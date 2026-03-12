@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder/data/tracks -type f -name *.json)",
+      "Bash(find /c/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder -name *.json -o -name track* -type f)",
+      "Bash(ls -lh /c/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder/data/aeromaps/BMWGTPAeroMap/*.xlsx)",
+      "Bash(for dir:*)",
+      "Bash(do basename:*)",
+      "Read(//c/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder/$dir/**)",
+      "Bash(done)",
+      "Bash(grep -n \"body_roll\\\\|roll_deg\" /c/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder/data/tracks/*.json)",
+      "Bash(find /c/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder -name *validate* -o -name *test* -o -name *verify*)",
+      "Bash(grep -n \"def.*roll\\\\|body_roll\" /c/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder/track_model/*.py)",
+      "Bash(grep -rn \"body_roll\\\\|BodyRoll\\\\|RollRate\" /c/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder --include=*.py)",
+      "Bash(python3 -c \"import json; data = json.load\\(open\\(''/c/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder/data/tracks/sebring_international_raceway_international.json''\\)\\); print\\(json.dumps\\({k: v for k, v in data.items\\(\\) if ''roll'' in k.lower\\(\\) or ''body'' in k.lower\\(\\)}, indent=2\\)\\)\")",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\(''C:/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder/data/tracks/sebring_international_raceway_international.json''\\)\\); print\\(''Keys:'', list\\(d.keys\\(\\)\\)\\); print\\(''lateral_g:'', d.get\\(''lateral_g''\\)\\); print\\(''body_roll_deg:'', d.get\\(''body_roll_deg''\\)\\); print\\(''shock p95 front:'', d.get\\(''shock_vel_p95_front_mps''\\)\\); print\\(''shock p99 front:'', d.get\\(''shock_vel_p99_front_mps''\\)\\); print\\(''shock p95 rear:'', d.get\\(''shock_vel_p95_rear_mps''\\)\\); print\\(''shock p99 rear:'', d.get\\(''shock_vel_p99_rear_mps''\\)\\)\")",
+      "Bash(python -c \"import json; d=json.load\\(open\\(''C:/Users/VYRAL/Desktop/iracingsetupapp/gtp-setup-builder/data/tracks/sebring_international_raceway_international.json''\\)\\); print\\(''Keys:'', list\\(d.keys\\(\\)\\)\\); print\\(''lateral_g:'', d.get\\(''lateral_g''\\)\\); print\\(''body_roll_deg:'', d.get\\(''body_roll_deg''\\)\\); print\\(''shock p95 front:'', d.get\\(''shock_vel_p95_front_mps''\\)\\); print\\(''shock p99 front:'', d.get\\(''shock_vel_p99_front_mps''\\)\\); print\\(''shock p95 rear:'', d.get\\(''shock_vel_p95_rear_mps''\\)\\); print\\(''shock p99 rear:'', d.get\\(''shock_vel_p99_rear_mps''\\)\\)\")"
+    ]
+  }
+}

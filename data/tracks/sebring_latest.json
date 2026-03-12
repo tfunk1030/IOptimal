@@ -1,0 +1,382 @@
+{
+  "track_name": "Sebring International Raceway",
+  "track_config": "International",
+  "track_length_m": 5793.8,
+  "car": "BMW M Hybrid V8",
+  "best_lap_time_s": 109.6,
+  "speed_bands_kph": {
+    "60-80": 1.9,
+    "80-100": 2.9,
+    "100-120": 7.9,
+    "120-140": 12.7,
+    "140-160": 9.9,
+    "160-180": 8.6,
+    "180-200": 9.4,
+    "200-220": 10.7,
+    "220-240": 10.5,
+    "240-260": 11.0,
+    "260-280": 10.7,
+    "280-300": 4.0
+  },
+  "median_speed_kph": 193.4,
+  "max_speed_kph": 295.6,
+  "min_speed_kph": 69.2,
+  "peak_lat_g": 3.88,
+  "peak_braking_g": 2.65,
+  "peak_accel_g": 1.17,
+  "peak_vertical_g": 2.88,
+  "braking_zones": [
+    {
+      "entry_speed_kph": 283.8,
+      "min_speed_kph": 199.6,
+      "peak_decel_g": 1.71,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    },
+    {
+      "entry_speed_kph": 247.8,
+      "min_speed_kph": 100.2,
+      "peak_decel_g": 2.39,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    },
+    {
+      "entry_speed_kph": 140.9,
+      "min_speed_kph": 122.5,
+      "peak_decel_g": 1.17,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    },
+    {
+      "entry_speed_kph": 281.7,
+      "min_speed_kph": 75.9,
+      "peak_decel_g": 2.65,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    },
+    {
+      "entry_speed_kph": 270.2,
+      "min_speed_kph": 94.8,
+      "peak_decel_g": 2.56,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    },
+    {
+      "entry_speed_kph": 227.4,
+      "min_speed_kph": 116.2,
+      "peak_decel_g": 2.06,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    },
+    {
+      "entry_speed_kph": 271.6,
+      "min_speed_kph": 127.6,
+      "peak_decel_g": 2.55,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    },
+    {
+      "entry_speed_kph": 172.7,
+      "min_speed_kph": 143.1,
+      "peak_decel_g": 1.19,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    },
+    {
+      "entry_speed_kph": 134.8,
+      "min_speed_kph": 126.5,
+      "peak_decel_g": 0.61,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    },
+    {
+      "entry_speed_kph": 295.3,
+      "min_speed_kph": 125.2,
+      "peak_decel_g": 2.04,
+      "lap_dist_m": 0.0,
+      "braking_dist_m": 0.0
+    }
+  ],
+  "corners": [
+    {
+      "speed_kph": 212.6,
+      "peak_lat_g": 3.81,
+      "direction": "left",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 247.6,
+      "peak_lat_g": 1.93,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 127.7,
+      "peak_lat_g": 1.99,
+      "direction": "left",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 126.2,
+      "peak_lat_g": 2.0,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 129.8,
+      "peak_lat_g": 2.13,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 131.0,
+      "peak_lat_g": 3.88,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 132.9,
+      "peak_lat_g": 2.11,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 110.2,
+      "peak_lat_g": 1.96,
+      "direction": "left",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 242.2,
+      "peak_lat_g": 1.6,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 69.6,
+      "peak_lat_g": 1.99,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 157.7,
+      "peak_lat_g": 1.31,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 206.6,
+      "peak_lat_g": 2.16,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 250.9,
+      "peak_lat_g": 2.55,
+      "direction": "left",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 98.4,
+      "peak_lat_g": 1.98,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 178.0,
+      "peak_lat_g": 2.15,
+      "direction": "left",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 223.6,
+      "peak_lat_g": 2.7,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 113.5,
+      "peak_lat_g": 2.35,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 268.1,
+      "peak_lat_g": 2.81,
+      "direction": "left",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 144.6,
+      "peak_lat_g": 2.09,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 169.1,
+      "peak_lat_g": 2.07,
+      "direction": "left",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 148.0,
+      "peak_lat_g": 2.61,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 153.2,
+      "peak_lat_g": 1.06,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 156.6,
+      "peak_lat_g": 1.52,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 141.0,
+      "peak_lat_g": 2.64,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    },
+    {
+      "speed_kph": 190.5,
+      "peak_lat_g": 1.83,
+      "direction": "right",
+      "lap_dist_m": 0.0,
+      "radius_m": 0.0
+    }
+  ],
+  "shock_vel_histogram_front": {
+    "0-5": 1488,
+    "5-10": 1407,
+    "10-20": 2394,
+    "20-50": 4597,
+    "50-100": 2138,
+    "100-200": 874,
+    "200+": 254
+  },
+  "shock_vel_histogram_rear": {
+    "0-5": 1479,
+    "5-10": 1404,
+    "10-20": 2504,
+    "20-50": 4339,
+    "50-100": 2025,
+    "100-200": 969,
+    "200+": 432
+  },
+  "shock_vel_p50_front_mps": 0.0264,
+  "shock_vel_p95_front_mps": 0.134,
+  "shock_vel_p99_front_mps": 0.2597,
+  "shock_vel_p50_rear_mps": 0.0257,
+  "shock_vel_p95_rear_mps": 0.1576,
+  "shock_vel_p99_rear_mps": 0.3086,
+  "elevation_change_m": 3.0,
+  "lltd_measured": 0.489,
+  "roll_gradient_deg_per_g": -0.097,
+  "ride_heights_mm": {
+    "front_mean": 21.7,
+    "front_p01": 8.3,
+    "front_p99": 37.8,
+    "rear_mean": 36.0,
+    "rear_p01": 16.4,
+    "rear_p99": 54.2
+  },
+  "telemetry_source": "bmwlmdh_sebring international 2026-03-11 17-38-43, lap 4 only",
+  "lateral_g": {
+    "mean_abs": 0.85,
+    "p90": 1.62,
+    "p95": 2.09,
+    "p99": 2.55,
+    "max": 3.88
+  },
+  "kerb_events": [
+    {
+      "lap_dist_m": 0,
+      "severity": 2.5,
+      "side": "both"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 2.3,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 2.1,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 2.0,
+      "side": "both"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 1.9,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 1.8,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 1.7,
+      "side": "both"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 1.6,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 1.5,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 1.4,
+      "side": "both"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 1.3,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 0,
+      "severity": 1.2,
+      "side": "right"
+    }
+  ]
+}
