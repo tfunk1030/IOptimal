@@ -235,6 +235,7 @@ class ARBSolver:
         self,
         front_wheel_rate_nmm: float,
         rear_wheel_rate_nmm: float,
+        lltd_offset: float = 0.0,
     ) -> ARBSolution:
         """Find ARB sizes and blades for target LLTD.
 
@@ -260,8 +261,8 @@ class ARBSolver:
             motion_ratio=cs.rear_motion_ratio,
         )
 
-        # Target LLTD (OptimumG: static front weight + 5%)
-        target_lltd = self.car.weight_dist_front + 0.05
+        # Target LLTD (OptimumG: static front weight + 5%) + modifier offset
+        target_lltd = self.car.weight_dist_front + 0.05 + lltd_offset
 
         # ─── BMW ARB strategy ────────────────────────────────────────────────
         # Per SKILL.md and per-car-quirks.md:

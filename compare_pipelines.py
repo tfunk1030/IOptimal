@@ -413,64 +413,178 @@ print()
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  SUMMARY: What Changed
+#  PHASE 3: Re-run solver WITH modifier feedback (the real difference)
 # ═══════════════════════════════════════════════════════════════════
 
-print("\n")
+print("\n\n")
+print("!" * WIDTH)
+print("  ENHANCED PIPELINE — ACTUAL SOLVER DIFFERENCES")
+print("  (Modifiers now feed back into solver targets)")
+print("!" * WIDTH)
+
+# Simulate realistic diagnosis findings that would trigger modifiers
+# In a real run, these come from telemetry. Here we simulate a driver
+# with settle time issues and mild understeer.
+from solver.modifiers import SolverModifiers
+
+# Scenario: Sebring bumpy track → adaptive thresholds change what triggers.
+# Smooth-consistent driver on rough track with mild understeer and slow settle.
+# These modifiers represent what compute_modifiers() would produce.
+enhanced_modifiers = SolverModifiers(
+    df_balance_offset_pct=-0.15,     # Speed gradient → shift DF forward
+    lltd_offset=-0.02,              # Understeer diagnosis → lower LLTD
+    front_heave_min_floor_nmm=60.0, # Bottoming diagnosis → floor constraint
+    rear_third_min_floor_nmm=0.0,
+    front_ls_rbd_offset=1,          # Settle time too slow → stiffer rebound
+    rear_ls_rbd_offset=0,
+    front_hs_comp_offset=0,
+    rear_hs_comp_offset=0,
+    damping_ratio_scale=0.92,       # Smooth driver → slightly softer ζ targets
+    reasons=[
+        "Speed gradient +1.8° → DF balance offset -0.15%",
+        "Understeer 2.8° > threshold 2.6° → LLTD offset -0.02",
+        "Front bottoming 7 events → heave floor 60 N/mm",
+        "Settle time 250ms > adaptive threshold 170ms → LS rbd +1",
+        "Smooth-consistent driver → damping_ratio_scale 0.92",
+    ],
+)
+
+print()
+print("  Modifiers computed from diagnosis + driver style:")
+for r in enhanced_modifiers.reasons:
+    print(f"    {r}")
+
+# Re-run Step 1 with DF balance offset
+target_balance_enhanced = 50.14 + enhanced_modifiers.df_balance_offset_pct
+e_step1 = rake_solver.solve(
+    target_balance=target_balance_enhanced,
+    fuel_load_l=89.0,
+    pin_front_min=True,
+)
+
+# Re-run Step 2 with heave floor
+e_step2 = heave_solver.solve(
+    dynamic_front_rh_mm=e_step1.dynamic_front_rh_mm,
+    dynamic_rear_rh_mm=e_step1.dynamic_rear_rh_mm,
+    front_heave_floor_nmm=enhanced_modifiers.front_heave_min_floor_nmm,
+    rear_third_floor_nmm=enhanced_modifiers.rear_third_min_floor_nmm,
+)
+
+# Re-run Step 3
+e_step3 = corner_solver.solve(
+    front_heave_nmm=e_step2.front_heave_nmm,
+    rear_third_nmm=e_step2.rear_third_nmm,
+    fuel_load_l=89.0,
+)
+
+# Re-run Step 4 with LLTD offset
+e_step4 = arb_solver.solve(
+    front_wheel_rate_nmm=e_step3.front_wheel_rate_nmm,
+    rear_wheel_rate_nmm=e_step3.rear_spring_rate_nmm,
+    lltd_offset=enhanced_modifiers.lltd_offset,
+)
+
+# Re-run Step 5
+e_step5 = geom_solver.solve(
+    k_roll_total_nm_deg=e_step4.k_roll_front_total + e_step4.k_roll_rear_total,
+    front_wheel_rate_nmm=e_step3.front_wheel_rate_nmm,
+    rear_wheel_rate_nmm=e_step3.rear_spring_rate_nmm,
+)
+
+# Re-run Step 6 with damping ratio scale
+e_step6 = damper_solver.solve(
+    front_wheel_rate_nmm=e_step3.front_wheel_rate_nmm,
+    rear_wheel_rate_nmm=e_step3.rear_spring_rate_nmm,
+    front_dynamic_rh_mm=e_step1.dynamic_front_rh_mm,
+    rear_dynamic_rh_mm=e_step1.dynamic_rear_rh_mm,
+    fuel_load_l=89.0,
+    damping_ratio_scale=enhanced_modifiers.damping_ratio_scale,
+)
+
+# Apply damper click offsets from modifiers
+from pipeline.produce import _apply_damper_modifiers
+_apply_damper_modifiers(e_step6, enhanced_modifiers, car)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  SIDE-BY-SIDE: Current vs Enhanced — ACTUAL NUMBERS
+# ═══════════════════════════════════════════════════════════════════
+
+print()
+print("=" * WIDTH)
+print("  SIDE-BY-SIDE: SETUP VALUES THAT ACTUALLY CHANGE")
+print("=" * WIDTH)
+print()
+print(f"  {'Parameter':<30s} {'Current':>8s} {'Enhanced':>8s} {'Delta':>8s}")
+print("  " + "-" * (WIDTH - 4))
+
+def diff_line(label, old_val, new_val, fmt=".1f", units=""):
+    delta = new_val - old_val
+    marker = " **" if abs(delta) > 0.01 else ""
+    print(f"  {label:<30s} {old_val:>8{fmt}} {new_val:>8{fmt}} {delta:>+8{fmt}}{units}{marker}")
+
+# Step 1
+diff_line("DF balance target %", 50.14, target_balance_enhanced, ".2f")
+diff_line("Dynamic front RH (mm)", step1.dynamic_front_rh_mm, e_step1.dynamic_front_rh_mm)
+diff_line("Dynamic rear RH (mm)", step1.dynamic_rear_rh_mm, e_step1.dynamic_rear_rh_mm)
+diff_line("DF balance achieved %", step1.df_balance_pct, e_step1.df_balance_pct, ".2f")
+
+# Step 2
+diff_line("Front heave (N/mm)", step2.front_heave_nmm, e_step2.front_heave_nmm, ".0f")
+diff_line("Rear third (N/mm)", step2.rear_third_nmm, e_step2.rear_third_nmm, ".0f")
+diff_line("Front bottoming margin (mm)", step2.front_bottoming_margin_mm, e_step2.front_bottoming_margin_mm)
+
+# Step 3
+diff_line("Front torsion OD (mm)", step3.front_torsion_od_mm, e_step3.front_torsion_od_mm)
+diff_line("Rear spring rate (N/mm)", step3.rear_spring_rate_nmm, e_step3.rear_spring_rate_nmm, ".0f")
+
+# Step 4
+diff_line("LLTD target", step4.lltd_target * 100, e_step4.lltd_target * 100, ".2f", "%")
+diff_line("LLTD achieved", step4.lltd_achieved * 100, e_step4.lltd_achieved * 100, ".2f", "%")
+diff_line("RARB blade (slow)", float(step4.rarb_blade_slow_corner), float(e_step4.rarb_blade_slow_corner), ".0f")
+diff_line("RARB blade (fast)", float(step4.rarb_blade_fast_corner), float(e_step4.rarb_blade_fast_corner), ".0f")
+
+# Step 5
+diff_line("Front camber (deg)", step5.front_camber_deg, e_step5.front_camber_deg)
+diff_line("Rear camber (deg)", step5.rear_camber_deg, e_step5.rear_camber_deg)
+
+# Step 6
+diff_line("LF LS Comp (click)", float(step6.lf.ls_comp), float(e_step6.lf.ls_comp), ".0f")
+diff_line("LF LS Rbd (click)", float(step6.lf.ls_rbd), float(e_step6.lf.ls_rbd), ".0f")
+diff_line("LF HS Comp (click)", float(step6.lf.hs_comp), float(e_step6.lf.hs_comp), ".0f")
+diff_line("LR LS Comp (click)", float(step6.lr.ls_comp), float(e_step6.lr.ls_comp), ".0f")
+diff_line("LR LS Rbd (click)", float(step6.lr.ls_rbd), float(e_step6.lr.ls_rbd), ".0f")
+diff_line("LR HS Comp (click)", float(step6.lr.hs_comp), float(e_step6.lr.hs_comp), ".0f")
+diff_line("ζ LS front", step6.zeta_ls_front, e_step6.zeta_ls_front, ".3f")
+diff_line("ζ LS rear", step6.zeta_ls_rear, e_step6.zeta_ls_rear, ".3f")
+diff_line("ζ HS front", step6.zeta_hs_front, e_step6.zeta_hs_front, ".3f")
+diff_line("ζ HS rear", step6.zeta_hs_rear, e_step6.zeta_hs_rear, ".3f")
+
+print()
+print("  ** = value changed by enhanced reasoning")
+print()
+
+# Count changes
+changes_count = 0
+for old, new in [
+    (step1.dynamic_front_rh_mm, e_step1.dynamic_front_rh_mm),
+    (step1.dynamic_rear_rh_mm, e_step1.dynamic_rear_rh_mm),
+    (step2.front_heave_nmm, e_step2.front_heave_nmm),
+    (step2.rear_third_nmm, e_step2.rear_third_nmm),
+    (step4.lltd_achieved, e_step4.lltd_achieved),
+    (step6.lf.ls_comp, e_step6.lf.ls_comp),
+    (step6.lf.ls_rbd, e_step6.lf.ls_rbd),
+    (step6.lf.hs_comp, e_step6.lf.hs_comp),
+    (step6.lr.ls_comp, e_step6.lr.ls_comp),
+    (step6.lr.ls_rbd, e_step6.lr.ls_rbd),
+    (step6.zeta_ls_front, e_step6.zeta_ls_front),
+]:
+    if abs(old - new) > 0.001:
+        changes_count += 1
+
 print("#" * WIDTH)
-print("  SUMMARY: CURRENT vs ENHANCED PIPELINE")
-print("#" * WIDTH)
-
-comparisons = [
-    ("Constraint Analysis",
-     "Binary pass/fail\n    'Bottoming margin: 0.2mm (OK)'",
-     "Quantified proximity + binding analysis\n    '!! Front bottoming: 14.8/15.0mm (1.3% margin)\n       BINDING — constrains entire heave choice'"),
-
-    ("Sensitivity",
-     "None\n    No understanding of how sensitive\n    outputs are to input changes",
-     "+10 N/mm heave → -X.X mm excursion\n    1 RARB blade → -2.9% LLTD shift\n    Engineers know what matters most"),
-
-    ("Uncertainty",
-     "Qualitative only\n    'HIGH/MEDIUM/LOW confidence'",
-     "Quantified ± bands per parameter\n    'Front heave: 70 ± 15 N/mm [MED]\n     Dominant: shock velocity p99 (±6.7%)\n     Try 60 and 70 on track'"),
-
-    ("Thresholds",
-     "Fixed for all conditions\n    understeer > 2.5° always",
-     "Track/car/driver adapted\n    Sebring (rough): relax to 2.7°\n    Smooth driver: tighten by 15%\n    High-speed: stricter than low-speed"),
-
-    ("Stint Reasoning",
-     "Single-point optimization\n    One fuel load, one solution",
-     "Multi-fuel-state compromise\n    Full/half/empty fuel analysis\n    Tyre degradation prediction\n    Pre-compensate RARB + pressures"),
-
-    ("Corner Strategy",
-     "One static setup\n    RARB blade 3 everywhere",
-     "Per-corner live adjustments\n    T1: blade 1, T7: blade 4\n    Binding corner identified\n    TC/bias/diff per corner"),
-
-    ("Cross-Step Checks",
-     "Sequential, no feedback\n    Step 6 damper issues can't\n    fix Step 2 spring problems",
-     "Residual checking + back-propagation\n    If damper ζ out of range →\n      adjust spring (relaxation-damped)\n    Converges in 2-3 passes"),
-
-    ("Diagnosis",
-     "Linear: symptom → fix\n    3 symptoms → 3 separate fixes",
-     "Causal DAG: root cause analysis\n    3 symptoms ← 1 root cause\n    One fix resolves all three\n    Disambiguation with confidence"),
-
-    ("Learning",
-     "No memory between sessions\n    Same model every time",
-     "Predict → measure → update\n    Bayesian m_eff correction\n    Detects systematic model drift\n    Gets better with every run"),
-]
-
-for title, old, new in comparisons:
-    print(f"\n  {title}")
-    print("  " + "-" * (WIDTH - 4))
-    print(f"  CURRENT:")
-    for line in old.split("\n"):
-        print(f"    {line.strip()}")
-    print(f"  ENHANCED:")
-    for line in new.split("\n"):
-        print(f"    {line.strip()}")
-
-print("\n" + "#" * WIDTH)
-print(f"  Setup values: UNCHANGED (same physics solver)")
-print(f"  Reasoning depth: 8 new analysis layers")
-print(f"  Engineer insight: Dramatically improved")
+print(f"  {changes_count} parameters changed by enhanced reasoning")
+print(f"  Same physics engine — different inputs from deeper diagnosis")
+print(f"  Adaptive thresholds + modifiers → different solver targets")
+print(f"  → different actual setup values on the car")
 print("#" * WIDTH)
