@@ -269,12 +269,17 @@ class HeaveSolver:
         self,
         dynamic_front_rh_mm: float,
         dynamic_rear_rh_mm: float,
+        front_heave_floor_nmm: float = 0.0,
+        rear_third_floor_nmm: float = 0.0,
     ) -> HeaveSolution:
         """Find minimum safe heave/third spring rates.
 
         Args:
             dynamic_front_rh_mm: Front dynamic ride height from Step 1
             dynamic_rear_rh_mm: Rear dynamic ride height from Step 1
+            front_heave_floor_nmm: Minimum front heave rate from modifier
+                (e.g., bottoming diagnosis demands stiffer spring)
+            rear_third_floor_nmm: Minimum rear third rate from modifier
 
         Returns:
             HeaveSolution with recommended rates and constraint analysis
@@ -298,6 +303,11 @@ class HeaveSolver:
         else:
             k_front = k_front_sigma
             front_binding = "variance"
+
+        # Apply modifier floor constraint (diagnosis-driven minimum)
+        if front_heave_floor_nmm > 0 and k_front < front_heave_floor_nmm:
+            k_front = front_heave_floor_nmm
+            front_binding = "modifier_floor"
 
         # Clamp to valid range and round up to nearest 10 N/mm (iRacing garage step)
         k_front = max(k_front, hsm.front_spring_range_nmm[0])
@@ -324,6 +334,11 @@ class HeaveSolver:
         else:
             k_rear = k_rear_sigma
             rear_binding = "variance"
+
+        # Apply modifier floor constraint (diagnosis-driven minimum)
+        if rear_third_floor_nmm > 0 and k_rear < rear_third_floor_nmm:
+            k_rear = rear_third_floor_nmm
+            rear_binding = "modifier_floor"
 
         # Clamp and round up to nearest 10 N/mm (iRacing garage step)
         k_rear = max(k_rear, hsm.rear_spring_range_nmm[0])

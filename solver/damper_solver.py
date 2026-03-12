@@ -404,6 +404,7 @@ class DamperSolver:
         front_dynamic_rh_mm: float,
         rear_dynamic_rh_mm: float,
         fuel_load_l: float = 89.0,
+        damping_ratio_scale: float = 1.0,
     ) -> DamperSolution:
         """Derive all damper settings from physics.
 
@@ -416,6 +417,11 @@ class DamperSolver:
         6. Map to clicks via force calibration
         7. Apply rebound multiplier from physics
         8. Compute HS slope from track surface distribution
+
+        Args:
+            damping_ratio_scale: Multiplier on ζ targets from solver modifiers.
+                >1.0 = stiffer damping (e.g. erratic driver needs more control),
+                <1.0 = softer damping (e.g. smooth driver benefits from compliance).
         """
         d = self.car.damper
 
@@ -428,10 +434,11 @@ class DamperSolver:
         c_crit_rear = self._critical_damping(rear_wheel_rate_nmm, m_rear)
 
         # ─── 3-4. Damping coefficients ────────────────────────────────────────
-        zeta_ls_f = self._damping_ratio_ls(is_front=True)
-        zeta_ls_r = self._damping_ratio_ls(is_front=False)
-        zeta_hs_f = self._damping_ratio_hs(is_front=True)
-        zeta_hs_r = self._damping_ratio_hs(is_front=False)
+        # Apply damping_ratio_scale from modifiers (driver style / diagnosis)
+        zeta_ls_f = self._damping_ratio_ls(is_front=True) * damping_ratio_scale
+        zeta_ls_r = self._damping_ratio_ls(is_front=False) * damping_ratio_scale
+        zeta_hs_f = self._damping_ratio_hs(is_front=True) * damping_ratio_scale
+        zeta_hs_r = self._damping_ratio_hs(is_front=False) * damping_ratio_scale
 
         c_ls_front = zeta_ls_f * c_crit_front
         c_ls_rear = zeta_ls_r * c_crit_rear
