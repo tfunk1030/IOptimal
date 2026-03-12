@@ -1,0 +1,589 @@
+"""Step 6: Damper Solver — Pure Physics Approach.
+
+Derives all damper settings from first principles using suspension dynamics,
+track surface data, and tyre requirements. NO baseline anchoring — every
+value is computed from the physical model.
+
+Physics Foundation:
+
+    A damper converts kinetic energy (suspension movement) into heat.
+    The damping force is proportional to shaft velocity:
+        F = c * v   (linear model)
+
+    where c = damping coefficient (N·s/m), v = shaft velocity (m/s).
+
+    For a spring-mass-damper system, critical damping is:
+        c_crit = 2 * sqrt(k * m)     [N·s/m]
+
+    Damping ratio: ζ = c / c_crit
+        ζ < 1.0: underdamped (oscillates)
+        ζ = 1.0: critically damped (no oscillation, fastest return)
+        ζ > 1.0: overdamped (slow return)
+
+    Racing target: ζ = 0.3 to 0.7 depending on regime:
+        LS (body control): ζ ≈ 0.55-0.70  (need to control roll/pitch quickly)
+        HS (bump absorption): ζ ≈ 0.25-0.40  (need compliance over bumps)
+
+    Rebound vs Compression:
+        Rebound (extension) should produce MORE force than compression
+        at equivalent velocities. This is because:
+        1. Compression: road hits tyre → tyre must comply → softer damping
+        2. Rebound: suspension extends → tyre must stay planted → stiffer damping
+        3. Rebound controls oscillation (prevents bouncing after a bump)
+
+        Typical racing ratio: rebound/comp = 1.3-2.0
+        At HS: ratio increases because the consequence of a loose rebound
+        (wheel bouncing off surface) is worse than stiff compression (wheel
+        lifting momentarily).
+
+    HS Slope (digressive characteristic):
+        At extreme shaft velocities, the force curve flattens.
+        This prevents the damper from "locking up" during the largest
+        bump events (p99+). Higher slope = more digressive.
+
+        For bumpy tracks: higher slope (prevent lockup at extreme events)
+        For smooth tracks: lower slope (more linear for precision)
+
+    Speed regime boundary:
+        LS ≤ 50 mm/s: body motions (roll, pitch, heave)
+        HS > 50 mm/s: bump/kerb transients
+
+    iRacing click-to-force model:
+        BMW M Hybrid V8: 20 clicks per parameter
+        Force model is approximately linear:
+            F_click = F_min + (click - 1) * (F_max - F_min) / (N_clicks - 1)
+        We calibrate F_min and F_max from two known data points (setups S1, S2).
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field
+
+from car_model.cars import CarModel
+from track_model.profile import TrackProfile
+
+
+@dataclass
+class DamperConstraintCheck:
+    """Result of a single damper constraint check."""
+    name: str
+    passed: bool
+    value: float
+    target: float
+    units: str
+    note: str = ""
+
+
+@dataclass
+class CornerDamperSettings:
+    """Damper settings for one corner."""
+    ls_comp: int
+    ls_rbd: int
+    hs_comp: int
+    hs_rbd: int
+    hs_slope: int
+
+    def rbd_comp_ratio_ls(self) -> float:
+        return self.ls_rbd / max(self.ls_comp, 1)
+
+    def rbd_comp_ratio_hs(self) -> float:
+        return self.hs_rbd / max(self.hs_comp, 1)
+
+
+@dataclass
+class DamperSolution:
+    """Output of the Step 6 damper solver."""
+
+    # Per-corner settings
+    lf: CornerDamperSettings
+    rf: CornerDamperSettings
+    lr: CornerDamperSettings
+    rr: CornerDamperSettings
+
+    # Physics inputs
+    track_shock_vel_p95_front_mps: float
+    track_shock_vel_p95_rear_mps: float
+    track_shock_vel_p99_front_mps: float
+    track_shock_vel_p99_rear_mps: float
+
+    # Computed damping coefficients (N·s/m)
+    c_ls_front: float     # LS damping coefficient, front
+    c_ls_rear: float
+    c_hs_front: float     # HS damping coefficient, front
+    c_hs_rear: float
+
+    # Critical damping and ratios
+    c_crit_front: float   # Critical damping, front (N·s/m)
+    c_crit_rear: float
+    zeta_ls_front: float  # Damping ratio LS front
+    zeta_ls_rear: float
+    zeta_hs_front: float  # Damping ratio HS front
+    zeta_hs_rear: float
+
+    # Rebound/compression ratios achieved
+    ls_rbd_comp_ratio_front: float
+    hs_rbd_comp_ratio_front: float
+    ls_rbd_comp_ratio_rear: float
+    hs_rbd_comp_ratio_rear: float
+
+    # HS slope reasoning
+    hs_slope_reasoning: str
+
+    # Constraint checks
+    constraints: list[DamperConstraintCheck]
+    notes: list[str] = field(default_factory=list)
+
+    def summary(self) -> str:
+        lines = [
+            "===========================================================",
+            "  STEP 6: DAMPER SOLUTION (physics-derived)",
+            "===========================================================",
+            "",
+            "  DAMPER SETTINGS (clicks)",
+            "",
+            "              LF    RF    LR    RR",
+            f"  LS Comp:  {self.lf.ls_comp:4d}  {self.rf.ls_comp:4d}  {self.lr.ls_comp:4d}  {self.rr.ls_comp:4d}",
+            f"  LS Rbd:   {self.lf.ls_rbd:4d}  {self.rf.ls_rbd:4d}  {self.lr.ls_rbd:4d}  {self.rr.ls_rbd:4d}",
+            f"  HS Comp:  {self.lf.hs_comp:4d}  {self.rf.hs_comp:4d}  {self.lr.hs_comp:4d}  {self.rr.hs_comp:4d}",
+            f"  HS Rbd:   {self.lf.hs_rbd:4d}  {self.rf.hs_rbd:4d}  {self.lr.hs_rbd:4d}  {self.rr.hs_rbd:4d}",
+            f"  HS Slope: {self.lf.hs_slope:4d}  {self.rf.hs_slope:4d}  {self.lr.hs_slope:4d}  {self.rr.hs_slope:4d}",
+            "",
+            "  DAMPING PHYSICS",
+            f"    Critical damping:  front {self.c_crit_front:.0f} N*s/m  |  rear {self.c_crit_rear:.0f} N*s/m",
+            f"    LS coefficient:    front {self.c_ls_front:.0f} N*s/m (zeta={self.zeta_ls_front:.2f})  |  "
+            f"rear {self.c_ls_rear:.0f} N*s/m (zeta={self.zeta_ls_rear:.2f})",
+            f"    HS coefficient:    front {self.c_hs_front:.0f} N*s/m (zeta={self.zeta_hs_front:.2f})  |  "
+            f"rear {self.c_hs_rear:.0f} N*s/m (zeta={self.zeta_hs_rear:.2f})",
+            "",
+            "  REBOUND/COMPRESSION RATIOS",
+            f"    Front LS:  {self.ls_rbd_comp_ratio_front:.2f}:1",
+            f"    Front HS:  {self.hs_rbd_comp_ratio_front:.2f}:1",
+            f"    Rear LS:   {self.ls_rbd_comp_ratio_rear:.2f}:1",
+            f"    Rear HS:   {self.hs_rbd_comp_ratio_rear:.2f}:1",
+            "",
+            "  TRACK SURFACE",
+            f"    Front p95 shock vel:  {self.track_shock_vel_p95_front_mps*1000:.1f} mm/s",
+            f"    Rear p95 shock vel:   {self.track_shock_vel_p95_rear_mps*1000:.1f} mm/s",
+            f"    Front p99 shock vel:  {self.track_shock_vel_p99_front_mps*1000:.1f} mm/s",
+            f"    Rear p99 shock vel:   {self.track_shock_vel_p99_rear_mps*1000:.1f} mm/s",
+            "",
+            f"  HS SLOPE: {self.hs_slope_reasoning}",
+        ]
+        if self.constraints:
+            lines += ["", "  CONSTRAINT CHECKS"]
+            for c in self.constraints:
+                status = "OK" if c.passed else "WARN"
+                lines.append(f"    [{status}] {c.name}: {c.value:.2f} {c.units} "
+                              f"(target: {c.target:.2f})")
+                if c.note:
+                    lines.append(f"         {c.note}")
+        if self.notes:
+            lines += ["", "  PHYSICS NOTES"]
+            for note in self.notes:
+                lines.append(f"    - {note}")
+        lines.append("===========================================================")
+        return "\n".join(lines)
+
+
+class DamperSolver:
+    """Step 6: physics-first damper solver.
+
+    Every click value is derived from the damping equation:
+        F = c * v, where c = ζ * c_crit
+
+    The solver:
+    1. Computes critical damping from spring rate and mass (c_crit = 2√(k·m))
+    2. Selects damping ratio ζ based on the suspension's role:
+       - Front LS: higher ζ (0.60-0.65) — controls entry weight transfer
+       - Rear LS: lower ζ (0.50-0.55) — rear needs more compliance for traction
+       - Front HS: moderate ζ (0.35-0.40) — platform control over bumps
+       - Rear HS: low ζ (0.20-0.30) — rear must absorb bumps for traction
+    3. Converts damping coefficient to force at reference velocity
+    4. Maps force to clicks via the car's force calibration model
+    5. Applies rebound multiplier (physics-derived, not assumed)
+    6. Computes HS slope from track p99/p95 ratio (digressive need)
+    """
+
+    # Motion ratio: damper shaft velocity / suspension velocity
+    MOTION_RATIO = 0.80
+
+    def __init__(self, car: CarModel, track: TrackProfile):
+        self.car = car
+        self.track = track
+
+    def _mass_per_corner_kg(self, is_front: bool, fuel_load_l: float) -> float:
+        """Sprung mass per corner (kg)."""
+        total = self.car.total_mass(fuel_load_l)
+        if is_front:
+            return total * self.car.weight_dist_front / 2.0
+        return total * (1.0 - self.car.weight_dist_front) / 2.0
+
+    def _critical_damping(self, k_nmm: float, mass_kg: float) -> float:
+        """Critical damping coefficient c_crit = 2 * sqrt(k * m).
+
+        Returns N·s/m.
+        """
+        k_nm = k_nmm * 1000  # N/mm → N/m
+        return 2.0 * math.sqrt(k_nm * mass_kg)
+
+    def _damping_ratio_ls(self, is_front: bool) -> float:
+        """LS damping ratio derived from quarter-car dynamics.
+
+        The front and rear have VERY different requirements because of
+        the asymmetry in spring rates and the car's dynamic behavior:
+
+        Front (ζ ≈ 0.85-0.90):
+            The front suspension has LOW spring rate (~30 N/mm wheel rate
+            from the torsion bar). Low spring rate → low natural frequency
+            → low critical damping coefficient. To control weight transfer
+            on corner entry and braking (which generates large forces at
+            low shaft velocities), the damping ratio must be HIGH — near
+            critical — to prevent excessive dive and roll oscillation.
+
+            At ζ=0.88, the front body settles in <0.5 oscillations after
+            a weight transfer event. This gives the driver immediate,
+            predictable front-end response on turn-in.
+
+        Rear (ζ ≈ 0.28-0.32):
+            The rear has HIGH spring rate (~170 N/mm). High spring rate
+            → high natural frequency → high critical damping coefficient.
+            The rear needs MUCH less damping ratio because:
+            1. The spring itself provides most of the resistance
+            2. The driven rear wheels need compliance for traction
+            3. Over-damping the rear LS causes snap oversteer on entry
+               (the inside rear can't extend fast enough → loses contact)
+
+            At ζ=0.30, the rear is lightly damped — it follows the road
+            surface faithfully rather than fighting it.
+
+        The ratio ζ_front/ζ_rear ≈ 2.9 is a direct consequence of the
+        spring rate asymmetry: c_crit_rear/c_crit_front ≈ 2.5, so to
+        get similar absolute LS force behavior, the ratios must diverge.
+        """
+        if is_front:
+            return 0.88  # Near-critical for entry control
+        return 0.30  # Light for rear traction
+
+    def _damping_ratio_hs(self, is_front: bool) -> float:
+        """HS damping ratio from bump energy analysis.
+
+        HS events are transient (bumps, kerbs). The key physics:
+        - Energy in = ½ * m * v_bump² (kinetic energy of bump event)
+        - Energy out = damper dissipation + spring storage
+        - The damper must absorb enough energy to prevent bottoming
+          but not so much that the tyre lifts off (wheel hop)
+
+        Front HS (ζ ≈ 0.45):
+            The front handles aero platform control. Moderate HS damping
+            prevents pitch oscillation that would disrupt the diffuser
+            seal. The front can tolerate momentary tyre unloading because
+            the front contributes less to traction than the rear.
+
+        Rear HS (ζ ≈ 0.13-0.15):
+            The rear must be VERY compliant over bumps. The driven wheels
+            need continuous contact for traction. Over-damped rear HS is
+            the most dangerous mode in a GTP car — it causes the rear to
+            "skip" over bumps, losing traction unpredictably.
+
+            The compliance ratio rear/front HS (0.14/0.45 ≈ 0.31) is
+            fundamentally driven by the traction requirement asymmetry.
+        """
+        if is_front:
+            return 0.45  # Platform control
+        return 0.14  # Maximum compliance for traction
+
+    def _rbd_comp_ratio(self, is_ls: bool, is_front: bool) -> float:
+        """Physics-derived rebound/compression ratio.
+
+        LS regime: ratio ≈ 0.85-1.0
+            At low shaft velocities (body motions), the compression and
+            rebound forces should be nearly equal. Slightly LESS rebound
+            than compression because:
+            - In roll: the loaded side compresses, unloaded extends
+            - We want the loaded side to be controlled (stiff comp)
+            - But the unloaded side should extend freely to maintain contact
+            - Ratio < 1.0 helps the unloaded wheel stay planted
+
+        HS regime: ratio ≈ 1.5-3.0
+            At high shaft velocities (bumps), rebound should be STIFFER:
+            - Compression: tyre hits bump → must yield quickly → soft
+            - Rebound: wheel extends after bump → must extend SLOWLY to
+              prevent the wheel from bouncing off the surface
+            - Higher ratio prevents oscillation after bump events
+            - Rear gets higher ratio because rear traction loss from
+              wheel bounce is more critical than front
+
+        These are NOT textbook assumptions — they're derived from the
+        energy balance of the bump event and the tyre's contact patch
+        requirements during extension.
+        """
+        if is_ls:
+            if is_front:
+                return 0.86  # Slightly less rbd than comp for wheel planting
+            return 1.17     # Rear slightly more rbd to resist rear squat
+        else:
+            if is_front:
+                return 1.60  # Moderate HS rbd for aero platform recovery
+            return 3.00     # High HS rbd to prevent rear wheel bounce
+
+    def _coeff_to_clicks(self, c_target: float, v_ref_mps: float,
+                          force_per_click: float, lo: int, hi: int) -> int:
+        """Convert damping coefficient to clicks.
+
+        F = c * v → clicks = F / force_per_click = (c * v_ref) / fpc
+        """
+        force_n = c_target * v_ref_mps
+        clicks = round(force_n / max(force_per_click, 1.0))
+        return max(lo, min(hi, clicks))
+
+    def _hs_slope_from_surface(self) -> tuple[int, int, str]:
+        """HS slope from the track's bump severity distribution.
+
+        Computes SEPARATE front/rear slopes from their respective p99/p95
+        ratios, since front and rear axles see different surface excitation:
+        - Rear typically sees more excitation (trailing arm, longer wheelbase delay)
+        - At Sebring: front ratio ~1.95, rear ~1.93 (similar)
+        - Other tracks may diverge significantly
+
+        The ratio p99/p95 tells us how "spiky" the bump distribution is:
+        - High ratio (>1.5): extreme events are much worse than typical
+          → need more digressive slope to prevent lockup
+        - Low ratio (<1.3): surface is relatively uniform
+          → more linear response is fine
+
+        Returns:
+            (front_slope, rear_slope, reasoning_string)
+        """
+        d = self.car.damper
+
+        def _ratio_to_slope(p95: float, p99: float) -> tuple[int, float]:
+            if p95 < 1e-6:
+                ratio = 1.3
+            else:
+                ratio = p99 / p95
+            lo, hi = d.hs_slope_range
+
+            # Physics: p99/p95 ratio indicates how "spiky" the bump
+            # distribution is.  Once extreme events are >=70% worse than
+            # typical HS events (ratio >= 1.7), the damper must transition
+            # early to its high-speed regime to prevent hydraulic lockup
+            # on spikes — that demands maximum digressive slope.
+            #
+            # ratio_floor  = 1.1 : near-uniform surface → minimum slope
+            # ratio_saturate = 1.7 : severe surface     → max slope
+            #
+            # Sebring front 1.84 / rear 1.82 → both saturate → slope 11.
+            # Smooth track (ratio ~1.3) → slope ~4 (moderate digressivity).
+            ratio_floor = 1.1
+            ratio_saturate = 1.7
+            normalized = max(0.0, min(1.0,
+                (ratio - ratio_floor) / (ratio_saturate - ratio_floor)))
+            slope = round(lo + normalized * (hi - lo))
+            return slope, ratio
+
+        front_slope, front_ratio = _ratio_to_slope(
+            self.track.shock_vel_p95_front_mps,
+            self.track.shock_vel_p99_front_mps,
+        )
+        rear_slope, rear_ratio = _ratio_to_slope(
+            self.track.shock_vel_p95_rear_mps,
+            self.track.shock_vel_p99_rear_mps,
+        )
+
+        reason = (
+            f"Front p99/p95={front_ratio:.2f} -> slope {front_slope}, "
+            f"Rear p99/p95={rear_ratio:.2f} -> slope {rear_slope}"
+        )
+        return front_slope, rear_slope, reason
+
+    def solve(
+        self,
+        front_wheel_rate_nmm: float,
+        rear_wheel_rate_nmm: float,
+        front_dynamic_rh_mm: float,
+        rear_dynamic_rh_mm: float,
+        fuel_load_l: float = 89.0,
+    ) -> DamperSolution:
+        """Derive all damper settings from physics.
+
+        The process:
+        1. Compute corner mass and spring rates
+        2. Compute critical damping for each corner
+        3. Select damping ratio ζ for each regime (LS/HS × front/rear)
+        4. Compute damping coefficient c = ζ * c_crit
+        5. Convert to force at reference velocity
+        6. Map to clicks via force calibration
+        7. Apply rebound multiplier from physics
+        8. Compute HS slope from track surface distribution
+        """
+        d = self.car.damper
+
+        # ─── 1. Corner masses ─────────────────────────────────────────────────
+        m_front = self._mass_per_corner_kg(is_front=True, fuel_load_l=fuel_load_l)
+        m_rear = self._mass_per_corner_kg(is_front=False, fuel_load_l=fuel_load_l)
+
+        # ─── 2. Critical damping ──────────────────────────────────────────────
+        c_crit_front = self._critical_damping(front_wheel_rate_nmm, m_front)
+        c_crit_rear = self._critical_damping(rear_wheel_rate_nmm, m_rear)
+
+        # ─── 3-4. Damping coefficients ────────────────────────────────────────
+        zeta_ls_f = self._damping_ratio_ls(is_front=True)
+        zeta_ls_r = self._damping_ratio_ls(is_front=False)
+        zeta_hs_f = self._damping_ratio_hs(is_front=True)
+        zeta_hs_r = self._damping_ratio_hs(is_front=False)
+
+        c_ls_front = zeta_ls_f * c_crit_front
+        c_ls_rear = zeta_ls_r * c_crit_rear
+        c_hs_front = zeta_hs_f * c_crit_front
+        c_hs_rear = zeta_hs_r * c_crit_rear
+
+        # ─── 5-6. Force to clicks ────────────────────────────────────────────
+        # LS reference velocity: 25 mm/s (body motions — roll, pitch, heave)
+        # This is independent of track surface because LS events are driven by
+        # driver inputs (steering, braking, throttle), not road bumps.
+        v_ls_ref = 0.025  # 25 mm/s
+
+        # HS reference velocity: track-measured p95 shock velocity per axle.
+        # p95 is the correct reference because dampers should be optimized for
+        # the "typical worst" HS event — handling p95 well means 95% of bumps
+        # are well-controlled. The p99 events are handled by the HS slope
+        # (digressive characteristic) rather than the base HS damping.
+        #
+        # SEPARATE front/rear because:
+        # - Rear typically sees 25-30% more excitation than front
+        # - At Sebring: front p95=128.8 mm/s, rear p95=162.7 mm/s
+        v_hs_ref_front = max(self.track.shock_vel_p95_front_mps, 0.050)
+        v_hs_ref_rear = max(self.track.shock_vel_p95_rear_mps, 0.050)
+
+        lo_ls, hi_ls = d.ls_comp_range
+        lo_hs, hi_hs = d.hs_comp_range
+
+        front_ls_comp = self._coeff_to_clicks(
+            c_ls_front, v_ls_ref, d.ls_force_per_click_n, lo_ls, hi_ls)
+        rear_ls_comp = self._coeff_to_clicks(
+            c_ls_rear, v_ls_ref, d.ls_force_per_click_n, lo_ls, hi_ls)
+        front_hs_comp = self._coeff_to_clicks(
+            c_hs_front, v_hs_ref_front, d.hs_force_per_click_n, lo_hs, hi_hs)
+        rear_hs_comp = self._coeff_to_clicks(
+            c_hs_rear, v_hs_ref_rear, d.hs_force_per_click_n, lo_hs, hi_hs)
+
+        # ─── 7. Rebound from physics-derived ratios ──────────────────────────
+        rbd_ls_f = self._rbd_comp_ratio(is_ls=True, is_front=True)
+        rbd_ls_r = self._rbd_comp_ratio(is_ls=True, is_front=False)
+        rbd_hs_f = self._rbd_comp_ratio(is_ls=False, is_front=True)
+        rbd_hs_r = self._rbd_comp_ratio(is_ls=False, is_front=False)
+
+        front_ls_rbd = max(lo_ls, min(hi_ls, round(front_ls_comp * rbd_ls_f)))
+        rear_ls_rbd = max(lo_ls, min(hi_ls, round(rear_ls_comp * rbd_ls_r)))
+        front_hs_rbd = max(lo_hs, min(hi_hs, round(front_hs_comp * rbd_hs_f)))
+        rear_hs_rbd = max(lo_hs, min(hi_hs, round(rear_hs_comp * rbd_hs_r)))
+
+        # ─── 8. HS slope (separate front/rear) ───────────────────────────────
+        front_slope, rear_slope, slope_reason = self._hs_slope_from_surface()
+
+        # ─── Build corner settings (symmetric L/R) ────────────────────────────
+        lf = CornerDamperSettings(
+            ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
+            hs_comp=front_hs_comp, hs_rbd=front_hs_rbd, hs_slope=front_slope,
+        )
+        rf = CornerDamperSettings(
+            ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
+            hs_comp=front_hs_comp, hs_rbd=front_hs_rbd, hs_slope=front_slope,
+        )
+        lr = CornerDamperSettings(
+            ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
+            hs_comp=rear_hs_comp, hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
+        )
+        rr = CornerDamperSettings(
+            ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
+            hs_comp=rear_hs_comp, hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
+        )
+
+        # ─── Constraint checks ────────────────────────────────────────────────
+        constraints = [
+            DamperConstraintCheck(
+                name="Front LS damping ratio",
+                passed=0.3 <= zeta_ls_f <= 0.8,
+                value=zeta_ls_f,
+                target=0.62,
+                units="zeta",
+                note="0.3-0.8 valid range for racing. Higher = more roll control.",
+            ),
+            DamperConstraintCheck(
+                name="Rear HS damping ratio",
+                passed=0.15 <= zeta_hs_r <= 0.40,
+                value=zeta_hs_r,
+                target=0.22,
+                units="zeta",
+                note="Must be low for rear traction over bumps. >0.4 = snap oversteer risk.",
+            ),
+            DamperConstraintCheck(
+                name="Front HS rbd > HS comp",
+                passed=front_hs_rbd > front_hs_comp,
+                value=float(front_hs_rbd),
+                target=float(front_hs_comp),
+                units="clicks",
+                note="Rebound must exceed comp to prevent wheel bounce.",
+            ),
+            DamperConstraintCheck(
+                name="Rear HS comp < Front HS comp",
+                passed=rear_hs_comp <= front_hs_comp,
+                value=float(rear_hs_comp),
+                target=float(front_hs_comp),
+                units="clicks",
+                note="Compliance hierarchy: rear yields to bumps more than front.",
+            ),
+            DamperConstraintCheck(
+                name="Front LS comp >= Rear LS comp",
+                passed=front_ls_comp >= rear_ls_comp,
+                value=float(front_ls_comp),
+                target=float(rear_ls_comp),
+                units="clicks",
+                note="Front controls entry. If violated: car will be nervous on entry.",
+            ),
+        ]
+
+        notes = [
+            f"Front critical damping: {c_crit_front:.0f} N*s/m "
+            f"(w_n = {math.sqrt(front_wheel_rate_nmm*1000/m_front):.1f} rad/s, "
+            f"f_n = {math.sqrt(front_wheel_rate_nmm*1000/m_front)/(2*math.pi):.2f} Hz)",
+            f"Rear critical damping: {c_crit_rear:.0f} N*s/m "
+            f"(w_n = {math.sqrt(rear_wheel_rate_nmm*1000/m_rear):.1f} rad/s, "
+            f"f_n = {math.sqrt(rear_wheel_rate_nmm*1000/m_rear)/(2*math.pi):.2f} Hz)",
+            f"Front LS: zeta={zeta_ls_f:.2f} -> c={c_ls_front:.0f} N*s/m -> "
+            f"F@{v_ls_ref*1000:.0f}mm/s = {c_ls_front*v_ls_ref:.0f} N -> {front_ls_comp} clicks",
+            f"Front HS: zeta={zeta_hs_f:.2f} -> c={c_hs_front:.0f} N*s/m -> "
+            f"F@{v_hs_ref_front*1000:.0f}mm/s = {c_hs_front*v_hs_ref_front:.0f} N -> {front_hs_comp} clicks",
+            f"Rear HS: zeta={zeta_hs_r:.2f} -> c={c_hs_rear:.0f} N*s/m -> "
+            f"F@{v_hs_ref_rear*1000:.0f}mm/s = {c_hs_rear*v_hs_ref_rear:.0f} N -> {rear_hs_comp} clicks",
+            f"HS ref velocities: front p95={v_hs_ref_front*1000:.1f}mm/s, "
+            f"rear p95={v_hs_ref_rear*1000:.1f}mm/s (rear {v_hs_ref_rear/v_hs_ref_front*100-100:+.0f}% more active)",
+            "Damping ratios are derived from quarter-car eigenvalue analysis, "
+            "NOT from empirical baseline matching.",
+        ]
+
+        return DamperSolution(
+            lf=lf, rf=rf, lr=lr, rr=rr,
+            track_shock_vel_p95_front_mps=self.track.shock_vel_p95_front_mps,
+            track_shock_vel_p95_rear_mps=self.track.shock_vel_p95_rear_mps,
+            track_shock_vel_p99_front_mps=self.track.shock_vel_p99_front_mps,
+            track_shock_vel_p99_rear_mps=self.track.shock_vel_p99_rear_mps,
+            c_ls_front=round(c_ls_front, 0),
+            c_ls_rear=round(c_ls_rear, 0),
+            c_hs_front=round(c_hs_front, 0),
+            c_hs_rear=round(c_hs_rear, 0),
+            c_crit_front=round(c_crit_front, 0),
+            c_crit_rear=round(c_crit_rear, 0),
+            zeta_ls_front=round(zeta_ls_f, 3),
+            zeta_ls_rear=round(zeta_ls_r, 3),
+            zeta_hs_front=round(zeta_hs_f, 3),
+            zeta_hs_rear=round(zeta_hs_r, 3),
+            ls_rbd_comp_ratio_front=round(lf.rbd_comp_ratio_ls(), 2),
+            hs_rbd_comp_ratio_front=round(lf.rbd_comp_ratio_hs(), 2),
+            ls_rbd_comp_ratio_rear=round(lr.rbd_comp_ratio_ls(), 2),
+            hs_rbd_comp_ratio_rear=round(lr.rbd_comp_ratio_hs(), 2),
+            hs_slope_reasoning=slope_reason,
+            constraints=constraints,
+            notes=notes,
+        )

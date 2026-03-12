@@ -1,0 +1,953 @@
+{
+  "track_name": "Sebring International Raceway",
+  "track_config": "International",
+  "track_length_m": 5793.8,
+  "car": "BMW M Hybrid V8",
+  "best_lap_time_s": 110.013,
+  "speed_bands_kph": {
+    "60-80": 1.7,
+    "80-100": 2.6,
+    "100-120": 9.3,
+    "120-140": 11.4,
+    "140-160": 10.4,
+    "160-180": 9.0,
+    "180-200": 9.6,
+    "200-220": 10.6,
+    "220-240": 10.0,
+    "240-260": 11.4,
+    "260-280": 10.5,
+    "280-300": 3.6
+  },
+  "median_speed_kph": 191.5,
+  "max_speed_kph": 294.4,
+  "min_speed_kph": 66.4,
+  "peak_lat_g": 4.53,
+  "peak_braking_g": 2.64,
+  "peak_accel_g": 1.39,
+  "peak_vertical_g": 3.38,
+  "braking_zones": [
+    {
+      "lap_dist_m": 318.2,
+      "entry_speed_kph": 283.4,
+      "min_speed_kph": 191.3,
+      "peak_decel_g": 1.95,
+      "braking_dist_m": 132.8
+    },
+    {
+      "lap_dist_m": 810.6,
+      "entry_speed_kph": 247.7,
+      "min_speed_kph": 117.2,
+      "peak_decel_g": 2.54,
+      "braking_dist_m": 113.0
+    },
+    {
+      "lap_dist_m": 935.4,
+      "entry_speed_kph": 111.0,
+      "min_speed_kph": 107.7,
+      "peak_decel_g": 0.63,
+      "braking_dist_m": 5.7
+    },
+    {
+      "lap_dist_m": 1044.0,
+      "entry_speed_kph": 139.2,
+      "min_speed_kph": 122.0,
+      "peak_decel_g": 1.04,
+      "braking_dist_m": 26.4
+    },
+    {
+      "lap_dist_m": 1790.4,
+      "entry_speed_kph": 279.6,
+      "min_speed_kph": 70.4,
+      "peak_decel_g": 2.6,
+      "braking_dist_m": 184.3
+    },
+    {
+      "lap_dist_m": 2606.8,
+      "entry_speed_kph": 269.1,
+      "min_speed_kph": 97.4,
+      "peak_decel_g": 2.52,
+      "braking_dist_m": 139.7
+    },
+    {
+      "lap_dist_m": 3109.7,
+      "entry_speed_kph": 223.2,
+      "min_speed_kph": 123.5,
+      "peak_decel_g": 2.09,
+      "braking_dist_m": 100.2
+    },
+    {
+      "lap_dist_m": 3217.7,
+      "entry_speed_kph": 119.4,
+      "min_speed_kph": 110.7,
+      "peak_decel_g": 0.79,
+      "braking_dist_m": 13.2
+    },
+    {
+      "lap_dist_m": 3867.1,
+      "entry_speed_kph": 271.3,
+      "min_speed_kph": 131.2,
+      "peak_decel_g": 2.53,
+      "braking_dist_m": 139.4
+    },
+    {
+      "lap_dist_m": 4151.7,
+      "entry_speed_kph": 176.3,
+      "min_speed_kph": 139.3,
+      "peak_decel_g": 1.36,
+      "braking_dist_m": 44.1
+    },
+    {
+      "lap_dist_m": 4214.2,
+      "entry_speed_kph": 130.4,
+      "min_speed_kph": 127.4,
+      "peak_decel_g": 0.53,
+      "braking_dist_m": 6.0
+    },
+    {
+      "lap_dist_m": 5130.0,
+      "entry_speed_kph": 292.9,
+      "min_speed_kph": 155.0,
+      "peak_decel_g": 2.17,
+      "braking_dist_m": 161.6
+    }
+  ],
+  "corners": [
+    {
+      "lap_dist_m": 478.4,
+      "speed_kph": 183.6,
+      "peak_lat_g": 4.53,
+      "radius_m": 58.6,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 740.0,
+      "speed_kph": 235.8,
+      "peak_lat_g": 2.21,
+      "radius_m": 197.9,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 947.0,
+      "speed_kph": 104.7,
+      "peak_lat_g": 2.17,
+      "radius_m": 39.7,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 1125.6,
+      "speed_kph": 105.7,
+      "peak_lat_g": 2.05,
+      "radius_m": 42.8,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 1193.3,
+      "speed_kph": 142.3,
+      "peak_lat_g": 0.75,
+      "radius_m": 212.8,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 1239.4,
+      "speed_kph": 168.8,
+      "peak_lat_g": 1.32,
+      "radius_m": 170.3,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 1319.5,
+      "speed_kph": 201.4,
+      "peak_lat_g": 1.56,
+      "radius_m": 204.0,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 1741.6,
+      "speed_kph": 275.0,
+      "peak_lat_g": 0.66,
+      "radius_m": 899.1,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 1980.4,
+      "speed_kph": 66.4,
+      "peak_lat_g": 1.86,
+      "radius_m": 18.6,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 2080.0,
+      "speed_kph": 152.0,
+      "peak_lat_g": 2.15,
+      "radius_m": 84.4,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 2356.9,
+      "speed_kph": 239.7,
+      "peak_lat_g": 2.38,
+      "radius_m": 190.2,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 2759.5,
+      "speed_kph": 93.2,
+      "peak_lat_g": 1.98,
+      "radius_m": 34.6,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 2830.5,
+      "speed_kph": 135.8,
+      "peak_lat_g": 2.16,
+      "radius_m": 67.1,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 3241.3,
+      "speed_kph": 105.7,
+      "peak_lat_g": 2.51,
+      "radius_m": 35.0,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 3608.3,
+      "speed_kph": 244.0,
+      "peak_lat_g": 2.46,
+      "radius_m": 190.0,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 4023.9,
+      "speed_kph": 125.5,
+      "peak_lat_g": 2.13,
+      "radius_m": 58.3,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 4231.7,
+      "speed_kph": 123.5,
+      "peak_lat_g": 2.14,
+      "radius_m": 56.1,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 4316.0,
+      "speed_kph": 152.7,
+      "peak_lat_g": 1.11,
+      "radius_m": 165.4,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 5347.0,
+      "speed_kph": 138.4,
+      "peak_lat_g": 2.89,
+      "radius_m": 52.1,
+      "direction": "right"
+    }
+  ],
+  "shock_vel_histogram_front": {
+    "0-5": 1475,
+    "5-10": 1425,
+    "10-20": 2534,
+    "20-50": 4672,
+    "50-100": 2126,
+    "100-200": 752,
+    "200+": 216
+  },
+  "shock_vel_histogram_rear": {
+    "0-5": 1481,
+    "5-10": 1409,
+    "10-20": 2420,
+    "20-50": 4470,
+    "50-100": 2041,
+    "100-200": 966,
+    "200+": 413
+  },
+  "shock_vel_by_sector": {
+    "S1": {
+      "dist_range_m": [
+        0.0,
+        579.0
+      ],
+      "front_p50_mps": 0.0563,
+      "front_p95_mps": 0.1958,
+      "front_p99_mps": 0.2873,
+      "rear_p50_mps": 0.0664,
+      "rear_p95_mps": 0.2498,
+      "rear_p99_mps": 0.3624
+    },
+    "S2": {
+      "dist_range_m": [
+        579.0,
+        1159.0
+      ],
+      "front_p50_mps": 0.0283,
+      "front_p95_mps": 0.1782,
+      "front_p99_mps": 0.3796,
+      "rear_p50_mps": 0.0273,
+      "rear_p95_mps": 0.2486,
+      "rear_p99_mps": 0.5079
+    },
+    "S3": {
+      "dist_range_m": [
+        1159.0,
+        1738.0
+      ],
+      "front_p50_mps": 0.022,
+      "front_p95_mps": 0.0767,
+      "front_p99_mps": 0.1455,
+      "rear_p50_mps": 0.0223,
+      "rear_p95_mps": 0.0849,
+      "rear_p99_mps": 0.221
+    },
+    "S4": {
+      "dist_range_m": [
+        1738.0,
+        2318.0
+      ],
+      "front_p50_mps": 0.0226,
+      "front_p95_mps": 0.0811,
+      "front_p99_mps": 0.1381,
+      "rear_p50_mps": 0.0244,
+      "rear_p95_mps": 0.1026,
+      "rear_p99_mps": 0.1936
+    },
+    "S5": {
+      "dist_range_m": [
+        2318.0,
+        2897.0
+      ],
+      "front_p50_mps": 0.0213,
+      "front_p95_mps": 0.0859,
+      "front_p99_mps": 0.1712,
+      "rear_p50_mps": 0.0232,
+      "rear_p95_mps": 0.1122,
+      "rear_p99_mps": 0.2319
+    },
+    "S6": {
+      "dist_range_m": [
+        2897.0,
+        3476.0
+      ],
+      "front_p50_mps": 0.0194,
+      "front_p95_mps": 0.091,
+      "front_p99_mps": 0.1509,
+      "rear_p50_mps": 0.022,
+      "rear_p95_mps": 0.0902,
+      "rear_p99_mps": 0.1381
+    },
+    "S7": {
+      "dist_range_m": [
+        3476.0,
+        4056.0
+      ],
+      "front_p50_mps": 0.0228,
+      "front_p95_mps": 0.0901,
+      "front_p99_mps": 0.1492,
+      "rear_p50_mps": 0.0231,
+      "rear_p95_mps": 0.1206,
+      "rear_p99_mps": 0.2139
+    },
+    "S8": {
+      "dist_range_m": [
+        4056.0,
+        4635.0
+      ],
+      "front_p50_mps": 0.0161,
+      "front_p95_mps": 0.1394,
+      "front_p99_mps": 0.3804,
+      "rear_p50_mps": 0.0173,
+      "rear_p95_mps": 0.1537,
+      "rear_p99_mps": 0.4273
+    },
+    "S9": {
+      "dist_range_m": [
+        4635.0,
+        5214.0
+      ],
+      "front_p50_mps": 0.0313,
+      "front_p95_mps": 0.0656,
+      "front_p99_mps": 0.0843,
+      "rear_p50_mps": 0.0218,
+      "rear_p95_mps": 0.0654,
+      "rear_p99_mps": 0.0871
+    },
+    "S10": {
+      "dist_range_m": [
+        5214.0,
+        5794.0
+      ],
+      "front_p50_mps": 0.0419,
+      "front_p95_mps": 0.1558,
+      "front_p99_mps": 0.243,
+      "rear_p50_mps": 0.0509,
+      "rear_p95_mps": 0.2099,
+      "rear_p99_mps": 0.2959
+    }
+  },
+  "shock_vel_p50_front_mps": 0.0257,
+  "shock_vel_p95_front_mps": 0.1229,
+  "shock_vel_p99_front_mps": 0.2371,
+  "shock_vel_p50_rear_mps": 0.0261,
+  "shock_vel_p95_rear_mps": 0.1567,
+  "shock_vel_p99_rear_mps": 0.3203,
+  "kerb_events": [
+    {
+      "lap_dist_m": 627.4,
+      "severity": 1.51,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 1207.5,
+      "severity": 0.29,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 2033.0,
+      "severity": 0.54,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 3813.4,
+      "severity": 0.3,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 4098.3,
+      "severity": 0.49,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 4304.3,
+      "severity": 0.33,
+      "side": "left"
+    }
+  ],
+  "elevation_profile": [
+    {
+      "dist_m": 0,
+      "alt_m": 19.11
+    },
+    {
+      "dist_m": 50,
+      "alt_m": 19.17
+    },
+    {
+      "dist_m": 100,
+      "alt_m": 19.21
+    },
+    {
+      "dist_m": 150,
+      "alt_m": 19.21
+    },
+    {
+      "dist_m": 200,
+      "alt_m": 19.3
+    },
+    {
+      "dist_m": 250,
+      "alt_m": 19.31
+    },
+    {
+      "dist_m": 300,
+      "alt_m": 19.22
+    },
+    {
+      "dist_m": 350,
+      "alt_m": 19.21
+    },
+    {
+      "dist_m": 400,
+      "alt_m": 19.17
+    },
+    {
+      "dist_m": 450,
+      "alt_m": 19.19
+    },
+    {
+      "dist_m": 500,
+      "alt_m": 19.17
+    },
+    {
+      "dist_m": 550,
+      "alt_m": 19.18
+    },
+    {
+      "dist_m": 600,
+      "alt_m": 19.11
+    },
+    {
+      "dist_m": 650,
+      "alt_m": 19.01
+    },
+    {
+      "dist_m": 700,
+      "alt_m": 18.96
+    },
+    {
+      "dist_m": 750,
+      "alt_m": 19.01
+    },
+    {
+      "dist_m": 800,
+      "alt_m": 19.07
+    },
+    {
+      "dist_m": 850,
+      "alt_m": 19.16
+    },
+    {
+      "dist_m": 900,
+      "alt_m": 19.27
+    },
+    {
+      "dist_m": 950,
+      "alt_m": 19.68
+    },
+    {
+      "dist_m": 1000,
+      "alt_m": 19.88
+    },
+    {
+      "dist_m": 1050,
+      "alt_m": 19.91
+    },
+    {
+      "dist_m": 1100,
+      "alt_m": 19.95
+    },
+    {
+      "dist_m": 1150,
+      "alt_m": 20.17
+    },
+    {
+      "dist_m": 1200,
+      "alt_m": 20.21
+    },
+    {
+      "dist_m": 1250,
+      "alt_m": 20.33
+    },
+    {
+      "dist_m": 1300,
+      "alt_m": 20.44
+    },
+    {
+      "dist_m": 1350,
+      "alt_m": 20.33
+    },
+    {
+      "dist_m": 1400,
+      "alt_m": 20.31
+    },
+    {
+      "dist_m": 1450,
+      "alt_m": 20.2
+    },
+    {
+      "dist_m": 1500,
+      "alt_m": 20.01
+    },
+    {
+      "dist_m": 1550,
+      "alt_m": 19.83
+    },
+    {
+      "dist_m": 1600,
+      "alt_m": 19.62
+    },
+    {
+      "dist_m": 1650,
+      "alt_m": 19.42
+    },
+    {
+      "dist_m": 1700,
+      "alt_m": 19.24
+    },
+    {
+      "dist_m": 1750,
+      "alt_m": 19.06
+    },
+    {
+      "dist_m": 1800,
+      "alt_m": 18.9
+    },
+    {
+      "dist_m": 1850,
+      "alt_m": 18.7
+    },
+    {
+      "dist_m": 1900,
+      "alt_m": 18.47
+    },
+    {
+      "dist_m": 1950,
+      "alt_m": 18.21
+    },
+    {
+      "dist_m": 2000,
+      "alt_m": 18.35
+    },
+    {
+      "dist_m": 2050,
+      "alt_m": 18.53
+    },
+    {
+      "dist_m": 2100,
+      "alt_m": 18.66
+    },
+    {
+      "dist_m": 2150,
+      "alt_m": 18.66
+    },
+    {
+      "dist_m": 2200,
+      "alt_m": 18.85
+    },
+    {
+      "dist_m": 2250,
+      "alt_m": 19.08
+    },
+    {
+      "dist_m": 2300,
+      "alt_m": 19.3
+    },
+    {
+      "dist_m": 2350,
+      "alt_m": 19.49
+    },
+    {
+      "dist_m": 2400,
+      "alt_m": 19.61
+    },
+    {
+      "dist_m": 2450,
+      "alt_m": 19.68
+    },
+    {
+      "dist_m": 2500,
+      "alt_m": 19.63
+    },
+    {
+      "dist_m": 2550,
+      "alt_m": 19.56
+    },
+    {
+      "dist_m": 2600,
+      "alt_m": 19.51
+    },
+    {
+      "dist_m": 2650,
+      "alt_m": 19.48
+    },
+    {
+      "dist_m": 2700,
+      "alt_m": 19.45
+    },
+    {
+      "dist_m": 2750,
+      "alt_m": 19.45
+    },
+    {
+      "dist_m": 2800,
+      "alt_m": 19.51
+    },
+    {
+      "dist_m": 2850,
+      "alt_m": 19.6
+    },
+    {
+      "dist_m": 2900,
+      "alt_m": 19.61
+    },
+    {
+      "dist_m": 2950,
+      "alt_m": 19.61
+    },
+    {
+      "dist_m": 3000,
+      "alt_m": 19.5
+    },
+    {
+      "dist_m": 3050,
+      "alt_m": 19.22
+    },
+    {
+      "dist_m": 3100,
+      "alt_m": 18.83
+    },
+    {
+      "dist_m": 3150,
+      "alt_m": 18.29
+    },
+    {
+      "dist_m": 3200,
+      "alt_m": 17.78
+    },
+    {
+      "dist_m": 3250,
+      "alt_m": 17.73
+    },
+    {
+      "dist_m": 3300,
+      "alt_m": 17.93
+    },
+    {
+      "dist_m": 3350,
+      "alt_m": 18.18
+    },
+    {
+      "dist_m": 3400,
+      "alt_m": 18.3
+    },
+    {
+      "dist_m": 3450,
+      "alt_m": 18.4
+    },
+    {
+      "dist_m": 3500,
+      "alt_m": 18.4
+    },
+    {
+      "dist_m": 3550,
+      "alt_m": 18.38
+    },
+    {
+      "dist_m": 3600,
+      "alt_m": 18.51
+    },
+    {
+      "dist_m": 3650,
+      "alt_m": 18.76
+    },
+    {
+      "dist_m": 3700,
+      "alt_m": 18.91
+    },
+    {
+      "dist_m": 3750,
+      "alt_m": 18.81
+    },
+    {
+      "dist_m": 3800,
+      "alt_m": 18.54
+    },
+    {
+      "dist_m": 3850,
+      "alt_m": 18.27
+    },
+    {
+      "dist_m": 3900,
+      "alt_m": 18.12
+    },
+    {
+      "dist_m": 3950,
+      "alt_m": 17.94
+    },
+    {
+      "dist_m": 4000,
+      "alt_m": 18.23
+    },
+    {
+      "dist_m": 4050,
+      "alt_m": 18.31
+    },
+    {
+      "dist_m": 4100,
+      "alt_m": 18.14
+    },
+    {
+      "dist_m": 4150,
+      "alt_m": 17.92
+    },
+    {
+      "dist_m": 4200,
+      "alt_m": 18.06
+    },
+    {
+      "dist_m": 4250,
+      "alt_m": 18.02
+    },
+    {
+      "dist_m": 4300,
+      "alt_m": 18.23
+    },
+    {
+      "dist_m": 4350,
+      "alt_m": 18.45
+    },
+    {
+      "dist_m": 4400,
+      "alt_m": 18.6
+    },
+    {
+      "dist_m": 4450,
+      "alt_m": 18.76
+    },
+    {
+      "dist_m": 4500,
+      "alt_m": 18.85
+    },
+    {
+      "dist_m": 4550,
+      "alt_m": 18.95
+    },
+    {
+      "dist_m": 4600,
+      "alt_m": 19.01
+    },
+    {
+      "dist_m": 4650,
+      "alt_m": 19.01
+    },
+    {
+      "dist_m": 4700,
+      "alt_m": 19.01
+    },
+    {
+      "dist_m": 4750,
+      "alt_m": 19.01
+    },
+    {
+      "dist_m": 4800,
+      "alt_m": 18.95
+    },
+    {
+      "dist_m": 4850,
+      "alt_m": 18.88
+    },
+    {
+      "dist_m": 4900,
+      "alt_m": 18.79
+    },
+    {
+      "dist_m": 4950,
+      "alt_m": 18.69
+    },
+    {
+      "dist_m": 5000,
+      "alt_m": 18.6
+    },
+    {
+      "dist_m": 5050,
+      "alt_m": 18.51
+    },
+    {
+      "dist_m": 5100,
+      "alt_m": 18.46
+    },
+    {
+      "dist_m": 5150,
+      "alt_m": 18.41
+    },
+    {
+      "dist_m": 5200,
+      "alt_m": 18.44
+    },
+    {
+      "dist_m": 5250,
+      "alt_m": 18.58
+    },
+    {
+      "dist_m": 5300,
+      "alt_m": 18.34
+    },
+    {
+      "dist_m": 5350,
+      "alt_m": 18.27
+    },
+    {
+      "dist_m": 5400,
+      "alt_m": 18.43
+    },
+    {
+      "dist_m": 5450,
+      "alt_m": 18.58
+    },
+    {
+      "dist_m": 5500,
+      "alt_m": 18.67
+    },
+    {
+      "dist_m": 5550,
+      "alt_m": 18.83
+    },
+    {
+      "dist_m": 5600,
+      "alt_m": 18.91
+    },
+    {
+      "dist_m": 5650,
+      "alt_m": 18.96
+    },
+    {
+      "dist_m": 5700,
+      "alt_m": 19.02
+    },
+    {
+      "dist_m": 5750,
+      "alt_m": 19.11
+    }
+  ],
+  "elevation_change_m": 3.0,
+  "lateral_g": {
+    "mean_abs": 0.88,
+    "p90": 1.78,
+    "p95": 1.98,
+    "p99": 2.38,
+    "max": 4.53
+  },
+  "body_roll_deg": {
+    "mean_abs": 0.7,
+    "p95": 1.62,
+    "max": 3.88
+  },
+  "ride_heights_mm": {
+    "LF": {
+      "mean_mm": 21.6,
+      "min_mm": -19.1,
+      "max_mm": 85.7,
+      "p05_mm": 10.7,
+      "p95_mm": 32.8,
+      "std_mm": 7.4
+    },
+    "RF": {
+      "mean_mm": 22.8,
+      "min_mm": -11.2,
+      "max_mm": 111.5,
+      "p05_mm": 10.5,
+      "p95_mm": 34.5,
+      "std_mm": 8.3
+    },
+    "LR": {
+      "mean_mm": 35.5,
+      "min_mm": -11.8,
+      "max_mm": 105.6,
+      "p05_mm": 20.5,
+      "p95_mm": 50.9,
+      "std_mm": 9.8
+    },
+    "RR": {
+      "mean_mm": 36.7,
+      "min_mm": -4.1,
+      "max_mm": 126.8,
+      "p05_mm": 19.6,
+      "p95_mm": 53.6,
+      "std_mm": 11.2
+    }
+  },
+  "roll_gradient_deg_per_g": 0.821,
+  "lltd_measured": 0.486,
+  "surface_profile": {
+    "front_p50_mmps": 25.7,
+    "front_p95_mmps": 122.9,
+    "front_p99_mmps": 237.1,
+    "rear_p50_mmps": 26.1,
+    "rear_p95_mmps": 156.7,
+    "rear_p99_mmps": 320.3,
+    "front_p99_p95_ratio": 1.93,
+    "rear_p99_p95_ratio": 2.04
+  },
+  "telemetry_source": "bmw_sebring_2026-03-06.ibt \u2014 best lap 110.013s"
+}
