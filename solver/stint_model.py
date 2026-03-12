@@ -161,7 +161,7 @@ def compute_fuel_states(
     if fuel_levels_l is None:
         fuel_levels_l = [89.0, 50.0, 12.0]
 
-    dry_mass_kg = car.mass_kg  # car mass without fuel
+    dry_mass_kg = car.mass_car_kg + car.mass_driver_kg  # car + driver mass without fuel
     wheelbase_m = car.wheelbase_m
     front_weight_base = car.weight_dist_front
 
@@ -189,7 +189,7 @@ def compute_fuel_states(
             fuel_mass_kg=round(fuel_mass, 1),
             total_mass_kg=round(total_mass, 1),
             front_weight_pct=round(front_weight * 100, 1),
-            cg_height_mm=round(car.cg_height_mm + cg_shift * 1000, 1),
+            cg_height_mm=round(car.corner_spring.cg_height_mm + cg_shift * 1000, 1),
             pushrod_correction_mm=round(pushrod_correction, 1),
         ))
 
