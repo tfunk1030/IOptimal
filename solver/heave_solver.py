@@ -299,10 +299,10 @@ class HeaveSolver:
             k_front = k_front_sigma
             front_binding = "variance"
 
-        # Clamp to valid range and round up to nearest integer
+        # Clamp to valid range and round up to nearest 10 N/mm (iRacing garage step)
         k_front = max(k_front, hsm.front_spring_range_nmm[0])
         k_front = min(k_front, hsm.front_spring_range_nmm[1])
-        k_front = math.ceil(k_front)
+        k_front = math.ceil(k_front / 10) * 10
 
         front_exc = self.excursion(v_front, m_front, k_front)
         front_sigma = self.sigma_from_excursion(front_exc)
@@ -325,10 +325,10 @@ class HeaveSolver:
             k_rear = k_rear_sigma
             rear_binding = "variance"
 
-        # Clamp and round up
+        # Clamp and round up to nearest 10 N/mm (iRacing garage step)
         k_rear = max(k_rear, hsm.rear_spring_range_nmm[0])
         k_rear = min(k_rear, hsm.rear_spring_range_nmm[1])
-        k_rear = math.ceil(k_rear)
+        k_rear = math.ceil(k_rear / 10) * 10
 
         rear_exc = self.excursion(v_rear, m_rear, k_rear)
         rear_sigma = self.sigma_from_excursion(rear_exc)

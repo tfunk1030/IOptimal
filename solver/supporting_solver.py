@@ -25,7 +25,7 @@ class SupportingSolution:
     """Computed values for brake, diff, TC, and tyre pressure parameters."""
 
     # Brakes
-    brake_bias_pct: float = 46.5
+    brake_bias_pct: float = 56.0
     brake_bias_reasoning: str = ""
 
     # Differential
@@ -92,18 +92,29 @@ class SupportingSolver:
         return sol
 
     def _solve_brake_bias(self, sol: SupportingSolution) -> None:
-        """Brake bias from weight transfer under braking + driver style.
+        """Brake bias from dynamic weight transfer under braking + driver style.
 
-        Baseline: front_weight_pct + 1.0% (front tyres carry more under decel)
-        Adjustments from driver trail braking and measured slip ratios.
+        Under braking, longitudinal weight transfer shifts load forward:
+          dynamic_front = static_front + (CG_height / wheelbase) * decel_g
+        Brake bias tracks this but scaled by ~0.88 (brake system efficiency).
         """
         car = self.car
         driver = self.driver
         measured = self.measured
 
-        # Baseline from static weight distribution
-        bias = car.weight_dist_front * 100 + 1.0
-        reasons = [f"Baseline: {car.weight_dist_front*100:.1f}% + 1.0% = {bias:.1f}%"]
+        # Dynamic weight transfer under braking
+        decel_g = 1.5  # typical GTP peak braking deceleration
+        cg_height_m = car.corner_spring.cg_height_mm / 1000.0
+        wheelbase_m = car.wheelbase_m
+        weight_transfer = (cg_height_m / wheelbase_m) * decel_g
+        dynamic_front = car.weight_dist_front + weight_transfer
+        # Brake bias scales with dynamic weight but isn't 1:1 (system efficiency ~0.88)
+        bias = dynamic_front * 100 * 0.85
+        reasons = [
+            f"Dynamic front load: {car.weight_dist_front:.2f} + "
+            f"({cg_height_m:.3f}/{wheelbase_m:.3f})*{decel_g} = {dynamic_front:.3f}; "
+            f"bias = {dynamic_front*100:.1f}% * 0.85 = {bias:.1f}%"
+        ]
 
         # Deep trail braker needs more front authority for later rotation
         if driver.trail_brake_classification == "deep":
@@ -123,7 +134,7 @@ class SupportingSolver:
             bias += 0.3
             reasons.append(f"+0.3% for high body slip p95={measured.body_slip_p95_deg:.1f}°")
 
-        sol.brake_bias_pct = round(_clamp(bias, 44.0, 50.0), 1)
+        sol.brake_bias_pct = round(_clamp(bias, 50.0, 62.0), 1)
         sol.brake_bias_reasoning = "; ".join(reasons)
 
     def _solve_diff(self, sol: SupportingSolution) -> None:
@@ -162,13 +173,17 @@ class SupportingSolver:
         sol.diff_preload_nm = round(_clamp(preload, 5.0, 40.0), 0)
 
         # ── Coast ramp ── (lower angle = more locking on coast/decel)
+        # iRacing valid steps: 40, 45, 50 (and 5° increments)
         coast = 45 - int(driver.trail_brake_depth_mean * 10)
-        coast = int(_clamp(coast, 30, 55))
+        coast = round(coast / 5) * 5  # snap to nearest 5°
+        coast = int(_clamp(coast, 40, 50))
         reasons.append(f"Coast ramp: {coast}° (from trail brake depth {driver.trail_brake_depth_mean:.2f})")
 
         # ── Drive ramp ── (higher angle = less locking on accel)
+        # iRacing valid steps: 65, 70, 75 (and 5° increments)
         drive = 65 + int(driver.throttle_progressiveness * 10)
-        drive = int(_clamp(drive, 55, 80))
+        drive = round(drive / 5) * 5  # snap to nearest 5°
+        drive = int(_clamp(drive, 65, 75))
         reasons.append(f"Drive ramp: {drive}° (from throttle R²={driver.throttle_progressiveness:.2f})")
 
         sol.diff_ramp_coast = coast

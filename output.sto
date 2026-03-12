@@ -6,7 +6,7 @@
   <Layers>
     <Details>
       <String Id="Event" Value="GTP Setup Builder" Unit="" />
-      <String Id="Session" Value="Generated 2026-03-12 05:23 UTC" Unit="" />
+      <String Id="Session" Value="Generated 2026-03-12 05:54 UTC" Unit="" />
       <String Id="Venue" Value="Sebring International Raceway — International" Unit="" />
       <String Id="Vehicle Type" Value="Car" Unit="" />
       <Numeric Id="CarSetup_TiresAero_AeroSettings_RearWingAngle" Value="17.0" Unit="deg" />
@@ -20,10 +20,10 @@
       <Numeric Id="CarSetup_Chassis_RightRear_RideHeight" Value="49.5" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Front_PushrodLengthOffset" Value="-25.5" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Rear_PushrodLengthOffset" Value="-31.0" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Front_HeaveSpring" Value="66" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_Front_HeaveSpring" Value="70" Unit="N/mm" />
       <Numeric Id="CarSetup_Chassis_Front_HeavePerchOffset" Value="-13" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Front_HeaveSliderDeflMax" Value="200" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Rear_ThirdSpring" Value="429" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_Rear_ThirdSpring" Value="430" Unit="N/mm" />
       <Numeric Id="CarSetup_Chassis_Rear_ThirdPerchOffset" Value="42" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Rear_ThirdSliderDeflMax" Value="150" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_LeftFront_TorsionBarOD" Value="13.9" Unit="mm" />
@@ -75,13 +75,13 @@
       <Numeric Id="CarSetup_TiresAero_LeftRearTire_StartingPressure" Value="152.0" Unit="kPa" />
       <Numeric Id="CarSetup_TiresAero_RightRearTire_StartingPressure" Value="152.0" Unit="kPa" />
       <String Id="CarSetup_TiresAero_TireType_TireType" Value="Dry" Unit="" />
-      <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias" Value="47.7" Unit="%" />
+      <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias" Value="55.9" Unit="%" />
       <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration" Value="0.0" Unit="" />
       <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget" Value="0.0" Unit="" />
       <String Id="CarSetup_BrakesDriveUnit_BrakeSpec_PadCompound" Value="Medium" Unit="" />
       <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_FrontMasterCyl" Value="19.1" Unit="mm" />
       <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_RearMasterCyl" Value="20.6" Unit="mm" />
-      <String Id="CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles" Value="45/71" Unit="" />
+      <String Id="CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles" Value="45/70" Unit="" />
       <Numeric Id="CarSetup_BrakesDriveUnit_RearDiffSpec_ClutchFrictionPlates" Value="6" Unit="" />
       <Numeric Id="CarSetup_BrakesDriveUnit_RearDiffSpec_Preload" Value="15.0" Unit="Nm" />
       <Numeric Id="CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain" Value="5" Unit="(TCLAT)" />
