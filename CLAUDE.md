@@ -76,21 +76,50 @@ Follows the 6-step workflow. Each step has constraints and an objective:
 - Output: all damper clicks (LS/HS comp/rbd, slope)
 - NOTE: damper effects are speed-dependent. Low-speed corners and high-speed corners may need different reasoning.
 
-**Supporting Parameters:**
-- Diff: preload, ramp angles, clutch plates based on target rotation vs stability
-- Brake bias: based on weight distribution and tyre grip balance
-- Migration: based on aero sensitivity through braking zone
-- Tyre pressures: constrained by 152 kPa minimum, target hot pressure window
+**Supporting Parameters** (`solver/supporting_solver.py`):
+- Brake bias: weight transfer baseline + driver trail braking adjustment + measured slip correction
+- Diff preload: traction demand × driver throttle style + body slip correction (5–40 Nm)
+- Diff ramps: coast from trail braking depth, drive from throttle progressiveness
+- TC: gain/slip from rear slip ratio + driver consistency
+- Tyre pressures: targeting 155–170 kPa hot window from measured hot data
 
-#### 5. `ibt_parser/` — Telemetry Parser
-- Existing parser from skill files, refactored into proper module
-- Extract setup, lap times, ride heights, shock velocities, tyre data, driver aids
-- Feed TrackProfile and validate solver predictions against real data
+**Solver Modifiers** (`solver/modifiers.py`):
+- Feedback loop: diagnosis + driver style → adjust solver targets before physics runs
+- DF balance offset (from speed gradient diagnosis)
+- LLTD offset (from understeer/oversteer diagnosis)
+- Heave floor constraints (from bottoming diagnosis)
+- Damper click offsets + ζ scaling (from settle time diagnosis + driver smoothness)
 
-#### 6. `output/` — Setup File Generator
-- Generate iRacing .sto setup files directly
+**Aero Gradients** (`aero_model/gradient.py`):
+- Central-difference ∂(DF balance)/∂(RH) and ∂(L/D)/∂(RH) at operating point
+- Aero window: ± mm before 0.5% balance shift
+- L/D cost of ride height variance (second-order curvature analysis)
+
+#### 5. `analyzer/` — Telemetry Analysis & Diagnosis
+- `extract.py` — Extract 60+ measured quantities from IBT (ride heights, shock vel, understeer, body slip, tyre thermals)
+- `diagnose.py` — Identify handling problems from physics thresholds (6 priority categories: safety → grip)
+- `recommend.py` — Generate physics-based setup change recommendations
+- `setup_reader.py` — Parse current garage setup from IBT session info YAML
+- `segment.py` — **Corner-by-corner lap segmentation**: detects corners (|lat_g| > 0.5g), computes per-corner suspension metrics (shock vel p95/p99, RH mean/min), handling metrics (understeer, body slip, trail brake %), speed classification (low/mid/high), and time-loss delta
+- `driver_style.py` — **Driver behavior profiling**: trail braking depth/classification, throttle progressiveness (R² of linear ramp), steering jerk (smoothness), lap-to-lap consistency (apex speed CV), cornering aggression (g utilization). Produces a `DriverProfile` with style classification (e.g., "smooth-consistent", "aggressive-erratic")
+- `report.py` — ASCII terminal report formatting (63-char width)
+
+#### 6. `pipeline/` — Unified IBT→.sto Setup Producer
+End-to-end pipeline that connects telemetry analysis to the 6-step solver:
+```
+IBT → extract → segment corners → driver style → diagnose
+    → aero gradients → solver modifiers → 6-step solver
+    → supporting params → .sto + JSON + engineering report
+```
+- `produce.py` — CLI orchestrator: `python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --sto output.sto`
+- `report.py` — Engineering report: driver profile, handling diagnosis, aero analysis, 6-step solution summary, supporting parameters, setup comparison (current vs produced), confidence assessment
+- `__main__.py` — Entry point for `python -m pipeline`
+
+#### 7. `output/` — Setup File Generator
+- Generate iRacing .sto setup files directly (BMW-specific CarSetup_* XML IDs)
 - Generate human-readable setup reports with reasoning for each parameter
 - Generate comparison reports (current setup vs solver recommendation)
+- `write_sto()` accepts optional supporting parameter overrides (brake bias, diff, TC, pressures) via kwargs
 
 ### Data Files
 - `data/aeromaps/` — Raw xlsx files (provided)
@@ -117,16 +146,29 @@ Follows the 6-step workflow. Each step has constraints and an objective:
 3. Speed-dependent reasoning. The same symptom at different speeds may require different solutions.
 4. Uncertainty is OK. If the solver can't determine a value from physics, it says so and gives a range.
 5. Validate against telemetry. Every prediction should be testable with an IBT file.
+6. Driver-adaptive: different drivers on the same track should produce different setups.
 
-## Getting Started
-1. Parse aero maps (all 33 xlsx files) into structured numpy arrays
-2. Build interpolation model for BMW 17-wing (match against known telemetry)
-3. Parse one BMW Sebring IBT to build track profile
-4. Implement Step 1 (rake solver) and validate against actual BMW setup
-5. Iterate through remaining steps
+## Usage
+
+### Standalone solver (pre-built track profile):
+```bash
+python -m solver.solve --car bmw --track sebring --wing 17 --sto output.sto
+```
+
+### Full pipeline (IBT → .sto, driver-adaptive):
+```bash
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --sto output.sto
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --lap 25 --json output.json
+```
+
+### Analyzer (diagnose existing setup):
+```bash
+python -m analyzer --car bmw --ibt session.ibt
+```
 
 ## Reference Files
 - `skill/SKILL.md` — Engineering knowledge base (damper theory, ARB physics, etc.)
 - `skill/per-car-quirks.md` — Car-specific verified findings
 - `skill/ibt-parsing-guide.md` — IBT binary format parser
 - `skill/telemetry-channels.md` — Channel reference
+```
