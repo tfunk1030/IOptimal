@@ -21,6 +21,7 @@ from pathlib import Path
 
 from aero_model import load_car_surfaces
 from aero_model.gradient import compute_gradients
+from analyzer.adaptive_thresholds import compute_adaptive_thresholds
 from analyzer.diagnose import diagnose
 from analyzer.driver_style import analyze_driver
 from analyzer.extract import extract_measurements
@@ -112,9 +113,17 @@ def produce(args: argparse.Namespace) -> None:
     driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
     print(f"  {driver.summary()}")
 
-    # ── Phase E: Diagnose handling ──
+    # ── Phase E: Compute adaptive thresholds & diagnose handling ──
+    print("Computing adaptive thresholds...")
+    adaptive_thresh = compute_adaptive_thresholds(track, car, driver)
+    if adaptive_thresh.adaptations:
+        for a in adaptive_thresh.adaptations:
+            print(f"  {a}")
+    else:
+        print("  Using baseline thresholds (no adaptations)")
+
     print("Diagnosing handling...")
-    diagnosis = diagnose(measured, current_setup, car)
+    diagnosis = diagnose(measured, current_setup, car, thresholds=adaptive_thresh)
     print(f"  Assessment: {diagnosis.assessment}")
     print(f"  Problems: {len(diagnosis.problems)}")
 
@@ -171,9 +180,16 @@ def produce(args: argparse.Namespace) -> None:
         step2 = heave_solver.solve(
             dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
             dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
+            rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
         )
-        # Override rate if below floor (we can't change the solver directly,
-        # but we can re-check the constraint)
+    elif modifiers.rear_third_min_floor_nmm > 0 and step2.rear_third_nmm < modifiers.rear_third_min_floor_nmm:
+        step2 = heave_solver.solve(
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
+            rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
+        )
     if not args.report_only:
         print(step2.summary())
 
@@ -194,11 +210,8 @@ def produce(args: argparse.Namespace) -> None:
     step4 = arb_solver.solve(
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
         rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+        lltd_offset=modifiers.lltd_offset,
     )
-    # Note: LLTD offset from modifiers is applied conceptually — the ARB solver
-    # targets static weight + 0.05, so we'd need to adjust. For now, the modifier
-    # effect is noted in the report. A full integration would pass the offset
-    # into the solver's target_lltd computation.
     if not args.report_only:
         print(step4.summary())
 
@@ -222,6 +235,7 @@ def produce(args: argparse.Namespace) -> None:
         front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
         rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
         fuel_load_l=fuel,
+        damping_ratio_scale=modifiers.damping_ratio_scale,
     )
     # Apply damper click offsets from modifiers
     _apply_damper_modifiers(step6, modifiers, car)

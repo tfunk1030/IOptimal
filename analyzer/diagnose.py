@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from analyzer.adaptive_thresholds import AdaptiveThresholds
 from analyzer.extract import MeasuredState
 from analyzer.setup_reader import CurrentSetup
 from car_model.cars import CarModel
@@ -53,6 +54,7 @@ def diagnose(
     measured: MeasuredState,
     setup: CurrentSetup,
     car: CarModel,
+    thresholds: AdaptiveThresholds | None = None,
 ) -> Diagnosis:
     """Analyze telemetry and identify handling problems from physics.
 
@@ -60,10 +62,15 @@ def diagnose(
         measured: Telemetry-derived measurements from extract.py
         setup: Current garage setup from setup_reader.py
         car: Car physical model
+        thresholds: Adaptive thresholds scaled for track/car/driver.
+            If None, uses baseline defaults.
 
     Returns:
         Diagnosis with prioritized problems list and overall assessment
     """
+    if thresholds is None:
+        thresholds = AdaptiveThresholds()
+
     diag = Diagnosis(
         lap_time_s=measured.lap_time_s,
         lap_number=measured.lap_number,
@@ -74,22 +81,22 @@ def diagnose(
     problems = []
 
     # ── Priority 0: Safety ──────────────────────────────────────────────
-    _check_safety(measured, setup, car, problems)
+    _check_safety(measured, setup, car, problems, thresholds)
 
     # ── Priority 1: Platform ────────────────────────────────────────────
-    _check_platform(measured, setup, car, problems)
+    _check_platform(measured, setup, car, problems, thresholds)
 
     # ── Priority 2: Balance ─────────────────────────────────────────────
-    _check_balance(measured, setup, car, problems)
+    _check_balance(measured, setup, car, problems, thresholds)
 
     # ── Priority 3: Dampers ─────────────────────────────────────────────
-    _check_dampers(measured, setup, car, problems)
+    _check_dampers(measured, setup, car, problems, thresholds)
 
     # ── Priority 4: Thermal ─────────────────────────────────────────────
-    _check_thermal(measured, setup, car, problems)
+    _check_thermal(measured, setup, car, problems, thresholds)
 
     # ── Priority 5: Grip ────────────────────────────────────────────────
-    _check_grip(measured, setup, car, problems)
+    _check_grip(measured, setup, car, problems, thresholds)
 
     # Sort by priority then severity
     severity_order = {"critical": 0, "significant": 1, "minor": 2}
@@ -103,7 +110,8 @@ def diagnose(
 
 
 def _check_safety(
-    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem]
+    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
+    t: AdaptiveThresholds = AdaptiveThresholds(),
 ) -> None:
     """Check safety-critical items: vortex burst and bottoming."""
 
@@ -126,8 +134,9 @@ def _check_safety(
         ))
 
     # Front bottoming
-    if m.bottoming_event_count_front > 5:
-        sev = "critical" if m.bottoming_event_count_front > 20 else "significant"
+    front_bottom_thresh = t.bottoming_events_front
+    if m.bottoming_event_count_front > front_bottom_thresh:
+        sev = "critical" if m.bottoming_event_count_front > front_bottom_thresh * 4 else "significant"
         problems.append(Problem(
             category="safety",
             severity=sev,
@@ -139,14 +148,15 @@ def _check_safety(
             ),
             speed_context="all",
             measured=float(m.bottoming_event_count_front),
-            threshold=5.0,
+            threshold=float(front_bottom_thresh),
             units="events",
             priority=0,
         ))
 
     # Rear bottoming
-    if m.bottoming_event_count_rear > 5:
-        sev = "critical" if m.bottoming_event_count_rear > 20 else "significant"
+    rear_bottom_thresh = t.bottoming_events_rear
+    if m.bottoming_event_count_rear > rear_bottom_thresh:
+        sev = "critical" if m.bottoming_event_count_rear > rear_bottom_thresh * 4 else "significant"
         problems.append(Problem(
             category="safety",
             severity=sev,
@@ -158,24 +168,26 @@ def _check_safety(
             ),
             speed_context="all",
             measured=float(m.bottoming_event_count_rear),
-            threshold=5.0,
+            threshold=float(rear_bottom_thresh),
             units="events",
             priority=0,
         ))
 
 
 def _check_platform(
-    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem]
+    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
+    t: AdaptiveThresholds = AdaptiveThresholds(),
 ) -> None:
     """Check platform stability: ride height variance and excursion."""
 
-    # Front variance
-    if m.front_rh_std_mm > 8.0:
-        sev = "significant" if m.front_rh_std_mm > 12.0 else "minor"
+    # Front variance (adaptive: relaxed on bumpy tracks, tightened on smooth)
+    front_var_thresh = t.front_rh_variance_mm
+    if m.front_rh_std_mm > front_var_thresh:
+        sev = "significant" if m.front_rh_std_mm > front_var_thresh * 1.5 else "minor"
         problems.append(Problem(
             category="platform",
             severity=sev,
-            symptom=f"Front RH variance {m.front_rh_std_mm:.1f}mm (threshold 8.0mm)",
+            symptom=f"Front RH variance {m.front_rh_std_mm:.1f}mm (threshold {front_var_thresh:.1f}mm)",
             cause=(
                 "Front platform oscillating too much at speed. "
                 "Aero balance shifts with each oscillation cycle. "
@@ -183,18 +195,19 @@ def _check_platform(
             ),
             speed_context="high",
             measured=m.front_rh_std_mm,
-            threshold=8.0,
+            threshold=front_var_thresh,
             units="mm",
             priority=1,
         ))
 
     # Rear variance
-    if m.rear_rh_std_mm > 10.0:
-        sev = "significant" if m.rear_rh_std_mm > 15.0 else "minor"
+    rear_var_thresh = t.rear_rh_variance_mm
+    if m.rear_rh_std_mm > rear_var_thresh:
+        sev = "significant" if m.rear_rh_std_mm > rear_var_thresh * 1.5 else "minor"
         problems.append(Problem(
             category="platform",
             severity=sev,
-            symptom=f"Rear RH variance {m.rear_rh_std_mm:.1f}mm (threshold 10.0mm)",
+            symptom=f"Rear RH variance {m.rear_rh_std_mm:.1f}mm (threshold {rear_var_thresh:.1f}mm)",
             cause=(
                 "Rear platform oscillating too much at speed. "
                 "Diffuser efficiency degrades with large RH variation. "
@@ -202,16 +215,16 @@ def _check_platform(
             ),
             speed_context="high",
             measured=m.rear_rh_std_mm,
-            threshold=10.0,
+            threshold=rear_var_thresh,
             units="mm",
             priority=1,
         ))
 
     # Front excursion near bottoming
-    # If excursion p99 is more than 80% of the dynamic ride height, we are close
+    excursion_thresh = t.excursion_pct / 100.0
     if s.front_rh_at_speed_mm > 0 and m.front_rh_excursion_measured_mm > 0:
         margin = m.front_rh_excursion_measured_mm / s.front_rh_at_speed_mm
-        if margin > 0.80:
+        if margin > excursion_thresh:
             problems.append(Problem(
                 category="platform",
                 severity="significant",
@@ -233,12 +246,14 @@ def _check_platform(
 
 
 def _check_balance(
-    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem]
+    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
+    t: AdaptiveThresholds = AdaptiveThresholds(),
 ) -> None:
     """Check balance: understeer, LLTD, body slip, speed gradient."""
 
-    # Excessive understeer
-    if m.understeer_mean_deg > 2.5:
+    # Excessive understeer (adaptive: car/driver-specific threshold)
+    us_thresh = t.understeer_all_deg
+    if m.understeer_mean_deg > us_thresh:
         problems.append(Problem(
             category="balance",
             severity="significant",
@@ -250,14 +265,15 @@ def _check_balance(
             ),
             speed_context="all",
             measured=m.understeer_mean_deg,
-            threshold=2.5,
+            threshold=us_thresh,
             units="deg",
             priority=2,
         ))
 
     # Net oversteer (loose)
-    if m.understeer_mean_deg < -0.5:
-        sev = "significant" if m.understeer_mean_deg < -1.5 else "minor"
+    os_thresh = t.oversteer_deg
+    if m.understeer_mean_deg < os_thresh:
+        sev = "significant" if m.understeer_mean_deg < os_thresh - 1.0 else "minor"
         problems.append(Problem(
             category="balance",
             severity=sev,
@@ -269,15 +285,16 @@ def _check_balance(
             ),
             speed_context="all",
             measured=m.understeer_mean_deg,
-            threshold=-0.5,
+            threshold=os_thresh,
             units="deg",
             priority=2,
         ))
 
     # Speed gradient: aero/mechanical mismatch
+    grad_thresh = t.speed_gradient_deg
     if m.understeer_low_speed_deg != 0 and m.understeer_high_speed_deg != 0:
         gradient = m.understeer_high_speed_deg - m.understeer_low_speed_deg
-        if abs(gradient) > 1.5:
+        if abs(gradient) > grad_thresh:
             if gradient > 0:
                 problems.append(Problem(
                     category="balance",
@@ -295,7 +312,7 @@ def _check_balance(
                     ),
                     speed_context="high",
                     measured=gradient,
-                    threshold=1.5,
+                    threshold=grad_thresh,
                     units="deg",
                     priority=2,
                 ))
@@ -316,7 +333,7 @@ def _check_balance(
                     ),
                     speed_context="high",
                     measured=gradient,
-                    threshold=-1.5,
+                    threshold=-grad_thresh,
                     units="deg",
                     priority=2,
                 ))
@@ -326,10 +343,10 @@ def _check_balance(
         target_lltd = car.weight_dist_front + 0.03  # 3% above front weight dist
         lltd_delta = m.lltd_measured - target_lltd
 
-        if lltd_delta > 0.08:
+        if lltd_delta > t.lltd_high_delta:
             problems.append(Problem(
                 category="balance",
-                severity="significant" if lltd_delta > 0.12 else "minor",
+                severity="significant" if lltd_delta > t.lltd_high_delta * 1.5 else "minor",
                 symptom=(
                     f"LLTD {m.lltd_measured*100:.1f}% vs target "
                     f"{target_lltd*100:.0f}% (delta +{lltd_delta*100:.1f}%)"
@@ -341,14 +358,14 @@ def _check_balance(
                 ),
                 speed_context="all",
                 measured=m.lltd_measured * 100,
-                threshold=(target_lltd + 0.08) * 100,
+                threshold=(target_lltd + t.lltd_high_delta) * 100,
                 units="%",
                 priority=2,
             ))
-        elif lltd_delta < -0.02:
+        elif lltd_delta < t.lltd_low_delta:
             problems.append(Problem(
                 category="balance",
-                severity="significant" if lltd_delta < -0.06 else "minor",
+                severity="significant" if lltd_delta < t.lltd_low_delta * 3 else "minor",
                 symptom=(
                     f"LLTD {m.lltd_measured*100:.1f}% vs target "
                     f"{target_lltd*100:.0f}% (delta {lltd_delta*100:+.1f}%)"
@@ -360,17 +377,18 @@ def _check_balance(
                 ),
                 speed_context="all",
                 measured=m.lltd_measured * 100,
-                threshold=(target_lltd - 0.02) * 100,
+                threshold=(target_lltd + t.lltd_low_delta) * 100,
                 units="%",
                 priority=2,
             ))
 
     # Body slip angle (rear instability)
-    if m.body_slip_p95_deg > 4.0:
+    bs_thresh = t.body_slip_p95_deg
+    if m.body_slip_p95_deg > bs_thresh:
         problems.append(Problem(
             category="balance",
-            severity="significant" if m.body_slip_p95_deg > 6.0 else "minor",
-            symptom=f"Body slip angle p95 = {m.body_slip_p95_deg:.1f} deg (threshold 4.0)",
+            severity="significant" if m.body_slip_p95_deg > bs_thresh * 1.5 else "minor",
+            symptom=f"Body slip angle p95 = {m.body_slip_p95_deg:.1f} deg (threshold {bs_thresh:.1f})",
             cause=(
                 "Rear of car sliding excessively. High body slip angle "
                 "increases drag and risks snap oversteer. "
@@ -379,23 +397,25 @@ def _check_balance(
             ),
             speed_context="all",
             measured=m.body_slip_p95_deg,
-            threshold=4.0,
+            threshold=bs_thresh,
             units="deg",
             priority=2,
         ))
 
 
 def _check_dampers(
-    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem]
+    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
+    t: AdaptiveThresholds = AdaptiveThresholds(),
 ) -> None:
     """Check damper response: settle time, yaw correlation, roll rate."""
 
     # Settle time too long (underdamped)
-    if m.front_rh_settle_time_ms > 200:
+    settle_upper = t.settle_time_upper_ms
+    if m.front_rh_settle_time_ms > settle_upper:
         problems.append(Problem(
             category="damper",
-            severity="significant" if m.front_rh_settle_time_ms > 350 else "minor",
-            symptom=f"Front settle time {m.front_rh_settle_time_ms:.0f}ms (target <200ms)",
+            severity="significant" if m.front_rh_settle_time_ms > settle_upper * 1.75 else "minor",
+            symptom=f"Front settle time {m.front_rh_settle_time_ms:.0f}ms (target <{settle_upper:.0f}ms)",
             cause=(
                 "Front suspension takes too long to recover from bumps. "
                 "Underdamped: platform oscillates instead of settling. "
@@ -403,16 +423,16 @@ def _check_dampers(
             ),
             speed_context="all",
             measured=m.front_rh_settle_time_ms,
-            threshold=200.0,
+            threshold=settle_upper,
             units="ms",
             priority=3,
         ))
 
-    if m.rear_rh_settle_time_ms > 200:
+    if m.rear_rh_settle_time_ms > settle_upper:
         problems.append(Problem(
             category="damper",
-            severity="significant" if m.rear_rh_settle_time_ms > 350 else "minor",
-            symptom=f"Rear settle time {m.rear_rh_settle_time_ms:.0f}ms (target <200ms)",
+            severity="significant" if m.rear_rh_settle_time_ms > settle_upper * 1.75 else "minor",
+            symptom=f"Rear settle time {m.rear_rh_settle_time_ms:.0f}ms (target <{settle_upper:.0f}ms)",
             cause=(
                 "Rear suspension takes too long to recover from bumps. "
                 "Underdamped: platform oscillates instead of settling. "
@@ -420,17 +440,18 @@ def _check_dampers(
             ),
             speed_context="all",
             measured=m.rear_rh_settle_time_ms,
-            threshold=200.0,
+            threshold=settle_upper,
             units="ms",
             priority=3,
         ))
 
     # Settle time too short (overdamped, losing compliance)
-    if 0 < m.front_rh_settle_time_ms < 50:
+    settle_lower = t.settle_time_lower_ms
+    if 0 < m.front_rh_settle_time_ms < settle_lower:
         problems.append(Problem(
             category="damper",
             severity="minor",
-            symptom=f"Front settle time {m.front_rh_settle_time_ms:.0f}ms (too fast, <50ms)",
+            symptom=f"Front settle time {m.front_rh_settle_time_ms:.0f}ms (too fast, <{settle_lower:.0f}ms)",
             cause=(
                 "Front suspension overdamped. Fast settle but loses "
                 "compliance over bumps. Tyre load variation increases, "
@@ -438,33 +459,34 @@ def _check_dampers(
             ),
             speed_context="all",
             measured=m.front_rh_settle_time_ms,
-            threshold=50.0,
+            threshold=settle_lower,
             units="ms",
             priority=3,
         ))
 
-    if 0 < m.rear_rh_settle_time_ms < 50:
+    if 0 < m.rear_rh_settle_time_ms < settle_lower:
         problems.append(Problem(
             category="damper",
             severity="minor",
-            symptom=f"Rear settle time {m.rear_rh_settle_time_ms:.0f}ms (too fast, <50ms)",
+            symptom=f"Rear settle time {m.rear_rh_settle_time_ms:.0f}ms (too fast, <{settle_lower:.0f}ms)",
             cause=(
                 "Rear suspension overdamped. Fast settle but loses "
                 "compliance over bumps. Reduce rear LS rebound."
             ),
             speed_context="all",
             measured=m.rear_rh_settle_time_ms,
-            threshold=50.0,
+            threshold=settle_lower,
             units="ms",
             priority=3,
         ))
 
     # Yaw rate correlation (transient predictability)
-    if 0 < m.yaw_rate_correlation < 0.65:
+    yaw_thresh = t.yaw_correlation_r2
+    if 0 < m.yaw_rate_correlation < yaw_thresh:
         problems.append(Problem(
             category="damper",
-            severity="significant" if m.yaw_rate_correlation < 0.50 else "minor",
-            symptom=f"Yaw rate R^2 = {m.yaw_rate_correlation:.3f} (target >0.65)",
+            severity="significant" if m.yaw_rate_correlation < yaw_thresh * 0.77 else "minor",
+            symptom=f"Yaw rate R^2 = {m.yaw_rate_correlation:.3f} (target >{yaw_thresh:.2f})",
             cause=(
                 "Yaw rate does not track steering input well. "
                 "Unpredictable transient response. Could be damper "
@@ -473,17 +495,18 @@ def _check_dampers(
             ),
             speed_context="all",
             measured=m.yaw_rate_correlation,
-            threshold=0.65,
+            threshold=yaw_thresh,
             units="R^2",
             priority=3,
         ))
 
     # Excessive roll rate (LS rebound too soft)
-    if m.roll_rate_p95_deg_per_s > 25.0:
+    roll_thresh = t.roll_rate_p95_deg_per_s
+    if m.roll_rate_p95_deg_per_s > roll_thresh:
         problems.append(Problem(
             category="damper",
             severity="minor",
-            symptom=f"Roll rate p95 = {m.roll_rate_p95_deg_per_s:.1f} deg/s (target <25)",
+            symptom=f"Roll rate p95 = {m.roll_rate_p95_deg_per_s:.1f} deg/s (target <{roll_thresh:.0f})",
             cause=(
                 "Body rolling too fast during transitions. "
                 "LS rebound damping not controlling weight transfer "
@@ -491,14 +514,15 @@ def _check_dampers(
             ),
             speed_context="all",
             measured=m.roll_rate_p95_deg_per_s,
-            threshold=25.0,
+            threshold=roll_thresh,
             units="deg/s",
             priority=3,
         ))
 
 
 def _check_thermal(
-    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem]
+    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
+    t: AdaptiveThresholds = AdaptiveThresholds(),
 ) -> None:
     """Check tyre thermal: temp spread, carcass temp, pressure."""
 
@@ -512,13 +536,14 @@ def _check_thermal(
         ("RR", m.rear_temp_spread_rr_c, "rear"),
     ]
 
+    temp_spread_thresh = t.temp_spread_c
     for corner, spread, axle in spreads:
-        if abs(spread) > 8.0:
+        if abs(spread) > temp_spread_thresh:
             if spread > 0:
                 problems.append(Problem(
                     category="thermal",
-                    severity="significant" if abs(spread) > 12.0 else "minor",
-                    symptom=f"{corner} inner hot by {spread:+.1f}C (threshold 8.0C)",
+                    severity="significant" if abs(spread) > temp_spread_thresh * 1.5 else "minor",
+                    symptom=f"{corner} inner hot by {spread:+.1f}C (threshold {temp_spread_thresh:.0f}C)",
                     cause=(
                         f"{corner} inner edge overheating. Too much negative "
                         f"camber for this {axle} axle. Reduce camber magnitude "
@@ -526,15 +551,15 @@ def _check_thermal(
                     ),
                     speed_context="all",
                     measured=spread,
-                    threshold=8.0,
+                    threshold=temp_spread_thresh,
                     units="C",
                     priority=4,
                 ))
             else:
                 problems.append(Problem(
                     category="thermal",
-                    severity="significant" if abs(spread) > 12.0 else "minor",
-                    symptom=f"{corner} outer hot by {abs(spread):.1f}C (threshold 8.0C)",
+                    severity="significant" if abs(spread) > temp_spread_thresh * 1.5 else "minor",
+                    symptom=f"{corner} outer hot by {abs(spread):.1f}C (threshold {temp_spread_thresh:.0f}C)",
                     cause=(
                         f"{corner} outer edge overheating. Not enough negative "
                         f"camber for this {axle} axle. Increase camber magnitude "
@@ -670,7 +695,8 @@ def _check_thermal(
 
 
 def _check_grip(
-    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem]
+    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
+    t: AdaptiveThresholds = AdaptiveThresholds(),
 ) -> None:
     """Check grip utilization: traction slip and braking slip."""
 
