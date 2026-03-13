@@ -298,8 +298,12 @@ def produce(args: argparse.Namespace) -> None:
             v_p99_front_mps=track.shock_vel_p99_front_mps,
             v_p99_rear_mps=track.shock_vel_p99_rear_mps,
         )
-    except Exception as e:
-        print(f"[stint] Analysis skipped: {e}")
+    except (KeyError, AttributeError) as e:
+        stint_result = None
+        if not args.report_only:
+            print(f"[stint] Skipped: missing data ({e})")
+    except (TypeError, NameError) as e:
+        raise  # re-raise programming errors — don't hide bugs
 
     # ── Phase I.6: Sector compromise analysis ──
     sector_result = None
@@ -311,8 +315,12 @@ def produce(args: argparse.Namespace) -> None:
             base_bias_pct=supporting.brake_bias_pct,
             base_camber_deg=step5.front_camber_deg,
         )
-    except Exception as e:
-        print(f"[sector] Analysis skipped: {e}")
+    except (KeyError, AttributeError) as e:
+        sector_result = None
+        if not args.report_only:
+            print(f"[sector] Skipped: missing data ({e})")
+    except (TypeError, NameError) as e:
+        raise  # re-raise programming errors — don't hide bugs
 
     # ── Phase I.7: Lap time sensitivity ──
     sensitivity_result = None
@@ -324,8 +332,12 @@ def produce(args: argparse.Namespace) -> None:
             step4=step4, step5=step5,
             brake_bias_pct=supporting.brake_bias_pct,
         )
-    except Exception as e:
-        print(f"[sensitivity] Analysis skipped: {e}")
+    except (KeyError, AttributeError) as e:
+        sensitivity_result = None
+        if not args.report_only:
+            print(f"[sensitivity] Skipped: missing data ({e})")
+    except (TypeError, NameError) as e:
+        raise  # re-raise programming errors — don't hide bugs
 
     # ── Phase J: Output ──
     if args.sto:

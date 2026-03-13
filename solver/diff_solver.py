@@ -49,10 +49,12 @@ DRIVE_RAMP_OPTIONS = [65, 70, 75]
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
+    """Clamp v to the range [lo, hi]."""
     return max(lo, min(hi, v))
 
 
 def _snap_to_options(value: int, options: list[int]) -> int:
+    """Snap value to the nearest element in options list."""
     return min(options, key=lambda x: abs(x - value))
 
 
@@ -142,6 +144,38 @@ class DiffSolver:
     ) -> None:
         self.car = car
         self.max_torque_nm = getattr(car, "max_torque_nm", max_torque_nm)
+
+    @classmethod
+    def solve_defaults(cls, car: "CarModel", track: "TrackProfile | None" = None) -> DiffSolution:
+        """Solve with conservative defaults for a neutral driver.
+
+        Used by the standalone solver (no IBT data). Produces a sensible
+        baseline differential setup for an average smooth driver.
+
+        Args:
+            car: Car physical model
+            track: Track profile (used for peak lateral g if provided)
+
+        Returns:
+            DiffSolution with neutral/conservative baseline settings
+        """
+        from analyzer.driver_style import DriverProfile
+        from analyzer.extract import MeasuredState
+
+        # Conservative neutral defaults: moderate trail braking, moderate throttle
+        neutral_driver = DriverProfile(
+            trail_brake_depth_mean=0.3,
+            trail_brake_classification="moderate",
+            throttle_progressiveness=0.6,
+            throttle_classification="moderate",
+        )
+        # Nominal measured state: low body slip, typical rear slip
+        nominal_measured = MeasuredState(
+            body_slip_p95_deg=2.0,
+            rear_slip_ratio_p95=0.03,
+        )
+
+        return cls(car).solve(neutral_driver, nominal_measured, track)
 
     def solve(
         self,

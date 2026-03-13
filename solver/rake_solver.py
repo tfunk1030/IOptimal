@@ -183,7 +183,8 @@ class RakeSolver:
     ) -> float | None:
         """Find the actual rear RH that achieves target balance at a given front RH.
 
-        Uses Brent's method (root finding) on the balance error.
+        Primary method: Brent's method (root finding) on the balance error.
+        Fallback: surface.find_rh_for_balance() bisection (interpolator utility).
         """
         rear_lo = self.car.min_rear_rh_dynamic
         rear_hi = self.car.max_rear_rh_dynamic
@@ -204,7 +205,15 @@ class RakeSolver:
             result = brentq(balance_error, rear_lo, rear_hi, xtol=0.01, maxiter=50)
             return result
         except ValueError:
-            return None
+            # Fallback: use AeroSurface.find_rh_for_balance() bisection method
+            # Note: this operates in aero-map coordinates (may have axes swapped)
+            aero_front, _ = self.car.to_aero_coords(actual_front, rear_lo)
+            fallback = self.surface.find_rh_for_balance(
+                target_balance,
+                rear_rh=aero_front,  # in aero coords, "rear_rh" col = actual front
+                front_rh_range=(rear_lo, rear_hi),
+            )
+            return fallback
 
     def _build_solution(
         self,

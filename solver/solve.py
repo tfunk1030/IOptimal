@@ -121,6 +121,15 @@ def main():
                 car.geometry.rear_roll_gain = learned.calibrated_rear_roll_gain
             print()
 
+    # Confidence check — warn if car model has ESTIMATE parameters
+    confidence = car.estimate_confidence()
+    estimate_params = [p for p, v in confidence.items() if "ESTIMATE" in v]
+    if estimate_params:
+        params_str = ", ".join(estimate_params)
+        print(f"[confidence] {car.name}: {params_str} — outputs less reliable")
+        print(f"  (Run pipeline with real IBT to calibrate these values)")
+        print()
+
     # Load aero surfaces
     surfaces = load_car_surfaces(car.canonical_name)
     if args.wing not in surfaces:
@@ -245,6 +254,28 @@ def main():
     if not args.json and not args.report_only:
         print(step6.summary())
 
+    # ─── Constraint proximity analysis (binding constraints) ──────────
+    try:
+        from solver.sensitivity import build_sensitivity_report
+        sensitivity_report = build_sensitivity_report(
+            step1=step1,
+            step2=step2,
+            arb_lltd=step4.lltd_achieved,
+            arb_lltd_target=step4.lltd_target,
+            rarb_sensitivity=step4.rarb_sensitivity_per_blade,
+        )
+        binding = sensitivity_report.binding_constraints()
+        if binding and not args.report_only:
+            print()
+            print("[constraints] Near-binding constraints:")
+            for c in binding:
+                print(f"  !! {c.name}: {c.actual_value:.1f} / {c.limit_value:.1f} {c.units} "
+                      f"(slack {c.slack_pct:+.1f}%)")
+                if c.binding_explanation:
+                    print(f"     → {c.binding_explanation}")
+    except Exception:
+        pass  # constraint analysis is advisory
+
     # ─── Extra analyses (stint, sector, sensitivity, space) ───────────
     stint_result = None
     sector_result = None
@@ -304,6 +335,18 @@ def main():
                 print(space_result.summary())
         except Exception as e:
             print(f"[space] Skipped: {e}")
+
+    # ─── Step 6b: Differential (standalone defaults) ──────────────────
+    diff_result = None
+    try:
+        from solver.diff_solver import DiffSolver
+        diff_result = DiffSolver.solve_defaults(car, track=track)
+        if not args.report_only and not args.json:
+            print()
+            print(diff_result.summary())
+    except Exception as e:
+        if not args.report_only:
+            print(f"[diff] Skipped: {e}")
 
     # ─── Full Setup Report ─────────────────────────────────────────────
     print()
