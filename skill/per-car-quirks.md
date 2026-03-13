@@ -122,6 +122,7 @@ Note: BMW has relatively low damper click values compared to Ferrari. The scales
 | Gear stack | Short |
 
 ### BMW-Specific Quirks
+- **[HARD RULE] Front heave must run 30-50 N/mm on ALL tracks except Daytona and Le Mans.** Enforced as a car-specific hard clamp in the heave solver. On exempt tracks (Daytona, any Le Mans config), the physics solver runs unconstrained within the normal spring range. This rule is based on verified telemetry showing the BMW's front aero platform cannot tolerate heave below 30 N/mm (vortex burst) or above 50 N/mm (excessive platform stiffness kills mechanical grip) across the typical GTP track portfolio.
 - **Cold tyre snap:** Notably worse than other GTP cars on out-laps. The Garage 61 setup runs soft front ARB and modest damping which helps but doesn't eliminate this.
 - **Rear ARB sensitivity:** One step in ARB diameter can swing balance dramatically. The verified setup uses "Medium" rear ARB — this is the middle ground. Use blades (3 in this setup) for fine-tuning.
 - **Low brake bias (46%):** Much lower than the Ferrari (56.5%). BMW front brakes are aggressive and the car has a tendency to lock fronts, so bias sits further rearward.
