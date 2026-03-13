@@ -80,15 +80,15 @@ KNOWN_CAUSALITY = {
         ("rear_bottoming_events", "-"),
     ],
     ("rear_arb_blade", "+"): [
-        ("lltd_measured", "-"),         # more rear ARB → less front LLTD
-        ("understeer_mean_deg", "-"),   # less understeer
+        ("lltd_measured", "+"),         # more rear ARB → more rear roll resistance → higher front LLTD
+        ("understeer_mean_deg", "+"),   # more understeer (front lighter)
     ],
     ("front_camber_deg", "-"): [        # more negative = more static camber
         ("body_roll_p95_deg", "~"),     # minimal direct effect
     ],
     ("torsion_bar_od_mm", "+"): [
         ("front_dominant_freq_hz", "+"),
-        ("front_rh_std_mm", "+"),       # stiffer = more transmits bumps
+        ("front_rh_std_mm", "-"),       # stiffer spring = less RH variance
     ],
     ("rear_spring_nmm", "+"): [
         ("rear_dominant_freq_hz", "+"),
