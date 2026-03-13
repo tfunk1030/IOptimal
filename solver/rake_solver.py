@@ -94,6 +94,10 @@ class RakeSolution:
     free_opt_ld: float = 0.0         # L/D if front were not pinned
     ld_cost_of_pinning: float = 0.0  # L/D penalty from running at floor
 
+    # Aero stall proximity
+    aero_state: str = "nominal"      # "nominal" | "stall_warning" | "stall_risk"
+    stall_factor: float = 0.0        # 0.0 (clear) to 1.0 (full stall)
+
     def summary(self) -> str:
         """Human-readable summary of the solution."""
         lines = [
@@ -115,6 +119,14 @@ class RakeSolution:
             lines += [
                 f"    L/D (free):  {self.free_opt_ld:6.3f}  (if front not pinned)",
                 f"    L/D cost:    {self.ld_cost_of_pinning:+6.3f}  (tradeoff for more DF)",
+            ]
+        if self.aero_state != "nominal":
+            lines += [
+                "",
+                f"  ⚠  AERO STALL WARNING: {self.aero_state.upper()}",
+                f"     stall_factor={self.stall_factor:.3f}  "
+                f"(front RH too low — vortex collapse risk)",
+                f"     Raise front static RH or reduce front aero compression.",
             ]
         lines += [
             "",
@@ -261,6 +273,9 @@ class RakeSolver:
 
         ld_cost = ld - free_opt_ld if free_opt_ld > 0 else 0.0
 
+        # Compute aero stall proximity at the dynamic front ride height
+        stall = self.surface.stall_proximity(actual_front_dyn)
+
         return RakeSolution(
             dynamic_front_rh_mm=round(actual_front_dyn, 1),
             dynamic_rear_rh_mm=round(actual_rear_dyn, 1),
@@ -285,6 +300,8 @@ class RakeSolver:
             mode=mode,
             free_opt_ld=round(free_opt_ld, 3) if free_opt_ld > 0 else 0.0,
             ld_cost_of_pinning=round(ld_cost, 3) if free_opt_ld > 0 else 0.0,
+            aero_state=stall["aero_state"],
+            stall_factor=stall["stall_factor"],
         )
 
     def solve(
