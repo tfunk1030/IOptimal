@@ -245,6 +245,7 @@ def produce(args: argparse.Namespace) -> None:
         k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
         rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+        fuel_load_l=args.fuel,
     )
     if not args.report_only:
         print(step5.summary())

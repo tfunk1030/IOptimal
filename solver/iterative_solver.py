@@ -328,6 +328,7 @@ def run_iterative_solver(
             k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
             front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            fuel_load_l=fuel_load_l,
         )
 
         damper_solver = DamperSolver(car, track)
