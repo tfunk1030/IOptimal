@@ -102,6 +102,9 @@ class WheelGeometrySolution:
 
     # Constraint checks
     constraints: list[GeometryConstraintCheck]
+
+    # Camber confidence: "estimated" (physics model) or "calibrated" (thermal data)
+    camber_confidence: str = "estimated"
     notes: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -299,6 +302,7 @@ class WheelGeometrySolver:
         front_wheel_rate_nmm: float,
         rear_wheel_rate_nmm: float,
         fuel_load_l: float = 89.0,
+        camber_confidence: str = "estimated",
     ) -> WheelGeometrySolution:
         """Compute optimal wheel geometry.
 
@@ -461,6 +465,7 @@ class WheelGeometrySolver:
             expected_conditioning_laps_front=round(laps_front, 1),
             expected_conditioning_laps_rear=round(laps_rear, 1),
             k_roll_total_nm_deg=round(k_roll_total_nm_deg, 0),
+            camber_confidence=camber_confidence,
             constraints=constraints,
             notes=notes,
         )
