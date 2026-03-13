@@ -395,6 +395,13 @@ class CarModel:
     # Weight distribution
     weight_dist_front: float = 0.47  # Static front weight fraction
 
+    # Brake bias — calibrated from real IBT/LDX data per car.
+    # iRacing BrakePressureBias = hydraulic front pressure split (%).
+    # NOT dynamic weight transfer ratio. Rear MC is physically larger,
+    # which handles dynamic compensation. This parameter stays near static
+    # weight distribution with small forward correction for stability.
+    brake_bias_pct: float = 46.0     # Default — calibrated below per car
+
     # Chassis geometry — needed for handling dynamics (understeer, slip angle)
     wheelbase_m: float = 2.740       # Wheelbase (m). BMW/Dallara = 2.740
     steering_ratio: float = 17.8     # Steering wheel to road wheel ratio
@@ -519,6 +526,7 @@ BMW_M_HYBRID_V8 = CarModel(
     mass_car_kg=1030.0,       # GTP minimum ~1030 kg dry
     mass_driver_kg=75.0,
     weight_dist_front=0.47,
+    brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
     aero_axes_swapped=True,
     min_front_rh_static=30.0,  # sim-enforced floor for all GTP
     max_front_rh_static=80.0,
