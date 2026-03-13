@@ -247,8 +247,8 @@ class CornerSpringSolver:
         rear_freq = self.natural_freq(rear_rate, m_r_corner)
 
         # === Compute derived values ===
-        total_front_heave = front_heave_nmm + 2 * front_rate
-        total_rear_heave = rear_third_nmm + 2 * rear_rate
+        total_front_heave = front_heave_nmm + 2 * front_rate  # front MR=1.0
+        total_rear_heave = rear_third_nmm + 2 * rear_rate * csm.rear_motion_ratio ** 2
         front_heave_ratio = front_heave_nmm / front_rate if front_rate > 0 else 0
         rear_third_ratio = rear_third_nmm / rear_rate if rear_rate > 0 else 0
         front_isolation = bump_freq / front_freq if front_freq > 0 else 0
