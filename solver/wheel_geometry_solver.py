@@ -190,6 +190,7 @@ class WheelGeometrySolver:
         representative_roll_deg: float,
         roll_gain: float,
         baseline_deg: float,
+        is_front: bool = True,
     ) -> float:
         """Compute optimal static camber from roll kinematics.
 
@@ -206,6 +207,7 @@ class WheelGeometrySolver:
             representative_roll_deg: Body roll at representative (p95) lateral G
             roll_gain: Camber change per degree of roll (deg/deg)
             baseline_deg: Calibrated baseline camber for comparison
+            is_front: True for front axle, False for rear axle
         """
         geo = self.car.geometry
 
@@ -221,11 +223,15 @@ class WheelGeometrySolver:
         crown_correction = -0.2
         optimal += crown_correction
 
-        # Clamp to valid range
-        c_min, c_max = geo.front_camber_range_deg
+        # Clamp to valid range and snap to garage step (axle-specific)
+        if is_front:
+            c_min, c_max = geo.front_camber_range_deg
+            step = geo.front_camber_step_deg
+        else:
+            c_min, c_max = geo.rear_camber_range_deg
+            step = geo.rear_camber_step_deg
         optimal = max(c_min, min(c_max, optimal))
-        # Snap to garage step
-        return round(optimal / geo.front_camber_step_deg) * geo.front_camber_step_deg
+        return round(optimal / step) * step
 
     def _toe_recommendation(
         self,
@@ -347,9 +353,10 @@ class WheelGeometrySolver:
             representative_roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg
         )
         rear_camber = self._optimal_camber(
-            representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg
+            representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg,
+            is_front=False,
         )
-        # Use rear geometry range for rear camber
+        # Rear range already applied in _optimal_camber via is_front=False
         r_min, r_max = geo.rear_camber_range_deg
         rear_camber = max(r_min, min(r_max, rear_camber))
 

@@ -27,6 +27,7 @@ from solver.wheel_geometry_solver import WheelGeometrySolver
 from solver.damper_solver import DamperSolver
 from output.report import print_full_setup_report, save_json_summary
 from output.setup_writer import write_sto
+from solver.learned_corrections import apply_learned_corrections
 
 TRACKS_DIR = Path(__file__).parent.parent / "data" / "tracks"
 
@@ -84,12 +85,32 @@ def main():
                         help="Export iRacing .sto setup file")
     parser.add_argument("--report-only", action="store_true",
                         help="Print only the garage setup sheet (skip per-step details)")
+    parser.add_argument("--learn", action="store_true",
+                        help="Apply empirical corrections from accumulated session data")
 
     args = parser.parse_args()
 
     # Load car model
     car = get_car(args.car)
     print(f"Car: {car.name}")
+
+    # Apply learned corrections if requested
+    learned = None
+    if args.learn:
+        learned = apply_learned_corrections(
+            car.canonical_name, args.track, min_sessions=2, verbose=True
+        )
+        if learned.applied:
+            # Override calibration constants with empirical values
+            if learned.heave_m_eff_front_kg is not None:
+                car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
+            if learned.heave_m_eff_rear_kg is not None:
+                car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
+            if learned.aero_compression_front_mm is not None:
+                car.aero_compression.front_compression_mm = learned.aero_compression_front_mm
+            if learned.aero_compression_rear_mm is not None:
+                car.aero_compression.rear_compression_mm = learned.aero_compression_rear_mm
+            print()
 
     # Load aero surfaces
     surfaces = load_car_surfaces(car.canonical_name)
@@ -153,6 +174,62 @@ def main():
     if not args.json and not args.report_only:
         print(step3.summary())
 
+    # Convert rear spring rate to wheel rate (MR^2) for downstream solvers
+    rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+
+    # ─── RH Reconciliation (after step2+step3 provide actual spring values) ──
+    rh_model = car.ride_height_model
+
+    # Front RH: refine with actual heave spring from step2
+    if rh_model.front_is_calibrated:
+        actual_heave_nmm = step2.front_heave_nmm
+        front_camber = car.geometry.front_camber_baseline_deg  # step5 not run yet
+        new_front_rh = rh_model.predict_front_static_rh(actual_heave_nmm, front_camber)
+        if abs(new_front_rh - step1.static_front_rh_mm) > 0.05:
+            if not args.json and not args.report_only:
+                print(f"  Front RH refined: {step1.static_front_rh_mm:.1f} -> "
+                      f"{new_front_rh:.1f} mm (heave {actual_heave_nmm:.0f} N/mm)")
+            step1.static_front_rh_mm = round(new_front_rh, 1)
+
+    # Rear RH: refine with actual spring values from step2+step3
+    if rh_model.is_calibrated:
+        actual_third_nmm = step2.rear_third_nmm
+        actual_heave_perch = step2.perch_offset_front_mm
+        actual_rear_spring = step3.rear_spring_rate_nmm
+
+        predicted_rh = rh_model.predict_rear_static_rh(
+            step1.rear_pushrod_offset_mm, actual_third_nmm,
+            actual_rear_spring, actual_heave_perch,
+        )
+        rh_error = predicted_rh - step1.static_rear_rh_mm
+
+        if abs(rh_error) > 0.5:
+            # Re-solve pushrod to hit the original target static rear RH
+            new_pushrod = rh_model.pushrod_for_target_rh(
+                step1.static_rear_rh_mm, actual_third_nmm,
+                actual_rear_spring, actual_heave_perch,
+            )
+            new_pushrod = round(new_pushrod * 2) / 2  # snap to 0.5mm
+            new_rh = rh_model.predict_rear_static_rh(
+                new_pushrod, actual_third_nmm,
+                actual_rear_spring, actual_heave_perch,
+            )
+            if not args.json and not args.report_only:
+                print(f"  RH reconciliation: pushrod {step1.rear_pushrod_offset_mm:.1f} "
+                      f"-> {new_pushrod:.1f} mm "
+                      f"(predicted RH {predicted_rh:.1f} -> {new_rh:.1f} mm)")
+            step1.rear_pushrod_offset_mm = round(new_pushrod, 1)
+            step1.static_rear_rh_mm = round(new_rh, 1)
+        elif not args.json and not args.report_only:
+            print(f"  RH model check: predicted {predicted_rh:.1f} mm "
+                  f"vs target {step1.static_rear_rh_mm:.1f} mm "
+                  f"(error {rh_error:+.2f} mm — OK)")
+
+    # Update static rake from (possibly refined) front + rear
+    step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
+    if not args.json and not args.report_only:
+        print()
+
     # ─── Step 4: Anti-Roll Bars ────────────────────────────────────────
     print()
     print("Running Step 4: Anti-Roll Bars...")
@@ -161,7 +238,7 @@ def main():
     arb_solver = ARBSolver(car, track)
     step4 = arb_solver.solve(
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
     )
 
     if not args.json and not args.report_only:
@@ -176,7 +253,7 @@ def main():
     step5 = geom_solver.solve(
         k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
     )
 
     if not args.json and not args.report_only:
@@ -190,7 +267,7 @@ def main():
     damper_solver = DamperSolver(car, track)
     step6 = damper_solver.solve(
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
         rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
         fuel_load_l=args.fuel,

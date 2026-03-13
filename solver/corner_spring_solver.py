@@ -189,7 +189,6 @@ class CornerSpringSolver:
         m_f_corner = total_mass * self.car.weight_dist_front / 2
         m_r_corner = total_mass * (1 - self.car.weight_dist_front) / 2
 
-        bump_freq = self.track.shock_vel_p99_front_mps  # Not the bump freq
         bump_freq = self.car.rh_variance.dominant_bump_freq_hz
 
         # === FRONT: Natural frequency targeting ===

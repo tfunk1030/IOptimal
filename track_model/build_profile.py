@@ -375,9 +375,11 @@ def _find_corners(
         avg_steer = float(np.mean(segment_steer))
         direction = "left" if avg_steer > 0 else "right"
 
-        # Estimate radius: r = v^2 / (a_lat)
+        # Estimate radius: r = v^2 / (a_lat) using values at the apex point
+        apex_local_idx = np.argmin(segment_speed)
+        apex_lat_at_apex = float(np.abs(segment_lat[apex_local_idx])) if apex_local_idx < len(segment_lat) else peak_lat
         apex_speed_ms = apex_speed / 3.6
-        apex_lat_ms2 = peak_lat * 9.81
+        apex_lat_ms2 = apex_lat_at_apex * 9.81
         radius = (apex_speed_ms ** 2) / apex_lat_ms2 if apex_lat_ms2 > 0.5 else 999
 
         dist = float(lap_dist[min(apex_idx, len(lap_dist) - 1)])
