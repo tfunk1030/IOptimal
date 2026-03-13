@@ -69,15 +69,19 @@ def produce(args: argparse.Namespace) -> None:
     fuel = args.fuel or current_setup.fuel_l or 89.0
     print(f"  Wing: {wing}°, Fuel: {fuel:.0f} L")
 
-    # ── Apply learned corrections if requested ──
+    # ── Apply learned corrections (default: auto, --no-learn to disable) ──
     learned = None
-    if getattr(args, "learn", False):
+    if not getattr(args, "no_learn", False):
         track_info = ibt.track_info()
         track_name = track_info.get("track_name", "")
         learned = apply_learned_corrections(
-            car.canonical_name, track_name, min_sessions=2, verbose=True
+            car.canonical_name, track_name, min_sessions=3, verbose=False
         )
-        if learned.applied:
+        n_corrections = len(learned.applied)
+        n_sessions = learned.session_count
+        car_track_label = f"{car.canonical_name}/{track_name.lower().split()[0]}"
+        if n_corrections > 0 and learned.session_count >= 3:
+            # Apply corrections to car model
             if learned.heave_m_eff_front_kg is not None:
                 car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
             if learned.heave_m_eff_rear_kg is not None:
@@ -90,7 +94,9 @@ def produce(args: argparse.Namespace) -> None:
                 car.geometry.front_roll_gain = learned.calibrated_front_roll_gain
             if learned.calibrated_rear_roll_gain is not None:
                 car.geometry.rear_roll_gain = learned.calibrated_rear_roll_gain
-            print()
+            print(f"[learn] Applied {n_corrections} corrections from {n_sessions} sessions ({car_track_label})")
+        else:
+            print(f"[learn] Physics-only ({n_sessions} sessions for {car_track_label})")
 
     # ── Load aero surfaces ──
     surfaces = load_car_surfaces(car.canonical_name)
@@ -345,12 +351,8 @@ def produce(args: argparse.Namespace) -> None:
     )
     print(report)
 
-    # ── Phase L: Auto-learn (ingest session into knowledge base) ──
-    if getattr(args, "auto_learn", False):
-        print()
-        print("=" * 60)
-        print("  AUTO-LEARN: Ingesting session into knowledge base...")
-        print("=" * 60)
+    # ── Phase L: Auto-learn (default: on, --no-learn disables) ──
+    if not getattr(args, "no_learn", False):
         try:
             from learner.ingest import ingest_ibt
             result = ingest_ibt(
@@ -358,15 +360,13 @@ def produce(args: argparse.Namespace) -> None:
                 ibt_path=args.ibt,
                 wing=wing,
                 lap=args.lap,
-                verbose=True,
+                verbose=False,
             )
             if result.get("new_learnings"):
-                print("\n  New learnings:")
-                for l in result["new_learnings"]:
-                    print(f"    • {l}")
+                for ln in result["new_learnings"]:
+                    print(f"[learn] {ln}")
         except Exception as e:
-            print(f"  Auto-learn failed: {e}")
-            print("  (Setup production was not affected)")
+            print(f"[learn] Ingest failed: {e} (setup production was not affected)")
 
 
 def _apply_damper_modifiers(
@@ -424,10 +424,11 @@ def main():
                         help="Save full JSON summary to file")
     parser.add_argument("--report-only", action="store_true",
                         help="Print only the final report (skip per-step details)")
-    parser.add_argument("--learn", action="store_true",
-                        help="Apply empirical corrections from accumulated session data")
-    parser.add_argument("--auto-learn", action="store_true",
-                        help="Automatically ingest this session into the knowledge base after producing")
+    parser.add_argument("--no-learn", action="store_true",
+                        help="Disable auto-learning (skip empirical corrections and session ingest)")
+    # Legacy flags (kept for backward-compat; no-op since auto is default)
+    parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     produce(args)
