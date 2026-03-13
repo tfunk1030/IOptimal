@@ -36,7 +36,7 @@ from solver.damper_solver import DamperSolver
 from solver.heave_solver import HeaveSolver
 from solver.modifiers import SolverModifiers, compute_modifiers
 from solver.learned_corrections import apply_learned_corrections
-from solver.rake_solver import RakeSolver
+from solver.rake_solver import RakeSolver, reconcile_ride_heights
 from solver.supporting_solver import SupportingSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
 from track_model.build_profile import build_profile
@@ -225,42 +225,7 @@ def produce(args: argparse.Namespace) -> None:
     rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
 
     # RH reconciliation: refine static RH with actual spring values
-    rh_model = car.ride_height_model
-
-    # Front RH: refine with actual heave spring from step2
-    if rh_model.front_is_calibrated:
-        new_front_rh = rh_model.predict_front_static_rh(
-            step2.front_heave_nmm, car.geometry.front_camber_baseline_deg,
-        )
-        if abs(new_front_rh - step1.static_front_rh_mm) > 0.05:
-            print(f"  Front RH refined: {step1.static_front_rh_mm:.1f} -> "
-                  f"{new_front_rh:.1f} mm (heave {step2.front_heave_nmm:.0f} N/mm)")
-            step1.static_front_rh_mm = round(new_front_rh, 1)
-
-    # Rear RH: refine with actual spring values from step2+step3
-    if rh_model.is_calibrated:
-        predicted_rh = rh_model.predict_rear_static_rh(
-            step1.rear_pushrod_offset_mm, step2.rear_third_nmm,
-            step3.rear_spring_rate_nmm, step2.perch_offset_front_mm,
-        )
-        rh_error = predicted_rh - step1.static_rear_rh_mm
-        if abs(rh_error) > 0.5:
-            new_pushrod = rh_model.pushrod_for_target_rh(
-                step1.static_rear_rh_mm, step2.rear_third_nmm,
-                step3.rear_spring_rate_nmm, step2.perch_offset_front_mm,
-            )
-            new_pushrod = round(new_pushrod * 2) / 2
-            new_rh = rh_model.predict_rear_static_rh(
-                new_pushrod, step2.rear_third_nmm,
-                step3.rear_spring_rate_nmm, step2.perch_offset_front_mm,
-            )
-            print(f"  RH reconciliation: pushrod {step1.rear_pushrod_offset_mm:.1f} "
-                  f"-> {new_pushrod:.1f} mm (RH {predicted_rh:.1f} -> {new_rh:.1f} mm)")
-            step1.rear_pushrod_offset_mm = round(new_pushrod, 1)
-            step1.static_rear_rh_mm = round(new_rh, 1)
-
-    # Update static rake from (possibly refined) front + rear
-    step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
+    reconcile_ride_heights(car, step1, step2, step3, verbose=not args.report_only)
 
     # Step 4: ARBs (with LLTD offset)
     print("\nRunning Step 4: Anti-Roll Bars...")
@@ -280,6 +245,7 @@ def produce(args: argparse.Namespace) -> None:
         k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
         rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+        fuel_load_l=args.fuel,
     )
     if not args.report_only:
         print(step5.summary())

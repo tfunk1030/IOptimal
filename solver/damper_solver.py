@@ -205,9 +205,6 @@ class DamperSolver:
     6. Computes HS slope from track p99/p95 ratio (digressive need)
     """
 
-    # Motion ratio: damper shaft velocity / suspension velocity
-    MOTION_RATIO = 0.80
-
     def __init__(self, car: CarModel, track: TrackProfile):
         self.car = car
         self.track = track
@@ -511,11 +508,11 @@ class DamperSolver:
         constraints = [
             DamperConstraintCheck(
                 name="Front LS damping ratio",
-                passed=0.3 <= zeta_ls_f <= 0.8,
+                passed=0.3 <= zeta_ls_f <= 1.0,
                 value=zeta_ls_f,
-                target=0.62,
+                target=0.88,
                 units="zeta",
-                note="0.3-0.8 valid range for racing. Higher = more roll control.",
+                note="0.3-1.0 valid range for racing. GTP front uses high \u03b6 due to soft springs.",
             ),
             DamperConstraintCheck(
                 name="Rear HS damping ratio",
