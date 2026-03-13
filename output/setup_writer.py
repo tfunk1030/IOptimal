@@ -263,7 +263,7 @@ def write_sto(
     car_canonical: str = "bmw",
     tyre_pressure_kpa: float = 152.0,
     # --- Defaults for fields not computed by the solver ---
-    brake_bias_pct: float = 56.0,
+    brake_bias_pct: float | None = None,  # None = compute from car physics
     brake_bias_migration: float = 0.0,
     brake_bias_target: float = 0.0,
     pad_compound: str = "Medium",
@@ -305,6 +305,16 @@ def write_sto(
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Compute brake bias from physics if not provided
+    if brake_bias_pct is None:
+        from solver.supporting_solver import compute_brake_bias
+        from car_model.cars import get_car
+        try:
+            _car = get_car(car_canonical)
+            brake_bias_pct, _ = compute_brake_bias(_car, fuel_load_l=fuel_l)
+        except Exception:
+            brake_bias_pct = 56.0  # fallback only if car model unavailable
 
     # Resolve ID mapping for this car
     ids = _CAR_PARAM_IDS.get(car_canonical.lower(), _BMW_PARAM_IDS)
