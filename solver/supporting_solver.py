@@ -68,6 +68,59 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def compute_brake_bias(
+    car: "CarModel",
+    decel_g: float | None = None,
+    fuel_load_l: float | None = None,
+) -> tuple[float, str]:
+    """Compute physics-based brake bias without IBT driver data.
+
+    Used by the standalone solver (no IBT available) and as the seed
+    value before driver-style adjustments are applied.
+
+    Physics:
+        Under braking, longitudinal weight transfer shifts load forward:
+            dynamic_front = static_front + (h_cg / L) * decel_g
+        Brake bias tracks this transfer scaled by system efficiency (~0.85).
+
+    Args:
+        car: Car physical model
+        decel_g: Peak braking deceleration in g (default: track-typical 1.5g)
+        fuel_load_l: Fuel load for weight distribution adjustment (optional)
+
+    Returns:
+        (brake_bias_pct, reasoning_str)
+    """
+    if decel_g is None:
+        decel_g = 1.5  # typical GTP peak braking deceleration
+
+    cg_height_m = car.corner_spring.cg_height_mm / 1000.0
+    wheelbase_m = car.wheelbase_m
+
+    # Fuel load shifts weight distribution (fuel cell is typically rear-biased)
+    front_dist = car.weight_dist_front
+    if fuel_load_l is not None:
+        # Each litre ~0.8 kg, rear-biased tank shifts rear weight ~0.02% per litre
+        front_dist = front_dist - (fuel_load_l * 0.0002)
+
+    weight_transfer = (cg_height_m / wheelbase_m) * decel_g
+    dynamic_front = front_dist + weight_transfer
+
+    # Bias = dynamic front load × brake efficiency factor
+    # 0.85 accounts for rear bias in master cylinder sizing (GTP convention)
+    bias = dynamic_front * 100 * 0.85
+
+    reasoning = (
+        f"Static front: {front_dist:.3f} | "
+        f"Transfer: ({cg_height_m:.3f}/{wheelbase_m:.3f})*{decel_g:.1f}g = {weight_transfer:.3f} | "
+        f"Dynamic front: {dynamic_front:.3f} | "
+        f"Bias: {dynamic_front*100:.1f}% × 0.85 = {bias:.1f}%"
+    )
+
+    bias = round(_clamp(bias, 50.0, 62.0), 1)
+    return bias, reasoning
+
+
 class SupportingSolver:
     """Compute brake bias, diff, TC, and tyre pressures from physics + driver style."""
 
@@ -94,29 +147,18 @@ class SupportingSolver:
     def _solve_brake_bias(self, sol: SupportingSolution) -> None:
         """Brake bias from dynamic weight transfer under braking + driver style.
 
-        Under braking, longitudinal weight transfer shifts load forward:
-          dynamic_front = static_front + (CG_height / wheelbase) * decel_g
-        Brake bias tracks this but scaled by ~0.88 (brake system efficiency).
+        Seeds from compute_brake_bias() (physics-only), then applies
+        driver-style and measured-state adjustments.
         """
-        car = self.car
         driver = self.driver
         measured = self.measured
 
-        # Dynamic weight transfer under braking
-        decel_g = 1.5  # typical GTP peak braking deceleration
-        cg_height_m = car.corner_spring.cg_height_mm / 1000.0
-        wheelbase_m = car.wheelbase_m
-        weight_transfer = (cg_height_m / wheelbase_m) * decel_g
-        dynamic_front = car.weight_dist_front + weight_transfer
-        # Brake bias scales with dynamic weight but isn't 1:1 (system efficiency ~0.85)
-        bias = dynamic_front * 100 * 0.85
-        reasons = [
-            f"Dynamic front load: {car.weight_dist_front:.2f} + "
-            f"({cg_height_m:.3f}/{wheelbase_m:.3f})*{decel_g} = {dynamic_front:.3f}; "
-            f"bias = {dynamic_front*100:.1f}% * 0.85 = {bias:.1f}%"
-        ]
+        # Physics seed (fuel-adjusted weight transfer)
+        fuel_l = getattr(self, "_fuel_load_l", None)
+        bias, base_reason = compute_brake_bias(self.car, fuel_load_l=fuel_l)
+        reasons = [base_reason]
 
-        # Deep trail braker needs more front authority for later rotation
+        # Driver style adjustments
         if driver.trail_brake_classification == "deep":
             bias += 0.5
             reasons.append("+0.5% for deep trail braking")

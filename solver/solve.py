@@ -27,6 +27,7 @@ from solver.wheel_geometry_solver import WheelGeometrySolver
 from solver.damper_solver import DamperSolver
 from output.report import print_full_setup_report, save_json_summary
 from output.setup_writer import write_sto
+from solver.supporting_solver import compute_brake_bias
 from solver.learned_corrections import apply_learned_corrections
 
 TRACKS_DIR = Path(__file__).parent.parent / "data" / "tracks"
@@ -270,6 +271,10 @@ def main():
         print(f"\nJSON summary saved to: {args.save}")
 
     if args.sto:
+        brake_bias, bias_reasoning = compute_brake_bias(
+            car, fuel_load_l=args.fuel
+        )
+        print(f"\nBrake bias (physics): {brake_bias:.1f}%  [{bias_reasoning}]")
         sto_path = write_sto(
             car_name=car.name,
             track_name=f"{track.track_name} — {track.track_config}",
@@ -279,6 +284,7 @@ def main():
             step4=step4, step5=step5, step6=step6,
             output_path=args.sto,
             car_canonical=car.canonical_name,
+            brake_bias_pct=brake_bias,
         )
         print(f"\niRacing .sto setup saved to: {sto_path}")
 
