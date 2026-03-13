@@ -97,7 +97,8 @@ def main():
 
     # Load car model
     car = get_car(args.car)
-    print(f"Car: {car.name}")
+    if not args.report_only:
+        print(f"Car: {car.name}")
 
     # Apply learned corrections if requested
     learned = None
@@ -137,20 +138,23 @@ def main():
         print(f"ERROR: Wing angle {args.wing}° not available. Available: {available}")
         sys.exit(1)
     surface = surfaces[args.wing]
-    print(f"Aero surface: {surface}")
+    if not args.report_only:
+        print(f"Aero surface: {surface}")
 
     # Load track profile
     track = find_track_profile(args.track)
-    print(f"Track: {track.track_name} — {track.track_config}")
-    print(f"Best lap: {track.best_lap_time_s:.3f}s")
-    print()
+    if not args.report_only:
+        print(f"Track: {track.track_name} — {track.track_config}")
+        print(f"Best lap: {track.best_lap_time_s:.3f}s")
+        print()
 
     # ─── Step 1: Rake / Ride Heights ─────────────────────────────────
-    print("=" * 60)
-    print("Running Step 1: Rake / Ride Heights...")
-    print(f"  Target DF balance: {args.balance:.2f}% ± {args.tolerance:.2f}%")
-    print(f"  Fuel load: {args.fuel:.0f} L")
-    print()
+    if not args.report_only:
+        print("=" * 60)
+        if not args.report_only: print("Running Step 1: Rake / Ride Heights...")
+        print(f"  Target DF balance: {args.balance:.2f}% ± {args.tolerance:.2f}%")
+        print(f"  Fuel load: {args.fuel:.0f} L")
+        print()
 
     rake_solver = RakeSolver(car, surface, track)
     step1 = rake_solver.solve(
@@ -165,7 +169,7 @@ def main():
 
     # ─── Step 2: Heave / Third Springs ─────────────────────────────────
     print()
-    print("Running Step 2: Heave / Third Springs...")
+    if not args.report_only: print("Running Step 2: Heave / Third Springs...")
     print()
 
     heave_solver = HeaveSolver(car, track)
@@ -179,7 +183,7 @@ def main():
 
     # ─── Step 3: Corner Springs ────────────────────────────────────────
     print()
-    print("Running Step 3: Corner Springs...")
+    if not args.report_only: print("Running Step 3: Corner Springs...")
     print()
 
     corner_solver = CornerSpringSolver(car, track)
@@ -205,7 +209,7 @@ def main():
 
     # ─── Step 4: Anti-Roll Bars ────────────────────────────────────────
     print()
-    print("Running Step 4: Anti-Roll Bars...")
+    if not args.report_only: print("Running Step 4: Anti-Roll Bars...")
     print()
 
     arb_solver = ARBSolver(car, track)
@@ -219,7 +223,7 @@ def main():
 
     # ─── Step 5: Wheel Geometry ────────────────────────────────────────
     print()
-    print("Running Step 5: Wheel Geometry...")
+    if not args.report_only: print("Running Step 5: Wheel Geometry...")
     print()
 
     geom_solver = WheelGeometrySolver(car, track)
@@ -239,7 +243,7 @@ def main():
 
     # ─── Step 6: Dampers ──────────────────────────────────────────────
     print()
-    print("Running Step 6: Dampers...")
+    if not args.report_only: print("Running Step 6: Dampers...")
     print()
 
     damper_solver = DamperSolver(car, track)
@@ -351,6 +355,28 @@ def main():
     # ─── Full Setup Report ─────────────────────────────────────────────
     print()
     print()
+    # Compute supporting params for standalone report (brake bias, diff defaults)
+    _supporting = None
+    try:
+        from solver.supporting_solver import compute_brake_bias
+        from solver.diff_solver import DiffSolver
+        from analyzer.driver_style import DriverProfile
+        from analyzer.extract import MeasuredState
+
+        _bias, _ = compute_brake_bias(car, fuel_load_l=args.fuel)
+        _diff = DiffSolver.solve_defaults(car, track)  # uses neutral driver defaults
+
+        class _StandaloneSupporting:
+            brake_bias_pct = _bias
+            diff_preload_nm = _diff.preload_nm
+            diff_ramp_coast = _diff.coast_ramp_deg
+            diff_ramp_drive = _diff.drive_ramp_deg
+            diff_clutch_plates = _diff.clutch_plates
+
+        _supporting = _StandaloneSupporting()
+    except Exception:
+        pass
+
     report = print_full_setup_report(
         car_name=car.name,
         track_name=f"{track.track_name} — {track.track_config}",
@@ -366,6 +392,7 @@ def main():
         sector_result=sector_result,
         sensitivity_result=sensitivity_result,
         space_result=space_result,
+        supporting=_supporting,
     )
     print(report)
 
