@@ -34,7 +34,9 @@
       "Bash(python -c \"import sys,json; [print\\(json.loads\\(l\\)[''''message''''][''''content''''][0][''''text''''][:2000]\\) for l in sys.stdin if ''''text'''' in l]\")",
       "Bash(find /c/Users/tfunk/IOptimal -name *.ibt -type f)",
       "Bash(cmd.exe /c \"python3 -c \"\"open\\(r''C:\\\\Users\\\\tfunk\\\\.claude\\\\cache\\\\agents\\\\scout\\\\latest-output.md'', ''w''\\).write\\(''test''\\)\"\"\")",
-      "Bash(printf '%s' 'import os; path = os.path.expanduser\\(\"\"\"\"~/.claude/cache/agents/scout/latest-output.md\"\"\"\"\\); print\\(\"\"\"\"Can write:\"\"\"\", os.access\\(os.path.dirname\\(path\\), os.W_OK\\)\\)')"
+      "Bash(printf '%s' 'import os; path = os.path.expanduser\\(\"\"\"\"~/.claude/cache/agents/scout/latest-output.md\"\"\"\"\\); print\\(\"\"\"\"Can write:\"\"\"\", os.access\\(os.path.dirname\\(path\\), os.W_OK\\)\\)')",
+      "Bash(find /c/Users/VYRAL/IOptimal -type f -name *test*learner* -o -path *test* -name *learner*)",
+      "Bash(python -m learner.ingest --status)"
     ]
   }
 }
