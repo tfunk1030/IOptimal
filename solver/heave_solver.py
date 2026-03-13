@@ -385,6 +385,32 @@ class HeaveSolver:
             )
         )
 
+        # HeaveSpringDefl budget validation:
+        # DeflMax (available spring travel) depends only on spring rate.
+        # DeflStatic + dynamic excursion must not exceed DeflMax.
+        if hsm.heave_spring_defl_max_intercept_mm > 0:
+            defl_max = (hsm.heave_spring_defl_max_intercept_mm
+                        + hsm.heave_spring_defl_max_slope * k_front)
+            # Excursion at recommended rate is front_exc
+            defl_budget_remaining = defl_max - front_exc
+            budget_safe = defl_budget_remaining > 10.0  # 10mm margin for static defl
+            safety_checks.append(SpringSafetyCheck(
+                label=f"HeaveSpringDefl budget at {k_front} N/mm",
+                rate_nmm=k_front,
+                axle="front",
+                excursion_mm=round(front_exc, 1),
+                dynamic_rh_mm=round(defl_max, 1),
+                bottoming_mm=round(max(0, front_exc - defl_max), 1),
+                sigma_mm=round(front_sigma, 1),
+                sigma_target_mm=hsm.sigma_target_mm,
+                safe=budget_safe,
+                reason=(f"DeflMax={defl_max:.1f}mm, excursion={front_exc:.1f}mm, "
+                        f"remaining={defl_budget_remaining:.1f}mm for static defl"
+                        if budget_safe else
+                        f"WARN: DeflMax={defl_max:.1f}mm may not accommodate "
+                        f"excursion={front_exc:.1f}mm + static deflection"),
+            ))
+
         return HeaveSolution(
             front_heave_nmm=k_front,
             rear_third_nmm=k_rear,

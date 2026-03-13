@@ -154,10 +154,12 @@ def write_sto(
              step3.front_torsion_od_mm, "mm")
     _numeric(details, "CarSetup_Chassis_RightFront_TorsionBarOD",
              step3.front_torsion_od_mm, "mm")
-    # Torsion bar turns (derived from OD — iRacing computes this internally,
-    # but including it makes the .sto more complete for reference)
-    _numeric(details, "CarSetup_Chassis_LeftFront_TorsionBarTurns", 0.098, "Turns")
-    _numeric(details, "CarSetup_Chassis_RightFront_TorsionBarTurns", 0.098, "Turns")
+    # Torsion bar turns — derived from heave spring rate + OD calibration.
+    # At OD=13.9mm: Turns = 0.0856 + 0.668 / HeaveSpring (from 19 BMW sessions).
+    # iRacing auto-computes this, but the .sto needs a value for the setup to load.
+    _tb_turns = round(0.0856 + 0.668 / max(step2.front_heave_nmm, 1), 3)
+    _numeric(details, "CarSetup_Chassis_LeftFront_TorsionBarTurns", _tb_turns, "Turns")
+    _numeric(details, "CarSetup_Chassis_RightFront_TorsionBarTurns", _tb_turns, "Turns")
     # Rear: coil spring (BMW)
     _numeric(details, "CarSetup_Chassis_LeftRear_SpringRate",
              int(round(step3.rear_spring_rate_nmm)), "N/mm")
