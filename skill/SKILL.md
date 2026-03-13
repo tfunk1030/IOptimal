@@ -218,6 +218,38 @@ GTP cars use a sophisticated suspension with **corner springs** (torsion bars on
 
 **Key insight**: If you want to change aero platform stiffness without affecting mechanical roll balance, adjust heave springs. If you want to change mechanical balance without affecting the aero platform, adjust ARBs. This separation is the core of GTP setup philosophy. Real-world WEC teams (Williams F1 reportedly ran zero rear corner springs — only heave + ARB) take this to the extreme.
 
+### Front Suspension Load Path — Heave, Perch, Torsion Bar Interaction
+
+The front static load on GTP cars splits between the **heave spring** and **torsion bars**. Changing any one parameter shifts load between them, producing cascading effects on read-only garage diagnostics. Understanding this load path is essential for producing legal, optimized setups.
+
+**Read-Only Diagnostics (iRacing auto-computes from tunable params):**
+- **HeaveSpringDeflStatic**: How much the heave spring is compressed at rest. Driven by heave rate + perch offset. More preload (lower perch) or softer spring → more static compression.
+- **HeaveSpringDeflMax**: Maximum available spring compression travel. Depends ONLY on spring rate (stiffer = shorter spring = less max travel). Perch has zero effect.
+- **HeaveSliderDeflStatic**: How far the slider mechanism has traveled from fully extended. Dominated by perch offset (21.8× the effect of heave rate per mm).
+- **TorsionBarTurns**: How much the torsion bar has twisted under static load. At same OD, softer heave spring → torsion bars carry more static load → more twist → higher turns value.
+- **TorsionBarDefl**: Torsion bar deflection in mm. Tracks turns proportionally.
+
+**Load Path Physics:**
+When heave spring is softened, it carries less of the front static weight. The remaining load transfers to the torsion bars, which twist more. This changes:
+1. Torsion bar turns/deflection (read-only, auto-computed)
+2. Corner weight distribution and crossweight (must be re-checked in garage)
+3. The effective static stiffness of the front platform at rest
+
+**Three Methods to Adjust Front Ride Height (ranked by side effects):**
+1. **Pushrod Length Offset** — Cleanest. Changes RH only. No preload, crossweight, or torsion bar effects.
+2. **Heave Perch Offset** — Changes RH + heave spring preload. Affects HeaveSpringDeflStatic, HeaveSliderDeflStatic, and indirectly shifts load to/from torsion bars.
+3. **Torsion Bar Turns** — Most side effects. Changes corner weight, crossweight, and torsion bar deflection. Use ONLY for crossweight tuning, not ride height.
+
+**HeaveSpringDefl Budget (critical constraint):**
+```
+Available_dynamic_travel = HeaveSpringDeflMax - HeaveSpringDeflStatic
+```
+The heave spring must not bottom during dynamic excursion:
+```
+HeaveSpringDeflStatic + excursion_p99 < HeaveSpringDeflMax
+```
+Over-preloading (very negative perch) eats into available travel by increasing DeflStatic.
+
 ### Suspension — Dampers
 
 Dampers control the *rate* of suspension movement, not the *amount* (that's springs). **Critical concept: "low speed" and "high speed" refer to shaft velocity (mm/s), NOT car speed.** A car at 300 km/h on a smooth straight has low-speed damper activity; a car at 50 km/h hitting a kerb generates high-speed events.
