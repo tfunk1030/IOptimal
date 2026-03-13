@@ -88,6 +88,10 @@ def main():
                         help="Print only the garage setup sheet (skip per-step details)")
     parser.add_argument("--learn", action="store_true",
                         help="Apply empirical corrections from accumulated session data")
+    parser.add_argument("--space", action="store_true",
+                        help="Run setup space exploration (feasible region and flat-bottom analysis)")
+    parser.add_argument("--stint-laps", type=int, default=30,
+                        help="Stint length for stint analysis (default: 30)")
 
     args = parser.parse_args()
 
@@ -241,6 +245,63 @@ def main():
     if not args.json and not args.report_only:
         print(step6.summary())
 
+    # ─── Extra analyses (stint, sector, sensitivity, space) ───────────
+    stint_result = None
+    sector_result = None
+    sensitivity_result = None
+    space_result = None
+
+    try:
+        from solver.stint_model import analyze_stint
+        stint_result = analyze_stint(
+            car=car,
+            stint_laps=args.stint_laps,
+            base_heave_nmm=step2.front_heave_nmm,
+            base_third_nmm=step2.rear_third_nmm,
+            v_p99_front_mps=track.shock_vel_p99_front_mps,
+            v_p99_rear_mps=track.shock_vel_p99_rear_mps,
+        )
+    except Exception as e:
+        if not args.report_only:
+            print(f"[stint] Skipped: {e}")
+
+    try:
+        from solver.sector_compromise import SectorCompromise
+        sector_result = SectorCompromise(track).analyze(
+            step1=step1, step2=step2, step4=step4,
+        )
+    except Exception as e:
+        if not args.report_only:
+            print(f"[sector] Skipped: {e}")
+
+    try:
+        from solver.laptime_sensitivity import compute_laptime_sensitivity
+        from solver.supporting_solver import compute_brake_bias as _cbias
+        _bias, _ = _cbias(car, fuel_load_l=args.fuel)
+        sensitivity_result = compute_laptime_sensitivity(
+            track=track,
+            step1=step1, step2=step2, step3=step3,
+            step4=step4, step5=step5,
+            brake_bias_pct=_bias,
+        )
+    except Exception as e:
+        if not args.report_only:
+            print(f"[sensitivity] Skipped: {e}")
+
+    if args.space:
+        try:
+            from solver.setup_space import explore_setup_space
+            space_result = explore_setup_space(
+                track=track,
+                step1=step1, step2=step2, step3=step3, step4=step4,
+                sensitivity=sensitivity_result,
+            )
+            if not args.report_only and not args.json:
+                print()
+                print(space_result.summary())
+        except Exception as e:
+            print(f"[space] Skipped: {e}")
+
     # ─── Full Setup Report ─────────────────────────────────────────────
     print()
     print()
@@ -255,6 +316,10 @@ def main():
         step4=step4,
         step5=step5,
         step6=step6,
+        stint_result=stint_result,
+        sector_result=sector_result,
+        sensitivity_result=sensitivity_result,
+        space_result=space_result,
     )
     print(report)
 

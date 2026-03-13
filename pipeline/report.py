@@ -21,8 +21,11 @@ if TYPE_CHECKING:
     from solver.corner_spring_solver import CornerSpringSolution
     from solver.damper_solver import DamperSolution
     from solver.heave_solver import HeaveSolution
+    from solver.laptime_sensitivity import LaptimeSensitivityReport
     from solver.modifiers import SolverModifiers
     from solver.rake_solver import RakeSolution
+    from solver.sector_compromise import SectorCompromiseResult
+    from solver.stint_model import StintStrategy
     from solver.supporting_solver import SupportingSolution
     from solver.wheel_geometry_solver import WheelGeometrySolution
     from track_model.profile import TrackProfile
@@ -58,6 +61,9 @@ def generate_report(
     modifiers: SolverModifiers,
     step1: RakeSolution,
     step2: HeaveSolution,
+    stint_result: StintStrategy | None = None,
+    sector_result: SectorCompromiseResult | None = None,
+    sensitivity_result: LaptimeSensitivityReport | None = None,
     step3: CornerSpringSolution,
     step4: ARBSolution,
     step5: WheelGeometrySolution,
@@ -65,7 +71,7 @@ def generate_report(
     supporting: SupportingSolution,
     current_setup: CurrentSetup,
     wing: float,
-) -> str:
+) -> str:  # noqa: C901
     """Generate the full engineering report.
 
     Returns a multi-line string ready for print().
@@ -252,6 +258,35 @@ def generate_report(
     _cmp("R HS Comp", current_setup.rear_hs_comp, step6.lr.hs_comp, "clicks", ".0f")
     _cmp("R HS Rbd", current_setup.rear_hs_rbd, step6.lr.hs_rbd, "clicks", ".0f")
     add()
+
+    # ── 9b. Diff physics detail ──
+    if supporting is not None and hasattr(supporting, "_diff_solution"):
+        diff_sol = supporting._diff_solution
+        add(_section("DIFFERENTIAL PHYSICS"))
+        add(_row("Preload", f"{diff_sol.preload_nm:.0f} Nm"))
+        add(_row("Coast ramp", f"{diff_sol.coast_ramp_deg} deg (lock on coast/entry)"))
+        add(_row("Drive ramp", f"{diff_sol.drive_ramp_deg} deg (lock on drive/exit)"))
+        add(_row("Clutch plates", f"{diff_sol.clutch_plates}"))
+        add(_row("Lock% coast/entry", f"{diff_sol.lock_pct_coast:.1f}%"))
+        add(_row("Lock% drive/exit", f"{diff_sol.lock_pct_drive:.1f}%"))
+        add(_row("Exit understeer index", f"{diff_sol.exit_understeer_index:+.3f}"))
+        add(_row("Entry rotation index", f"{diff_sol.entry_rotation_index:+.3f}"))
+        add()
+
+    # ── 10a. Stint Analysis ──
+    if stint_result is not None:
+        add(stint_result.summary(WIDTH))
+        add()
+
+    # ── 10b. Sector Compromise ──
+    if sector_result is not None:
+        add(sector_result.summary(WIDTH))
+        add()
+
+    # ── 10c. Lap Time Sensitivity ──
+    if sensitivity_result is not None:
+        add(sensitivity_result.summary(WIDTH))
+        add()
 
     # ── 10. Confidence Assessment ──
     add(_section("CONFIDENCE ASSESSMENT"))
