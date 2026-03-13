@@ -74,51 +74,54 @@ def compute_brake_bias(
     decel_g: float | None = None,
     fuel_load_l: float | None = None,
 ) -> tuple[float, str]:
-    """Compute physics-based brake bias without IBT driver data.
+    """Compute iRacing-calibrated brake bias (BrakePressureBias parameter).
 
-    Used by the standalone solver (no IBT available) and as the seed
-    value before driver-style adjustments are applied.
+    iRacing's BrakePressureBias is the hydraulic FRONT pressure split (%).
+    It is NOT the dynamic weight transfer ratio. The rear master cylinder
+    (20.6mm BMW) is already physically larger than the front (19.1mm),
+    which provides the braking system's dynamic weight transfer compensation.
 
-    Physics:
-        Under braking, longitudinal weight transfer shifts load forward:
-            dynamic_front = static_front + (h_cg / L) * decel_g
-        Brake bias tracks this transfer scaled by system efficiency (~0.85).
+    Calibrated from 3 real BMW Sebring sessions:
+        IBT session:   46.0%   (BrakePressureBias from telemetry)
+        S1 (compliant): 46.5%  (from bmw_sebring_s1.ldx)
+        S2 (locked):    46.0%  (from bmw_sebring_s2.ldx)
+
+    Formula: bias ≈ static_front_weight_pct + forward_correction
+    Where forward_correction is a small positive offset that keeps the
+    front axle from locking under heavy braking. The mc size ratio
+    (rear/front = 20.6/19.1 = 1.079) handles the dynamic compensation;
+    this parameter stays close to static weight distribution.
 
     Args:
         car: Car physical model
-        decel_g: Peak braking deceleration in g (default: track-typical 1.5g)
-        fuel_load_l: Fuel load for weight distribution adjustment (optional)
+        decel_g: Unused (kept for API compatibility)
+        fuel_load_l: Fuel load for weight distribution shift (optional)
 
     Returns:
         (brake_bias_pct, reasoning_str)
     """
-    if decel_g is None:
-        decel_g = 1.5  # typical GTP peak braking deceleration
+    # Use calibrated per-car value from car model.
+    # iRacing BrakePressureBias = hydraulic front pressure split (%).
+    # Calibrated from real IBT/LDX data — BMW: 46.0-46.5% at Sebring.
+    # Small fuel-load adjustment (full tank → slightly higher front weight
+    # → bias can come up ~0.3-0.5%; empty tank → bias can drop slightly).
+    bias = car.brake_bias_pct
 
-    cg_height_m = car.corner_spring.cg_height_mm / 1000.0
-    wheelbase_m = car.wheelbase_m
-
-    # Fuel load shifts weight distribution (fuel cell is typically rear-biased)
-    front_dist = car.weight_dist_front
     if fuel_load_l is not None:
-        # Each litre ~0.8 kg, rear-biased tank shifts rear weight ~0.02% per litre
-        front_dist = front_dist - (fuel_load_l * 0.0002)
-
-    weight_transfer = (cg_height_m / wheelbase_m) * decel_g
-    dynamic_front = front_dist + weight_transfer
-
-    # Bias = dynamic front load × brake efficiency factor
-    # 0.85 accounts for rear bias in master cylinder sizing (GTP convention)
-    bias = dynamic_front * 100 * 0.85
+        # Full tank adds ~56kg (89L × 0.63 kg/L net rear-biased effect)
+        # shifts front weight up slightly → allow small forward bias correction
+        # Range: 89L = +0.5%, 12L = 0%
+        fuel_correction = (fuel_load_l / 89.0) * 0.5
+        bias = bias + fuel_correction
 
     reasoning = (
-        f"Static front: {front_dist:.3f} | "
-        f"Transfer: ({cg_height_m:.3f}/{wheelbase_m:.3f})*{decel_g:.1f}g = {weight_transfer:.3f} | "
-        f"Dynamic front: {dynamic_front:.3f} | "
-        f"Bias: {dynamic_front*100:.1f}% × 0.85 = {bias:.1f}%"
+        f"Calibrated base: {car.brake_bias_pct:.1f}% | "
+        f"Fuel correction: +{(fuel_load_l or 0) / 89.0 * 0.5:.2f}% at {fuel_load_l or 0:.0f}L | "
+        f"Result: {bias:.1f}% | "
+        f"Source: car_model per-car calibration (BMW: IBT=46.0%, S1=46.5%, S2=46.0%)"
     )
 
-    bias = round(_clamp(bias, 50.0, 62.0), 1)
+    bias = round(bias, 1)
     return bias, reasoning
 
 
