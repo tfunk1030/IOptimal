@@ -1,7 +1,11 @@
-"""Engineering report for the setup producer pipeline.
+"""Pipeline report — wraps the shared garage card format with IBT-specific context.
 
-ASCII terminal output (63-char width, cp1252-safe) with optional JSON export.
-Reports every decision with physics justification.
+Adds driver profile, handling diagnosis, corner analysis, current vs recommended
+comparison, and learning summary around the shared output/report.py garage card.
+
+Usage:
+    report_str = generate_report(car, track, measured, driver, diagnosis, ...)
+    print(report_str)
 """
 
 from __future__ import annotations
@@ -30,24 +34,27 @@ if TYPE_CHECKING:
     from solver.wheel_geometry_solver import WheelGeometrySolution
     from track_model.profile import TrackProfile
 
+from output.report import print_full_setup_report
 
-WIDTH = 63
-
-
-def _section(title: str) -> str:
-    pad = (WIDTH - len(title) - 2) // 2
-    return "=" * pad + f" {title} " + "=" * (WIDTH - pad - len(title) - 2)
+W = 70
 
 
-def _subsection(title: str) -> str:
-    pad = (WIDTH - len(title) - 2) // 2
-    return "-" * pad + f" {title} " + "-" * (WIDTH - pad - len(title) - 2)
+def _hdr(title: str) -> str:
+    pad = (W - len(title) - 2) // 2
+    return "─" * pad + f" {title} " + "─" * (W - pad - len(title) - 2)
 
 
-def _row(label: str, value: str, width: int = WIDTH) -> str:
-    """Left-align label, right-align value."""
-    padding = width - len(label) - len(value) - 4
-    return f"  {label}{'.' * max(padding, 1)} {value}"
+def _row(label: str, value: str) -> str:
+    pad = W - len(label) - len(value) - 4
+    return f"  {label}{'.' * max(pad, 1)} {value}"
+
+
+def _cmp(label: str, curr: float | None, prod: float, unit: str = "", fmt: str = ".1f") -> str:
+    if curr is None or curr == 0:
+        return f"  {label:22s}  {'—':>8}  {prod:>8{fmt}}  {'—':>8} {unit}"
+    delta = prod - curr
+    arrow = "↑" if delta > 0.05 else ("↓" if delta < -0.05 else "·")
+    return f"  {label:22s}  {curr:>8{fmt}}  {prod:>8{fmt}}  {delta:>+8{fmt}} {unit} {arrow}"
 
 
 def generate_report(
@@ -71,256 +78,101 @@ def generate_report(
     stint_result: StintStrategy | None = None,
     sector_result: SectorCompromiseResult | None = None,
     sensitivity_result: LaptimeSensitivityReport | None = None,
-) -> str:  # noqa: C901
-    """Generate the full engineering report.
+    space_result: object = None,
+) -> str:
+    """Generate the full pipeline report: telemetry context + garage card + comparison."""
 
-    Returns a multi-line string ready for print().
-    """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
+    a = lines.append
 
-    def add(s: str = "") -> None:
-        lines.append(s)
+    # ── PRE-CARD: Driver & Diagnosis ──────────────────────────────────
+    a("═" * W)
+    lap_str = f"  Lap #{measured.lap_number}  ({measured.lap_time_s:.3f}s)" if measured else ""
+    a(f"  {car.name}  ·  {track.track_name} — {track.track_config}  ·  Wing {wing}°")
+    a(f"  Telemetry-calibrated{lap_str}  ·  {now}")
+    a("═" * W)
+    a("")
 
-    # ── 1. Header ──
-    add(_section("GTP SETUP PRODUCER"))
-    add(f"  Generated: {now}")
-    add(f"  Car: {car.name}")
-    add(f"  Track: {track.track_name} -- {track.track_config}")
-    fuel_str = f"{current_setup.fuel_l:.0f} L" if current_setup and current_setup.fuel_l else "N/A"
-    add(f"  Wing: {wing} deg   Fuel: {fuel_str}")
-    add(f"  Lap: #{measured.lap_number} ({measured.lap_time_s:.3f}s)")
-    add(f"  Assessment: {diagnosis.assessment.upper()}")
-    add()
+    # Driver profile (one line each)
+    a(_hdr("DRIVER PROFILE"))
+    a(f"  Style: {driver.style}  ·  Trail brake: {driver.trail_brake_classification} "
+      f"({driver.trail_brake_depth_mean:.0%})  ·  "
+      f"Throttle: {driver.throttle_classification}  ·  "
+      f"Consistency: {driver.consistency}")
+    a("")
 
-    # ── 2. Driver Profile ──
-    add(_section("DRIVER PROFILE"))
-    add(_row("Overall style", driver.style))
-    add(_row("Trail braking", f"{driver.trail_brake_classification} ({driver.trail_brake_depth_mean:.0%})"))
-    add(_row("Throttle", f"{driver.throttle_classification} (R2={driver.throttle_progressiveness:.2f})"))
-    add(_row("Steering", f"{driver.steering_smoothness} (jerk p95={driver.steering_jerk_p95_rad_per_s2:.0f})"))
-    add(_row("Consistency", f"{driver.consistency} (CV={driver.apex_speed_cv:.3f})"))
-    add(_row("Cornering aggression", f"{driver.cornering_aggression} ({driver.avg_peak_lat_g_utilization:.0%})"))
-    add()
-
-    # ── 3. Handling Diagnosis ──
-    add(_section("HANDLING DIAGNOSIS"))
+    # Handling diagnosis (top 3 problems)
+    a(_hdr("HANDLING DIAGNOSIS"))
+    severity_icon = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}
     if diagnosis.problems:
-        for p in diagnosis.problems[:8]:  # top 8 problems
-            sev_tag = f"[{p.severity.upper():11s}]"
-            add(f"  {sev_tag} {p.symptom}")
-            add(f"    {p.cause[:WIDTH - 6]}")
+        for p in diagnosis.problems[:4]:
+            icon = severity_icon.get(p.severity.lower(), "⚪")
+            a(f"  {icon} {p.symptom}")
+            cause = p.cause[:W - 8]
+            a(f"    ↳ {cause}")
     else:
-        add("  No significant handling problems detected.")
-    add()
+        a("  ✓ No significant handling problems detected.")
+    if getattr(diagnosis, "causal_diagnosis", None):
+        a(f"  Causal chain: {str(diagnosis.causal_diagnosis)[:W - 16]}")
+    a("")
 
-    # ── 4. Corner Analysis ──
-    if corners:
-        add(_section("CORNER ANALYSIS"))
-        add(f"  {len(corners)} corners detected")
-        n_low = sum(1 for c in corners if c.speed_class == "low")
-        n_mid = sum(1 for c in corners if c.speed_class == "mid")
-        n_high = sum(1 for c in corners if c.speed_class == "high")
-        add(f"  Speed classes: low={n_low} mid={n_mid} high={n_high}")
-        add()
+    # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
+    a(print_full_setup_report(
+        car_name=car.name,
+        track_name=f"{track.track_name} — {track.track_config}",
+        wing=wing,
+        target_balance=aero_grad.df_balance_pct,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+        stint_result=stint_result,
+        sector_result=sector_result,
+        sensitivity_result=sensitivity_result,
+        space_result=space_result,
+        supporting=supporting,
+    ))
 
-        # Top 5 worst corners by time loss
-        worst = sorted(corners, key=lambda c: c.delta_to_min_time_s, reverse=True)[:5]
-        if worst and worst[0].delta_to_min_time_s > 0:
-            add(_subsection("Worst Corners (time loss)"))
-            for c in worst:
-                add(f"  T{c.corner_id + 1:02d} @{c.lap_dist_start_m:.0f}m "
-                    f"{c.direction:5s} {c.apex_speed_kph:5.0f}kph "
-                    f"[{c.speed_class:4s}] "
-                    f"dt={c.delta_to_min_time_s:+.3f}s "
-                    f"US={c.understeer_mean_deg:+.1f}deg")
-            add()
+    # ── CURRENT vs RECOMMENDED ────────────────────────────────────────
+    if current_setup is not None:
+        a("")
+        a(_hdr("CURRENT vs RECOMMENDED"))
+        a(f"  {'Parameter':<22}  {'Current':>8}  {'Recomm':>8}  {'Change':>9}")
+        a("  " + "─" * (W - 4))
+        a(_cmp("Wing",               current_setup.wing_angle_deg,       wing,                           "°",   ".0f"))
+        a(_cmp("Front RH (static)",  current_setup.static_front_rh_mm,   step1.static_front_rh_mm,       "mm"))
+        a(_cmp("Rear RH (static)",   current_setup.static_rear_rh_mm,    step1.static_rear_rh_mm,        "mm"))
+        a(_cmp("Front heave",        current_setup.front_heave_nmm,      step2.front_heave_nmm,          "N/mm", ".0f"))
+        a(_cmp("Rear third",         current_setup.rear_third_nmm,       step2.rear_third_nmm,           "N/mm", ".0f"))
+        a(_cmp("Rear spring",        current_setup.rear_spring_nmm,      step3.rear_spring_rate_nmm,     "N/mm", ".0f"))
+        a(_cmp("Torsion bar OD",     current_setup.front_torsion_od_mm,  step3.front_torsion_od_mm,      "mm"))
+        a(_cmp("Front camber",       current_setup.front_camber_deg,     step5.front_camber_deg,         "°"))
+        a(_cmp("Rear camber",        current_setup.rear_camber_deg,      step5.rear_camber_deg,          "°"))
+        a(_cmp("Brake bias",         current_setup.brake_bias_pct,       supporting.brake_bias_pct,      "%"))
+        a(_cmp("Diff preload",       current_setup.diff_preload_nm,      supporting.diff_preload_nm,     "Nm",  ".0f"))
+        a(_cmp("TC gain",            current_setup.tc_gain,              supporting.tc_gain,             "",    ".0f"))
+        a(_cmp("F LS Comp",          current_setup.front_ls_comp,        step6.lf.ls_comp,               "cl",  ".0f"))
+        a(_cmp("F HS Comp",          current_setup.front_hs_comp,        step6.lf.hs_comp,               "cl",  ".0f"))
+        a(_cmp("R LS Comp",          current_setup.rear_ls_comp,         step6.lr.ls_comp,               "cl",  ".0f"))
+        a(_cmp("R HS Comp",          current_setup.rear_hs_comp,         step6.lr.hs_comp,               "cl",  ".0f"))
+        a("")
 
-    # ── 5. Aero Analysis ──
-    add(_section("AERO ANALYSIS"))
-    add(_row("DF balance", f"{aero_grad.df_balance_pct:.2f}%"))
-    add(_row("L/D ratio", f"{aero_grad.ld_ratio:.3f}"))
-    add(_row("dBal/dFrontRH", f"{aero_grad.dBalance_dFrontRH:+.4f} %/mm"))
-    add(_row("dBal/dRearRH", f"{aero_grad.dBalance_dRearRH:+.4f} %/mm"))
-    add(_row("Aero window (front)", f"+/-{aero_grad.front_rh_window_mm:.1f} mm"))
-    add(_row("Aero window (rear)", f"+/-{aero_grad.rear_rh_window_mm:.1f} mm"))
-    if aero_grad.balance_variance_from_rh_pct > 0:
-        add(_row("DF balance sigma (from RH)", f"{aero_grad.balance_variance_from_rh_pct:.3f}%"))
-        add(_row("L/D cost of variance", f"{aero_grad.ld_cost_of_variance:.4f}"))
-    add()
-
-    # ── 6. Solver Modifiers ──
-    if modifiers.reasons:
-        add(_section("SOLVER MODIFIERS"))
-        for r in modifiers.reasons:
-            add(f"  - {r}")
-        add()
-
-    # ── 7. 6-Step Solver Summary ──
-    add(_section("SETUP SOLUTION"))
-    add(_subsection("Step 1: Rake / Ride Heights"))
-    add(_row("Dynamic front RH", f"{step1.dynamic_front_rh_mm:.1f} mm"))
-    add(_row("Dynamic rear RH", f"{step1.dynamic_rear_rh_mm:.1f} mm"))
-    add(_row("Rake", f"{step1.rake_dynamic_mm:.1f} mm"))
-    add(_row("DF balance", f"{step1.df_balance_pct:.2f}%"))
-    add(_row("L/D", f"{step1.ld_ratio:.3f}"))
-    add(_row("Static front RH", f"{step1.static_front_rh_mm:.0f} mm"))
-    add(_row("Static rear RH", f"{step1.static_rear_rh_mm:.0f} mm"))
-    add()
-
-    add(_subsection("Step 2: Heave / Third Springs"))
-    add(_row("Front heave", f"{step2.front_heave_nmm:.0f} N/mm"))
-    add(_row("Rear third", f"{step2.rear_third_nmm:.0f} N/mm"))
-    add(_row("Front bottoming margin", f"{step2.front_bottoming_margin_mm:.1f} mm"))
-    add(_row("Rear bottoming margin", f"{step2.rear_bottoming_margin_mm:.1f} mm"))
-    add()
-
-    add(_subsection("Step 3: Corner Springs"))
-    add(_row("Front torsion bar OD", f"{step3.front_torsion_od_mm:.1f} mm"))
-    add(_row("Front wheel rate", f"{step3.front_wheel_rate_nmm:.1f} N/mm"))
-    add(_row("Rear spring rate", f"{step3.rear_spring_rate_nmm:.1f} N/mm"))
-    add(_row("Front natural freq", f"{step3.front_natural_freq_hz:.2f} Hz"))
-    add(_row("Rear natural freq", f"{step3.rear_natural_freq_hz:.2f} Hz"))
-    add()
-
-    add(_subsection("Step 4: Anti-Roll Bars"))
-    add(_row("Front ARB", f"{step4.front_arb_size} blade {step4.front_arb_blade_start}"))
-    add(_row("Rear ARB", f"{step4.rear_arb_size} blade {step4.rear_arb_blade_start}"))
-    add(_row("LLTD target", f"{step4.lltd_target:.1%}"))
-    add(_row("LLTD achieved", f"{step4.lltd_achieved:.1%}"))
-    add(_row("RARB range", f"blade {step4.rarb_blade_slow_corner}-{step4.rarb_blade_fast_corner}"))
-    add()
-
-    add(_subsection("Step 5: Wheel Geometry"))
-    add(_row("Front camber", f"{step5.front_camber_deg:.1f} deg"))
-    add(_row("Rear camber", f"{step5.rear_camber_deg:.1f} deg"))
-    add(_row("Front toe", f"{step5.front_toe_mm:.2f} mm"))
-    add(_row("Rear toe", f"{step5.rear_toe_mm:.2f} mm"))
-    add()
-
-    add(_subsection("Step 6: Dampers"))
-    add("              LF    RF    LR    RR")
-    add(f"  LS Comp:  {step6.lf.ls_comp:4d}  {step6.rf.ls_comp:4d}  {step6.lr.ls_comp:4d}  {step6.rr.ls_comp:4d}")
-    add(f"  LS Rbd:   {step6.lf.ls_rbd:4d}  {step6.rf.ls_rbd:4d}  {step6.lr.ls_rbd:4d}  {step6.rr.ls_rbd:4d}")
-    add(f"  HS Comp:  {step6.lf.hs_comp:4d}  {step6.rf.hs_comp:4d}  {step6.lr.hs_comp:4d}  {step6.rr.hs_comp:4d}")
-    add(f"  HS Rbd:   {step6.lf.hs_rbd:4d}  {step6.rf.hs_rbd:4d}  {step6.lr.hs_rbd:4d}  {step6.rr.hs_rbd:4d}")
-    add(f"  HS Slope: {step6.lf.hs_slope:4d}  {step6.rf.hs_slope:4d}  {step6.lr.hs_slope:4d}  {step6.rr.hs_slope:4d}")
-    add()
-
-    # ── 8. Supporting Parameters ──
-    add(_section("SUPPORTING PARAMETERS"))
-    add(_row("Brake bias", f"{supporting.brake_bias_pct:.1f}%"))
-    add(f"    {supporting.brake_bias_reasoning}")
-    add(_row("Diff preload", f"{supporting.diff_preload_nm:.0f} Nm"))
-    add(_row("Diff ramps", f"coast {supporting.diff_ramp_coast} / drive {supporting.diff_ramp_drive}"))
-    add(_row("Diff plates", f"{supporting.diff_clutch_plates}"))
-    add(f"    {supporting.diff_reasoning[:WIDTH - 6]}")
-    add(_row("TC gain", f"{supporting.tc_gain}"))
-    add(_row("TC slip", f"{supporting.tc_slip}"))
-    add(f"    {supporting.tc_reasoning}")
-    add(_row("Tyre pressure FL", f"{supporting.tyre_cold_fl_kpa:.0f} kPa"))
-    add(_row("Tyre pressure FR", f"{supporting.tyre_cold_fr_kpa:.0f} kPa"))
-    add(_row("Tyre pressure RL", f"{supporting.tyre_cold_rl_kpa:.0f} kPa"))
-    add(_row("Tyre pressure RR", f"{supporting.tyre_cold_rr_kpa:.0f} kPa"))
-    add()
-
-    # ── 9. Setup Comparison ──
-    add(_section("SETUP COMPARISON"))
-    add("  Parameter              Current   Produced   Delta")
-    add("  " + "-" * (WIDTH - 4))
-
-    def _cmp(label: str, curr: float, prod: float, unit: str = "", fmt: str = ".1f") -> None:
-        delta = prod - curr
-        delta_str = f"{delta:+{fmt}}"
-        add(f"  {label:22s} {curr:>8{fmt}}  {prod:>8{fmt}}  {delta_str:>8} {unit}")
-
-    _cmp("Wing", current_setup.wing_angle_deg, wing, "deg", ".0f")
-    _cmp("Front RH (static)", current_setup.static_front_rh_mm, step1.static_front_rh_mm, "mm")
-    _cmp("Rear RH (static)", current_setup.static_rear_rh_mm, step1.static_rear_rh_mm, "mm")
-    _cmp("Front heave", current_setup.front_heave_nmm, step2.front_heave_nmm, "N/mm", ".0f")
-    _cmp("Rear third", current_setup.rear_third_nmm, step2.rear_third_nmm, "N/mm", ".0f")
-    _cmp("Rear spring", current_setup.rear_spring_nmm, step3.rear_spring_rate_nmm, "N/mm", ".0f")
-    _cmp("Front camber", current_setup.front_camber_deg, step5.front_camber_deg, "deg")
-    _cmp("Rear camber", current_setup.rear_camber_deg, step5.rear_camber_deg, "deg")
-    _cmp("Front toe", current_setup.front_toe_mm, step5.front_toe_mm, "mm", ".2f")
-    _cmp("Rear toe", current_setup.rear_toe_mm, step5.rear_toe_mm, "mm", ".2f")
-    _cmp("Brake bias", current_setup.brake_bias_pct, supporting.brake_bias_pct, "%")
-    _cmp("Diff preload", current_setup.diff_preload_nm, supporting.diff_preload_nm, "Nm", ".0f")
-    _cmp("TC gain", current_setup.tc_gain, supporting.tc_gain, "", ".0f")
-    _cmp("TC slip", current_setup.tc_slip, supporting.tc_slip, "", ".0f")
-    # Dampers (front LF as representative)
-    _cmp("F LS Comp", current_setup.front_ls_comp, step6.lf.ls_comp, "clicks", ".0f")
-    _cmp("F LS Rbd", current_setup.front_ls_rbd, step6.lf.ls_rbd, "clicks", ".0f")
-    _cmp("F HS Comp", current_setup.front_hs_comp, step6.lf.hs_comp, "clicks", ".0f")
-    _cmp("F HS Rbd", current_setup.front_hs_rbd, step6.lf.hs_rbd, "clicks", ".0f")
-    _cmp("R LS Comp", current_setup.rear_ls_comp, step6.lr.ls_comp, "clicks", ".0f")
-    _cmp("R LS Rbd", current_setup.rear_ls_rbd, step6.lr.ls_rbd, "clicks", ".0f")
-    _cmp("R HS Comp", current_setup.rear_hs_comp, step6.lr.hs_comp, "clicks", ".0f")
-    _cmp("R HS Rbd", current_setup.rear_hs_rbd, step6.lr.hs_rbd, "clicks", ".0f")
-    add()
-
-    # ── 9b. Diff physics detail ──
-    if supporting is not None and hasattr(supporting, "_diff_solution"):
-        diff_sol = supporting._diff_solution
-        add(_section("DIFFERENTIAL PHYSICS"))
-        add(_row("Preload", f"{diff_sol.preload_nm:.0f} Nm"))
-        add(_row("Coast ramp", f"{diff_sol.coast_ramp_deg} deg (lock on coast/entry)"))
-        add(_row("Drive ramp", f"{diff_sol.drive_ramp_deg} deg (lock on drive/exit)"))
-        add(_row("Clutch plates", f"{diff_sol.clutch_plates}"))
-        add(_row("Lock% coast/entry", f"{diff_sol.lock_pct_coast:.1f}%"))
-        add(_row("Lock% drive/exit", f"{diff_sol.lock_pct_drive:.1f}%"))
-        add(_row("Exit understeer index", f"{diff_sol.exit_understeer_index:+.3f}"))
-        add(_row("Entry rotation index", f"{diff_sol.entry_rotation_index:+.3f}"))
-        add()
-
-    # ── 10a. Stint Analysis ──
-    if stint_result is not None:
-        add(stint_result.summary(WIDTH))
-        add()
-
-    # ── 10b. Sector Compromise ──
-    if sector_result is not None:
-        add(sector_result.summary(WIDTH))
-        add()
-
-    # ── 10c. Lap Time Sensitivity ──
-    if sensitivity_result is not None:
-        add(sensitivity_result.summary(WIDTH))
-        add()
-
-    # ── 10. Confidence Assessment ──
-    add(_section("CONFIDENCE ASSESSMENT"))
-    add("  HIGH confidence (well-calibrated):")
-    add("    - Ride heights, heave/third springs (energy model)")
-    add("    - DF balance (aero map interpolation)")
-    add("    - Corner springs (frequency model)")
-    add("    - ARBs (roll stiffness model)")
-    add("  MEDIUM confidence:")
-    add("    - Dampers (calibrated ratios, track-dependent)")
-    add("    - Wheel geometry (camber/roll model)")
-    add("    - Brake bias (weight transfer baseline)")
-    add("  LOWER confidence (driver-style dependent):")
-    add("    - Diff preload/ramps (driver behavior)")
-    add("    - TC settings (driver consistency)")
-    add("    - Tyre pressures (requires measured hot data)")
-    add()
-
-    # ── 11. Accumulated Knowledge (from learner) ──
+    # ── LEARNING SUMMARY ──────────────────────────────────────────────
     try:
         from learner.report_section import generate_learning_section
-        learning_section = generate_learning_section(
+        ls = generate_learning_section(
             car=car.canonical_name,
             track=track.track_name,
-            width=WIDTH,
+            width=W,
         )
-        if learning_section:
-            add(learning_section)
+        if ls:
+            a(ls)
+            a("")
     except Exception:
-        pass  # learner not available or no data — skip silently
+        pass
 
-    add("=" * WIDTH)
-    add(f"  Generated by GTP Setup Producer v1.0")
-    add(f"  {now}")
-    add("=" * WIDTH)
-
+    a("═" * W)
     return "\n".join(lines)
