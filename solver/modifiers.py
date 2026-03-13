@@ -133,9 +133,13 @@ def compute_modifiers(
         # Safety: bottoming → heave floor
         if cat == "safety" and "bottoming" in symptom:
             if "front" in symptom and problem.measured > 5:
+                # Floor estimate: use heave spring natural frequency constraint
+                # Higher shock velocity → stiffer spring needed to control platform
+                # BMW heave range is 30-50 N/mm; scale from p99 shock velocity
+                sv_floor = max(30.0, 35.0 + measured.front_shock_vel_p99_mps * 50)
                 mods.front_heave_min_floor_nmm = max(
                     mods.front_heave_min_floor_nmm,
-                    measured.front_shock_vel_p99_mps * 10  # rough floor estimate
+                    sv_floor,
                 )
                 mods.reasons.append(
                     f"Front bottoming {problem.measured:.0f} events → heave floor raised"

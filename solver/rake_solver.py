@@ -209,8 +209,10 @@ class RakeSolver:
         bal, ld = self._query_aero(actual_front_dyn, actual_rear_dyn)
 
         comp = self.car.aero_compression
-        front_comp = comp.front_compression_mm
-        rear_comp = comp.rear_compression_mm
+        # Use track median speed for compression instead of fixed reference speed
+        track_speed = self.track.median_speed_kph if self.track.median_speed_kph > 0 else comp.ref_speed_kph
+        front_comp = comp.front_at_speed(track_speed)
+        rear_comp = comp.rear_at_speed(track_speed)
 
         static_front = actual_front_dyn + front_comp
         static_rear = actual_rear_dyn + rear_comp
@@ -221,10 +223,42 @@ class RakeSolver:
 
         # Snap pushrods to 0.5mm increments (iRacing garage constraint)
         front_pushrod = round(self.car.pushrod.front_offset_for_rh(static_front) * 2) / 2
-        rear_pushrod = round(self.car.pushrod.rear_offset_for_rh(static_rear) * 2) / 2
+
+        # Rear pushrod: use multi-variable RH model if calibrated
+        rh_model = self.car.ride_height_model
+        if rh_model.is_calibrated:
+            # Use baseline heave/spring values (step2/step3 haven't run yet).
+            # These will be reconciled after step2 in solve.py.
+            baseline_third_nmm = self.car.heave_spring.rear_spring_range_nmm[0]
+            # Use a reasonable default — heave baseline from HeaveSpringModel
+            baseline_heave_perch = self.car.heave_spring.perch_offset_front_baseline_mm
+            baseline_rear_spring = self.car.corner_spring.rear_spring_range_nmm[0]
+            # Use midpoint of typical ranges as better defaults
+            baseline_third_nmm = self.car.rear_third_spring_nmm  # car default
+            baseline_rear_spring = 170.0  # typical BMW rear spring
+            rear_pushrod = rh_model.pushrod_for_target_rh(
+                static_rear, baseline_third_nmm,
+                baseline_rear_spring, baseline_heave_perch,
+            )
+        else:
+            rear_pushrod = self.car.pushrod.rear_offset_for_rh(static_rear)
+        rear_pushrod = round(rear_pushrod * 2) / 2
+
         # Recompute actual static RH from snapped pushrod
-        static_front = self.car.pushrod.front_rh_for_offset(front_pushrod)
-        static_rear = self.car.pushrod.rear_rh_for_offset(rear_pushrod)
+        if rh_model.front_is_calibrated:
+            static_front = rh_model.predict_front_static_rh(
+                heave_nmm=self.car.front_heave_spring_nmm,
+                camber_deg=self.car.geometry.front_camber_baseline_deg,
+            )
+        else:
+            static_front = self.car.pushrod.front_rh_for_offset(front_pushrod)
+        if rh_model.is_calibrated:
+            static_rear = rh_model.predict_rear_static_rh(
+                rear_pushrod, baseline_third_nmm,
+                baseline_rear_spring, baseline_heave_perch,
+            )
+        else:
+            static_rear = self.car.pushrod.rear_rh_for_offset(rear_pushrod)
 
         front_min_p99 = actual_front_dyn - front_excursion_p99
         vb_margin = front_min_p99 - self.car.vortex_burst_threshold_mm

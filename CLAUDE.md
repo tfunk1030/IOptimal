@@ -121,6 +121,34 @@ IBT → extract → segment corners → driver style → diagnose
 - Generate comparison reports (current setup vs solver recommendation)
 - `write_sto()` accepts optional supporting parameter overrides (brake bias, diff, TC, pressures) via kwargs
 
+#### 8. `learner/` — Cumulative Knowledge System
+Treats every IBT session as an experiment. Extracts structured observations,
+detects deltas between sessions, fits empirical models, and accumulates
+knowledge that compounds over time.
+
+```
+IBT → analyzer pipeline → Observation (structured snapshot)
+    → Delta detection (vs prior session: what changed, what resulted)
+    → Empirical model fitting (corrections to physics from data)
+    → Insight generation (recurring patterns, trends, sensitivities)
+    → Knowledge store (persistent JSON in data/learnings/)
+```
+
+- `knowledge_store.py` — JSON-based persistent storage (observations, deltas, models, insights)
+- `observation.py` — Extracts structured observation from one IBT analysis
+- `delta_detector.py` — Compares consecutive sessions, finds setup→effect causality
+- `empirical_models.py` — Fits lightweight regressions from accumulated data
+- `recall.py` — Query interface: "what do we know about X?", corrections for solver
+- `ingest.py` — CLI entry point: `python -m learner.ingest --car bmw --ibt session.ibt`
+
+Key features:
+- **Controlled experiment detection**: if only one solver step changed between sessions,
+  causal confidence is high. Multi-change sessions get lower confidence.
+- **Empirical corrections**: measured roll gradient, LLTD, m_eff, aero compression
+  accumulate and the solver can query them to refine its physics predictions.
+- **Lap time sensitivity**: tracks which parameters had the biggest lap time effect.
+- **Recurring problem detection**: flags issues that appear in >50% of sessions.
+
 ### Data Files
 - `data/aeromaps/` — Raw xlsx files (provided)
 - `data/aeromaps_parsed/` — Parsed JSON/numpy arrays
@@ -148,6 +176,34 @@ IBT → extract → segment corners → driver style → diagnose
 5. Validate against telemetry. Every prediction should be testable with an IBT file.
 6. Driver-adaptive: different drivers on the same track should produce different setups.
 
+### Important Implementation Details
+
+**Spring rate conventions (critical):**
+- Front torsion bar: `CornerSpringSolution.front_wheel_rate_nmm` is already a wheel rate (MR baked into C*OD^4 formula, `front_motion_ratio=1.0` for all cars)
+- Rear coil spring: `CornerSpringSolution.rear_spring_rate_nmm` is a RAW SPRING RATE. Must multiply by `car.corner_spring.rear_motion_ratio ** 2` to get wheel rate before passing to ARB/geometry/damper solvers.
+- The ARB solver's `_corner_spring_roll_stiffness()` now expects wheel rates for both axles (no internal MR conversion).
+
+**Aero compression is speed-dependent:**
+- `AeroCompression` stores reference values at `ref_speed_kph` (230 kph)
+- Use `comp.front_at_speed(speed)` / `comp.rear_at_speed(speed)` for V² scaling
+- The rake solver uses `track.median_speed_kph` for compression at the operating point
+
+**Static ride height models (RideHeightModel):**
+- Front static RH is NOT sim-pinned — it varies with front_heave_nmm (r=0.50) and front_camber_deg (r=0.64)
+- Front model: `front_static_rh = 30.1458 + 0.001614*heave_nmm + 0.074486*camber_deg` (LOO RMSE = 0.066mm)
+- Rear model: 4-feature regression (pushrod, third_nmm, rear_spring, heave_perch), R²=0.97, LOO RMSE = 0.845mm
+- Both models are reconciled after step2+step3 in solve.py and produce.py
+
+**Learner model ID convention:**
+- Model IDs use first word of track name only: `{car}_{track_first_word}_empirical` (e.g., `bmw_sebring_empirical`)
+- Both `ingest.py` and `recall.py` use `track_name.lower().split()[0]` for consistency
+
+**Known limitations:**
+- Ferrari rear suspension is modeled as coil spring (placeholder) — actually a torsion bar. Corner spring and LLTD outputs for Ferrari are unreliable until the index→OD mapping is decoded.
+- `m_eff` empirical correction uses lap-wide statistics (not filtered to high-speed straights), causing overestimation. Treat as rough indicator.
+- `min_sessions=2` gate for learned corrections is weak — corrections from only 2 sessions may be noisy.
+- Knowledge store has no file locking — safe for single-user CLI but not concurrent access.
+
 ## Usage
 
 ### Standalone solver (pre-built track profile):
@@ -161,9 +217,19 @@ python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --sto output.st
 python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --lap 25 --json output.json
 ```
 
+### Full pipeline with learning:
+```bash
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --sto output.sto --learn --auto-learn
+```
+
 ### Analyzer (diagnose existing setup):
 ```bash
 python -m analyzer --car bmw --ibt session.ibt
+```
+
+### Learner (ingest session into knowledge base):
+```bash
+python -m learner.ingest --car bmw --ibt session.ibt
 ```
 
 ## Reference Files
@@ -171,4 +237,3 @@ python -m analyzer --car bmw --ibt session.ibt
 - `skill/per-car-quirks.md` — Car-specific verified findings
 - `skill/ibt-parsing-guide.md` — IBT binary format parser
 - `skill/telemetry-channels.md` — Channel reference
-```
