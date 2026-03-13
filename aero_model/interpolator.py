@@ -77,6 +77,63 @@ class AeroSurface:
             "rear_df_pct": round(100.0 - bal, 2),
         }
 
+    # Stall model constants — calibrated for GTP ground effect vehicles
+    STALL_ONSET_MM = 8.0    # Front RH at which stall begins to develop (mm)
+    STALL_HARD_MM = 2.0     # Front RH at which full stall is reached (mm)
+
+    def stall_proximity(self, front_rh_mm: float) -> dict:
+        """Compute aerodynamic stall proximity and effects at a given front ride height.
+
+        GTP cars run ground-effect aerodynamics with a vortex-sealed diffuser.
+        As the front ride height drops below a critical threshold, the vortex
+        starts to collapse (onset), and below a hard limit it fully collapses
+        (stall), catastrophically reducing downforce and shifting balance forward.
+
+        Args:
+            front_rh_mm: Dynamic front ride height in mm
+
+        Returns:
+            dict with:
+                stall_factor: 0.0 (nominal) to 1.0 (full stall)
+                aero_state: "nominal" | "stall_warning" | "stall_risk"
+                df_balance_shift_pct: Additional front bias from stall (%)
+                ld_degradation: L/D degradation fraction (0.0 to 0.15)
+        """
+        if front_rh_mm >= self.STALL_ONSET_MM:
+            return {
+                "stall_factor": 0.0,
+                "aero_state": "nominal",
+                "df_balance_shift_pct": 0.0,
+                "ld_degradation": 0.0,
+            }
+
+        # Stall factor: 0 at onset, 1 at hard limit
+        stall_factor = (
+            (self.STALL_ONSET_MM - front_rh_mm)
+            / (self.STALL_ONSET_MM - self.STALL_HARD_MM)
+        )
+        stall_factor = float(max(0.0, min(1.0, stall_factor)))
+
+        # Aero state classification
+        if stall_factor < 0.25:
+            aero_state = "stall_warning"
+        else:
+            aero_state = "stall_risk"
+
+        # DF balance shifts forward as rear DF collapses faster than front
+        # Max +1.5% front at full stall (empirical from BMW stall data)
+        df_balance_shift_pct = stall_factor * 1.5
+
+        # L/D degrades up to 15% at full stall (total downforce loss)
+        ld_degradation = stall_factor * 0.15
+
+        return {
+            "stall_factor": round(stall_factor, 4),
+            "aero_state": aero_state,
+            "df_balance_shift_pct": round(df_balance_shift_pct, 3),
+            "ld_degradation": round(ld_degradation, 4),
+        }
+
     def find_rh_for_balance(self, target_balance: float,
                             rear_rh: float,
                             front_rh_range: tuple[float, float] | None = None) -> float | None:
