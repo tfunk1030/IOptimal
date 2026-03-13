@@ -94,6 +94,36 @@ def main():
                         help="Stint length for stint analysis (default: 30)")
 
     args = parser.parse_args()
+    run_solver(args)
+
+
+def run_solver(args: "argparse.Namespace") -> None:
+    """Run the standalone physics solver with a pre-parsed args object.
+
+    Called by both ``main()`` (direct invocation) and the unified
+    ``__main__.py`` entry point when no IBT is provided.
+    """
+    # Fill in defaults for args that differ between unified and standalone CLI
+    if not hasattr(args, "fuel") or args.fuel is None:
+        args.fuel = 89.0
+    if not hasattr(args, "balance"):
+        args.balance = 50.14
+    if not hasattr(args, "tolerance"):
+        args.tolerance = 0.1
+    if not hasattr(args, "free"):
+        args.free = False
+    if not hasattr(args, "json"):
+        args.json = False
+    if not hasattr(args, "save"):
+        args.save = getattr(args, "json_path", None)
+    if not hasattr(args, "report_only"):
+        args.report_only = False
+    if not hasattr(args, "space"):
+        args.space = False
+    if not hasattr(args, "stint_laps"):
+        args.stint_laps = 30
+    if not hasattr(args, "learn"):
+        args.learn = not getattr(args, "no_learn", False)
 
     # Load car model
     car = get_car(args.car)

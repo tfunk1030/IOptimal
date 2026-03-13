@@ -9,11 +9,11 @@
       "fit_type": "linear",
       "coefficients": [
         0.0,
-        0.8140806053303524
+        0.8140806060291511
       ],
-      "r_squared": 0.9969559196867616,
+      "r_squared": 0.9969559196418776,
       "sample_count": 30,
-      "residual_std": 0.044915419622911186,
+      "residual_std": 0.044915419992598314,
       "x_values": [
         4.525352954864502,
         4.525352954864502,
@@ -47,7 +47,7 @@
         3.833526849746704
       ],
       "y_values": [
-        0.8378423085084316,
+        0.8378423294723902,
         0.8378423085084316,
         0.8240055010317592,
         0.8196927069854991,
@@ -90,12 +90,12 @@
       "y_param": "lltd_measured",
       "fit_type": "linear",
       "coefficients": [
-        -0.00019367056856041685,
-        0.48636500415351674
+        -0.00019367056856042173,
+        0.48636500415351686
       ],
-      "r_squared": 0.010180188181364347,
+      "r_squared": 0.010180188181369565,
       "sample_count": 30,
-      "residual_std": 0.0025494395736978094,
+      "residual_std": 0.002549439573697802,
       "x_values": [
         5.0,
         5.0,
@@ -172,10 +172,10 @@
       "y_param": "front_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.02447386909648017,
-        6.888224221052802
+        -0.024473869096480118,
+        6.888224221052801
       ],
-      "r_squared": 0.3980514093949199,
+      "r_squared": 0.3980514093949201,
       "sample_count": 30,
       "residual_std": 0.0,
       "x_values": [
@@ -254,10 +254,10 @@
       "y_param": "rear_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.004295849808445211,
-        9.481012849026442
+        -0.004295849808445209,
+        9.481012849026444
       ],
-      "r_squared": 0.23456130759810478,
+      "r_squared": 0.23456130759810512,
       "sample_count": 30,
       "residual_std": 0.0,
       "x_values": [
@@ -331,7 +331,7 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-03-13T17:42:38.737129+00:00",
+  "last_updated": "2026-03-13T23:48:35.801616+00:00",
   "observation_count": 30,
   "most_sensitive_parameters": [],
   "corrections": {
@@ -339,8 +339,8 @@
     "aero_compression_front_std_mm": 1.3706175212821747,
     "aero_compression_rear_mean_mm": 20.629791755676266,
     "aero_compression_rear_std_mm": 1.7306315472160834,
-    "roll_gradient_measured_mean": 0.8140806053303524,
-    "roll_gradient_measured_std": 0.044915419622911186,
+    "roll_gradient_measured_mean": 0.8140806060291511,
+    "roll_gradient_measured_std": 0.044915419992598314,
     "roll_gradient_sample_count": 30,
     "lltd_measured_mean": 0.4858098151903105,
     "lltd_measured_std": 0.0025625163894764168,

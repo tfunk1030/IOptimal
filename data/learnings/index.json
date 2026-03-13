@@ -42,7 +42,7 @@
     "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-13_12-24-56"
   ],
   "total_observations": 38,
-  "total_deltas": 85,
+  "total_deltas": 87,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -51,5 +51,5 @@
   "tracks_seen": [
     "Sebring International Raceway_International"
   ],
-  "last_updated": "2026-03-13T17:42:38.710051+00:00"
+  "last_updated": "2026-03-13T23:48:35.782339+00:00"
 }
