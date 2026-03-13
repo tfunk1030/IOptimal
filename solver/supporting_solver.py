@@ -182,7 +182,7 @@ class SupportingSolver:
             bias += 0.3
             reasons.append(f"+0.3% for high body slip p95={measured.body_slip_p95_deg:.1f}°")
 
-        sol.brake_bias_pct = round(_clamp(bias, 50.0, 62.0), 1)
+        sol.brake_bias_pct = round(bias, 1)
         sol.brake_bias_reasoning = "; ".join(reasons)
 
     def _solve_diff(self, sol: SupportingSolution) -> None:
