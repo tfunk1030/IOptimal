@@ -296,6 +296,7 @@ def produce(args: argparse.Namespace) -> None:
             step1=step1, step2=step2, step3=step3,
             step4=step4, step5=step5, step6=step6,
             output_path=args.sto,
+            car_canonical=car.canonical_name,
             tyre_pressure_kpa=supporting.tyre_cold_fl_kpa,
             brake_bias_pct=supporting.brake_bias_pct,
             diff_coast_drive_ramp=f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}",
