@@ -117,6 +117,8 @@ class HeaveSpringModel:
     perch_offset_front_baseline_mm: float = -13.0  # Verified baseline
     perch_offset_rear_baseline_mm: float = 43.0  # Integer-only in iRacing garage
     heave_slider_defl_max_mm: float = 45.0  # iRacing hard limit for heave slider deflection
+    front_heave_hard_range_nmm: tuple[float, float] | None = None  # Car-specific hard clamp
+    front_heave_hard_range_exempt_tracks: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -484,6 +486,8 @@ BMW_M_HYBRID_V8 = CarModel(
         sigma_target_mm=10.0,   # SKILL.md: sigma > 5mm at >200 kph = unstable
         perch_offset_front_baseline_mm=-13.0,
         perch_offset_rear_baseline_mm=42.0,  # Verified from 2026-03-11 session
+        front_heave_hard_range_nmm=(30.0, 50.0),
+        front_heave_hard_range_exempt_tracks=["daytona", "le_mans"],
     ),
     corner_spring=CornerSpringModel(
         # Front torsion bar: OD 13.9mm -> ~30 N/mm wheel rate
