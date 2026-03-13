@@ -236,7 +236,7 @@ def _compute_front_heave_conflict(
 def _compute_brake_bias_conflict(
     slow_pct: float,
     fast_pct: float,
-    base_bias_pct: float = 56.0,
+    base_bias_pct: float = 46.0,  # calibrated default; always pass from compute_brake_bias()
 ) -> ParameterConflict | None:
     """Brake bias conflict: slow corners slightly rearward, fast corners forward."""
     if abs(fast_pct - slow_pct) < 20:
@@ -290,7 +290,7 @@ class SectorCompromise:
         step1: "RakeSolution | None" = None,
         step2: "HeaveSolution | None" = None,
         step4: "ARBSolution | None" = None,
-        base_bias_pct: float = 56.0,
+        base_bias_pct: float = 46.0,  # pass from compute_brake_bias() for accuracy
         base_camber_deg: float = -2.9,
     ) -> SectorCompromiseResult:
         """Run sector compromise analysis.
