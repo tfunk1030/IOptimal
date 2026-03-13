@@ -85,6 +85,18 @@
         "sigma_target_mm": 10.0,
         "safe": false,
         "reason": "Bottoming by 5.8mm (excursion 20.8mm > RH 15.0mm)"
+      },
+      {
+        "label": "HeaveSpringDefl budget at 50 N/mm",
+        "rate_nmm": 50,
+        "axle": "front",
+        "excursion_mm": 16.1,
+        "dynamic_rh_mm": 90.3,
+        "bottoming_mm": 0,
+        "sigma_mm": 6.9,
+        "sigma_target_mm": 10.0,
+        "safe": true,
+        "reason": "DeflMax=90.3mm, excursion=16.1mm, remaining=74.2mm for static defl"
       }
     ]
   },

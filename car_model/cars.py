@@ -116,7 +116,16 @@ class HeaveSpringModel:
     sigma_target_mm: float = 10.0    # Platform stability threshold
     perch_offset_front_baseline_mm: float = -13.0  # Verified baseline
     perch_offset_rear_baseline_mm: float = 43.0  # Integer-only in iRacing garage
-    heave_slider_defl_max_mm: float = 45.0  # iRacing hard limit for heave slider deflection
+    # HeaveSpringDeflMax calibration: DeflMax = defl_max_intercept + defl_max_slope * spring_rate
+    # Derived from 19 BMW Sebring sessions (March 2026):
+    #   Heave 30 -> 97.7mm, 50 -> 90.2mm, 70 -> 84.8mm, 90 -> 80.4mm
+    heave_spring_defl_max_intercept_mm: float = 103.4
+    heave_spring_defl_max_slope: float = -0.262  # mm per N/mm of spring rate
+    # Torsion bar turns calibration (OD=13.9 baseline):
+    #   Turns = turns_intercept + turns_heave_coeff / heave_spring_nmm
+    torsion_bar_turns_intercept: float = 0.0856
+    torsion_bar_turns_heave_coeff: float = 0.668
+    torsion_bar_turns_baseline_od_mm: float = 13.9
     front_heave_hard_range_nmm: tuple[float, float] | None = None  # Car-specific hard clamp
     front_heave_hard_range_exempt_tracks: list[str] = field(default_factory=list)
 
