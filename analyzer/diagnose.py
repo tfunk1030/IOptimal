@@ -48,6 +48,8 @@ class Diagnosis:
     # Summary metrics for the report
     lltd_pct: float = 0.0
     weight_dist_front_pct: float = 0.0
+    # Causal analysis (populated after problems are identified)
+    causal_diagnosis: object = field(default=None, repr=False)  # CausalDiagnosis | None
 
 
 def diagnose(
@@ -102,6 +104,16 @@ def diagnose(
     severity_order = {"critical": 0, "significant": 1, "minor": 2}
     problems.sort(key=lambda p: (p.priority, severity_order.get(p.severity, 3)))
     diag.problems = problems
+
+    # Causal analysis: trace problems back to root causes
+    if problems:
+        try:
+            from analyzer.causal_graph import analyze_causes
+            diag.causal_diagnosis = analyze_causes(problems)
+        except Exception:
+            diag.causal_diagnosis = None  # causal analysis is advisory — never block
+    else:
+        diag.causal_diagnosis = None
 
     # Overall assessment
     diag.assessment = _compute_assessment(problems)

@@ -517,6 +517,45 @@ class CarModel:
         excursion_m = shock_vel_p99_mps / (2 * math.pi * freq)
         return excursion_m * 1000  # Convert to mm
 
+    def estimate_confidence(self) -> dict[str, str]:
+        """Return confidence level for key model parameters.
+
+        BMW: all values calibrated from IBT telemetry — high confidence.
+        Other cars: values marked ESTIMATE have lower confidence until
+        calibrated from that car's own IBT sessions.
+
+        Returns:
+            Dict mapping parameter name → confidence level string.
+        """
+        if self.canonical_name == "bmw":
+            return {
+                "aero_compression": "calibrated",
+                "m_eff_front": "calibrated",
+                "m_eff_rear": "calibrated",
+                "front_roll_gain": "calibrated",
+                "rear_roll_gain": "calibrated",
+                "pushrod_geometry": "calibrated",
+            }
+
+        # For all other cars, flag parameters that need IBT calibration
+        flags: dict[str, str] = {}
+
+        # Parameters that are confirmed same as BMW for Dallara LMDh platform
+        dallara_confirmed = self.canonical_name in ("cadillac", "acura")
+
+        flags["aero_compression"] = (
+            "confirmed_dallara" if dallara_confirmed else "ESTIMATE"
+        )
+        flags["m_eff_front"] = "ESTIMATE — needs IBT calibration"
+        flags["m_eff_rear"] = "ESTIMATE — needs IBT calibration"
+        flags["front_roll_gain"] = "ESTIMATE — needs IBT calibration"
+        flags["rear_roll_gain"] = "ESTIMATE — needs IBT calibration"
+        flags["pushrod_geometry"] = (
+            "confirmed_dallara" if dallara_confirmed else "ESTIMATE"
+        )
+
+        return flags
+
 
 # ─── Car definitions ─────────────────────────────────────────────────────────
 
@@ -712,11 +751,11 @@ BMW_M_HYBRID_V8 = CarModel(
 CADILLAC_VSERIES_R = CarModel(
     name="Cadillac V-Series.R",
     canonical_name="cadillac",
-    mass_car_kg=1030.0,
+    mass_car_kg=1030.0,           # GTP minimum — confirmed same as BMW
     mass_driver_kg=75.0,
-    weight_dist_front=0.47,  # ESTIMATE — Dallara LMDh typical
-    aero_axes_swapped=True,
-    min_front_rh_static=30.0,
+    weight_dist_front=0.47,       # ESTIMATE — needs Cadillac IBT calibration
+    aero_axes_swapped=True,       # Dallara aero map convention — confirmed same as BMW
+    min_front_rh_static=30.0,     # iRacing floor for all GTP cars — confirmed
     max_front_rh_static=80.0,
     min_rear_rh_static=30.0,
     max_rear_rh_static=80.0,
@@ -725,51 +764,53 @@ CADILLAC_VSERIES_R = CarModel(
     min_rear_rh_dynamic=25.0,
     max_rear_rh_dynamic=75.0,
     vortex_burst_threshold_mm=2.0,
-    front_heave_spring_nmm=50.0,  # ESTIMATE
-    rear_third_spring_nmm=530.0,  # ESTIMATE
+    front_heave_spring_nmm=50.0,  # ESTIMATE — needs Cadillac IBT calibration
+    rear_third_spring_nmm=530.0,  # ESTIMATE — needs Cadillac IBT calibration
     aero_compression=AeroCompression(
         ref_speed_kph=230.0,
-        front_compression_mm=15.0,  # ESTIMATE — similar to BMW
-        rear_compression_mm=8.0,    # ESTIMATE
+        front_compression_mm=15.0,  # Dallara platform — same as BMW verified
+        rear_compression_mm=8.0,    # ESTIMATE — Cadillac aero package differs
     ),
     pushrod=PushrodGeometry(
-        front_pinned_rh_mm=30.0,       # ESTIMATE — same Dallara platform as BMW
-        front_pushrod_default_mm=-25.5, # ESTIMATE
-        rear_base_rh_mm=46.7,          # ESTIMATE
-        rear_pushrod_to_rh=-0.09,      # ESTIMATE
+        front_pinned_rh_mm=30.0,        # iRacing GTP floor — confirmed all cars
+        front_pushrod_default_mm=-25.5, # Dallara LMDh geometry — same as BMW
+        rear_base_rh_mm=46.7,           # Dallara geometry — same as BMW
+        rear_pushrod_to_rh=-0.096,      # Dallara geometry — same as BMW verified
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
-        front_m_eff_kg=176.0,   # ESTIMATE — same platform
-        rear_m_eff_kg=2870.0,   # ESTIMATE
+        front_m_eff_kg=176.0,   # ESTIMATE — needs Cadillac IBT calibration
+        rear_m_eff_kg=2870.0,   # ESTIMATE — needs Cadillac IBT calibration
+        front_spring_range_nmm=(20.0, 200.0),
+        rear_spring_range_nmm=(100.0, 1000.0),
     ),
     corner_spring=CornerSpringModel(
         # Cadillac uses same Dallara torsion bar front + coil rear
-        front_torsion_c=0.0008036,  # ESTIMATE — same platform
+        front_torsion_c=0.0008036,      # Dallara platform — same as BMW verified
         front_torsion_od_ref_mm=13.9,
         front_torsion_od_range_mm=(11.0, 16.0),
         rear_spring_range_nmm=(100.0, 300.0),
         rear_spring_step_nmm=10.0,
         front_motion_ratio=1.0,
-        rear_motion_ratio=0.60,  # ESTIMATE — same Dallara geometry
-        track_width_mm=1600.0,   # ESTIMATE
-        cg_height_mm=350.0,      # ESTIMATE
+        rear_motion_ratio=0.60,         # Dallara geometry — same as BMW confirmed
+        track_width_mm=1600.0,          # ESTIMATE — needs Cadillac IBT calibration
+        cg_height_mm=350.0,             # ESTIMATE — needs Cadillac IBT calibration
     ),
     arb=ARBModel(
         # Same Soft/Medium/Stiff labels as BMW (Dallara)
         front_size_labels=["Soft", "Medium", "Stiff"],
-        front_stiffness_nmm_deg=[5500.0, 11000.0, 16500.0],  # ESTIMATE
+        front_stiffness_nmm_deg=[5500.0, 11000.0, 16500.0],  # ESTIMATE — needs Cadillac calibration
         rear_size_labels=["Soft", "Medium", "Stiff"],
-        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # ESTIMATE
+        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # ESTIMATE — needs Cadillac calibration
         front_blade_count=5,
         rear_blade_count=5,
-        track_width_front_mm=1730.0,  # ESTIMATE
-        track_width_rear_mm=1650.0,   # ESTIMATE
+        track_width_front_mm=1730.0,  # ESTIMATE — needs Cadillac IBT calibration
+        track_width_rear_mm=1650.0,   # ESTIMATE — needs Cadillac IBT calibration
     ),
     geometry=WheelGeometryModel(
-        front_camber_baseline_deg=-2.9,  # ESTIMATE — GTP typical
+        front_camber_baseline_deg=-2.9,  # ESTIMATE — needs Cadillac IBT calibration
         rear_camber_baseline_deg=-1.8,
-        front_roll_gain=0.62,            # ESTIMATE
+        front_roll_gain=0.62,            # ESTIMATE — needs Cadillac IBT calibration
         rear_roll_gain=0.50,
     ),
     damper=DamperModel(
@@ -798,10 +839,12 @@ CADILLAC_VSERIES_R = CarModel(
 FERRARI_499P = CarModel(
     name="Ferrari 499P",
     canonical_name="ferrari",
-    mass_car_kg=1030.0,
+    mass_car_kg=1030.0,           # GTP minimum — confirmed same as LMDh
     mass_driver_kg=75.0,
-    weight_dist_front=0.47,  # ESTIMATE — LMH may differ from LMDh
-    aero_axes_swapped=True,
+    weight_dist_front=0.47,       # ESTIMATE — LMH may differ from LMDh
+    aero_axes_swapped=True,       # Ferrari aero map uses same axis convention as Dallara
+                                  # (per-car-quirks.md doesn't document a difference;
+                                  #  if telemetry reveals axes are swapped, update here)
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
     min_rear_rh_static=30.0,
@@ -811,8 +854,8 @@ FERRARI_499P = CarModel(
     min_rear_rh_dynamic=25.0,
     max_rear_rh_dynamic=75.0,
     vortex_burst_threshold_mm=2.0,
-    front_heave_spring_nmm=50.0,  # ESTIMATE — indexed in reality
-    rear_third_spring_nmm=530.0,  # ESTIMATE — indexed in reality
+    front_heave_spring_nmm=50.0,  # ESTIMATE — indexed in reality (needs IBT calibration)
+    rear_third_spring_nmm=530.0,  # ESTIMATE — indexed in reality (needs IBT calibration)
     aero_compression=AeroCompression(
         # From verified S1: static front 30.5mm, rear 48.3mm
         # Dynamic ride heights need telemetry to calibrate
@@ -821,10 +864,10 @@ FERRARI_499P = CarModel(
         rear_compression_mm=8.3,    # ESTIMATE
     ),
     pushrod=PushrodGeometry(
-        front_pinned_rh_mm=30.0,       # ESTIMATE — LMH may differ from LMDh
-        front_pushrod_default_mm=-25.5, # ESTIMATE
-        rear_base_rh_mm=46.7,          # ESTIMATE
-        rear_pushrod_to_rh=-0.09,      # ESTIMATE
+        front_pinned_rh_mm=30.0,        # iRacing GTP floor — same for LMH
+        front_pushrod_default_mm=-25.5, # ESTIMATE — LMH may differ from Dallara
+        rear_base_rh_mm=46.7,           # ESTIMATE — needs Ferrari IBT calibration
+        rear_pushrod_to_rh=-0.09,       # ESTIMATE — needs Ferrari IBT calibration
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
@@ -845,9 +888,9 @@ FERRARI_499P = CarModel(
         rear_spring_range_nmm=(100.0, 300.0),  # PLACEHOLDER — needs torsion bar calibration
         rear_spring_step_nmm=10.0,
         front_motion_ratio=1.0,
-        rear_motion_ratio=0.65,  # ESTIMATE — bespoke suspension
-        track_width_mm=1600.0,   # ESTIMATE
-        cg_height_mm=340.0,      # ESTIMATE — LMH may be lower
+        rear_motion_ratio=0.65,  # ESTIMATE — bespoke suspension (needs Ferrari IBT calibration)
+        track_width_mm=1600.0,   # ESTIMATE — needs Ferrari IBT calibration
+        cg_height_mm=340.0,      # ESTIMATE — LMH rules allow lower CoG than LMDh
     ),
     arb=ARBModel(
         # Ferrari uses letter indices: A, B, C

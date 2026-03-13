@@ -61,9 +61,6 @@ def generate_report(
     modifiers: SolverModifiers,
     step1: RakeSolution,
     step2: HeaveSolution,
-    stint_result: StintStrategy | None = None,
-    sector_result: SectorCompromiseResult | None = None,
-    sensitivity_result: LaptimeSensitivityReport | None = None,
     step3: CornerSpringSolution,
     step4: ARBSolution,
     step5: WheelGeometrySolution,
@@ -71,6 +68,9 @@ def generate_report(
     supporting: SupportingSolution,
     current_setup: CurrentSetup,
     wing: float,
+    stint_result: StintStrategy | None = None,
+    sector_result: SectorCompromiseResult | None = None,
+    sensitivity_result: LaptimeSensitivityReport | None = None,
 ) -> str:  # noqa: C901
     """Generate the full engineering report.
 

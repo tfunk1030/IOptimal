@@ -76,6 +76,14 @@ def recommend(
             seen[ch.parameter] = ch
     changes = sorted(seen.values(), key=lambda c: (c.priority, c.parameter))
 
+    # Resolve conflicts between competing recommendations before applying
+    try:
+        from analyzer.conflict_resolver import resolve_conflicts
+        conflict_report = resolve_conflicts(changes)
+        changes = conflict_report.resolved_changes
+    except Exception:
+        pass  # conflict resolution is advisory — never block recommendations
+
     # Apply all changes to the improved setup
     for ch in changes:
         _apply_change(improved, ch)
