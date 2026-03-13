@@ -392,3 +392,111 @@ All commands print formatted ASCII reports (63-character width) to the terminal.
 - **Free mode**: The `--free` flag lets the solver optimize front ride height freely instead of pinning it to the sim floor. Try it if the default feels too stiff.
 - **Learning compounds**: The more sessions you ingest, the better the empirical corrections become. Ingest consistently for best results.
 - **Ferrari caveat**: Ferrari rear suspension uses a torsion bar that isn't fully decoded yet. Corner spring and LLTD outputs for Ferrari should be treated as approximate.
+
+---
+
+## New Features (March 2026)
+
+### `--space` Flag — Setup Space Exploration
+
+Scans around the solver's optimal values to map the "flat bottom" of the parameter space.
+
+```bash
+python -m solver.solve --car bmw --track sebring --wing 17 --space
+```
+
+For each key parameter, the space explorer:
+- Scans ±N steps from the optimal value
+- Scores each point: constraint violations + estimated lap time delta
+- Identifies the "flat bottom" range (lap time delta < 100ms)
+- Classifies robustness: **tight** / **moderate** / **wide**
+
+**How to read the output:**
+```
+SETUP SPACE EXPLORATION
+Parameter        Optimal    Flat Bottom Range    Robustness
+rear_rh_mm       40.0mm     38.0–43.0mm (±2.5)  moderate
+front_heave_nmm  50 N/mm    40–70 N/mm   (±15)  wide
+rear_arb_blade   3          2–4          (±1)    tight
+```
+- **Tight**: Must nail this parameter precisely in the garage
+- **Moderate**: Small errors (±1 step) tolerable
+- **Wide**: Broad latitude — de-prioritize this parameter in on-track tuning
+
+---
+
+### Stint Model Output Interpretation
+
+The stint model appears in the report after the main setup section. It shows how the setup's behavior changes as fuel burns off during a stint.
+
+**Key sections:**
+- **Balance evolution**: Understeer shift over laps as fuel lightens the car
+- **RARB compensation schedule**: Which laps to soften/stiffen the rear ARB to maintain balance
+- **Pushrod schedule**: Pushrod adjustments (pitstop only) to compensate for fuel burn
+
+**Example:**
+```
+STINT ANALYSIS (30 laps)
+  Lap  Fuel  FrontWt  US_shift  RARB_rec  Verdict
+  1    89L   47.0%    +0.0deg   blade 3   Baseline
+  15   58L   47.8%    +0.4deg   blade 2   Soften slightly
+  30   27L   48.6%    +0.8deg   blade 2   Monitor balance
+```
+- Positive US_shift = car tends more towards understeer as fuel burns
+- RARB_rec = recommended live RARB blade for that fuel load
+
+---
+
+### Sector Compromise Table Interpretation
+
+The sector compromise section appears below the stint analysis. It shows the trade-off cost of a single setup across different corner types.
+
+```
+SECTOR COMPROMISE
+Parameter         Slow opt  Fast opt  Lap compromise  Slow cost  Fast cost
+rear_arb_blade    2         4         3               +0.3s      +0.2s
+front_heave_nmm   40        70        50              +0.1s      +0.15s
+brake_bias_pct    57.5      55.0      56.0            +0.05s     +0.08s
+```
+
+- **Slow opt**: Optimal value for slow-speed corners (<120 kph)
+- **Fast opt**: Optimal value for fast-speed corners (>180 kph)
+- **Lap compromise**: Best single value across all sectors
+- **Slow/Fast cost**: Estimated time loss per lap from the compromise in that sector
+
+If slow cost >> fast cost: circuit is slow-corner dominated — bias the setup toward slow-corner optimum.
+
+---
+
+### Lap Time Sensitivity Ranking Interpretation
+
+The sensitivity section ranks setup parameters by how many milliseconds of lap time you gain per unit of change. This helps prioritize where to spend setup time.
+
+```
+LAP TIME SENSITIVITY ANALYSIS
+Parameter          Value    ±ms/unit   Conf
+rear_rh_mm         40.0     -45.2      med    <- biggest lever
+rear_arb_blade      3.0     +38.1      high
+front_rh_mm        15.0     -22.4      med
+brake_bias_pct     56.0     -18.3      med
+torsion_bar_od_mm  13.9      -8.7      med
+front_heave_nmm    50.0      -0.8      low
+rear_camber_deg    -1.8     +28.5      low
+```
+
+**Reading the signs:**
+- **Negative ms/unit** = faster if you *decrease* the parameter
+- **Positive ms/unit** = faster if you *increase* the parameter
+
+**Focus:**
+- Parameters >50ms/unit: prioritize these in on-track fine-tuning
+- Parameters 20-50ms/unit: worthwhile but less urgent  
+- Parameters <20ms/unit: marginal gains — only tune after the above are locked in
+- "low" confidence = physics model estimate only; treat as directional, not precise
+
+**Typical ranking at Sebring:**
+1. Rear RH (aero balance — most critical)
+2. Rear ARB (LLTD and balance)
+3. Front RH (vortex sensitivity)
+4. Brake bias (entry stability)
+5. Torsion bar OD (front wheel rate/LLTD coupling)
