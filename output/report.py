@@ -18,6 +18,7 @@ from solver.corner_spring_solver import CornerSpringSolution
 from solver.arb_solver import ARBSolution
 from solver.wheel_geometry_solver import WheelGeometrySolution
 from solver.damper_solver import DamperSolution
+from solver.coupling import coupling_notes_for_report, COUPLING_CHAINS
 
 
 def _asdict_safe(obj: Any) -> Any:
@@ -140,6 +141,26 @@ def print_full_setup_report(
         f"  Rear dynamic camber @ peak g:   {step5.rear_dynamic_camber_at_peak_deg:+.1f}°",
         f"  Fronts reach op temp:  ~{step5.expected_conditioning_laps_front:.0f} laps",
         f"  Rears reach op temp:   ~{step5.expected_conditioning_laps_rear:.0f} laps",
+        "",
+        section("COUPLING SENSITIVITY"),
+        "",
+    ]
+
+    # Add coupling notes for the key solver outputs
+    # Use delta-from-baseline (BMW reference values)
+    _BMW_TORSION_BASELINE_OD = 13.9
+    _torsion_delta = step3.front_torsion_od_mm - _BMW_TORSION_BASELINE_OD
+    _arb_delta = step4.rear_arb_blade_start - 3  # BMW baseline blade = 3
+    _coupling_notes = coupling_notes_for_report(
+        torsion_od_delta=_torsion_delta,
+        rear_arb_delta=_arb_delta,
+    )
+    if _coupling_notes:
+        for _note in _coupling_notes:
+            lines.append(f"  {_note}")
+    else:
+        lines.append("  No significant deviations from coupling baselines.")
+    lines += [
         "",
         section("PLATFORM CHECKS"),
         "",
