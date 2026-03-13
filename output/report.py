@@ -146,7 +146,7 @@ def print_full_setup_report(
         f"  Front heave:  {step2.front_heave_nmm:.0f} N/mm  "
         f"(bottoming margin: {step2.front_bottoming_margin_mm:.1f} mm)",
         f"  Rear third:   {step2.rear_third_nmm:.0f} N/mm  "
-        f"(sigma: {step2.rear_sigma_at_rate_mm:.1f} mm / target: {step2.rear_sigma_at_rate_mm:.1f} mm)",
+        f"(sigma: {step2.rear_sigma_at_rate_mm:.1f} mm / target: {step2.sigma_target_mm:.1f} mm)",
         f"  Front torsion bar:  {step3.front_torsion_od_mm:.2f} mm  "
         f"(freq: {step3.front_natural_freq_hz:.2f} Hz, heave/corner: {step3.front_heave_corner_ratio:.1f}x)",
         f"  Rear coil spring:   {step3.rear_spring_rate_nmm:.0f} N/mm  "
