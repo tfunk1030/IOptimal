@@ -267,8 +267,11 @@ def main():
 
     try:
         from solver.sector_compromise import SectorCompromise
+        from solver.supporting_solver import compute_brake_bias as _cbias_sec
+        _bias_sec, _ = _cbias_sec(car, fuel_load_l=args.fuel)
         sector_result = SectorCompromise(track).analyze(
             step1=step1, step2=step2, step4=step4,
+            base_bias_pct=_bias_sec,
         )
     except Exception as e:
         if not args.report_only:
