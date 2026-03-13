@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from analyzer.driver_style import DriverProfile
     from analyzer.extract import MeasuredState
     from car_model.cars import CarModel
+    from track_model.profile import TrackProfile
 
 
 @dataclass
@@ -130,11 +131,13 @@ class SupportingSolver:
         driver: DriverProfile,
         measured: MeasuredState,
         diagnosis: Diagnosis,
+        track: "TrackProfile | None" = None,
     ) -> None:
         self.car = car
         self.driver = driver
         self.measured = measured
         self.diagnosis = diagnosis
+        self.track = track
 
     def solve(self) -> SupportingSolution:
         sol = SupportingSolution()
@@ -182,10 +185,35 @@ class SupportingSolver:
     def _solve_diff(self, sol: SupportingSolution) -> None:
         """Differential from traction demand × driver style.
 
-        Preload: stability vs rotation tradeoff
-        Coast ramp: trail braking behavior
-        Drive ramp: throttle application style
+        Uses DiffSolver for full physics model (preload, coast ramp, drive ramp,
+        lock percentage, and handling indices). Falls back to simplified calculation
+        if DiffSolver import fails.
         """
+        try:
+            from solver.diff_solver import DiffSolver
+            diff_solver = DiffSolver(self.car)
+            diff_sol = diff_solver.solve(
+                driver=self.driver,
+                measured=self.measured,
+                track=self.track,
+            )
+            sol.diff_preload_nm = diff_sol.preload_nm
+            sol.diff_ramp_coast = diff_sol.coast_ramp_deg
+            sol.diff_ramp_drive = diff_sol.drive_ramp_deg
+            sol.diff_clutch_plates = diff_sol.clutch_plates
+            # Store diff solution for reporting (optional attribute)
+            sol._diff_solution = diff_sol
+            sol.diff_reasoning = (
+                f"{diff_sol.preload_reasoning} | {diff_sol.ramp_reasoning} | "
+                f"Lock: coast={diff_sol.lock_pct_coast:.1f}% "
+                f"drive={diff_sol.lock_pct_drive:.1f}%"
+            )
+        except Exception:
+            # Fallback: simplified calculation (original implementation)
+            self._solve_diff_fallback(sol)
+
+    def _solve_diff_fallback(self, sol: SupportingSolution) -> None:
+        """Fallback differential solver (simplified physics, no DiffSolver dependency)."""
         driver = self.driver
         measured = self.measured
 
@@ -202,7 +230,7 @@ class SupportingSolver:
 
         if measured.body_slip_p95_deg > 4.0:
             preload += 5
-            reasons.append(f"+5 Nm for body slip p95={measured.body_slip_p95_deg:.1f}° (lock more)")
+            reasons.append(f"+5 Nm for body slip p95={measured.body_slip_p95_deg:.1f} deg (lock more)")
 
         if driver.trail_brake_classification == "deep":
             preload -= 5
@@ -215,18 +243,16 @@ class SupportingSolver:
         sol.diff_preload_nm = round(_clamp(preload, 5.0, 40.0), 0)
 
         # ── Coast ramp ── (lower angle = more locking on coast/decel)
-        # iRacing valid steps: 40, 45, 50 (and 5° increments)
         coast = 45 - int(driver.trail_brake_depth_mean * 10)
-        coast = round(coast / 5) * 5  # snap to nearest 5°
+        coast = round(coast / 5) * 5
         coast = int(_clamp(coast, 40, 50))
-        reasons.append(f"Coast ramp: {coast}° (from trail brake depth {driver.trail_brake_depth_mean:.2f})")
+        reasons.append(f"Coast ramp: {coast} deg (from trail brake depth {driver.trail_brake_depth_mean:.2f})")
 
         # ── Drive ramp ── (higher angle = less locking on accel)
-        # iRacing valid steps: 65, 70, 75 (and 5° increments)
         drive = 65 + int(driver.throttle_progressiveness * 10)
-        drive = round(drive / 5) * 5  # snap to nearest 5°
+        drive = round(drive / 5) * 5
         drive = int(_clamp(drive, 65, 75))
-        reasons.append(f"Drive ramp: {drive}° (from throttle R²={driver.throttle_progressiveness:.2f})")
+        reasons.append(f"Drive ramp: {drive} deg (from throttle R2={driver.throttle_progressiveness:.2f})")
 
         sol.diff_ramp_coast = coast
         sol.diff_ramp_drive = drive
