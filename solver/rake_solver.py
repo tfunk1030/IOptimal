@@ -229,13 +229,9 @@ class RakeSolver:
         if rh_model.is_calibrated:
             # Use baseline heave/spring values (step2/step3 haven't run yet).
             # These will be reconciled after step2 in solve.py.
-            baseline_third_nmm = self.car.heave_spring.rear_spring_range_nmm[0]
-            # Use a reasonable default — heave baseline from HeaveSpringModel
+            baseline_third_nmm = self.car.rear_third_spring_nmm  # car default
             baseline_heave_perch = self.car.heave_spring.perch_offset_front_baseline_mm
             baseline_rear_spring = self.car.corner_spring.rear_spring_range_nmm[0]
-            # Use midpoint of typical ranges as better defaults
-            baseline_third_nmm = self.car.rear_third_spring_nmm  # car default
-            baseline_rear_spring = 170.0  # typical BMW rear spring
             rear_pushrod = rh_model.pushrod_for_target_rh(
                 static_rear, baseline_third_nmm,
                 baseline_rear_spring, baseline_heave_perch,
@@ -282,7 +278,7 @@ class RakeSolver:
             rear_pushrod_offset_mm=round(rear_pushrod, 1),
             aero_compression_front_mm=round(front_comp, 1),
             aero_compression_rear_mm=round(rear_comp, 1),
-            compression_ref_speed_kph=comp.ref_speed_kph,
+            compression_ref_speed_kph=track_speed,
             balance_error_pct=round(abs(bal - target_balance), 3),
             converged=converged,
             iterations=iterations,
@@ -339,9 +335,12 @@ class RakeSolver:
         """
         comp = self.car.aero_compression
 
+        # Use track median speed for compression (consistent with _build_solution)
+        track_speed = self.track.median_speed_kph if self.track.median_speed_kph > 0 else comp.ref_speed_kph
+
         # Front static = sim minimum → front dynamic = minimum - compression
         static_front = self.car.min_front_rh_static
-        dyn_front = static_front - comp.front_compression_mm
+        dyn_front = static_front - comp.front_at_speed(track_speed)
 
         # Check vortex burst constraint
         min_front_for_vortex = (
@@ -350,7 +349,7 @@ class RakeSolver:
         if dyn_front < min_front_for_vortex:
             # Front too low — would vortex burst. Raise to safe minimum.
             dyn_front = min_front_for_vortex
-            static_front = dyn_front + comp.front_compression_mm
+            static_front = dyn_front + comp.front_at_speed(track_speed)
 
         # Find rear RH for target balance
         dyn_rear = self._find_rear_for_balance(dyn_front, target_balance)
@@ -477,3 +476,66 @@ class RakeSolver:
                     if ld > best_ld:
                         best_ld = ld
         return best_ld if best_ld > 0 else 0.0
+
+
+def reconcile_ride_heights(
+    car,
+    step1: RakeSolution,
+    step2,
+    step3,
+    verbose: bool = True,
+) -> None:
+    """Reconcile static ride heights after step2+step3 provide actual spring values.
+
+    Modifies step1 in-place with refined static RH, pushrod, and rake values.
+    Called from both solve.py and produce.py after steps 2 and 3.
+    """
+    rh_model = car.ride_height_model
+
+    # Front RH: refine with actual heave spring from step2
+    if rh_model.front_is_calibrated:
+        front_camber = car.geometry.front_camber_baseline_deg
+        new_front_rh = rh_model.predict_front_static_rh(
+            step2.front_heave_nmm, front_camber,
+        )
+        if abs(new_front_rh - step1.static_front_rh_mm) > 0.05:
+            if verbose:
+                print(f"  Front RH refined: {step1.static_front_rh_mm:.1f} -> "
+                      f"{new_front_rh:.1f} mm (heave {step2.front_heave_nmm:.0f} N/mm)")
+            step1.static_front_rh_mm = round(new_front_rh, 1)
+
+    # Rear RH: refine with actual spring values from step2+step3
+    if rh_model.is_calibrated:
+        actual_third_nmm = step2.rear_third_nmm
+        actual_heave_perch = step2.perch_offset_front_mm
+        actual_rear_spring = step3.rear_spring_rate_nmm
+
+        predicted_rh = rh_model.predict_rear_static_rh(
+            step1.rear_pushrod_offset_mm, actual_third_nmm,
+            actual_rear_spring, actual_heave_perch,
+        )
+        rh_error = predicted_rh - step1.static_rear_rh_mm
+
+        if abs(rh_error) > 0.5:
+            new_pushrod = rh_model.pushrod_for_target_rh(
+                step1.static_rear_rh_mm, actual_third_nmm,
+                actual_rear_spring, actual_heave_perch,
+            )
+            new_pushrod = round(new_pushrod * 2) / 2  # snap to 0.5mm
+            new_rh = rh_model.predict_rear_static_rh(
+                new_pushrod, actual_third_nmm,
+                actual_rear_spring, actual_heave_perch,
+            )
+            if verbose:
+                print(f"  RH reconciliation: pushrod {step1.rear_pushrod_offset_mm:.1f} "
+                      f"-> {new_pushrod:.1f} mm "
+                      f"(predicted RH {predicted_rh:.1f} -> {new_rh:.1f} mm)")
+            step1.rear_pushrod_offset_mm = round(new_pushrod, 1)
+            step1.static_rear_rh_mm = round(new_rh, 1)
+        elif verbose:
+            print(f"  RH model check: predicted {predicted_rh:.1f} mm "
+                  f"vs target {step1.static_rear_rh_mm:.1f} mm "
+                  f"(error {rh_error:+.2f} mm — OK)")
+
+    # Update static rake from (possibly refined) front + rear
+    step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)

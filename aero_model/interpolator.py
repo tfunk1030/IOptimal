@@ -36,19 +36,27 @@ class AeroSurface:
         # Build interpolators (front_rh = axis 0, rear_rh = axis 1)
         self._balance_interp = RegularGridInterpolator(
             (front_rh, rear_rh), balance,
-            method="cubic", bounds_error=False, fill_value=None,
+            method="cubic", bounds_error=False, fill_value=np.nan,
         )
         self._ld_interp = RegularGridInterpolator(
             (front_rh, rear_rh), ld,
-            method="cubic", bounds_error=False, fill_value=None,
+            method="cubic", bounds_error=False, fill_value=np.nan,
         )
+
+    def _clamp_rh(self, front_rh: float, rear_rh: float) -> tuple[float, float]:
+        """Clamp ride heights to the grid boundaries to prevent extrapolation."""
+        front_rh = float(np.clip(front_rh, self.front_rh[0], self.front_rh[-1]))
+        rear_rh = float(np.clip(rear_rh, self.rear_rh[0], self.rear_rh[-1]))
+        return front_rh, rear_rh
 
     def df_balance(self, front_rh: float, rear_rh: float) -> float:
         """Query DF balance (%) at given ride heights."""
+        front_rh, rear_rh = self._clamp_rh(front_rh, rear_rh)
         return float(self._balance_interp([[front_rh, rear_rh]])[0])
 
     def lift_drag(self, front_rh: float, rear_rh: float) -> float:
         """Query L/D ratio at given ride heights."""
+        front_rh, rear_rh = self._clamp_rh(front_rh, rear_rh)
         return float(self._ld_interp([[front_rh, rear_rh]])[0])
 
     def query(self, front_rh: float, rear_rh: float) -> dict:
