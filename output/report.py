@@ -154,7 +154,7 @@ def print_full_setup_report(
         "",
         "",
         "  GARAGE LIMITS",
-        "  Heave slider deflection max: 45.0 mm  (check in garage after loading)",
+        "  Heave slider defl: check in garage (target <45mm static)",
         "  Heave/third perch offsets: integer increments only",
         "",
         section("VALIDATION CHECKLIST"),

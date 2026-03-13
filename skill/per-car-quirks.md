@@ -147,6 +147,37 @@ Note: BMW has relatively low damper click values compared to Ferrari. The scales
 - **[VERIFIED S1 2026] Vision tread tire conditioning rates at Sebring:** Fronts condition at +2.2-2.6°C/lap, rears at +2.9-3.5°C/lap. At these rates, rears reach 85°C operating window by lap 8-9, fronts by lap 13-15. A 5-lap Offline Testing stint will NOT reach operating temps — this is normal Vision tread conditioning behavior, not a setup failure. For sprint sessions, increase camber and toe-out to accelerate thermal buildup. For endurance, the conditioning model handles it over the first 8-10 laps.
 - **Brake migration IS available (correction from earlier analysis).** The BMW shows `BrakeBiasMigration` in the setup — previously incorrectly documented as "no migration." All tested sessions ran migration at 0 (disabled). Migration is available as a tuning tool but has not been tested. BB at 46.0% has been stable across 7 sessions.
 
+### BMW Front Heave/Slider/Torsion Calibration (19 sessions, March 7-12 2026)
+
+**Derived Formulas (BMW-specific, OD=13.9mm baseline):**
+```
+HeaveSpringDeflMax = 103.4 - 0.262 * HeaveSpring    (depends ONLY on spring rate)
+HeaveSliderDeflStatic = 46.2 + 0.012 * Heave + 0.251 * Perch   (perch dominates 21.8:1)
+TorsionBarTurns = 0.0856 + 0.668 / HeaveSpring      (at OD=13.9mm)
+```
+
+**Key data points (unique setups):**
+| Heave | Perch | SldrS | SprDS | SprDM | TB_OD | Turns | TBDfl |
+|-------|-------|-------|-------|-------|-------|-------|-------|
+| 90 | -13.0 | 43.4 | 8.8 | 80.4 | 13.9 | 0.093 | 18.3 |
+| 80 | -13.0 | 44.2 | 9.6 | 82.5 | 13.9 | 0.093 | 18.6 |
+| 70 | -13.0 | 44.3 | 9.7 | 84.8 | 13.9 | 0.095 | 19.8 |
+| 70 | -14.5 | 42.5 | 9.4 | 84.8 | 13.9 | 0.096 | 20.1 |
+| 50 | -13.0 | 44.7 | 10.1 | 90.2 | 13.9 | 0.098 | 22.2 |
+| 50 | -12.5 | 44.9 | 9.8 | 90.2 | 13.9 | 0.098 | 22.3 |
+| 50 | -10.0 | 43.3 | 5.7 | 90.2 | 13.9 | 0.102 | 24.4 |
+| 40 | -17.5 | 41.8 | 11.7 | 93.6 | 13.9 | 0.100 | 22.5 |
+| 30 | -31.5 | 40.4 | 24.3 | 97.7 | 14.3 | 0.092 | 16.6 |
+| 30 | -31.5 | 36.8 | 20.7 | 97.7 | 15.1 | 0.091 | 14.6 |
+
+**Perch offset guidelines by heave spring rate:**
+- **Heave 30:** Requires very negative perch (-31.5mm) to maintain slider position; over-preloads spring (DeflStatic=24mm = 25% of travel consumed)
+- **Heave 40-50:** Perch -13 to -17mm works well; DeflStatic ~10mm, SliderStatic ~42-45mm
+- **Heave 70-90:** Perch -13mm is safe; SliderStatic ~43-44mm, plenty of dynamic travel
+- **Perch more positive than -10mm is risky:** SliderStatic approaches 45mm limit, spring nearly unloaded (DeflStatic ~5mm)
+
+**Load path physics:** Softening heave spring shifts static load to torsion bars. At heave 50 with OD 13.9, torsion bars carry ~0.102 turns of preload. At heave 90, only ~0.093 turns. This means **changing heave spring without checking crossweight in garage will unbalance the car.**
+
 ---
 
 ## Ferrari 499P {#ferrari}
