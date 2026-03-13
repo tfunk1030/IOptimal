@@ -282,9 +282,50 @@ def produce(args: argparse.Namespace) -> None:
 
     # ── Phase I: Compute supporting params ──
     print("\nComputing supporting parameters...")
-    supporting_solver = SupportingSolver(car, driver, measured, diagnosis)
+    supporting_solver = SupportingSolver(car, driver, measured, diagnosis, track=track)
     supporting = supporting_solver.solve()
     print(f"  {supporting.summary()}")
+
+    # ── Phase I.5: Stint analysis ──
+    stint_result = None
+    try:
+        from solver.stint_model import analyze_stint
+        stint_result = analyze_stint(
+            car=car,
+            stint_laps=getattr(args, "stint_laps", 30),
+            base_heave_nmm=step2.front_heave_nmm,
+            base_third_nmm=step2.rear_third_nmm,
+            v_p99_front_mps=track.shock_vel_p99_front_mps,
+            v_p99_rear_mps=track.shock_vel_p99_rear_mps,
+        )
+    except Exception as e:
+        print(f"[stint] Analysis skipped: {e}")
+
+    # ── Phase I.6: Sector compromise analysis ──
+    sector_result = None
+    try:
+        from solver.sector_compromise import SectorCompromise
+        sector_solver = SectorCompromise(track)
+        sector_result = sector_solver.analyze(
+            step1=step1, step2=step2, step4=step4,
+            base_bias_pct=supporting.brake_bias_pct,
+            base_camber_deg=step5.front_camber_deg,
+        )
+    except Exception as e:
+        print(f"[sector] Analysis skipped: {e}")
+
+    # ── Phase I.7: Lap time sensitivity ──
+    sensitivity_result = None
+    try:
+        from solver.laptime_sensitivity import compute_laptime_sensitivity
+        sensitivity_result = compute_laptime_sensitivity(
+            track=track,
+            step1=step1, step2=step2, step3=step3,
+            step4=step4, step5=step5,
+            brake_bias_pct=supporting.brake_bias_pct,
+        )
+    except Exception as e:
+        print(f"[sensitivity] Analysis skipped: {e}")
 
     # ── Phase J: Output ──
     if args.sto:
@@ -349,6 +390,9 @@ def produce(args: argparse.Namespace) -> None:
         supporting=supporting,
         current_setup=current_setup,
         wing=wing,
+        stint_result=stint_result,
+        sector_result=sector_result,
+        sensitivity_result=sensitivity_result,
     )
     print(report)
 
