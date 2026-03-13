@@ -43,8 +43,19 @@ def print_full_setup_report(
     step4: ARBSolution,
     step5: WheelGeometrySolution,
     step6: DamperSolution,
+    stint_result: Any = None,
+    sector_result: Any = None,
+    sensitivity_result: Any = None,
+    space_result: Any = None,
 ) -> str:
-    """Generate the complete setup sheet as a printable string."""
+    """Generate the complete setup sheet as a printable string.
+
+    Optional extra results (all default to None for backward compatibility):
+        stint_result: StintStrategy from solver.stint_model
+        sector_result: SectorCompromiseResult from solver.sector_compromise
+        sensitivity_result: LaptimeSensitivityReport from solver.laptime_sensitivity
+        space_result: SetupSpaceReport from solver.setup_space
+    """
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     width = 63
@@ -178,6 +189,41 @@ def print_full_setup_report(
         "  Heave slider defl: check in garage (target <45mm static)",
         "  Heave/third perch offsets: integer increments only",
         "",
+    ]
+
+    # ── Optional: Stint Analysis ──
+    if stint_result is not None:
+        try:
+            lines.append(stint_result.summary(width))
+            lines.append("")
+        except Exception:
+            pass
+
+    # ── Optional: Sector Compromise ──
+    if sector_result is not None:
+        try:
+            lines.append(sector_result.summary(width))
+            lines.append("")
+        except Exception:
+            pass
+
+    # ── Optional: Lap Time Sensitivity ──
+    if sensitivity_result is not None:
+        try:
+            lines.append(sensitivity_result.summary(width))
+            lines.append("")
+        except Exception:
+            pass
+
+    # ── Optional: Setup Space Exploration ──
+    if space_result is not None:
+        try:
+            lines.append(space_result.summary(width))
+            lines.append("")
+        except Exception:
+            pass
+
+    lines += [
         section("VALIDATION CHECKLIST"),
         "",
         "  Before calling the setup 'done':",
