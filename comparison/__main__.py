@@ -42,8 +42,8 @@ def main() -> None:
         help="Wing angle override for synthesis (auto-detected if omitted)",
     )
     parser.add_argument(
-        "--lap", type=int, default=None,
-        help="Lap number to analyze in each IBT (default: best lap)",
+        "--lap", type=int, nargs="+", default=None,
+        help="Lap number(s) to analyze. One per IBT file, or a single value applied to all (default: best lap)",
     )
     parser.add_argument(
         "--balance", type=float, default=50.14,
@@ -89,6 +89,18 @@ def main() -> None:
     print(f"Sessions to compare: {len(args.ibt)}")
     print()
 
+    # Resolve per-file lap numbers
+    if args.lap is None:
+        lap_list = [None] * len(args.ibt)
+    elif len(args.lap) == 1:
+        lap_list = args.lap * len(args.ibt)
+    elif len(args.lap) == len(args.ibt):
+        lap_list = args.lap
+    else:
+        print(f"ERROR: --lap got {len(args.lap)} values but --ibt got {len(args.ibt)} files. "
+              f"Provide one lap per file, or a single lap for all.")
+        sys.exit(1)
+
     # ── Phase 1: Analyze each session ──
     sessions = []
     for i, ibt_path in enumerate(args.ibt, start=1):
@@ -102,7 +114,7 @@ def main() -> None:
             car=car,
             wing=args.wing,
             fuel=args.fuel,
-            lap=args.lap,
+            lap=lap_list[i - 1],
             label=label,
         )
         sessions.append(session)

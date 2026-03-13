@@ -393,14 +393,22 @@ class CornerSpringSolver:
             detail=f"Total heave {total_front:.0f} < heave spring {front_heave_nmm:.0f}",
         ))
 
-        # 6. Front torsion bar OD in valid range
+        # 6. Front torsion bar OD in valid range and matches discrete option
         od = csm.torsion_bar_od_for_rate(front_rate)
         od_lo, od_hi = csm.front_torsion_od_range_mm
-        checks.append(CornerSpringCheck(
-            name=f"Torsion bar OD in range ({od:.1f}mm)",
-            satisfied=od_lo <= od <= od_hi,
-            detail=f"OD {od:.1f}mm outside range {od_lo}-{od_hi}mm",
-        ))
+        if csm.front_torsion_od_options:
+            snapped = csm.snap_torsion_od(od)
+            checks.append(CornerSpringCheck(
+                name=f"Torsion bar OD valid ({snapped:.2f}mm)",
+                satisfied=snapped in csm.front_torsion_od_options,
+                detail=f"OD {od:.2f}mm not in discrete garage options",
+            ))
+        else:
+            checks.append(CornerSpringCheck(
+                name=f"Torsion bar OD in range ({od:.1f}mm)",
+                satisfied=od_lo <= od <= od_hi,
+                detail=f"OD {od:.1f}mm outside range {od_lo}-{od_hi}mm",
+            ))
 
         # 7. Rear spring rate in valid range
         r_lo, r_hi = csm.rear_spring_range_nmm

@@ -1,0 +1,78 @@
+{
+  "car": "porsche",
+  "track": "Sebring International Raceway",
+  "relationships": {
+    "roll_gradient": {
+      "name": "Roll gradient (measured)",
+      "x_param": "peak_lat_g",
+      "y_param": "roll_gradient_deg_per_g",
+      "fit_type": "linear",
+      "coefficients": [
+        0.0,
+        0.8398469702351248
+      ],
+      "r_squared": 0.9940333196185425,
+      "sample_count": 2,
+      "residual_std": 0.06487338316286406,
+      "x_values": [
+        3.224290370941162,
+        3.6939659118652344
+      ],
+      "y_values": [
+        0.9047203533979888,
+        0.7749735870722607
+      ],
+      "x_min": 3.224290370941162,
+      "x_max": 3.6939659118652344,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    },
+    "front_rh_var_vs_heave": {
+      "name": "Front RH variance vs heave spring",
+      "x_param": "front_heave_nmm",
+      "y_param": "front_rh_std_mm",
+      "fit_type": "linear",
+      "coefficients": [
+        0.003056240081787136,
+        5.401716232299798
+      ],
+      "r_squared": 1.0,
+      "sample_count": 2,
+      "residual_std": 0.0,
+      "x_values": [
+        180.0,
+        200.0
+      ],
+      "y_values": [
+        5.951839447021484,
+        6.012964248657227
+      ],
+      "x_min": 180.0,
+      "x_max": 200.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    }
+  },
+  "last_updated": "2026-03-13T17:20:42.353900+00:00",
+  "observation_count": 2,
+  "most_sensitive_parameters": [],
+  "corrections": {
+    "aero_compression_front_mean_mm": 12.090606498718262,
+    "aero_compression_front_std_mm": 0.9335096359252937,
+    "aero_compression_rear_mean_mm": 23.303792572021486,
+    "aero_compression_rear_std_mm": 3.192516326904297,
+    "roll_gradient_measured_mean": 0.8398469702351248,
+    "roll_gradient_measured_std": 0.06487338316286406,
+    "roll_gradient_sample_count": 2,
+    "lltd_measured_mean": 0.4872129532441175,
+    "lltd_measured_std": 0.0034448897785726573,
+    "m_eff_front_values": [
+      639.6,
+      356.4
+    ],
+    "m_eff_front_empirical_mean": 498.0,
+    "m_eff_front_empirical_std": 141.60000000000002
+  }
+}

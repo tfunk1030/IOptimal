@@ -1,0 +1,2773 @@
+{
+  "session_before": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-12_22-39-23",
+  "session_after": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-07_22-00-50",
+  "car": "bmw",
+  "track": "Sebring International Raceway",
+  "setup_changes": [
+    {
+      "parameter": "rear_arb_blade",
+      "before": 1,
+      "after": 3,
+      "delta": 2.0,
+      "step_group": "step4_arb",
+      "significance": "major"
+    },
+    {
+      "parameter": "rear_third_nmm",
+      "before": 380.0,
+      "after": 530.0,
+      "delta": 150.0,
+      "step_group": "step2_heave",
+      "significance": "major"
+    },
+    {
+      "parameter": "front_pushrod",
+      "before": -22.5,
+      "after": -23.0,
+      "delta": -0.5,
+      "step_group": "step1_rake",
+      "significance": "minor"
+    },
+    {
+      "parameter": "rear_rh_static",
+      "before": 49.5,
+      "after": 49.9,
+      "delta": 0.3999999999999986,
+      "step_group": "step1_rake",
+      "significance": "minor"
+    },
+    {
+      "parameter": "rear_spring_nmm",
+      "before": 130.0,
+      "after": 160.0,
+      "delta": 30.0,
+      "step_group": "step3_springs",
+      "significance": "major"
+    },
+    {
+      "parameter": "rear_camber_deg",
+      "before": -1.4,
+      "after": -1.8,
+      "delta": -0.40000000000000013,
+      "step_group": "step5_geometry",
+      "significance": "minor"
+    },
+    {
+      "parameter": "brake_bias_pct",
+      "before": 45.75,
+      "after": 46.0,
+      "delta": 0.25,
+      "step_group": "other",
+      "significance": "trivial"
+    },
+    {
+      "parameter": "rear_pushrod",
+      "before": -18.0,
+      "after": -27.0,
+      "delta": -9.0,
+      "step_group": "step1_rake",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_lf_ls_comp",
+      "before": 8,
+      "after": 7,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_lf_ls_rbd",
+      "before": 7,
+      "after": 6,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_lf_hs_rbd",
+      "before": 6,
+      "after": 8,
+      "delta": 2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_lf_hs_slope",
+      "before": 11,
+      "after": 10,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_rf_ls_comp",
+      "before": 8,
+      "after": 7,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_rf_ls_rbd",
+      "before": 7,
+      "after": 6,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_rf_hs_rbd",
+      "before": 6,
+      "after": 8,
+      "delta": 2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rf_hs_slope",
+      "before": 11,
+      "after": 10,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_lr_hs_comp",
+      "before": 4,
+      "after": 6,
+      "delta": 2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_lr_hs_slope",
+      "before": 11,
+      "after": 10,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_rr_hs_comp",
+      "before": 4,
+      "after": 6,
+      "delta": 2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rr_hs_slope",
+      "before": 11,
+      "after": 10,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    }
+  ],
+  "telemetry_effects": [
+    {
+      "metric": "front_rh_std_mm",
+      "category": "platform",
+      "before": 6.115548133850098,
+      "after": 4.389847278594971,
+      "delta": -1.7257,
+      "pct_change": -28.2,
+      "significance": "large"
+    },
+    {
+      "metric": "rear_rh_std_mm",
+      "category": "platform",
+      "before": 8.608481407165527,
+      "after": 6.125545024871826,
+      "delta": -2.4829,
+      "pct_change": -28.8,
+      "significance": "large"
+    },
+    {
+      "metric": "front_bottoming_events",
+      "category": "platform",
+      "before": 0.0,
+      "after": 12.0,
+      "delta": 12.0,
+      "pct_change": 0.0,
+      "significance": "large"
+    },
+    {
+      "metric": "rear_bottoming_events",
+      "category": "platform",
+      "before": 4.0,
+      "after": 16.0,
+      "delta": 12.0,
+      "pct_change": 300.0,
+      "significance": "large"
+    },
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.13623131811618805,
+      "after": 0.08783163875341415,
+      "delta": -0.0484,
+      "pct_change": -35.5,
+      "significance": "large"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.1787121295928955,
+      "after": 0.10236625373363495,
+      "delta": -0.0763,
+      "pct_change": -42.7,
+      "significance": "large"
+    },
+    {
+      "metric": "understeer_high_speed_deg",
+      "category": "balance",
+      "before": 0.1178189143538475,
+      "after": -0.08637159317731857,
+      "delta": -0.2042,
+      "pct_change": -173.3,
+      "significance": "large"
+    },
+    {
+      "metric": "understeer_low_speed_deg",
+      "category": "balance",
+      "before": 0.2659514844417572,
+      "after": 0.10531976819038391,
+      "delta": -0.1606,
+      "pct_change": -60.4,
+      "significance": "large"
+    },
+    {
+      "metric": "body_slip_p95_deg",
+      "category": "balance",
+      "before": 2.8258419036865234,
+      "after": 25.546306610107422,
+      "delta": 22.7205,
+      "pct_change": 804.0,
+      "significance": "large"
+    },
+    {
+      "metric": "dynamic_front_rh_mm",
+      "category": "aero",
+      "before": 20.486730575561523,
+      "after": 21.816028594970703,
+      "delta": 1.3293,
+      "pct_change": 6.5,
+      "significance": "moderate"
+    },
+    {
+      "metric": "dynamic_rear_rh_mm",
+      "category": "aero",
+      "before": 25.397356033325195,
+      "after": 33.35841751098633,
+      "delta": 7.9611,
+      "pct_change": 31.3,
+      "significance": "large"
+    },
+    {
+      "metric": "front_dominant_freq_hz",
+      "category": "damper",
+      "before": 2.9,
+      "after": 0.91,
+      "delta": -1.99,
+      "pct_change": -68.6,
+      "significance": "large"
+    },
+    {
+      "metric": "rear_dominant_freq_hz",
+      "category": "damper",
+      "before": 2.9,
+      "after": 0.91,
+      "delta": -1.99,
+      "pct_change": -68.6,
+      "significance": "large"
+    }
+  ],
+  "hypotheses": [
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": 2.0,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_arb_blade + -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "rear_third_nmm + -> expected rear_rh_std_mm -, observed -",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.3,
+      "mechanism": "rear_third_nmm + -> expected rear_bottoming_events -, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": 150.0,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_third_nmm + -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "front_pushrod - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_rh_static",
+      "cause_delta": 0.3999999999999986,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_rh_static + -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_spring_nmm + -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_spring_nmm",
+      "cause_delta": 30.0,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.3,
+      "mechanism": "rear_spring_nmm + -> expected rear_dominant_freq_hz +, observed -",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_camber_deg",
+      "cause_delta": -0.40000000000000013,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_camber_deg - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": -9.0,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "rear_pushrod - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_comp - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_ls_rbd - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_rbd + -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lf_hs_slope - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_comp",
+      "cause_delta": -1,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_comp - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_ls_rbd",
+      "cause_delta": -1,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_ls_rbd - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_rbd",
+      "cause_delta": 2,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_rbd + -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rf_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rf_hs_slope - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_comp + -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_lr_hs_slope - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_comp",
+      "cause_delta": 2,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_comp + -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_rh_std_mm",
+      "effect_delta": -1.7257,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed front_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_rh_std_mm",
+      "effect_delta": -2.4829,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed rear_rh_std_mm - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed front_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 12.0,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed rear_bottoming_events + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": -0.0484,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed front_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": -0.0763,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed rear_shock_vel_p95_mps - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "understeer_high_speed_deg",
+      "effect_delta": -0.2042,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed understeer_high_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "understeer_low_speed_deg",
+      "effect_delta": -0.1606,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed understeer_low_speed_deg - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 22.7205,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed body_slip_p95_deg + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_front_rh_mm",
+      "effect_delta": 1.3293,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed dynamic_front_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 7.9611,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed dynamic_rear_rh_mm + (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "front_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed front_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_rr_hs_slope",
+      "cause_delta": -1,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": -1.99,
+      "direction_match": false,
+      "confidence": 0.1,
+      "mechanism": "damper_rr_hs_slope - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "corroborated_by": 0
+    }
+  ],
+  "num_setup_changes": 19,
+  "controlled_experiment": false,
+  "changed_steps": [
+    "step1_rake",
+    "step2_heave",
+    "step3_springs",
+    "step4_arb",
+    "step5_geometry",
+    "step6_dampers"
+  ],
+  "lap_time_delta_s": 200.102,
+  "driver_style_changed": true,
+  "key_finding": "Changed rear_arb_blade: 2.0, rear_third_nmm: 150.0, rear_spring_nmm: 30.0 (200.102s slower); effects: front_rh_std_mm -1.73, rear_rh_std_mm -2.48, front_bottoming_events +12.00 [low confidence]",
+  "confidence_level": "low"
+}
