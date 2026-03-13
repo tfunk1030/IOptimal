@@ -314,23 +314,27 @@ def run_iterative_solver(
             fuel_load_l=fuel_load_l,
         )
 
+        # Convert rear spring rate to wheel rate (MR²) for downstream solvers
+        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+
         arb_solver = ARBSolver(car, track)
         step4 = arb_solver.solve(
             front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         )
 
         geom_solver = WheelGeometrySolver(car, track)
         step5 = geom_solver.solve(
             k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
             front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            fuel_load_l=fuel_load_l,
         )
 
         damper_solver = DamperSolver(car, track)
         step6 = damper_solver.solve(
             front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
             front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
             rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
             fuel_load_l=fuel_load_l,

@@ -165,13 +165,14 @@ class WheelGeometrySolver:
         self.car = car
         self.track = track
 
-    def _body_roll_at_g(self, lat_g: float, k_roll_total_nm_deg: float) -> float:
+    def _body_roll_at_g(self, lat_g: float, k_roll_total_nm_deg: float,
+                        fuel_load_l: float = 89.0) -> float:
         """Estimate body roll angle at a given lateral g.
 
         roll = m * ay * h_cg / K_roll_total
         Returns degrees.
         """
-        mass_kg = self.car.total_mass(fuel_load_l=60.0)  # mid-stint mass
+        mass_kg = self.car.total_mass(fuel_load_l=fuel_load_l)
         ay_ms2 = lat_g * 9.81
         h_cg_m = self.car.corner_spring.cg_height_mm / 1000.0
         t_avg_m = (
@@ -297,6 +298,7 @@ class WheelGeometrySolver:
         k_roll_total_nm_deg: float,
         front_wheel_rate_nmm: float,
         rear_wheel_rate_nmm: float,
+        fuel_load_l: float = 89.0,
     ) -> WheelGeometrySolution:
         """Compute optimal wheel geometry.
 
@@ -342,10 +344,10 @@ class WheelGeometrySolver:
         representative_lat_g = p95_lat_g + kerb_weight * (peak_lat_g - p95_lat_g)
 
         # Body roll at peak lateral g (for dynamic camber check at worst case)
-        roll_deg = self._body_roll_at_g(peak_lat_g, k_roll_total_nm_deg)
+        roll_deg = self._body_roll_at_g(peak_lat_g, k_roll_total_nm_deg, fuel_load_l)
         # Body roll at representative lateral g (for camber optimization)
         representative_roll_deg = self._body_roll_at_g(
-            representative_lat_g, k_roll_total_nm_deg
+            representative_lat_g, k_roll_total_nm_deg, fuel_load_l
         )
 
         # Optimal static camber — optimized for p95 cornering load

@@ -122,9 +122,9 @@ def _recommend_safety(
     if "vortex burst" in problem.symptom.lower():
         # Stiffen front heave to reduce excursion
         hs = car.heave_spring
-        # Target: reduce excursion by 30% -> need k_new = k_old * 1.3^2 = 1.7 * k_old
+        # Excursion ~ 1/√k, so 30% reduction: k_new = k_old / 0.7² ≈ k_old * 2.04
         k_current = setup.front_heave_nmm
-        k_target = k_current * 1.7
+        k_target = k_current * 2.04
         k_target = max(hs.front_spring_range_nmm[0],
                        min(hs.front_spring_range_nmm[1], round(k_target)))
 
@@ -148,8 +148,8 @@ def _recommend_safety(
     elif "front bottoming" in problem.symptom.lower():
         hs = car.heave_spring
         k_current = setup.front_heave_nmm
-        # Stiffen by 40% for bottoming
-        k_target = k_current * 1.4
+        # Excursion ~ 1/√k, so 30% reduction: k_new = k_old / 0.7² ≈ 2.04
+        k_target = k_current * 2.04
         k_target = max(hs.front_spring_range_nmm[0],
                        min(hs.front_spring_range_nmm[1], round(k_target)))
 

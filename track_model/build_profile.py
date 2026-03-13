@@ -78,7 +78,7 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
 
     # === Speed profile (best lap) ===
     speed_profile = _build_speed_profile(speed_kph)
-    peak_vert_g = float(np.max(np.abs(vert_g)))
+    # Note: peak_vert_g uses session-wide value from line 76 (includes all laps)
 
     # === Braking zones ===
     braking_zones = _find_braking_zones(
