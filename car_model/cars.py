@@ -443,7 +443,7 @@ class CarModel:
 
     # Heave spring physics model
     heave_spring: HeaveSpringModel = field(default_factory=lambda: HeaveSpringModel(
-        front_m_eff_kg=166.8, rear_m_eff_kg=3078.3
+        front_m_eff_kg=228.0, rear_m_eff_kg=2395.3
     ))
 
     # Corner spring physics model

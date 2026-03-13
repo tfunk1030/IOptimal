@@ -50,7 +50,7 @@ def write_sto(
     output_path: str | Path,
     tyre_pressure_kpa: float = 152.0,
     # --- Defaults for fields not computed by the solver ---
-    brake_bias_pct: float = 46.5,
+    brake_bias_pct: float = 56.0,
     brake_bias_migration: float = 0.0,
     brake_bias_target: float = 0.0,
     pad_compound: str = "Medium",
