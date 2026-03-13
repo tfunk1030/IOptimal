@@ -1,0 +1,14 @@
+{
+  "car": "porsche",
+  "total_sessions": 2,
+  "tracks_included": [
+    "Sebring International Raceway"
+  ],
+  "aero_compression_front_mm": 12.090606498718262,
+  "aero_compression_rear_mm": 23.303792572021486,
+  "roll_gradient_global_deg_per_g": 0.8398469702351248,
+  "m_eff_front_global_kg": 497.9889909062149,
+  "anomalies": [],
+  "confidence": "low",
+  "last_updated": "2026-03-13T17:20:42.367935+00:00"
+}

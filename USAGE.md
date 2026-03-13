@@ -169,7 +169,7 @@ python -m comparison --car bmw --ibt session1.ibt session2.ibt session3.ibt --wi
 | `--car` | Yes | — | Car name |
 | `--ibt` | Yes (2+) | — | Paths to two or more IBT files |
 | `--wing` | No | auto | Wing angle for synthesis |
-| `--lap` | No | best lap | Lap number in each IBT |
+| `--lap` | No | best lap | Lap number(s) — one per IBT file, or a single value for all |
 | `--balance` | No | 50.14 | Target DF balance for synthesis (%) |
 | `--fuel` | No | auto | Fuel load override in liters |
 | `--sto` | No | — | Export synthesized setup as .sto |

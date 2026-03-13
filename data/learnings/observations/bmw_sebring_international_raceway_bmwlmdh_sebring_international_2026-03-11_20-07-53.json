@@ -1,10 +1,10 @@
 {
   "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-11_20-07-53",
-  "ibt_path": "bmwlmdh_sebring international 2026-03-11 20-07-53.ibt",
+  "ibt_path": "ibtfiles/bmwlmdh_sebring international 2026-03-11 20-07-53.ibt",
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-13T08:51:05.214314+00:00",
+  "timestamp": "2026-03-13T17:20:26.012060+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -61,7 +61,8 @@
     "best_lap_time_s": 109.37226867675781,
     "lap_number": 13,
     "median_speed_kph": 192.8,
-    "max_speed_kph": 296.6
+    "max_speed_kph": 296.6,
+    "consistency_cv": 0.06931036944826412
   },
   "telemetry": {
     "dynamic_front_rh_mm": 21.959684371948242,
@@ -90,8 +91,8 @@
   },
   "driver_profile": {
     "style": "aggressive-variable",
-    "trail_braking_depth": 0.06826315789473685,
-    "trail_braking_class": "light",
+    "trail_braking_depth": 0.2362105263157895,
+    "trail_braking_class": "moderate",
     "throttle_progressiveness": 0.5722142887058032,
     "steering_smoothness": "smooth",
     "consistency": "variable",
@@ -99,7 +100,7 @@
   },
   "diagnosis": {
     "assessment": "competitive",
-    "problem_count": 6,
+    "problem_count": 7,
     "problems": [
       {
         "category": "safety",
@@ -116,6 +117,14 @@
         "measured": 102.61785507202148,
         "threshold": 80.0,
         "speed_context": "high"
+      },
+      {
+        "category": "balance",
+        "severity": "minor",
+        "symptom": "LLTD 48.6% vs target 52% (delta -3.4%)",
+        "measured": 48.5884856610933,
+        "threshold": 50.0,
+        "speed_context": "all"
       },
       {
         "category": "thermal",

@@ -1,0 +1,21 @@
+{
+  "car": "ferrari",
+  "track": "Sebring International Raceway",
+  "session_count": 6,
+  "key_insights": [
+    "Lap time range: 60.251s \u2013 109.889s (49.638s window across 6 sessions)",
+    "Changed front_rh_static: -0.3999999999999986, rear_rh_static: -0.3999999999999986 (45.620s slower); effects: understeer_high_speed_deg +0.05, understeer_low_speed_deg +0.07, front_dominant_freq_hz +0.79 [high confidence]",
+    "Changed rear_arb_blade: 3.0 (0.670s faster); effects: understeer_low_speed_deg +0.05, front_dominant_freq_hz +1.90 [high confidence]",
+    "Changed rear_arb_blade: -1.0 (0.374s slower); effects: understeer_high_speed_deg -0.03, understeer_low_speed_deg +0.10, front_dominant_freq_hz -1.96 [high confidence]",
+    "No setup changes detected between sessions.",
+    "Measured roll gradient: 0.853 deg/g (+/- 0.061)"
+  ],
+  "setup_trends": [
+    "rear_arb_blade: trending increasing (2.0 -> 4.0 over 6 sessions)"
+  ],
+  "unresolved_questions": [
+    "thermal:Front carcass temp 35C (target >80C) appears in 4/6 sessions \u2014 may need attention",
+    "balance:LLTD 48.7% vs target 52% (delta -3.3%) appears in 3/6 sessions \u2014 may need attention",
+    "thermal:Rear carcass temp 35C (target >80C) appears in 3/6 sessions \u2014 may need attention"
+  ]
+}

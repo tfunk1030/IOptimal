@@ -87,7 +87,7 @@ def ingest_ibt(
     store: KnowledgeStore | None = None,
     verbose: bool = True,
 ) -> dict:
-    """Full ingest cycle: analyze → observe → delta → models → insights.
+    """Full ingest cycle: analyze -> observe -> delta -> models -> insights.
 
     Returns dict with: observation, delta (if any), models, new_learnings
     """
@@ -181,7 +181,7 @@ def ingest_ibt(
             if delta_result.hypotheses:
                 high_conf = [h for h in delta_result.hypotheses if h.confidence >= 0.5]
                 if high_conf:
-                    print(f"\n  Causal hypotheses (≥50% confidence):")
+                    print(f"\n  Causal hypotheses (>=50% confidence):")
                     for h in high_conf[:5]:
                         match = "Y" if h.direction_match else "N"
                         print(f"    [{match}] {h.mechanism} (conf={h.confidence:.0%})")
@@ -338,7 +338,7 @@ def _generate_insights(
         if rg > 0:
             insights["key_insights"].append(
                 f"Measured roll gradient: {rg:.3f} deg/g "
-                f"(± {models.corrections.get('roll_gradient_measured_std', 0):.3f})"
+                f"(+/- {models.corrections.get('roll_gradient_measured_std', 0):.3f})"
             )
 
     return insights

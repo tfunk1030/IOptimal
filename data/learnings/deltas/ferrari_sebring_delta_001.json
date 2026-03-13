@@ -1,0 +1,107 @@
+{
+  "session_before": "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-06_18-03-15",
+  "session_after": "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-06_18-14-24",
+  "car": "ferrari",
+  "track": "Sebring International Raceway",
+  "setup_changes": [],
+  "telemetry_effects": [
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.0995338186621666,
+      "after": 0.10812561213970184,
+      "delta": 0.0086,
+      "pct_change": 8.6,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.1111501008272171,
+      "after": 0.1162877231836319,
+      "delta": 0.0051,
+      "pct_change": 4.6,
+      "significance": "small"
+    },
+    {
+      "metric": "understeer_high_speed_deg",
+      "category": "balance",
+      "before": 0.020336171612143517,
+      "after": 0.07995729148387909,
+      "delta": 0.0596,
+      "pct_change": 293.2,
+      "significance": "large"
+    },
+    {
+      "metric": "understeer_low_speed_deg",
+      "category": "balance",
+      "before": -0.820121169090271,
+      "after": 0.04246969521045685,
+      "delta": 0.8626,
+      "pct_change": 105.2,
+      "significance": "large"
+    },
+    {
+      "metric": "body_slip_p95_deg",
+      "category": "balance",
+      "before": 2.4846432209014893,
+      "after": 3.3405840396881104,
+      "delta": 0.8559,
+      "pct_change": 34.4,
+      "significance": "large"
+    },
+    {
+      "metric": "dynamic_front_rh_mm",
+      "category": "aero",
+      "before": 21.43232536315918,
+      "after": 21.87973403930664,
+      "delta": 0.4474,
+      "pct_change": 2.1,
+      "significance": "small"
+    },
+    {
+      "metric": "dynamic_rear_rh_mm",
+      "category": "aero",
+      "before": 29.376623153686523,
+      "after": 29.790071487426758,
+      "delta": 0.4134,
+      "pct_change": 1.4,
+      "significance": "small"
+    },
+    {
+      "metric": "roll_gradient_deg_per_g",
+      "category": "aero",
+      "before": 0.9798537774167344,
+      "after": 0.8708920486048005,
+      "delta": -0.109,
+      "pct_change": -11.1,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_dominant_freq_hz",
+      "category": "damper",
+      "before": 2.9,
+      "after": 2.14,
+      "delta": -0.76,
+      "pct_change": -26.2,
+      "significance": "large"
+    },
+    {
+      "metric": "rear_dominant_freq_hz",
+      "category": "damper",
+      "before": 4.84,
+      "after": 5.0,
+      "delta": 0.16,
+      "pct_change": 3.3,
+      "significance": "small"
+    }
+  ],
+  "hypotheses": [],
+  "num_setup_changes": 0,
+  "controlled_experiment": true,
+  "changed_steps": [],
+  "lap_time_delta_s": 4.018,
+  "driver_style_changed": true,
+  "key_finding": "No setup changes detected between sessions.",
+  "confidence_level": "low"
+}

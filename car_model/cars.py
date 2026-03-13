@@ -224,7 +224,10 @@ class CornerSpringModel:
     front_torsion_c: float           # Calibration constant: k_wheel = C * OD^4
     front_torsion_od_ref_mm: float   # Reference OD for calibration
     front_torsion_od_range_mm: tuple[float, float] = (11.0, 16.0)
-    front_torsion_od_step_mm: float = 0.10  # Garage step size
+    front_torsion_od_step_mm: float = 0.10  # Garage step size (fallback if no options)
+    # Discrete OD options from iRacing garage — if set, snap_torsion_od uses these
+    # instead of continuous step rounding.
+    front_torsion_od_options: list[float] = field(default_factory=list)
 
     # Rear coil spring
     rear_spring_range_nmm: tuple[float, float] = (100.0, 300.0)
@@ -263,7 +266,10 @@ class CornerSpringModel:
         return (k_wheel_nmm / self.front_torsion_c) ** 0.25
 
     def snap_torsion_od(self, od_mm: float) -> float:
-        """Snap OD to nearest garage step."""
+        """Snap OD to nearest discrete garage option (or step if no options)."""
+        if self.front_torsion_od_options:
+            return min(self.front_torsion_od_options,
+                       key=lambda x: abs(x - od_mm))
         step = self.front_torsion_od_step_mm
         return round(round(od_mm / step) * step, 2)
 
@@ -580,8 +586,12 @@ BMW_M_HYBRID_V8 = CarModel(
         # so front_motion_ratio = 1.0 (formula already gives wheel rate).
         front_torsion_c=0.0008036,
         front_torsion_od_ref_mm=13.9,
-        front_torsion_od_range_mm=(11.0, 16.0),
-        front_torsion_od_step_mm=0.10,
+        front_torsion_od_range_mm=(13.90, 18.20),
+        # Discrete OD options from iRacing garage (14 values, 13.90-18.20mm)
+        front_torsion_od_options=[
+            13.90, 14.34, 14.76, 15.14, 15.51, 15.86,
+            16.19, 16.51, 16.81, 17.11, 17.39, 17.67, 17.94, 18.20,
+        ],
         # Rear coil spring: iRacing reports spring rate at the damper (170 N/mm).
         # To get wheel rate: k_wheel = k_spring * MR^2 = 170 * 0.36 = 61.2 N/mm
         # Third/corner ratio: 530/170 = 3.1x (within 1.5-3.5x guideline)
