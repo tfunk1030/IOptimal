@@ -340,7 +340,7 @@ def _check_balance(
 
     # LLTD check
     if m.lltd_measured > 0:
-        target_lltd = car.weight_dist_front + 0.03  # 3% above front weight dist
+        target_lltd = car.weight_dist_front + 0.05  # 5% above front weight dist (OptimumG baseline)
         lltd_delta = m.lltd_measured - target_lltd
 
         if lltd_delta > t.lltd_high_delta:

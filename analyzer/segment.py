@@ -305,11 +305,11 @@ def segment_lap(
             seg_bs = body_slip_deg[cs:ce]
             bs_peak = float(np.max(np.abs(seg_bs))) if len(seg_bs) > 0 else 0.0
 
-        # Trail braking: fraction of samples past apex with brake > 5%
+        # Trail braking: fraction of pre-apex samples (turn-in to apex) with brake > 5%
         apex_local = ca - cs
-        post_apex_brake = seg_brake[apex_local:]
-        if len(post_apex_brake) > 0:
-            trail_pct = float(np.sum(post_apex_brake > 0.05) / len(post_apex_brake))
+        pre_apex_brake = seg_brake[:apex_local]
+        if len(pre_apex_brake) > 0:
+            trail_pct = float(np.sum(pre_apex_brake > 0.05) / len(pre_apex_brake))
         else:
             trail_pct = 0.0
 

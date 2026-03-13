@@ -91,6 +91,78 @@ class PushrodGeometry:
 
 
 @dataclass
+class RideHeightModel:
+    """Multi-variable static RH prediction from calibration regression.
+
+    Rear: rear_static_rh = intercept + Σ(coeff_i * param_i)
+    Front: front_static_rh = front_intercept + Σ(coeff_i * param_i)
+
+    Calibrated from 13 BMW Sebring sessions (March 2026).
+
+    Front model (2 features): R² ~ 0.64, LOO-CV RMSE = 0.066 mm
+      front_camber_deg (r=0.64) and front_heave_nmm (r=0.50)
+    Rear model (4 features): R² = 0.9655, LOO-CV RMSE = 0.845 mm
+    """
+    # --- Front static RH regression ---
+    front_intercept: float = 30.0   # fallback: acts as pinned value when coeffs are 0
+    front_coeff_heave_nmm: float = 0.0     # mm RH per N/mm heave spring rate
+    front_coeff_camber_deg: float = 0.0    # mm RH per deg front camber
+    front_loo_rmse_mm: float = 0.0
+
+    # --- Rear static RH regression ---
+    rear_intercept: float = 0.0
+    rear_coeff_pushrod: float = 0.0        # mm RH per mm pushrod offset
+    rear_coeff_third_nmm: float = 0.0      # mm RH per N/mm third spring rate
+    rear_coeff_rear_spring: float = 0.0    # mm RH per N/mm rear spring rate
+    rear_coeff_heave_perch: float = 0.0    # mm RH per mm front heave perch offset
+    rear_r_squared: float = 0.0
+    rear_loo_rmse_mm: float = 0.0
+
+    def predict_front_static_rh(
+        self, heave_nmm: float, camber_deg: float,
+    ) -> float:
+        """Predict front static RH from setup parameters."""
+        return (self.front_intercept
+                + self.front_coeff_heave_nmm * heave_nmm
+                + self.front_coeff_camber_deg * camber_deg)
+
+    def predict_rear_static_rh(
+        self, pushrod_mm: float, third_nmm: float,
+        rear_spring_nmm: float, heave_perch_mm: float,
+    ) -> float:
+        """Predict rear static RH from setup parameters."""
+        return (self.rear_intercept
+                + self.rear_coeff_pushrod * pushrod_mm
+                + self.rear_coeff_third_nmm * third_nmm
+                + self.rear_coeff_rear_spring * rear_spring_nmm
+                + self.rear_coeff_heave_perch * heave_perch_mm)
+
+    def pushrod_for_target_rh(
+        self, target_rh_mm: float, third_nmm: float,
+        rear_spring_nmm: float, heave_perch_mm: float,
+    ) -> float:
+        """Solve for the pushrod offset that achieves a target rear static RH."""
+        if abs(self.rear_coeff_pushrod) < 1e-6:
+            return -29.0  # Fallback if pushrod has no effect
+        other = (self.rear_intercept
+                 + self.rear_coeff_third_nmm * third_nmm
+                 + self.rear_coeff_rear_spring * rear_spring_nmm
+                 + self.rear_coeff_heave_perch * heave_perch_mm)
+        return (target_rh_mm - other) / self.rear_coeff_pushrod
+
+    @property
+    def is_calibrated(self) -> bool:
+        """True if rear model has non-zero coefficients."""
+        return abs(self.rear_coeff_pushrod) > 1e-6
+
+    @property
+    def front_is_calibrated(self) -> bool:
+        """True if front model has non-zero coefficients."""
+        return (abs(self.front_coeff_heave_nmm) > 1e-6
+                or abs(self.front_coeff_camber_deg) > 1e-6)
+
+
+@dataclass
 class HeaveSpringModel:
     """Calibrated heave/third spring physics model.
 
@@ -393,6 +465,9 @@ class CarModel:
     # Damper model
     damper: DamperModel = field(default_factory=lambda: DamperModel())
 
+    # Multi-variable ride height prediction model
+    ride_height_model: RideHeightModel = field(default_factory=lambda: RideHeightModel())
+
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
 
@@ -589,6 +664,23 @@ BMW_M_HYBRID_V8 = CarModel(
         rear_hs_rbd_baseline=9,
         rear_hs_slope_baseline=10,
     ),
+    ride_height_model=RideHeightModel(
+        # Calibrated from 13 BMW Sebring sessions (March 2026).
+        # Front model (2 features): LOO-CV RMSE = 0.066 mm
+        #   front_static_rh = 30.1458 + 0.001614*heave_nmm + 0.074486*camber_deg
+        front_intercept=30.1458,
+        front_coeff_heave_nmm=0.001614,
+        front_coeff_camber_deg=0.074486,
+        front_loo_rmse_mm=0.066,
+        # Rear model (4 features): R² = 0.9655, LOO-CV RMSE = 0.845 mm
+        rear_intercept=48.1799,
+        rear_coeff_pushrod=0.399463,
+        rear_coeff_third_nmm=0.008965,
+        rear_coeff_rear_spring=0.065140,
+        rear_coeff_heave_perch=0.255291,
+        rear_r_squared=0.9655,
+        rear_loo_rmse_mm=0.845,
+    ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
 
@@ -729,7 +821,10 @@ FERRARI_499P = CarModel(
         front_torsion_c=0.0008036,  # ESTIMATE — needs Ferrari-specific calibration
         front_torsion_od_ref_mm=13.9,  # ESTIMATE
         front_torsion_od_range_mm=(11.0, 16.0),  # ESTIMATE
-        rear_spring_range_nmm=(100.0, 300.0),  # ESTIMATE — actually torsion bar
+        # WARNING: Ferrari rear is actually a torsion bar (indexed values in iRacing),
+        # but we model it as a coil spring range until the index→OD mapping is decoded.
+        # Corner spring and LLTD outputs for Ferrari are UNRELIABLE until calibrated.
+        rear_spring_range_nmm=(100.0, 300.0),  # PLACEHOLDER — needs torsion bar calibration
         rear_spring_step_nmm=10.0,
         front_motion_ratio=1.0,
         rear_motion_ratio=0.65,  # ESTIMATE — bespoke suspension

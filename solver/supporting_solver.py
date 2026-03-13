@@ -108,7 +108,7 @@ class SupportingSolver:
         wheelbase_m = car.wheelbase_m
         weight_transfer = (cg_height_m / wheelbase_m) * decel_g
         dynamic_front = car.weight_dist_front + weight_transfer
-        # Brake bias scales with dynamic weight but isn't 1:1 (system efficiency ~0.88)
+        # Brake bias scales with dynamic weight but isn't 1:1 (system efficiency ~0.85)
         bias = dynamic_front * 100 * 0.85
         reasons = [
             f"Dynamic front load: {car.weight_dist_front:.2f} + "

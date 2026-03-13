@@ -249,16 +249,14 @@ class ARBSolver:
         arb = self.car.arb
 
         # Roll stiffness from corner springs
-        # Front torsion bar: MR already baked into wheel rate from C*OD^4
-        # Rear coil spring: apply MR^2 to convert spring rate to wheel rate
-        cs = self.car.corner_spring
+        # Both front and rear inputs are already wheel rates (N/mm):
+        #   Front: MR baked into torsion bar C*OD^4 formula
+        #   Rear: converted from spring rate by caller (spring_rate * MR^2)
         k_springs_front = self._corner_spring_roll_stiffness(
             front_wheel_rate_nmm, arb.track_width_front_mm,
-            motion_ratio=cs.front_motion_ratio,
         )
         k_springs_rear = self._corner_spring_roll_stiffness(
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
-            motion_ratio=cs.rear_motion_ratio,
         )
 
         # Target LLTD (OptimumG: static front weight + 5%) + modifier offset

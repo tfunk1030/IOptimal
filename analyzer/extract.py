@@ -276,7 +276,7 @@ def extract_measurements(
         else:
             # Derive from ride height differential
             if has_rh:
-                track_w_m = 1.6  # approximate front track width
+                track_w_m = car.arb.track_width_front_mm / 1000  # car-specific front track width
                 roll_from_rh = np.degrees(np.arctan((lf_rh - rf_rh) / (track_w_m * 1000)))
                 abs_roll_rh = np.abs(roll_from_rh)
                 abs_lat_full = np.abs(lat_g)
@@ -298,12 +298,14 @@ def extract_measurements(
         )
 
         # --- Settle time after bump events ---
+        # Average LF+RF shock velocities for front settle time (not just LF)
+        front_sv_avg = (lf_sv + rf_sv) / 2
         state.front_rh_settle_time_ms = _settle_time(
-            front_rh, front_sv[:n], ibt.tick_rate,
+            front_rh, front_sv_avg, ibt.tick_rate,
         )
+        rear_sv_avg = (lr_sv + rr_sv) / 2
         state.rear_rh_settle_time_ms = _settle_time(
-            rear_rh, rear_sv[:n] if len(rear_sv) >= n else np.concatenate([lr_sv, rr_sv])[:n],
-            ibt.tick_rate,
+            rear_rh, rear_sv_avg, ibt.tick_rate,
         )
 
     # --- Handling dynamics ---

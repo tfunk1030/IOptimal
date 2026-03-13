@@ -1,10 +1,10 @@
-"""GTP Setup Producer — unified IBT→.sto physics pipeline.
+"""GTP Setup Producer — unified IBT->.sto physics pipeline.
 
 Orchestrates the full flow:
-  IBT → telemetry extraction → corner segmentation → driver style analysis
-  → handling diagnosis → aero gradient analysis → solver modifiers
-  → 6-step constraint solver → supporting parameter solver
-  → .sto output + engineering report
+  IBT -> telemetry extraction -> corner segmentation -> driver style analysis
+  -> handling diagnosis -> aero gradient analysis -> solver modifiers
+  -> 6-step constraint solver -> supporting parameter solver
+  -> .sto output + engineering report
 
 Usage:
     python -m pipeline.produce --car bmw --ibt path/to/session.ibt --wing 17
@@ -35,6 +35,7 @@ from solver.corner_spring_solver import CornerSpringSolver
 from solver.damper_solver import DamperSolver
 from solver.heave_solver import HeaveSolver
 from solver.modifiers import SolverModifiers, compute_modifiers
+from solver.learned_corrections import apply_learned_corrections
 from solver.rake_solver import RakeSolver
 from solver.supporting_solver import SupportingSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
@@ -67,6 +68,25 @@ def produce(args: argparse.Namespace) -> None:
     wing = args.wing or current_setup.wing_angle_deg
     fuel = args.fuel or current_setup.fuel_l or 89.0
     print(f"  Wing: {wing}°, Fuel: {fuel:.0f} L")
+
+    # ── Apply learned corrections if requested ──
+    learned = None
+    if getattr(args, "learn", False):
+        track_info = ibt.track_info()
+        track_name = track_info.get("track_name", "")
+        learned = apply_learned_corrections(
+            car.canonical_name, track_name, min_sessions=2, verbose=True
+        )
+        if learned.applied:
+            if learned.heave_m_eff_front_kg is not None:
+                car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
+            if learned.heave_m_eff_rear_kg is not None:
+                car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
+            if learned.aero_compression_front_mm is not None:
+                car.aero_compression.front_compression_mm = learned.aero_compression_front_mm
+            if learned.aero_compression_rear_mm is not None:
+                car.aero_compression.rear_compression_mm = learned.aero_compression_rear_mm
+            print()
 
     # ── Load aero surfaces ──
     surfaces = load_car_surfaces(car.canonical_name)
@@ -175,15 +195,12 @@ def produce(args: argparse.Namespace) -> None:
         dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
         dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
     )
-    # Apply modifier floor constraints
-    if modifiers.front_heave_min_floor_nmm > 0 and step2.front_heave_nmm < modifiers.front_heave_min_floor_nmm:
-        step2 = heave_solver.solve(
-            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-            front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
-            rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
-        )
-    elif modifiers.rear_third_min_floor_nmm > 0 and step2.rear_third_nmm < modifiers.rear_third_min_floor_nmm:
+    # Apply modifier floor constraints (check both independently)
+    needs_re_solve = (
+        (modifiers.front_heave_min_floor_nmm > 0 and step2.front_heave_nmm < modifiers.front_heave_min_floor_nmm)
+        or (modifiers.rear_third_min_floor_nmm > 0 and step2.rear_third_nmm < modifiers.rear_third_min_floor_nmm)
+    )
+    if needs_re_solve:
         step2 = heave_solver.solve(
             dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
             dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
@@ -204,12 +221,53 @@ def produce(args: argparse.Namespace) -> None:
     if not args.report_only:
         print(step3.summary())
 
+    # Convert rear spring rate to wheel rate (MR^2) for downstream solvers
+    rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+
+    # RH reconciliation: refine static RH with actual spring values
+    rh_model = car.ride_height_model
+
+    # Front RH: refine with actual heave spring from step2
+    if rh_model.front_is_calibrated:
+        new_front_rh = rh_model.predict_front_static_rh(
+            step2.front_heave_nmm, car.geometry.front_camber_baseline_deg,
+        )
+        if abs(new_front_rh - step1.static_front_rh_mm) > 0.05:
+            print(f"  Front RH refined: {step1.static_front_rh_mm:.1f} -> "
+                  f"{new_front_rh:.1f} mm (heave {step2.front_heave_nmm:.0f} N/mm)")
+            step1.static_front_rh_mm = round(new_front_rh, 1)
+
+    # Rear RH: refine with actual spring values from step2+step3
+    if rh_model.is_calibrated:
+        predicted_rh = rh_model.predict_rear_static_rh(
+            step1.rear_pushrod_offset_mm, step2.rear_third_nmm,
+            step3.rear_spring_rate_nmm, step2.perch_offset_front_mm,
+        )
+        rh_error = predicted_rh - step1.static_rear_rh_mm
+        if abs(rh_error) > 0.5:
+            new_pushrod = rh_model.pushrod_for_target_rh(
+                step1.static_rear_rh_mm, step2.rear_third_nmm,
+                step3.rear_spring_rate_nmm, step2.perch_offset_front_mm,
+            )
+            new_pushrod = round(new_pushrod * 2) / 2
+            new_rh = rh_model.predict_rear_static_rh(
+                new_pushrod, step2.rear_third_nmm,
+                step3.rear_spring_rate_nmm, step2.perch_offset_front_mm,
+            )
+            print(f"  RH reconciliation: pushrod {step1.rear_pushrod_offset_mm:.1f} "
+                  f"-> {new_pushrod:.1f} mm (RH {predicted_rh:.1f} -> {new_rh:.1f} mm)")
+            step1.rear_pushrod_offset_mm = round(new_pushrod, 1)
+            step1.static_rear_rh_mm = round(new_rh, 1)
+
+    # Update static rake from (possibly refined) front + rear
+    step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
+
     # Step 4: ARBs (with LLTD offset)
     print("\nRunning Step 4: Anti-Roll Bars...")
     arb_solver = ARBSolver(car, track)
     step4 = arb_solver.solve(
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         lltd_offset=modifiers.lltd_offset,
     )
     if not args.report_only:
@@ -221,7 +279,7 @@ def produce(args: argparse.Namespace) -> None:
     step5 = geom_solver.solve(
         k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
     )
     if not args.report_only:
         print(step5.summary())
@@ -231,7 +289,7 @@ def produce(args: argparse.Namespace) -> None:
     damper_solver = DamperSolver(car, track)
     step6 = damper_solver.solve(
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
         rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
         fuel_load_l=fuel,
@@ -313,6 +371,29 @@ def produce(args: argparse.Namespace) -> None:
     )
     print(report)
 
+    # ── Phase L: Auto-learn (ingest session into knowledge base) ──
+    if getattr(args, "auto_learn", False):
+        print()
+        print("=" * 60)
+        print("  AUTO-LEARN: Ingesting session into knowledge base...")
+        print("=" * 60)
+        try:
+            from learner.ingest import ingest_ibt
+            result = ingest_ibt(
+                car_name=args.car,
+                ibt_path=args.ibt,
+                wing=wing,
+                lap=args.lap,
+                verbose=True,
+            )
+            if result.get("new_learnings"):
+                print("\n  New learnings:")
+                for l in result["new_learnings"]:
+                    print(f"    • {l}")
+        except Exception as e:
+            print(f"  Auto-learn failed: {e}")
+            print("  (Setup production was not affected)")
+
 
 def _apply_damper_modifiers(
     step6: object,
@@ -347,7 +428,7 @@ def _apply_damper_modifiers(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="GTP Setup Producer — IBT→.sto physics pipeline"
+        description="GTP Setup Producer — IBT->.sto physics pipeline"
     )
     parser.add_argument("--car", required=True, help="Car name (e.g., bmw)")
     parser.add_argument("--ibt", required=True, help="Path to IBT telemetry file")
@@ -369,6 +450,10 @@ def main():
                         help="Save full JSON summary to file")
     parser.add_argument("--report-only", action="store_true",
                         help="Print only the final report (skip per-step details)")
+    parser.add_argument("--learn", action="store_true",
+                        help="Apply empirical corrections from accumulated session data")
+    parser.add_argument("--auto-learn", action="store_true",
+                        help="Automatically ingest this session into the knowledge base after producing")
     args = parser.parse_args()
 
     produce(args)
