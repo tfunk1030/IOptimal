@@ -40,6 +40,10 @@ class LearnedCorrections:
     aero_compression_front_mm: float | None = None
     aero_compression_rear_mm: float | None = None
 
+    # Calibrated roll gains from tyre thermal spread analysis
+    calibrated_front_roll_gain: float | None = None
+    calibrated_rear_roll_gain: float | None = None
+
     # Damping ratio scale from driver history
     damping_ratio_scale: float | None = None
 
@@ -159,6 +163,23 @@ def apply_learned_corrections(
         result.applied.append(
             f"Aero compression rear: {ac_rear:.1f} mm (measured)"
         )
+
+    # ── Apply calibrated roll gains from tyre thermals ──
+    front_rg = corrections.get("calibrated_front_roll_gain")
+    rg_confidence = corrections.get("roll_gain_calibration_confidence", "insufficient")
+    rg_samples = corrections.get("roll_gain_calibration_samples", 0)
+    if front_rg is not None and rg_confidence in ("medium", "high"):
+        result.calibrated_front_roll_gain = front_rg
+        result.applied.append(
+            f"Front roll_gain: {front_rg:.4f} (thermal calibration, "
+            f"{rg_samples} sessions, {rg_confidence} confidence)"
+        )
+        rear_rg = corrections.get("calibrated_rear_roll_gain")
+        if rear_rg is not None:
+            result.calibrated_rear_roll_gain = rear_rg
+            result.applied.append(
+                f"Rear roll_gain: {rear_rg:.4f} (thermal calibration)"
+            )
 
     if verbose and result.applied:
         print(result.summary())

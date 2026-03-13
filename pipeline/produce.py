@@ -86,6 +86,10 @@ def produce(args: argparse.Namespace) -> None:
                 car.aero_compression.front_compression_mm = learned.aero_compression_front_mm
             if learned.aero_compression_rear_mm is not None:
                 car.aero_compression.rear_compression_mm = learned.aero_compression_rear_mm
+            if learned.calibrated_front_roll_gain is not None:
+                car.geometry.front_roll_gain = learned.calibrated_front_roll_gain
+            if learned.calibrated_rear_roll_gain is not None:
+                car.geometry.rear_roll_gain = learned.calibrated_rear_roll_gain
             print()
 
     # ── Load aero surfaces ──
@@ -241,11 +245,15 @@ def produce(args: argparse.Namespace) -> None:
     # Step 5: Wheel Geometry
     print("\nRunning Step 5: Wheel Geometry...")
     geom_solver = WheelGeometrySolver(car, track)
+    _camber_conf = ("calibrated"
+                    if learned and learned.calibrated_front_roll_gain is not None
+                    else "estimated")
     step5 = geom_solver.solve(
         k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
         rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         fuel_load_l=fuel,
+        camber_confidence=_camber_conf,
     )
     if not args.report_only:
         print(step5.summary())

@@ -186,6 +186,14 @@ def fit_models(
     # ── 8. Physics model corrections ───────────────────────────────
     _compute_corrections(observations, models)
 
+    # ── 9. Roll gain calibration from tyre thermals ─────────────────
+    thermal_cal = calibrate_roll_gain_from_thermals(observations)
+    if thermal_cal["front_roll_gain"] is not None:
+        models.corrections["calibrated_front_roll_gain"] = thermal_cal["front_roll_gain"]
+        models.corrections["calibrated_rear_roll_gain"] = thermal_cal["rear_roll_gain"]
+        models.corrections["roll_gain_calibration_confidence"] = thermal_cal["confidence"]
+        models.corrections["roll_gain_calibration_samples"] = thermal_cal["sample_count"]
+
     return models
 
 
@@ -390,6 +398,98 @@ def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> 
 
     sensitivities.sort(key=lambda t: t[1], reverse=True)
     models.most_sensitive_parameters = [(p, s) for p, _, s in sensitivities[:10]]
+
+
+def calibrate_roll_gain_from_thermals(observations: list[dict]) -> dict:
+    """Calibrate front (and rear) roll gain from tyre inner/outer temperature spread.
+
+    Physics:
+        Inner shoulder hotter than outer → too much negative camber (inner loaded)
+        Outer shoulder hotter than inner → too little negative camber (outer loaded)
+
+        contact_error_deg = (inner_temp - outer_temp) * k_thermal
+        Where k_thermal = 0.025 deg/°C (empirical constant)
+
+        actual_camber = current_camber + contact_error_deg
+
+        Since optimal_camber = -(roll_deg * roll_gain):
+            roll_gain = -actual_camber / roll_deg
+
+    Args:
+        observations: List of session observation dicts. Each must contain:
+            - telemetry.front_tyre_inner_temp
+            - telemetry.front_tyre_outer_temp
+            - telemetry.body_roll_p95_deg
+            - setup.front_camber_deg (current static camber used that session)
+
+    Returns:
+        dict with keys: front_roll_gain, rear_roll_gain, sample_count, confidence
+    """
+    k_thermal = 0.025  # deg/°C — empirical constant (calibrated from Vision tread data)
+
+    front_gains: list[float] = []
+    rear_gains: list[float] = []
+
+    for obs in observations:
+        tel = obs.get("telemetry", {})
+        setup = obs.get("setup", {})
+
+        # ── Front roll gain calibration ──────────────────────────────
+        inner_temp = tel.get("front_tyre_inner_temp")
+        outer_temp = tel.get("front_tyre_outer_temp")
+        body_roll = tel.get("body_roll_p95_deg")
+        current_camber = setup.get("front_camber_deg")
+
+        if all(v is not None for v in [inner_temp, outer_temp, body_roll, current_camber]):
+            if abs(body_roll) > 0.2:  # guard against near-zero division
+                contact_error_deg = (inner_temp - outer_temp) * k_thermal
+                actual_camber = current_camber + contact_error_deg
+                roll_gain = -actual_camber / body_roll
+                # Sanity bounds: realistic roll gain range for GTP cars
+                if 0.1 < roll_gain < 2.5:
+                    front_gains.append(roll_gain)
+
+        # ── Rear roll gain calibration ───────────────────────────────
+        rear_inner = tel.get("rear_tyre_inner_temp")
+        rear_outer = tel.get("rear_tyre_outer_temp")
+        rear_camber = setup.get("rear_camber_deg")
+
+        if all(v is not None for v in [rear_inner, rear_outer, body_roll, rear_camber]):
+            if abs(body_roll) > 0.2:
+                rear_contact_error = (rear_inner - rear_outer) * k_thermal
+                rear_actual_camber = rear_camber + rear_contact_error
+                rear_gain = -rear_actual_camber / body_roll
+                if 0.1 < rear_gain < 2.5:
+                    rear_gains.append(rear_gain)
+
+    sample_count = len(front_gains)
+
+    if sample_count < 3:
+        return {
+            "front_roll_gain": None,
+            "rear_roll_gain": None,
+            "sample_count": sample_count,
+            "confidence": "insufficient",
+        }
+
+    front_mean = float(np.mean(front_gains))
+    rear_mean = float(np.mean(rear_gains)) if rear_gains else None
+
+    # Confidence from coefficient of variation (CV)
+    front_cv = float(np.std(front_gains)) / front_mean if front_mean > 0 else 1.0
+    if front_cv < 0.05 and sample_count >= 6:
+        confidence = "high"
+    elif front_cv < 0.15 and sample_count >= 3:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    return {
+        "front_roll_gain": round(front_mean, 4),
+        "rear_roll_gain": round(rear_mean, 4) if rear_mean is not None else None,
+        "sample_count": sample_count,
+        "confidence": confidence,
+    }
 
 
 def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> None:
