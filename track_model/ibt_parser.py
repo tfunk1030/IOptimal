@@ -176,27 +176,68 @@ class IBTFile:
                 current_lap = new_lap
         return laps
 
-    def best_lap_indices(self, min_time: float = 60.0) -> tuple[int, int] | None:
-        """Find start/end indices of the best valid lap.
+    def lap_times(self, min_time: float = 0.0) -> list[tuple[int, float, int, int]]:
+        """Return [(lap_num, lap_time_s, start_idx, end_idx)] for all complete laps.
 
-        Returns (start_idx, end_idx) or None.
+        Args:
+            min_time: Absolute minimum lap time in seconds (hard floor).
+                      Laps shorter than this are always excluded (e.g., pit
+                      exits, partial laps, red-flag stubs).
         """
         lap_time_ch = self.channel("LapCurrentLapTime")
         if lap_time_ch is None:
-            return None
-
-        boundaries = self.lap_boundaries()
-        best_time = float("inf")
-        best_range = None
-
-        for lap_num, start, end in boundaries:
-            if lap_num <= 0:  # Skip out-lap
+            return []
+        result = []
+        for lap_num, start, end in self.lap_boundaries():
+            if lap_num <= 0:
                 continue
             lt = float(lap_time_ch[end])
-            if lt < min_time:  # Too short to be valid
-                continue
-            if lt < best_time:
-                best_time = lt
-                best_range = (start, end)
+            if lt >= min_time:
+                result.append((lap_num, lt, start, end))
+        return result
 
-        return best_range
+    def best_lap_indices(
+        self,
+        min_time: float = 108.0,
+        outlier_pct: float = 0.115,
+    ) -> tuple[int, int] | None:
+        """Find start/end indices of the best valid representative lap.
+
+        A lap is valid only when:
+          1. Its time >= ``min_time`` (hard absolute floor, default 108s).
+             Catches partial laps, pit exits, and abbreviated stints.
+          2. Its time <= median(valid laps) * (1 + ``outlier_pct``).
+             Drops anomalously slow laps (safety-car, off-track tours, etc.)
+             while keeping real hot laps that are slightly slower than median.
+
+        The default ``outlier_pct=0.115`` (11.5%) means a lap must be within
+        ~12 seconds of the median at Sebring (109s track) to count.
+        Set ``outlier_pct=None`` to disable the upper-bound filter.
+
+        Args:
+            min_time:    Absolute floor in seconds (default 108.0).
+            outlier_pct: Maximum fractional deviation above median to accept
+                         (default 0.115 = 11.5%).  Pass None to disable.
+
+        Returns:
+            (start_idx, end_idx) of the fastest qualifying lap, or None.
+        """
+        import statistics
+
+        valid = self.lap_times(min_time=min_time)
+        if not valid:
+            return None
+
+        # Optionally drop laps that are outliers above the median
+        if outlier_pct is not None and len(valid) >= 2:
+            times = [lt for _, lt, _, _ in valid]
+            med = statistics.median(times)
+            ceiling = med * (1.0 + outlier_pct)
+            valid = [(ln, lt, s, e) for ln, lt, s, e in valid if lt <= ceiling]
+
+        if not valid:
+            return None
+
+        # Return the indices of the fastest remaining lap
+        _, _, best_start, best_end = min(valid, key=lambda x: x[1])
+        return (best_start, best_end)
