@@ -277,6 +277,40 @@ def format_report(
 
         lines.append("")
 
+    # --- Heave Spring Travel ---
+    if measured is not None and (measured.front_heave_defl_p99_mm > 0 or
+                                  measured.front_heave_travel_used_pct > 0):
+        lines.append(section("HEAVE SPRING TRAVEL"))
+        lines.append("")
+
+        if measured.front_heave_defl_mean_mm > 0:
+            lines.append(f"  Front heave deflection:")
+            lines.append(f"    Mean:  {measured.front_heave_defl_mean_mm:.1f} mm"
+                         f"    p99:  {measured.front_heave_defl_p99_mm:.1f} mm"
+                         f"    Max:  {measured.front_heave_defl_max_mm:.1f} mm")
+        if measured.front_heave_travel_used_pct > 0:
+            pct = measured.front_heave_travel_used_pct
+            flag = " *** WARNING ***" if pct > 85 else ""
+            lines.append(f"  Travel used (at speed):     {pct:.0f}%{flag}")
+        if measured.front_heave_travel_used_braking_pct > 0:
+            pct = measured.front_heave_travel_used_braking_pct
+            flag = " *** WARNING ***" if pct > 85 else ""
+            lines.append(f"  Travel used (braking):      {pct:.0f}%{flag}")
+        if measured.heave_bottoming_events_front > 0:
+            lines.append(f"  Bottoming events (front):   {measured.heave_bottoming_events_front}")
+
+        if measured.rear_heave_defl_mean_mm > 0:
+            lines.append(f"  Rear heave deflection:")
+            lines.append(f"    Mean:  {measured.rear_heave_defl_mean_mm:.1f} mm"
+                         f"    p99:  {measured.rear_heave_defl_p99_mm:.1f} mm"
+                         f"    Max:  {measured.rear_heave_defl_max_mm:.1f} mm")
+        if measured.rear_heave_travel_used_pct > 0:
+            lines.append(f"  Rear travel used:           {measured.rear_heave_travel_used_pct:.0f}%")
+        if measured.heave_bottoming_events_rear > 0:
+            lines.append(f"  Bottoming events (rear):    {measured.heave_bottoming_events_rear}")
+
+        lines.append("")
+
     lines.append("=" * width)
 
     return "\n".join(lines)

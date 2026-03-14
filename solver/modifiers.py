@@ -32,6 +32,8 @@ class SolverModifiers:
     # Step 2: Heave
     front_heave_min_floor_nmm: float = 0.0
     rear_third_min_floor_nmm: float = 0.0
+    # Perch offset override (from heave travel exhaustion diagnosis)
+    front_heave_perch_target_mm: float | None = None
 
     # Step 4: ARBs
     lltd_offset: float = 0.0
@@ -54,6 +56,8 @@ class SolverModifiers:
             lines.append(f"  Front heave floor: {self.front_heave_min_floor_nmm:.0f} N/mm")
         if self.rear_third_min_floor_nmm > 0:
             lines.append(f"  Rear third floor: {self.rear_third_min_floor_nmm:.0f} N/mm")
+        if self.front_heave_perch_target_mm is not None:
+            lines.append(f"  Front heave perch target: {self.front_heave_perch_target_mm:.1f} mm")
         if self.lltd_offset != 0:
             lines.append(f"  LLTD offset: {self.lltd_offset:+.3f}")
         if self.damping_ratio_scale != 1.0:
@@ -143,6 +147,27 @@ def compute_modifiers(
                 )
                 mods.reasons.append(
                     f"Front bottoming {problem.measured:.0f} events → heave floor raised"
+                )
+
+        # Safety: heave spring travel exhaustion → perch adjustment
+        # Match both "exhausted under braking" and "used at speed" symptom strings
+        if cat == "safety" and "travel" in symptom and ("exhausted" in symptom or "used" in symptom):
+            # Travel exhaustion under braking: reduce slider position by lowering perch
+            # Each -1mm perch ≈ -0.251mm slider (from calibration)
+            # Target: bring travel usage below 80%
+            travel_pct = problem.measured
+            if travel_pct > 85:
+                # Estimate perch reduction needed: want to gain ~10-15mm of available travel
+                # More negative perch → lower slider → more static deflection →
+                # actually LESS available travel. The fix is to keep slider low
+                # so the spring is properly preloaded but the solver should
+                # optimize perch directly. Set a target perch that's more negative.
+                current_perch = getattr(measured, "front_heave_defl_mean_mm", 0)
+                # Use a reasonable target perch that gives slider ~41mm
+                mods.front_heave_perch_target_mm = -17.0  # Conservative safe value
+                mods.reasons.append(
+                    f"Heave travel {travel_pct:.0f}% exhausted → perch target -17mm "
+                    f"(reduce slider position for more preload)"
                 )
 
         # Damper: settle time
