@@ -150,7 +150,8 @@ def compute_modifiers(
                 )
 
         # Safety: heave spring travel exhaustion → perch adjustment
-        if cat == "safety" and "travel" in symptom and "exhausted" in symptom:
+        # Match both "exhausted under braking" and "used at speed" symptom strings
+        if cat == "safety" and "travel" in symptom and ("exhausted" in symptom or "used" in symptom):
             # Travel exhaustion under braking: reduce slider position by lowering perch
             # Each -1mm perch ≈ -0.251mm slider (from calibration)
             # Target: bring travel usage below 80%
