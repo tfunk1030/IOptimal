@@ -402,6 +402,7 @@ class DamperSolver:
         rear_dynamic_rh_mm: float,
         fuel_load_l: float = 89.0,
         damping_ratio_scale: float = 1.0,
+        measured: "MeasuredState | None" = None,
     ) -> DamperSolution:
         """Derive all damper settings from physics.
 
@@ -486,22 +487,62 @@ class DamperSolver:
         # ─── 8. HS slope (separate front/rear) ───────────────────────────────
         front_slope, rear_slope, slope_reason = self._hs_slope_from_surface()
 
-        # ─── Build corner settings (symmetric L/R) ────────────────────────────
+        # ─── Build corner settings (asymmetric L/R from per-corner shock data) ─
+        # When per-corner shock velocity data is available, the side with higher
+        # p95 shock velocity (more kerb/bump exposure) gets softer HS compression
+        # to improve compliance. The softer side absorbs kerbs better; the stiffer
+        # side maintains sharper platform control on smooth sections.
+        lf_hs_comp_adj = 0
+        rf_hs_comp_adj = 0
+        lr_hs_comp_adj = 0
+        rr_hs_comp_adj = 0
+
+        if measured is not None:
+            lf_sv = measured.lf_shock_vel_p95_mps
+            rf_sv = measured.rf_shock_vel_p95_mps
+            lr_sv = measured.lr_shock_vel_p95_mps
+            rr_sv = measured.rr_shock_vel_p95_mps
+
+            # Front asymmetry: >15% difference triggers adjustment
+            if lf_sv > 0 and rf_sv > 0:
+                front_ratio = max(lf_sv, rf_sv) / min(lf_sv, rf_sv)
+                if front_ratio > 1.15:
+                    # Soften the busier side by 1 click per 15% excess
+                    adj = min(2, round((front_ratio - 1.0) / 0.15))
+                    if lf_sv > rf_sv:
+                        lf_hs_comp_adj = -adj
+                    else:
+                        rf_hs_comp_adj = -adj
+
+            # Rear asymmetry
+            if lr_sv > 0 and rr_sv > 0:
+                rear_ratio = max(lr_sv, rr_sv) / min(lr_sv, rr_sv)
+                if rear_ratio > 1.15:
+                    adj = min(2, round((rear_ratio - 1.0) / 0.15))
+                    if lr_sv > rr_sv:
+                        lr_hs_comp_adj = -adj
+                    else:
+                        rr_hs_comp_adj = -adj
+
         lf = CornerDamperSettings(
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
-            hs_comp=front_hs_comp, hs_rbd=front_hs_rbd, hs_slope=front_slope,
+            hs_comp=max(lo_hs, min(hi_hs, front_hs_comp + lf_hs_comp_adj)),
+            hs_rbd=front_hs_rbd, hs_slope=front_slope,
         )
         rf = CornerDamperSettings(
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
-            hs_comp=front_hs_comp, hs_rbd=front_hs_rbd, hs_slope=front_slope,
+            hs_comp=max(lo_hs, min(hi_hs, front_hs_comp + rf_hs_comp_adj)),
+            hs_rbd=front_hs_rbd, hs_slope=front_slope,
         )
         lr = CornerDamperSettings(
             ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
-            hs_comp=rear_hs_comp, hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
+            hs_comp=max(lo_hs, min(hi_hs, rear_hs_comp + lr_hs_comp_adj)),
+            hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
         )
         rr = CornerDamperSettings(
             ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
-            hs_comp=rear_hs_comp, hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
+            hs_comp=max(lo_hs, min(hi_hs, rear_hs_comp + rr_hs_comp_adj)),
+            hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
         )
 
         # ─── Constraint checks ────────────────────────────────────────────────
