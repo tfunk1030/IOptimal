@@ -66,6 +66,14 @@ def main() -> None:
     parser.add_argument("--space", action="store_true",
                         help="Run setup space exploration (feasible ranges + flat bottom)")
 
+    # ── Lap filtering ──
+    parser.add_argument("--min-lap-time", type=float, default=108.0, dest="min_lap_time",
+                        help="Absolute floor for valid laps in seconds (default: 108.0). "
+                             "Partial laps, pit exits, and aborted stints below this are ignored.")
+    parser.add_argument("--outlier-pct", type=float, default=0.115, dest="outlier_pct",
+                        help="Max %% above lap-time median to accept (default: 0.115 = 11.5%%). "
+                             "Drops safety-car / off-track laps. Pass 0 to disable.")
+
     # ── Learning ──
     parser.add_argument("--no-learn", action="store_true",
                         help="Skip IBT ingestion / empirical corrections (read-only run)")

@@ -117,6 +117,8 @@ def extract_measurements(
     ibt_path: str | Path,
     car: CarModel,
     lap: int | None = None,
+    min_lap_time: float = 108.0,
+    outlier_pct: float = 0.115,
 ) -> MeasuredState:
     """Extract all analysis-relevant measurements from an IBT session.
 
@@ -138,7 +140,7 @@ def extract_measurements(
         state.lap_time_s = float(lap_time_ch[end]) if lap_time_ch is not None else 0.0
         state.lap_number = lap
     else:
-        best = ibt.best_lap_indices(min_time=60.0)
+        best = ibt.best_lap_indices(min_time=min_lap_time, outlier_pct=outlier_pct)
         if best is None:
             raise ValueError("No valid laps found in IBT file")
         start, end = best
