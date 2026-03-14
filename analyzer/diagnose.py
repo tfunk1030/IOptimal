@@ -185,6 +185,122 @@ def _check_safety(
             priority=0,
         ))
 
+    # Front heave spring travel exhaustion (direct deflection measurement)
+    # When deflection approaches DeflMax, the spring bottoms out.
+    # Under braking this causes: entry rotation (spring compressing) → mid-corner push (bottomed).
+    if m.front_heave_travel_used_braking_pct > 85.0:
+        sev = "critical" if m.front_heave_travel_used_braking_pct > 95.0 else "significant"
+        problems.append(Problem(
+            category="safety",
+            severity=sev,
+            symptom=(
+                f"Front heave spring travel {m.front_heave_travel_used_braking_pct:.0f}% "
+                f"exhausted under braking (p99 defl {m.front_heave_defl_braking_p99_mm:.1f}mm)"
+            ),
+            cause=(
+                "Front heave spring travel nearly exhausted under braking. "
+                "High deflection (preload) consumes static travel, leaving "
+                "insufficient dynamic range for weight transfer compression. "
+                "Symptom: entry rotation followed by mid-corner push as spring "
+                "bottoms out and car becomes rigid. "
+                "Fix: reduce heave perch offset (lower deflection) or stiffen heave spring."
+            ),
+            speed_context="braking",
+            measured=m.front_heave_travel_used_braking_pct,
+            threshold=85.0,
+            units="%",
+            priority=0,
+        ))
+
+    # Front heave spring travel exhaustion at speed (non-braking)
+    if m.front_heave_travel_used_pct > 85.0:
+        sev = "critical" if m.front_heave_travel_used_pct > 95.0 else "significant"
+        problems.append(Problem(
+            category="safety",
+            severity=sev,
+            symptom=(
+                f"Front heave spring travel {m.front_heave_travel_used_pct:.0f}% "
+                f"used at speed (p99 defl {m.front_heave_defl_p99_mm:.1f}mm)"
+            ),
+            cause=(
+                "Front heave spring using most of its available travel at speed. "
+                "Bump events or kerbs will exhaust remaining travel, causing "
+                "spike loads through chassis. "
+                "Fix: reduce heave perch offset or stiffen heave spring."
+            ),
+            speed_context="high",
+            measured=m.front_heave_travel_used_pct,
+            threshold=85.0,
+            units="%",
+            priority=0,
+        ))
+
+    # Rear heave spring travel exhaustion at speed
+    if m.rear_heave_travel_used_pct > 85.0:
+        sev = "critical" if m.rear_heave_travel_used_pct > 95.0 else "significant"
+        problems.append(Problem(
+            category="safety",
+            severity=sev,
+            symptom=(
+                f"Rear third spring travel {m.rear_heave_travel_used_pct:.0f}% "
+                f"used at speed (p99 defl {m.rear_heave_defl_p99_mm:.1f}mm)"
+            ),
+            cause=(
+                "Rear third spring using most of its available travel at speed. "
+                "Diffuser stall risk and rear instability if travel exhausts. "
+                "Fix: stiffen rear third spring or adjust rear third perch."
+            ),
+            speed_context="high",
+            measured=m.rear_heave_travel_used_pct,
+            threshold=85.0,
+            units="%",
+            priority=0,
+        ))
+
+    # Direct heave bottoming events (from deflection channel, not ride height proxy)
+    if m.heave_bottoming_events_front > 0:
+        sev = "critical" if m.heave_bottoming_events_front > 10 else "significant"
+        problems.append(Problem(
+            category="safety",
+            severity=sev,
+            symptom=(
+                f"{m.heave_bottoming_events_front} front heave spring bottoming events "
+                f"(deflection within 2mm of DeflMax)"
+            ),
+            cause=(
+                "Front heave spring physically bottoming out — deflection at mechanical "
+                "limit. Car becomes a rigid board with no vertical compliance. "
+                "Fix: reduce heave perch offset (preload) or stiffen heave spring."
+            ),
+            speed_context="all",
+            measured=float(m.heave_bottoming_events_front),
+            threshold=0.0,
+            units="events",
+            priority=0,
+        ))
+
+    # Rear heave bottoming events (from deflection channel)
+    if m.heave_bottoming_events_rear > 0:
+        sev = "critical" if m.heave_bottoming_events_rear > 10 else "significant"
+        problems.append(Problem(
+            category="safety",
+            severity=sev,
+            symptom=(
+                f"{m.heave_bottoming_events_rear} rear third spring bottoming events "
+                f"(deflection within 2mm of DeflMax)"
+            ),
+            cause=(
+                "Rear third spring physically bottoming out — deflection at mechanical "
+                "limit. Rear becomes rigid, diffuser stall risk increases. "
+                "Fix: stiffen rear third spring or adjust perch offset."
+            ),
+            speed_context="all",
+            measured=float(m.heave_bottoming_events_rear),
+            threshold=0.0,
+            units="events",
+            priority=0,
+        ))
+
 
 def _check_platform(
     m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],

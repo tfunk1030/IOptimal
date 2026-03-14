@@ -221,6 +221,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
     step2 = heave_solver.solve(
         dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
         dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+        front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
     )
     # Apply modifier floor constraints (check both independently)
     needs_re_solve = (
@@ -233,6 +234,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
             front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
             rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
+            front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
         )
     if not args.report_only:
         print(step2.summary())

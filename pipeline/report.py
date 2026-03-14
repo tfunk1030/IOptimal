@@ -160,6 +160,32 @@ def generate_report(
         a(_cmp("R HS Comp",          current_setup.rear_hs_comp,         step6.lr.hs_comp,               "cl",  ".0f"))
         a("")
 
+    # ── HEAVE TRAVEL BUDGET ────────────────────────────────────────────
+    if step2.defl_max_front_mm > 0:
+        a(_hdr("FRONT HEAVE TRAVEL BUDGET"))
+        a(f"  Heave spring:       {step2.front_heave_nmm:.0f} N/mm")
+        a(f"  Perch offset:       {step2.perch_offset_front_mm:.1f} mm")
+        a(f"  Slider position:    {step2.slider_static_front_mm:.1f} mm")
+        a(f"  DeflMax:            {step2.defl_max_front_mm:.1f} mm")
+        a(f"  Static deflection:  {step2.static_defl_front_mm:.1f} mm")
+        a(f"  Available travel:   {step2.available_travel_front_mm:.1f} mm")
+        a(f"  Excursion p99:      {step2.front_excursion_at_rate_mm:.1f} mm")
+        margin_status = "OK" if step2.travel_margin_front_mm >= 5 else "LOW"
+        a(f"  Travel margin:      {step2.travel_margin_front_mm:.1f} mm  [{margin_status}]")
+        if step2.total_force_at_limit_n > 0:
+            a(f"  Force at limit:")
+            a(f"    Spring:  {step2.spring_force_at_limit_n:.0f} N  (k × travel)")
+            a(f"    Damper:  {step2.damper_force_braking_n:.0f} N  (c_ls × v_braking)")
+            a(f"    Total:   {step2.total_force_at_limit_n:.0f} N")
+        # Travel usage from telemetry (if measured)
+        if measured.front_heave_travel_used_pct > 0:
+            a(f"  Measured travel use: {measured.front_heave_travel_used_pct:.0f}%")
+        if measured.front_heave_travel_used_braking_pct > 0:
+            pct = measured.front_heave_travel_used_braking_pct
+            flag = " *** WARNING ***" if pct > 85 else ""
+            a(f"  Under braking:      {pct:.0f}%{flag}")
+        a("")
+
     # ── LEARNING SUMMARY ──────────────────────────────────────────────
     try:
         from learner.report_section import generate_learning_section
