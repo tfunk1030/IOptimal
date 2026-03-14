@@ -48,8 +48,11 @@ BOTTOMING_LAPTIME_COST_MS = 20.0  # ms per bottoming event
 TYPICAL_BOTTOMING_EVENTS_PER_LAP = 0.5  # at soft spring limit
 
 # RARB → LLTD → understeer → lap time chain
+# Previous values (0.3 / 0.2) yielded ~180 ms/blade — far too high.
+# RARB is a fine-tuning tool within an already-balanced window.
+# Real-world iRacing experience: 1 blade ≈ 20-50 ms on a Sebring-length track.
 LLTD_US_COEFF = 0.3            # deg understeer per 1% LLTD shift
-US_LAPTIME_COEFF_S_PER_DEG = 0.2  # s/lap per degree understeer (typical circuit)
+US_LAPTIME_COEFF_S_PER_DEG = 0.05  # s/lap per degree understeer (fine-tuning within balance window)
 RARB_LLTD_PER_BLADE = 0.030    # fraction LLTD change per RARB blade (absolute)
 TORSION_LLTD_PER_NMM = 0.003   # fraction LLTD change per N/mm wheel rate (approximate)
 
