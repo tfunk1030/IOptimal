@@ -100,6 +100,15 @@ def diagnose(
     # ── Priority 5: Grip ────────────────────────────────────────────────
     _check_grip(measured, setup, car, problems, thresholds)
 
+    # ── Priority 5+: Brake & Hybrid Feedback ─────────────────────────────
+    _check_brake_system(measured, setup, car, problems)
+
+    # ── In-car adjustment warnings ────────────────────────────────────────
+    _check_in_car_adjustments(measured, problems)
+
+    # ── Speed-dependent balance (LLTD split) ──────────────────────────────
+    _check_speed_dependent_balance(measured, car, problems)
+
     # Sort by priority then severity
     severity_order = {"critical": 0, "significant": 1, "minor": 2}
     problems.sort(key=lambda p: (p.priority, severity_order.get(p.severity, 3)))
@@ -254,6 +263,49 @@ def _check_safety(
             measured=m.rear_heave_travel_used_pct,
             threshold=85.0,
             units="%",
+            priority=0,
+        ))
+
+    # Splitter scrape detection (CFSRrideHeight — most important aero channel)
+    if m.splitter_scrape_events > 0:
+        sev = "critical" if m.splitter_scrape_events > 20 else "significant"
+        problems.append(Problem(
+            category="safety",
+            severity=sev,
+            symptom=(
+                f"{m.splitter_scrape_events} splitter scrape events "
+                f"(min splitter RH = {m.splitter_rh_min_mm:.1f}mm)"
+            ),
+            cause=(
+                "Center front splitter approaching or touching the ground. "
+                "Causes sudden aero stall (complete downforce loss) and potential "
+                "structural damage. Raise front ride height, stiffen front heave "
+                "spring, or reduce front aero compression."
+            ),
+            speed_context="high",
+            measured=float(m.splitter_scrape_events),
+            threshold=0.0,
+            units="events",
+            priority=0,
+        ))
+
+    if m.splitter_rh_mean_at_speed_mm > 0 and m.splitter_rh_p01_mm < 5.0:
+        problems.append(Problem(
+            category="safety",
+            severity="significant",
+            symptom=(
+                f"Splitter p01 clearance only {m.splitter_rh_p01_mm:.1f}mm "
+                f"(mean {m.splitter_rh_mean_at_speed_mm:.1f}mm)"
+            ),
+            cause=(
+                "Splitter running dangerously close to ground. Any additional "
+                "bump, kerb, or dirty air will likely cause scraping. "
+                "Increase front ride height margin."
+            ),
+            speed_context="high",
+            measured=m.splitter_rh_p01_mm,
+            threshold=5.0,
+            units="mm",
             priority=0,
         ))
 
@@ -862,6 +914,165 @@ def _check_grip(
             units="ratio",
             priority=5,
         ))
+
+
+def _check_brake_system(
+    m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
+) -> None:
+    """Check brake system: measured bias vs setup, ABS intervention."""
+
+    # Measured brake bias vs setup bias (from brake line pressures)
+    if m.measured_brake_bias_pct > 0 and s.brake_bias_pct > 0:
+        bias_delta = abs(m.measured_brake_bias_pct - s.brake_bias_pct)
+        if bias_delta > 3.0:
+            problems.append(Problem(
+                category="grip",
+                severity="significant" if bias_delta > 5.0 else "minor",
+                symptom=(
+                    f"Measured brake bias {m.measured_brake_bias_pct:.1f}% "
+                    f"differs from setup {s.brake_bias_pct:.1f}% "
+                    f"(delta {bias_delta:.1f}%)"
+                ),
+                cause=(
+                    "Measured hydraulic brake bias from line pressures does not match "
+                    "the garage setting. This may indicate ABS intervention is skewing "
+                    "the effective bias, or the bias setting is not being applied correctly."
+                ),
+                speed_context="braking",
+                measured=m.measured_brake_bias_pct,
+                threshold=s.brake_bias_pct,
+                units="%",
+                priority=5,
+            ))
+
+    # Excessive ABS intervention
+    if m.abs_active_pct > 30.0:
+        problems.append(Problem(
+            category="grip",
+            severity="significant" if m.abs_active_pct > 50.0 else "minor",
+            symptom=f"ABS active {m.abs_active_pct:.0f}% of braking time",
+            cause=(
+                "ABS intervening too frequently. Either brake bias is too far "
+                "forward (locking fronts) or ABS level is set too aggressively. "
+                "Shift bias rearward or increase ABS intervention threshold."
+            ),
+            speed_context="braking",
+            measured=m.abs_active_pct,
+            threshold=30.0,
+            units="%",
+            priority=5,
+        ))
+
+    # ABS cutting significant force
+    if m.abs_cut_mean_pct > 15.0:
+        problems.append(Problem(
+            category="grip",
+            severity="significant" if m.abs_cut_mean_pct > 25.0 else "minor",
+            symptom=f"ABS cutting {m.abs_cut_mean_pct:.0f}% of brake force when active",
+            cause=(
+                "ABS is reducing brake force significantly. This means the "
+                "braking system is consistently overloading the tyres. "
+                "Reduce brake bias forward or lower ABS aggressiveness."
+            ),
+            speed_context="braking",
+            measured=m.abs_cut_mean_pct,
+            threshold=15.0,
+            units="%",
+            priority=5,
+        ))
+
+
+def _check_in_car_adjustments(
+    m: MeasuredState, problems: list[Problem],
+) -> None:
+    """Check if driver is frequently adjusting in-car settings.
+
+    Frequent adjustments indicate the base setup value is wrong.
+    """
+    if m.brake_bias_adjustments > 5:
+        problems.append(Problem(
+            category="balance",
+            severity="minor",
+            symptom=(
+                f"Brake bias adjusted {m.brake_bias_adjustments} times during session "
+                f"(range {m.brake_bias_range[0]:.1f}-{m.brake_bias_range[1]:.1f})"
+            ),
+            cause=(
+                "Driver frequently changing brake bias suggests the base "
+                "setting is not optimal. Set garage bias closer to the "
+                "most-used value to reduce in-car workload."
+            ),
+            speed_context="all",
+            measured=float(m.brake_bias_adjustments),
+            threshold=5.0,
+            units="adjustments",
+            priority=2,
+        ))
+
+    if m.tc_adjustments > 5:
+        problems.append(Problem(
+            category="grip",
+            severity="minor",
+            symptom=f"Traction control adjusted {m.tc_adjustments} times during session",
+            cause=(
+                "Driver frequently changing TC suggests rear grip is inconsistent. "
+                "If TC is being increased through the stint, rear tyres are "
+                "degrading. Check rear pressures, diff preload, and camber."
+            ),
+            speed_context="traction",
+            measured=float(m.tc_adjustments),
+            threshold=5.0,
+            units="adjustments",
+            priority=5,
+        ))
+
+
+def _check_speed_dependent_balance(
+    m: MeasuredState, car: CarModel, problems: list[Problem],
+) -> None:
+    """Check for speed-dependent LLTD shift (aero vs mechanical balance split)."""
+    if m.lltd_low_speed > 0 and m.lltd_high_speed > 0:
+        lltd_shift = (m.lltd_high_speed - m.lltd_low_speed) * 100  # in %
+        if abs(lltd_shift) > 5.0:  # >5% LLTD shift between speed ranges
+            if lltd_shift > 0:
+                problems.append(Problem(
+                    category="balance",
+                    severity="significant" if abs(lltd_shift) > 8.0 else "minor",
+                    symptom=(
+                        f"LLTD shifts +{lltd_shift:.1f}% from low to high speed "
+                        f"(low {m.lltd_low_speed*100:.1f}%, high {m.lltd_high_speed*100:.1f}%)"
+                    ),
+                    cause=(
+                        "Front carries more lateral load transfer at high speed than low speed. "
+                        "Aero roll resistance is adding to front roll stiffness at speed. "
+                        "This causes more understeer at high speed. "
+                        "Soften front ARB or increase rear aero balance."
+                    ),
+                    speed_context="high",
+                    measured=lltd_shift,
+                    threshold=5.0,
+                    units="%",
+                    priority=2,
+                ))
+            else:
+                problems.append(Problem(
+                    category="balance",
+                    severity="significant" if abs(lltd_shift) > 8.0 else "minor",
+                    symptom=(
+                        f"LLTD shifts {lltd_shift:.1f}% from low to high speed "
+                        f"(low {m.lltd_low_speed*100:.1f}%, high {m.lltd_high_speed*100:.1f}%)"
+                    ),
+                    cause=(
+                        "Rear carries more lateral load transfer at high speed. "
+                        "This causes more oversteer at high speed — dangerous. "
+                        "Stiffen front heave spring or increase front aero balance."
+                    ),
+                    speed_context="high",
+                    measured=lltd_shift,
+                    threshold=-5.0,
+                    units="%",
+                    priority=2,
+                ))
 
 
 def _compute_assessment(problems: list[Problem]) -> str:

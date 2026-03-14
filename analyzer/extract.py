@@ -95,6 +95,9 @@ class MeasuredState:
     front_rh_settle_time_ms: float = 0.0
     rear_rh_settle_time_ms: float = 0.0
 
+    # --- Body roll p95 ---
+    body_roll_p95_deg: float = 0.0
+
     # --- Handling dynamics ---
     understeer_mean_deg: float = 0.0
     understeer_low_speed_deg: float = 0.0
@@ -118,6 +121,76 @@ class MeasuredState:
     rear_pressure_mean_kpa: float = 0.0
     front_wear_mean_pct: float = 0.0
     rear_wear_mean_pct: float = 0.0
+
+    # --- Splitter ride height (CFSRrideHeight) ---
+    splitter_rh_mean_at_speed_mm: float = 0.0   # Mean center-front splitter RH at >150kph
+    splitter_rh_min_mm: float = 0.0              # Minimum observed (splitter scrape proximity)
+    splitter_rh_p01_mm: float = 0.0              # 1st percentile (near-worst case)
+    splitter_rh_std_mm: float = 0.0              # Variance at speed
+    splitter_scrape_events: int = 0              # Samples where splitter RH < 2mm
+
+    # --- Corner shock deflections (LF/RF/LR/RRshockDefl) ---
+    front_corner_defl_p99_mm: float = 0.0        # p99 corner shock deflection (avg LF+RF)
+    rear_corner_defl_p99_mm: float = 0.0         # p99 corner shock deflection (avg LR+RR)
+    front_corner_defl_max_mm: float = 0.0
+    rear_corner_defl_max_mm: float = 0.0
+
+    # --- Heave shock velocities (HFshockVel, HRshockVel) ---
+    front_heave_vel_p95_mps: float = 0.0         # Front heave damper velocity p95
+    front_heave_vel_p99_mps: float = 0.0
+    rear_heave_vel_p95_mps: float = 0.0
+    rear_heave_vel_p99_mps: float = 0.0
+    front_heave_vel_ls_pct: float = 0.0          # % of samples in LS regime (<25 mm/s)
+    front_heave_vel_hs_pct: float = 0.0          # % of samples in HS regime (>100 mm/s)
+
+    # --- Brake system ---
+    measured_brake_bias_pct: float = 0.0         # From brake line pressures: front/(front+rear)
+    abs_active_pct: float = 0.0                  # % of braking time ABS is active
+    abs_cut_mean_pct: float = 0.0                # Mean ABS force reduction during engagement
+    front_brake_pressure_peak_bar: float = 0.0
+    rear_brake_pressure_peak_bar: float = 0.0
+
+    # --- In-car adjustment tracking ---
+    brake_bias_adjustments: int = 0              # Number of bias changes during session
+    tc_adjustments: int = 0                      # Number of TC changes during session
+    brake_bias_range: tuple[float, float] = (0.0, 0.0)  # Min/max bias values used
+
+    # --- Fuel and weight ---
+    fuel_level_at_measurement_l: float = 0.0     # Fuel level during analyzed lap
+    fuel_used_per_lap_l: float = 0.0
+
+    # --- Hybrid/ERS ---
+    ers_battery_mean_pct: float = 0.0            # Mean battery charge during lap
+    ers_battery_min_pct: float = 0.0             # Minimum (depleted = less rear torque)
+    mguk_torque_peak_nm: float = 0.0             # Peak hybrid torque contribution
+
+    # --- Environmental ---
+    air_temp_c: float = 0.0
+    track_temp_c: float = 0.0
+    air_density_kg_m3: float = 0.0
+
+    # --- RPM ---
+    rpm_at_braking_pct_at_limiter: float = 0.0   # % of braking events hitting rev limiter
+
+    # --- Speed-dependent LLTD ---
+    lltd_low_speed: float = 0.0                  # LLTD at <120 kph (mechanical-dominated)
+    lltd_high_speed: float = 0.0                 # LLTD at >180 kph (aero-influenced)
+
+    # --- Directional understeer (left/right split) ---
+    understeer_left_turn_deg: float = 0.0
+    understeer_right_turn_deg: float = 0.0
+
+    # --- Per-corner shock velocities (loaded vs unloaded) ---
+    lf_shock_vel_p95_mps: float = 0.0
+    rf_shock_vel_p95_mps: float = 0.0
+    lr_shock_vel_p95_mps: float = 0.0
+    rr_shock_vel_p95_mps: float = 0.0
+
+    # --- Carcass temperature gradient (inner-outer, for deep camber validation) ---
+    front_carcass_gradient_lf_c: float = 0.0     # LF carcass inner-outer spread
+    front_carcass_gradient_rf_c: float = 0.0
+    rear_carcass_gradient_lr_c: float = 0.0
+    rear_carcass_gradient_rr_c: float = 0.0
 
     # --- Full rebuilt track profile ---
     measured_track_profile: TrackProfile | None = None
@@ -277,16 +350,49 @@ def extract_measurements(
             if total_defl > 0.1:
                 state.lltd_measured = mean_front_defl / total_defl
 
+        # --- Speed-dependent LLTD ---
+        if np.sum(corner_mask) > 100:
+            low_speed_corner = corner_mask & (speed_kph < 120)
+            high_speed_corner = corner_mask & (speed_kph > 180)
+
+            if np.sum(low_speed_corner) > 30:
+                f_defl_ls = np.abs(lf_rh[low_speed_corner] - rf_rh[low_speed_corner])
+                r_defl_ls = np.abs(lr_rh[low_speed_corner] - rr_rh[low_speed_corner])
+                total_ls = float(np.mean(f_defl_ls)) + float(np.mean(r_defl_ls))
+                if total_ls > 0.1:
+                    state.lltd_low_speed = float(np.mean(f_defl_ls)) / total_ls
+
+            if np.sum(high_speed_corner) > 30:
+                f_defl_hs = np.abs(lf_rh[high_speed_corner] - rf_rh[high_speed_corner])
+                r_defl_hs = np.abs(lr_rh[high_speed_corner] - rr_rh[high_speed_corner])
+                total_hs = float(np.mean(f_defl_hs)) + float(np.mean(r_defl_hs))
+                if total_hs > 0.1:
+                    state.lltd_high_speed = float(np.mean(f_defl_hs)) / total_hs
+
         # --- Body roll ---
         if ibt.has_channel("Roll"):
             all_roll_deg = np.degrees(ibt.channel("Roll")[start:end + 1])
             abs_roll = np.abs(all_roll_deg)
-
             abs_lat_full = np.abs(lat_g)
-            p95_lat = float(np.percentile(abs_lat_full, 95))
-            p95_roll = float(np.percentile(abs_roll, 95))
-            if p95_lat > 0.5 and p95_roll > 0.1:
-                state.roll_gradient_measured_deg_per_g = p95_roll / p95_lat
+
+            # p95 body roll (used by learner/empirical_models for roll gradient fitting)
+            state.body_roll_p95_deg = round(float(np.percentile(abs_roll, 95)), 2)
+
+            # Linear regression of |Roll| vs |LatAccel| in the 1-2g range
+            # This is more accurate than the p95/p95 ratio which mixes
+            # independent percentiles from different moments in time
+            regression_mask = (abs_lat_full > 1.0) & (abs_lat_full < 2.5)
+            if np.sum(regression_mask) > 50:
+                x = abs_lat_full[regression_mask]
+                y = abs_roll[regression_mask]
+                coeffs = np.polyfit(x, y, 1)
+                state.roll_gradient_measured_deg_per_g = round(float(coeffs[0]), 3)
+            else:
+                # Fallback to p95 ratio if insufficient cornering data
+                p95_lat = float(np.percentile(abs_lat_full, 95))
+                p95_roll = float(np.percentile(abs_roll, 95))
+                if p95_lat > 0.5 and p95_roll > 0.1:
+                    state.roll_gradient_measured_deg_per_g = p95_roll / p95_lat
 
             if state.peak_lat_g_measured > 1.0:
                 state.body_roll_at_peak_g_deg = float(
@@ -299,10 +405,21 @@ def extract_measurements(
                 roll_from_rh = np.degrees(np.arctan((lf_rh - rf_rh) / (track_w_m * 1000)))
                 abs_roll_rh = np.abs(roll_from_rh)
                 abs_lat_full = np.abs(lat_g)
-                p95_lat = float(np.percentile(abs_lat_full, 95))
-                p95_roll = float(np.percentile(abs_roll_rh, 95))
-                if p95_lat > 0.5 and p95_roll > 0.01:
-                    state.roll_gradient_measured_deg_per_g = p95_roll / p95_lat
+
+                state.body_roll_p95_deg = round(float(np.percentile(abs_roll_rh, 95)), 2)
+
+                regression_mask = (abs_lat_full > 1.0) & (abs_lat_full < 2.5)
+                if np.sum(regression_mask) > 50:
+                    x = abs_lat_full[regression_mask]
+                    y = abs_roll_rh[regression_mask]
+                    coeffs = np.polyfit(x, y, 1)
+                    state.roll_gradient_measured_deg_per_g = round(float(coeffs[0]), 3)
+                else:
+                    p95_lat = float(np.percentile(abs_lat_full, 95))
+                    p95_roll = float(np.percentile(abs_roll_rh, 95))
+                    if p95_lat > 0.5 and p95_roll > 0.01:
+                        state.roll_gradient_measured_deg_per_g = p95_roll / p95_lat
+
                 if state.peak_lat_g_measured > 1.0:
                     state.body_roll_at_peak_g_deg = float(
                         state.roll_gradient_measured_deg_per_g * state.peak_lat_g_measured
@@ -337,6 +454,39 @@ def extract_measurements(
 
     # --- Tyre thermal / wear / pressure ---
     _extract_tyre_data(ibt, start, end, speed_kph, state)
+
+    # --- Splitter ride height (CFSRrideHeight) ---
+    _extract_splitter_rh(ibt, start, end, speed_kph, brake_for_heave, state)
+
+    # --- Corner shock deflections ---
+    _extract_corner_shock_defl(ibt, start, end, state)
+
+    # --- Heave shock velocities ---
+    _extract_heave_shock_vel(ibt, start, end, speed_kph, state)
+
+    # --- Brake system (line pressures, ABS) ---
+    _extract_brake_system(ibt, start, end, state)
+
+    # --- In-car adjustments ---
+    _extract_in_car_adjustments(ibt, state)
+
+    # --- Fuel level ---
+    _extract_fuel(ibt, start, end, state)
+
+    # --- Hybrid/ERS ---
+    _extract_hybrid(ibt, start, end, state)
+
+    # --- Environmental ---
+    _extract_environmental(ibt, state)
+
+    # --- RPM analysis ---
+    _extract_rpm(ibt, start, end, speed_kph, state)
+
+    # --- Per-corner shock velocities ---
+    state.lf_shock_vel_p95_mps = float(np.percentile(lf_sv, 95))
+    state.rf_shock_vel_p95_mps = float(np.percentile(rf_sv, 95))
+    state.lr_shock_vel_p95_mps = float(np.percentile(lr_sv, 95))
+    state.rr_shock_vel_p95_mps = float(np.percentile(rr_sv, 95))
 
     # --- Rebuild full track profile ---
     try:
@@ -394,6 +544,14 @@ def _extract_handling(
         high_speed = cornering & (speed_kph > 180) & (np.abs(lat_g) > 0.5)
         if np.sum(high_speed) > 30:
             state.understeer_high_speed_deg = float(np.mean(understeer_deg[high_speed]))
+
+        # Left/right understeer split (detect asymmetric handling)
+        left_turn = cornering & (lat_g > 0.5)   # positive lat_g = left turn
+        right_turn = cornering & (lat_g < -0.5)
+        if np.sum(left_turn) > 30:
+            state.understeer_left_turn_deg = float(np.mean(understeer_deg[left_turn]))
+        if np.sum(right_turn) > 30:
+            state.understeer_right_turn_deg = float(np.mean(understeer_deg[right_turn]))
 
     # --- Body slip angle ---
     body_slip_deg = np.degrees(np.arctan2(vy, np.maximum(np.abs(vx), 1.0)))
@@ -511,6 +669,38 @@ def _extract_tyre_data(
             rear_carcass.append(np.mean(ibt.channel(ch)[start:end + 1][at_speed]))
     if rear_carcass:
         state.rear_carcass_mean_c = round(float(np.mean(rear_carcass)), 1)
+
+    # --- Carcass temperature gradient (CL vs CR) for deep camber validation ---
+    # When carcass temps are reliable (deviate from ambient), inner-outer
+    # carcass spread confirms whether surface temp spread is a real camber issue
+    carcass_gradient_channels = {
+        "LF": ("LFtempCL", "LFtempCR"),
+        "RF": ("RFtempCL", "RFtempCR"),
+        "LR": ("LRtempCL", "LRtempCR"),
+        "RR": ("RRtempCL", "RRtempCR"),
+    }
+    for corner, (ch_l, ch_r) in carcass_gradient_channels.items():
+        if ibt.has_channel(ch_l) and ibt.has_channel(ch_r):
+            cl = ibt.channel(ch_l)[start:end + 1][at_speed]
+            cr = ibt.channel(ch_r)[start:end + 1][at_speed]
+            # Only compute if carcass temps show meaningful deviation from ambient
+            # (ambient ~25-35C, working temps >60C)
+            mean_cl = float(np.mean(cl))
+            mean_cr = float(np.mean(cr))
+            if mean_cl > 50 or mean_cr > 50:  # Carcass is at working temperature
+                if corner.startswith("L"):
+                    gradient = float(np.mean(cr - cl))  # inner(R) - outer(L)
+                else:
+                    gradient = float(np.mean(cl - cr))  # inner(L) - outer(R)
+
+                if corner == "LF":
+                    state.front_carcass_gradient_lf_c = round(gradient, 1)
+                elif corner == "RF":
+                    state.front_carcass_gradient_rf_c = round(gradient, 1)
+                elif corner == "LR":
+                    state.rear_carcass_gradient_lr_c = round(gradient, 1)
+                elif corner == "RR":
+                    state.rear_carcass_gradient_rr_c = round(gradient, 1)
 
     # --- Tyre pressure ---
     for prefix, attr in [("LF", "front"), ("RF", "front"), ("LR", "rear"), ("RR", "rear")]:
@@ -767,10 +957,286 @@ def _extract_heave_deflection(
 
         state.rear_heave_defl_max_mm = round(float(np.max(hr_defl)), 2)
 
-        # Rear travel usage (rear third spring DeflMax is different — use 61.2mm from calibration)
-        rear_defl_max = 61.2  # Calibrated rear third spring DeflMax (mm)
+        # Rear travel usage — use per-car DeflMax from car model
+        rear_defl_max = hsm.rear_third_defl_max_mm
         full_p99_rear = round(float(np.percentile(hr_defl, 99)), 2)
         if rear_defl_max > 0:
             state.rear_heave_travel_used_pct = round(full_p99_rear / rear_defl_max * 100, 1)
             bottom_thresh_rear = rear_defl_max - 2.0
             state.heave_bottoming_events_rear = int(np.sum(hr_defl > bottom_thresh_rear))
+
+
+def _extract_splitter_rh(
+    ibt: IBTFile, start: int, end: int,
+    speed_kph: np.ndarray, brake: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract center front splitter ride height (CFSRrideHeight).
+
+    The most important single aero channel — directly measures splitter-to-ground
+    clearance. When near zero, the splitter is scraping and aero stall is imminent.
+    """
+    if not ibt.has_channel("CFSRrideHeight"):
+        return
+
+    cfsr = ibt.channel("CFSRrideHeight")[start:end + 1] * 1000  # m → mm
+    at_speed = (speed_kph > 150) & (brake < 0.05)
+
+    if np.sum(at_speed) > 50:
+        state.splitter_rh_mean_at_speed_mm = round(float(np.mean(cfsr[at_speed])), 2)
+        state.splitter_rh_std_mm = round(float(np.std(cfsr[at_speed])), 2)
+        state.splitter_rh_p01_mm = round(float(np.percentile(cfsr[at_speed], 1)), 2)
+
+    state.splitter_rh_min_mm = round(float(np.min(cfsr)), 2)
+    state.splitter_scrape_events = int(np.sum(cfsr < 2.0))
+
+
+def _extract_corner_shock_defl(
+    ibt: IBTFile, start: int, end: int,
+    state: MeasuredState,
+) -> None:
+    """Extract corner shock deflection (LF/RF/LR/RRshockDefl).
+
+    Corner shock deflection measures actual spring compression from static.
+    More precise than ride height for bottoming detection since it directly
+    measures spring travel remaining.
+    """
+    front_channels = ["LFshockDefl", "RFshockDefl"]
+    rear_channels = ["LRshockDefl", "RRshockDefl"]
+
+    if all(ibt.has_channel(c) for c in front_channels):
+        lf_defl = np.abs(ibt.channel("LFshockDefl")[start:end + 1]) * 1000  # m → mm
+        rf_defl = np.abs(ibt.channel("RFshockDefl")[start:end + 1]) * 1000
+        front_defl = (lf_defl + rf_defl) / 2.0
+        state.front_corner_defl_p99_mm = round(float(np.percentile(front_defl, 99)), 2)
+        state.front_corner_defl_max_mm = round(float(np.max(front_defl)), 2)
+
+    if all(ibt.has_channel(c) for c in rear_channels):
+        lr_defl = np.abs(ibt.channel("LRshockDefl")[start:end + 1]) * 1000
+        rr_defl = np.abs(ibt.channel("RRshockDefl")[start:end + 1]) * 1000
+        rear_defl = (lr_defl + rr_defl) / 2.0
+        state.rear_corner_defl_p99_mm = round(float(np.percentile(rear_defl, 99)), 2)
+        state.rear_corner_defl_max_mm = round(float(np.max(rear_defl)), 2)
+
+
+def _extract_heave_shock_vel(
+    ibt: IBTFile, start: int, end: int,
+    speed_kph: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract heave shock velocities (HFshockVel, HRshockVel).
+
+    Classifies heave damper regime:
+    - <25 mm/s = LS regime (controlled by LS damper settings)
+    - >100 mm/s = HS regime (controlled by HS damper settings)
+
+    High HFshockVel variance at speed indicates platform instability
+    from the heave damper, not the spring.
+    """
+    at_speed = speed_kph > 150
+
+    if ibt.has_channel("HFshockVel"):
+        hf_vel = np.abs(ibt.channel("HFshockVel")[start:end + 1])
+        hf_vel_mmps = hf_vel * 1000  # m/s → mm/s
+
+        if np.sum(at_speed) > 50:
+            hf_at_speed = hf_vel[at_speed]
+            state.front_heave_vel_p95_mps = round(float(np.percentile(hf_at_speed, 95)), 4)
+            state.front_heave_vel_p99_mps = round(float(np.percentile(hf_at_speed, 99)), 4)
+
+        # Regime classification (full lap)
+        total = len(hf_vel_mmps)
+        if total > 0:
+            state.front_heave_vel_ls_pct = round(float(np.sum(hf_vel_mmps < 25) / total * 100), 1)
+            state.front_heave_vel_hs_pct = round(float(np.sum(hf_vel_mmps > 100) / total * 100), 1)
+
+    if ibt.has_channel("HRshockVel"):
+        hr_vel = np.abs(ibt.channel("HRshockVel")[start:end + 1])
+        if np.sum(at_speed) > 50:
+            hr_at_speed = hr_vel[at_speed]
+            state.rear_heave_vel_p95_mps = round(float(np.percentile(hr_at_speed, 95)), 4)
+            state.rear_heave_vel_p99_mps = round(float(np.percentile(hr_at_speed, 99)), 4)
+
+
+def _extract_brake_system(
+    ibt: IBTFile, start: int, end: int,
+    state: MeasuredState,
+) -> None:
+    """Extract brake line pressures, ABS data, and compute measured brake bias.
+
+    Per-corner brake line pressure shows the ACTUAL force distribution including
+    the bias setting and ABS intervention. Comparing front vs rear pressure gives
+    the true hydraulic bias.
+    """
+    brake = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else None
+    braking = (brake > 0.3) if brake is not None else None
+
+    # Brake line pressures → measured brake bias
+    front_press_chs = ["LFbrakeLinePress", "RFbrakeLinePress"]
+    rear_press_chs = ["LRbrakeLinePress", "RRbrakeLinePress"]
+
+    if all(ibt.has_channel(c) for c in front_press_chs + rear_press_chs):
+        lf_press = ibt.channel("LFbrakeLinePress")[start:end + 1]
+        rf_press = ibt.channel("RFbrakeLinePress")[start:end + 1]
+        lr_press = ibt.channel("LRbrakeLinePress")[start:end + 1]
+        rr_press = ibt.channel("RRbrakeLinePress")[start:end + 1]
+
+        front_avg = (lf_press + rf_press) / 2.0
+        rear_avg = (lr_press + rr_press) / 2.0
+
+        state.front_brake_pressure_peak_bar = round(float(np.max(front_avg)), 1)
+        state.rear_brake_pressure_peak_bar = round(float(np.max(rear_avg)), 1)
+
+        if braking is not None and np.sum(braking) > 20:
+            front_braking = front_avg[braking]
+            rear_braking = rear_avg[braking]
+            total = front_braking + rear_braking
+            valid = total > 1.0  # bar
+            if np.sum(valid) > 10:
+                bias_samples = front_braking[valid] / total[valid] * 100
+                state.measured_brake_bias_pct = round(float(np.mean(bias_samples)), 1)
+
+    # ABS activity
+    if ibt.has_channel("BrakeABSactive") and braking is not None:
+        abs_active = ibt.channel("BrakeABSactive")[start:end + 1]
+        braking_count = int(np.sum(braking))
+        if braking_count > 10:
+            state.abs_active_pct = round(
+                float(np.sum(abs_active[braking] > 0.5) / braking_count * 100), 1
+            )
+
+    if ibt.has_channel("BrakeABScutPct") and braking is not None:
+        abs_cut = ibt.channel("BrakeABScutPct")[start:end + 1]
+        abs_engaged = braking & (abs_cut > 0.01)
+        if np.sum(abs_engaged) > 5:
+            state.abs_cut_mean_pct = round(float(np.mean(abs_cut[abs_engaged]) * 100), 1)
+
+
+def _extract_in_car_adjustments(
+    ibt: IBTFile,
+    state: MeasuredState,
+) -> None:
+    """Track in-car adjustment changes across the full session.
+
+    If the driver is frequently adjusting brake bias or TC, the base setup
+    values are wrong and should be changed in the garage.
+    """
+    if ibt.has_channel("dcBrakeBias"):
+        bias = ibt.channel("dcBrakeBias")
+        if bias is not None and len(bias) > 100:
+            changes = np.sum(np.abs(np.diff(bias)) > 0.001)
+            state.brake_bias_adjustments = int(changes)
+            state.brake_bias_range = (round(float(np.min(bias)), 2), round(float(np.max(bias)), 2))
+
+    if ibt.has_channel("dcTractionControl"):
+        tc = ibt.channel("dcTractionControl")
+        if tc is not None and len(tc) > 100:
+            changes = np.sum(np.abs(np.diff(tc)) > 0.001)
+            state.tc_adjustments = int(changes)
+
+
+def _extract_fuel(
+    ibt: IBTFile, start: int, end: int,
+    state: MeasuredState,
+) -> None:
+    """Extract fuel level for weight/balance calculations.
+
+    89L full tank → 0L = ~65kg mass change = ~3% weight distribution shift.
+    """
+    if ibt.has_channel("FuelLevel"):
+        fuel = ibt.channel("FuelLevel")[start:end + 1]
+        state.fuel_level_at_measurement_l = round(float(np.mean(fuel)), 1)
+        fuel_start = float(fuel[0])
+        fuel_end = float(fuel[-1])
+        if fuel_start > fuel_end:
+            state.fuel_used_per_lap_l = round(fuel_start - fuel_end, 2)
+
+
+def _extract_hybrid(
+    ibt: IBTFile, start: int, end: int,
+    state: MeasuredState,
+) -> None:
+    """Extract hybrid/ERS data for traction context.
+
+    When battery is depleted, less rear torque is available from MGU-K.
+    MGU-K torque spikes can cause traction events unrelated to diff/TC.
+    """
+    if ibt.has_channel("EnergyERSBatteryPct"):
+        bat_pct = ibt.channel("EnergyERSBatteryPct")[start:end + 1]
+        state.ers_battery_mean_pct = round(float(np.mean(bat_pct) * 100), 1)
+        state.ers_battery_min_pct = round(float(np.min(bat_pct) * 100), 1)
+    elif ibt.has_channel("EnergyERSBattery"):
+        # Fallback to absolute energy (normalize to approximate percentage)
+        bat_j = ibt.channel("EnergyERSBattery")[start:end + 1]
+        max_j = float(np.max(bat_j)) if np.max(bat_j) > 0 else 1.0
+        state.ers_battery_mean_pct = round(float(np.mean(bat_j) / max_j * 100), 1)
+        state.ers_battery_min_pct = round(float(np.min(bat_j) / max_j * 100), 1)
+
+    if ibt.has_channel("TorqueMGU_K"):
+        mguk = ibt.channel("TorqueMGU_K")[start:end + 1]
+        state.mguk_torque_peak_nm = round(float(np.max(np.abs(mguk))), 1)
+
+
+def _extract_environmental(
+    ibt: IBTFile,
+    state: MeasuredState,
+) -> None:
+    """Extract environmental conditions from session info or telemetry channels.
+
+    Air/track temp affect tyre pressures and grip.
+    Air density affects aero forces (DF and drag scale linearly with density).
+    """
+    if ibt.has_channel("AirTemp"):
+        air_temp = ibt.channel("AirTemp")
+        if air_temp is not None and len(air_temp) > 0:
+            state.air_temp_c = round(float(np.mean(air_temp)), 1)
+
+    if ibt.has_channel("TrackTempCrew"):
+        track_temp = ibt.channel("TrackTempCrew")
+        if track_temp is not None and len(track_temp) > 0:
+            state.track_temp_c = round(float(np.mean(track_temp)), 1)
+
+    if ibt.has_channel("AirDensity"):
+        density = ibt.channel("AirDensity")
+        if density is not None and len(density) > 0:
+            state.air_density_kg_m3 = round(float(np.mean(density)), 4)
+
+
+def _extract_rpm(
+    ibt: IBTFile, start: int, end: int,
+    speed_kph: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract RPM data for rev limiter and gear analysis.
+
+    Hitting the rev limiter before braking zones = lost time from not
+    upshifting or from gear ratio mismatch.
+    """
+    if not ibt.has_channel("RPM") or not ibt.has_channel("Brake"):
+        return
+
+    rpm = ibt.channel("RPM")[start:end + 1]
+    brake = ibt.channel("Brake")[start:end + 1]
+
+    # Detect rev limiter hits: RPM within 50 of max observed RPM
+    rpm_max = float(np.max(rpm))
+    if rpm_max < 1000:
+        return
+
+    limiter_threshold = rpm_max - 50
+    at_limiter = rpm > limiter_threshold
+
+    # Check how often we're at limiter just before braking (within 0.5s = 30 samples)
+    braking_starts = np.where(np.diff(brake > 0.1) == 1)[0]
+    if len(braking_starts) == 0:
+        return
+
+    limiter_before_braking = 0
+    for bs in braking_starts:
+        lookback = max(0, bs - 30)
+        if np.any(at_limiter[lookback:bs]):
+            limiter_before_braking += 1
+
+    state.rpm_at_braking_pct_at_limiter = round(
+        limiter_before_braking / len(braking_starts) * 100, 1
+    )
