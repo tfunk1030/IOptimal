@@ -335,6 +335,7 @@ def synthesize_setup(
         rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
         fuel_load_l=fuel,
         damping_ratio_scale=merged_mods.damping_ratio_scale,
+        measured=best_session.measured,
     )
     _apply_damper_modifiers(step6, merged_mods, car)
 

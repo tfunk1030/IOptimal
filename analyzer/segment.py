@@ -50,7 +50,7 @@ class CornerAnalysis:
     understeer_mean_deg: float = 0.0
     body_slip_peak_deg: float = 0.0
     trail_brake_pct: float = 0.0  # fraction of corner duration with brake > 5%
-    throttle_onset_pct: float = 0.0  # lap_dist % where throttle first exceeds 20%
+    throttle_onset_dist_m: float = 0.0  # lap_dist (m) where throttle first exceeds 20%
 
     # Time loss potential
     delta_to_min_time_s: float = 0.0  # actual - theoretical minimum
@@ -234,10 +234,14 @@ def segment_lap(
         front_rh = np.zeros(n)
         rear_rh = np.zeros(n)
 
+    # Yaw rate (used for radius and understeer)
+    yaw_rate: np.ndarray | None = None
+    if ibt.has_channel("YawRate"):
+        yaw_rate = ibt.channel("YawRate")[start:end + 1]
+
     # Understeer (optional, requires car model)
     understeer_deg: np.ndarray | None = None
-    if car is not None and ibt.has_channel("YawRate"):
-        yaw_rate = ibt.channel("YawRate")[start:end + 1]
+    if car is not None and yaw_rate is not None:
         safe_speed = np.maximum(speed_ms, 5.0)
         road_wheel_angle = steering / car.steering_ratio
         understeer_rad = road_wheel_angle - car.wheelbase_m * yaw_rate / safe_speed
@@ -269,10 +273,15 @@ def segment_lap(
         peak_lat = float(np.max(np.abs(seg_lat)))
         duration = (ce - cs) * dt
 
-        # Radius from apex speed and peak lateral g
-        apex_ms = apex_speed / 3.6
-        lat_ms2 = peak_lat * 9.81
-        radius = (apex_ms ** 2) / lat_ms2 if lat_ms2 > 0.5 else 999.0
+        # Radius from speed / yaw_rate at peak lat_g sample (independent measurement)
+        peak_lat_idx = cs + int(np.argmax(np.abs(seg_lat)))
+        if yaw_rate is not None and abs(float(yaw_rate[peak_lat_idx])) > 0.01:
+            radius = abs(float(speed_ms[peak_lat_idx]) / float(yaw_rate[peak_lat_idx]))
+        else:
+            # Fallback: use speed and lat_g at peak lat_g sample (cotimed)
+            peak_speed_ms = float(speed_ms[peak_lat_idx])
+            lat_ms2 = peak_lat * 9.81
+            radius = (peak_speed_ms ** 2) / lat_ms2 if lat_ms2 > 0.5 else 999.0
 
         speed_class = _classify_speed(apex_speed)
 
@@ -357,7 +366,7 @@ def segment_lap(
             understeer_mean_deg=round(us_mean, 2),
             body_slip_peak_deg=round(bs_peak, 2),
             trail_brake_pct=round(trail_pct, 3),
-            throttle_onset_pct=round(throttle_onset, 1),
+            throttle_onset_dist_m=round(throttle_onset, 1),
             delta_to_min_time_s=round(max(delta_t, 0.0), 3),
         ))
 

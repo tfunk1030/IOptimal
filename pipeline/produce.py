@@ -293,6 +293,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
         fuel_load_l=fuel,
         damping_ratio_scale=modifiers.damping_ratio_scale,
+        measured=measured,
     )
     # Apply damper click offsets from modifiers
     _apply_damper_modifiers(step6, modifiers, car)

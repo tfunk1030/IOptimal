@@ -241,6 +241,42 @@ def build_observation(
         "rf_shock_vel_p95_mps": getattr(m, "rf_shock_vel_p95_mps", 0.0),
         "lr_shock_vel_p95_mps": getattr(m, "lr_shock_vel_p95_mps", 0.0),
         "rr_shock_vel_p95_mps": getattr(m, "rr_shock_vel_p95_mps", 0.0),
+        # Per-corner tyre data
+        "lf_pressure_kpa": getattr(m, "lf_pressure_kpa", 0.0),
+        "rf_pressure_kpa": getattr(m, "rf_pressure_kpa", 0.0),
+        "lr_pressure_kpa": getattr(m, "lr_pressure_kpa", 0.0),
+        "rr_pressure_kpa": getattr(m, "rr_pressure_kpa", 0.0),
+        "lf_cold_pressure_kpa": getattr(m, "lf_cold_pressure_kpa", 0.0),
+        "rf_cold_pressure_kpa": getattr(m, "rf_cold_pressure_kpa", 0.0),
+        "lr_cold_pressure_kpa": getattr(m, "lr_cold_pressure_kpa", 0.0),
+        "rr_cold_pressure_kpa": getattr(m, "rr_cold_pressure_kpa", 0.0),
+        "lf_wear_pct": getattr(m, "lf_wear_pct", 0.0),
+        "rf_wear_pct": getattr(m, "rf_wear_pct", 0.0),
+        "lr_wear_pct": getattr(m, "lr_wear_pct", 0.0),
+        "rr_wear_pct": getattr(m, "rr_wear_pct", 0.0),
+        "lf_temp_middle_c": getattr(m, "lf_temp_middle_c", 0.0),
+        "rf_temp_middle_c": getattr(m, "rf_temp_middle_c", 0.0),
+        "lr_temp_middle_c": getattr(m, "lr_temp_middle_c", 0.0),
+        "rr_temp_middle_c": getattr(m, "rr_temp_middle_c", 0.0),
+        # Raw driver inputs
+        "throttle_raw_mean": getattr(m, "throttle_raw_mean", 0.0),
+        "tc_intervention_pct": getattr(m, "tc_intervention_pct", 0.0),
+        "brake_raw_peak": getattr(m, "brake_raw_peak", 0.0),
+        # Gear
+        "gear_at_apex_mode": getattr(m, "gear_at_apex_mode", 0),
+        "max_gear": getattr(m, "max_gear", 0),
+        # Pitch dynamics
+        "pitch_mean_at_speed_deg": getattr(m, "pitch_mean_at_speed_deg", 0.0),
+        "pitch_range_deg": getattr(m, "pitch_range_deg", 0.0),
+        # Extended adjustments
+        "arb_front_adjustments": getattr(m, "arb_front_adjustments", 0),
+        "arb_rear_adjustments": getattr(m, "arb_rear_adjustments", 0),
+        "tc2_adjustments": getattr(m, "tc2_adjustments", 0),
+        "abs_adjustments": getattr(m, "abs_adjustments", 0),
+        "deploy_mode_adjustments": getattr(m, "deploy_mode_adjustments", 0),
+        # Wind
+        "wind_speed_ms": getattr(m, "wind_speed_ms", 0.0),
+        "wind_dir_deg": getattr(m, "wind_dir_deg", 0.0),
     }
 
     # ── Driver ──
@@ -288,12 +324,12 @@ def build_observation(
         for c in corners:
             corner_perf.append({
                 "corner_id": getattr(c, "corner_id", 0),
-                "lap_dist_m": getattr(c, "lap_dist_m", 0.0),
+                "lap_dist_m": getattr(c, "lap_dist_start_m", 0.0),
                 "direction": getattr(c, "direction", ""),
                 "speed_class": getattr(c, "speed_class", ""),
-                "speed_kph": getattr(c, "speed_kph", 0.0),
-                "understeer_deg": getattr(c, "understeer_deg", 0.0),
-                "body_slip_deg": getattr(c, "body_slip_deg", 0.0),
+                "speed_kph": getattr(c, "apex_speed_kph", 0.0),
+                "understeer_deg": getattr(c, "understeer_mean_deg", 0.0),
+                "body_slip_deg": getattr(c, "body_slip_peak_deg", 0.0),
             })
 
     return Observation(
