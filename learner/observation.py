@@ -208,17 +208,56 @@ def build_observation(
         "rear_rh_settle_time_ms": m.rear_rh_settle_time_ms,
         "front_dominant_freq_hz": m.front_dominant_freq_hz,
         "rear_dominant_freq_hz": m.rear_dominant_freq_hz,
+        # New Phase 1: Splitter & shock deflection
+        "splitter_rh_mean_at_speed_mm": getattr(m, "splitter_rh_mean_at_speed_mm", 0.0),
+        "splitter_rh_min_mm": getattr(m, "splitter_rh_min_mm", 0.0),
+        "splitter_scrape_events": getattr(m, "splitter_scrape_events", 0),
+        "front_corner_defl_p99_mm": getattr(m, "front_corner_defl_p99_mm", 0.0),
+        "rear_corner_defl_p99_mm": getattr(m, "rear_corner_defl_p99_mm", 0.0),
+        "front_heave_vel_p95_mps": getattr(m, "front_heave_vel_p95_mps", 0.0),
+        "rear_heave_vel_p95_mps": getattr(m, "rear_heave_vel_p95_mps", 0.0),
+        "front_heave_vel_ls_pct": getattr(m, "front_heave_vel_ls_pct", 0.0),
+        "front_heave_vel_hs_pct": getattr(m, "front_heave_vel_hs_pct", 0.0),
+        # New Phase 1: Speed-dependent LLTD
+        "lltd_low_speed": getattr(m, "lltd_low_speed", 0.0),
+        "lltd_high_speed": getattr(m, "lltd_high_speed", 0.0),
+        # New Phase 2: Brake system
+        "measured_brake_bias_pct": getattr(m, "measured_brake_bias_pct", 0.0),
+        "abs_active_pct": getattr(m, "abs_active_pct", 0.0),
+        "abs_cut_mean_pct": getattr(m, "abs_cut_mean_pct", 0.0),
+        "brake_bias_adjustments": getattr(m, "brake_bias_adjustments", 0),
+        "tc_adjustments": getattr(m, "tc_adjustments", 0),
+        # New Phase 3: Environmental & hybrid
+        "fuel_level_at_measurement_l": getattr(m, "fuel_level_at_measurement_l", 0.0),
+        "ers_battery_mean_pct": getattr(m, "ers_battery_mean_pct", 0.0),
+        "mguk_torque_peak_nm": getattr(m, "mguk_torque_peak_nm", 0.0),
+        "air_temp_c": getattr(m, "air_temp_c", 0.0),
+        "track_temp_c": getattr(m, "track_temp_c", 0.0),
+        "rpm_at_braking_pct_at_limiter": getattr(m, "rpm_at_braking_pct_at_limiter", 0.0),
+        # New Phase 4: Directional understeer & per-corner shock vel
+        "understeer_left_turn_deg": getattr(m, "understeer_left_turn_deg", 0.0),
+        "understeer_right_turn_deg": getattr(m, "understeer_right_turn_deg", 0.0),
+        "lf_shock_vel_p95_mps": getattr(m, "lf_shock_vel_p95_mps", 0.0),
+        "rf_shock_vel_p95_mps": getattr(m, "rf_shock_vel_p95_mps", 0.0),
+        "lr_shock_vel_p95_mps": getattr(m, "lr_shock_vel_p95_mps", 0.0),
+        "rr_shock_vel_p95_mps": getattr(m, "rr_shock_vel_p95_mps", 0.0),
     }
 
     # ── Driver ──
     driver = {
         "style": d.style,
         "trail_braking_depth": d.trail_brake_depth_mean,
+        "trail_braking_p95": d.trail_brake_depth_p95,
         "trail_braking_class": d.trail_brake_classification,
         "throttle_progressiveness": d.throttle_progressiveness,
+        "throttle_onset_rate_pct_per_s": d.throttle_onset_rate_pct_per_s,
+        "throttle_classification": d.throttle_classification,
         "steering_smoothness": d.steering_smoothness,
+        "steering_jerk_p95_rad_per_s2": d.steering_jerk_p95_rad_per_s2,
+        "apex_speed_cv": d.apex_speed_cv,
         "consistency": d.consistency,
         "cornering_aggression": d.cornering_aggression,
+        "avg_peak_lat_g_utilization": d.avg_peak_lat_g_utilization,
     }
 
     # ── Diagnosis ──

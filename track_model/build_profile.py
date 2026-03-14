@@ -223,6 +223,27 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         ), 2),
     }
 
+    # === Center front splitter ride height ===
+    splitter_mean = 0.0
+    splitter_min = 0.0
+    if ibt.has_channel("CFSRrideHeight"):
+        cfsr = ibt.channel("CFSRrideHeight")[start:end + 1] * 1000  # m → mm
+        at_speed_mask = speed_kph > 150
+        if np.sum(at_speed_mask) > 50:
+            splitter_mean = round(float(np.mean(cfsr[at_speed_mask])), 1)
+        splitter_min = round(float(np.min(cfsr)), 1)
+
+    # === Environmental conditions ===
+    env_air_temp = 0.0
+    env_track_temp = 0.0
+    env_air_density = 0.0
+    if ibt.has_channel("AirTemp"):
+        env_air_temp = round(float(np.mean(ibt.channel("AirTemp")[ot_mask])), 1)
+    if ibt.has_channel("TrackTempCrew"):
+        env_track_temp = round(float(np.mean(ibt.channel("TrackTempCrew")[ot_mask])), 1)
+    if ibt.has_channel("AirDensity"):
+        env_air_density = round(float(np.mean(ibt.channel("AirDensity")[ot_mask])), 4)
+
     # === Telemetry source ===
     telemetry_src = f"{Path(ibt_path).name} — best lap {best_lap_time:.3f}s"
 
@@ -260,6 +281,11 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         roll_gradient_deg_per_g=roll_gradient,
         lltd_measured=lltd_measured,
         surface_profile=surface_profile_data,
+        splitter_rh_mean_mm=splitter_mean,
+        splitter_rh_min_mm=splitter_min,
+        air_temp_c=env_air_temp,
+        track_temp_c=env_track_temp,
+        air_density_kg_m3=env_air_density,
         telemetry_source=telemetry_src,
     )
     return profile
