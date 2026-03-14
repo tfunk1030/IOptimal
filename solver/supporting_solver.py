@@ -243,7 +243,7 @@ class SupportingSolver:
             preload += 5
             reasons.append(f"+5 Nm for rear slip ratio p95={measured.rear_slip_ratio_p95:.3f}")
 
-        sol.diff_preload_nm = round(_clamp(preload, 5.0, 40.0), 0)
+        sol.diff_preload_nm = round(_clamp(preload, 5.0, 40.0) / 5) * 5  # 5 Nm increments
 
         # ── Coast ramp ── (lower angle = more locking on coast/decel)
         coast = 45 - int(driver.trail_brake_depth_mean * 10)

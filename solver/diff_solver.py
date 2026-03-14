@@ -216,7 +216,7 @@ class DiffSolver:
         return DiffSolution(
             lock_pct_coast=round(lock_pct_coast, 1),
             lock_pct_drive=round(lock_pct_drive, 1),
-            preload_nm=round(preload_nm, 0),
+            preload_nm=round(preload_nm / 5) * 5,  # iRacing garage: 5 Nm increments
             coast_ramp_deg=coast_ramp,
             drive_ramp_deg=drive_ramp,
             clutch_plates=clutch_plates,
