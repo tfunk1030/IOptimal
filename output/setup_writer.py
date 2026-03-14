@@ -538,13 +538,32 @@ def write_sto(
     _w_num("rf_torsion_defl", _tb_defl, "mm")
 
     # Front heave spring / slider deflections
-    _fh_delta = step2.front_heave_nmm - 30.0
-    _w_num("front_heave_spring_defl_static",
-           round(24.0 + _fh_delta * (-0.55), 1), "mm")
-    _w_num("front_heave_spring_defl_max",
-           round(97.7 - _fh_delta * 0.35, 1), "mm")
-    _w_num("front_heave_slider_defl_static",
-           round(40.6 + _fh_delta * 0.017, 1), "mm")
+    # Use solver-computed values; fallback uses car_model calibration coefficients
+    _fh = step2.front_heave_nmm
+    _fh_perch = step2.perch_offset_front_mm
+    if step2.static_defl_front_mm > 0:
+        _heave_defl_static = step2.static_defl_front_mm
+    elif _car is not None:
+        _h = _car.heave_spring
+        _heave_defl_static = _h.defl_static_intercept + _h.defl_static_heave_coeff * _fh
+    else:
+        _heave_defl_static = 40.5 + (-0.55) * _fh
+    if step2.defl_max_front_mm > 0:
+        _heave_defl_max = step2.defl_max_front_mm
+    elif _car is not None:
+        _heave_defl_max = _car.heave_spring.heave_spring_defl_max_intercept_mm + _car.heave_spring.heave_spring_defl_max_slope * _fh
+    else:
+        _heave_defl_max = 103.4 + (-0.262) * _fh
+    if step2.slider_static_front_mm > 0:
+        _heave_slider_static = step2.slider_static_front_mm
+    elif _car is not None:
+        _h = _car.heave_spring
+        _heave_slider_static = _h.slider_intercept + _h.slider_heave_coeff * _fh + _h.slider_perch_coeff * _fh_perch
+    else:
+        _heave_slider_static = 46.2 + 0.012 * _fh + 0.251 * _fh_perch
+    _w_num("front_heave_spring_defl_static", round(_heave_defl_static, 1), "mm")
+    _w_num("front_heave_spring_defl_max", round(_heave_defl_max, 1), "mm")
+    _w_num("front_heave_slider_defl_static", round(_heave_slider_static, 1), "mm")
 
     # Rear coil spring deflections
     _lr_spring_defl = round(8.5 * 180.0 / max(step3.rear_spring_rate_nmm, 1.0), 1)
