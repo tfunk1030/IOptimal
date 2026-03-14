@@ -352,6 +352,7 @@ class HeaveSolver:
         dynamic_rear_rh_mm: float,
         front_heave_floor_nmm: float = 0.0,
         rear_third_floor_nmm: float = 0.0,
+        front_heave_perch_target_mm: float | None = None,
     ) -> HeaveSolution:
         """Find minimum safe heave/third spring rates.
 
@@ -361,6 +362,8 @@ class HeaveSolver:
             front_heave_floor_nmm: Minimum front heave rate from modifier
                 (e.g., bottoming diagnosis demands stiffer spring)
             rear_third_floor_nmm: Minimum rear third rate from modifier
+            front_heave_perch_target_mm: Override perch offset from modifier
+                (e.g., travel exhaustion diagnosis demands more negative perch)
 
         Returns:
             HeaveSolution with recommended rates and constraint analysis
@@ -534,6 +537,18 @@ class HeaveSolver:
             else:
                 # No slider model calibrated — use baseline
                 perch_front = hsm.perch_offset_front_baseline_mm
+                static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
+                available_travel = max(0, defl_max - static_defl)
+                travel_margin = available_travel - front_exc
+
+            # Apply perch target override from modifier (diagnosis-driven)
+            if front_heave_perch_target_mm is not None:
+                perch_front = round(front_heave_perch_target_mm * 2) / 2
+                # Recompute slider and travel budget with overridden perch
+                if hsm.slider_perch_coeff > 0:
+                    slider_static = (hsm.slider_intercept
+                                     + hsm.slider_heave_coeff * k_front
+                                     + hsm.slider_perch_coeff * perch_front)
                 static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
                 available_travel = max(0, defl_max - static_defl)
                 travel_margin = available_travel - front_exc
