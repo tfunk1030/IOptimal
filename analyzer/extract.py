@@ -95,6 +95,9 @@ class MeasuredState:
     front_rh_settle_time_ms: float = 0.0
     rear_rh_settle_time_ms: float = 0.0
 
+    # --- Body roll p95 ---
+    body_roll_p95_deg: float = 0.0
+
     # --- Handling dynamics ---
     understeer_mean_deg: float = 0.0
     understeer_low_speed_deg: float = 0.0
@@ -372,6 +375,9 @@ def extract_measurements(
             abs_roll = np.abs(all_roll_deg)
             abs_lat_full = np.abs(lat_g)
 
+            # p95 body roll (used by learner/empirical_models for roll gradient fitting)
+            state.body_roll_p95_deg = round(float(np.percentile(abs_roll, 95)), 2)
+
             # Linear regression of |Roll| vs |LatAccel| in the 1-2g range
             # This is more accurate than the p95/p95 ratio which mixes
             # independent percentiles from different moments in time
@@ -399,6 +405,8 @@ def extract_measurements(
                 roll_from_rh = np.degrees(np.arctan((lf_rh - rf_rh) / (track_w_m * 1000)))
                 abs_roll_rh = np.abs(roll_from_rh)
                 abs_lat_full = np.abs(lat_g)
+
+                state.body_roll_p95_deg = round(float(np.percentile(abs_roll_rh, 95)), 2)
 
                 regression_mask = (abs_lat_full > 1.0) & (abs_lat_full < 2.5)
                 if np.sum(regression_mask) > 50:
