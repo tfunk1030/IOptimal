@@ -48,6 +48,10 @@ EFFECT_METRICS = {
         "front_rh_std_mm", "rear_rh_std_mm",
         "front_bottoming_events", "rear_bottoming_events",
         "front_shock_vel_p95_mps", "rear_shock_vel_p95_mps",
+        "front_heave_defl_p99_mm", "front_heave_travel_used_pct",
+        "front_heave_travel_used_braking_pct",
+        "rear_heave_defl_p99_mm", "rear_heave_travel_used_pct",
+        "heave_bottoming_events_front", "heave_bottoming_events_rear",
     ],
     "balance": [
         "lltd_measured", "understeer_mean_deg",
@@ -74,10 +78,17 @@ KNOWN_CAUSALITY = {
     ("front_heave_nmm", "+"): [
         ("front_rh_std_mm", "-"),
         ("front_bottoming_events", "-"),
+        ("front_heave_defl_p99_mm", "-"),       # stiffer spring = less deflection
+        ("front_heave_travel_used_pct", "-"),    # stiffer spring = more DeflMax headroom
+        ("front_heave_travel_used_braking_pct", "-"),
+        ("heave_bottoming_events_front", "-"),
     ],
     ("rear_third_nmm", "+"): [
         ("rear_rh_std_mm", "-"),
         ("rear_bottoming_events", "-"),
+        ("rear_heave_defl_p99_mm", "-"),
+        ("rear_heave_travel_used_pct", "-"),
+        ("heave_bottoming_events_rear", "-"),
     ],
     ("rear_arb_blade", "+"): [
         ("lltd_measured", "+"),         # more rear ARB → more rear roll resistance → higher front LLTD
@@ -211,6 +222,13 @@ def _classify_effect_significance(metric: str, delta: float, pct: float) -> str:
         "understeer_mean_deg": (0.3, 1.0),
         "front_bottoming_events": (2, 10),
         "rear_bottoming_events": (2, 10),
+        "front_heave_defl_p99_mm": (2.0, 5.0),
+        "front_heave_travel_used_pct": (5.0, 15.0),
+        "front_heave_travel_used_braking_pct": (5.0, 15.0),
+        "rear_heave_defl_p99_mm": (2.0, 5.0),
+        "rear_heave_travel_used_pct": (5.0, 15.0),
+        "heave_bottoming_events_front": (2, 10),
+        "heave_bottoming_events_rear": (2, 10),
         "front_rh_settle_time_ms": (20, 80),
         "roll_gradient_deg_per_g": (0.05, 0.15),
     }
