@@ -235,6 +235,28 @@ def _check_safety(
             priority=0,
         ))
 
+    # Rear heave spring travel exhaustion at speed
+    if m.rear_heave_travel_used_pct > 85.0:
+        sev = "critical" if m.rear_heave_travel_used_pct > 95.0 else "significant"
+        problems.append(Problem(
+            category="safety",
+            severity=sev,
+            symptom=(
+                f"Rear third spring travel {m.rear_heave_travel_used_pct:.0f}% "
+                f"used at speed (p99 defl {m.rear_heave_defl_p99_mm:.1f}mm)"
+            ),
+            cause=(
+                "Rear third spring using most of its available travel at speed. "
+                "Diffuser stall risk and rear instability if travel exhausts. "
+                "Fix: stiffen rear third spring or adjust rear third perch."
+            ),
+            speed_context="high",
+            measured=m.rear_heave_travel_used_pct,
+            threshold=85.0,
+            units="%",
+            priority=0,
+        ))
+
     # Direct heave bottoming events (from deflection channel, not ride height proxy)
     if m.heave_bottoming_events_front > 0:
         sev = "critical" if m.heave_bottoming_events_front > 10 else "significant"
@@ -252,6 +274,28 @@ def _check_safety(
             ),
             speed_context="all",
             measured=float(m.heave_bottoming_events_front),
+            threshold=0.0,
+            units="events",
+            priority=0,
+        ))
+
+    # Rear heave bottoming events (from deflection channel)
+    if m.heave_bottoming_events_rear > 0:
+        sev = "critical" if m.heave_bottoming_events_rear > 10 else "significant"
+        problems.append(Problem(
+            category="safety",
+            severity=sev,
+            symptom=(
+                f"{m.heave_bottoming_events_rear} rear third spring bottoming events "
+                f"(deflection within 2mm of DeflMax)"
+            ),
+            cause=(
+                "Rear third spring physically bottoming out — deflection at mechanical "
+                "limit. Rear becomes rigid, diffuser stall risk increases. "
+                "Fix: stiffen rear third spring or adjust perch offset."
+            ),
+            speed_context="all",
+            measured=float(m.heave_bottoming_events_rear),
             threshold=0.0,
             units="events",
             priority=0,
