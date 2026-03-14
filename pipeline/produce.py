@@ -92,10 +92,13 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
                 car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
             if learned.heave_m_eff_rear_kg is not None:
                 car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
-            if learned.aero_compression_front_mm is not None:
-                car.aero_compression.front_compression_mm = learned.aero_compression_front_mm
-            if learned.aero_compression_rear_mm is not None:
-                car.aero_compression.rear_compression_mm = learned.aero_compression_rear_mm
+            # NOTE: aero_compression_{front,rear}_mm are intentionally NOT applied here.
+            # The IBT LFrideHeight/LRrideHeight sensor channels are in a different
+            # coordinate frame than the aero maps (AeroCalc reference). Applying the
+            # sensor-measured compression to the aero map solver produces inflated
+            # static RH recommendations (+10-15mm error). The car-model values in
+            # cars.py are calibrated directly from AeroCalculator IBT fields and
+            # are the correct reference for the aero solver.
             if learned.calibrated_front_roll_gain is not None:
                 car.geometry.front_roll_gain = learned.calibrated_front_roll_gain
             if learned.calibrated_rear_roll_gain is not None:

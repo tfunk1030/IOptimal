@@ -225,9 +225,9 @@ def main() -> None:
     # ── Car / session ──
     parser.add_argument("--car", required=True,
                         help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
-    parser.add_argument("--ibt", nargs="+", default=None, metavar="IBT",
-                        help="IBT telemetry file(s). One file = single report. "
-                             "Multiple files = individual reports + cross-setup comparison.")
+    parser.add_argument("--ibt", action="append", default=None, metavar="IBT",
+                        help="IBT telemetry file. Repeat for multiple files: "
+                             "--ibt f1.ibt --ibt f2.ibt → per-file reports + comparison table.")
     parser.add_argument("--track", default=None,
                         help="Track name for standalone solver (used when no --ibt)")
     parser.add_argument("--wing", type=float, default=None,
@@ -252,6 +252,8 @@ def main() -> None:
                         help="Save full JSON summary to file")
     parser.add_argument("--report-only", action="store_true",
                         help="Print only the final report (suppress per-step progress)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Show full step-by-step solver output (default: report only)")
     parser.add_argument("--space", action="store_true",
                         help="Run setup space exploration (feasible ranges + flat bottom)")
 
@@ -268,6 +270,10 @@ def main() -> None:
                         help="Skip IBT ingestion / empirical corrections (read-only run)")
 
     args = parser.parse_args()
+
+    # Default: quiet (report-only). Use --verbose to see step-by-step solver output.
+    if not args.verbose:
+        args.report_only = True
 
     # ── Validate ──
     if args.ibt is None and args.track is None:

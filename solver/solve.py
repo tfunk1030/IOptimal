@@ -142,10 +142,7 @@ def run_solver(args: "argparse.Namespace") -> None:
                 car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
             if learned.heave_m_eff_rear_kg is not None:
                 car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
-            if learned.aero_compression_front_mm is not None:
-                car.aero_compression.front_compression_mm = learned.aero_compression_front_mm
-            if learned.aero_compression_rear_mm is not None:
-                car.aero_compression.rear_compression_mm = learned.aero_compression_rear_mm
+            # aero_compression overrides intentionally omitted — see pipeline/produce.py note
             if learned.calibrated_front_roll_gain is not None:
                 car.geometry.front_roll_gain = learned.calibrated_front_roll_gain
             if learned.calibrated_rear_roll_gain is not None:
