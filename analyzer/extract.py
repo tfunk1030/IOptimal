@@ -62,6 +62,23 @@ class MeasuredState:
     front_rh_excursion_measured_mm: float = 0.0
     rear_rh_excursion_measured_mm: float = 0.0
 
+    # --- Heave/shock deflection (spring travel) ---
+    front_heave_defl_mean_mm: float = 0.0       # Mean HFshockDefl at speed
+    front_heave_defl_p99_mm: float = 0.0        # p99 peak compression
+    front_heave_defl_max_mm: float = 0.0        # Maximum observed compression
+    front_heave_defl_std_mm: float = 0.0        # Variance of heave deflection
+    rear_heave_defl_mean_mm: float = 0.0        # Mean HRshockDefl at speed
+    rear_heave_defl_p99_mm: float = 0.0
+    rear_heave_defl_max_mm: float = 0.0
+    rear_heave_defl_std_mm: float = 0.0
+    front_heave_travel_used_pct: float = 0.0    # p99 defl / DeflMax * 100
+    rear_heave_travel_used_pct: float = 0.0
+    heave_bottoming_events_front: int = 0       # Direct spring travel exhaustion
+    heave_bottoming_events_rear: int = 0
+    # Braking-specific heave analysis (detects entry rotation → mid-corner push)
+    front_heave_defl_braking_p99_mm: float = 0.0
+    front_heave_travel_used_braking_pct: float = 0.0
+
     # --- Step 3: Spring response ---
     front_dominant_freq_hz: float = 0.0
     rear_dominant_freq_hz: float = 0.0
@@ -309,6 +326,11 @@ def extract_measurements(
         state.rear_rh_settle_time_ms = _settle_time(
             rear_rh, rear_sv_avg, ibt.tick_rate,
         )
+
+    # --- Heave shock deflection (direct spring travel measurement) ---
+    # Independent of ride height channels — uses HFshockDefl/HRshockDefl directly
+    brake_for_heave = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else np.zeros(n)
+    _extract_heave_deflection(ibt, start, end, speed_kph, brake_for_heave, car, state)
 
     # --- Handling dynamics ---
     _extract_handling(ibt, start, end, speed_ms, speed_kph, lat_g, car, state)
@@ -660,3 +682,95 @@ def _settle_time(
         return 0.0
 
     return round(float(np.median(settle_times)), 1)
+
+
+def _extract_heave_deflection(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    speed_kph: np.ndarray,
+    brake: np.ndarray,
+    car: CarModel,
+    state: MeasuredState,
+) -> None:
+    """Extract heave shock deflection data for spring travel analysis.
+
+    Heave deflection measures actual spring travel (compression from static).
+    When deflection approaches DeflMax, the spring is bottoming out — the car
+    becomes rigid and loses mechanical grip.
+
+    Physics:
+        - Spring force is linear: F = k * x (position-dependent)
+        - Shock force is nonlinear: F = c(v) * v (velocity-dependent)
+        - Under braking (slow weight transfer, LS regime), the spring dominates
+        - If spring travel is exhausted, the car hits a rigid bump stop
+        - Symptom: entry rotation (spring compressing) → mid-corner push (bottomed)
+
+    Channels:
+        HFshockDefl — front heave element deflection (meters)
+        HRshockDefl — rear heave/third element deflection (may be missing)
+    """
+    n = end - start + 1
+    hsm = car.heave_spring
+
+    # --- Front heave deflection ---
+    if ibt.has_channel("HFshockDefl"):
+        hf_defl = np.abs(ibt.channel("HFshockDefl")[start:end + 1]) * 1000  # m → mm
+
+        # At-speed analysis (>150 kph, no heavy braking)
+        at_speed = (speed_kph > 150) & (brake < 0.05)
+        if np.sum(at_speed) > 50:
+            state.front_heave_defl_mean_mm = round(float(np.mean(hf_defl[at_speed])), 2)
+            state.front_heave_defl_std_mm = round(float(np.std(hf_defl[at_speed])), 2)
+            state.front_heave_defl_p99_mm = round(float(np.percentile(hf_defl[at_speed], 99)), 2)
+
+        # Full-lap max
+        state.front_heave_defl_max_mm = round(float(np.max(hf_defl)), 2)
+
+        # Compute travel usage (p99 deflection as % of DeflMax)
+        # DeflMax depends on spring rate — use 50 N/mm as reference (BMW midpoint)
+        # since we may not know the current setup's heave rate at extraction time
+        defl_max_ref = 0.0
+        if hsm.heave_spring_defl_max_intercept_mm > 0:
+            defl_max_ref = hsm.heave_spring_defl_max_intercept_mm + hsm.heave_spring_defl_max_slope * 50.0
+            full_p99 = round(float(np.percentile(hf_defl, 99)), 2)
+            if defl_max_ref > 0:
+                state.front_heave_travel_used_pct = round(full_p99 / defl_max_ref * 100, 1)
+
+                # Direct spring bottoming: deflection within 2mm of DeflMax
+                bottom_thresh = defl_max_ref - 2.0
+                if bottom_thresh > 0:
+                    state.heave_bottoming_events_front = int(np.sum(hf_defl > bottom_thresh))
+
+        # --- Braking-specific analysis ---
+        # Under braking (Brake > 0.3), weight transfer compresses front heave spring.
+        # If it exhausts travel here, driver feels entry rotation → mid-corner push.
+        braking_mask = brake > 0.3
+        if np.sum(braking_mask) > 20:
+            hf_braking = hf_defl[braking_mask]
+            state.front_heave_defl_braking_p99_mm = round(float(np.percentile(hf_braking, 99)), 2)
+            if defl_max_ref > 0:
+                state.front_heave_travel_used_braking_pct = round(
+                    state.front_heave_defl_braking_p99_mm / defl_max_ref * 100, 1
+                )
+
+    # --- Rear heave/third deflection ---
+    # HRshockDefl may be missing in some IBT files (per ibt-parsing-guide.md)
+    if ibt.has_channel("HRshockDefl"):
+        hr_defl = np.abs(ibt.channel("HRshockDefl")[start:end + 1]) * 1000  # m → mm
+
+        at_speed = (speed_kph > 150) & (brake < 0.05)
+        if np.sum(at_speed) > 50:
+            state.rear_heave_defl_mean_mm = round(float(np.mean(hr_defl[at_speed])), 2)
+            state.rear_heave_defl_std_mm = round(float(np.std(hr_defl[at_speed])), 2)
+            state.rear_heave_defl_p99_mm = round(float(np.percentile(hr_defl[at_speed], 99)), 2)
+
+        state.rear_heave_defl_max_mm = round(float(np.max(hr_defl)), 2)
+
+        # Rear travel usage (rear third spring DeflMax is different — use 61.2mm from calibration)
+        rear_defl_max = 61.2  # Calibrated rear third spring DeflMax (mm)
+        full_p99_rear = round(float(np.percentile(hr_defl, 99)), 2)
+        if rear_defl_max > 0:
+            state.rear_heave_travel_used_pct = round(full_p99_rear / rear_defl_max * 100, 1)
+            bottom_thresh_rear = rear_defl_max - 2.0
+            state.heave_bottoming_events_rear = int(np.sum(hr_defl > bottom_thresh_rear))

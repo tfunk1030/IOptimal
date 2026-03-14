@@ -200,6 +200,22 @@ class HeaveSpringModel:
     torsion_bar_turns_baseline_od_mm: float = 13.9
     front_heave_hard_range_nmm: tuple[float, float] | None = None  # Car-specific hard clamp
     front_heave_hard_range_exempt_tracks: list[str] = field(default_factory=list)
+    # Slider position model: SliderStatic = slider_intercept + slider_heave_coeff * heave_nmm
+    #                                        + slider_perch_coeff * perch_mm
+    # Calibrated from 19 BMW sessions: SliderStatic = 46.2 + 0.012*Heave + 0.251*Perch
+    # Perch dominates slider position (21.8:1 ratio vs heave rate)
+    slider_intercept: float = 46.2
+    slider_heave_coeff: float = 0.012
+    slider_perch_coeff: float = 0.251
+    # Spring static deflection model: DeflStatic = defl_static_intercept + defl_static_heave_coeff * heave_nmm
+    # Calibrated: DeflStatic ≈ 24.0 + (heave - 30) * (-0.55)
+    # Simplified: DeflStatic = 40.5 - 0.55 * heave_nmm
+    defl_static_intercept: float = 40.5
+    defl_static_heave_coeff: float = -0.55
+    # Minimum static deflection to keep spring loaded (mm)
+    min_static_defl_mm: float = 3.0
+    # Maximum allowed slider position (spring nearly unloaded above this)
+    max_slider_mm: float = 45.0
 
 
 @dataclass
@@ -361,6 +377,13 @@ class DamperModel:
     rear_hs_slope_baseline: int = 10
     rbd_comp_ratio_target: float = 1.6  # HS rbd:comp from S2 front (8/5)
     ls_threshold_mps: float = 0.05
+    # Shock force-velocity curve parameters (for combined spring+shock modeling)
+    # F = c * v; c varies between LS and HS regimes with digressive transition
+    front_ls_coefficient_nsm: float = 5060.0   # Front LS damping coefficient (N·s/m)
+    front_hs_coefficient_nsm: float = 2586.0   # Front HS damping coefficient (N·s/m)
+    rear_ls_coefficient_nsm: float = 4358.0    # Rear LS damping coefficient (N·s/m)
+    rear_hs_coefficient_nsm: float = 2034.0    # Rear HS damping coefficient (N·s/m)
+    knee_velocity_mps: float = 0.050           # LS/HS transition velocity (50 mm/s)
 
     def snap_click(self, value: float, param: str) -> int:
         lo, hi = getattr(self, f"{param}_range")

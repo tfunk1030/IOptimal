@@ -540,11 +540,14 @@ def write_sto(
     # Front heave spring / slider deflections
     _fh_delta = step2.front_heave_nmm - 30.0
     _w_num("front_heave_spring_defl_static",
-           round(24.0 + _fh_delta * (-0.55), 1), "mm")
+           round(step2.static_defl_front_mm if step2.static_defl_front_mm > 0
+                 else 24.0 + _fh_delta * (-0.55), 1), "mm")
     _w_num("front_heave_spring_defl_max",
-           round(97.7 - _fh_delta * 0.35, 1), "mm")
+           round(step2.defl_max_front_mm if step2.defl_max_front_mm > 0
+                 else 97.7 - _fh_delta * 0.35, 1), "mm")
     _w_num("front_heave_slider_defl_static",
-           round(40.6 + _fh_delta * 0.017, 1), "mm")
+           round(step2.slider_static_front_mm if step2.slider_static_front_mm > 0
+                 else 40.6 + _fh_delta * 0.017, 1), "mm")
 
     # Rear coil spring deflections
     _lr_spring_defl = round(8.5 * 180.0 / max(step3.rear_spring_rate_nmm, 1.0), 1)

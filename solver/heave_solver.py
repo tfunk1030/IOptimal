@@ -41,7 +41,7 @@ Validated against BMW Sebring telemetry:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
@@ -71,12 +71,24 @@ class HeaveSolution:
     rear_sigma_at_rate_mm: float
     rear_binding_constraint: str
 
-    # Perch offsets (baseline reference)
+    # Perch offsets (optimized for travel budget)
     perch_offset_front_mm: float
     perch_offset_rear_mm: float
 
+    # Travel budget analysis (front heave)
+    slider_static_front_mm: float = 0.0       # Predicted slider position
+    defl_max_front_mm: float = 0.0            # Maximum spring travel
+    static_defl_front_mm: float = 0.0         # Static compression from preload
+    available_travel_front_mm: float = 0.0    # DeflMax - StaticDefl
+    travel_margin_front_mm: float = 0.0       # AvailableTravel - excursion_p99
+
+    # Combined spring + shock force analysis
+    spring_force_at_limit_n: float = 0.0      # k * available_travel (spring at max)
+    damper_force_braking_n: float = 0.0       # c_ls * v_braking (damper at typical braking vel)
+    total_force_at_limit_n: float = 0.0       # Spring + damper force before bottoming
+
     # Safety check results
-    safety_checks: list[SpringSafetyCheck]
+    safety_checks: list[SpringSafetyCheck] = field(default_factory=list)
 
     def summary(self) -> str:
         """Human-readable summary of the solution."""
@@ -107,10 +119,34 @@ class HeaveSolution:
             f"    Sigma at rate:       {self.rear_sigma_at_rate_mm:5.1f} mm",
             f"    Binding constraint:  {self.rear_binding_constraint}",
             "",
-            "  PERCH OFFSETS (baseline reference)",
-            f"    Front:  {self.perch_offset_front_mm:6.0f} mm",
+            "  PERCH OFFSETS (optimized for travel budget)",
+            f"    Front:  {self.perch_offset_front_mm:6.1f} mm",
             f"    Rear:   {self.perch_offset_rear_mm:6.0f} mm",
         ]
+
+        # Travel budget section
+        if self.defl_max_front_mm > 0:
+            lines += [
+                "",
+                "  FRONT TRAVEL BUDGET",
+                f"    Slider position:     {self.slider_static_front_mm:5.1f} mm",
+                f"    DeflMax:             {self.defl_max_front_mm:5.1f} mm",
+                f"    Static deflection:   {self.static_defl_front_mm:5.1f} mm",
+                f"    Available travel:    {self.available_travel_front_mm:5.1f} mm",
+                f"    Excursion p99:       {self.front_excursion_at_rate_mm:5.1f} mm",
+                f"    Travel margin:       {self.travel_margin_front_mm:5.1f} mm  "
+                + ("OK" if self.travel_margin_front_mm >= 5 else "LOW"),
+            ]
+
+        # Combined force analysis
+        if self.total_force_at_limit_n > 0:
+            lines += [
+                "",
+                "  COMBINED SPRING + SHOCK FORCE AT TRAVEL LIMIT",
+                f"    Spring force:   {self.spring_force_at_limit_n:7.0f} N  (k × travel)",
+                f"    Damper force:   {self.damper_force_braking_n:7.0f} N  (c_ls × v_braking)",
+                f"    Total:          {self.total_force_at_limit_n:7.0f} N",
+            ]
 
         if self.safety_checks:
             lines += [
@@ -265,6 +301,51 @@ class HeaveSolver:
             reason="; ".join(reasons) if reasons else "Within all constraints",
         )
 
+    def combined_force_at_travel(
+        self,
+        spring_rate_nmm: float,
+        travel_mm: float,
+        velocity_mps: float,
+        axle: str = "front",
+    ) -> tuple[float, float, float]:
+        """Compute combined spring + shock force at a given travel and velocity.
+
+        Springs are linear: F = k * x (position-dependent).
+        Shocks are nonlinear: F = c(v) * v (velocity-dependent).
+        Under braking (slow weight transfer, LS regime ~20 mm/s), spring dominates.
+        Under bump impacts (fast transient, HS regime >50 mm/s), shock dominates.
+
+        Args:
+            spring_rate_nmm: Spring rate (N/mm)
+            travel_mm: Spring compression position (mm from static)
+            velocity_mps: Compression velocity (m/s)
+            axle: "front" or "rear"
+
+        Returns:
+            (spring_force_n, damper_force_n, total_force_n)
+        """
+        spring_force = spring_rate_nmm * travel_mm  # N
+
+        # Select damping coefficient based on velocity regime
+        damper = self.car.damper
+        knee = damper.knee_velocity_mps
+
+        if axle == "front":
+            c_ls = damper.front_ls_coefficient_nsm
+            c_hs = damper.front_hs_coefficient_nsm
+        else:
+            c_ls = damper.rear_ls_coefficient_nsm
+            c_hs = damper.rear_hs_coefficient_nsm
+
+        if velocity_mps <= knee:
+            damper_force = c_ls * velocity_mps
+        else:
+            # Digressive: LS force at knee + HS force for excess velocity
+            damper_force = c_ls * knee + c_hs * (velocity_mps - knee)
+
+        total = spring_force + damper_force
+        return (spring_force, damper_force, total)
+
     def solve(
         self,
         dynamic_front_rh_mm: float,
@@ -385,31 +466,105 @@ class HeaveSolver:
             )
         )
 
-        # HeaveSpringDefl budget validation:
-        # DeflMax (available spring travel) depends only on spring rate.
-        # DeflStatic + dynamic excursion must not exceed DeflMax.
+        # --- Perch offset optimization (travel budget) ---
+        # Compute DeflMax, then find optimal perch that maximizes available travel
+        # while maintaining minimum preload.
+        defl_max = 0.0
+        slider_static = 0.0
+        static_defl = 0.0
+        available_travel = 0.0
+        travel_margin = 0.0
+        perch_front = hsm.perch_offset_front_baseline_mm
+
         if hsm.heave_spring_defl_max_intercept_mm > 0:
             defl_max = (hsm.heave_spring_defl_max_intercept_mm
                         + hsm.heave_spring_defl_max_slope * k_front)
-            # Excursion at recommended rate is front_exc
-            defl_budget_remaining = defl_max - front_exc
-            budget_safe = defl_budget_remaining > 10.0  # 10mm margin for static defl
+
+            # Optimize perch: find value that maximizes available travel
+            # while keeping static deflection >= min_static_defl_mm
+            # and slider position <= max_slider_mm.
+            #
+            # SliderStatic = slider_intercept + slider_heave_coeff * heave + slider_perch_coeff * perch
+            # StaticDefl = defl_static_intercept + defl_static_heave_coeff * heave
+            #   (static deflection depends primarily on heave rate, not perch directly)
+            # AvailableTravel = DeflMax - StaticDefl
+            #
+            # But perch affects slider position, which indicates how much preload is on the spring.
+            # Lower slider = more preload = higher static defl = less available travel.
+            # Higher slider = less preload = lower static defl = more available travel,
+            #   BUT slider > max_slider_mm means spring is nearly unloaded (risky).
+            #
+            # Strategy: target slider that maximizes travel while staying below max_slider_mm.
+            # Solve for perch from slider constraint:
+            #   target_slider = slider_intercept + slider_heave_coeff * heave + slider_perch_coeff * perch
+            #   perch = (target_slider - slider_intercept - slider_heave_coeff * heave) / slider_perch_coeff
+
+            if hsm.slider_perch_coeff > 0:
+                # Target slider: leave 3mm margin below max_slider (spring stays loaded)
+                target_slider = hsm.max_slider_mm - 3.0
+                perch_front = (
+                    (target_slider - hsm.slider_intercept - hsm.slider_heave_coeff * k_front)
+                    / hsm.slider_perch_coeff
+                )
+                # Round to 0.5mm (iRacing garage precision)
+                perch_front = round(perch_front * 2) / 2
+
+                # Verify slider position with computed perch
+                slider_static = (hsm.slider_intercept
+                                 + hsm.slider_heave_coeff * k_front
+                                 + hsm.slider_perch_coeff * perch_front)
+
+                # Static deflection from heave rate
+                static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
+
+                # Ensure minimum preload: static defl must be >= min_static_defl_mm
+                if static_defl < hsm.min_static_defl_mm:
+                    # Need more negative perch to increase preload
+                    # Each mm more negative perch adds ~0.251mm to slider depression
+                    # which adds more static deflection
+                    perch_front -= (hsm.min_static_defl_mm - static_defl) / 0.5
+                    perch_front = round(perch_front * 2) / 2
+                    slider_static = (hsm.slider_intercept
+                                     + hsm.slider_heave_coeff * k_front
+                                     + hsm.slider_perch_coeff * perch_front)
+                    static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
+
+                available_travel = max(0, defl_max - static_defl)
+                travel_margin = available_travel - front_exc
+            else:
+                # No slider model calibrated — use baseline
+                perch_front = hsm.perch_offset_front_baseline_mm
+                static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
+                available_travel = max(0, defl_max - static_defl)
+                travel_margin = available_travel - front_exc
+
+            # Safety check: travel budget
+            budget_safe = travel_margin > 5.0
             safety_checks.append(SpringSafetyCheck(
-                label=f"HeaveSpringDefl budget at {k_front} N/mm",
+                label=f"Travel budget at {k_front} N/mm (perch {perch_front:.1f}mm)",
                 rate_nmm=k_front,
                 axle="front",
                 excursion_mm=round(front_exc, 1),
                 dynamic_rh_mm=round(defl_max, 1),
-                bottoming_mm=round(max(0, front_exc - defl_max), 1),
+                bottoming_mm=round(max(0, front_exc - available_travel), 1),
                 sigma_mm=round(front_sigma, 1),
                 sigma_target_mm=hsm.sigma_target_mm,
                 safe=budget_safe,
-                reason=(f"DeflMax={defl_max:.1f}mm, excursion={front_exc:.1f}mm, "
-                        f"remaining={defl_budget_remaining:.1f}mm for static defl"
+                reason=(f"DeflMax={defl_max:.1f}mm, StaticDefl={static_defl:.1f}mm, "
+                        f"available={available_travel:.1f}mm, excursion={front_exc:.1f}mm, "
+                        f"margin={travel_margin:.1f}mm"
                         if budget_safe else
-                        f"WARN: DeflMax={defl_max:.1f}mm may not accommodate "
-                        f"excursion={front_exc:.1f}mm + static deflection"),
+                        f"WARN: Travel margin {travel_margin:.1f}mm < 5mm. "
+                        f"Spring may bottom under braking weight transfer."),
             ))
+
+        # --- Combined spring + shock force at travel limit ---
+        spring_force_limit = k_front * available_travel if available_travel > 0 else 0.0
+        # Under braking, compression velocity is in LS regime (~20 mm/s for weight transfer)
+        v_braking_mps = 0.020  # Typical braking compression velocity (LS regime)
+        damper = self.car.damper
+        damper_force_braking = damper.front_ls_coefficient_nsm * v_braking_mps
+        total_force_limit = spring_force_limit + damper_force_braking
 
         return HeaveSolution(
             front_heave_nmm=k_front,
@@ -426,7 +581,15 @@ class HeaveSolver:
             rear_bottoming_margin_mm=round(dynamic_rear_rh_mm - rear_exc, 1),
             rear_sigma_at_rate_mm=round(rear_sigma, 1),
             rear_binding_constraint=rear_binding,
-            perch_offset_front_mm=round(hsm.perch_offset_front_baseline_mm),
+            perch_offset_front_mm=round(perch_front, 1),
             perch_offset_rear_mm=round(hsm.perch_offset_rear_baseline_mm),
+            slider_static_front_mm=round(slider_static, 1),
+            defl_max_front_mm=round(defl_max, 1),
+            static_defl_front_mm=round(static_defl, 1),
+            available_travel_front_mm=round(available_travel, 1),
+            travel_margin_front_mm=round(travel_margin, 1),
+            spring_force_at_limit_n=round(spring_force_limit, 0),
+            damper_force_braking_n=round(damper_force_braking, 0),
+            total_force_at_limit_n=round(total_force_limit, 0),
             safety_checks=safety_checks,
         )
