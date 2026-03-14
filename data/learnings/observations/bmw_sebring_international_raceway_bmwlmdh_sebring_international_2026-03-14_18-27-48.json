@@ -1,0 +1,399 @@
+{
+  "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-14_18-27-48",
+  "ibt_path": "ibtfiles\\bmwlmdh_sebring international 2026-03-14 18-27-48.ibt",
+  "car": "bmw",
+  "track": "Sebring International Raceway",
+  "track_config": "International",
+  "timestamp": "2026-03-14T23:40:58.792293+00:00",
+  "ibt_date": "",
+  "setup": {
+    "wing": 17.0,
+    "fuel_l": 89.0,
+    "front_rh_static": 30.1,
+    "rear_rh_static": 49.5,
+    "front_pushrod": -25.5,
+    "rear_pushrod": -23.0,
+    "front_heave_nmm": 30.0,
+    "rear_third_nmm": 450.0,
+    "torsion_bar_od_mm": 13.9,
+    "rear_spring_nmm": 150.0,
+    "front_arb_size": "Soft",
+    "front_arb_blade": 1,
+    "rear_arb_size": "Soft",
+    "rear_arb_blade": 3,
+    "front_camber_deg": -2.1,
+    "rear_camber_deg": -1.7,
+    "front_toe_mm": -0.4,
+    "rear_toe_mm": -0.0,
+    "brake_bias_pct": 46.0,
+    "dampers": {
+      "lf": {
+        "ls_comp": 7,
+        "ls_rbd": 6,
+        "hs_comp": 4,
+        "hs_rbd": 6,
+        "hs_slope": 11
+      },
+      "rf": {
+        "ls_comp": 7,
+        "ls_rbd": 6,
+        "hs_comp": 4,
+        "hs_rbd": 6,
+        "hs_slope": 11
+      },
+      "lr": {
+        "ls_comp": 3,
+        "ls_rbd": 4,
+        "hs_comp": 4,
+        "hs_rbd": 9,
+        "hs_slope": 11
+      },
+      "rr": {
+        "ls_comp": 3,
+        "ls_rbd": 4,
+        "hs_comp": 4,
+        "hs_rbd": 9,
+        "hs_slope": 11
+      }
+    }
+  },
+  "performance": {
+    "best_lap_time_s": 109.13140106201172,
+    "lap_number": 30,
+    "median_speed_kph": 193.4,
+    "max_speed_kph": 295.9,
+    "consistency_cv": 0.0885895088183577
+  },
+  "telemetry": {
+    "dynamic_front_rh_mm": 17.468751907348633,
+    "dynamic_rear_rh_mm": 28.31216812133789,
+    "front_rh_std_mm": 6.405029773712158,
+    "rear_rh_std_mm": 7.41527795791626,
+    "front_shock_vel_p95_mps": 0.13004715740680695,
+    "rear_shock_vel_p95_mps": 0.17236003279685974,
+    "front_shock_vel_p99_mps": 0.24244128167629242,
+    "rear_shock_vel_p99_mps": 0.3274536430835724,
+    "peak_lat_g": 3.9610917568206787,
+    "body_roll_p95_deg": 1.7,
+    "body_roll_max_deg": -0.45948664379119875,
+    "roll_gradient_deg_per_g": -0.116,
+    "lltd_measured": 0.509224222256104,
+    "understeer_mean_deg": -0.10062836855649948,
+    "understeer_high_speed_deg": 0.10055658221244812,
+    "understeer_low_speed_deg": -0.2850389778614044,
+    "body_slip_p95_deg": 3.2292988300323486,
+    "front_bottoming_events": 0,
+    "rear_bottoming_events": 7,
+    "front_heave_defl_p99_mm": 90.46,
+    "front_heave_travel_used_pct": 94.2,
+    "front_heave_travel_used_braking_pct": 94.6,
+    "rear_heave_defl_p99_mm": 0.0,
+    "rear_heave_travel_used_pct": 0.0,
+    "heave_bottoming_events_front": 2,
+    "heave_bottoming_events_rear": 0,
+    "front_rh_settle_time_ms": 0.0,
+    "rear_rh_settle_time_ms": 0.0,
+    "front_dominant_freq_hz": 2.86,
+    "rear_dominant_freq_hz": 5.0,
+    "splitter_rh_mean_at_speed_mm": 51.93,
+    "splitter_rh_min_mm": 23.52,
+    "splitter_scrape_events": 0,
+    "front_corner_defl_p99_mm": 32.41,
+    "rear_corner_defl_p99_mm": 39.49,
+    "front_heave_vel_p95_mps": 0.3235,
+    "rear_heave_vel_p95_mps": 0.0,
+    "front_heave_vel_ls_pct": 23.3,
+    "front_heave_vel_hs_pct": 31.9,
+    "lltd_low_speed": 0.5067460783249268,
+    "lltd_high_speed": 0.5109419694015668,
+    "measured_brake_bias_pct": 68.5,
+    "abs_active_pct": 0.0,
+    "abs_cut_mean_pct": 100.0,
+    "brake_bias_adjustments": 10,
+    "tc_adjustments": 0,
+    "fuel_level_at_measurement_l": 71.0,
+    "ers_battery_mean_pct": 56.1,
+    "mguk_torque_peak_nm": 324.5,
+    "air_temp_c": 27.8,
+    "track_temp_c": 39.4,
+    "rpm_at_braking_pct_at_limiter": 0.0,
+    "understeer_left_turn_deg": -0.02391289733350277,
+    "understeer_right_turn_deg": -0.14550136029720306,
+    "lf_shock_vel_p95_mps": 0.13493478298187256,
+    "rf_shock_vel_p95_mps": 0.12211879342794418,
+    "lr_shock_vel_p95_mps": 0.17969520390033722,
+    "rr_shock_vel_p95_mps": 0.1633032262325287,
+    "lf_pressure_kpa": 186.9,
+    "rf_pressure_kpa": 185.9,
+    "lr_pressure_kpa": 182.3,
+    "rr_pressure_kpa": 181.2,
+    "lf_cold_pressure_kpa": 151.6,
+    "rf_cold_pressure_kpa": 151.6,
+    "lr_cold_pressure_kpa": 151.6,
+    "rr_cold_pressure_kpa": 151.6,
+    "lf_wear_pct": 95.8,
+    "rf_wear_pct": 96.5,
+    "lr_wear_pct": 93.6,
+    "rr_wear_pct": 94.7,
+    "lf_temp_middle_c": 64.9,
+    "rf_temp_middle_c": 65.0,
+    "lr_temp_middle_c": 71.1,
+    "rr_temp_middle_c": 70.3,
+    "throttle_raw_mean": 0.714,
+    "tc_intervention_pct": 0.0,
+    "brake_raw_peak": 0.834,
+    "gear_at_apex_mode": 0,
+    "max_gear": 7,
+    "pitch_mean_at_speed_deg": 0.181,
+    "pitch_range_deg": 1.73,
+    "arb_front_adjustments": 0,
+    "arb_rear_adjustments": 0,
+    "tc2_adjustments": 0,
+    "abs_adjustments": 0,
+    "deploy_mode_adjustments": 0,
+    "wind_speed_ms": 4.02,
+    "wind_dir_deg": 90.0
+  },
+  "driver_profile": {
+    "style": "aggressive-erratic",
+    "trail_braking_depth": 0.2814666666666667,
+    "trail_braking_p95": 1.0,
+    "trail_braking_class": "moderate",
+    "throttle_progressiveness": 0.7385504604074173,
+    "throttle_onset_rate_pct_per_s": -40.25599278948594,
+    "throttle_classification": "moderate",
+    "steering_smoothness": "smooth",
+    "steering_jerk_p95_rad_per_s2": 32.252403259277344,
+    "apex_speed_cv": 0.0885895088183577,
+    "consistency": "erratic",
+    "cornering_aggression": "limit",
+    "avg_peak_lat_g_utilization": 25.076277023567847
+  },
+  "diagnosis": {
+    "assessment": "compromised",
+    "problem_count": 10,
+    "problems": [
+      {
+        "category": "safety",
+        "severity": "significant",
+        "symptom": "Front heave spring travel 95% exhausted under braking (p99 defl 90.4mm)",
+        "measured": 94.6,
+        "threshold": 85.0,
+        "speed_context": "braking"
+      },
+      {
+        "category": "safety",
+        "severity": "significant",
+        "symptom": "Front heave spring travel 94% used at speed (p99 defl 90.5mm)",
+        "measured": 94.2,
+        "threshold": 85.0,
+        "speed_context": "high"
+      },
+      {
+        "category": "safety",
+        "severity": "significant",
+        "symptom": "2 front heave spring bottoming events (deflection within 2mm of DeflMax)",
+        "measured": 2.0,
+        "threshold": 0.0,
+        "speed_context": "all"
+      },
+      {
+        "category": "safety",
+        "severity": "minor",
+        "symptom": "2 rear bottoming events on kerbs only",
+        "measured": 2.0,
+        "threshold": 6.0,
+        "speed_context": "all"
+      },
+      {
+        "category": "platform",
+        "severity": "significant",
+        "symptom": "Front excursion p99 17.4mm = 116% of dynamic RH (15mm)",
+        "measured": 116.02467854817708,
+        "threshold": 80.0,
+        "speed_context": "high"
+      },
+      {
+        "category": "balance",
+        "severity": "minor",
+        "symptom": "Brake bias adjusted 10 times during session (range 45.2-46.0)",
+        "measured": 10.0,
+        "threshold": 5.0,
+        "speed_context": "all"
+      },
+      {
+        "category": "thermal",
+        "severity": "minor",
+        "symptom": "Front hot pressure 186 kPa (target <175)",
+        "measured": 186.4,
+        "threshold": 175.0,
+        "speed_context": "all"
+      },
+      {
+        "category": "thermal",
+        "severity": "minor",
+        "symptom": "Rear hot pressure 182 kPa (target <175)",
+        "measured": 181.8,
+        "threshold": 175.0,
+        "speed_context": "all"
+      },
+      {
+        "category": "grip",
+        "severity": "significant",
+        "symptom": "Measured brake bias 68.5% differs from setup 46.0% (delta 22.5%)",
+        "measured": 68.5,
+        "threshold": 46.0,
+        "speed_context": "braking"
+      },
+      {
+        "category": "grip",
+        "severity": "significant",
+        "symptom": "ABS cutting 100% of brake force when active",
+        "measured": 100.0,
+        "threshold": 15.0,
+        "speed_context": "braking"
+      }
+    ]
+  },
+  "conditions": {
+    "telemetry_source": "bmwlmdh_sebring international 2026-03-14 18-27-48.ibt \u2014 best lap 109.131s"
+  },
+  "solver_comparison": {},
+  "corner_performance": [
+    {
+      "corner_id": 0,
+      "lap_dist_m": 150.6,
+      "direction": "right",
+      "speed_class": "high",
+      "speed_kph": 269.3,
+      "understeer_deg": -0.01,
+      "body_slip_deg": 0.19
+    },
+    {
+      "corner_id": 1,
+      "lap_dist_m": 288.4,
+      "direction": "left",
+      "speed_class": "low",
+      "speed_kph": 105.6,
+      "understeer_deg": -0.04,
+      "body_slip_deg": 7.6
+    },
+    {
+      "corner_id": 2,
+      "lap_dist_m": 1722.5,
+      "direction": "left",
+      "speed_class": "high",
+      "speed_kph": 273.8,
+      "understeer_deg": 0.01,
+      "body_slip_deg": 0.08
+    },
+    {
+      "corner_id": 3,
+      "lap_dist_m": 1807.5,
+      "direction": "right",
+      "speed_class": "high",
+      "speed_kph": 255.6,
+      "understeer_deg": -0.01,
+      "body_slip_deg": 0.09
+    },
+    {
+      "corner_id": 4,
+      "lap_dist_m": 1870.1,
+      "direction": "left",
+      "speed_class": "mid",
+      "speed_kph": 159.2,
+      "understeer_deg": -0.02,
+      "body_slip_deg": 0.1
+    },
+    {
+      "corner_id": 5,
+      "lap_dist_m": 1916.9,
+      "direction": "right",
+      "speed_class": "low",
+      "speed_kph": 69.7,
+      "understeer_deg": 0.02,
+      "body_slip_deg": 4.72
+    },
+    {
+      "corner_id": 6,
+      "lap_dist_m": 3416.4,
+      "direction": "left",
+      "speed_class": "high",
+      "speed_kph": 194.8,
+      "understeer_deg": 0.01,
+      "body_slip_deg": 0.13
+    },
+    {
+      "corner_id": 7,
+      "lap_dist_m": 3532.7,
+      "direction": "left",
+      "speed_class": "high",
+      "speed_kph": 228.1,
+      "understeer_deg": 0.02,
+      "body_slip_deg": 0.09
+    },
+    {
+      "corner_id": 8,
+      "lap_dist_m": 3585.7,
+      "direction": "right",
+      "speed_class": "mid",
+      "speed_kph": 131.3,
+      "understeer_deg": -0.09,
+      "body_slip_deg": 4.42
+    },
+    {
+      "corner_id": 9,
+      "lap_dist_m": 4453.9,
+      "direction": "left",
+      "speed_class": "high",
+      "speed_kph": 208.9,
+      "understeer_deg": 0.01,
+      "body_slip_deg": 0.07
+    },
+    {
+      "corner_id": 10,
+      "lap_dist_m": 4536.2,
+      "direction": "right",
+      "speed_class": "high",
+      "speed_kph": 229.6,
+      "understeer_deg": -0.01,
+      "body_slip_deg": 0.05
+    },
+    {
+      "corner_id": 11,
+      "lap_dist_m": 4898.9,
+      "direction": "right",
+      "speed_class": "high",
+      "speed_kph": 281.1,
+      "understeer_deg": -0.0,
+      "body_slip_deg": 0.04
+    },
+    {
+      "corner_id": 12,
+      "lap_dist_m": 4951.3,
+      "direction": "left",
+      "speed_class": "high",
+      "speed_kph": 285.5,
+      "understeer_deg": 0.01,
+      "body_slip_deg": 0.03
+    },
+    {
+      "corner_id": 13,
+      "lap_dist_m": 5012.5,
+      "direction": "right",
+      "speed_class": "mid",
+      "speed_kph": 133.1,
+      "understeer_deg": -0.42,
+      "body_slip_deg": 3.13
+    },
+    {
+      "corner_id": 14,
+      "lap_dist_m": 5722.9,
+      "direction": "left",
+      "speed_class": "high",
+      "speed_kph": 239.0,
+      "understeer_deg": 0.0,
+      "body_slip_deg": 0.05
+    }
+  ]
+}

@@ -222,6 +222,103 @@ class HeaveSpringModel:
 
 
 @dataclass
+class DeflectionModel:
+    """Calibrated static deflection models for .sto garage display values.
+
+    Predicts iRacing's computed deflection values from setup parameters.
+    Calibrated from BMW Sebring LDX ground truth (S1/S2) and
+    per-car-quirks 10-point dataset (March 2026).
+
+    Front parameters use multi-variable regressions (11 data points).
+    Rear parameters use physics-based force-balance models (exact on S1/S2).
+    Shock deflections use pushrod-offset-based models (exact on S1/S2).
+    """
+    # --- Shock deflection: defl = intercept + coeff * pushrod_offset ---
+    shock_front_intercept: float = 24.8
+    shock_front_pushrod_coeff: float = 0.4
+    shock_rear_intercept: float = 27.6
+    shock_rear_pushrod_coeff: float = 0.328
+
+    # --- TorsionBarDefl ---
+    # TBDefl = (load_intercept + load_heave*heave + load_perch*perch) / k_torsion
+    # where k_torsion = C_torsion * OD^4 (from CornerSpringModel)
+    # R²=0.937, LOO-CV RMSE=0.98mm (11 data points)
+    tb_load_intercept: float = 986.80
+    tb_load_heave_coeff: float = -3.6064
+    tb_load_perch_coeff: float = 9.3644
+
+    # --- HeaveSpringDeflStatic ---
+    # SprDS = intercept + inv_heave/heave + perch_coeff*perch + inv_od4/OD^4
+    # R²=0.961, RMSE=1.06mm (11 data points)
+    heave_defl_intercept: float = -18.0521
+    heave_defl_inv_heave_coeff: float = 11.2229
+    heave_defl_perch_coeff: float = -0.877717
+    heave_defl_inv_od4_coeff: float = 571123.66
+
+    # --- HeaveSliderDeflStatic ---
+    # SldrS = intercept + heave_coeff*heave + perch_coeff*perch + od_coeff*OD
+    # R²=0.788, RMSE=1.05mm (11 data points)
+    slider_intercept: float = 93.4077
+    slider_heave_coeff: float = 0.001461
+    slider_perch_coeff: float = 0.119503
+    slider_od_coeff: float = -3.489077
+
+    # --- Rear SpringDeflStatic (force-balance) ---
+    # defl = (load - perch_coeff * spring_perch) / spring_rate
+    # Exact on S1 and S2
+    rear_spring_eff_load: float = 5763.0
+    rear_spring_perch_coeff: float = 102.0
+
+    # --- ThirdSpringDeflStatic (force-balance) ---
+    # defl = (load - perch_coeff * third_perch) / third_rate
+    # Exact on S1 and S2
+    third_spring_eff_load: float = 20970.0
+    third_spring_perch_coeff: float = 445.6
+
+    # --- ThirdSliderDeflStatic ---
+    # slider = intercept + coeff * ThirdSpringDeflStatic
+    # Links slider travel to spring deflection via geometric lever ratio.
+    # Exact on S1 and S2
+    third_slider_intercept: float = 16.39
+    third_slider_spring_defl_coeff: float = 0.4681
+
+    def shock_defl_front(self, pushrod_offset_mm: float) -> float:
+        return self.shock_front_intercept + self.shock_front_pushrod_coeff * pushrod_offset_mm
+
+    def shock_defl_rear(self, pushrod_offset_mm: float) -> float:
+        return self.shock_rear_intercept + self.shock_rear_pushrod_coeff * pushrod_offset_mm
+
+    def torsion_bar_defl(self, heave_nmm: float, perch_mm: float, k_torsion: float) -> float:
+        load = (self.tb_load_intercept
+                + self.tb_load_heave_coeff * heave_nmm
+                + self.tb_load_perch_coeff * perch_mm)
+        return load / max(k_torsion, 0.1)
+
+    def heave_spring_defl_static(self, heave_nmm: float, perch_mm: float, od_mm: float) -> float:
+        return (self.heave_defl_intercept
+                + self.heave_defl_inv_heave_coeff / max(heave_nmm, 1.0)
+                + self.heave_defl_perch_coeff * perch_mm
+                + self.heave_defl_inv_od4_coeff / max(od_mm ** 4, 1.0))
+
+    def heave_slider_defl_static(self, heave_nmm: float, perch_mm: float, od_mm: float) -> float:
+        return (self.slider_intercept
+                + self.slider_heave_coeff * heave_nmm
+                + self.slider_perch_coeff * perch_mm
+                + self.slider_od_coeff * od_mm)
+
+    def rear_spring_defl_static(self, spring_rate_nmm: float, spring_perch_mm: float) -> float:
+        return ((self.rear_spring_eff_load - self.rear_spring_perch_coeff * spring_perch_mm)
+                / max(spring_rate_nmm, 1.0))
+
+    def third_spring_defl_static(self, third_rate_nmm: float, third_perch_mm: float) -> float:
+        return ((self.third_spring_eff_load - self.third_spring_perch_coeff * third_perch_mm)
+                / max(third_rate_nmm, 1.0))
+
+    def third_slider_defl_static(self, third_spring_defl_mm: float) -> float:
+        return self.third_slider_intercept + self.third_slider_spring_defl_coeff * third_spring_defl_mm
+
+
+@dataclass
 class CornerSpringModel:
     """Corner spring physics model (torsion bars front, coil springs rear).
 
@@ -506,6 +603,9 @@ class CarModel:
 
     # Multi-variable ride height prediction model
     ride_height_model: RideHeightModel = field(default_factory=lambda: RideHeightModel())
+
+    # Deflection model for .sto display values
+    deflection: DeflectionModel = field(default_factory=lambda: DeflectionModel())
 
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)

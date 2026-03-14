@@ -42,7 +42,15 @@
       "Bash(head -15 grep -rn \"LF.*RH\\\\|RF.*RH\\\\|corner.*rh\\\\|per.corner.*rh\\\\|diagonal.*rh\\\\|cross.weight\\\\|wedge\\\\|wicker\" /c/Users/tfunk/IOptimal/ --include=\"*.py\")",
       "Bash(/tmp/wr.py:*)",
       "Bash(python3 -c \"open\\(''/tmp/flag.txt'',''w''\\).write\\(''1''\\)\")",
-      "Bash(python3 -c \"exec\\(open\\(''/tmp/report_writer.py''\\).read\\(\\)\\)\")"
+      "Bash(python3 -c \"exec\\(open\\(''/tmp/report_writer.py''\\).read\\(\\)\\)\")",
+      "Bash(xxd -l 256 \"$USERPROFILE/Documents/iRacing/setups/bmwlmdh/tfsebring12.sto\")",
+      "Read(//c/Users/VYRAL/IOptimal/$USERPROFILE/Documents/iRacing/setups/bmwlmdh/**)",
+      "Bash(ls /c/Python*)",
+      "Read(//c/Users/VYRAL/AppData/Local/Programs/Python//**)",
+      "Bash(git -C /c/Users/VYRAL/IOptimal diff output/setup_writer.py)",
+      "Bash(git -C /c/Users/VYRAL/IOptimal log --oneline -5 -- data/calibration/)",
+      "Bash(xxd /c/Users/VYRAL/Documents/iRacing/setups/bmwlmdh/ai1.sto)",
+      "Bash(find /c/Users/VYRAL/IOptimal/data -name *calibration* -o -name *ground*truth*)"
     ]
   }
 }

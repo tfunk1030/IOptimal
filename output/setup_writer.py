@@ -523,60 +523,66 @@ def write_sto(
     _w_num("lr_shock_defl_max", 150, "mm")
     _w_num("rr_shock_defl_max", 150, "mm")
 
-    # === Computed / display deflections (iRacing-style, BMW only) ===
-    # Static shock deflections (calibrated from real LDX files)
-    _lf_sd = round(step1.static_front_rh_mm * 0.487, 1)
-    _lr_sd = round(step1.static_rear_rh_mm  * 0.462, 1)
+    # === Computed / display deflections ===
+    # Uses physics-informed multi-variable models from DeflectionModel.
+    # Front: 11-point regression (per-car-quirks + S2 LDX).
+    # Rear: force-balance models (exact on S1/S2 LDX).
+    _fh = step2.front_heave_nmm
+    _fh_perch = step2.perch_offset_front_mm
+    _f_od = step3.front_torsion_od_mm
+
+    if _car is not None:
+        _dm = _car.deflection
+        _k_torsion = _car.corner_spring.torsion_bar_rate(_f_od)
+
+        _lf_sd = round(_dm.shock_defl_front(step1.front_pushrod_offset_mm), 1)
+        _lr_sd = round(_dm.shock_defl_rear(step1.rear_pushrod_offset_mm), 1)
+        _tb_defl = round(_dm.torsion_bar_defl(_fh, _fh_perch, _k_torsion), 1)
+        _heave_defl_static = round(_dm.heave_spring_defl_static(_fh, _fh_perch, _f_od), 1)
+        _heave_slider_static = round(_dm.heave_slider_defl_static(_fh, _fh_perch, _f_od), 1)
+        _lr_spring_defl = round(_dm.rear_spring_defl_static(
+            step3.rear_spring_rate_nmm, step3.rear_spring_perch_mm), 1)
+        _r3_defl = round(_dm.third_spring_defl_static(
+            step2.rear_third_nmm, step2.perch_offset_rear_mm), 1)
+        _r3_slider = round(_dm.third_slider_defl_static(_r3_defl), 1)
+    else:
+        _lf_sd = round(step1.static_front_rh_mm * 0.487, 1)
+        _lr_sd = round(step1.static_rear_rh_mm * 0.462, 1)
+        _tb_defl = round(_tb_turns * 181.5, 1)
+        _heave_defl_static = round(40.5 + (-0.55) * _fh, 1)
+        _heave_slider_static = round(46.2 + 0.012 * _fh + 0.251 * _fh_perch, 1)
+        _lr_spring_defl = round(8.5 * 180.0 / max(step3.rear_spring_rate_nmm, 1.0), 1)
+        _r3_defl = round(19.2 * step1.static_rear_rh_mm / 48.9, 1)
+        _r3_slider = _r3_defl
+
     _w_num("lf_shock_defl_static", _lf_sd, "mm")
     _w_num("rf_shock_defl_static", _lf_sd, "mm")
     _w_num("lr_shock_defl_static", _lr_sd, "mm")
     _w_num("rr_shock_defl_static", _lr_sd, "mm")
 
-    # Torsion bar deflections (calibrated: 0.092 turns → 16.7 mm in s1.ldx)
-    _tb_defl = round(_tb_turns * 181.5, 1)
     _w_num("lf_torsion_defl", _tb_defl, "mm")
     _w_num("rf_torsion_defl", _tb_defl, "mm")
 
-    # Front heave spring / slider deflections
-    # Use solver-computed values; fallback uses car_model calibration coefficients
-    _fh = step2.front_heave_nmm
-    _fh_perch = step2.perch_offset_front_mm
-    if step2.static_defl_front_mm > 0:
-        _heave_defl_static = step2.static_defl_front_mm
-    elif _car is not None:
-        _h = _car.heave_spring
-        _heave_defl_static = _h.defl_static_intercept + _h.defl_static_heave_coeff * _fh
-    else:
-        _heave_defl_static = 40.5 + (-0.55) * _fh
+    # HeaveSpringDeflMax retains its linear model (well-calibrated from 19 sessions)
     if step2.defl_max_front_mm > 0:
         _heave_defl_max = step2.defl_max_front_mm
     elif _car is not None:
-        _heave_defl_max = _car.heave_spring.heave_spring_defl_max_intercept_mm + _car.heave_spring.heave_spring_defl_max_slope * _fh
+        _heave_defl_max = (_car.heave_spring.heave_spring_defl_max_intercept_mm
+                           + _car.heave_spring.heave_spring_defl_max_slope * _fh)
     else:
         _heave_defl_max = 103.4 + (-0.262) * _fh
-    if step2.slider_static_front_mm > 0:
-        _heave_slider_static = step2.slider_static_front_mm
-    elif _car is not None:
-        _h = _car.heave_spring
-        _heave_slider_static = _h.slider_intercept + _h.slider_heave_coeff * _fh + _h.slider_perch_coeff * _fh_perch
-    else:
-        _heave_slider_static = 46.2 + 0.012 * _fh + 0.251 * _fh_perch
-    _w_num("front_heave_spring_defl_static", round(_heave_defl_static, 1), "mm")
+    _w_num("front_heave_spring_defl_static", _heave_defl_static, "mm")
     _w_num("front_heave_spring_defl_max", round(_heave_defl_max, 1), "mm")
-    _w_num("front_heave_slider_defl_static", round(_heave_slider_static, 1), "mm")
+    _w_num("front_heave_slider_defl_static", _heave_slider_static, "mm")
 
-    # Rear coil spring deflections
-    _lr_spring_defl = round(8.5 * 180.0 / max(step3.rear_spring_rate_nmm, 1.0), 1)
     _w_num("lr_spring_defl_static", _lr_spring_defl, "mm")
     _w_num("rr_spring_defl_static", _lr_spring_defl, "mm")
     _w_num("lr_spring_defl_max", 76.8, "mm")
     _w_num("rr_spring_defl_max", 76.8, "mm")
 
-    # Rear third spring / slider deflections
-    _r3_defl = round(19.2 * step1.static_rear_rh_mm / 48.9, 1)
-    _w_num("rear_third_spring_defl_static",  _r3_defl, "mm")
-    _w_num("rear_third_spring_defl_max",     61.2,     "mm")
-    _w_num("rear_third_slider_defl_static",  _r3_defl, "mm")
+    _w_num("rear_third_spring_defl_static",  _r3_defl,  "mm")
+    _w_num("rear_third_spring_defl_max",     61.2,      "mm")
+    _w_num("rear_third_slider_defl_static",  _r3_slider, "mm")
 
     # Corner weights (N)
     _w_num("lf_corner_weight", _lf_cw, "N")
