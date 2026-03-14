@@ -196,9 +196,12 @@ class CornerSpringSolver:
         # Use a ratio of 3.0 for bumpy tracks (high shock vel), 2.5 for smooth
         # Scale based on track surface severity (p99 shock velocity)
         # Sebring p99_front = 0.2511 m/s is moderately bumpy -> ratio ~3.0
-        front_freq_ratio = self._surface_severity_to_freq_ratio(
-            self.track.shock_vel_p99_front_mps
-        )
+        # Use clean-track p99 for surface severity — curb spikes are not
+        # representative of the sustained surface the corner springs must handle.
+        front_sv_p99 = (self.track.shock_vel_p99_front_clean_mps
+                        if self.track.shock_vel_p99_front_clean_mps > 0
+                        else self.track.shock_vel_p99_front_mps)
+        front_freq_ratio = self._surface_severity_to_freq_ratio(front_sv_p99)
         front_target_freq = bump_freq / front_freq_ratio
         front_target_rate = self.rate_for_freq(front_target_freq, m_f_corner)
 
@@ -227,16 +230,15 @@ class CornerSpringSolver:
         # For the rear, the binding constraint is the third/corner ratio.
         # Bumpy tracks need higher ratio (softer corner for grip).
         # The target ratio is scaled by surface severity.
-        rear_freq_ratio = self._surface_severity_to_freq_ratio(
-            self.track.shock_vel_p99_rear_mps
-        )
+        rear_sv_p99 = (self.track.shock_vel_p99_rear_clean_mps
+                       if self.track.shock_vel_p99_rear_clean_mps > 0
+                       else self.track.shock_vel_p99_rear_mps)
+        rear_freq_ratio = self._surface_severity_to_freq_ratio(rear_sv_p99)
 
         # Rear target from third/corner ratio
         # For bumpy track: ratio ~3.0 (softer corner)
         # For smooth track: ratio ~2.0 (stiffer corner)
-        rear_target_ratio = self._surface_severity_to_heave_ratio(
-            self.track.shock_vel_p99_rear_mps
-        )
+        rear_target_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
         rear_target_rate = rear_third_nmm / rear_target_ratio
 
         # Clamp to valid range and snap

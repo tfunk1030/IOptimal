@@ -99,8 +99,27 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         lap_dist, track_length_m,
     )
 
-    # === Kerb events ===
-    kerb_events = _find_kerb_events(vert_g, rumble_lf, rumble_rf, lap_dist)
+    # === Kerb events and sample mask ===
+    kerb_events, kerb_mask = _find_kerb_events(vert_g, rumble_lf, rumble_rf, lap_dist)
+
+    # Compute clean-track and kerb-only shock velocity percentiles
+    clean_mask = ~kerb_mask
+    kerb_sample_pct = round(float(np.sum(kerb_mask) / len(kerb_mask) * 100), 1) if len(kerb_mask) > 0 else 0.0
+
+    if np.sum(clean_mask) > 10:
+        front_sv_clean = np.concatenate([np.abs(lf_sv[clean_mask]), np.abs(rf_sv[clean_mask])])
+        rear_sv_clean = np.concatenate([np.abs(lr_sv[clean_mask]), np.abs(rr_sv[clean_mask])])
+    else:
+        # Not enough clean samples — fall back to raw
+        front_sv_clean = front_sv
+        rear_sv_clean = rear_sv
+
+    if np.sum(kerb_mask) > 2:
+        front_sv_kerb = np.concatenate([np.abs(lf_sv[kerb_mask]), np.abs(rf_sv[kerb_mask])])
+        rear_sv_kerb = np.concatenate([np.abs(lr_sv[kerb_mask]), np.abs(rr_sv[kerb_mask])])
+    else:
+        front_sv_kerb = np.array([0.0])
+        rear_sv_kerb = np.array([0.0])
 
     # === Elevation ===
     elev_profile = []
@@ -281,6 +300,19 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         shock_vel_p50_rear_mps=round(float(np.percentile(rear_sv, 50)), 4),
         shock_vel_p95_rear_mps=round(float(np.percentile(rear_sv, 95)), 4),
         shock_vel_p99_rear_mps=round(float(np.percentile(rear_sv, 99)), 4),
+        # Clean-track shock velocity (kerb strikes excluded)
+        shock_vel_p50_front_clean_mps=round(float(np.percentile(front_sv_clean, 50)), 4),
+        shock_vel_p95_front_clean_mps=round(float(np.percentile(front_sv_clean, 95)), 4),
+        shock_vel_p99_front_clean_mps=round(float(np.percentile(front_sv_clean, 99)), 4),
+        shock_vel_p50_rear_clean_mps=round(float(np.percentile(rear_sv_clean, 50)), 4),
+        shock_vel_p95_rear_clean_mps=round(float(np.percentile(rear_sv_clean, 95)), 4),
+        shock_vel_p99_rear_clean_mps=round(float(np.percentile(rear_sv_clean, 99)), 4),
+        # Kerb-only shock velocity (for HS damper tuning)
+        shock_vel_p95_front_kerb_mps=round(float(np.percentile(front_sv_kerb, 95)), 4),
+        shock_vel_p99_front_kerb_mps=round(float(np.percentile(front_sv_kerb, 99)), 4),
+        shock_vel_p95_rear_kerb_mps=round(float(np.percentile(rear_sv_kerb, 95)), 4),
+        shock_vel_p99_rear_kerb_mps=round(float(np.percentile(rear_sv_kerb, 99)), 4),
+        kerb_sample_pct=kerb_sample_pct,
         kerb_events=kerb_events,
         elevation_profile=elev_profile,
         elevation_change_m=round(elev_change, 1),
@@ -485,9 +517,18 @@ def _find_kerb_events(
     rumble_lf: np.ndarray | None,
     rumble_rf: np.ndarray | None,
     lap_dist: np.ndarray,
-) -> list[KerbEvent]:
-    """Detect kerb strikes from rumble strip channels and vertical g spikes."""
+    dilation_samples: int = 20,
+) -> tuple[list[KerbEvent], np.ndarray]:
+    """Detect kerb strikes from rumble strip channels and vertical g spikes.
+
+    Returns:
+        Tuple of (kerb_events, kerb_sample_mask) where kerb_sample_mask is a
+        boolean array (True = on/near kerb) with dilation applied to capture
+        the damper ring-down after leaving the strip (~0.3s at 60Hz).
+    """
     events = []
+    n_samples = len(vert_g)
+    raw_mask = np.zeros(n_samples, dtype=bool)
 
     # Primary method: rumble strip channels (iRacing reports kerb contact directly)
     if rumble_lf is not None and rumble_rf is not None:
@@ -497,6 +538,7 @@ def _find_kerb_events(
         either_on = lf_on | rf_on
 
         if np.any(either_on):
+            raw_mask = either_on.copy()
             edges = np.diff(either_on.astype(int))
             starts = np.where(edges == 1)[0] + 1
             ends = np.where(edges == -1)[0] + 1
@@ -538,6 +580,7 @@ def _find_kerb_events(
 
         spike_mask = vert_deviation > threshold
         if np.any(spike_mask):
+            raw_mask = spike_mask.copy()
             edges = np.diff(spike_mask.astype(int))
             starts = np.where(edges == 1)[0] + 1
             ends = np.where(edges == -1)[0] + 1
@@ -568,7 +611,19 @@ def _find_kerb_events(
                 merged.append(evt)
         events = merged
 
-    return events
+    # Dilate the mask to capture damper ring-down after leaving the strip.
+    # A curb strike's shock velocity effect persists ~0.3-0.5s after contact.
+    if np.any(raw_mask) and dilation_samples > 0:
+        dilated = raw_mask.copy()
+        indices = np.where(raw_mask)[0]
+        for idx in indices:
+            end = min(idx + dilation_samples + 1, n_samples)
+            dilated[idx:end] = True
+        kerb_mask = dilated
+    else:
+        kerb_mask = raw_mask
+
+    return events, kerb_mask
 
 
 def _build_elevation_profile(

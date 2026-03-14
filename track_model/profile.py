@@ -46,6 +46,31 @@ class KerbEvent:
     side: str                   # "left", "right", or "both"
 
 
+def build_kerb_spatial_mask(
+    lap_dist: np.ndarray,
+    kerb_events: list[KerbEvent],
+    buffer_m: float = 30.0,
+) -> np.ndarray:
+    """Boolean mask where True = sample is within a kerb zone.
+
+    Uses KerbEvent lap_dist_m positions with a spatial buffer to mark
+    samples near known kerb locations. Useful for filtering telemetry
+    data in extract.py and segment.py which work with lap_dist arrays.
+
+    Args:
+        lap_dist: Per-sample lap distance array (m).
+        kerb_events: List of detected kerb events with lap_dist_m.
+        buffer_m: Spatial buffer around each kerb event center (m).
+
+    Returns:
+        Boolean array, same length as lap_dist.
+    """
+    mask = np.zeros(len(lap_dist), dtype=bool)
+    for event in kerb_events:
+        mask |= np.abs(lap_dist - event.lap_dist_m) <= buffer_m
+    return mask
+
+
 @dataclass
 class TrackProfile:
     """Complete track demand profile extracted from telemetry."""
@@ -85,6 +110,23 @@ class TrackProfile:
     shock_vel_p50_rear_mps: float = 0.0
     shock_vel_p95_rear_mps: float = 0.0
     shock_vel_p99_rear_mps: float = 0.0
+
+    # Clean-track shock velocity (kerb strikes excluded)
+    shock_vel_p50_front_clean_mps: float = 0.0
+    shock_vel_p95_front_clean_mps: float = 0.0
+    shock_vel_p99_front_clean_mps: float = 0.0
+    shock_vel_p50_rear_clean_mps: float = 0.0
+    shock_vel_p95_rear_clean_mps: float = 0.0
+    shock_vel_p99_rear_clean_mps: float = 0.0
+
+    # Kerb-only shock velocity (for HS damper tuning)
+    shock_vel_p95_front_kerb_mps: float = 0.0
+    shock_vel_p99_front_kerb_mps: float = 0.0
+    shock_vel_p95_rear_kerb_mps: float = 0.0
+    shock_vel_p99_rear_kerb_mps: float = 0.0
+
+    # Kerb filtering metadata
+    kerb_sample_pct: float = 0.0  # % of lap samples on kerbs
 
     # Kerb events
     kerb_events: list[KerbEvent] = field(default_factory=list)
@@ -187,4 +229,10 @@ class TrackProfile:
             f"p95={self.shock_vel_p95_rear_mps*1000:.1f} mm/s, "
             f"p99={self.shock_vel_p99_rear_mps*1000:.1f} mm/s",
         ]
+        if self.shock_vel_p99_front_clean_mps > 0:
+            lines.extend([
+                f"Shock vel clean (front): p99={self.shock_vel_p99_front_clean_mps*1000:.1f} mm/s",
+                f"Shock vel clean (rear):  p99={self.shock_vel_p99_rear_clean_mps*1000:.1f} mm/s",
+                f"Kerb samples: {self.kerb_sample_pct:.1f}%",
+            ])
         return "\n".join(lines)

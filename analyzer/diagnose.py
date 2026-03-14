@@ -154,41 +154,80 @@ def _check_safety(
             priority=0,
         ))
 
-    # Front bottoming
+    # Front bottoming — use clean-track count for severity assessment.
+    # Kerb bottoming is a driving line choice, not a setup failure.
     front_bottom_thresh = t.bottoming_events_front
-    if m.bottoming_event_count_front > front_bottom_thresh:
-        sev = "critical" if m.bottoming_event_count_front > front_bottom_thresh * 4 else "significant"
+    front_clean = (m.bottoming_event_count_front_clean
+                   if m.bottoming_event_count_front_clean > 0 or m.bottoming_event_count_front_kerb > 0
+                   else m.bottoming_event_count_front)  # fallback for old data
+    if front_clean > front_bottom_thresh:
+        sev = "critical" if front_clean > front_bottom_thresh * 4 else "significant"
         problems.append(Problem(
             category="safety",
             severity=sev,
-            symptom=f"{m.bottoming_event_count_front} front bottoming events",
+            symptom=f"{front_clean} front bottoming events (clean track)",
             cause=(
-                "Front suspension hitting bump stops. Causes spike loads through "
-                "chassis, unpredictable handling, and potential aero stall. "
-                "Front heave spring too soft or ride height too low."
+                "Front suspension hitting bump stops on clean track surface. "
+                "Causes spike loads through chassis, unpredictable handling, "
+                "and potential aero stall. Front heave spring too soft or ride "
+                "height too low."
             ),
             speed_context="all",
-            measured=float(m.bottoming_event_count_front),
+            measured=float(front_clean),
+            threshold=float(front_bottom_thresh),
+            units="events",
+            priority=0,
+        ))
+    elif m.bottoming_event_count_front_kerb > 0:
+        problems.append(Problem(
+            category="safety",
+            severity="minor",
+            symptom=f"{m.bottoming_event_count_front_kerb} front bottoming events on kerbs only",
+            cause=(
+                "Front bottoming occurs only on kerb strikes — this is a driving "
+                "line choice, not a spring rate issue. Consider shallower kerb "
+                "usage or accept the contact."
+            ),
+            speed_context="all",
+            measured=float(m.bottoming_event_count_front_kerb),
             threshold=float(front_bottom_thresh),
             units="events",
             priority=0,
         ))
 
-    # Rear bottoming
+    # Rear bottoming — same clean vs kerb split
     rear_bottom_thresh = t.bottoming_events_rear
-    if m.bottoming_event_count_rear > rear_bottom_thresh:
-        sev = "critical" if m.bottoming_event_count_rear > rear_bottom_thresh * 4 else "significant"
+    rear_clean = (m.bottoming_event_count_rear_clean
+                  if m.bottoming_event_count_rear_clean > 0 or m.bottoming_event_count_rear_kerb > 0
+                  else m.bottoming_event_count_rear)
+    if rear_clean > rear_bottom_thresh:
+        sev = "critical" if rear_clean > rear_bottom_thresh * 4 else "significant"
         problems.append(Problem(
             category="safety",
             severity=sev,
-            symptom=f"{m.bottoming_event_count_rear} rear bottoming events",
+            symptom=f"{rear_clean} rear bottoming events (clean track)",
             cause=(
-                "Rear suspension hitting bump stops. Causes rear instability "
-                "and diffuser stall risk. Stiffen rear third spring or raise "
-                "rear ride height."
+                "Rear suspension hitting bump stops on clean track surface. "
+                "Causes rear instability and diffuser stall risk. Stiffen rear "
+                "third spring or raise rear ride height."
             ),
             speed_context="all",
-            measured=float(m.bottoming_event_count_rear),
+            measured=float(rear_clean),
+            threshold=float(rear_bottom_thresh),
+            units="events",
+            priority=0,
+        ))
+    elif m.bottoming_event_count_rear_kerb > 0:
+        problems.append(Problem(
+            category="safety",
+            severity="minor",
+            symptom=f"{m.bottoming_event_count_rear_kerb} rear bottoming events on kerbs only",
+            cause=(
+                "Rear bottoming occurs only on kerb strikes — this is a driving "
+                "line choice, not a spring rate issue."
+            ),
+            speed_context="all",
+            measured=float(m.bottoming_event_count_rear_kerb),
             threshold=float(rear_bottom_thresh),
             units="events",
             priority=0,

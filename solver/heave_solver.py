@@ -264,10 +264,15 @@ class HeaveSolver:
         """
         hsm = self.car.heave_spring
         if axle == "front":
-            v_p99 = self.track.shock_vel_p99_front_mps
+            # Use clean-track p99 (kerb strikes excluded) for spring sizing
+            v_p99 = (self.track.shock_vel_p99_front_clean_mps
+                     if self.track.shock_vel_p99_front_clean_mps > 0
+                     else self.track.shock_vel_p99_front_mps)
             m_eff = hsm.front_m_eff_kg
         else:
-            v_p99 = self.track.shock_vel_p99_rear_mps
+            v_p99 = (self.track.shock_vel_p99_rear_clean_mps
+                     if self.track.shock_vel_p99_rear_clean_mps > 0
+                     else self.track.shock_vel_p99_rear_mps)
             m_eff = hsm.rear_m_eff_kg
 
         exc = self.excursion(v_p99, m_eff, rate_nmm)
@@ -371,7 +376,12 @@ class HeaveSolver:
         hsm = self.car.heave_spring
 
         # --- Front axle ---
-        v_front = self.track.shock_vel_p99_front_mps
+        # Use clean-track p99 (kerb strikes excluded) for spring sizing.
+        # Curb strikes are driving choices, not setup failures — sizing springs
+        # for curb absorption loses mechanical grip everywhere else.
+        v_front = (self.track.shock_vel_p99_front_clean_mps
+                   if self.track.shock_vel_p99_front_clean_mps > 0
+                   else self.track.shock_vel_p99_front_mps)
         m_front = hsm.front_m_eff_kg
 
         k_front_bottoming = self.min_rate_for_no_bottoming(
@@ -414,7 +424,9 @@ class HeaveSolver:
         front_sigma = self.sigma_from_excursion(front_exc)
 
         # --- Rear axle ---
-        v_rear = self.track.shock_vel_p99_rear_mps
+        v_rear = (self.track.shock_vel_p99_rear_clean_mps
+                  if self.track.shock_vel_p99_rear_clean_mps > 0
+                  else self.track.shock_vel_p99_rear_mps)
         m_rear = hsm.rear_m_eff_kg
 
         k_rear_bottoming = self.min_rate_for_no_bottoming(

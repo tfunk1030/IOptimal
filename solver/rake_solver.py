@@ -334,10 +334,12 @@ class RakeSolver:
         Returns:
             RakeSolution with dynamic targets, static settings, and pushrod offsets.
         """
-        # Ride height excursion from track surface
-        front_excursion_p99 = self.car.rh_excursion_p99(
-            self.track.shock_vel_p99_front_mps
-        )
+        # Ride height excursion from track surface (use clean-track p99,
+        # kerb strikes are not representative of sustained platform behavior)
+        front_sv_p99 = (self.track.shock_vel_p99_front_clean_mps
+                        if self.track.shock_vel_p99_front_clean_mps > 0
+                        else self.track.shock_vel_p99_front_mps)
+        front_excursion_p99 = self.car.rh_excursion_p99(front_sv_p99)
 
         if pin_front_min:
             return self._solve_pinned_front(
