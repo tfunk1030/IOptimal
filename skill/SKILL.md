@@ -250,6 +250,41 @@ HeaveSpringDeflStatic + excursion_p99 < HeaveSpringDeflMax
 ```
 Over-preloading (very negative perch) eats into available travel by increasing DeflStatic.
 
+### Heave Spring Deflection — Why High Deflection Kills Mid-Corner Grip
+
+**The Problem:**
+Heave spring "deflection" (preload setting) controls how much of the spring's total travel is consumed statically. When deflection is too high (slider at 44-45mm on BMW), the spring has already used most of its static travel before the car even moves. Under braking, weight transfer compresses the front heave spring further through its remaining travel. When it runs out of travel, the car hits a rigid bump stop and becomes a board — no more vertical or lateral compliance.
+
+**The Failure Mode — Entry Rotation → Mid-Corner Push:**
+1. **Trail braking phase**: Weight transfers forward, compressing the front heave spring through its remaining travel. The spring is still compressing, which allows the front to load progressively. The driver feels good rotation and turn-in.
+2. **Mid-corner transition**: The heave spring exhausts its travel (bottoms out). The front suddenly becomes rigid — no more suspension compliance. Mechanical grip drops because the front tyres can no longer absorb surface imperfections. The car pushes.
+3. **The trap**: The good entry feel makes the driver think the front setup is working. The mid-corner push seems like a separate problem. But it's the same cause — too little available spring travel.
+
+**Spring vs Shock Compression Curves:**
+- **Spring (linear):** F = k × x. Position-dependent. Every mm of compression adds the same force. A 50 N/mm spring at 10mm = 500N, at 20mm = 1000N. Predictable, proportional.
+- **Shock/Damper (nonlinear):** F = c(v) × v. Velocity-dependent with digressive characteristic. At low velocities (<50 mm/s, LS regime), force rises proportionally with velocity. At high velocities (>50 mm/s, HS regime), force tapers off (digressive slope). The shock doesn't care about position — only how fast you're moving through travel.
+- **Combined:** Under braking (slow, steady weight transfer at ~20 mm/s), the spring dominates because the compression velocity is in the LS regime. The damper contributes ~100N (c_ls × v_braking ≈ 5060 × 0.02 = 101N) while the spring contributes ~2500N (50 N/mm × 50mm travel). Spring travel exhaustion under braking **cannot be saved by shock tuning** — the shock barely contributes at braking compression velocities.
+- **Under bump impacts** (fast transient at 100-300 mm/s), the shock dominates. This is why HS damping slope matters for kerb strikes but is irrelevant for the deflection-exhaustion failure mode.
+
+**Travel Budget Formula:**
+```
+DeflMax = 103.4 - 0.262 × HeaveSpring     (BMW, depends ONLY on spring rate)
+StaticDefl = f(spring_rate)                 (how much travel consumed at rest)
+AvailableTravel = DeflMax - StaticDefl
+Required = excursion_p99 + braking_weight_transfer_compression
+Margin = AvailableTravel - Required         (must be > 5mm)
+```
+
+**Optimal Slider Position:**
+Computed from physics — maximize available dynamic travel while maintaining minimum preload (>3mm static deflection to keep spring loaded). For BMW at heave 50 N/mm, this typically yields slider ~40-42mm. The perch offset is the tuning parameter: more negative perch → lower slider → more preload → more static deflection (less available travel, but spring stays loaded). The solver optimizes this tradeoff.
+
+**Telemetry Detection:**
+- **HFshockDefl** channel directly measures front heave element deflection (meters)
+- Travel usage % = p99 deflection / DeflMax × 100
+- Travel usage under braking (Brake > 0.3) is the critical metric
+- >85% travel used under braking = significant, >95% = critical
+- Direct bottoming events = deflection within 2mm of DeflMax
+
 ### Suspension — Dampers
 
 Dampers control the *rate* of suspension movement, not the *amount* (that's springs). **Critical concept: "low speed" and "high speed" refer to shaft velocity (mm/s), NOT car speed.** A car at 300 km/h on a smooth straight has low-speed damper activity; a car at 50 km/h hitting a kerb generates high-speed events.
