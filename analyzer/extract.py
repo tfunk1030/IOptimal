@@ -192,6 +192,56 @@ class MeasuredState:
     rear_carcass_gradient_lr_c: float = 0.0
     rear_carcass_gradient_rr_c: float = 0.0
 
+    # --- Per-corner tyre data (preserves left-right split) ---
+    lf_pressure_kpa: float = 0.0
+    rf_pressure_kpa: float = 0.0
+    lr_pressure_kpa: float = 0.0
+    rr_pressure_kpa: float = 0.0
+    lf_cold_pressure_kpa: float = 0.0
+    rf_cold_pressure_kpa: float = 0.0
+    lr_cold_pressure_kpa: float = 0.0
+    rr_cold_pressure_kpa: float = 0.0
+    lf_wear_pct: float = 0.0
+    rf_wear_pct: float = 0.0
+    lr_wear_pct: float = 0.0
+    rr_wear_pct: float = 0.0
+    lf_temp_inner_c: float = 0.0   # Inner surface temp at speed
+    rf_temp_inner_c: float = 0.0
+    lr_temp_inner_c: float = 0.0
+    rr_temp_inner_c: float = 0.0
+    lf_temp_middle_c: float = 0.0  # Middle surface temp at speed
+    rf_temp_middle_c: float = 0.0
+    lr_temp_middle_c: float = 0.0
+    rr_temp_middle_c: float = 0.0
+    lf_temp_outer_c: float = 0.0   # Outer surface temp at speed
+    rf_temp_outer_c: float = 0.0
+    lr_temp_outer_c: float = 0.0
+    rr_temp_outer_c: float = 0.0
+
+    # --- Raw driver inputs (before TC/ABS intervention) ---
+    throttle_raw_mean: float = 0.0          # Mean ThrottleRaw at speed
+    tc_intervention_pct: float = 0.0        # % of time TC is cutting throttle
+    brake_raw_peak: float = 0.0             # Peak BrakeRaw value
+
+    # --- Gear data ---
+    gear_at_apex_mode: int = 0              # Most common gear at corner apexes
+    max_gear: int = 0                       # Highest gear used on track
+
+    # --- Pitch dynamics ---
+    pitch_mean_at_speed_deg: float = 0.0    # Mean pitch angle at speed (rake indicator)
+    pitch_range_deg: float = 0.0            # p99-p01 pitch range (platform stability)
+
+    # --- In-car adjustment tracking (extended) ---
+    arb_front_adjustments: int = 0          # dcAntiRollFront changes
+    arb_rear_adjustments: int = 0           # dcAntiRollRear changes
+    tc2_adjustments: int = 0                # dcTractionControl2 changes
+    abs_adjustments: int = 0                # dcABS changes
+    deploy_mode_adjustments: int = 0        # dcMGUKDeployMode changes
+
+    # --- Wind ---
+    wind_speed_ms: float = 0.0
+    wind_dir_deg: float = 0.0
+
     # --- Full rebuilt track profile ---
     measured_track_profile: TrackProfile | None = None
 
@@ -321,10 +371,12 @@ def extract_measurements(
         state.bottoming_event_count_rear = int(np.sum(rear_rh < rear_bottom_thresh))
 
         # Vortex burst: front RH dropping below 3.5-sigma at speed
-        vb_excursion_threshold = 3.5 * front_std_all
+        # Use at-speed std (not full-lap) to avoid inflation from pit/low-speed samples
         if np.sum(at_speed) > 50:
             front_at_speed = front_rh[at_speed]
             front_mean_speed = float(np.mean(front_at_speed))
+            front_std_speed = float(np.std(front_at_speed))
+            vb_excursion_threshold = 3.5 * front_std_speed
             state.vortex_burst_event_count = int(
                 np.sum(front_at_speed < (front_mean_speed - vb_excursion_threshold))
             )
@@ -339,6 +391,13 @@ def extract_measurements(
             state.rear_rh_excursion_measured_mm = float(np.percentile(rear_deviation, 99))
 
         # --- LLTD from ride height deflections ---
+        # Weight by track_width² to convert deflection ratio to load transfer ratio.
+        # RH deflection (mm) × track_width² ∝ roll moment ∝ lateral load transfer.
+        tw_f = getattr(car.arb, "track_width_front_mm", 1730.0)
+        tw_r = getattr(car.arb, "track_width_rear_mm", 1650.0)
+        tw_f_sq = tw_f ** 2
+        tw_r_sq = tw_r ** 2
+
         abs_lat_g = np.abs(lat_g)
         corner_mask = abs_lat_g > 1.0
         if np.sum(corner_mask) > 100:
@@ -346,9 +405,11 @@ def extract_measurements(
             rear_deflection = np.abs(lr_rh[corner_mask] - rr_rh[corner_mask])
             mean_front_defl = float(np.mean(front_deflection))
             mean_rear_defl = float(np.mean(rear_deflection))
-            total_defl = mean_front_defl + mean_rear_defl
-            if total_defl > 0.1:
-                state.lltd_measured = mean_front_defl / total_defl
+            front_moment = mean_front_defl * tw_f_sq
+            rear_moment = mean_rear_defl * tw_r_sq
+            total_moment = front_moment + rear_moment
+            if total_moment > 0.1:
+                state.lltd_measured = front_moment / total_moment
 
         # --- Speed-dependent LLTD ---
         if np.sum(corner_mask) > 100:
@@ -358,16 +419,20 @@ def extract_measurements(
             if np.sum(low_speed_corner) > 30:
                 f_defl_ls = np.abs(lf_rh[low_speed_corner] - rf_rh[low_speed_corner])
                 r_defl_ls = np.abs(lr_rh[low_speed_corner] - rr_rh[low_speed_corner])
-                total_ls = float(np.mean(f_defl_ls)) + float(np.mean(r_defl_ls))
+                f_mom_ls = float(np.mean(f_defl_ls)) * tw_f_sq
+                r_mom_ls = float(np.mean(r_defl_ls)) * tw_r_sq
+                total_ls = f_mom_ls + r_mom_ls
                 if total_ls > 0.1:
-                    state.lltd_low_speed = float(np.mean(f_defl_ls)) / total_ls
+                    state.lltd_low_speed = f_mom_ls / total_ls
 
             if np.sum(high_speed_corner) > 30:
                 f_defl_hs = np.abs(lf_rh[high_speed_corner] - rf_rh[high_speed_corner])
                 r_defl_hs = np.abs(lr_rh[high_speed_corner] - rr_rh[high_speed_corner])
-                total_hs = float(np.mean(f_defl_hs)) + float(np.mean(r_defl_hs))
+                f_mom_hs = float(np.mean(f_defl_hs)) * tw_f_sq
+                r_mom_hs = float(np.mean(r_defl_hs)) * tw_r_sq
+                total_hs = f_mom_hs + r_mom_hs
                 if total_hs > 0.1:
-                    state.lltd_high_speed = float(np.mean(f_defl_hs)) / total_hs
+                    state.lltd_high_speed = f_mom_hs / total_hs
 
         # --- Body roll ---
         if ibt.has_channel("Roll"):
@@ -481,6 +546,22 @@ def extract_measurements(
 
     # --- RPM analysis ---
     _extract_rpm(ibt, start, end, speed_kph, state)
+
+    # --- Raw driver inputs (ThrottleRaw, BrakeRaw) ---
+    _extract_raw_inputs(ibt, start, end, speed_kph, state)
+
+    # --- Gear ---
+    _extract_gear(ibt, start, end, state)
+
+    # --- Pitch dynamics ---
+    brake_for_pitch = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else np.zeros(n)
+    _extract_pitch(ibt, start, end, speed_kph, brake_for_pitch, state)
+
+    # --- Extended in-car adjustments ---
+    _extract_extended_adjustments(ibt, start, end, state)
+
+    # --- Wind ---
+    _extract_wind(ibt, state)
 
     # --- Per-corner shock velocities ---
     state.lf_shock_vel_p95_mps = float(np.percentile(lf_sv, 95))
@@ -702,46 +783,70 @@ def _extract_tyre_data(
                 elif corner == "RR":
                     state.rear_carcass_gradient_rr_c = round(gradient, 1)
 
-    # --- Tyre pressure ---
-    for prefix, attr in [("LF", "front"), ("RF", "front"), ("LR", "rear"), ("RR", "rear")]:
+    # --- Tyre pressure (per-corner + axle average) ---
+    per_corner_pressures: dict[str, float] = {}
+    for prefix in ["LF", "RF", "LR", "RR"]:
         ch = f"{prefix}pressure"
         if ibt.has_channel(ch):
             pressure = ibt.channel(ch)[start:end + 1]
             mean_p = float(np.mean(pressure[at_speed]))
-            if attr == "front":
-                if state.front_pressure_mean_kpa == 0:
-                    state.front_pressure_mean_kpa = round(mean_p, 1)
-                else:
-                    state.front_pressure_mean_kpa = round(
-                        (state.front_pressure_mean_kpa + mean_p) / 2.0, 1)
-            else:
-                if state.rear_pressure_mean_kpa == 0:
-                    state.rear_pressure_mean_kpa = round(mean_p, 1)
-                else:
-                    state.rear_pressure_mean_kpa = round(
-                        (state.rear_pressure_mean_kpa + mean_p) / 2.0, 1)
+            per_corner_pressures[prefix] = mean_p
+            setattr(state, f"{prefix.lower()}_pressure_kpa", round(mean_p, 1))
 
-    # --- Tyre wear (end-of-lap snapshot) ---
-    for prefix, attr in [("LF", "front"), ("RF", "front"), ("LR", "rear"), ("RR", "rear")]:
+    # Axle averages (backward-compatible)
+    if "LF" in per_corner_pressures and "RF" in per_corner_pressures:
+        state.front_pressure_mean_kpa = round(
+            (per_corner_pressures["LF"] + per_corner_pressures["RF"]) / 2.0, 1)
+    if "LR" in per_corner_pressures and "RR" in per_corner_pressures:
+        state.rear_pressure_mean_kpa = round(
+            (per_corner_pressures["LR"] + per_corner_pressures["RR"]) / 2.0, 1)
+
+    # --- Cold tyre pressure ---
+    for prefix in ["LF", "RF", "LR", "RR"]:
+        ch = f"{prefix}coldPressure"
+        if ibt.has_channel(ch):
+            cold_p = float(ibt.channel(ch)[start])  # First sample = cold start
+            setattr(state, f"{prefix.lower()}_cold_pressure_kpa", round(cold_p, 1))
+
+    # --- Per-corner surface temps (inner, middle, outer) ---
+    for prefix in ["LF", "RF", "LR", "RR"]:
+        is_left = prefix.startswith("L")
+        ch_l = f"{prefix}tempL"
+        ch_m = f"{prefix}tempM"
+        ch_r = f"{prefix}tempR"
+        p = prefix.lower()
+
+        if ibt.has_channel(ch_l) and ibt.has_channel(ch_r):
+            temp_l = ibt.channel(ch_l)[start:end + 1][at_speed]
+            temp_r = ibt.channel(ch_r)[start:end + 1][at_speed]
+            inner = float(np.mean(temp_r if is_left else temp_l))
+            outer = float(np.mean(temp_l if is_left else temp_r))
+            setattr(state, f"{p}_temp_inner_c", round(inner, 1))
+            setattr(state, f"{p}_temp_outer_c", round(outer, 1))
+
+        if ibt.has_channel(ch_m):
+            temp_m = ibt.channel(ch_m)[start:end + 1][at_speed]
+            setattr(state, f"{p}_temp_middle_c", round(float(np.mean(temp_m)), 1))
+
+    # --- Tyre wear (end-of-lap snapshot, per-corner + axle average) ---
+    per_corner_wear: dict[str, float] = {}
+    for prefix in ["LF", "RF", "LR", "RR"]:
         wear_channels = [f"{prefix}wearL", f"{prefix}wearM", f"{prefix}wearR"]
         wear_vals = []
         for ch in wear_channels:
             if ibt.has_channel(ch):
                 wear_vals.append(float(ibt.channel(ch)[end]))
         if wear_vals:
-            avg_wear = np.mean(wear_vals) * 100
-            if attr == "front":
-                if state.front_wear_mean_pct == 0:
-                    state.front_wear_mean_pct = round(avg_wear, 1)
-                else:
-                    state.front_wear_mean_pct = round(
-                        (state.front_wear_mean_pct + avg_wear) / 2.0, 1)
-            else:
-                if state.rear_wear_mean_pct == 0:
-                    state.rear_wear_mean_pct = round(avg_wear, 1)
-                else:
-                    state.rear_wear_mean_pct = round(
-                        (state.rear_wear_mean_pct + avg_wear) / 2.0, 1)
+            avg_wear = float(np.mean(wear_vals)) * 100
+            per_corner_wear[prefix] = avg_wear
+            setattr(state, f"{prefix.lower()}_wear_pct", round(avg_wear, 1))
+
+    if "LF" in per_corner_wear and "RF" in per_corner_wear:
+        state.front_wear_mean_pct = round(
+            (per_corner_wear["LF"] + per_corner_wear["RF"]) / 2.0, 1)
+    if "LR" in per_corner_wear and "RR" in per_corner_wear:
+        state.rear_wear_mean_pct = round(
+            (per_corner_wear["LR"] + per_corner_wear["RR"]) / 2.0, 1)
 
 
 def _find_lap(ibt: IBTFile, lap_num: int) -> tuple[int, int]:
@@ -918,11 +1023,23 @@ def _extract_heave_deflection(
         state.front_heave_defl_max_mm = round(float(np.max(hf_defl)), 2)
 
         # Compute travel usage (p99 deflection as % of DeflMax)
-        # DeflMax depends on spring rate — use 50 N/mm as reference (BMW midpoint)
-        # since we may not know the current setup's heave rate at extraction time
+        # Read actual heave spring rate from session YAML if available
+        heave_rate_nmm = 50.0  # fallback
+        try:
+            si = ibt.session_info
+            if isinstance(si, dict):
+                cs = si.get("CarSetup", {})
+                front_setup = cs.get("Chassis", cs.get("Front", {})).get("Front", {})
+                hs_val = front_setup.get("HeaveSpring")
+                if hs_val is not None:
+                    parsed = float(str(hs_val).replace(" N/mm", "").strip())
+                    if parsed > 0:
+                        heave_rate_nmm = parsed
+        except (ValueError, TypeError, AttributeError):
+            pass
         defl_max_ref = 0.0
         if hsm.heave_spring_defl_max_intercept_mm > 0:
-            defl_max_ref = hsm.heave_spring_defl_max_intercept_mm + hsm.heave_spring_defl_max_slope * 50.0
+            defl_max_ref = hsm.heave_spring_defl_max_intercept_mm + hsm.heave_spring_defl_max_slope * heave_rate_nmm
             full_p99 = round(float(np.percentile(hf_defl, 99)), 2)
             if defl_max_ref > 0:
                 state.front_heave_travel_used_pct = round(full_p99 / defl_max_ref * 100, 1)
@@ -1240,3 +1357,124 @@ def _extract_rpm(
     state.rpm_at_braking_pct_at_limiter = round(
         limiter_before_braking / len(braking_starts) * 100, 1
     )
+
+
+def _extract_raw_inputs(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    speed_kph: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract raw driver inputs (before TC/ABS intervention).
+
+    ThrottleRaw vs Throttle difference reveals TC intervention.
+    BrakeRaw vs Brake difference reveals ABS intervention.
+    """
+    at_speed = speed_kph > 100
+
+    if ibt.has_channel("ThrottleRaw"):
+        throttle_raw = ibt.channel("ThrottleRaw")[start:end + 1]
+        if np.sum(at_speed) > 50:
+            state.throttle_raw_mean = round(float(np.mean(throttle_raw[at_speed])), 3)
+
+        # TC intervention: ThrottleRaw > Throttle means TC is cutting
+        if ibt.has_channel("Throttle"):
+            throttle = ibt.channel("Throttle")[start:end + 1]
+            tc_cutting = (throttle_raw > throttle + 0.02) & (throttle_raw > 0.1)
+            throttle_applied = throttle_raw > 0.1
+            if np.sum(throttle_applied) > 50:
+                state.tc_intervention_pct = round(
+                    float(np.sum(tc_cutting) / np.sum(throttle_applied) * 100), 1)
+
+    if ibt.has_channel("BrakeRaw"):
+        brake_raw = ibt.channel("BrakeRaw")[start:end + 1]
+        state.brake_raw_peak = round(float(np.max(brake_raw)), 3)
+
+
+def _extract_gear(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    state: MeasuredState,
+    corners: list | None = None,
+) -> None:
+    """Extract gear data for corner classification and rev analysis."""
+    if not ibt.has_channel("Gear"):
+        return
+
+    gear = ibt.channel("Gear")[start:end + 1].astype(int)
+    state.max_gear = int(np.max(gear))
+
+    # Mode gear at corner apexes (if corner info available)
+    if corners:
+        apex_gears = []
+        for c in corners:
+            # Find approximate sample for this corner's apex
+            if hasattr(c, "apex_speed_kph") and c.apex_speed_kph > 0:
+                # Use the min-speed sample within the corner
+                apex_gears.append(int(gear[min(c.corner_id, len(gear) - 1)]))
+        if apex_gears:
+            from collections import Counter
+            gear_counts = Counter(apex_gears)
+            state.gear_at_apex_mode = gear_counts.most_common(1)[0][0]
+
+
+def _extract_pitch(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    speed_kph: np.ndarray,
+    brake: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract pitch dynamics for aero platform analysis.
+
+    Pitch angle at speed = actual rake.
+    Pitch range = platform stability under braking/acceleration.
+    """
+    at_speed = (speed_kph > 150) & (brake < 0.05)
+
+    if ibt.has_channel("Pitch"):
+        pitch = np.degrees(ibt.channel("Pitch")[start:end + 1])
+        if np.sum(at_speed) > 50:
+            state.pitch_mean_at_speed_deg = round(float(np.mean(pitch[at_speed])), 3)
+        state.pitch_range_deg = round(
+            float(np.percentile(pitch, 99) - np.percentile(pitch, 1)), 2)
+
+
+def _extract_extended_adjustments(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    state: MeasuredState,
+) -> None:
+    """Track in-car adjustment changes beyond brake bias and TC1."""
+    adj_channels = {
+        "dcAntiRollFront": "arb_front_adjustments",
+        "dcAntiRollRear": "arb_rear_adjustments",
+        "dcTractionControl2": "tc2_adjustments",
+        "dcABS": "abs_adjustments",
+        "dcMGUKDeployMode": "deploy_mode_adjustments",
+    }
+    for ch_name, attr_name in adj_channels.items():
+        if ibt.has_channel(ch_name):
+            ch_data = ibt.channel(ch_name)[start:end + 1]
+            changes = int(np.sum(np.abs(np.diff(ch_data)) > 0.001))
+            setattr(state, attr_name, changes)
+
+
+def _extract_wind(
+    ibt: IBTFile,
+    state: MeasuredState,
+) -> None:
+    """Extract wind conditions (affects aero balance at high speed)."""
+    if ibt.has_channel("WindVel"):
+        wind_vel = ibt.channel("WindVel")
+        if wind_vel is not None and len(wind_vel) > 0:
+            state.wind_speed_ms = round(float(np.mean(wind_vel)), 2)
+
+    if ibt.has_channel("WindDir"):
+        wind_dir = ibt.channel("WindDir")
+        if wind_dir is not None and len(wind_dir) > 0:
+            state.wind_dir_deg = round(float(np.mean(np.degrees(wind_dir))), 1)

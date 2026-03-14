@@ -297,68 +297,80 @@ class SupportingSolver:
     def _solve_pressures(self, sol: SupportingSolution) -> None:
         """Tyre pressures targeting 155-170 kPa hot window.
 
-        Adjusts cold starting pressure based on measured hot pressures.
-        If no measured data, uses minimum safe cold pressure.
+        Uses per-corner hot pressures when available (preserves left-right split).
+        Applies track temperature correction: ~0.3 kPa cold adjustment per °C
+        difference from 30°C reference (hotter track → lower cold start).
         """
         measured = self.measured
 
         # Hot pressure target window
         hot_low = 155.0
         hot_high = 170.0
+        hot_target = (hot_low + hot_high) / 2.0
         min_cold = 152.0  # iRacing minimum
         default_cold = 152.0
-
-        # We only have front/rear averages from MeasuredState
-        front_hot = measured.front_pressure_mean_kpa
-        rear_hot = measured.rear_pressure_mean_kpa
         reasons = []
 
-        if front_hot > 0:
-            # Compute cold adjustment for front
-            if front_hot > hot_high:
-                adj = -(front_hot - hot_high) / 3.0
-                cold_f = default_cold + adj
+        # Track temperature correction: hotter track → tyres heat more → start lower
+        # Reference: 30°C track temp. Correction: ~0.3 kPa per °C difference.
+        track_temp_correction = 0.0
+        if measured.track_temp_c > 0:
+            track_temp_correction = -(measured.track_temp_c - 30.0) * 0.3
+            if abs(track_temp_correction) > 0.5:
                 reasons.append(
-                    f"Front hot {front_hot:.0f} kPa > {hot_high:.0f} → "
-                    f"cold {max(cold_f, min_cold):.0f} kPa"
+                    f"Track temp {measured.track_temp_c:.0f}°C → "
+                    f"cold adj {track_temp_correction:+.1f} kPa"
                 )
-            elif front_hot < hot_low:
-                adj = (hot_low - front_hot) / 3.0
-                cold_f = default_cold + adj
+
+        def _cold_from_hot(hot_kpa: float) -> float:
+            """Compute cold target from measured hot pressure."""
+            if hot_kpa > hot_high:
+                adj = -(hot_kpa - hot_high) / 3.0
+            elif hot_kpa < hot_low:
+                adj = (hot_low - hot_kpa) / 3.0
+            else:
+                adj = 0.0
+            return max(default_cold + adj + track_temp_correction, min_cold)
+
+        # Per-corner pressures (if available)
+        lf_hot = measured.lf_pressure_kpa
+        rf_hot = measured.rf_pressure_kpa
+        lr_hot = measured.lr_pressure_kpa
+        rr_hot = measured.rr_pressure_kpa
+
+        if lf_hot > 0 and rf_hot > 0:
+            sol.tyre_cold_fl_kpa = round(_cold_from_hot(lf_hot), 0)
+            sol.tyre_cold_fr_kpa = round(_cold_from_hot(rf_hot), 0)
+            if abs(lf_hot - rf_hot) > 3:
                 reasons.append(
-                    f"Front hot {front_hot:.0f} kPa < {hot_low:.0f} → "
-                    f"cold {cold_f:.0f} kPa"
+                    f"LF/RF hot split: {lf_hot:.0f}/{rf_hot:.0f} kPa → "
+                    f"cold {sol.tyre_cold_fl_kpa:.0f}/{sol.tyre_cold_fr_kpa:.0f}"
                 )
             else:
-                cold_f = default_cold
-                reasons.append(f"Front hot {front_hot:.0f} kPa in target window")
-
-            sol.tyre_cold_fl_kpa = round(max(cold_f, min_cold), 0)
-            sol.tyre_cold_fr_kpa = round(max(cold_f, min_cold), 0)
+                reasons.append(f"Front hot {(lf_hot+rf_hot)/2:.0f} kPa → cold {sol.tyre_cold_fl_kpa:.0f} kPa")
+        elif measured.front_pressure_mean_kpa > 0:
+            cold_f = _cold_from_hot(measured.front_pressure_mean_kpa)
+            sol.tyre_cold_fl_kpa = round(cold_f, 0)
+            sol.tyre_cold_fr_kpa = round(cold_f, 0)
+            reasons.append(f"Front hot {measured.front_pressure_mean_kpa:.0f} kPa → cold {cold_f:.0f} kPa")
         else:
             reasons.append("No front pressure data — using minimum 152 kPa")
 
-        if rear_hot > 0:
-            if rear_hot > hot_high:
-                adj = -(rear_hot - hot_high) / 3.0
-                cold_r = default_cold + adj
+        if lr_hot > 0 and rr_hot > 0:
+            sol.tyre_cold_rl_kpa = round(_cold_from_hot(lr_hot), 0)
+            sol.tyre_cold_rr_kpa = round(_cold_from_hot(rr_hot), 0)
+            if abs(lr_hot - rr_hot) > 3:
                 reasons.append(
-                    f"Rear hot {rear_hot:.0f} kPa > {hot_high:.0f} → "
-                    f"cold {max(cold_r, min_cold):.0f} kPa"
-                )
-            elif rear_hot < hot_low:
-                adj = (hot_low - rear_hot) / 3.0
-                cold_r = default_cold + adj
-                reasons.append(
-                    f"Rear hot {rear_hot:.0f} kPa < {hot_low:.0f} → "
-                    f"cold {cold_r:.0f} kPa"
+                    f"LR/RR hot split: {lr_hot:.0f}/{rr_hot:.0f} kPa → "
+                    f"cold {sol.tyre_cold_rl_kpa:.0f}/{sol.tyre_cold_rr_kpa:.0f}"
                 )
             else:
-                cold_r = default_cold
-                reasons.append(f"Rear hot {rear_hot:.0f} kPa in target window")
-
-            sol.tyre_cold_rl_kpa = round(max(cold_r, min_cold), 0)
-            sol.tyre_cold_rr_kpa = round(max(cold_r, min_cold), 0)
+                reasons.append(f"Rear hot {(lr_hot+rr_hot)/2:.0f} kPa → cold {sol.tyre_cold_rl_kpa:.0f} kPa")
+        elif measured.rear_pressure_mean_kpa > 0:
+            cold_r = _cold_from_hot(measured.rear_pressure_mean_kpa)
+            sol.tyre_cold_rl_kpa = round(cold_r, 0)
+            sol.tyre_cold_rr_kpa = round(cold_r, 0)
+            reasons.append(f"Rear hot {measured.rear_pressure_mean_kpa:.0f} kPa → cold {cold_r:.0f} kPa")
         else:
             reasons.append("No rear pressure data — using minimum 152 kPa")
 

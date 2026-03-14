@@ -4,7 +4,7 @@
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-14T03:34:26.918208+00:00",
+  "timestamp": "2026-03-14T06:12:27.064563+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -74,9 +74,9 @@
     "front_shock_vel_p99_mps": 0.27043798565864563,
     "rear_shock_vel_p99_mps": 0.34782278537750244,
     "peak_lat_g": 4.064794063568115,
-    "body_roll_p95_deg": 0.0,
-    "body_roll_max_deg": 3.153656742773023,
-    "roll_gradient_deg_per_g": 0.7758466218592911,
+    "body_roll_p95_deg": 1.6,
+    "body_roll_max_deg": -1.052781662464142,
+    "roll_gradient_deg_per_g": -0.259,
     "lltd_measured": 0.48499237568322334,
     "understeer_mean_deg": 0.05946056544780731,
     "understeer_high_speed_deg": 0.16391602158546448,
@@ -84,23 +84,64 @@
     "body_slip_p95_deg": 3.2204835414886475,
     "front_bottoming_events": 0,
     "rear_bottoming_events": 7,
+    "front_heave_defl_p99_mm": 84.85,
+    "front_heave_travel_used_pct": 93.6,
+    "front_heave_travel_used_braking_pct": 94.2,
+    "rear_heave_defl_p99_mm": 0.0,
+    "rear_heave_travel_used_pct": 0.0,
+    "heave_bottoming_events_front": 3,
+    "heave_bottoming_events_rear": 0,
     "front_rh_settle_time_ms": 0.0,
     "rear_rh_settle_time_ms": 0.0,
     "front_dominant_freq_hz": 2.8,
-    "rear_dominant_freq_hz": 4.9
+    "rear_dominant_freq_hz": 4.9,
+    "splitter_rh_mean_at_speed_mm": 53.94,
+    "splitter_rh_min_mm": 30.66,
+    "splitter_scrape_events": 0,
+    "front_corner_defl_p99_mm": 30.42,
+    "rear_corner_defl_p99_mm": 38.26,
+    "front_heave_vel_p95_mps": 0.3429,
+    "rear_heave_vel_p95_mps": 0.0,
+    "front_heave_vel_ls_pct": 23.7,
+    "front_heave_vel_hs_pct": 31.5,
+    "lltd_low_speed": 0.4820119736145802,
+    "lltd_high_speed": 0.4861978603839339,
+    "measured_brake_bias_pct": 68.5,
+    "abs_active_pct": 0.0,
+    "abs_cut_mean_pct": 100.0,
+    "brake_bias_adjustments": 18,
+    "tc_adjustments": 0,
+    "fuel_level_at_measurement_l": 70.9,
+    "ers_battery_mean_pct": 52.3,
+    "mguk_torque_peak_nm": 361.4,
+    "air_temp_c": 27.8,
+    "track_temp_c": 39.4,
+    "rpm_at_braking_pct_at_limiter": 5.6,
+    "understeer_left_turn_deg": 0.1754104644060135,
+    "understeer_right_turn_deg": -0.006777693051844835,
+    "lf_shock_vel_p95_mps": 0.15036924183368683,
+    "rf_shock_vel_p95_mps": 0.12835678458213806,
+    "lr_shock_vel_p95_mps": 0.1874822974205017,
+    "rr_shock_vel_p95_mps": 0.1698000282049179
   },
   "driver_profile": {
     "style": "aggressive-erratic",
     "trail_braking_depth": 0.27856521739130435,
+    "trail_braking_p95": 1.0,
     "trail_braking_class": "moderate",
     "throttle_progressiveness": 0.7082779096821336,
+    "throttle_onset_rate_pct_per_s": -40.955639001516204,
+    "throttle_classification": "moderate",
     "steering_smoothness": "smooth",
+    "steering_jerk_p95_rad_per_s2": 30.50187110900879,
+    "apex_speed_cv": 0.10252724204457037,
     "consistency": "erratic",
-    "cornering_aggression": "limit"
+    "cornering_aggression": "limit",
+    "avg_peak_lat_g_utilization": 0.9972002640731268
   },
   "diagnosis": {
-    "assessment": "competitive",
-    "problem_count": 5,
+    "assessment": "compromised",
+    "problem_count": 11,
     "problems": [
       {
         "category": "safety",
@@ -108,6 +149,30 @@
         "symptom": "7 rear bottoming events",
         "measured": 7.0,
         "threshold": 6.0,
+        "speed_context": "all"
+      },
+      {
+        "category": "safety",
+        "severity": "significant",
+        "symptom": "Front heave spring travel 94% exhausted under braking (p99 defl 85.0mm)",
+        "measured": 94.2,
+        "threshold": 85.0,
+        "speed_context": "braking"
+      },
+      {
+        "category": "safety",
+        "severity": "significant",
+        "symptom": "Front heave spring travel 94% used at speed (p99 defl 84.8mm)",
+        "measured": 93.6,
+        "threshold": 85.0,
+        "speed_context": "high"
+      },
+      {
+        "category": "safety",
+        "severity": "significant",
+        "symptom": "3 front heave spring bottoming events (deflection within 2mm of DeflMax)",
+        "measured": 3.0,
+        "threshold": 0.0,
         "speed_context": "all"
       },
       {
@@ -127,6 +192,14 @@
         "speed_context": "all"
       },
       {
+        "category": "balance",
+        "severity": "minor",
+        "symptom": "Brake bias adjusted 18 times during session (range 45.2-46.0)",
+        "measured": 18.0,
+        "threshold": 5.0,
+        "speed_context": "all"
+      },
+      {
         "category": "thermal",
         "severity": "minor",
         "symptom": "Front hot pressure 186 kPa (target <175)",
@@ -141,6 +214,22 @@
         "measured": 182.1,
         "threshold": 175.0,
         "speed_context": "all"
+      },
+      {
+        "category": "grip",
+        "severity": "significant",
+        "symptom": "Measured brake bias 68.5% differs from setup 45.8% (delta 22.8%)",
+        "measured": 68.5,
+        "threshold": 45.75,
+        "speed_context": "braking"
+      },
+      {
+        "category": "grip",
+        "severity": "significant",
+        "symptom": "ABS cutting 100% of brake force when active",
+        "measured": 100.0,
+        "threshold": 15.0,
+        "speed_context": "braking"
       }
     ]
   },

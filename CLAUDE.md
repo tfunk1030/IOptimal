@@ -201,7 +201,7 @@ Key features:
 **Known limitations:**
 - Ferrari rear suspension is modeled as coil spring (placeholder) — actually a torsion bar. Corner spring and LLTD outputs for Ferrari are unreliable until the index→OD mapping is decoded.
 - `m_eff` empirical correction uses lap-wide statistics (not filtered to high-speed straights), causing overestimation. Treat as rough indicator.
-- `min_sessions=2` gate for learned corrections is weak — corrections from only 2 sessions may be noisy.
+- `min_sessions=3` gate for learned corrections is weak — corrections from only 3 sessions may be noisy.
 - Knowledge store has no file locking — safe for single-user CLI but not concurrent access.
 
 ## Usage

@@ -177,18 +177,6 @@ def analyze_driver(
             # This is approximate — find samples near the corner's distance range
             pass  # Will use corner-level data below
 
-        # Simpler approach: use the per-corner throttle exit characteristics
-        for c in corners:
-            if c.duration_s < 0.5:
-                continue
-            # Onset rate from trail brake pct and duration
-            # Higher trail_brake_pct with quick throttle onset = binary
-            # Lower trail_brake_pct with gradual onset = progressive
-            exit_fraction = 1.0 - c.trail_brake_pct
-            if exit_fraction > 0 and c.duration_s > 0:
-                rate = exit_fraction / (c.duration_s * max(1.0 - c.trail_brake_pct, 0.1))
-                onset_rates.append(rate)
-
     # Use best lap for detailed throttle analysis
     best = ibt.best_lap_indices()
     if best is not None:
