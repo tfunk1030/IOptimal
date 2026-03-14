@@ -28,9 +28,10 @@ if TYPE_CHECKING:
 # From ARB solver: each RARB blade ≈ -3% LLTD (softening rear ARB shifts LLTD rearward)
 RARB_LLTD_PER_BLADE = -0.030  # fraction (e.g., -0.030 = -3%)
 
-# Lap time sensitivity: 1% LLTD shift ≈ 0.3° understeer ≈ 0.2s/lap at typical circuit
-# So per RARB blade: ~0.9° understeer → ~0.18s (180ms)
-RARB_LAPTIME_MS_PER_BLADE = 180.0  # ms per RARB blade deviation from optimal
+# Lap time sensitivity: 1% LLTD shift ≈ 0.3° understeer ≈ 0.05s/lap (fine-tuning)
+# Per RARB blade: ~0.9° understeer → ~45ms. RARB is a fine-tuning tool within
+# an already-balanced window — real iRacing experience shows ~20-50 ms/blade.
+RARB_LAPTIME_MS_PER_BLADE = 45.0  # ms per RARB blade deviation from optimal
 
 # Ride height → DF change (approximate from aero map sensitivity)
 RH_DF_SENSITIVITY_N_PER_MM = 0.5   # N DF change per mm rear RH change
