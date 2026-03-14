@@ -143,8 +143,44 @@ _BMW_PARAM_IDS: dict[str, str] = {
     "fuel_low_warning":         "CarSetup_BrakesDriveUnit_Fuel_FuelLowWarning",
     # Gears
     "gear_stack":               "CarSetup_BrakesDriveUnit_GearRatios_GearStack",
+    # Gear speeds (BMW Short stack — constants from real LDX data, Unit="Km/h")
+    "speed_in_first":           "CarSetup_BrakesDriveUnit_GearRatios_SpeedInFirst",
+    "speed_in_second":          "CarSetup_BrakesDriveUnit_GearRatios_SpeedInSecond",
+    "speed_in_third":           "CarSetup_BrakesDriveUnit_GearRatios_SpeedInThird",
+    "speed_in_fourth":          "CarSetup_BrakesDriveUnit_GearRatios_SpeedInFourth",
+    "speed_in_fifth":           "CarSetup_BrakesDriveUnit_GearRatios_SpeedInFifth",
+    "speed_in_sixth":           "CarSetup_BrakesDriveUnit_GearRatios_SpeedInSixth",
+    "speed_in_seventh":         "CarSetup_BrakesDriveUnit_GearRatios_SpeedInSeventh",
     # Lighting
     "roof_light_color":         "CarSetup_BrakesDriveUnit_Lighting_RoofIdLightColor",
+    # Update counter
+    "update_count":             "CarSetup_UpdateCount",
+    # Computed display values — static shock deflections
+    "lf_shock_defl_static":     "CarSetup_Chassis_LeftFront_ShockDeflStatic",
+    "rf_shock_defl_static":     "CarSetup_Chassis_RightFront_ShockDeflStatic",
+    "lr_shock_defl_static":     "CarSetup_Chassis_LeftRear_ShockDeflStatic",
+    "rr_shock_defl_static":     "CarSetup_Chassis_RightRear_ShockDeflStatic",
+    # Computed display values — torsion bar deflections
+    "lf_torsion_defl":          "CarSetup_Chassis_LeftFront_TorsionBarDefl",
+    "rf_torsion_defl":          "CarSetup_Chassis_RightFront_TorsionBarDefl",
+    # Computed display values — front heave spring/slider deflections
+    "front_heave_spring_defl_static":  "CarSetup_Chassis_Front_HeaveSpringDeflStatic",
+    "front_heave_spring_defl_max":     "CarSetup_Chassis_Front_HeaveSpringDeflMax",
+    "front_heave_slider_defl_static":  "CarSetup_Chassis_Front_HeaveSliderDeflStatic",
+    # Computed display values — rear coil spring deflections
+    "lr_spring_defl_static":    "CarSetup_Chassis_LeftRear_SpringDeflStatic",
+    "rr_spring_defl_static":    "CarSetup_Chassis_RightRear_SpringDeflStatic",
+    "lr_spring_defl_max":       "CarSetup_Chassis_LeftRear_SpringDeflMax",
+    "rr_spring_defl_max":       "CarSetup_Chassis_RightRear_SpringDeflMax",
+    # Computed display values — rear third spring/slider deflections
+    "rear_third_spring_defl_static":   "CarSetup_Chassis_Rear_ThirdSpringDeflStatic",
+    "rear_third_spring_defl_max":      "CarSetup_Chassis_Rear_ThirdSpringDeflMax",
+    "rear_third_slider_defl_static":   "CarSetup_Chassis_Rear_ThirdSliderDeflStatic",
+    # Corner weights (physics-computed Newtons)
+    "lf_corner_weight":         "CarSetup_Chassis_LeftFront_CornerWeight",
+    "rf_corner_weight":         "CarSetup_Chassis_RightFront_CornerWeight",
+    "lr_corner_weight":         "CarSetup_Chassis_LeftRear_CornerWeight",
+    "rr_corner_weight":         "CarSetup_Chassis_RightRear_CornerWeight",
 }
 
 
@@ -366,15 +402,35 @@ def write_sto(
     # ── Pre-write validation: warn on out-of-range values ──────────────────
     _validate_setup_values(step1, step2, step3, step4, step5, step6)
 
+    # ── Fetch car model for physics computations ───────────────────────────
+    from car_model.cars import get_car as _get_car
+    try:
+        _car = _get_car(car_canonical)
+    except Exception:
+        _car = None
+
     # Compute brake bias from physics if not provided
     if brake_bias_pct is None:
         from solver.supporting_solver import compute_brake_bias
-        from car_model.cars import get_car
         try:
-            _car = get_car(car_canonical)
-            brake_bias_pct, _ = compute_brake_bias(_car, fuel_load_l=fuel_l)
+            if _car is not None:
+                brake_bias_pct, _ = compute_brake_bias(_car, fuel_load_l=fuel_l)
+            else:
+                brake_bias_pct = 56.0
         except Exception:
             brake_bias_pct = 56.0  # fallback only if car model unavailable
+
+    # ── Corner weights (physics-computed) ─────────────────────────────────
+    if _car is not None:
+        _total_mass   = _car.mass_car_kg + _car.mass_driver_kg + fuel_l * _car.fuel_density_kg_per_l
+        _front_axle_n = _total_mass * 9.81 * _car.weight_dist_front
+        _rear_axle_n  = _total_mass * 9.81 * (1.0 - _car.weight_dist_front)
+        _lf_cw = round(_front_axle_n / 2.0, 0)
+        _rf_cw = round(_front_axle_n / 2.0, 0)
+        _lr_cw = round(_rear_axle_n  / 2.0, 0)
+        _rr_cw = round(_rear_axle_n  / 2.0, 0)
+    else:
+        _lf_cw = _rf_cw = _lr_cw = _rr_cw = 0.0
 
     # Resolve ID mapping for this car
     ids = _CAR_PARAM_IDS.get(car_canonical.lower(), _BMW_PARAM_IDS)
@@ -407,6 +463,9 @@ def write_sto(
     _string(details, "Session", f"Generated {now.strftime('%Y-%m-%d %H:%M')} UTC")
     _string(details, "Venue", track_name)
     _string(details, "Vehicle Type", "Car")
+
+    # Setup update counter (iRacing increments this each save; we emit 1)
+    _w_num("update_count", 1, "")
 
     # === Aero ===
     _w_num("wing_angle",       wing,                                 "deg")
@@ -455,6 +514,48 @@ def write_sto(
     _w_num("rf_shock_defl_max", 100, "mm")
     _w_num("lr_shock_defl_max", 150, "mm")
     _w_num("rr_shock_defl_max", 150, "mm")
+
+    # === Computed / display deflections (iRacing-style, BMW only) ===
+    # Static shock deflections (calibrated from real LDX files)
+    _lf_sd = round(step1.static_front_rh_mm * 0.487, 1)
+    _lr_sd = round(step1.static_rear_rh_mm  * 0.462, 1)
+    _w_num("lf_shock_defl_static", _lf_sd, "mm")
+    _w_num("rf_shock_defl_static", _lf_sd, "mm")
+    _w_num("lr_shock_defl_static", _lr_sd, "mm")
+    _w_num("rr_shock_defl_static", _lr_sd, "mm")
+
+    # Torsion bar deflections (calibrated: 0.092 turns → 16.7 mm in s1.ldx)
+    _tb_defl = round(_tb_turns * 181.5, 1)
+    _w_num("lf_torsion_defl", _tb_defl, "mm")
+    _w_num("rf_torsion_defl", _tb_defl, "mm")
+
+    # Front heave spring / slider deflections
+    _fh_delta = step2.front_heave_nmm - 30.0
+    _w_num("front_heave_spring_defl_static",
+           round(24.0 + _fh_delta * (-0.55), 1), "mm")
+    _w_num("front_heave_spring_defl_max",
+           round(97.7 - _fh_delta * 0.35, 1), "mm")
+    _w_num("front_heave_slider_defl_static",
+           round(40.6 + _fh_delta * 0.017, 1), "mm")
+
+    # Rear coil spring deflections
+    _lr_spring_defl = round(8.5 * 180.0 / max(step3.rear_spring_rate_nmm, 1.0), 1)
+    _w_num("lr_spring_defl_static", _lr_spring_defl, "mm")
+    _w_num("rr_spring_defl_static", _lr_spring_defl, "mm")
+    _w_num("lr_spring_defl_max", 76.8, "mm")
+    _w_num("rr_spring_defl_max", 76.8, "mm")
+
+    # Rear third spring / slider deflections
+    _r3_defl = round(19.2 * step1.static_rear_rh_mm / 48.9, 1)
+    _w_num("rear_third_spring_defl_static",  _r3_defl, "mm")
+    _w_num("rear_third_spring_defl_max",     61.2,     "mm")
+    _w_num("rear_third_slider_defl_static",  _r3_defl, "mm")
+
+    # Corner weights (N)
+    _w_num("lf_corner_weight", _lf_cw, "N")
+    _w_num("rf_corner_weight", _rf_cw, "N")
+    _w_num("lr_corner_weight", _lr_cw, "N")
+    _w_num("rr_corner_weight", _rr_cw, "N")
 
     # === ARBs ===
     _w_str("front_arb_size",   step4.front_arb_size)
@@ -526,6 +627,14 @@ def write_sto(
 
     # === Gears ===
     _w_str("gear_stack", gear_stack)
+    # BMW Short stack gear speeds (km/h) — constants calibrated from real LDX data
+    _w_num("speed_in_first",   116, "Km/h")
+    _w_num("speed_in_second",  151, "Km/h")
+    _w_num("speed_in_third",   184, "Km/h")
+    _w_num("speed_in_fourth",  220, "Km/h")
+    _w_num("speed_in_fifth",   257, "Km/h")
+    _w_num("speed_in_sixth",   288, "Km/h")
+    _w_num("speed_in_seventh", 316, "Km/h")
 
     # === Lighting ===
     _w_str("roof_light_color", roof_light_color)
