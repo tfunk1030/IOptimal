@@ -86,12 +86,12 @@
       "y_param": "lltd_measured",
       "fit_type": "linear",
       "coefficients": [
-        -0.002118593081155313,
-        0.49639776980821676
+        -0.0020339756198149753,
+        0.49673623965357755
       ],
-      "r_squared": 0.0782478913364908,
-      "sample_count": 35,
-      "residual_std": 0.009574751472510176,
+      "r_squared": 0.06493210799220284,
+      "sample_count": 36,
+      "residual_std": 0.010026733104665564,
       "x_values": [
         5.0,
         5.0,
@@ -127,6 +127,7 @@
         3.0,
         1.0,
         2.0,
+        3.0,
         3.0
       ],
       "y_values": [
@@ -164,7 +165,8 @@
         0.5111457965281654,
         0.5099296140024236,
         0.5082502282063625,
-        0.5121757890509507
+        0.5121757890509507,
+        0.5106040336704427
       ],
       "x_min": 1.0,
       "x_max": 5.0,
@@ -178,11 +180,11 @@
       "y_param": "front_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.028063296118355962,
-        7.130475460453205
+        -0.02820802114278129,
+        7.139598632879004
       ],
-      "r_squared": 0.42051205967282745,
-      "sample_count": 35,
+      "r_squared": 0.43719658767460745,
+      "sample_count": 36,
       "residual_std": 0.0,
       "x_values": [
         50.0,
@@ -218,6 +220,7 @@
         40.0,
         40.0,
         40.0,
+        30.0,
         30.0,
         30.0
       ],
@@ -256,7 +259,8 @@
         5.955018520355225,
         5.931454658508301,
         6.332736492156982,
-        6.285985946655273
+        6.285985946655273,
+        6.346374988555908
       ],
       "x_min": 30.0,
       "x_max": 90.0,
@@ -270,11 +274,11 @@
       "y_param": "rear_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.004536034207462367,
-        9.57991231835983
+        -0.004694650036063398,
+        9.66145004938126
       ],
-      "r_squared": 0.2563133912701201,
-      "sample_count": 35,
+      "r_squared": 0.28626359714604954,
+      "sample_count": 36,
       "residual_std": 0.0,
       "x_values": [
         530.0,
@@ -311,7 +315,8 @@
         480.0,
         530.0,
         430.0,
-        470.0
+        470.0,
+        360.0
       ],
       "y_values": [
         7.460980415344238,
@@ -348,7 +353,8 @@
         7.220598220825195,
         6.911177635192871,
         7.763716220855713,
-        7.496074199676514
+        7.496074199676514,
+        8.169967651367188
       ],
       "x_min": 320.0,
       "x_max": 540.0,
@@ -357,19 +363,19 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-03-14T08:14:53.512355+00:00",
-  "observation_count": 35,
+  "last_updated": "2026-03-14T14:56:33.528730+00:00",
+  "observation_count": 36,
   "most_sensitive_parameters": [],
   "corrections": {
-    "aero_compression_front_mean_mm": 9.891668624877932,
-    "aero_compression_front_std_mm": 1.4761372567220488,
-    "aero_compression_rear_mean_mm": 20.641909648350307,
-    "aero_compression_rear_std_mm": 1.6270711390987174,
+    "aero_compression_front_mean_mm": 9.965040429433188,
+    "aero_compression_front_std_mm": 1.5188395915098114,
+    "aero_compression_rear_mean_mm": 20.75210115644667,
+    "aero_compression_rear_std_mm": 1.7317039574452358,
     "roll_gradient_measured_mean": 0.8154683074496597,
     "roll_gradient_measured_std": 0.046029541742685295,
     "roll_gradient_sample_count": 28,
-    "lltd_measured_mean": 0.4905867716427622,
-    "lltd_measured_std": 0.00997287648052007,
+    "lltd_measured_mean": 0.49114280669908666,
+    "lltd_measured_std": 0.010369024068798563,
     "m_eff_front_values": [
       167.0,
       167.0,
@@ -405,9 +411,10 @@
       106.7,
       107.2,
       98.5,
-      86.2
+      86.2,
+      108.8
     ],
-    "m_eff_front_empirical_mean": 140.01142857142855,
-    "m_eff_front_empirical_std": 40.660256280750694
+    "m_eff_front_empirical_mean": 139.14444444444445,
+    "m_eff_front_empirical_std": 40.41832260830645
   }
 }
