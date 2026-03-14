@@ -111,7 +111,9 @@ def print_full_setup_report(
     a(_box_top("GARAGE CARD"))
     a(_blank())
     a(_row("  RIDE HEIGHTS & PUSHRODS", "  SPRINGS"))
-    _tb_turns = round(0.0856 + 0.668 / max(step2.front_heave_nmm, 1), 3)
+    _tb_turns = round(
+        0.1089 - 0.1642 / max(step2.front_heave_nmm, 1) + 0.000368 * step2.perch_offset_front_mm, 3
+    )
     a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
            f"  Heave F:    {step2.front_heave_nmm:5.0f} N/mm  perch {step2.perch_offset_front_mm:+.0f}mm"))
     a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
