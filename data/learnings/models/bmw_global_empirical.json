@@ -1,14 +1,14 @@
 {
   "car": "bmw",
-  "total_sessions": 32,
+  "total_sessions": 35,
   "tracks_included": [
     "Sebring International Raceway"
   ],
-  "aero_compression_front_mm": 9.695133912563325,
-  "aero_compression_rear_mm": 20.62467533349991,
-  "roll_gradient_global_deg_per_g": 0.8112866246721928,
-  "m_eff_front_global_kg": 144.01986798750562,
+  "aero_compression_front_mm": 9.891668624877932,
+  "aero_compression_rear_mm": 20.641909648350307,
+  "roll_gradient_global_deg_per_g": 0.8117185640396695,
+  "m_eff_front_global_kg": 140.01409384902357,
   "anomalies": [],
   "confidence": "medium",
-  "last_updated": "2026-03-14T01:13:53.369032+00:00"
+  "last_updated": "2026-03-14T03:34:29.643282+00:00"
 }
