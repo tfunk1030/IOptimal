@@ -133,20 +133,22 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
             "max": round(float(np.max(abs_roll)), 2),
         }
 
-        # Roll gradient: derived from body roll statistics and lateral G
-        # Direct linear fit of |roll| vs |lat_g| is unreliable because:
-        # 1. Roll channel sign convention varies
-        # 2. Aero roll resistance is speed-dependent (non-linear)
-        # 3. Combined lateral+longitudinal events muddy the correlation
-        #
-        # Instead: use the p95 ratio as a robust estimator.
-        # At p95 cornering (~2g), the car exhibits p95 roll (~1.6°).
-        # This gives roll_gradient ≈ p95_roll / p95_lat_g.
-        p95_lat = float(np.percentile(abs_lat_g_ot, 95))
-        if p95_lat > 0.5 and float(np.percentile(abs_roll, 95)) > 0.1:
-            roll_gradient = round(
-                float(np.percentile(abs_roll, 95)) / p95_lat, 3
-            )
+        # Roll gradient: linear fit of |Roll| vs |LatAccel| in the 1-2.5g range
+        # where the relationship is most linear and aerodynamic effects are
+        # less dominant than at peak speeds.
+        regression_mask = (abs_lat_g_ot > 1.0) & (abs_lat_g_ot < 2.5)
+        if np.sum(regression_mask) > 50:
+            x = abs_lat_g_ot[regression_mask]
+            y = abs_roll[regression_mask]
+            coeffs = np.polyfit(x, y, 1)
+            roll_gradient = round(float(coeffs[0]), 3)
+        else:
+            # Fallback to p95 ratio if insufficient cornering data
+            p95_lat = float(np.percentile(abs_lat_g_ot, 95))
+            if p95_lat > 0.5 and float(np.percentile(abs_roll, 95)) > 0.1:
+                roll_gradient = round(
+                    float(np.percentile(abs_roll, 95)) / p95_lat, 3
+                )
     else:
         # Derive roll from ride height differential (LF-RF, LR-RR)
         if (ibt.has_channel("LFrideHeight") and ibt.has_channel("RFrideHeight")):
@@ -162,11 +164,18 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
                 "p95": round(float(np.percentile(abs_roll_rh, 95)), 2),
                 "max": round(float(np.max(abs_roll_rh)), 2),
             }
-            p95_lat = float(np.percentile(abs_lat_g_ot, 95))
-            if p95_lat > 0.5 and float(np.percentile(abs_roll_rh, 95)) > 0.1:
-                roll_gradient = round(
-                    float(np.percentile(abs_roll_rh, 95)) / p95_lat, 3
-                )
+            regression_mask = (abs_lat_g_ot > 1.0) & (abs_lat_g_ot < 2.5)
+            if np.sum(regression_mask) > 50:
+                x = abs_lat_g_ot[regression_mask]
+                y = abs_roll_rh[regression_mask]
+                coeffs = np.polyfit(x, y, 1)
+                roll_gradient = round(float(coeffs[0]), 3)
+            else:
+                p95_lat = float(np.percentile(abs_lat_g_ot, 95))
+                if p95_lat > 0.5 and float(np.percentile(abs_roll_rh, 95)) > 0.1:
+                    roll_gradient = round(
+                        float(np.percentile(abs_roll_rh, 95)) / p95_lat, 3
+                    )
 
     # === Ride height statistics ===
     ride_heights: dict[str, dict] = {}
