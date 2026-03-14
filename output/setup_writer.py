@@ -496,8 +496,16 @@ def write_sto(
     # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
     _w_num("lf_torsion_od", step3.front_torsion_od_mm, "mm")
     _w_num("rf_torsion_od", step3.front_torsion_od_mm, "mm")
-    # Torsion bar turns calibration: Turns = 0.0856 + 0.668 / HeaveSpring
-    _tb_turns = round(0.0856 + 0.668 / max(step2.front_heave_nmm, 1), 3)
+    # Torsion bar turns calibration: 3-point fit from BMW calibration sessions
+    # turns = 0.1089 - 0.1642/heave_rate + 0.000368 * heave_perch
+    # Calibrated from: S1 (heave=30,perch=-31)->0.092, S2 (heave=60,perch=-14)->0.101,
+    #   Taylor manual (heave=40,perch=-13)->0.102=31mm => 0.100=30mm
+    _tb_turns = round(
+        0.1089
+        - 0.1642 / max(step2.front_heave_nmm, 1)
+        + 0.000368 * step2.perch_offset_front_mm,
+        3,
+    )
     _w_num("lf_torsion_turns", _tb_turns, "Turns")
     _w_num("rf_torsion_turns", _tb_turns, "Turns")
     # Porsche roll spring (only if car maps it)
