@@ -52,6 +52,10 @@ class CornerAnalysis:
     trail_brake_pct: float = 0.0  # fraction of corner duration with brake > 5%
     throttle_onset_dist_m: float = 0.0  # lap_dist (m) where throttle first exceeds 20%
 
+    # Kerb overlap
+    has_kerb_overlap: bool = False
+    kerb_severity_max: float = 0.0
+
     # Time loss potential
     delta_to_min_time_s: float = 0.0  # actual - theoretical minimum
 
@@ -170,6 +174,7 @@ def segment_lap(
     end: int,
     car: CarModel | None = None,
     tick_rate: int = 60,
+    kerb_events: list | None = None,
 ) -> list[CornerAnalysis]:
     """Segment one lap (start..end sample indices) into corner events.
 
@@ -344,6 +349,18 @@ def segment_lap(
         else:
             delta_t = 0.0
 
+        # Check for kerb overlap: any kerb event within this corner's distance range
+        corner_has_kerb = False
+        corner_kerb_sev = 0.0
+        if kerb_events:
+            corner_start_m = float(lap_dist[cs])
+            corner_end_m = float(lap_dist[min(ce - 1, n - 1)])
+            buffer_m = 30.0
+            for ke in kerb_events:
+                if (corner_start_m - buffer_m) <= ke.lap_dist_m <= (corner_end_m + buffer_m):
+                    corner_has_kerb = True
+                    corner_kerb_sev = max(corner_kerb_sev, ke.severity)
+
         results.append(CornerAnalysis(
             corner_id=cid,
             lap_dist_start_m=round(float(lap_dist[cs]), 1),
@@ -367,6 +384,8 @@ def segment_lap(
             body_slip_peak_deg=round(bs_peak, 2),
             trail_brake_pct=round(trail_pct, 3),
             throttle_onset_dist_m=round(throttle_onset, 1),
+            has_kerb_overlap=corner_has_kerb,
+            kerb_severity_max=round(corner_kerb_sev, 2),
             delta_to_min_time_s=round(max(delta_t, 0.0), 3),
         ))
 

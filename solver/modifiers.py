@@ -134,8 +134,9 @@ def compute_modifiers(
                     f"Speed gradient {gradient:.1f}° → DF balance -0.5% (more rear DF)"
                 )
 
-        # Safety: bottoming → heave floor
-        if cat == "safety" and "bottoming" in symptom:
+        # Safety: bottoming → heave floor (only for clean-track bottoming,
+        # not kerb-only — kerb bottoming is a driving choice, not a setup failure)
+        if cat == "safety" and "bottoming" in symptom and "kerb" not in symptom:
             if "front" in symptom and problem.measured > 5:
                 # Floor estimate: use heave spring natural frequency constraint
                 # Higher shock velocity → stiffer spring needed to control platform

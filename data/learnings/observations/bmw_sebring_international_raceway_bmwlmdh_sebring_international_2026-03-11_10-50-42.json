@@ -1,10 +1,10 @@
 {
   "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-11_10-50-42",
-  "ibt_path": "ibtfiles/bmwlmdh_sebring international 2026-03-11 10-50-42.ibt",
+  "ibt_path": "data/telemetry/bmwlmdh_sebring international 2026-03-11 10-50-42.ibt",
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-13T17:20:23.693520+00:00",
+  "timestamp": "2026-03-14T08:01:27.585307+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -74,34 +74,129 @@
     "front_shock_vel_p99_mps": 0.27823203802108765,
     "rear_shock_vel_p99_mps": 0.32538220286369324,
     "peak_lat_g": 3.5113439559936523,
-    "body_roll_p95_deg": 0.0,
-    "body_roll_max_deg": 2.741333680802059,
-    "roll_gradient_deg_per_g": 0.780707818760611,
-    "lltd_measured": 0.4862816591647723,
+    "body_roll_p95_deg": 1.63,
+    "body_roll_max_deg": -0.43189530658721925,
+    "roll_gradient_deg_per_g": -0.123,
+    "lltd_measured": 0.509949961918872,
     "understeer_mean_deg": -0.01047923881560564,
     "understeer_high_speed_deg": 0.08904065936803818,
     "understeer_low_speed_deg": -0.09852869063615799,
     "body_slip_p95_deg": 3.3008837699890137,
     "front_bottoming_events": 1,
     "rear_bottoming_events": 3,
+    "front_heave_defl_p99_mm": 90.09,
+    "front_heave_travel_used_pct": 94.0,
+    "front_heave_travel_used_braking_pct": 95.7,
+    "rear_heave_defl_p99_mm": 0.0,
+    "rear_heave_travel_used_pct": 0.0,
+    "heave_bottoming_events_front": 19,
+    "heave_bottoming_events_rear": 0,
     "front_rh_settle_time_ms": 0.0,
     "rear_rh_settle_time_ms": 0.0,
     "front_dominant_freq_hz": 2.79,
-    "rear_dominant_freq_hz": 4.88
+    "rear_dominant_freq_hz": 4.88,
+    "splitter_rh_mean_at_speed_mm": 53.05,
+    "splitter_rh_min_mm": 28.66,
+    "splitter_scrape_events": 0,
+    "front_corner_defl_p99_mm": 32.35,
+    "rear_corner_defl_p99_mm": 42.97,
+    "front_heave_vel_p95_mps": 0.3412,
+    "rear_heave_vel_p95_mps": 0.0,
+    "front_heave_vel_ls_pct": 24.0,
+    "front_heave_vel_hs_pct": 30.7,
+    "lltd_low_speed": 0.5080753535760691,
+    "lltd_high_speed": 0.5126113064660347,
+    "measured_brake_bias_pct": 69.6,
+    "abs_active_pct": 0.0,
+    "abs_cut_mean_pct": 100.0,
+    "brake_bias_adjustments": 21,
+    "tc_adjustments": 0,
+    "fuel_level_at_measurement_l": 77.7,
+    "ers_battery_mean_pct": 62.3,
+    "mguk_torque_peak_nm": 353.4,
+    "air_temp_c": 27.8,
+    "track_temp_c": 39.4,
+    "rpm_at_braking_pct_at_limiter": 0.0,
+    "understeer_left_turn_deg": 0.046578384935855865,
+    "understeer_right_turn_deg": -0.043768420815467834,
+    "lf_shock_vel_p95_mps": 0.1407998651266098,
+    "rf_shock_vel_p95_mps": 0.12395668029785156,
+    "lr_shock_vel_p95_mps": 0.1748483031988144,
+    "rr_shock_vel_p95_mps": 0.15404680371284485,
+    "lf_pressure_kpa": 181.2,
+    "rf_pressure_kpa": 180.3,
+    "lr_pressure_kpa": 178.0,
+    "rr_pressure_kpa": 177.4,
+    "lf_cold_pressure_kpa": 151.6,
+    "rf_cold_pressure_kpa": 151.6,
+    "lr_cold_pressure_kpa": 151.6,
+    "rr_cold_pressure_kpa": 151.6,
+    "lf_wear_pct": 96.0,
+    "rf_wear_pct": 96.2,
+    "lr_wear_pct": 92.8,
+    "rr_wear_pct": 93.7,
+    "lf_temp_middle_c": 61.8,
+    "rf_temp_middle_c": 62.9,
+    "lr_temp_middle_c": 68.9,
+    "rr_temp_middle_c": 68.3,
+    "throttle_raw_mean": 0.71,
+    "tc_intervention_pct": 0.0,
+    "brake_raw_peak": 0.822,
+    "gear_at_apex_mode": 0,
+    "max_gear": 7,
+    "pitch_mean_at_speed_deg": 0.127,
+    "pitch_range_deg": 1.77,
+    "arb_front_adjustments": 0,
+    "arb_rear_adjustments": 8,
+    "tc2_adjustments": 0,
+    "abs_adjustments": 0,
+    "deploy_mode_adjustments": 0,
+    "wind_speed_ms": 4.02,
+    "wind_dir_deg": 90.0
   },
   "driver_profile": {
     "style": "aggressive-erratic",
     "trail_braking_depth": 0.32811111111111113,
+    "trail_braking_p95": 1.0,
     "trail_braking_class": "moderate",
     "throttle_progressiveness": 0.6190709517800888,
+    "throttle_onset_rate_pct_per_s": -88.01517447231103,
+    "throttle_classification": "moderate",
     "steering_smoothness": "smooth",
+    "steering_jerk_p95_rad_per_s2": 35.73592758178711,
+    "apex_speed_cv": 0.1251455120276877,
     "consistency": "erratic",
-    "cornering_aggression": "limit"
+    "cornering_aggression": "limit",
+    "avg_peak_lat_g_utilization": 28.420012980739937
   },
   "diagnosis": {
-    "assessment": "competitive",
-    "problem_count": 5,
+    "assessment": "dangerous",
+    "problem_count": 10,
     "problems": [
+      {
+        "category": "safety",
+        "severity": "critical",
+        "symptom": "Front heave spring travel 96% exhausted under braking (p99 defl 91.5mm)",
+        "measured": 95.7,
+        "threshold": 85.0,
+        "speed_context": "braking"
+      },
+      {
+        "category": "safety",
+        "severity": "critical",
+        "symptom": "19 front heave spring bottoming events (deflection within 2mm of DeflMax)",
+        "measured": 19.0,
+        "threshold": 0.0,
+        "speed_context": "all"
+      },
+      {
+        "category": "safety",
+        "severity": "significant",
+        "symptom": "Front heave spring travel 94% used at speed (p99 defl 90.1mm)",
+        "measured": 94.0,
+        "threshold": 85.0,
+        "speed_context": "high"
+      },
       {
         "category": "platform",
         "severity": "significant",
@@ -113,9 +208,9 @@
       {
         "category": "balance",
         "severity": "minor",
-        "symptom": "LLTD 48.6% vs target 52% (delta -3.4%)",
-        "measured": 48.62816591647723,
-        "threshold": 50.0,
+        "symptom": "Brake bias adjusted 21 times during session (range 45.5-46.8)",
+        "measured": 21.0,
+        "threshold": 5.0,
         "speed_context": "all"
       },
       {
@@ -130,7 +225,7 @@
         "category": "thermal",
         "severity": "minor",
         "symptom": "Front hot pressure 181 kPa (target <175)",
-        "measured": 180.7,
+        "measured": 180.8,
         "threshold": 175.0,
         "speed_context": "all"
       },
@@ -141,6 +236,22 @@
         "measured": 177.7,
         "threshold": 175.0,
         "speed_context": "all"
+      },
+      {
+        "category": "grip",
+        "severity": "significant",
+        "symptom": "Measured brake bias 69.6% differs from setup 46.5% (delta 23.1%)",
+        "measured": 69.6,
+        "threshold": 46.5,
+        "speed_context": "braking"
+      },
+      {
+        "category": "grip",
+        "severity": "significant",
+        "symptom": "ABS cutting 100% of brake force when active",
+        "measured": 100.0,
+        "threshold": 15.0,
+        "speed_context": "braking"
       }
     ]
   },
@@ -151,165 +262,165 @@
   "corner_performance": [
     {
       "corner_id": 0,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 23.7,
       "direction": "right",
       "speed_class": "high",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 254.7,
+      "understeer_deg": -0.03,
+      "body_slip_deg": 0.17
     },
     {
       "corner_id": 1,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 130.2,
       "direction": "left",
       "speed_class": "high",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 186.8,
+      "understeer_deg": 0.46,
+      "body_slip_deg": 2.86
     },
     {
       "corner_id": 2,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 692.3,
       "direction": "right",
       "speed_class": "high",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 197.3,
+      "understeer_deg": -0.11,
+      "body_slip_deg": 0.78
     },
     {
       "corner_id": 3,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 855.9,
       "direction": "left",
       "speed_class": "low",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 105.2,
+      "understeer_deg": -0.18,
+      "body_slip_deg": 6.29
     },
     {
       "corner_id": 4,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 1858.4,
       "direction": "left",
       "speed_class": "high",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 207.2,
+      "understeer_deg": 0.08,
+      "body_slip_deg": 0.15
     },
     {
       "corner_id": 5,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 1907.8,
       "direction": "left",
       "speed_class": "mid",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 142.7,
+      "understeer_deg": -0.03,
+      "body_slip_deg": 0.1
     },
     {
       "corner_id": 6,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 1919.7,
       "direction": "right",
       "speed_class": "low",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 68.0,
+      "understeer_deg": 0.48,
+      "body_slip_deg": 2.63
     },
     {
       "corner_id": 7,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 2053.7,
       "direction": "right",
       "speed_class": "mid",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 132.5,
+      "understeer_deg": 0.02,
+      "body_slip_deg": 1.45
     },
     {
       "corner_id": 8,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 2699.6,
       "direction": "right",
       "speed_class": "low",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 90.2,
+      "understeer_deg": -0.08,
+      "body_slip_deg": 4.75
     },
     {
       "corner_id": 9,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 3371.8,
       "direction": "right",
       "speed_class": "mid",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 178.7,
+      "understeer_deg": -0.0,
+      "body_slip_deg": 0.09
     },
     {
       "corner_id": 10,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 3447.7,
       "direction": "left",
       "speed_class": "high",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 206.8,
+      "understeer_deg": 0.01,
+      "body_slip_deg": 0.06
     },
     {
       "corner_id": 11,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 3521.0,
       "direction": "right",
       "speed_class": "mid",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 125.3,
+      "understeer_deg": 0.12,
+      "body_slip_deg": 6.24
     },
     {
       "corner_id": 12,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 4357.4,
       "direction": "left",
       "speed_class": "mid",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 170.8,
+      "understeer_deg": 0.01,
+      "body_slip_deg": 0.2
     },
     {
       "corner_id": 13,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 4447.6,
       "direction": "right",
       "speed_class": "high",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 206.2,
+      "understeer_deg": -0.02,
+      "body_slip_deg": 0.12
     },
     {
       "corner_id": 14,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 4592.1,
       "direction": "left",
       "speed_class": "high",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 240.9,
+      "understeer_deg": -0.0,
+      "body_slip_deg": 0.04
     },
     {
       "corner_id": 15,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 4747.0,
       "direction": "right",
       "speed_class": "high",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 264.4,
+      "understeer_deg": -0.01,
+      "body_slip_deg": 0.05
     },
     {
       "corner_id": 16,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 4943.1,
       "direction": "right",
       "speed_class": "mid",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 133.9,
+      "understeer_deg": -0.3,
+      "body_slip_deg": 3.31
     },
     {
       "corner_id": 17,
-      "lap_dist_m": 0.0,
+      "lap_dist_m": 5745.8,
       "direction": "right",
       "speed_class": "high",
-      "speed_kph": 0.0,
-      "understeer_deg": 0.0,
-      "body_slip_deg": 0.0
+      "speed_kph": 243.2,
+      "understeer_deg": -0.0,
+      "body_slip_deg": 0.05
     }
   ]
 }

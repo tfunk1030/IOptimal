@@ -379,6 +379,10 @@ class DamperSolver:
             slope = round(lo + normalized * (hi - lo))
             return slope, ratio
 
+        # NOTE: Using raw (unfiltered) shock velocities intentionally here.
+        # HS compression must handle kerb transients — these are the design
+        # input for high-speed damping. Clean-track values would under-spec
+        # the damper's ability to absorb curb energy.
         front_slope, front_ratio = _ratio_to_slope(
             self.track.shock_vel_p95_front_mps,
             self.track.shock_vel_p99_front_mps,
@@ -458,6 +462,8 @@ class DamperSolver:
         # SEPARATE front/rear because:
         # - Rear typically sees 25-30% more excitation than front
         # - At Sebring: front p95=128.8 mm/s, rear p95=162.7 mm/s
+        # NOTE: Using raw (unfiltered) p95 intentionally — HS damping must
+        # handle kerb transients, not just clean-track surface inputs.
         v_hs_ref_front = max(self.track.shock_vel_p95_front_mps, 0.050)
         v_hs_ref_rear = max(self.track.shock_vel_p95_rear_mps, 0.050)
 
