@@ -51,8 +51,14 @@ def _find_lap_indices(ibt: IBTFile, lap_num: int) -> tuple[int, int] | None:
     return None
 
 
-def produce(args: argparse.Namespace) -> None:
-    """Run the full setup production pipeline."""
+def produce(args: argparse.Namespace, _return_result: bool = False) -> None | dict:
+    """Run the full setup production pipeline.
+
+    Args:
+        args: Parsed CLI args.
+        _return_result: If True, return a dict of solver outputs (used by
+            batch/multi-IBT compare mode) instead of returning None.
+    """
 
     # ── Load car model ──
     car = get_car(args.car)
@@ -416,6 +422,23 @@ def produce(args: argparse.Namespace) -> None:
     )
     print(report)
 
+    # ── Build return dict if requested (multi-IBT batch mode) ──
+    _result: dict | None = None
+    if _return_result:
+        _result = {
+            "report": report,
+            "lap_time_s": measured.lap_time_s,
+            "lap_number": measured.lap_number,
+            "current_setup": current_setup,
+            "step1": step1,
+            "step2": step2,
+            "step3": step3,
+            "step4": step4,
+            "step5": step5,
+            "step6": step6,
+            "supporting": supporting,
+        }
+
     # ── Phase L: Auto-learn (default: on, --no-learn disables) ──
     if not getattr(args, "no_learn", False):
         try:
@@ -432,6 +455,24 @@ def produce(args: argparse.Namespace) -> None:
                     print(f"[learn] {ln}")
         except Exception as e:
             print(f"[learn] Ingest failed: {e} (setup production was not affected)")
+
+    return _result
+
+
+def produce_result(args: argparse.Namespace) -> dict:
+    """Run the full pipeline and return structured results for comparison.
+
+    Wraps ``produce(_return_result=True)`` — prints the report and returns
+    a dict with all solver outputs for use by the multi-IBT batch runner.
+
+    Returns:
+        dict with keys: lap_time_s, lap_number, current_setup,
+        step1..step6, supporting, report
+    """
+    result = produce(args, _return_result=True)
+    if result is None:
+        raise RuntimeError("produce_result: produce() did not return data")
+    return result
 
 
 def _apply_damper_modifiers(

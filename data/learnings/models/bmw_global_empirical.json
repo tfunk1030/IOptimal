@@ -4,11 +4,11 @@
   "tracks_included": [
     "Sebring International Raceway"
   ],
-  "aero_compression_front_mm": 9.70218085050583,
-  "aero_compression_rear_mm": 20.629790544509888,
-  "roll_gradient_global_deg_per_g": 0.8143330164257195,
-  "m_eff_front_global_kg": 143.32979982198202,
+  "aero_compression_front_mm": 9.695133912563325,
+  "aero_compression_rear_mm": 20.62467533349991,
+  "roll_gradient_global_deg_per_g": 0.8112866246721928,
+  "m_eff_front_global_kg": 144.01986798750562,
   "anomalies": [],
   "confidence": "medium",
-  "last_updated": "2026-03-14T00:09:16.185537+00:00"
+  "last_updated": "2026-03-14T00:43:21.990345+00:00"
 }
