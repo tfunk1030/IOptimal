@@ -114,7 +114,12 @@ def produce(args: argparse.Namespace) -> None:
 
     # ── Phase B: Extract telemetry ──
     print("Extracting telemetry measurements...")
-    measured = extract_measurements(args.ibt, car, lap=args.lap)
+    measured = extract_measurements(
+        args.ibt, car,
+        lap=args.lap,
+        min_lap_time=getattr(args, "min_lap_time", 108.0),
+        outlier_pct=getattr(args, "outlier_pct", 0.115),
+    )
     print(f"  Lap {measured.lap_number}: {measured.lap_time_s:.3f}s")
 
     # ── Phase C: Segment corners ──
@@ -122,7 +127,10 @@ def produce(args: argparse.Namespace) -> None:
     if args.lap:
         lap_indices = _find_lap_indices(ibt, args.lap)
     else:
-        lap_indices = ibt.best_lap_indices()
+        lap_indices = ibt.best_lap_indices(
+            min_time=getattr(args, "min_lap_time", 108.0),
+            outlier_pct=getattr(args, "outlier_pct", 0.115),
+        )
 
     if lap_indices is None:
         print("ERROR: Could not find lap indices")
@@ -483,6 +491,13 @@ def main():
                         help="Print only the final report (skip per-step details)")
     parser.add_argument("--no-learn", action="store_true",
                         help="Disable auto-learning (skip empirical corrections and session ingest)")
+    # Lap selection / filtering
+    parser.add_argument("--min-lap-time", type=float, default=108.0, dest="min_lap_time",
+                        help="Minimum valid lap time in seconds (default: 108.0). "
+                             "Laps shorter than this are always excluded as partial/out-laps.")
+    parser.add_argument("--outlier-pct", type=float, default=0.115, dest="outlier_pct",
+                        help="Max fractional deviation above median to accept (default: 0.115 = 11.5%%). "
+                             "Drops anomalously slow laps. Pass 0 to disable.")
     # Legacy flags (kept for backward-compat; no-op since auto is default)
     parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)
