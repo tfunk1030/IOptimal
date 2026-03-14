@@ -23,7 +23,7 @@ import numpy as np
 
 from track_model.ibt_parser import IBTFile
 from track_model.build_profile import build_profile
-from track_model.profile import TrackProfile
+from track_model.profile import TrackProfile, build_kerb_spatial_mask
 from car_model.cars import CarModel
 
 
@@ -50,6 +50,10 @@ class MeasuredState:
     aero_compression_rear_mm: float = 0.0
     bottoming_event_count_front: int = 0
     bottoming_event_count_rear: int = 0
+    bottoming_event_count_front_clean: int = 0
+    bottoming_event_count_rear_clean: int = 0
+    bottoming_event_count_front_kerb: int = 0
+    bottoming_event_count_rear_kerb: int = 0
     vortex_burst_event_count: int = 0
     front_rh_p01_mm: float = 0.0
     rear_rh_p01_mm: float = 0.0
@@ -367,8 +371,32 @@ def extract_measurements(
 
         front_bottom_thresh = front_mean_all - 3.0 * front_std_all
         rear_bottom_thresh = rear_mean_all - 3.0 * rear_std_all
-        state.bottoming_event_count_front = int(np.sum(front_rh < front_bottom_thresh))
-        state.bottoming_event_count_rear = int(np.sum(rear_rh < rear_bottom_thresh))
+        front_bottoming = front_rh < front_bottom_thresh
+        rear_bottoming = rear_rh < rear_bottom_thresh
+        state.bottoming_event_count_front = int(np.sum(front_bottoming))
+        state.bottoming_event_count_rear = int(np.sum(rear_bottoming))
+
+        # Split bottoming into clean-track vs kerb using spatial mask
+        # Build kerb mask from rumble channels or VertAccel fallback
+        lap_dist_ch = ibt.channel("LapDist")[start:end + 1] if ibt.has_channel("LapDist") else None
+        rumble_lf = ibt.channel("TireLF_RumblePitch")[start:end + 1] if ibt.has_channel("TireLF_RumblePitch") else None
+        rumble_rf = ibt.channel("TireRF_RumblePitch")[start:end + 1] if ibt.has_channel("TireRF_RumblePitch") else None
+
+        if lap_dist_ch is not None and (rumble_lf is not None or rumble_rf is not None):
+            # Build kerb mask from rumble strips (same logic as build_profile)
+            vert_accel = ibt.channel("VertAccel")[start:end + 1] / 9.81
+            from track_model.build_profile import _find_kerb_events
+            kerb_events_local, _ = _find_kerb_events(vert_accel, rumble_lf, rumble_rf, lap_dist_ch)
+            kerb_spatial = build_kerb_spatial_mask(lap_dist_ch, kerb_events_local, buffer_m=30.0)
+
+            state.bottoming_event_count_front_clean = int(np.sum(front_bottoming & ~kerb_spatial))
+            state.bottoming_event_count_rear_clean = int(np.sum(rear_bottoming & ~kerb_spatial))
+            state.bottoming_event_count_front_kerb = int(np.sum(front_bottoming & kerb_spatial))
+            state.bottoming_event_count_rear_kerb = int(np.sum(rear_bottoming & kerb_spatial))
+        else:
+            # No kerb data available — treat all as clean-track
+            state.bottoming_event_count_front_clean = state.bottoming_event_count_front
+            state.bottoming_event_count_rear_clean = state.bottoming_event_count_rear
 
         # Vortex burst: front RH dropping below 3.5-sigma at speed
         # Use at-speed std (not full-lap) to avoid inflation from pit/low-speed samples
