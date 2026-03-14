@@ -133,20 +133,22 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
             "max": round(float(np.max(abs_roll)), 2),
         }
 
-        # Roll gradient: derived from body roll statistics and lateral G
-        # Direct linear fit of |roll| vs |lat_g| is unreliable because:
-        # 1. Roll channel sign convention varies
-        # 2. Aero roll resistance is speed-dependent (non-linear)
-        # 3. Combined lateral+longitudinal events muddy the correlation
-        #
-        # Instead: use the p95 ratio as a robust estimator.
-        # At p95 cornering (~2g), the car exhibits p95 roll (~1.6°).
-        # This gives roll_gradient ≈ p95_roll / p95_lat_g.
-        p95_lat = float(np.percentile(abs_lat_g_ot, 95))
-        if p95_lat > 0.5 and float(np.percentile(abs_roll, 95)) > 0.1:
-            roll_gradient = round(
-                float(np.percentile(abs_roll, 95)) / p95_lat, 3
-            )
+        # Roll gradient: linear fit of |Roll| vs |LatAccel| in the 1-2.5g range
+        # where the relationship is most linear and aerodynamic effects are
+        # less dominant than at peak speeds.
+        regression_mask = (abs_lat_g_ot > 1.0) & (abs_lat_g_ot < 2.5)
+        if np.sum(regression_mask) > 50:
+            x = abs_lat_g_ot[regression_mask]
+            y = abs_roll[regression_mask]
+            coeffs = np.polyfit(x, y, 1)
+            roll_gradient = round(float(coeffs[0]), 3)
+        else:
+            # Fallback to p95 ratio if insufficient cornering data
+            p95_lat = float(np.percentile(abs_lat_g_ot, 95))
+            if p95_lat > 0.5 and float(np.percentile(abs_roll, 95)) > 0.1:
+                roll_gradient = round(
+                    float(np.percentile(abs_roll, 95)) / p95_lat, 3
+                )
     else:
         # Derive roll from ride height differential (LF-RF, LR-RR)
         if (ibt.has_channel("LFrideHeight") and ibt.has_channel("RFrideHeight")):
@@ -162,11 +164,18 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
                 "p95": round(float(np.percentile(abs_roll_rh, 95)), 2),
                 "max": round(float(np.max(abs_roll_rh)), 2),
             }
-            p95_lat = float(np.percentile(abs_lat_g_ot, 95))
-            if p95_lat > 0.5 and float(np.percentile(abs_roll_rh, 95)) > 0.1:
-                roll_gradient = round(
-                    float(np.percentile(abs_roll_rh, 95)) / p95_lat, 3
-                )
+            regression_mask = (abs_lat_g_ot > 1.0) & (abs_lat_g_ot < 2.5)
+            if np.sum(regression_mask) > 50:
+                x = abs_lat_g_ot[regression_mask]
+                y = abs_roll_rh[regression_mask]
+                coeffs = np.polyfit(x, y, 1)
+                roll_gradient = round(float(coeffs[0]), 3)
+            else:
+                p95_lat = float(np.percentile(abs_lat_g_ot, 95))
+                if p95_lat > 0.5 and float(np.percentile(abs_roll_rh, 95)) > 0.1:
+                    roll_gradient = round(
+                        float(np.percentile(abs_roll_rh, 95)) / p95_lat, 3
+                    )
 
     # === Ride height statistics ===
     ride_heights: dict[str, dict] = {}
@@ -223,6 +232,27 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         ), 2),
     }
 
+    # === Center front splitter ride height ===
+    splitter_mean = 0.0
+    splitter_min = 0.0
+    if ibt.has_channel("CFSRrideHeight"):
+        cfsr = ibt.channel("CFSRrideHeight")[start:end + 1] * 1000  # m → mm
+        at_speed_mask = speed_kph > 150
+        if np.sum(at_speed_mask) > 50:
+            splitter_mean = round(float(np.mean(cfsr[at_speed_mask])), 1)
+        splitter_min = round(float(np.min(cfsr)), 1)
+
+    # === Environmental conditions ===
+    env_air_temp = 0.0
+    env_track_temp = 0.0
+    env_air_density = 0.0
+    if ibt.has_channel("AirTemp"):
+        env_air_temp = round(float(np.mean(ibt.channel("AirTemp")[ot_mask])), 1)
+    if ibt.has_channel("TrackTempCrew"):
+        env_track_temp = round(float(np.mean(ibt.channel("TrackTempCrew")[ot_mask])), 1)
+    if ibt.has_channel("AirDensity"):
+        env_air_density = round(float(np.mean(ibt.channel("AirDensity")[ot_mask])), 4)
+
     # === Telemetry source ===
     telemetry_src = f"{Path(ibt_path).name} — best lap {best_lap_time:.3f}s"
 
@@ -260,6 +290,11 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         roll_gradient_deg_per_g=roll_gradient,
         lltd_measured=lltd_measured,
         surface_profile=surface_profile_data,
+        splitter_rh_mean_mm=splitter_mean,
+        splitter_rh_min_mm=splitter_min,
+        air_temp_c=env_air_temp,
+        track_temp_c=env_track_temp,
+        air_density_kg_m3=env_air_density,
         telemetry_source=telemetry_src,
     )
     return profile

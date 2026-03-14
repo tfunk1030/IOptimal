@@ -193,6 +193,9 @@ class HeaveSpringModel:
     #   Heave 30 -> 97.7mm, 50 -> 90.2mm, 70 -> 84.8mm, 90 -> 80.4mm
     heave_spring_defl_max_intercept_mm: float = 103.4
     heave_spring_defl_max_slope: float = -0.262  # mm per N/mm of spring rate
+    # Rear third spring DeflMax (mm) — previously hardcoded in extract.py.
+    # Per-car value: BMW calibrated from 19 sessions. Other cars use ESTIMATE.
+    rear_third_defl_max_mm: float = 61.2
     # Torsion bar turns calibration (OD=13.9 baseline):
     #   Turns = turns_intercept + turns_heave_coeff / heave_spring_nmm
     torsion_bar_turns_intercept: float = 0.0856
