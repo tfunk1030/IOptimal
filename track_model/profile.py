@@ -114,6 +114,15 @@ class TrackProfile:
     # Surface profile (detailed shock velocity breakdown)
     surface_profile: dict = field(default_factory=dict)
 
+    # Center front splitter ride height at speed (mm)
+    splitter_rh_mean_mm: float = 0.0
+    splitter_rh_min_mm: float = 0.0
+
+    # Environmental conditions
+    air_temp_c: float = 0.0
+    track_temp_c: float = 0.0
+    air_density_kg_m3: float = 0.0
+
     # Telemetry source description
     telemetry_source: str = ""
 
