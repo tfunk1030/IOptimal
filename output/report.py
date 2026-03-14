@@ -111,12 +111,13 @@ def print_full_setup_report(
     a(_box_top("GARAGE CARD"))
     a(_blank())
     a(_row("  RIDE HEIGHTS & PUSHRODS", "  SPRINGS"))
+    _tb_turns = round(0.0856 + 0.668 / max(step2.front_heave_nmm, 1), 3)
     a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
-           f"  Heave F:    {step2.front_heave_nmm:5.0f} N/mm"))
+           f"  Heave F:    {step2.front_heave_nmm:5.0f} N/mm  perch {step2.perch_offset_front_mm:+.0f}mm"))
     a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
-           f"  Third R:    {step2.rear_third_nmm:5.0f} N/mm"))
+           f"  Third R:    {step2.rear_third_nmm:5.0f} N/mm  perch {step2.perch_offset_rear_mm:+.0f}mm"))
     a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
-           f"  Torsion:   {step3.front_torsion_od_mm:6.2f} mm OD"))
+           f"  Torsion:   {step3.front_torsion_od_mm:6.2f} mm OD  {_tb_turns:.3f} Turns"))
     a(_row(f"  Front pushrod: {step1.front_pushrod_offset_mm:5.1f} mm",
            f"  Rear coil:  {step3.rear_spring_rate_nmm:5.0f} N/mm"))
     a(_row(f"  Rear pushrod:  {step1.rear_pushrod_offset_mm:5.1f} mm",
