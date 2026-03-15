@@ -4,7 +4,7 @@
   "session_count": 39,
   "key_insights": [
     "Lap time range: 61.218s \u2013 1672.020s (1610.802s window across 39 sessions)",
-    "Measured roll gradient: 0.815 deg/g (+/- 0.046)"
+    "Measured roll gradient: 0.815 deg/g (+/- 0.047)"
   ],
   "setup_trends": [
     "front_heave_nmm: trending decreasing (50.0 -> 30.0 over 39 sessions)",

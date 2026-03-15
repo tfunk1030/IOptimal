@@ -9,13 +9,12 @@
       "fit_type": "linear",
       "coefficients": [
         0.0,
-        0.8154683074496597
+        0.8146396399673363
       ],
-      "r_squared": 0.9968139020142053,
-      "sample_count": 28,
-      "residual_std": 0.046029541742685295,
+      "r_squared": 0.9967181455769428,
+      "sample_count": 27,
+      "residual_std": 0.04666864538630096,
       "x_values": [
-        4.525352954864502,
         4.525352954864502,
         3.2927119731903076,
         3.722074270248413,
@@ -45,7 +44,6 @@
         3.1514835357666016
       ],
       "y_values": [
-        0.8378423294723902,
         0.8378423085084316,
         0.8240055010317592,
         0.8196927069854991,
@@ -86,12 +84,12 @@
       "y_param": "lltd_measured",
       "fit_type": "linear",
       "coefficients": [
-        -0.0018175066417753956,
-        0.49760211556573597
+        -0.000950851933220436,
+        0.4958090368583808
       ],
-      "r_squared": 0.04172743844630333,
+      "r_squared": 0.010670621775429212,
       "sample_count": 39,
-      "residual_std": 0.010885998789030224,
+      "residual_std": 0.011443189621734923,
       "x_values": [
         5.0,
         5.0,
@@ -134,7 +132,7 @@
         3.0
       ],
       "y_values": [
-        0.48820069927934046,
+        0.5118693382164292,
         0.48820069927934046,
         0.48588121125753486,
         0.4839160131169791,
@@ -381,7 +379,7 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-03-15T01:10:36.886606+00:00",
+  "last_updated": "2026-03-15T01:24:18.853935+00:00",
   "observation_count": 39,
   "most_sensitive_parameters": [],
   "corrections": {
@@ -389,11 +387,11 @@
     "aero_compression_front_std_mm": 1.6377820946555468,
     "aero_compression_rear_mean_mm": 20.8212770315317,
     "aero_compression_rear_std_mm": 1.6867573743051578,
-    "roll_gradient_measured_mean": 0.8154683074496597,
-    "roll_gradient_measured_std": 0.046029541742685295,
-    "roll_gradient_sample_count": 28,
-    "lltd_measured_mean": 0.49256902025005034,
-    "lltd_measured_std": 0.011120485678594014,
+    "roll_gradient_measured_mean": 0.8146396399673363,
+    "roll_gradient_measured_std": 0.04666864538630096,
+    "roll_gradient_sample_count": 27,
+    "lltd_measured_mean": 0.4931759084279244,
+    "lltd_measured_std": 0.011504735586535395,
     "m_eff_front_values": [
       167.0,
       167.0,

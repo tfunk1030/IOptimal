@@ -6,9 +6,9 @@
   ],
   "aero_compression_front_mm": 10.17950883523012,
   "aero_compression_rear_mm": 20.8212770315317,
-  "roll_gradient_global_deg_per_g": 0.8154683074496597,
-  "m_eff_front_global_kg": 135.72706312673338,
+  "roll_gradient_global_deg_per_g": 0.8146396399673363,
+  "m_eff_front_global_kg": 135.72706314827042,
   "anomalies": [],
   "confidence": "medium",
-  "last_updated": "2026-03-15T01:10:36.900106+00:00"
+  "last_updated": "2026-03-15T01:24:18.866538+00:00"
 }
