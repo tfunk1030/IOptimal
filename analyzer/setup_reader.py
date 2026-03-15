@@ -50,6 +50,37 @@ def _parse_int(value: str | int | float | None, default: int = 0) -> int:
         return default
 
 
+def _parse_defl(value: str | None) -> tuple[float, float]:
+    """Parse deflection strings from IBT session info.
+
+    Formats seen in iRacing IBT YAML:
+        "15.0 mm 100.0 mm"  → (static=15.0, max=100.0)
+        "11.1 mm of 97.7 mm" → (static=11.1, max=97.7)
+        "24.5 mm"            → (static=24.5, max=0.0)
+    """
+    if value is None:
+        return (0.0, 0.0)
+    s = str(value).strip()
+    # Try "X mm of Y mm" first
+    if " of " in s:
+        parts = s.split(" of ")
+        return (_parse_float(parts[0]), _parse_float(parts[1]))
+    # Try "X mm Y mm" (two numbers with units, space-separated)
+    # Extract all numeric tokens
+    tokens = s.replace("mm", "").replace("kPa", "").replace("N/", "").split()
+    nums = []
+    for t in tokens:
+        try:
+            nums.append(float(t))
+        except ValueError:
+            pass
+    if len(nums) >= 2:
+        return (nums[0], nums[1])
+    if len(nums) == 1:
+        return (nums[0], 0.0)
+    return (0.0, 0.0)
+
+
 def _get(d: dict, *keys, default=None):
     """Nested dict access: _get(d, 'Chassis', 'Front', 'HeaveSpring')."""
     for k in keys:
@@ -121,6 +152,30 @@ class CurrentSetup:
     tc_gain: int = 0
     tc_slip: int = 0
     fuel_l: float = 0.0
+
+    # --- iRacing-computed garage display values ---
+    # These are computed by iRacing from the settable parameters above.
+    # Extracted from IBT session info for model calibration ground truth.
+    torsion_bar_turns: float = 0.0
+    torsion_bar_defl_mm: float = 0.0
+    front_shock_defl_static_mm: float = 0.0
+    front_shock_defl_max_mm: float = 0.0
+    rear_shock_defl_static_mm: float = 0.0
+    rear_shock_defl_max_mm: float = 0.0
+    heave_spring_defl_static_mm: float = 0.0
+    heave_spring_defl_max_mm: float = 0.0
+    heave_slider_defl_static_mm: float = 0.0
+    heave_slider_defl_max_mm: float = 0.0
+    rear_spring_defl_static_mm: float = 0.0
+    rear_spring_defl_max_mm: float = 0.0
+    third_spring_defl_static_mm: float = 0.0
+    third_spring_defl_max_mm: float = 0.0
+    third_slider_defl_static_mm: float = 0.0
+    third_slider_defl_max_mm: float = 0.0
+    lf_corner_weight_n: float = 0.0
+    rf_corner_weight_n: float = 0.0
+    lr_corner_weight_n: float = 0.0
+    rr_corner_weight_n: float = 0.0
 
     @classmethod
     def from_ibt(cls, ibt: IBTFile) -> CurrentSetup:
@@ -222,6 +277,28 @@ class CurrentSetup:
             tc_gain=_parse_int(tc.get("TractionControlGain")),
             tc_slip=_parse_int(tc.get("TractionControlSlip")),
             fuel_l=_parse_float(fuel.get("FuelLevel")),
+
+            # iRacing-computed display values (ground truth for calibration)
+            torsion_bar_turns=_parse_float(lf.get("TorsionBarTurns")),
+            torsion_bar_defl_mm=_parse_float(lf.get("TorsionBarDefl")),
+            front_shock_defl_static_mm=_parse_defl(lf.get("ShockDefl"))[0],
+            front_shock_defl_max_mm=_parse_defl(lf.get("ShockDefl"))[1],
+            rear_shock_defl_static_mm=_parse_defl(lr.get("ShockDefl"))[0],
+            rear_shock_defl_max_mm=_parse_defl(lr.get("ShockDefl"))[1],
+            heave_spring_defl_static_mm=_parse_defl(front.get("HeaveSpringDefl"))[0],
+            heave_spring_defl_max_mm=_parse_defl(front.get("HeaveSpringDefl"))[1],
+            heave_slider_defl_static_mm=_parse_defl(front.get("HeaveSliderDefl"))[0],
+            heave_slider_defl_max_mm=_parse_defl(front.get("HeaveSliderDefl"))[1],
+            rear_spring_defl_static_mm=_parse_defl(lr.get("SpringDefl"))[0],
+            rear_spring_defl_max_mm=_parse_defl(lr.get("SpringDefl"))[1],
+            third_spring_defl_static_mm=_parse_defl(rear.get("ThirdSpringDefl"))[0],
+            third_spring_defl_max_mm=_parse_defl(rear.get("ThirdSpringDefl"))[1],
+            third_slider_defl_static_mm=_parse_defl(rear.get("ThirdSliderDefl"))[0],
+            third_slider_defl_max_mm=_parse_defl(rear.get("ThirdSliderDefl"))[1],
+            lf_corner_weight_n=_parse_float(lf.get("CornerWeight")),
+            rf_corner_weight_n=_parse_float(rf.get("CornerWeight")),
+            lr_corner_weight_n=_parse_float(lr.get("CornerWeight")),
+            rr_corner_weight_n=_parse_float(rr.get("CornerWeight")),
         )
 
     def summary(self) -> str:

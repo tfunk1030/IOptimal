@@ -322,7 +322,7 @@ def _validate_setup_values(
 
     # Heave / third spring
     _chk("front_heave_nmm", step2.front_heave_nmm, 10.0, 200.0, "N/mm")
-    _chk("rear_third_nmm", step2.rear_third_nmm, 10.0, 200.0, "N/mm")
+    _chk("rear_third_nmm", step2.rear_third_nmm, 10.0, 900.0, "N/mm")
 
     # ARB blades (1-5)
     _chk("front_arb_blade", step4.front_arb_blade_start, 1.0, 5.0, "")
@@ -370,6 +370,7 @@ def write_sto(
     gear_stack: str = "Short",
     fuel_low_warning_l: float = 8.0,
     roof_light_color: str = "Orange",
+    include_computed: bool = False,
 ) -> Path:
     """Write an iRacing .sto setup file from solver output.
 
@@ -465,7 +466,8 @@ def write_sto(
     _string(details, "Vehicle Type", "Car")
 
     # Setup update counter (iRacing increments this each save; we emit 1)
-    _w_num("update_count", 1, "")
+    if include_computed:
+        _w_num("update_count", 1, "")
 
     # === Aero ===
     _w_num("wing_angle",       wing,                                 "deg")
@@ -487,27 +489,27 @@ def write_sto(
     # === Heave / Third springs ===
     _w_num("front_heave_spring",   int(round(step2.front_heave_nmm)),      "N/mm")
     _w_num("front_heave_perch",    int(round(step2.perch_offset_front_mm)), "mm")
-    _w_num("front_heave_defl_max", 200,                                     "mm")
     _w_num("rear_third_spring",    int(round(step2.rear_third_nmm)),        "N/mm")
     _w_num("rear_third_perch",     int(round(step2.perch_offset_rear_mm)),  "mm")
-    _w_num("rear_third_defl_max",  150,                                     "mm")
 
     # === Corner springs ===
     # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
     _w_num("lf_torsion_od", step3.front_torsion_od_mm, "mm")
     _w_num("rf_torsion_od", step3.front_torsion_od_mm, "mm")
-    # Torsion bar turns calibration: 3-point fit from BMW calibration sessions
-    # turns = 0.1089 - 0.1642/heave_rate + 0.000368 * heave_perch
-    # Calibrated from: S1 (heave=30,perch=-31)->0.092, S2 (heave=60,perch=-14)->0.101,
-    #   Taylor manual (heave=40,perch=-13)->0.102=31mm => 0.100=30mm
-    _tb_turns = round(
-        0.1089
-        - 0.1642 / max(step2.front_heave_nmm, 1)
-        + 0.000368 * step2.perch_offset_front_mm,
-        3,
-    )
-    _w_num("lf_torsion_turns", _tb_turns, "Turns")
-    _w_num("rf_torsion_turns", _tb_turns, "Turns")
+    # Torsion bar turns — computed by iRacing from heave/perch/OD.
+    # Only write when include_computed=True (for engineering reports).
+    if include_computed:
+        # turns = 0.0989 + 0.432/heave + 0.000699*perch + 0.000002*OD
+        # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.800
+        _tb_turns = round(
+            0.0989
+            + 0.432 / max(step2.front_heave_nmm, 1)
+            + 0.000699 * step2.perch_offset_front_mm
+            + 0.000002 * step3.front_torsion_od_mm,
+            3,
+        )
+        _w_num("lf_torsion_turns", _tb_turns, "Turns")
+        _w_num("rf_torsion_turns", _tb_turns, "Turns")
     # Porsche roll spring (only if car maps it)
     if "lf_roll_spring" in ids:
         _numeric(details, ids["lf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
@@ -517,72 +519,88 @@ def write_sto(
     _w_num("rr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
     _w_num("lr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
     _w_num("rr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
-    # Shock deflection maxes
-    _w_num("lf_shock_defl_max", 100, "mm")
-    _w_num("rf_shock_defl_max", 100, "mm")
-    _w_num("lr_shock_defl_max", 150, "mm")
-    _w_num("rr_shock_defl_max", 150, "mm")
+    # Shock deflection maxes (computed by iRacing)
+    if include_computed:
+        _w_num("lf_shock_defl_max", 100, "mm")
+        _w_num("rf_shock_defl_max", 100, "mm")
+        _w_num("lr_shock_defl_max", 150, "mm")
+        _w_num("rr_shock_defl_max", 150, "mm")
 
-    # === Computed / display deflections (iRacing-style, BMW only) ===
-    # Static shock deflections (calibrated from real LDX files)
-    _lf_sd = round(step1.static_front_rh_mm * 0.487, 1)
-    _lr_sd = round(step1.static_rear_rh_mm  * 0.462, 1)
-    _w_num("lf_shock_defl_static", _lf_sd, "mm")
-    _w_num("rf_shock_defl_static", _lf_sd, "mm")
-    _w_num("lr_shock_defl_static", _lr_sd, "mm")
-    _w_num("rr_shock_defl_static", _lr_sd, "mm")
+    # === Computed / display deflections ===
+    # These are display-only values that iRacing computes internally.
+    # Including them in the .sto causes iRacing to reject the file.
+    # Only write them when include_computed=True (for engineering reports).
+    if include_computed:
+        _fh = step2.front_heave_nmm
+        _fh_perch = step2.perch_offset_front_mm
+        _f_od = step3.front_torsion_od_mm
 
-    # Torsion bar deflections (calibrated: 0.092 turns → 16.7 mm in s1.ldx)
-    _tb_defl = round(_tb_turns * 181.5, 1)
-    _w_num("lf_torsion_defl", _tb_defl, "mm")
-    _w_num("rf_torsion_defl", _tb_defl, "mm")
+        if _car is not None:
+            _dm = _car.deflection
+            _k_torsion = _car.corner_spring.torsion_bar_rate(_f_od)
 
-    # Front heave spring / slider deflections
-    # Use solver-computed values; fallback uses car_model calibration coefficients
-    _fh = step2.front_heave_nmm
-    _fh_perch = step2.perch_offset_front_mm
-    if step2.static_defl_front_mm > 0:
-        _heave_defl_static = step2.static_defl_front_mm
-    elif _car is not None:
-        _h = _car.heave_spring
-        _heave_defl_static = _h.defl_static_intercept + _h.defl_static_heave_coeff * _fh
-    else:
-        _heave_defl_static = 40.5 + (-0.55) * _fh
-    if step2.defl_max_front_mm > 0:
-        _heave_defl_max = step2.defl_max_front_mm
-    elif _car is not None:
-        _heave_defl_max = _car.heave_spring.heave_spring_defl_max_intercept_mm + _car.heave_spring.heave_spring_defl_max_slope * _fh
-    else:
-        _heave_defl_max = 103.4 + (-0.262) * _fh
-    if step2.slider_static_front_mm > 0:
-        _heave_slider_static = step2.slider_static_front_mm
-    elif _car is not None:
-        _h = _car.heave_spring
-        _heave_slider_static = _h.slider_intercept + _h.slider_heave_coeff * _fh + _h.slider_perch_coeff * _fh_perch
-    else:
-        _heave_slider_static = 46.2 + 0.012 * _fh + 0.251 * _fh_perch
-    _w_num("front_heave_spring_defl_static", round(_heave_defl_static, 1), "mm")
-    _w_num("front_heave_spring_defl_max", round(_heave_defl_max, 1), "mm")
-    _w_num("front_heave_slider_defl_static", round(_heave_slider_static, 1), "mm")
+            _lf_sd = round(_dm.shock_defl_front(step1.front_pushrod_offset_mm), 1)
+            _lr_sd = round(_dm.shock_defl_rear(step1.rear_pushrod_offset_mm), 1)
+            _tb_defl = round(_dm.torsion_bar_defl(_fh, _fh_perch, _k_torsion), 1)
+            _heave_defl_static = round(_dm.heave_spring_defl_static(_fh, _fh_perch, _f_od), 1)
+            _heave_slider_static = round(_dm.heave_slider_defl_static(_fh, _fh_perch, _f_od), 1)
+            _lr_spring_defl = round(_dm.rear_spring_defl_static(
+                step3.rear_spring_rate_nmm, step3.rear_spring_perch_mm), 1)
+            _r3_defl = round(_dm.third_spring_defl_static(
+                step2.rear_third_nmm, step2.perch_offset_rear_mm), 1)
+            _r3_slider = round(_dm.third_slider_defl_static(_r3_defl), 1)
+        else:
+            _lf_sd = round(step1.static_front_rh_mm * 0.487, 1)
+            _lr_sd = round(step1.static_rear_rh_mm * 0.462, 1)
+            _tb_defl = round(_tb_turns * 181.5, 1)
+            _heave_defl_static = round(40.5 + (-0.55) * _fh, 1)
+            _heave_slider_static = round(46.2 + 0.012 * _fh + 0.251 * _fh_perch, 1)
+            _lr_spring_defl = round(8.5 * 180.0 / max(step3.rear_spring_rate_nmm, 1.0), 1)
+            _r3_defl = round(19.2 * step1.static_rear_rh_mm / 48.9, 1)
+            _r3_slider = _r3_defl
 
-    # Rear coil spring deflections
-    _lr_spring_defl = round(8.5 * 180.0 / max(step3.rear_spring_rate_nmm, 1.0), 1)
-    _w_num("lr_spring_defl_static", _lr_spring_defl, "mm")
-    _w_num("rr_spring_defl_static", _lr_spring_defl, "mm")
-    _w_num("lr_spring_defl_max", 76.8, "mm")
-    _w_num("rr_spring_defl_max", 76.8, "mm")
+        _w_num("lf_shock_defl_static", _lf_sd, "mm")
+        _w_num("rf_shock_defl_static", _lf_sd, "mm")
+        _w_num("lr_shock_defl_static", _lr_sd, "mm")
+        _w_num("rr_shock_defl_static", _lr_sd, "mm")
 
-    # Rear third spring / slider deflections
-    _r3_defl = round(19.2 * step1.static_rear_rh_mm / 48.9, 1)
-    _w_num("rear_third_spring_defl_static",  _r3_defl, "mm")
-    _w_num("rear_third_spring_defl_max",     61.2,     "mm")
-    _w_num("rear_third_slider_defl_static",  _r3_defl, "mm")
+        _w_num("lf_torsion_defl", _tb_defl, "mm")
+        _w_num("rf_torsion_defl", _tb_defl, "mm")
 
-    # Corner weights (N)
-    _w_num("lf_corner_weight", _lf_cw, "N")
-    _w_num("rf_corner_weight", _rf_cw, "N")
-    _w_num("lr_corner_weight", _lr_cw, "N")
-    _w_num("rr_corner_weight", _rr_cw, "N")
+        # HeaveSpringDeflMax retains its linear model (well-calibrated from 19 sessions)
+        if step2.defl_max_front_mm > 0:
+            _heave_defl_max = step2.defl_max_front_mm
+        elif _car is not None:
+            _heave_defl_max = (_car.heave_spring.heave_spring_defl_max_intercept_mm
+                               + _car.heave_spring.heave_spring_defl_max_slope * _fh)
+        else:
+            _heave_defl_max = 106.43 + (-0.310) * _fh
+        _w_num("front_heave_spring_defl_static", _heave_defl_static, "mm")
+        _w_num("front_heave_spring_defl_max", round(_heave_defl_max, 1), "mm")
+        _w_num("front_heave_slider_defl_static", _heave_slider_static, "mm")
+
+        _w_num("lr_spring_defl_static", _lr_spring_defl, "mm")
+        _w_num("rr_spring_defl_static", _lr_spring_defl, "mm")
+        if _car is not None:
+            _lr_defl_max = round(_dm.rear_spring_defl_max(
+                step3.rear_spring_rate_nmm, step3.rear_spring_perch_mm), 1)
+            _r3_defl_max = round(_dm.third_spring_defl_max(
+                step2.rear_third_nmm, step2.perch_offset_rear_mm), 1)
+        else:
+            _lr_defl_max = 76.8
+            _r3_defl_max = 61.2
+        _w_num("lr_spring_defl_max", _lr_defl_max, "mm")
+        _w_num("rr_spring_defl_max", _lr_defl_max, "mm")
+
+        _w_num("rear_third_spring_defl_static",  _r3_defl,  "mm")
+        _w_num("rear_third_spring_defl_max",     _r3_defl_max,      "mm")
+        _w_num("rear_third_slider_defl_static",  _r3_slider, "mm")
+
+        # Corner weights (N)
+        _w_num("lf_corner_weight", _lf_cw, "N")
+        _w_num("rf_corner_weight", _rf_cw, "N")
+        _w_num("lr_corner_weight", _lr_cw, "N")
+        _w_num("rr_corner_weight", _rr_cw, "N")
 
     # === ARBs ===
     _w_str("front_arb_size",   step4.front_arb_size)
@@ -590,8 +608,9 @@ def write_sto(
     _w_str("rear_arb_size",    step4.rear_arb_size)
     _w_num("rear_arb_blades",  step4.rear_arb_blade_start, "")
 
-    # === Cross weight ===
-    _w_num("cross_weight", 50, "%")
+    # === Cross weight (computed by iRacing) ===
+    if include_computed:
+        _w_num("cross_weight", 50, "%")
 
     # === Wheel geometry ===
     _w_num("lf_camber",  step5.front_camber_deg, "deg")
@@ -631,40 +650,35 @@ def write_sto(
     _w_num("rr_pressure", tyre_pressure_kpa, "kPa")
     _w_str("tyre_type", "Dry")
 
-    # === Brakes ===
-    _w_num("brake_bias",           brake_bias_pct,       "%")
-    _w_num("brake_bias_migration", brake_bias_migration,  "")
-    _w_num("brake_bias_target",    brake_bias_target,     "")
-    _w_str("pad_compound",         pad_compound)
-    _w_num("front_master_cyl",     front_master_cyl_mm,  "mm")
-    _w_num("rear_master_cyl",      rear_master_cyl_mm,   "mm")
-
-    # === Rear Diff ===
-    _w_str("diff_coast_drive_ramp", diff_coast_drive_ramp)
-    _w_num("diff_clutch_plates",    diff_clutch_plates,   "")
-    _w_num("diff_preload",          diff_preload_nm,       "Nm")
-
-    # === Traction Control ===
-    _w_num("tc_gain", tc_gain, "(TCLAT)")
-    _w_num("tc_slip", tc_slip, "(TCLON)")
-
     # === Fuel ===
     _w_num("fuel_level",       fuel_l,            "L")
-    _w_num("fuel_low_warning", fuel_low_warning_l, "L")
 
-    # === Gears ===
-    _w_str("gear_stack", gear_stack)
-    # BMW Short stack gear speeds (km/h) — constants calibrated from real LDX data
-    _w_num("speed_in_first",   116, "Km/h")
-    _w_num("speed_in_second",  151, "Km/h")
-    _w_num("speed_in_third",   184, "Km/h")
-    _w_num("speed_in_fourth",  220, "Km/h")
-    _w_num("speed_in_fifth",   257, "Km/h")
-    _w_num("speed_in_sixth",   288, "Km/h")
-    _w_num("speed_in_seventh", 316, "Km/h")
-
-    # === Lighting ===
-    _w_str("roof_light_color", roof_light_color)
+    # === Brakes, Diff, TC, Gears, Lighting ===
+    # iRacing rejects .sto files containing these parameters.
+    # The proven a2.sto ends at FuelLevel — anything after causes load failure.
+    # Only write these for engineering report mode (include_computed=True).
+    if include_computed:
+        _w_num("brake_bias",           brake_bias_pct,       "%")
+        _w_num("brake_bias_migration", brake_bias_migration,  "")
+        _w_num("brake_bias_target",    brake_bias_target,     "")
+        _w_str("pad_compound",         pad_compound)
+        _w_num("front_master_cyl",     front_master_cyl_mm,  "mm")
+        _w_num("rear_master_cyl",      rear_master_cyl_mm,   "mm")
+        _w_str("diff_coast_drive_ramp", diff_coast_drive_ramp)
+        _w_num("diff_clutch_plates",    diff_clutch_plates,   "")
+        _w_num("diff_preload",          diff_preload_nm,       "Nm")
+        _w_num("tc_gain", tc_gain, "(TCLAT)")
+        _w_num("tc_slip", tc_slip, "(TCLON)")
+        _w_num("fuel_low_warning", fuel_low_warning_l, "L")
+        _w_str("gear_stack", gear_stack)
+        _w_num("speed_in_first",   116, "Km/h")
+        _w_num("speed_in_second",  151, "Km/h")
+        _w_num("speed_in_third",   184, "Km/h")
+        _w_num("speed_in_fourth",  220, "Km/h")
+        _w_num("speed_in_fifth",   257, "Km/h")
+        _w_num("speed_in_sixth",   288, "Km/h")
+        _w_num("speed_in_seventh", 316, "Km/h")
+        _w_str("roof_light_color", roof_light_color)
 
     # Write XML
     tree = ElementTree(root)
