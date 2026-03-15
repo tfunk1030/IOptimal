@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from car_model.garage import GarageOutputModel
+from vertical_dynamics import damped_excursion_mm
 
 
 @dataclass
@@ -642,6 +643,10 @@ class CarModel:
     # Damper model
     damper: DamperModel = field(default_factory=lambda: DamperModel())
 
+    # Tyre vertical compliance (loaded-radius loss contributes directly to RH)
+    tyre_vertical_rate_front_nmm: float = 300.0
+    tyre_vertical_rate_rear_nmm: float = 320.0
+
     # Multi-variable ride height prediction model
     ride_height_model: RideHeightModel = field(default_factory=lambda: RideHeightModel())
 
@@ -685,16 +690,39 @@ class CarModel:
             return aero_rear_rh, aero_front_rh
         return aero_front_rh, aero_rear_rh
 
-    def rh_excursion_p99(self, shock_vel_p99_mps: float) -> float:
-        """Estimate p99 ride height excursion (mm) from shock velocity.
+    def rh_excursion_p99(
+        self,
+        shock_vel_p99_mps: float,
+        *,
+        axle: str = "front",
+        spring_rate_nmm: float | None = None,
+        damper_coeff_nsm: float | None = None,
+    ) -> float:
+        """Estimate p99 ride-height excursion (mm) using the shared vertical model.
 
-        Uses: excursion = shock_vel / (2 * pi * dominant_freq)
-        Converts from m/s to mm.
+        This uses the BMW-calibrated effective heave mass and a baseline axle
+        spring/damper state so Step 1 and Step 2 are at least directionally
+        consistent about how bumps consume ride-height budget.
         """
-        import math
-        freq = self.rh_variance.dominant_bump_freq_hz
-        excursion_m = shock_vel_p99_mps / (2 * math.pi * freq)
-        return excursion_m * 1000  # Convert to mm
+        is_front = axle.lower().startswith("f")
+        if is_front:
+            m_eff = self.heave_spring.front_m_eff_kg
+            k_nmm = spring_rate_nmm if spring_rate_nmm is not None else self.front_heave_spring_nmm
+            c_nsm = damper_coeff_nsm if damper_coeff_nsm is not None else self.damper.front_hs_coefficient_nsm
+            tyre_rate_nmm = self.tyre_vertical_rate_front_nmm
+        else:
+            m_eff = self.heave_spring.rear_m_eff_kg
+            k_nmm = spring_rate_nmm if spring_rate_nmm is not None else self.rear_third_spring_nmm
+            c_nsm = damper_coeff_nsm if damper_coeff_nsm is not None else self.damper.rear_hs_coefficient_nsm
+            tyre_rate_nmm = self.tyre_vertical_rate_rear_nmm
+
+        return damped_excursion_mm(
+            shock_vel_p99_mps,
+            m_eff,
+            k_nmm,
+            tyre_vertical_rate_nmm=tyre_rate_nmm,
+            damper_coeff_nsm=c_nsm,
+        )
 
     def estimate_confidence(self) -> dict[str, str]:
         """Return confidence level for key model parameters.
@@ -798,7 +826,7 @@ BMW_M_HYBRID_V8 = CarModel(
         front_m_eff_kg=228.0,
         rear_m_eff_kg=2395.3,
         front_spring_range_nmm=(20.0, 200.0),
-        rear_spring_range_nmm=(100.0, 1000.0),
+        rear_spring_range_nmm=(100.0, 900.0),
         sigma_target_mm=10.0,   # SKILL.md: sigma > 5mm at >200 kph = unstable
         perch_offset_front_baseline_mm=-13.0,
         perch_offset_rear_baseline_mm=42.0,  # Verified from 2026-03-11 session

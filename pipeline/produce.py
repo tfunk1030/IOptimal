@@ -314,6 +314,66 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             verbose=not args.report_only,
         )
 
+        # One fixed-point refinement pass: dampers depend on heave mode, and
+        # heave sizing now accounts for damper work. Run a provisional damper
+        # solve, then re-size heave/third once against that damper state.
+        damper_solver = DamperSolver(car, track)
+        provisional_step6 = damper_solver.solve(
+            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            fuel_load_l=fuel,
+            damping_ratio_scale=modifiers.damping_ratio_scale,
+            measured=measured,
+            front_heave_nmm=step2.front_heave_nmm,
+            rear_third_nmm=step2.rear_third_nmm,
+        )
+        refined_step2 = heave_solver.solve(
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
+            rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
+            front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
+            front_pushrod_mm=step1.front_pushrod_offset_mm,
+            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+            front_torsion_od_mm=step3.front_torsion_od_mm,
+            rear_spring_nmm=step3.rear_spring_rate_nmm,
+            rear_spring_perch_mm=step3.rear_spring_perch_mm,
+            rear_third_perch_mm=step2.perch_offset_rear_mm,
+            fuel_load_l=fuel,
+            front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+            front_hs_damper_nsm=provisional_step6.c_hs_front,
+            rear_hs_damper_nsm=provisional_step6.c_hs_rear,
+        )
+        if (
+            abs(refined_step2.front_heave_nmm - step2.front_heave_nmm) > 0.05
+            or abs(refined_step2.rear_third_nmm - step2.rear_third_nmm) > 0.05
+            or abs(refined_step2.perch_offset_front_mm - step2.perch_offset_front_mm) > 0.05
+        ):
+            step2 = refined_step2
+            step3 = corner_solver.solve(
+                front_heave_nmm=step2.front_heave_nmm,
+                rear_third_nmm=step2.rear_third_nmm,
+                fuel_load_l=fuel,
+            )
+            rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+            heave_solver.reconcile_solution(
+                step1,
+                step2,
+                step3,
+                fuel_load_l=fuel,
+                front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+                front_hs_damper_nsm=provisional_step6.c_hs_front,
+                verbose=False,
+            )
+            reconcile_ride_heights(
+                car, step1, step2, step3,
+                fuel_load_l=fuel,
+                track_name=track.track_name,
+                verbose=False,
+            )
+
         # Step 4: ARBs (with LLTD offset)
         log("\nRunning Step 4: Anti-Roll Bars...")
         arb_solver = ARBSolver(car, track)
@@ -348,7 +408,6 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
 
         # Step 6: Dampers (with damping ratio scale and click offsets)
         log("\nRunning Step 6: Dampers...")
-        damper_solver = DamperSolver(car, track)
         step6 = damper_solver.solve(
             front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
@@ -357,6 +416,8 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             fuel_load_l=fuel,
             damping_ratio_scale=modifiers.damping_ratio_scale,
             measured=measured,
+            front_heave_nmm=step2.front_heave_nmm,
+            rear_third_nmm=step2.rear_third_nmm,
         )
         # Apply damper click offsets from modifiers
         _apply_damper_modifiers(step6, modifiers, car)

@@ -290,6 +290,26 @@ def _recommend_platform(
                 priority=1,
                 confidence="medium",
             ))
+    elif "pitch range" in problem.symptom.lower():
+        k_current = setup.front_heave_nmm
+        k_target = max(hs.front_spring_range_nmm[0],
+                       min(hs.front_spring_range_nmm[1], round(k_current * 1.2)))
+        if k_target > k_current:
+            changes.append(SetupChange(
+                parameter="front_heave_nmm",
+                current=k_current,
+                recommended=k_target,
+                units="N/mm",
+                step=2,
+                reasoning=(
+                    f"Braking pitch range {problem.measured:.2f} deg is large. "
+                    f"Stiffen front heave from {k_current:.0f} to {k_target:.0f} N/mm "
+                    f"to keep more front ride-height budget in reserve under braking."
+                ),
+                effect="Reduce entry platform migration and improve braking support.",
+                priority=1,
+                confidence="medium",
+            ))
 
     return changes
 
@@ -632,8 +652,8 @@ def _recommend_thermal(
         # Too much negative camber -> reduce magnitude
         corner = problem.symptom[:2]  # "LF", "RF", "LR", "RR"
         axle = "front" if corner[1] == "F" else "rear"
-        spread = abs(problem.measured)
-        camber_correction = spread / 20.0  # ~0.1 deg per 2C spread
+        delta_from_target = abs(problem.measured)
+        camber_correction = max(0.1, delta_from_target / 12.0)
 
         if axle == "front":
             current = setup.front_camber_deg
@@ -651,8 +671,8 @@ def _recommend_thermal(
                     units="deg",
                     step=5,
                     reasoning=(
-                        f"{corner} inner-outer spread {problem.measured:+.1f}C. "
-                        f"Inner overheating -> too much negative camber. "
+                        f"{corner} spread is {problem.measured:+.1f}C beyond the target inner-hot window. "
+                        f"Reduce negative camber. "
                         f"Reduce from {current:.1f} to {new_val:.1f} deg."
                     ),
                     effect=f"Even out {corner} temperature spread, extend tyre life.",
@@ -674,8 +694,8 @@ def _recommend_thermal(
                     units="deg",
                     step=5,
                     reasoning=(
-                        f"{corner} inner-outer spread {problem.measured:+.1f}C. "
-                        f"Inner overheating -> too much negative camber. "
+                        f"{corner} spread is {problem.measured:+.1f}C beyond the target inner-hot window. "
+                        f"Reduce negative camber. "
                         f"Reduce from {current:.1f} to {new_val:.1f} deg."
                     ),
                     effect=f"Even out {corner} temperature spread, extend tyre life.",
@@ -687,8 +707,8 @@ def _recommend_thermal(
         # Not enough negative camber -> increase magnitude
         corner = problem.symptom[:2]
         axle = "front" if corner[1] == "F" else "rear"
-        spread = abs(problem.measured)
-        camber_correction = spread / 20.0
+        delta_from_target = abs(problem.measured)
+        camber_correction = max(0.1, delta_from_target / 12.0)
 
         if axle == "front":
             current = setup.front_camber_deg
@@ -705,8 +725,8 @@ def _recommend_thermal(
                     units="deg",
                     step=5,
                     reasoning=(
-                        f"{corner} inner-outer spread {problem.measured:+.1f}C. "
-                        f"Outer overheating -> not enough negative camber. "
+                        f"{corner} spread is {problem.measured:+.1f}C below the target inner-hot window. "
+                        f"Add negative camber. "
                         f"Increase from {current:.1f} to {new_val:.1f} deg."
                     ),
                     effect=f"Even out {corner} temperature spread, improve peak grip.",
@@ -728,8 +748,8 @@ def _recommend_thermal(
                     units="deg",
                     step=5,
                     reasoning=(
-                        f"{corner} inner-outer spread {problem.measured:+.1f}C. "
-                        f"Outer overheating -> not enough negative camber. "
+                        f"{corner} spread is {problem.measured:+.1f}C below the target inner-hot window. "
+                        f"Add negative camber. "
                         f"Increase from {current:.1f} to {new_val:.1f} deg."
                     ),
                     effect=f"Even out {corner} temperature spread.",
@@ -829,7 +849,7 @@ def _recommend_grip(
                 units="%",
                 step=4,
                 reasoning=(
-                    f"Front braking slip p95={problem.measured:.3f} (target <0.06). "
+                    f"Front braking lock proxy p95={problem.measured:.3f}. "
                     f"Shift brake bias from {current_bias:.1f}% to {new_bias:.1f}% "
                     f"(rearward) to reduce front lock-up tendency."
                 ),

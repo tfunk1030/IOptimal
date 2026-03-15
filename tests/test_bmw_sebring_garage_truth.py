@@ -117,6 +117,8 @@ class BMWSebringGarageTruthTests(unittest.TestCase):
         self.assertNotIn("FRONT HEAVE TRAVEL BUDGET", report)
         self.assertGreaterEqual(result["step1"].static_front_rh_mm, 30.0)
         self.assertLessEqual(result["step2"].slider_static_front_mm, 45.0)
+        self.assertLessEqual(result["step2"].rear_third_nmm, 900.0)
+        self.assertLessEqual(result["step2"].rear_sigma_at_rate_mm, self.car.heave_spring.sigma_target_mm)
 
         expected_outputs = self.garage_model.predict(
             GarageSetupState.from_solver_steps(
