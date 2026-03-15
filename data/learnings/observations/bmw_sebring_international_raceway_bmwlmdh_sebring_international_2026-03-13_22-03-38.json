@@ -4,7 +4,7 @@
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-14T14:56:32.248589+00:00",
+  "timestamp": "2026-03-15T01:10:32.060088+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -85,11 +85,11 @@
     "front_bottoming_events": 0,
     "rear_bottoming_events": 9,
     "front_heave_defl_p99_mm": 88.98,
-    "front_heave_travel_used_pct": 92.8,
-    "front_heave_travel_used_braking_pct": 93.2,
+    "front_heave_travel_used_pct": 91.3,
+    "front_heave_travel_used_braking_pct": 91.6,
     "rear_heave_defl_p99_mm": 0.0,
     "rear_heave_travel_used_pct": 0.0,
-    "heave_bottoming_events_front": 1,
+    "heave_bottoming_events_front": 0,
     "heave_bottoming_events_rear": 0,
     "front_rh_settle_time_ms": 0.0,
     "rear_rh_settle_time_ms": 0.0,
@@ -171,7 +171,7 @@
   },
   "diagnosis": {
     "assessment": "compromised",
-    "problem_count": 11,
+    "problem_count": 10,
     "problems": [
       {
         "category": "safety",
@@ -184,26 +184,18 @@
       {
         "category": "safety",
         "severity": "significant",
-        "symptom": "Front heave spring travel 93% exhausted under braking (p99 defl 89.0mm)",
-        "measured": 93.2,
+        "symptom": "Front heave spring travel 92% exhausted under braking (p99 defl 89.0mm)",
+        "measured": 91.6,
         "threshold": 85.0,
         "speed_context": "braking"
       },
       {
         "category": "safety",
         "severity": "significant",
-        "symptom": "Front heave spring travel 93% used at speed (p99 defl 89.0mm)",
-        "measured": 92.8,
+        "symptom": "Front heave spring travel 91% used at speed (p99 defl 89.0mm)",
+        "measured": 91.3,
         "threshold": 85.0,
         "speed_context": "high"
-      },
-      {
-        "category": "safety",
-        "severity": "significant",
-        "symptom": "1 front heave spring bottoming events (deflection within 2mm of DeflMax)",
-        "measured": 1.0,
-        "threshold": 0.0,
-        "speed_context": "all"
       },
       {
         "category": "platform",

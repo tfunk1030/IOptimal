@@ -538,9 +538,12 @@ def reconcile_ride_heights(
         actual_heave_perch = step2.perch_offset_front_mm
         actual_rear_spring = step3.rear_spring_rate_nmm
 
+        actual_spring_perch = step3.rear_spring_perch_mm
+
         predicted_rh = rh_model.predict_rear_static_rh(
             step1.rear_pushrod_offset_mm, actual_third_nmm,
             actual_rear_spring, actual_heave_perch,
+            spring_perch_mm=actual_spring_perch,
         )
         rh_error = predicted_rh - step1.static_rear_rh_mm
 
@@ -548,11 +551,13 @@ def reconcile_ride_heights(
             new_pushrod = rh_model.pushrod_for_target_rh(
                 step1.static_rear_rh_mm, actual_third_nmm,
                 actual_rear_spring, actual_heave_perch,
+                spring_perch_mm=actual_spring_perch,
             )
             new_pushrod = round(new_pushrod * 2) / 2  # snap to 0.5mm
             new_rh = rh_model.predict_rear_static_rh(
                 new_pushrod, actual_third_nmm,
                 actual_rear_spring, actual_heave_perch,
+                spring_perch_mm=actual_spring_perch,
             )
             if verbose:
                 print(f"  RH reconciliation: pushrod {step1.rear_pushrod_offset_mm:.1f} "

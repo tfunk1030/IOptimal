@@ -6,10 +6,9 @@
   <Layers>
     <Details>
       <String Id="Event" Value="GTP Setup Builder" Unit="" />
-      <String Id="Session" Value="Generated 2026-03-14 14:56 UTC" Unit="" />
+      <String Id="Session" Value="Generated 2026-03-14 23:55 UTC" Unit="" />
       <String Id="Venue" Value="Sebring International Raceway — International" Unit="" />
       <String Id="Vehicle Type" Value="Car" Unit="" />
-      <Numeric Id="CarSetup_UpdateCount" Value="1" Unit="" />
       <Numeric Id="CarSetup_TiresAero_AeroSettings_RearWingAngle" Value="17.0" Unit="deg" />
       <Numeric Id="CarSetup_TiresAero_AeroCalculator_FrontRhAtSpeed" Value="19.0" Unit="mm" />
       <Numeric Id="CarSetup_TiresAero_AeroCalculator_RearRhAtSpeed" Value="42.0" Unit="mm" />
@@ -17,57 +16,28 @@
       <Numeric Id="CarSetup_TiresAero_AeroCalculator_LD" Value="3.8" Unit="" />
       <Numeric Id="CarSetup_Chassis_LeftFront_RideHeight" Value="30.0" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_RightFront_RideHeight" Value="30.0" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_RideHeight" Value="49.2" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightRear_RideHeight" Value="49.2" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_RideHeight" Value="49.1" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_RideHeight" Value="49.1" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Front_PushrodLengthOffset" Value="-25.5" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Rear_PushrodLengthOffset" Value="-21.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_Rear_PushrodLengthOffset" Value="-21.5" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Front_HeaveSpring" Value="30" Unit="N/mm" />
       <Numeric Id="CarSetup_Chassis_Front_HeavePerchOffset" Value="-17" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Front_HeaveSliderDeflMax" Value="200" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Rear_ThirdSpring" Value="440" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_Rear_ThirdSpring" Value="450" Unit="N/mm" />
       <Numeric Id="CarSetup_Chassis_Rear_ThirdPerchOffset" Value="42" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Rear_ThirdSliderDeflMax" Value="150" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_LeftFront_TorsionBarOD" Value="13.9" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_RightFront_TorsionBarOD" Value="13.9" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_TorsionBarTurns" Value="0.097" Unit="Turns" />
-      <Numeric Id="CarSetup_Chassis_RightFront_TorsionBarTurns" Value="0.097" Unit="Turns" />
       <Numeric Id="CarSetup_Chassis_LeftRear_SpringRate" Value="150" Unit="N/mm" />
       <Numeric Id="CarSetup_Chassis_RightRear_SpringRate" Value="150" Unit="N/mm" />
       <Numeric Id="CarSetup_Chassis_LeftRear_SpringPerchOffset" Value="30.0" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_RightRear_SpringPerchOffset" Value="30.0" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_ShockDeflMax" Value="100" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightFront_ShockDeflMax" Value="100" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_ShockDeflMax" Value="150" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightRear_ShockDeflMax" Value="150" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_ShockDeflStatic" Value="14.6" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightFront_ShockDeflStatic" Value="14.6" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_ShockDeflStatic" Value="22.7" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightRear_ShockDeflStatic" Value="22.7" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_TorsionBarDefl" Value="17.6" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightFront_TorsionBarDefl" Value="17.6" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Front_HeaveSpringDeflStatic" Value="24.0" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Front_HeaveSpringDeflMax" Value="95.5" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Front_HeaveSliderDeflStatic" Value="42.3" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_SpringDeflStatic" Value="10.2" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightRear_SpringDeflStatic" Value="10.2" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_SpringDeflMax" Value="76.8" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightRear_SpringDeflMax" Value="76.8" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Rear_ThirdSpringDeflStatic" Value="19.3" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Rear_ThirdSpringDeflMax" Value="61.2" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Rear_ThirdSliderDeflStatic" Value="19.3" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_CornerWeight" Value="2700.0" Unit="N" />
-      <Numeric Id="CarSetup_Chassis_RightFront_CornerWeight" Value="2700.0" Unit="N" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_CornerWeight" Value="3044.0" Unit="N" />
-      <Numeric Id="CarSetup_Chassis_RightRear_CornerWeight" Value="3044.0" Unit="N" />
       <String Id="CarSetup_Chassis_Front_ArbSize" Value="Soft" Unit="" />
       <Numeric Id="CarSetup_Chassis_Front_ArbBlades" Value="1" Unit="" />
       <String Id="CarSetup_Chassis_Rear_ArbSize" Value="Soft" Unit="" />
       <Numeric Id="CarSetup_Chassis_Rear_ArbBlades" Value="3" Unit="" />
-      <Numeric Id="CarSetup_Chassis_Rear_CrossWeight" Value="50" Unit="%" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_Camber" Value="-1.8" Unit="deg" />
-      <Numeric Id="CarSetup_Chassis_RightFront_Camber" Value="-1.8" Unit="deg" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_Camber" Value="-1.5" Unit="deg" />
-      <Numeric Id="CarSetup_Chassis_RightRear_Camber" Value="-1.5" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_Camber" Value="-2.1" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_RightFront_Camber" Value="-2.1" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_Camber" Value="-1.7" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_RightRear_Camber" Value="-1.7" Unit="deg" />
       <Numeric Id="CarSetup_Chassis_Front_ToeIn" Value="-0.4" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_LeftRear_ToeIn" Value="0.0" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_RightRear_ToeIn" Value="0.0" Unit="mm" />
