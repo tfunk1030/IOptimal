@@ -1,2 +1,11 @@
 __pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+.env
+platform/.runtime/
+platform/frontend/node_modules/
+platform/frontend/dist/
+platform/frontend/.vite/
 
