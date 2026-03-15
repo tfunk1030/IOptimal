@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from learner.observation import Observation
+from learner.sanity import is_plausible_lap_time
 
 
 # Setup parameters grouped by solver step for attribution
@@ -367,7 +368,10 @@ def detect_delta(obs_before: Observation, obs_after: Observation) -> SessionDelt
     # ── 3. Performance delta ─────────────────────────────────────────
     lt_b = obs_before.performance.get("best_lap_time_s", 0)
     lt_a = obs_after.performance.get("best_lap_time_s", 0)
-    if lt_b > 0 and lt_a > 0:
+    if (
+        is_plausible_lap_time(lt_b, obs_after.car, obs_after.track)
+        and is_plausible_lap_time(lt_a, obs_after.car, obs_after.track)
+    ):
         delta.lap_time_delta_s = round(lt_a - lt_b, 3)
 
     # ── 4. Generate causal hypotheses ────────────────────────────────

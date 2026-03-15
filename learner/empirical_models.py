@@ -370,14 +370,17 @@ def _fit_settle_time(obs_list: list[dict], models: EmpiricalModelSet) -> None:
 
 def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> None:
     """Estimate which parameters most affect lap time from delta history."""
-    param_effects: dict[str, list[float]] = {}
+    param_effects: dict[str, list[tuple[float, float]]] = {}
 
     for d in deltas:
         lt_delta = d.get("lap_time_delta_s", 0)
         if abs(lt_delta) < 0.01:
             continue
+        if abs(lt_delta) > 3.0:
+            continue
         if d.get("confidence_level") not in ("high", "medium"):
             continue
+        weight = 1.0 if d.get("confidence_level") == "high" else 0.6
 
         for sc in d.get("setup_changes", []):
             if sc.get("significance") == "trivial":
@@ -387,17 +390,38 @@ def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> 
             if isinstance(delta_val, (int, float)) and abs(delta_val) > 0:
                 # Lap time change per unit of parameter change
                 sensitivity = lt_delta / delta_val
-                param_effects.setdefault(param, []).append(sensitivity)
+                param_effects.setdefault(param, []).append((sensitivity, weight))
 
-    # Average sensitivity per parameter
+    # Robust, confidence-weighted, regularized sensitivity per parameter
     sensitivities = []
+    total_weight = 0.0
     for param, effects in param_effects.items():
-        if len(effects) >= 1:
-            mean_sens = float(np.mean(effects))
-            sensitivities.append((param, abs(mean_sens), mean_sens))
+        if not effects:
+            continue
+        vals = np.array([v for v, _ in effects], dtype=float)
+        weights = np.array([w for _, w in effects], dtype=float)
+        total_weight += float(np.sum(weights))
+
+        median = float(np.median(vals))
+        mad = float(np.median(np.abs(vals - median)))
+        if mad > 1e-9:
+            robust_sigma = 1.4826 * mad
+            keep = np.abs(vals - median) <= 3.0 * robust_sigma
+            vals = vals[keep]
+            weights = weights[keep]
+        if len(vals) == 0:
+            continue
+
+        weighted_mean = float(np.average(vals, weights=weights))
+        # Shrink toward zero when validated sample weight is low.
+        shrink = float(np.sum(weights) / (np.sum(weights) + 3.0))
+        regularized_mean = weighted_mean * shrink
+        sensitivities.append((param, abs(regularized_mean), regularized_mean))
 
     sensitivities.sort(key=lambda t: t[1], reverse=True)
     models.most_sensitive_parameters = [(p, s) for p, _, s in sensitivities[:10]]
+    models.corrections["lap_time_surrogate_regularized"] = 1.0
+    models.corrections["lap_time_surrogate_sample_weight"] = round(total_weight, 3)
 
 
 def calibrate_roll_gain_from_thermals(observations: list[dict]) -> dict:
