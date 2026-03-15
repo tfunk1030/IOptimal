@@ -13,6 +13,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from car_model.garage import GarageSetupState
+
 if TYPE_CHECKING:
     from aero_model.gradient import AeroGradients
     from analyzer.diagnose import Diagnosis
@@ -75,16 +77,54 @@ def generate_report(
     supporting: SupportingSolution,
     current_setup: CurrentSetup,
     wing: float,
+    target_balance: float,
     stint_result: StintStrategy | None = None,
     sector_result: SectorCompromiseResult | None = None,
     sensitivity_result: LaptimeSensitivityReport | None = None,
     space_result: object = None,
+    compact: bool = False,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
     a = lines.append
+    garage_outputs = None
+    garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
+    if garage_model is not None:
+        garage_outputs = garage_model.predict(
+            GarageSetupState.from_solver_steps(
+                step1=step1,
+                step2=step2,
+                step3=step3,
+                step5=step5,
+                fuel_l=getattr(current_setup, "fuel_l", 0.0),
+            ),
+            front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
+        )
+
+    if compact:
+        return print_full_setup_report(
+            car_name=car.name,
+            track_name=f"{track.track_name} — {track.track_config}",
+            wing=wing,
+            target_balance=target_balance,
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step4=step4,
+            step5=step5,
+            step6=step6,
+            stint_result=stint_result,
+            sector_result=sector_result,
+            sensitivity_result=sensitivity_result,
+            space_result=space_result,
+            supporting=supporting,
+            car=car,
+            fuel_l=getattr(current_setup, "fuel_l", 0.0),
+            garage_outputs=garage_outputs,
+            compact=True,
+        )
 
     # ── PRE-CARD: Driver & Diagnosis ──────────────────────────────────
     a("═" * W)
@@ -122,7 +162,7 @@ def generate_report(
         car_name=car.name,
         track_name=f"{track.track_name} — {track.track_config}",
         wing=wing,
-        target_balance=aero_grad.df_balance_pct,
+        target_balance=target_balance,
         step1=step1,
         step2=step2,
         step3=step3,
@@ -134,6 +174,9 @@ def generate_report(
         sensitivity_result=sensitivity_result,
         space_result=space_result,
         supporting=supporting,
+        car=car,
+        fuel_l=getattr(current_setup, "fuel_l", 0.0),
+        garage_outputs=garage_outputs,
     ))
 
     # ── CURRENT vs RECOMMENDED ────────────────────────────────────────
@@ -162,16 +205,41 @@ def generate_report(
 
     # ── HEAVE TRAVEL BUDGET ────────────────────────────────────────────
     if step2.defl_max_front_mm > 0:
+        budget_slider = (
+            garage_outputs.heave_slider_defl_static_mm
+            if garage_outputs is not None else
+            step2.slider_static_front_mm
+        )
+        budget_defl_max = (
+            garage_outputs.heave_spring_defl_max_mm
+            if garage_outputs is not None else
+            step2.defl_max_front_mm
+        )
+        budget_static_defl = (
+            garage_outputs.heave_spring_defl_static_mm
+            if garage_outputs is not None else
+            step2.static_defl_front_mm
+        )
+        budget_available = (
+            garage_outputs.available_travel_front_mm
+            if garage_outputs is not None else
+            step2.available_travel_front_mm
+        )
+        budget_margin = (
+            garage_outputs.travel_margin_front_mm
+            if garage_outputs is not None else
+            step2.travel_margin_front_mm
+        )
         a(_hdr("FRONT HEAVE TRAVEL BUDGET"))
         a(f"  Heave spring:       {step2.front_heave_nmm:.0f} N/mm")
         a(f"  Perch offset:       {step2.perch_offset_front_mm:.1f} mm")
-        a(f"  Slider position:    {step2.slider_static_front_mm:.1f} mm")
-        a(f"  DeflMax:            {step2.defl_max_front_mm:.1f} mm")
-        a(f"  Static deflection:  {step2.static_defl_front_mm:.1f} mm")
-        a(f"  Available travel:   {step2.available_travel_front_mm:.1f} mm")
+        a(f"  Slider position:    {budget_slider:.1f} mm")
+        a(f"  DeflMax:            {budget_defl_max:.1f} mm")
+        a(f"  Static deflection:  {budget_static_defl:.1f} mm")
+        a(f"  Available travel:   {budget_available:.1f} mm")
         a(f"  Excursion p99:      {step2.front_excursion_at_rate_mm:.1f} mm")
-        margin_status = "OK" if step2.travel_margin_front_mm >= 5 else "LOW"
-        a(f"  Travel margin:      {step2.travel_margin_front_mm:.1f} mm  [{margin_status}]")
+        margin_status = "OK" if budget_margin >= 5 else "LOW"
+        a(f"  Travel margin:      {budget_margin:.1f} mm  [{margin_status}]")
         if step2.total_force_at_limit_n > 0:
             a(f"  Force at limit:")
             a(f"    Spring:  {step2.spring_force_at_limit_n:.0f} N  (k × travel)")

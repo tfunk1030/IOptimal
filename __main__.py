@@ -244,6 +244,8 @@ def main() -> None:
                         help="Balance tolerance %% (default: 0.1)")
     parser.add_argument("--free", action="store_true",
                         help="Free optimization (don't pin front RH at sim floor)")
+    parser.add_argument("--legacy-solver", action="store_true",
+                        help="Force the legacy sequential solver path for BMW/Sebring validation")
 
     # ── Output ──
     parser.add_argument("--sto", type=str, default=None,
