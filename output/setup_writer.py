@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, ElementTree, indent
 
+from car_model.garage import GarageSetupState
 from solver.rake_solver import RakeSolution
 from solver.heave_solver import HeaveSolution
 from solver.corner_spring_solver import CornerSpringSolution
@@ -409,6 +410,20 @@ def write_sto(
         _car = _get_car(car_canonical)
     except Exception:
         _car = None
+    garage_outputs = None
+    if _car is not None:
+        garage_model = _car.active_garage_output_model(track_name)
+        if garage_model is not None:
+            garage_outputs = garage_model.predict(
+                GarageSetupState.from_solver_steps(
+                    step1=step1,
+                    step2=step2,
+                    step3=step3,
+                    step5=step5,
+                    fuel_l=fuel_l,
+                ),
+                front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
+            )
 
     # Compute brake bias from physics if not provided
     if brake_bias_pct is None:
@@ -499,10 +514,8 @@ def write_sto(
     # Torsion bar turns — computed by iRacing from heave/perch/OD.
     # Only write when include_computed=True (for engineering reports).
     if include_computed:
-        # turns = 0.0989 + 0.432/heave + 0.000699*perch + 0.000002*OD
-        # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.800
         _tb_turns = round(
-            0.0989
+            garage_outputs.torsion_bar_turns if garage_outputs is not None else 0.0989
             + 0.432 / max(step2.front_heave_nmm, 1)
             + 0.000699 * step2.perch_offset_front_mm
             + 0.000002 * step3.front_torsion_od_mm,
@@ -531,11 +544,19 @@ def write_sto(
     # Including them in the .sto causes iRacing to reject the file.
     # Only write them when include_computed=True (for engineering reports).
     if include_computed:
-        _fh = step2.front_heave_nmm
-        _fh_perch = step2.perch_offset_front_mm
-        _f_od = step3.front_torsion_od_mm
-
-        if _car is not None:
+        if garage_outputs is not None:
+            _lf_sd = round(garage_outputs.front_shock_defl_static_mm, 1)
+            _lr_sd = round(garage_outputs.rear_shock_defl_static_mm, 1)
+            _tb_defl = round(garage_outputs.torsion_bar_defl_mm, 1)
+            _heave_defl_static = round(garage_outputs.heave_spring_defl_static_mm, 1)
+            _heave_slider_static = round(garage_outputs.heave_slider_defl_static_mm, 1)
+            _lr_spring_defl = round(garage_outputs.rear_spring_defl_static_mm, 1)
+            _r3_defl = round(garage_outputs.third_spring_defl_static_mm, 1)
+            _r3_slider = round(garage_outputs.third_slider_defl_static_mm, 1)
+        elif _car is not None:
+            _fh = step2.front_heave_nmm
+            _fh_perch = step2.perch_offset_front_mm
+            _f_od = step3.front_torsion_od_mm
             _dm = _car.deflection
             _k_torsion = _car.corner_spring.torsion_bar_rate(_f_od)
 
@@ -550,6 +571,8 @@ def write_sto(
                 step2.rear_third_nmm, step2.perch_offset_rear_mm), 1)
             _r3_slider = round(_dm.third_slider_defl_static(_r3_defl), 1)
         else:
+            _fh = step2.front_heave_nmm
+            _fh_perch = step2.perch_offset_front_mm
             _lf_sd = round(step1.static_front_rh_mm * 0.487, 1)
             _lr_sd = round(step1.static_rear_rh_mm * 0.462, 1)
             _tb_defl = round(_tb_turns * 181.5, 1)
@@ -568,12 +591,16 @@ def write_sto(
         _w_num("rf_torsion_defl", _tb_defl, "mm")
 
         # HeaveSpringDeflMax retains its linear model (well-calibrated from 19 sessions)
-        if step2.defl_max_front_mm > 0:
+        if garage_outputs is not None:
+            _heave_defl_max = garage_outputs.heave_spring_defl_max_mm
+        elif step2.defl_max_front_mm > 0:
             _heave_defl_max = step2.defl_max_front_mm
         elif _car is not None:
+            _fh = step2.front_heave_nmm
             _heave_defl_max = (_car.heave_spring.heave_spring_defl_max_intercept_mm
                                + _car.heave_spring.heave_spring_defl_max_slope * _fh)
         else:
+            _fh = step2.front_heave_nmm
             _heave_defl_max = 106.43 + (-0.310) * _fh
         _w_num("front_heave_spring_defl_static", _heave_defl_static, "mm")
         _w_num("front_heave_spring_defl_max", round(_heave_defl_max, 1), "mm")
@@ -581,7 +608,10 @@ def write_sto(
 
         _w_num("lr_spring_defl_static", _lr_spring_defl, "mm")
         _w_num("rr_spring_defl_static", _lr_spring_defl, "mm")
-        if _car is not None:
+        if garage_outputs is not None:
+            _lr_defl_max = round(garage_outputs.rear_spring_defl_max_mm, 1)
+            _r3_defl_max = round(garage_outputs.third_spring_defl_max_mm, 1)
+        elif _car is not None:
             _lr_defl_max = round(_dm.rear_spring_defl_max(
                 step3.rear_spring_rate_nmm, step3.rear_spring_perch_mm), 1)
             _r3_defl_max = round(_dm.third_spring_defl_max(

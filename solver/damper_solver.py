@@ -62,6 +62,7 @@ from dataclasses import dataclass, field
 
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
+from vertical_dynamics import axle_modal_rate_nmm
 
 
 @dataclass
@@ -407,6 +408,8 @@ class DamperSolver:
         fuel_load_l: float = 89.0,
         damping_ratio_scale: float = 1.0,
         measured: "MeasuredState | None" = None,
+        front_heave_nmm: float | None = None,
+        rear_third_nmm: float | None = None,
     ) -> DamperSolution:
         """Derive all damper settings from physics.
 
@@ -432,8 +435,29 @@ class DamperSolver:
         m_rear = self._mass_per_corner_kg(is_front=False, fuel_load_l=fuel_load_l)
 
         # ─── 2. Critical damping ──────────────────────────────────────────────
-        c_crit_front = self._critical_damping(front_wheel_rate_nmm, m_front)
-        c_crit_rear = self._critical_damping(rear_wheel_rate_nmm, m_rear)
+        front_axle_heave_nmm = (
+            self.car.front_heave_spring_nmm
+            if front_heave_nmm is None
+            else float(front_heave_nmm)
+        )
+        rear_axle_heave_nmm = (
+            self.car.rear_third_spring_nmm
+            if rear_third_nmm is None
+            else float(rear_third_nmm)
+        )
+        modal_front_rate_nmm = axle_modal_rate_nmm(
+            front_wheel_rate_nmm,
+            front_axle_heave_nmm,
+            self.car.tyre_vertical_rate_front_nmm,
+        )
+        modal_rear_rate_nmm = axle_modal_rate_nmm(
+            rear_wheel_rate_nmm,
+            rear_axle_heave_nmm,
+            self.car.tyre_vertical_rate_rear_nmm,
+        )
+
+        c_crit_front = self._critical_damping(modal_front_rate_nmm, m_front)
+        c_crit_rear = self._critical_damping(modal_rear_rate_nmm, m_rear)
 
         # ─── 3-4. Damping coefficients ────────────────────────────────────────
         # Apply damping_ratio_scale from modifiers (driver style / diagnosis)
@@ -597,11 +621,11 @@ class DamperSolver:
 
         notes = [
             f"Front critical damping: {c_crit_front:.0f} N*s/m "
-            f"(w_n = {math.sqrt(front_wheel_rate_nmm*1000/m_front):.1f} rad/s, "
-            f"f_n = {math.sqrt(front_wheel_rate_nmm*1000/m_front)/(2*math.pi):.2f} Hz)",
+            f"(modal k={modal_front_rate_nmm:.1f} N/mm, "
+            f"f_n = {math.sqrt(modal_front_rate_nmm*1000/m_front)/(2*math.pi):.2f} Hz)",
             f"Rear critical damping: {c_crit_rear:.0f} N*s/m "
-            f"(w_n = {math.sqrt(rear_wheel_rate_nmm*1000/m_rear):.1f} rad/s, "
-            f"f_n = {math.sqrt(rear_wheel_rate_nmm*1000/m_rear)/(2*math.pi):.2f} Hz)",
+            f"(modal k={modal_rear_rate_nmm:.1f} N/mm, "
+            f"f_n = {math.sqrt(modal_rear_rate_nmm*1000/m_rear)/(2*math.pi):.2f} Hz)",
             f"Front LS: zeta={zeta_ls_f:.2f} -> c={c_ls_front:.0f} N*s/m -> "
             f"F@{v_ls_ref*1000:.0f}mm/s = {c_ls_front*v_ls_ref:.0f} N -> {front_ls_comp} clicks",
             f"Front HS: zeta={zeta_hs_f:.2f} -> c={c_hs_front:.0f} N*s/m -> "

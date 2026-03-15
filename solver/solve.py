@@ -25,6 +25,7 @@ from solver.corner_spring_solver import CornerSpringSolver
 from solver.arb_solver import ARBSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
 from solver.damper_solver import DamperSolver
+from solver.full_setup_optimizer import optimize_if_supported
 from output.report import print_full_setup_report, save_json_summary
 from output.setup_writer import write_sto
 from solver.supporting_solver import compute_brake_bias
@@ -92,6 +93,8 @@ def main():
                         help="Run setup space exploration (feasible region and flat-bottom analysis)")
     parser.add_argument("--stint-laps", type=int, default=30,
                         help="Stint length for stint analysis (default: 30)")
+    parser.add_argument("--legacy-solver", action="store_true",
+                        help="Force the legacy sequential solver path for BMW/Sebring validation")
 
     args = parser.parse_args()
     run_solver(args)
@@ -124,17 +127,24 @@ def run_solver(args: "argparse.Namespace") -> None:
         args.stint_laps = 30
     if not hasattr(args, "learn"):
         args.learn = not getattr(args, "no_learn", False)
+    if not hasattr(args, "legacy_solver"):
+        args.legacy_solver = False
+
+    quiet = bool(args.report_only)
+
+    def log(message: str = "") -> None:
+        if not quiet:
+            print(message)
 
     # Load car model
     car = get_car(args.car)
-    if not args.report_only:
-        print(f"Car: {car.name}")
+    log(f"Car: {car.name}")
 
     # Apply learned corrections if requested
     learned = None
     if args.learn:
         learned = apply_learned_corrections(
-            car.canonical_name, args.track, min_sessions=2, verbose=True
+            car.canonical_name, args.track, min_sessions=2, verbose=not quiet
         )
         if learned.applied:
             # Override calibration constants with empirical values
@@ -147,16 +157,16 @@ def run_solver(args: "argparse.Namespace") -> None:
                 car.geometry.front_roll_gain = learned.calibrated_front_roll_gain
             if learned.calibrated_rear_roll_gain is not None:
                 car.geometry.rear_roll_gain = learned.calibrated_rear_roll_gain
-            print()
+            log()
 
     # Confidence check — warn if car model has ESTIMATE parameters
     confidence = car.estimate_confidence()
     estimate_params = [p for p, v in confidence.items() if "ESTIMATE" in v]
     if estimate_params:
         params_str = ", ".join(estimate_params)
-        print(f"[confidence] {car.name}: {params_str} — outputs less reliable")
-        print(f"  (Run pipeline with real IBT to calibrate these values)")
-        print()
+        log(f"[confidence] {car.name}: {params_str} - outputs less reliable")
+        log("  (Run pipeline with real IBT to calibrate these values)")
+        log()
 
     # Load aero surfaces
     surfaces = load_car_surfaces(car.canonical_name)
@@ -165,125 +175,227 @@ def run_solver(args: "argparse.Namespace") -> None:
         print(f"ERROR: Wing angle {args.wing}° not available. Available: {available}")
         sys.exit(1)
     surface = surfaces[args.wing]
-    if not args.report_only:
-        print(f"Aero surface: {surface}")
+    log(f"Aero surface: {surface}")
 
     # Load track profile
     track = find_track_profile(args.track)
-    if not args.report_only:
-        print(f"Track: {track.track_name} — {track.track_config}")
-        print(f"Best lap: {track.best_lap_time_s:.3f}s")
-        print()
+    log(f"Track: {track.track_name} - {track.track_config}")
+    log(f"Best lap: {track.best_lap_time_s:.3f}s")
+    log()
 
-    # ─── Step 1: Rake / Ride Heights ─────────────────────────────────
-    if not args.report_only:
-        print("=" * 60)
-        if not args.report_only: print("Running Step 1: Rake / Ride Heights...")
-        print(f"  Target DF balance: {args.balance:.2f}% ± {args.tolerance:.2f}%")
-        print(f"  Fuel load: {args.fuel:.0f} L")
-        print()
+    _camber_conf = ("calibrated"
+                    if learned and learned.calibrated_front_roll_gain is not None
+                    else "estimated")
 
-    rake_solver = RakeSolver(car, surface, track)
-    step1 = rake_solver.solve(
+    optimized = optimize_if_supported(
+        car=car,
+        surface=surface,
+        track=track,
         target_balance=args.balance,
         balance_tolerance=args.tolerance,
         fuel_load_l=args.fuel,
         pin_front_min=not args.free,
-    )
-
-    if not args.json and not args.report_only:
-        print(step1.summary())
-
-    # ─── Step 2: Heave / Third Springs ─────────────────────────────────
-    print()
-    if not args.report_only: print("Running Step 2: Heave / Third Springs...")
-    print()
-
-    heave_solver = HeaveSolver(car, track)
-    step2 = heave_solver.solve(
-        dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-        dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-    )
-
-    if not args.json and not args.report_only:
-        print(step2.summary())
-
-    # ─── Step 3: Corner Springs ────────────────────────────────────────
-    print()
-    if not args.report_only: print("Running Step 3: Corner Springs...")
-    print()
-
-    corner_solver = CornerSpringSolver(car, track)
-    step3 = corner_solver.solve(
-        front_heave_nmm=step2.front_heave_nmm,
-        rear_third_nmm=step2.rear_third_nmm,
-        fuel_load_l=args.fuel,
-    )
-
-    if not args.json and not args.report_only:
-        print(step3.summary())
-
-    # Convert rear spring rate to wheel rate (MR^2) for downstream solvers
-    rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-
-    # ─── RH Reconciliation (after step2+step3 provide actual spring values) ──
-    reconcile_ride_heights(
-        car, step1, step2, step3,
-        verbose=not args.json and not args.report_only,
-    )
-    if not args.json and not args.report_only:
-        print()
-
-    # ─── Step 4: Anti-Roll Bars ────────────────────────────────────────
-    print()
-    if not args.report_only: print("Running Step 4: Anti-Roll Bars...")
-    print()
-
-    arb_solver = ARBSolver(car, track)
-    step4 = arb_solver.solve(
-        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-    )
-
-    if not args.json and not args.report_only:
-        print(step4.summary())
-
-    # ─── Step 5: Wheel Geometry ────────────────────────────────────────
-    print()
-    if not args.report_only: print("Running Step 5: Wheel Geometry...")
-    print()
-
-    geom_solver = WheelGeometrySolver(car, track)
-    _camber_conf = ("calibrated"
-                    if learned and learned.calibrated_front_roll_gain is not None
-                    else "estimated")
-    step5 = geom_solver.solve(
-        k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
-        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-        fuel_load_l=args.fuel,
+        legacy_solver=args.legacy_solver,
         camber_confidence=_camber_conf,
     )
 
-    if not args.json and not args.report_only:
-        print(step5.summary())
+    if optimized is not None:
+        log("=" * 60)
+        log("Running BMW/Sebring constrained optimizer...")
+        log(f"  Target DF balance: {args.balance:.2f}% ± {args.tolerance:.2f}%")
+        log(f"  Fuel load: {args.fuel:.0f} L")
+        log()
+        step1 = optimized.step1
+        step2 = optimized.step2
+        step3 = optimized.step3
+        step4 = optimized.step4
+        step5 = optimized.step5
+        step6 = optimized.step6
+        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+    else:
+        # ─── Step 1: Rake / Ride Heights ─────────────────────────────────
+        log("=" * 60)
+        log("Running Step 1: Rake / Ride Heights...")
+        log(f"  Target DF balance: {args.balance:.2f}% ± {args.tolerance:.2f}%")
+        log(f"  Fuel load: {args.fuel:.0f} L")
+        log()
 
-    # ─── Step 6: Dampers ──────────────────────────────────────────────
-    print()
-    if not args.report_only: print("Running Step 6: Dampers...")
-    print()
+        rake_solver = RakeSolver(car, surface, track)
+        step1 = rake_solver.solve(
+            target_balance=args.balance,
+            balance_tolerance=args.tolerance,
+            fuel_load_l=args.fuel,
+            pin_front_min=not args.free,
+        )
 
-    damper_solver = DamperSolver(car, track)
-    step6 = damper_solver.solve(
-        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-        front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-        rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-        fuel_load_l=args.fuel,
-    )
+        if not args.json and not args.report_only:
+            print(step1.summary())
 
-    if not args.json and not args.report_only:
-        print(step6.summary())
+        # ─── Step 2: Heave / Third Springs ─────────────────────────────────
+        log()
+        log("Running Step 2: Heave / Third Springs...")
+        log()
+
+        heave_solver = HeaveSolver(car, track)
+        step2 = heave_solver.solve(
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_pushrod_mm=step1.front_pushrod_offset_mm,
+            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+            fuel_load_l=args.fuel,
+            front_camber_deg=car.geometry.front_camber_baseline_deg,
+        )
+
+        if not args.json and not args.report_only:
+            print(step2.summary())
+
+        # ─── Step 3: Corner Springs ────────────────────────────────────────
+        log()
+        log("Running Step 3: Corner Springs...")
+        log()
+
+        corner_solver = CornerSpringSolver(car, track)
+        step3 = corner_solver.solve(
+            front_heave_nmm=step2.front_heave_nmm,
+            rear_third_nmm=step2.rear_third_nmm,
+            fuel_load_l=args.fuel,
+        )
+
+        if not args.json and not args.report_only:
+            print(step3.summary())
+
+        # Convert rear spring rate to wheel rate (MR^2) for downstream solvers
+        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+
+        # ─── RH Reconciliation (after step2+step3 provide actual spring values) ──
+        heave_solver.reconcile_solution(
+            step1,
+            step2,
+            step3,
+            fuel_load_l=args.fuel,
+            front_camber_deg=car.geometry.front_camber_baseline_deg,
+            verbose=not args.json and not args.report_only,
+        )
+        reconcile_ride_heights(
+            car, step1, step2, step3,
+            fuel_load_l=args.fuel,
+            track_name=track.track_name,
+            verbose=not args.json and not args.report_only,
+        )
+        if not args.json and not args.report_only:
+            log()
+
+        # One refinement pass: heave sizing depends on HS damper work, and the
+        # damper solve depends on the modal heave/third rates. Solve once,
+        # re-size heave/third against that damper state, then continue.
+        damper_solver = DamperSolver(car, track)
+        provisional_step6 = damper_solver.solve(
+            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            fuel_load_l=args.fuel,
+            front_heave_nmm=step2.front_heave_nmm,
+            rear_third_nmm=step2.rear_third_nmm,
+        )
+        refined_step2 = heave_solver.solve(
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_pushrod_mm=step1.front_pushrod_offset_mm,
+            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+            front_torsion_od_mm=step3.front_torsion_od_mm,
+            rear_spring_nmm=step3.rear_spring_rate_nmm,
+            rear_spring_perch_mm=step3.rear_spring_perch_mm,
+            rear_third_perch_mm=step2.perch_offset_rear_mm,
+            fuel_load_l=args.fuel,
+            front_camber_deg=car.geometry.front_camber_baseline_deg,
+            front_hs_damper_nsm=provisional_step6.c_hs_front,
+            rear_hs_damper_nsm=provisional_step6.c_hs_rear,
+        )
+        if (
+            abs(refined_step2.front_heave_nmm - step2.front_heave_nmm) > 0.05
+            or abs(refined_step2.rear_third_nmm - step2.rear_third_nmm) > 0.05
+            or abs(refined_step2.perch_offset_front_mm - step2.perch_offset_front_mm) > 0.05
+        ):
+            step2 = refined_step2
+            step3 = corner_solver.solve(
+                front_heave_nmm=step2.front_heave_nmm,
+                rear_third_nmm=step2.rear_third_nmm,
+                fuel_load_l=args.fuel,
+            )
+            rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+            heave_solver.reconcile_solution(
+                step1,
+                step2,
+                step3,
+                fuel_load_l=args.fuel,
+                front_camber_deg=car.geometry.front_camber_baseline_deg,
+                front_hs_damper_nsm=provisional_step6.c_hs_front,
+                verbose=False,
+            )
+            reconcile_ride_heights(
+                car, step1, step2, step3,
+                fuel_load_l=args.fuel,
+                track_name=track.track_name,
+                verbose=False,
+            )
+
+        # ─── Step 4: Anti-Roll Bars ────────────────────────────────────────
+        log()
+        log("Running Step 4: Anti-Roll Bars...")
+        log()
+
+        arb_solver = ARBSolver(car, track)
+        step4 = arb_solver.solve(
+            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+        )
+
+        if not args.json and not args.report_only:
+            print(step4.summary())
+
+        # ─── Step 5: Wheel Geometry ────────────────────────────────────────
+        log()
+        log("Running Step 5: Wheel Geometry...")
+        log()
+
+        geom_solver = WheelGeometrySolver(car, track)
+        step5 = geom_solver.solve(
+            k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
+            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            fuel_load_l=args.fuel,
+            camber_confidence=_camber_conf,
+        )
+
+        if not args.json and not args.report_only:
+            print(step5.summary())
+
+        reconcile_ride_heights(
+            car, step1, step2, step3,
+            step5=step5,
+            fuel_load_l=args.fuel,
+            track_name=track.track_name,
+            verbose=False,
+        )
+
+        # ─── Step 6: Dampers ──────────────────────────────────────────────
+        log()
+        log("Running Step 6: Dampers...")
+        log()
+
+        step6 = damper_solver.solve(
+            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            fuel_load_l=args.fuel,
+            front_heave_nmm=step2.front_heave_nmm,
+            rear_third_nmm=step2.rear_third_nmm,
+        )
+
+        if not args.json and not args.report_only:
+            print(step6.summary())
 
     # ─── Constraint proximity analysis (binding constraints) ──────────
     try:
@@ -297,13 +409,13 @@ def run_solver(args: "argparse.Namespace") -> None:
         )
         binding = sensitivity_report.binding_constraints()
         if binding and not args.report_only:
-            print()
-            print("[constraints] Near-binding constraints:")
+            log()
+            log("[constraints] Near-binding constraints:")
             for c in binding:
-                print(f"  !! {c.name}: {c.actual_value:.1f} / {c.limit_value:.1f} {c.units} "
-                      f"(slack {c.slack_pct:+.1f}%)")
+                log(f"  !! {c.name}: {c.actual_value:.1f} / {c.limit_value:.1f} {c.units} "
+                    f"(slack {c.slack_pct:+.1f}%)")
                 if c.binding_explanation:
-                    print(f"     → {c.binding_explanation}")
+                    log(f"     → {c.binding_explanation}")
     except Exception:
         pass  # constraint analysis is advisory
 
@@ -324,8 +436,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             v_p99_rear_mps=track.shock_vel_p99_rear_mps,
         )
     except Exception as e:
-        if not args.report_only:
-            print(f"[stint] Skipped: {e}")
+        log(f"[stint] Skipped: {e}")
 
     try:
         from solver.sector_compromise import SectorCompromise
@@ -336,8 +447,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             base_bias_pct=_bias_sec,
         )
     except Exception as e:
-        if not args.report_only:
-            print(f"[sector] Skipped: {e}")
+        log(f"[sector] Skipped: {e}")
 
     try:
         from solver.laptime_sensitivity import compute_laptime_sensitivity
@@ -350,8 +460,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             brake_bias_pct=_bias,
         )
     except Exception as e:
-        if not args.report_only:
-            print(f"[sensitivity] Skipped: {e}")
+        log(f"[sensitivity] Skipped: {e}")
 
     if args.space:
         try:
@@ -362,10 +471,10 @@ def run_solver(args: "argparse.Namespace") -> None:
                 sensitivity=sensitivity_result,
             )
             if not args.report_only and not args.json:
-                print()
-                print(space_result.summary())
+                log()
+                log(space_result.summary())
         except Exception as e:
-            print(f"[space] Skipped: {e}")
+            log(f"[space] Skipped: {e}")
 
     # ─── Step 6b: Differential (standalone defaults) ──────────────────
     diff_result = None
@@ -373,15 +482,15 @@ def run_solver(args: "argparse.Namespace") -> None:
         from solver.diff_solver import DiffSolver
         diff_result = DiffSolver.solve_defaults(car, track=track)
         if not args.report_only and not args.json:
-            print()
-            print(diff_result.summary())
+            log()
+            log(diff_result.summary())
     except Exception as e:
-        if not args.report_only:
-            print(f"[diff] Skipped: {e}")
+        log(f"[diff] Skipped: {e}")
 
     # ─── Full Setup Report ─────────────────────────────────────────────
-    print()
-    print()
+    if not quiet:
+        print()
+        print()
     # Compute supporting params for standalone report (brake bias, diff defaults)
     _supporting = None
     try:
@@ -420,6 +529,9 @@ def run_solver(args: "argparse.Namespace") -> None:
         sensitivity_result=sensitivity_result,
         space_result=space_result,
         supporting=_supporting,
+        car=car,
+        fuel_l=args.fuel,
+        compact=quiet,
     )
     print(report)
 

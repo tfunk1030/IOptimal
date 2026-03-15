@@ -249,10 +249,20 @@ def format_report(
             lines.append(f"    High speed (>180 kph):    {measured.understeer_high_speed_deg:+.1f} deg")
 
         lines.append(f"  Body slip angle (p95):      {measured.body_slip_p95_deg:.1f} deg")
-        if measured.rear_slip_ratio_p95 > 0:
-            lines.append(f"  Rear traction slip (p95):   {measured.rear_slip_ratio_p95:.3f}")
-        if measured.front_slip_ratio_p95 > 0:
-            lines.append(f"  Front braking slip (p95):   {measured.front_slip_ratio_p95:.3f}")
+        rear_power_slip = (
+            measured.rear_power_slip_ratio_p95
+            if measured.rear_power_slip_ratio_p95 > 0
+            else measured.rear_slip_ratio_p95
+        )
+        front_lock = (
+            measured.front_braking_lock_ratio_p95
+            if measured.front_braking_lock_ratio_p95 > 0
+            else measured.front_slip_ratio_p95
+        )
+        if rear_power_slip > 0:
+            lines.append(f"  Rear power slip (p95):      {rear_power_slip:.3f}")
+        if front_lock > 0:
+            lines.append(f"  Front braking lock (p95):   {front_lock:.3f}")
 
         if measured.yaw_rate_correlation > 0:
             qual = "excellent" if measured.yaw_rate_correlation > 0.90 else \
@@ -260,8 +270,13 @@ def format_report(
                    "marginal" if measured.yaw_rate_correlation > 0.60 else "poor"
             lines.append(f"  Yaw correlation (R^2):      {measured.yaw_rate_correlation:.3f}  ({qual})")
 
-        if measured.lltd_measured > 0:
-            lines.append(f"  LLTD (measured):            {measured.lltd_measured*100:.1f}%")
+        roll_proxy = (
+            measured.roll_distribution_proxy
+            if measured.roll_distribution_proxy > 0
+            else measured.lltd_measured
+        )
+        if roll_proxy > 0:
+            lines.append(f"  Roll distribution proxy:    {roll_proxy*100:.1f}%")
         if measured.roll_gradient_measured_deg_per_g > 0:
             lines.append(f"  Roll gradient:              {measured.roll_gradient_measured_deg_per_g:.3f} deg/g")
 
@@ -269,11 +284,38 @@ def format_report(
             lines.append(f"  Roll rate (p95):            {measured.roll_rate_p95_deg_per_s:.1f} deg/s")
         if measured.pitch_rate_p95_deg_per_s > 0:
             lines.append(f"  Pitch rate (p95):           {measured.pitch_rate_p95_deg_per_s:.1f} deg/s")
+        if measured.pitch_range_braking_deg > 0:
+            lines.append(
+                f"  Braking pitch range:        {measured.pitch_range_braking_deg:.2f} deg"
+            )
+        if measured.pitch_mean_braking_deg != 0:
+            lines.append(
+                f"  Mean pitch under brake:     {measured.pitch_mean_braking_deg:+.2f} deg"
+            )
+        if measured.hydraulic_brake_split_pct > 0:
+            confidence = measured.hydraulic_brake_split_confidence or "low"
+            lines.append(
+                f"  Hydraulic brake split:      {measured.hydraulic_brake_split_pct:.1f}% ({confidence})"
+            )
+        if measured.braking_decel_mean_g > 0:
+            lines.append(
+                f"  Braking decel mean/peak:    {measured.braking_decel_mean_g:.2f} / "
+                f"{measured.braking_decel_peak_g:.2f} g"
+            )
+        if measured.front_brake_wheel_decel_asymmetry_p95_ms2 > 0:
+            lines.append(
+                f"  Front brake decel asym.:    "
+                f"{measured.front_brake_wheel_decel_asymmetry_p95_ms2:.1f} m/s^2"
+            )
 
         if measured.front_rh_settle_time_ms > 0:
             lines.append(f"  Front settle time:          {measured.front_rh_settle_time_ms:.0f} ms")
         if measured.rear_rh_settle_time_ms > 0:
             lines.append(f"  Rear settle time:           {measured.rear_rh_settle_time_ms:.0f} ms")
+        if measured.metric_fallbacks:
+            lines.append("  Metric fallbacks:")
+            for fallback in measured.metric_fallbacks:
+                lines.append(f"    - {fallback}")
 
         lines.append("")
 
@@ -386,7 +428,7 @@ def _get_ok_items(diag: Diagnosis, measured: MeasuredState | None) -> list[str]:
             ok.append(f"Rear variance: {measured.rear_rh_std_mm:.1f}mm (threshold 10.0)")
 
     if "balance" not in problem_cats:
-        ok.append("Balance: neutral handling, LLTD within range")
+        ok.append("Balance: neutral handling, roll-distribution proxy within range")
 
     if "damper" not in problem_cats:
         ok.append("Dampers: settle time and yaw response OK")

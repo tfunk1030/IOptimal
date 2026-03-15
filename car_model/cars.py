@@ -16,6 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from car_model.garage import GarageOutputModel
+from vertical_dynamics import damped_excursion_mm
+
 
 @dataclass
 class AeroCompression:
@@ -640,11 +643,18 @@ class CarModel:
     # Damper model
     damper: DamperModel = field(default_factory=lambda: DamperModel())
 
+    # Tyre vertical compliance (loaded-radius loss contributes directly to RH)
+    tyre_vertical_rate_front_nmm: float = 300.0
+    tyre_vertical_rate_rear_nmm: float = 320.0
+
     # Multi-variable ride height prediction model
     ride_height_model: RideHeightModel = field(default_factory=lambda: RideHeightModel())
 
     # Deflection model for .sto display values
     deflection: DeflectionModel = field(default_factory=lambda: DeflectionModel())
+
+    # Unified garage-output model (track-specific authoritative garage truth)
+    garage_output_model: GarageOutputModel | None = None
 
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
@@ -652,6 +662,15 @@ class CarModel:
     def total_mass(self, fuel_load_l: float) -> float:
         """Total car mass including driver and fuel (kg)."""
         return self.mass_car_kg + self.mass_driver_kg + fuel_load_l * self.fuel_density_kg_per_l
+
+    def active_garage_output_model(self, track_name: str | None = None) -> GarageOutputModel | None:
+        """Return the authoritative garage-output model for the given track."""
+        model = self.garage_output_model
+        if model is None:
+            return None
+        if model.applies_to_track(track_name):
+            return model
+        return None
 
     def to_aero_coords(self, actual_front_rh: float, actual_rear_rh: float) -> tuple[float, float]:
         """Convert actual front/rear RH to aero map query coordinates.
@@ -671,16 +690,39 @@ class CarModel:
             return aero_rear_rh, aero_front_rh
         return aero_front_rh, aero_rear_rh
 
-    def rh_excursion_p99(self, shock_vel_p99_mps: float) -> float:
-        """Estimate p99 ride height excursion (mm) from shock velocity.
+    def rh_excursion_p99(
+        self,
+        shock_vel_p99_mps: float,
+        *,
+        axle: str = "front",
+        spring_rate_nmm: float | None = None,
+        damper_coeff_nsm: float | None = None,
+    ) -> float:
+        """Estimate p99 ride-height excursion (mm) using the shared vertical model.
 
-        Uses: excursion = shock_vel / (2 * pi * dominant_freq)
-        Converts from m/s to mm.
+        This uses the BMW-calibrated effective heave mass and a baseline axle
+        spring/damper state so Step 1 and Step 2 are at least directionally
+        consistent about how bumps consume ride-height budget.
         """
-        import math
-        freq = self.rh_variance.dominant_bump_freq_hz
-        excursion_m = shock_vel_p99_mps / (2 * math.pi * freq)
-        return excursion_m * 1000  # Convert to mm
+        is_front = axle.lower().startswith("f")
+        if is_front:
+            m_eff = self.heave_spring.front_m_eff_kg
+            k_nmm = spring_rate_nmm if spring_rate_nmm is not None else self.front_heave_spring_nmm
+            c_nsm = damper_coeff_nsm if damper_coeff_nsm is not None else self.damper.front_hs_coefficient_nsm
+            tyre_rate_nmm = self.tyre_vertical_rate_front_nmm
+        else:
+            m_eff = self.heave_spring.rear_m_eff_kg
+            k_nmm = spring_rate_nmm if spring_rate_nmm is not None else self.rear_third_spring_nmm
+            c_nsm = damper_coeff_nsm if damper_coeff_nsm is not None else self.damper.rear_hs_coefficient_nsm
+            tyre_rate_nmm = self.tyre_vertical_rate_rear_nmm
+
+        return damped_excursion_mm(
+            shock_vel_p99_mps,
+            m_eff,
+            k_nmm,
+            tyre_vertical_rate_nmm=tyre_rate_nmm,
+            damper_coeff_nsm=c_nsm,
+        )
 
     def estimate_confidence(self) -> dict[str, str]:
         """Return confidence level for key model parameters.
@@ -784,11 +826,11 @@ BMW_M_HYBRID_V8 = CarModel(
         front_m_eff_kg=228.0,
         rear_m_eff_kg=2395.3,
         front_spring_range_nmm=(20.0, 200.0),
-        rear_spring_range_nmm=(100.0, 1000.0),
+        rear_spring_range_nmm=(100.0, 900.0),
         sigma_target_mm=10.0,   # SKILL.md: sigma > 5mm at >200 kph = unstable
         perch_offset_front_baseline_mm=-13.0,
         perch_offset_rear_baseline_mm=42.0,  # Verified from 2026-03-11 session
-        front_heave_hard_range_nmm=(30.0, 50.0),
+        front_heave_hard_range_nmm=(30.0, 90.0),
         front_heave_hard_range_exempt_tracks=["daytona", "le_mans"],
     ),
     corner_spring=CornerSpringModel(
@@ -903,6 +945,63 @@ BMW_M_HYBRID_V8 = CarModel(
         rear_coeff_spring_perch=0.068718,
         rear_r_squared=0.5155,
         rear_loo_rmse_mm=0.675,
+    ),
+    garage_output_model=GarageOutputModel(
+        name="BMW Sebring garage truth",
+        track_keywords=("sebring",),
+        default_front_pushrod_mm=-25.5,
+        default_rear_pushrod_mm=-29.0,
+        default_front_heave_nmm=50.0,
+        default_front_heave_perch_mm=-13.0,
+        default_rear_third_nmm=530.0,
+        default_rear_third_perch_mm=42.0,
+        default_front_torsion_od_mm=13.9,
+        default_rear_spring_nmm=170.0,
+        default_rear_spring_perch_mm=30.0,
+        default_front_camber_deg=-2.9,
+        default_front_shock_defl_max_mm=100.0,
+        default_rear_shock_defl_max_mm=150.0,
+        front_rh_floor_mm=30.0,
+        max_slider_mm=45.0,
+        min_static_defl_mm=3.0,
+        torsion_bar_rate_c=0.0008036,
+        heave_spring_defl_max_intercept_mm=106.43,
+        heave_spring_defl_max_slope=-0.310,
+        front_intercept=31.05479,
+        front_coeff_pushrod=0.054699,
+        front_coeff_heave_nmm=-0.001703,
+        front_coeff_heave_perch_mm=-0.003244,
+        front_coeff_torsion_od_mm=0.085293,
+        front_coeff_camber_deg=0.249827,
+        front_coeff_fuel_l=-0.001919,
+        rear_intercept=118.685053,
+        rear_coeff_pushrod=0.371743,
+        rear_coeff_third_nmm=0.014471,
+        rear_coeff_third_perch_mm=-1.101140,
+        rear_coeff_rear_spring_nmm=0.045074,
+        rear_coeff_rear_spring_perch_mm=-0.937916,
+        rear_coeff_front_heave_perch_mm=-0.068204,
+        rear_coeff_fuel_l=-0.008140,
+        torsion_turns_intercept=0.113040865,
+        torsion_turns_coeff_heave_nmm=-0.000161078,
+        torsion_turns_coeff_heave_perch_mm=0.000540572,
+        torsion_turns_coeff_torsion_od_mm=-0.001730502,
+        torsion_turns_coeff_front_rh_mm=0.000862398,
+        heave_defl_intercept=71.067844,
+        heave_defl_coeff_heave_nmm=-0.015976,
+        heave_defl_coeff_heave_perch_mm=-0.937587,
+        heave_defl_coeff_torsion_od_mm=-4.015412,
+        heave_defl_coeff_front_pushrod_mm=0.336211,
+        heave_defl_coeff_front_rh_mm=-0.310258,
+        heave_defl_coeff_torsion_turns=0.0,
+        slider_intercept=118.667844,
+        slider_coeff_heave_nmm=-0.015976,
+        slider_coeff_heave_perch_mm=0.062413,
+        slider_coeff_torsion_od_mm=-4.015412,
+        slider_coeff_front_pushrod_mm=0.336211,
+        slider_coeff_front_rh_mm=-0.310258,
+        slider_coeff_torsion_turns=0.0,
+        deflection=DeflectionModel(),
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
