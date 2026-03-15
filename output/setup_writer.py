@@ -292,54 +292,80 @@ def _validate_setup_values(
     step4: ARBSolution,
     step5: WheelGeometrySolution,
     step6: DamperSolution,
-) -> None:
-    """Validate all numeric values are within iRacing accepted ranges.
+    car=None,
+) -> list[str]:
+    """Validate and clamp all numeric values to iRacing accepted ranges.
 
-    Prints a warning for any out-of-range value. Does not raise — file
-    is still written so engineers can investigate.
-
-    iRacing GTP accepted ranges:
-        Ride heights: 10-80 mm
-        Heave spring: 10-200 N/mm
-        ARB blade: 1-5 (integer)
-        Damper clicks: 1-20 (integer)
-        Brake bias: 40-60%
-        Tyre pressure: 130-180 kPa (cold)
+    Mutates step objects in-place when clamping is needed.
+    Returns a list of warning messages for any values that were changed.
     """
+    from car_model.cars import GarageRanges
+    gr = car.garage_ranges if car is not None else GarageRanges()
     warnings: list[str] = []
 
-    def _chk(name: str, value: float, lo: float, hi: float, unit: str = "") -> None:
-        if value < lo or value > hi:
-            tag = "below" if value < lo else "above"
-            clamp = lo if value < lo else hi
+    def _clamp_field(obj, attr: str, lo: float, hi: float, name: str, unit: str = "") -> None:
+        value = getattr(obj, attr)
+        clamped = max(lo, min(hi, value))
+        if abs(clamped - value) > 1e-6:
             warnings.append(
-                f"setup_writer: {name}={value:.1f}{unit} {tag} iRacing "
-                f"minimum ({lo:.0f} {unit}) — clamped to {clamp:.0f}"
+                f"setup_writer: {name}={value:.1f}{unit} out of range "
+                f"[{lo:.0f}, {hi:.0f}]{unit} — clamped to {clamped:.1f}"
             )
+            setattr(obj, attr, clamped)
+
+    def _clamp_int_field(obj, attr: str, lo: int, hi: int, name: str, unit: str = "") -> None:
+        value = getattr(obj, attr)
+        clamped = max(lo, min(hi, int(round(value))))
+        if clamped != int(round(value)):
+            warnings.append(
+                f"setup_writer: {name}={value}{unit} out of range "
+                f"[{lo}, {hi}]{unit} — clamped to {clamped}"
+            )
+        setattr(obj, attr, clamped)
 
     # Ride heights (static)
-    _chk("front_static_rh_mm", step1.static_front_rh_mm, 10.0, 80.0, "mm")
-    _chk("rear_static_rh_mm", step1.static_rear_rh_mm, 10.0, 80.0, "mm")
+    _clamp_field(step1, "static_front_rh_mm", *gr.static_rh_mm, "front_static_rh", "mm")
+    _clamp_field(step1, "static_rear_rh_mm", *gr.static_rh_mm, "rear_static_rh", "mm")
+
+    # Pushrod offsets
+    _clamp_field(step1, "front_pushrod_offset_mm", *gr.front_pushrod_mm, "front_pushrod", "mm")
+    _clamp_field(step1, "rear_pushrod_offset_mm", *gr.rear_pushrod_mm, "rear_pushrod", "mm")
 
     # Heave / third spring
-    _chk("front_heave_nmm", step2.front_heave_nmm, 10.0, 200.0, "N/mm")
-    _chk("rear_third_nmm", step2.rear_third_nmm, 10.0, 900.0, "N/mm")
+    _clamp_field(step2, "front_heave_nmm", *gr.front_heave_nmm, "front_heave", " N/mm")
+    _clamp_field(step2, "rear_third_nmm", *gr.rear_third_nmm, "rear_third", " N/mm")
 
-    # ARB blades (1-5)
-    _chk("front_arb_blade", step4.front_arb_blade_start, 1.0, 5.0, "")
-    _chk("rear_arb_blade", step4.rear_arb_blade_start, 1.0, 5.0, "")
+    # Perch offsets
+    _clamp_field(step2, "perch_offset_front_mm", *gr.front_heave_perch_mm, "front_heave_perch", "mm")
+    _clamp_field(step2, "perch_offset_rear_mm", *gr.rear_third_perch_mm, "rear_third_perch", "mm")
 
-    # Damper clicks (1-20, representative corners)
+    # Corner springs
+    _clamp_field(step3, "front_torsion_od_mm", *gr.front_torsion_od_mm, "front_torsion_od", "mm")
+    _clamp_field(step3, "rear_spring_rate_nmm", *gr.rear_spring_nmm, "rear_spring_rate", " N/mm")
+    _clamp_field(step3, "rear_spring_perch_mm", *gr.rear_spring_perch_mm, "rear_spring_perch", "mm")
+
+    # ARB blades
+    _clamp_int_field(step4, "front_arb_blade_start", *gr.arb_blade, "front_arb_blade")
+    _clamp_int_field(step4, "rear_arb_blade_start", *gr.arb_blade, "rear_arb_blade")
+
+    # Wheel geometry
+    _clamp_field(step5, "front_camber_deg", *gr.camber_front_deg, "front_camber", " deg")
+    _clamp_field(step5, "rear_camber_deg", *gr.camber_rear_deg, "rear_camber", " deg")
+    _clamp_field(step5, "front_toe_mm", *gr.toe_front_mm, "front_toe", "mm")
+    _clamp_field(step5, "rear_toe_mm", *gr.toe_rear_mm, "rear_toe", "mm")
+
+    # Damper clicks
+    d_lo, d_hi = gr.damper_click
     for corner_name, corner in [
         ("lf", step6.lf), ("rf", step6.rf), ("lr", step6.lr), ("rr", step6.rr)
     ]:
-        _chk(f"{corner_name}_ls_comp", corner.ls_comp, 1.0, 20.0, "clicks")
-        _chk(f"{corner_name}_ls_rbd", corner.ls_rbd, 1.0, 20.0, "clicks")
-        _chk(f"{corner_name}_hs_comp", corner.hs_comp, 1.0, 20.0, "clicks")
-        _chk(f"{corner_name}_hs_rbd", corner.hs_rbd, 1.0, 20.0, "clicks")
+        _clamp_int_field(corner, "ls_comp", d_lo, d_hi, f"{corner_name}_ls_comp", " clicks")
+        _clamp_int_field(corner, "ls_rbd", d_lo, d_hi, f"{corner_name}_ls_rbd", " clicks")
+        _clamp_int_field(corner, "hs_comp", d_lo, d_hi, f"{corner_name}_hs_comp", " clicks")
+        _clamp_int_field(corner, "hs_rbd", d_lo, d_hi, f"{corner_name}_hs_rbd", " clicks")
+        _clamp_int_field(corner, "hs_slope", d_lo, d_hi, f"{corner_name}_hs_slope", " clicks")
 
-    for w in warnings:
-        print(f"[warning] {w}")
+    return warnings
 
 
 def write_sto(
@@ -401,15 +427,27 @@ def write_sto(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # ── Pre-write validation: warn on out-of-range values ──────────────────
-    _validate_setup_values(step1, step2, step3, step4, step5, step6)
-
-    # ── Fetch car model for physics computations ───────────────────────────
+    # ── Fetch car model ─────────────────────────────────────────────────────
     from car_model.cars import get_car as _get_car
     try:
         _car = _get_car(car_canonical)
     except Exception:
         _car = None
+
+    # ── Pre-write validation: garage correlation fix + range clamping ─────
+    from output.garage_validator import validate_and_fix_garage_correlation
+    if _car is not None:
+        garage_warnings = validate_and_fix_garage_correlation(
+            _car, step1, step2, step3, step5,
+            fuel_l=fuel_l, track_name=track_name,
+        )
+        for w in garage_warnings:
+            print(f"[garage] {w}")
+    clamp_warnings = _validate_setup_values(
+        step1, step2, step3, step4, step5, step6, car=_car,
+    )
+    for w in clamp_warnings:
+        print(f"[warning] {w}")
     garage_outputs = None
     if _car is not None:
         garage_model = _car.active_garage_output_model(track_name)

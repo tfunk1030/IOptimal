@@ -548,6 +548,15 @@ def run_solver(args: "argparse.Namespace") -> None:
         print(f"\nJSON summary saved to: {args.save}")
 
     if args.sto:
+        # Final garage correlation check before writing .sto
+        from output.garage_validator import validate_and_fix_garage_correlation
+        garage_warnings = validate_and_fix_garage_correlation(
+            car, step1, step2, step3, step5,
+            fuel_l=args.fuel, track_name=track.track_name,
+        )
+        for w in garage_warnings:
+            print(f"[garage] {w}")
+
         brake_bias, bias_reasoning = compute_brake_bias(
             car, fuel_load_l=args.fuel
         )
