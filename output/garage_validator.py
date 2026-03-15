@@ -138,21 +138,21 @@ def _clamp_step2(step2, gr) -> list[str]:
     msgs: list[str] = []
 
     old = step2.front_heave_nmm
-    val = round(_clamp(old, *gr.front_heave_nmm))
-    if val != old:
-        msgs.append(f"front_heave: {old:.0f} -> {val:.0f} N/mm (clamped)")
+    val = _snap(_clamp(old, *gr.front_heave_nmm), gr.heave_spring_resolution_nmm)
+    if abs(val - old) > 0.01:
+        msgs.append(f"front_heave: {old:.0f} -> {val:.0f} N/mm (clamped/snapped)")
         step2.front_heave_nmm = float(val)
 
     old = step2.perch_offset_front_mm
     val = _snap(_clamp(old, *gr.front_heave_perch_mm), gr.perch_resolution_mm)
-    if val != old:
+    if abs(val - old) > 0.01:
         msgs.append(f"front_heave_perch: {old:.1f} -> {val:.1f} mm (clamped/snapped)")
         step2.perch_offset_front_mm = val
 
     old = step2.rear_third_nmm
-    val = round(_clamp(old, *gr.rear_third_nmm))
-    if val != old:
-        msgs.append(f"rear_third: {old:.0f} -> {val:.0f} N/mm (clamped)")
+    val = _snap(_clamp(old, *gr.rear_third_nmm), gr.heave_spring_resolution_nmm)
+    if abs(val - old) > 0.01:
+        msgs.append(f"rear_third: {old:.0f} -> {val:.0f} N/mm (clamped/snapped)")
         step2.rear_third_nmm = float(val)
 
     old = step2.perch_offset_rear_mm
@@ -175,9 +175,9 @@ def _clamp_step3(step3, gr) -> list[str]:
         step3.front_torsion_od_mm = val
 
     old = step3.rear_spring_rate_nmm
-    val = round(_clamp(old, *gr.rear_spring_nmm))
-    if val != old:
-        msgs.append(f"rear_spring_rate: {old:.0f} -> {val:.0f} N/mm (clamped)")
+    val = _snap(_clamp(old, *gr.rear_spring_nmm), gr.rear_spring_resolution_nmm)
+    if abs(val - old) > 0.01:
+        msgs.append(f"rear_spring_rate: {old:.0f} -> {val:.0f} N/mm (clamped/snapped)")
         step3.rear_spring_rate_nmm = float(val)
 
     old = step3.rear_spring_perch_mm
