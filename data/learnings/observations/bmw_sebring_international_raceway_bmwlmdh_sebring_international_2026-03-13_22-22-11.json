@@ -4,7 +4,7 @@
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-15T01:10:32.819755+00:00",
+  "timestamp": "2026-03-15T22:26:54.249249+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -171,7 +171,7 @@
   },
   "diagnosis": {
     "assessment": "compromised",
-    "problem_count": 11,
+    "problem_count": 13,
     "problems": [
       {
         "category": "safety",
@@ -206,6 +206,14 @@
         "speed_context": "high"
       },
       {
+        "category": "platform",
+        "severity": "significant",
+        "symptom": "Braking pitch range 1.41 deg (mean +0.59 deg)",
+        "measured": 1.41,
+        "threshold": 0.9,
+        "speed_context": "braking"
+      },
+      {
         "category": "balance",
         "severity": "minor",
         "symptom": "Brake bias adjusted 9 times during session (range 45.2-46.2)",
@@ -216,9 +224,9 @@
       {
         "category": "thermal",
         "severity": "minor",
-        "symptom": "RR inner hot by +8.9C (threshold 8C)",
-        "measured": 8.9,
-        "threshold": 8.0,
+        "symptom": "LF spread +3.9C vs target +10C (too flat / outer loaded)",
+        "measured": -6.1,
+        "threshold": 4.8,
         "speed_context": "all"
       },
       {
@@ -240,9 +248,9 @@
       {
         "category": "grip",
         "severity": "significant",
-        "symptom": "Measured brake bias 68.3% differs from setup 45.2% (delta 23.0%)",
-        "measured": 68.3,
-        "threshold": 45.25,
+        "symptom": "Front braking slip p95 = 0.104 (target <0.06)",
+        "measured": 0.10435718297958374,
+        "threshold": 0.06,
         "speed_context": "braking"
       },
       {
@@ -256,10 +264,18 @@
       {
         "category": "grip",
         "severity": "minor",
-        "symptom": "Rear traction slip p95 = 0.082 (target <0.08)",
-        "measured": 0.08219777047634125,
+        "symptom": "Rear traction slip p95 = 0.091 (target <0.08)",
+        "measured": 0.09138558059930801,
         "threshold": 0.08,
         "speed_context": "traction"
+      },
+      {
+        "category": "grip",
+        "severity": "minor",
+        "symptom": "Hydraulic brake split 68.3% differs from setup 45.2% (delta 23.0%)",
+        "measured": 68.3,
+        "threshold": 45.25,
+        "speed_context": "braking"
       }
     ]
   },

@@ -79,6 +79,7 @@ def validate_and_fix_garage_correlation(
 
     # Something is wrong — attempt auto-correction
     warnings.extend(_fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
+    warnings.extend(_fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
     warnings.extend(_fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
 
     # Final verification
@@ -323,5 +324,67 @@ def _fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> 
         step1.rake_static_mm = round(
             step1.static_rear_rh_mm - step1.static_front_rh_mm, 1
         )
+
+    return msgs
+
+
+def _fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> list[str]:
+    """Fix torsion bar defl > max_torsion_bar_defl_mm by stiffening the bar or adjusting heave perch."""
+    msgs: list[str] = []
+    if garage_model.max_torsion_bar_defl_mm is None:
+        return msgs
+    max_defl = garage_model.max_torsion_bar_defl_mm
+    max_iters = 20
+
+    for _ in range(max_iters):
+        state = GarageSetupState.from_solver_steps(
+            step1=step1, step2=step2, step3=step3,
+            step5=step5, fuel_l=fuel_l,
+        )
+        outputs = garage_model.predict(state)
+        defl = outputs.torsion_bar_defl_mm
+        if defl <= max_defl + 0.1:
+            break
+
+        # Try stiffening the torsion bar (larger OD)
+        current_od = step3.front_torsion_od_mm
+        options = getattr(car.corner_spring, "front_torsion_od_options", None)
+        if options is not None:
+            larger_options = [od for od in options if od > current_od + 0.05]
+            if larger_options:
+                new_od = larger_options[0]
+                step3.front_torsion_od_mm = new_od
+                msgs.append(
+                    f"torsion bar defl {defl:.1f}mm > {max_defl:.0f}mm: "
+                    f"torsion OD {current_od:.2f} -> {new_od:.2f} mm"
+                )
+                continue
+        else:
+            # Fallback to continuous range
+            new_od = round(current_od + 0.5, 1)
+            if new_od <= gr.front_torsion_od_mm[1]:
+                step3.front_torsion_od_mm = new_od
+                msgs.append(
+                    f"torsion bar defl {defl:.1f}mm > {max_defl:.0f}mm: "
+                    f"torsion OD {current_od:.2f} -> {new_od:.2f} mm"
+                )
+                continue
+
+        # Torsion bar maxed out - make heave perch more negative to take more preload load
+        new_perch = step2.perch_offset_front_mm - gr.perch_resolution_mm
+        if new_perch >= gr.front_heave_perch_mm[0]:
+            old_perch = step2.perch_offset_front_mm
+            step2.perch_offset_front_mm = new_perch
+            msgs.append(
+                f"torsion bar defl still > {max_defl:.0f}mm after OD maxed: "
+                f"heave perch {old_perch:.0f} -> {new_perch:.0f} mm"
+            )
+            continue
+
+        msgs.append(
+            f"UNCORRECTABLE: torsion bar defl {defl:.1f}mm > {max_defl:.0f}mm "
+            f"(OD and heave perch at limits)"
+        )
+        break
 
     return msgs
