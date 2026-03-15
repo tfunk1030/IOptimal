@@ -482,6 +482,15 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
 
     # ── Phase J: Output ──
     if args.sto:
+        # Final garage correlation check before writing .sto
+        from output.garage_validator import validate_and_fix_garage_correlation
+        garage_warnings = validate_and_fix_garage_correlation(
+            car, step1, step2, step3, step5,
+            fuel_l=fuel, track_name=track.track_name,
+        )
+        for w in garage_warnings:
+            print(f"[garage] {w}")
+
         sto_path = write_sto(
             car_name=car.name,
             track_name=f"{track.track_name} — {track.track_config}",

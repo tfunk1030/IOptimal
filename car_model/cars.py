@@ -546,6 +546,36 @@ class RideHeightVariance:
 
 
 @dataclass
+class GarageRanges:
+    """iRacing-legal parameter ranges for .sto validation and clamping.
+
+    Each range is (min, max) inclusive.  Resolution fields define the
+    quantisation step that iRacing's garage enforces for each parameter.
+    """
+    front_pushrod_mm: tuple[float, float] = (-32.0, -15.0)
+    rear_pushrod_mm: tuple[float, float] = (-32.0, -15.0)
+    front_heave_nmm: tuple[float, float] = (10.0, 200.0)
+    rear_third_nmm: tuple[float, float] = (10.0, 900.0)
+    front_heave_perch_mm: tuple[float, float] = (-35.0, -5.0)  # Data: -31.5 to -10.0
+    rear_third_perch_mm: tuple[float, float] = (20.0, 55.0)
+    front_torsion_od_mm: tuple[float, float] = (13.9, 18.2)
+    rear_spring_nmm: tuple[float, float] = (100.0, 300.0)
+    rear_spring_perch_mm: tuple[float, float] = (25.0, 45.0)
+    static_rh_mm: tuple[float, float] = (10.0, 80.0)
+    arb_blade: tuple[int, int] = (1, 5)
+    damper_click: tuple[int, int] = (1, 11)  # BMW verified; Ferrari overrides
+    camber_front_deg: tuple[float, float] = (-5.0, 0.0)
+    camber_rear_deg: tuple[float, float] = (-4.0, 0.0)
+    toe_front_mm: tuple[float, float] = (-3.0, 3.0)
+    toe_rear_mm: tuple[float, float] = (-2.0, 3.0)
+    # Resolution (quantisation step sizes)
+    pushrod_resolution_mm: float = 0.5
+    heave_spring_resolution_nmm: float = 10.0  # iRacing garage steps in 10 N/mm
+    rear_spring_resolution_nmm: float = 10.0   # iRacing garage steps in 10 N/mm
+    perch_resolution_mm: float = 1.0
+
+
+@dataclass
 class CarModel:
     """Physical model for a GTP/Hypercar car."""
 
@@ -652,6 +682,9 @@ class CarModel:
 
     # Deflection model for .sto display values
     deflection: DeflectionModel = field(default_factory=lambda: DeflectionModel())
+
+    # iRacing-legal parameter ranges for .sto validation
+    garage_ranges: GarageRanges = field(default_factory=GarageRanges)
 
     # Unified garage-output model (track-specific authoritative garage truth)
     garage_output_model: GarageOutputModel | None = None
