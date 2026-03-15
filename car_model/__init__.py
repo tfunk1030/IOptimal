@@ -4,4 +4,4 @@ Per-car parameter definitions with valid ranges, units, constraint
 relationships, mass properties, and aero map axis conventions.
 """
 
-from car_model.cars import CarModel, get_car
+from car_model.cars import CarModel, GarageRanges, get_car
