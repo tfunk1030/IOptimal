@@ -539,16 +539,21 @@ def write_sto(
             _dm = _car.deflection
             _k_torsion = _car.corner_spring.torsion_bar_rate(_f_od)
 
-            _lf_sd = round(_dm.shock_defl_front(step1.front_pushrod_offset_mm), 1)
-            _lr_sd = round(_dm.shock_defl_rear(step1.rear_pushrod_offset_mm), 1)
+            _lf_sd = round(_dm.shock_defl_front(
+                step1.front_pushrod_offset_mm, _fh, _f_od), 1)
+            _lr_sd = round(_dm.shock_defl_rear(
+                step1.rear_pushrod_offset_mm, step3.rear_spring_rate_nmm,
+                step2.rear_third_nmm, step2.perch_offset_rear_mm), 1)
             _tb_defl = round(_dm.torsion_bar_defl(_fh, _fh_perch, _k_torsion), 1)
             _heave_defl_static = round(_dm.heave_spring_defl_static(_fh, _fh_perch, _f_od), 1)
             _heave_slider_static = round(_dm.heave_slider_defl_static(_fh, _fh_perch, _f_od), 1)
             _lr_spring_defl = round(_dm.rear_spring_defl_static(
-                step3.rear_spring_rate_nmm, step3.rear_spring_perch_mm), 1)
+                step3.rear_spring_rate_nmm, step3.rear_spring_perch_mm,
+                step1.rear_pushrod_offset_mm), 1)
             _r3_defl = round(_dm.third_spring_defl_static(
                 step2.rear_third_nmm, step2.perch_offset_rear_mm), 1)
-            _r3_slider = round(_dm.third_slider_defl_static(_r3_defl), 1)
+            _r3_slider = round(_dm.third_slider_defl_static(
+                _r3_defl, step2.perch_offset_rear_mm), 1)
         else:
             _lf_sd = round(step1.static_front_rh_mm * 0.487, 1)
             _lr_sd = round(step1.static_rear_rh_mm * 0.462, 1)

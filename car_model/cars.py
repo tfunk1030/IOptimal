@@ -241,12 +241,20 @@ class DeflectionModel:
     Rear parameters use physics-based force-balance models (exact on S1/S2).
     Shock deflections use pushrod-offset-based models (exact on S1/S2).
     """
-    # --- Shock deflection: defl = intercept + coeff * pushrod_offset ---
-    # Calibrated from 31 unique setups across 41 BMW sessions (March 2026)
-    shock_front_intercept: float = 21.228
-    shock_front_pushrod_coeff: float = 0.226
-    shock_rear_intercept: float = 25.924
-    shock_rear_pushrod_coeff: float = 0.266
+    # --- Front Shock Defl: pushrod + heave + OD ---
+    # Calibrated from 31 unique setups, R²=0.695, RMSE=0.35mm
+    shock_front_intercept: float = 42.783
+    shock_front_pushrod_coeff: float = 0.105
+    shock_front_heave_coeff: float = 0.003166
+    shock_front_od_coeff: float = -1.771
+
+    # --- Rear Shock Defl: pushrod + spring_rate + third_rate + third_perch ---
+    # Calibrated from 31 unique setups, R²=0.900, RMSE=0.45mm
+    shock_rear_intercept: float = 22.391
+    shock_rear_pushrod_coeff: float = 0.132
+    shock_rear_spring_rate_coeff: float = 0.011
+    shock_rear_third_rate_coeff: float = -0.013
+    shock_rear_third_perch_coeff: float = 0.110
 
     # --- TorsionBarDefl ---
     # TBDefl = (load_intercept + load_heave*heave + load_perch*perch) / k_torsion
@@ -267,19 +275,17 @@ class DeflectionModel:
     heave_defl_inv_od4_coeff: float = 666311.0
 
     # --- HeaveSliderDeflStatic ---
-    # SldrS = intercept + heave_coeff*heave + perch_coeff*perch + od_coeff*OD
-    # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.688
-    slider_intercept: float = 102.04
-    slider_heave_coeff: float = -0.000303
-    slider_perch_coeff: float = 0.091
-    slider_od_coeff: float = -4.108
+    # Exact physical relationship: slider = offset + heave_spring_defl + perch
+    # Calibrated from 31 unique setups across 41 BMW sessions, R²=1.000
+    slider_offset: float = 47.6
 
-    # --- Rear SpringDeflStatic (force-balance) ---
-    # defl = (load - perch_coeff * spring_perch) / spring_rate
-    # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.828
-    # Regression: defl*rate = 6091.76 - 115.89*perch → perch_coeff stored as positive
-    rear_spring_eff_load: float = 6091.76
-    rear_spring_perch_coeff: float = 115.89
+    # --- Rear SpringDeflStatic (direct form) ---
+    # defl = intercept + inv_rate_coeff/rate + perch_rate_coeff*perch/rate + pushrod_coeff*pushrod
+    # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.977, RMSE=0.51mm
+    rear_spring_intercept: float = 18.352
+    rear_spring_inv_rate_coeff: float = 5108.13
+    rear_spring_perch_rate_coeff: float = -153.345
+    rear_spring_pushrod_coeff: float = 0.188
 
     # --- ThirdSpringDeflStatic (force-balance) ---
     # defl = (load - perch_coeff * third_perch) / third_rate
@@ -289,11 +295,9 @@ class DeflectionModel:
     third_spring_perch_coeff: float = 357.96
 
     # --- ThirdSliderDeflStatic ---
-    # slider = intercept + coeff * ThirdSpringDeflStatic
-    # Links slider travel to spring deflection via geometric lever ratio.
-    # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.373
-    third_slider_intercept: float = 18.224
-    third_slider_spring_defl_coeff: float = 0.283
+    # Exact physical relationship: slider = offset + third_perch + third_spring_defl
+    # Calibrated from 31 unique setups across 41 BMW sessions, R²=1.000
+    third_slider_offset: float = -27.8
 
     # --- Rear SpringDeflMax ---
     # defl_max = intercept + rate_coeff * spring_rate + perch_coeff * spring_perch
@@ -309,11 +313,22 @@ class DeflectionModel:
     third_spring_defl_max_rate_coeff: float = -0.072
     third_spring_defl_max_perch_coeff: float = -0.036
 
-    def shock_defl_front(self, pushrod_offset_mm: float) -> float:
-        return self.shock_front_intercept + self.shock_front_pushrod_coeff * pushrod_offset_mm
+    def shock_defl_front(self, pushrod_offset_mm: float,
+                          heave_nmm: float = 0.0, od_mm: float = 0.0) -> float:
+        return (self.shock_front_intercept
+                + self.shock_front_pushrod_coeff * pushrod_offset_mm
+                + self.shock_front_heave_coeff * heave_nmm
+                + self.shock_front_od_coeff * od_mm)
 
-    def shock_defl_rear(self, pushrod_offset_mm: float) -> float:
-        return self.shock_rear_intercept + self.shock_rear_pushrod_coeff * pushrod_offset_mm
+    def shock_defl_rear(self, pushrod_offset_mm: float,
+                         spring_rate_nmm: float = 0.0,
+                         third_rate_nmm: float = 0.0,
+                         third_perch_mm: float = 0.0) -> float:
+        return (self.shock_rear_intercept
+                + self.shock_rear_pushrod_coeff * pushrod_offset_mm
+                + self.shock_rear_spring_rate_coeff * spring_rate_nmm
+                + self.shock_rear_third_rate_coeff * third_rate_nmm
+                + self.shock_rear_third_perch_coeff * third_perch_mm)
 
     def torsion_bar_defl(self, heave_nmm: float, perch_mm: float, k_torsion: float) -> float:
         load = (self.tb_load_intercept
@@ -328,21 +343,24 @@ class DeflectionModel:
                 + self.heave_defl_inv_od4_coeff / max(od_mm ** 4, 1.0))
 
     def heave_slider_defl_static(self, heave_nmm: float, perch_mm: float, od_mm: float) -> float:
-        return (self.slider_intercept
-                + self.slider_heave_coeff * heave_nmm
-                + self.slider_perch_coeff * perch_mm
-                + self.slider_od_coeff * od_mm)
+        heave_defl = self.heave_spring_defl_static(heave_nmm, perch_mm, od_mm)
+        return self.slider_offset + heave_defl + perch_mm
 
-    def rear_spring_defl_static(self, spring_rate_nmm: float, spring_perch_mm: float) -> float:
-        return ((self.rear_spring_eff_load - self.rear_spring_perch_coeff * spring_perch_mm)
-                / max(spring_rate_nmm, 1.0))
+    def rear_spring_defl_static(self, spring_rate_nmm: float, spring_perch_mm: float,
+                                 pushrod_offset_mm: float = 0.0) -> float:
+        rate = max(spring_rate_nmm, 1.0)
+        return (self.rear_spring_intercept
+                + self.rear_spring_inv_rate_coeff / rate
+                + self.rear_spring_perch_rate_coeff * spring_perch_mm / rate
+                + self.rear_spring_pushrod_coeff * pushrod_offset_mm)
 
     def third_spring_defl_static(self, third_rate_nmm: float, third_perch_mm: float) -> float:
         return ((self.third_spring_eff_load - self.third_spring_perch_coeff * third_perch_mm)
                 / max(third_rate_nmm, 1.0))
 
-    def third_slider_defl_static(self, third_spring_defl_mm: float) -> float:
-        return self.third_slider_intercept + self.third_slider_spring_defl_coeff * third_spring_defl_mm
+    def third_slider_defl_static(self, third_spring_defl_mm: float,
+                                  third_perch_mm: float = 0.0) -> float:
+        return self.third_slider_offset + third_perch_mm + third_spring_defl_mm
 
     def rear_spring_defl_max(self, spring_rate_nmm: float, spring_perch_mm: float) -> float:
         """Max rear spring deflection (mm) from rate and perch."""
