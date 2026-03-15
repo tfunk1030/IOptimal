@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from car_model.garage import GarageOutputModel
+
 
 @dataclass
 class AeroCompression:
@@ -646,12 +648,24 @@ class CarModel:
     # Deflection model for .sto display values
     deflection: DeflectionModel = field(default_factory=lambda: DeflectionModel())
 
+    # Unified garage-output model (track-specific authoritative garage truth)
+    garage_output_model: GarageOutputModel | None = None
+
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
 
     def total_mass(self, fuel_load_l: float) -> float:
         """Total car mass including driver and fuel (kg)."""
         return self.mass_car_kg + self.mass_driver_kg + fuel_load_l * self.fuel_density_kg_per_l
+
+    def active_garage_output_model(self, track_name: str | None = None) -> GarageOutputModel | None:
+        """Return the authoritative garage-output model for the given track."""
+        model = self.garage_output_model
+        if model is None:
+            return None
+        if model.applies_to_track(track_name):
+            return model
+        return None
 
     def to_aero_coords(self, actual_front_rh: float, actual_rear_rh: float) -> tuple[float, float]:
         """Convert actual front/rear RH to aero map query coordinates.
@@ -788,7 +802,7 @@ BMW_M_HYBRID_V8 = CarModel(
         sigma_target_mm=10.0,   # SKILL.md: sigma > 5mm at >200 kph = unstable
         perch_offset_front_baseline_mm=-13.0,
         perch_offset_rear_baseline_mm=42.0,  # Verified from 2026-03-11 session
-        front_heave_hard_range_nmm=(30.0, 50.0),
+        front_heave_hard_range_nmm=(30.0, 90.0),
         front_heave_hard_range_exempt_tracks=["daytona", "le_mans"],
     ),
     corner_spring=CornerSpringModel(
@@ -903,6 +917,63 @@ BMW_M_HYBRID_V8 = CarModel(
         rear_coeff_spring_perch=0.068718,
         rear_r_squared=0.5155,
         rear_loo_rmse_mm=0.675,
+    ),
+    garage_output_model=GarageOutputModel(
+        name="BMW Sebring garage truth",
+        track_keywords=("sebring",),
+        default_front_pushrod_mm=-25.5,
+        default_rear_pushrod_mm=-29.0,
+        default_front_heave_nmm=50.0,
+        default_front_heave_perch_mm=-13.0,
+        default_rear_third_nmm=530.0,
+        default_rear_third_perch_mm=42.0,
+        default_front_torsion_od_mm=13.9,
+        default_rear_spring_nmm=170.0,
+        default_rear_spring_perch_mm=30.0,
+        default_front_camber_deg=-2.9,
+        default_front_shock_defl_max_mm=100.0,
+        default_rear_shock_defl_max_mm=150.0,
+        front_rh_floor_mm=30.0,
+        max_slider_mm=45.0,
+        min_static_defl_mm=3.0,
+        torsion_bar_rate_c=0.0008036,
+        heave_spring_defl_max_intercept_mm=106.43,
+        heave_spring_defl_max_slope=-0.310,
+        front_intercept=31.05479,
+        front_coeff_pushrod=0.054699,
+        front_coeff_heave_nmm=-0.001703,
+        front_coeff_heave_perch_mm=-0.003244,
+        front_coeff_torsion_od_mm=0.085293,
+        front_coeff_camber_deg=0.249827,
+        front_coeff_fuel_l=-0.001919,
+        rear_intercept=118.685053,
+        rear_coeff_pushrod=0.371743,
+        rear_coeff_third_nmm=0.014471,
+        rear_coeff_third_perch_mm=-1.101140,
+        rear_coeff_rear_spring_nmm=0.045074,
+        rear_coeff_rear_spring_perch_mm=-0.937916,
+        rear_coeff_front_heave_perch_mm=-0.068204,
+        rear_coeff_fuel_l=-0.008140,
+        torsion_turns_intercept=0.113040865,
+        torsion_turns_coeff_heave_nmm=-0.000161078,
+        torsion_turns_coeff_heave_perch_mm=0.000540572,
+        torsion_turns_coeff_torsion_od_mm=-0.001730502,
+        torsion_turns_coeff_front_rh_mm=0.000862398,
+        heave_defl_intercept=71.067844,
+        heave_defl_coeff_heave_nmm=-0.015976,
+        heave_defl_coeff_heave_perch_mm=-0.937587,
+        heave_defl_coeff_torsion_od_mm=-4.015412,
+        heave_defl_coeff_front_pushrod_mm=0.336211,
+        heave_defl_coeff_front_rh_mm=-0.310258,
+        heave_defl_coeff_torsion_turns=0.0,
+        slider_intercept=118.667844,
+        slider_coeff_heave_nmm=-0.015976,
+        slider_coeff_heave_perch_mm=0.062413,
+        slider_coeff_torsion_od_mm=-4.015412,
+        slider_coeff_front_pushrod_mm=0.336211,
+        slider_coeff_front_rh_mm=-0.310258,
+        slider_coeff_torsion_turns=0.0,
+        deflection=DeflectionModel(),
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )

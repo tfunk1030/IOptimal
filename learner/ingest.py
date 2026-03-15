@@ -24,10 +24,11 @@ import sys
 from pathlib import Path
 
 from learner.knowledge_store import KnowledgeStore
-from learner.observation import build_observation
+from learner.observation import Observation, build_observation
 from learner.delta_detector import detect_delta, SessionDelta
 from learner.empirical_models import fit_models
 from learner.recall import KnowledgeRecall
+from learner.sanity import filter_plausible_lap_times, is_plausible_lap_time, select_valid_lap
 
 
 def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
@@ -53,22 +54,15 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     ibt = IBTFile(ibt_path)
     track = build_profile(ibt_path)
 
-    # Extract measurements (handles lap selection internally)
-    measured = extract_measurements(ibt_path, car, lap=lap)
+    lap_num, start, end, _lap_time = select_valid_lap(
+        ibt,
+        car=car_name,
+        track=track.track_name,
+        lap=lap,
+    )
 
-    # Find lap indices for segment/driver (needs explicit start/end)
-    if lap:
-        for ln, s, e in ibt.lap_boundaries():
-            if ln == lap:
-                start, end = s, e
-                break
-        else:
-            raise ValueError(f"Lap {lap} not found")
-    else:
-        result = ibt.best_lap_indices()
-        if result is None:
-            raise ValueError("No valid laps found")
-        start, end = result
+    # Extract measurements with the same validated lap used below.
+    measured = extract_measurements(ibt_path, car, lap=lap_num)
 
     setup = CurrentSetup.from_ibt(ibt)
     corners = segment_lap(ibt, start, end, car=car, tick_rate=ibt.tick_rate)
@@ -258,6 +252,138 @@ def ingest_ibt(
     return result
 
 
+def rebuild_track_learnings(
+    car_name: str,
+    track: str,
+    *,
+    store: KnowledgeStore | None = None,
+    repair_invalid_only: bool = True,
+    verbose: bool = True,
+) -> dict:
+    """Rebuild stored observations, deltas, models, and insights for one car/track."""
+    store = store or KnowledgeStore()
+    repo_root = Path(__file__).resolve().parent.parent
+
+    observations = sorted(
+        store.list_observations(car=car_name, track=track),
+        key=lambda obs: obs.get("session_id", ""),
+    )
+    if not observations:
+        return {
+            "repaired_sessions": [],
+            "removed_sessions": [],
+            "skipped_sessions": [],
+            "rebuilt_deltas": 0,
+            "model_updated": False,
+            "insights_updated": False,
+        }
+
+    repaired_sessions: list[str] = []
+    removed_sessions: list[str] = []
+    skipped_sessions: list[str] = []
+
+    for existing in observations:
+        lap_time = existing.get("performance", {}).get("best_lap_time_s")
+        if repair_invalid_only and is_plausible_lap_time(lap_time, car_name, existing.get("track", track)):
+            continue
+
+        ibt_ref = existing.get("ibt_path", "")
+        ibt_path = Path(ibt_ref)
+        if not ibt_path.is_absolute():
+            ibt_path = repo_root / ibt_path
+        if not ibt_path.exists():
+            skipped_sessions.append(existing.get("session_id", ""))
+            if verbose:
+                print(f"Skipping rebuild for missing IBT: {ibt_path}")
+            continue
+
+        try:
+            track_profile, measured, setup, driver, diag, corners, _ibt = _run_analyzer(
+                car_name,
+                str(ibt_path),
+            )
+        except ValueError as exc:
+            store.observation_path(existing["session_id"]).unlink(missing_ok=True)
+            removed_sessions.append(existing["session_id"])
+            if verbose:
+                print(f"Removed observation with no valid lap: {existing['session_id']} ({exc})")
+            continue
+        rebuilt = build_observation(
+            session_id=existing["session_id"],
+            ibt_path=ibt_ref or str(ibt_path),
+            car_name=car_name,
+            track_profile=track_profile,
+            measured_state=measured,
+            current_setup=setup,
+            driver_profile_obj=driver,
+            diagnosis_obj=diag,
+            corners=corners,
+        )
+        store.save_observation(existing["session_id"], rebuilt.to_dict())
+        repaired_sessions.append(existing["session_id"])
+        if verbose:
+            print(f"Rebuilt observation: {existing['session_id']} ({diag.lap_time_s:.3f}s)")
+
+    track_key_short = track.lower().split()[0]
+    for delta_path in (store.base / "deltas").glob(f"{car_name}_{track_key_short}_delta_*.json"):
+        delta_path.unlink()
+
+    observations = sorted(
+        store.list_observations(car=car_name, track=track),
+        key=lambda obs: obs.get("session_id", ""),
+    )
+    rebuilt_deltas = 0
+    for idx in range(1, len(observations)):
+        delta_result = detect_delta(
+            Observation.from_dict(observations[idx - 1]),
+            Observation.from_dict(observations[idx]),
+        )
+        delta_id = f"{car_name}_{track_key_short}_delta_{idx:03d}"
+        store.save_delta(delta_id, delta_result.to_dict())
+        rebuilt_deltas += 1
+
+    all_obs = store.list_observations(car=car_name, track=track)
+    all_deltas = store.list_deltas(car=car_name, track=track)
+    models = fit_models(all_obs, all_deltas, car_name, track)
+    model_id = f"{car_name}_{track_key_short}_empirical".lower()
+    store.save_model(model_id, models.to_dict())
+
+    insights = _generate_insights(all_obs, all_deltas, models, car_name, track)
+    insight_id = f"{car_name}_{track_key_short}_insights".lower()
+    store.save_insights(insight_id, insights)
+
+    try:
+        from learner.cross_track import build_global_model
+        build_global_model(car_name, store)
+    except Exception as exc:
+        if verbose:
+            print(f"Global model rebuild skipped: {exc}")
+
+    all_store_obs = store.list_observations()
+    idx = store.load_index()
+    idx["sessions"] = sorted(obs.get("session_id", "") for obs in all_store_obs if obs.get("session_id"))
+    idx["total_observations"] = len(all_store_obs)
+    idx["total_deltas"] = len(list((store.base / "deltas").glob("*.json")))
+    idx["cars_seen"] = sorted({obs.get("car", "") for obs in all_store_obs if obs.get("car")})
+    idx["tracks_seen"] = sorted(
+        {
+            f"{obs.get('track', '')}_{obs.get('track_config', '')}".rstrip("_")
+            for obs in all_store_obs
+            if obs.get("track")
+        }
+    )
+    store.save_index(idx)
+
+    return {
+        "repaired_sessions": repaired_sessions,
+        "removed_sessions": removed_sessions,
+        "skipped_sessions": skipped_sessions,
+        "rebuilt_deltas": rebuilt_deltas,
+        "model_updated": True,
+        "insights_updated": True,
+    }
+
+
 def _generate_insights(
     observations: list[dict],
     deltas: list[dict],
@@ -287,6 +413,7 @@ def _generate_insights(
         lt = obs.get("performance", {}).get("best_lap_time_s", 0)
         if lt > 0:
             lap_times.append(lt)
+    lap_times = filter_plausible_lap_times(lap_times, car=car, track=track)
     if lap_times:
         best = min(lap_times)
         worst = max(lap_times)

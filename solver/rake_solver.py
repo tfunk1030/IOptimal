@@ -47,6 +47,7 @@ import numpy as np
 from scipy.optimize import minimize, brentq
 
 from aero_model.interpolator import AeroSurface
+from car_model.garage import GarageSetupState
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
@@ -221,6 +222,7 @@ class RakeSolver:
         actual_rear_dyn: float,
         front_excursion_p99: float,
         target_balance: float,
+        fuel_load_l: float,
         converged: bool,
         iterations: int,
         mode: str,
@@ -242,40 +244,78 @@ class RakeSolver:
         static_front = max(static_front, self.car.min_front_rh_static)
         static_rear = max(static_rear, self.car.min_rear_rh_static)
 
-        # Snap pushrods to 0.5mm increments (iRacing garage constraint)
-        front_pushrod = round(self.car.pushrod.front_offset_for_rh(static_front) * 2) / 2
-
-        # Rear pushrod: use multi-variable RH model if calibrated
+        garage_model = self.car.active_garage_output_model(self.track.track_name)
         rh_model = self.car.ride_height_model
-        if rh_model.is_calibrated:
-            # Use baseline heave/spring values (step2/step3 haven't run yet).
-            # These will be reconciled after step2 in solve.py.
-            baseline_third_nmm = self.car.rear_third_spring_nmm  # car default
-            baseline_heave_perch = self.car.heave_spring.perch_offset_front_baseline_mm
-            baseline_rear_spring = self.car.corner_spring.rear_spring_range_nmm[0]
-            rear_pushrod = rh_model.pushrod_for_target_rh(
-                static_rear, baseline_third_nmm,
-                baseline_rear_spring, baseline_heave_perch,
+        if garage_model is not None:
+            baseline = garage_model.default_state(fuel_l=fuel_load_l)
+            front_pushrod = garage_model.front_pushrod_for_static_rh(
+                static_front,
+                front_heave_nmm=baseline.front_heave_nmm,
+                front_heave_perch_mm=baseline.front_heave_perch_mm,
+                front_torsion_od_mm=baseline.front_torsion_od_mm,
+                front_camber_deg=baseline.front_camber_deg,
+                fuel_l=fuel_load_l,
             )
+            rear_pushrod = garage_model.rear_pushrod_for_static_rh(
+                static_rear,
+                rear_third_nmm=baseline.rear_third_nmm,
+                rear_third_perch_mm=baseline.rear_third_perch_mm,
+                rear_spring_nmm=baseline.rear_spring_nmm,
+                rear_spring_perch_mm=baseline.rear_spring_perch_mm,
+                front_heave_perch_mm=baseline.front_heave_perch_mm,
+                fuel_l=fuel_load_l,
+            )
+            front_pushrod = round(front_pushrod * 2) / 2
+            rear_pushrod = round(rear_pushrod * 2) / 2
+            outputs = garage_model.predict(GarageSetupState(
+                front_pushrod_mm=front_pushrod,
+                rear_pushrod_mm=rear_pushrod,
+                front_heave_nmm=baseline.front_heave_nmm,
+                front_heave_perch_mm=baseline.front_heave_perch_mm,
+                rear_third_nmm=baseline.rear_third_nmm,
+                rear_third_perch_mm=baseline.rear_third_perch_mm,
+                front_torsion_od_mm=baseline.front_torsion_od_mm,
+                rear_spring_nmm=baseline.rear_spring_nmm,
+                rear_spring_perch_mm=baseline.rear_spring_perch_mm,
+                front_camber_deg=baseline.front_camber_deg,
+                fuel_l=fuel_load_l,
+            ))
+            static_front = outputs.front_static_rh_mm
+            static_rear = outputs.rear_static_rh_mm
         else:
-            rear_pushrod = self.car.pushrod.rear_offset_for_rh(static_rear)
-        rear_pushrod = round(rear_pushrod * 2) / 2
+            # Snap pushrods to 0.5mm increments (iRacing garage constraint)
+            front_pushrod = round(self.car.pushrod.front_offset_for_rh(static_front) * 2) / 2
 
-        # Recompute actual static RH from snapped pushrod
-        if rh_model.front_is_calibrated:
-            static_front = rh_model.predict_front_static_rh(
-                heave_nmm=self.car.front_heave_spring_nmm,
-                camber_deg=self.car.geometry.front_camber_baseline_deg,
-            )
-        else:
-            static_front = self.car.pushrod.front_rh_for_offset(front_pushrod)
-        if rh_model.is_calibrated:
-            static_rear = rh_model.predict_rear_static_rh(
-                rear_pushrod, baseline_third_nmm,
-                baseline_rear_spring, baseline_heave_perch,
-            )
-        else:
-            static_rear = self.car.pushrod.rear_rh_for_offset(rear_pushrod)
+            # Rear pushrod: use multi-variable RH model if calibrated
+            if rh_model.is_calibrated:
+                # Use baseline heave/spring values (step2/step3 haven't run yet).
+                # These will be reconciled after step2 in solve.py.
+                baseline_third_nmm = self.car.rear_third_spring_nmm  # car default
+                baseline_heave_perch = self.car.heave_spring.perch_offset_front_baseline_mm
+                baseline_rear_spring = self.car.corner_spring.rear_spring_range_nmm[0]
+                rear_pushrod = rh_model.pushrod_for_target_rh(
+                    static_rear, baseline_third_nmm,
+                    baseline_rear_spring, baseline_heave_perch,
+                )
+            else:
+                rear_pushrod = self.car.pushrod.rear_offset_for_rh(static_rear)
+            rear_pushrod = round(rear_pushrod * 2) / 2
+
+            # Recompute actual static RH from snapped pushrod
+            if rh_model.front_is_calibrated:
+                static_front = rh_model.predict_front_static_rh(
+                    heave_nmm=self.car.front_heave_spring_nmm,
+                    camber_deg=self.car.geometry.front_camber_baseline_deg,
+                )
+            else:
+                static_front = self.car.pushrod.front_rh_for_offset(front_pushrod)
+            if rh_model.is_calibrated:
+                static_rear = rh_model.predict_rear_static_rh(
+                    rear_pushrod, baseline_third_nmm,
+                    baseline_rear_spring, baseline_heave_perch,
+                )
+            else:
+                static_rear = self.car.pushrod.rear_rh_for_offset(rear_pushrod)
 
         front_min_p99 = actual_front_dyn - front_excursion_p99
         vb_margin = front_min_p99 - self.car.vortex_burst_threshold_mm
@@ -396,6 +436,7 @@ class RakeSolver:
             actual_rear_dyn=dyn_rear,
             front_excursion_p99=front_excursion_p99,
             target_balance=target_balance,
+            fuel_load_l=fuel_load_l,
             converged=True,
             iterations=1,  # Root finding, not iterative optimization
             mode="pinned_front",
@@ -476,6 +517,7 @@ class RakeSolver:
             actual_rear_dyn=float(best_result.x[1]),
             front_excursion_p99=front_excursion_p99,
             target_balance=target_balance,
+            fuel_load_l=fuel_load_l,
             converged=best_result.success,
             iterations=best_result.nit,
             mode="free_optimization",
@@ -511,6 +553,9 @@ def reconcile_ride_heights(
     step1: RakeSolution,
     step2,
     step3,
+    step5=None,
+    fuel_load_l: float = 0.0,
+    track_name: str | None = None,
     verbose: bool = True,
 ) -> None:
     """Reconcile static ride heights after step2+step3 provide actual spring values.
@@ -518,6 +563,80 @@ def reconcile_ride_heights(
     Modifies step1 in-place with refined static RH, pushrod, and rake values.
     Called from both solve.py and produce.py after steps 2 and 3.
     """
+    garage_model = car.active_garage_output_model(track_name)
+    if garage_model is not None:
+        front_camber = (
+            float(step5.front_camber_deg)
+            if step5 is not None and hasattr(step5, "front_camber_deg")
+            else float(car.geometry.front_camber_baseline_deg)
+        )
+        target_front_rh = max(
+            car.min_front_rh_static,
+            round(step1.dynamic_front_rh_mm + step1.aero_compression_front_mm, 3),
+        )
+        target_rear_rh = max(
+            car.min_rear_rh_static,
+            round(step1.dynamic_rear_rh_mm + step1.aero_compression_rear_mm, 3),
+        )
+
+        new_front_pushrod = garage_model.front_pushrod_for_static_rh(
+            target_front_rh,
+            front_heave_nmm=step2.front_heave_nmm,
+            front_heave_perch_mm=step2.perch_offset_front_mm,
+            front_torsion_od_mm=step3.front_torsion_od_mm,
+            front_camber_deg=front_camber,
+            fuel_l=fuel_load_l,
+        )
+        new_rear_pushrod = garage_model.rear_pushrod_for_static_rh(
+            target_rear_rh,
+            rear_third_nmm=step2.rear_third_nmm,
+            rear_third_perch_mm=step2.perch_offset_rear_mm,
+            rear_spring_nmm=step3.rear_spring_rate_nmm,
+            rear_spring_perch_mm=step3.rear_spring_perch_mm,
+            front_heave_perch_mm=step2.perch_offset_front_mm,
+            fuel_l=fuel_load_l,
+        )
+        new_front_pushrod = round(new_front_pushrod * 2) / 2
+        new_rear_pushrod = round(new_rear_pushrod * 2) / 2
+
+        outputs = garage_model.predict(
+            GarageSetupState(
+                front_pushrod_mm=new_front_pushrod,
+                rear_pushrod_mm=new_rear_pushrod,
+                front_heave_nmm=float(step2.front_heave_nmm),
+                front_heave_perch_mm=float(step2.perch_offset_front_mm),
+                rear_third_nmm=float(step2.rear_third_nmm),
+                rear_third_perch_mm=float(step2.perch_offset_rear_mm),
+                front_torsion_od_mm=float(step3.front_torsion_od_mm),
+                rear_spring_nmm=float(step3.rear_spring_rate_nmm),
+                rear_spring_perch_mm=float(step3.rear_spring_perch_mm),
+                front_camber_deg=float(front_camber),
+                fuel_l=float(fuel_load_l),
+            ),
+            front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
+        )
+
+        if verbose:
+            if abs(outputs.front_static_rh_mm - step1.static_front_rh_mm) > 0.05:
+                print(
+                    f"  Front RH round-trip: {step1.static_front_rh_mm:.1f} -> "
+                    f"{outputs.front_static_rh_mm:.1f} mm "
+                    f"(pushrod {step1.front_pushrod_offset_mm:.1f} -> {new_front_pushrod:.1f})"
+                )
+            if abs(outputs.rear_static_rh_mm - step1.static_rear_rh_mm) > 0.05:
+                print(
+                    f"  Rear RH round-trip: {step1.static_rear_rh_mm:.1f} -> "
+                    f"{outputs.rear_static_rh_mm:.1f} mm "
+                    f"(pushrod {step1.rear_pushrod_offset_mm:.1f} -> {new_rear_pushrod:.1f})"
+                )
+
+        step1.front_pushrod_offset_mm = round(new_front_pushrod, 1)
+        step1.rear_pushrod_offset_mm = round(new_rear_pushrod, 1)
+        step1.static_front_rh_mm = round(outputs.front_static_rh_mm, 1)
+        step1.static_rear_rh_mm = round(outputs.rear_static_rh_mm, 1)
+        step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
+        return
+
     rh_model = car.ride_height_model
 
     # Front RH: refine with actual heave spring from step2

@@ -1,10 +1,10 @@
 {
   "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-11_10-50-42",
-  "ibt_path": "data/telemetry/bmwlmdh_sebring international 2026-03-11 10-50-42.ibt",
+  "ibt_path": "ibtfiles\\bmwlmdh_sebring international 2026-03-11 10-50-42.ibt",
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-14T08:01:27.585307+00:00",
+  "timestamp": "2026-03-15T06:08:19.201541+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -85,11 +85,11 @@
     "front_bottoming_events": 1,
     "rear_bottoming_events": 3,
     "front_heave_defl_p99_mm": 90.09,
-    "front_heave_travel_used_pct": 94.0,
-    "front_heave_travel_used_braking_pct": 95.7,
+    "front_heave_travel_used_pct": 92.5,
+    "front_heave_travel_used_braking_pct": 94.2,
     "rear_heave_defl_p99_mm": 0.0,
     "rear_heave_travel_used_pct": 0.0,
-    "heave_bottoming_events_front": 19,
+    "heave_bottoming_events_front": 11,
     "heave_bottoming_events_rear": 0,
     "front_rh_settle_time_ms": 0.0,
     "rear_rh_settle_time_ms": 0.0,
@@ -176,24 +176,24 @@
       {
         "category": "safety",
         "severity": "critical",
-        "symptom": "Front heave spring travel 96% exhausted under braking (p99 defl 91.5mm)",
-        "measured": 95.7,
-        "threshold": 85.0,
-        "speed_context": "braking"
-      },
-      {
-        "category": "safety",
-        "severity": "critical",
-        "symptom": "19 front heave spring bottoming events (deflection within 2mm of DeflMax)",
-        "measured": 19.0,
+        "symptom": "11 front heave spring bottoming events (deflection within 2mm of DeflMax)",
+        "measured": 11.0,
         "threshold": 0.0,
         "speed_context": "all"
       },
       {
         "category": "safety",
         "severity": "significant",
-        "symptom": "Front heave spring travel 94% used at speed (p99 defl 90.1mm)",
-        "measured": 94.0,
+        "symptom": "Front heave spring travel 94% exhausted under braking (p99 defl 91.5mm)",
+        "measured": 94.2,
+        "threshold": 85.0,
+        "speed_context": "braking"
+      },
+      {
+        "category": "safety",
+        "severity": "significant",
+        "symptom": "Front heave spring travel 92% used at speed (p99 defl 90.1mm)",
+        "measured": 92.5,
         "threshold": 85.0,
         "speed_context": "high"
       },
