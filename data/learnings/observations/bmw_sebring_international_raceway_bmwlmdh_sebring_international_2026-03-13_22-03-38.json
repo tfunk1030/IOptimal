@@ -4,7 +4,7 @@
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-15T01:10:32.060088+00:00",
+  "timestamp": "2026-03-15T22:26:53.511750+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -171,16 +171,8 @@
   },
   "diagnosis": {
     "assessment": "compromised",
-    "problem_count": 10,
+    "problem_count": 13,
     "problems": [
-      {
-        "category": "safety",
-        "severity": "significant",
-        "symptom": "7 rear bottoming events (clean track)",
-        "measured": 7.0,
-        "threshold": 6.0,
-        "speed_context": "all"
-      },
       {
         "category": "safety",
         "severity": "significant",
@@ -198,12 +190,28 @@
         "speed_context": "high"
       },
       {
+        "category": "safety",
+        "severity": "minor",
+        "symptom": "7 rear low-RH events (proxy only)",
+        "measured": 7.0,
+        "threshold": 6.0,
+        "speed_context": "all"
+      },
+      {
         "category": "platform",
         "severity": "significant",
         "symptom": "Front excursion p99 17.2mm = 114% of dynamic RH (15mm)",
         "measured": 114.45921579996745,
         "threshold": 80.0,
         "speed_context": "high"
+      },
+      {
+        "category": "platform",
+        "severity": "significant",
+        "symptom": "Braking pitch range 1.40 deg (mean +0.57 deg)",
+        "measured": 1.4,
+        "threshold": 0.9,
+        "speed_context": "braking"
       },
       {
         "category": "balance",
@@ -216,9 +224,9 @@
       {
         "category": "thermal",
         "severity": "minor",
-        "symptom": "RR inner hot by +8.1C (threshold 8C)",
-        "measured": 8.1,
-        "threshold": 8.0,
+        "symptom": "LF spread +3.1C vs target +10C (too flat / outer loaded)",
+        "measured": -6.9,
+        "threshold": 4.8,
         "speed_context": "all"
       },
       {
@@ -240,17 +248,33 @@
       {
         "category": "grip",
         "severity": "significant",
-        "symptom": "Measured brake bias 69.3% differs from setup 46.0% (delta 23.3%)",
-        "measured": 69.3,
-        "threshold": 46.0,
+        "symptom": "ABS cutting 100% of brake force when active",
+        "measured": 100.0,
+        "threshold": 15.0,
         "speed_context": "braking"
       },
       {
         "category": "grip",
-        "severity": "significant",
-        "symptom": "ABS cutting 100% of brake force when active",
-        "measured": 100.0,
-        "threshold": 15.0,
+        "severity": "minor",
+        "symptom": "Rear traction slip p95 = 0.090 (target <0.08)",
+        "measured": 0.09020843356847763,
+        "threshold": 0.08,
+        "speed_context": "traction"
+      },
+      {
+        "category": "grip",
+        "severity": "minor",
+        "symptom": "Front braking slip p95 = 0.100 (target <0.06)",
+        "measured": 0.09970012307167053,
+        "threshold": 0.06,
+        "speed_context": "braking"
+      },
+      {
+        "category": "grip",
+        "severity": "minor",
+        "symptom": "Hydraulic brake split 69.3% differs from setup 46.0% (delta 23.3%)",
+        "measured": 69.3,
+        "threshold": 46.0,
         "speed_context": "braking"
       }
     ]

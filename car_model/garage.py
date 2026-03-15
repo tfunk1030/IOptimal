@@ -116,6 +116,7 @@ class GarageConstraintResult:
     valid: bool
     front_static_rh_ok: bool
     heave_slider_ok: bool
+    torsion_defl_ok: bool
     travel_margin_ok: bool
     bottoming_ok: bool
     vortex_ok: bool
@@ -147,6 +148,7 @@ class GarageOutputModel:
     front_rh_floor_mm: float = 30.0
     max_slider_mm: float = 45.0
     min_static_defl_mm: float = 3.0
+    max_torsion_bar_defl_mm: float | None = None
     torsion_bar_rate_c: float = 0.0008036
     heave_spring_defl_max_intercept_mm: float = 106.43
     heave_spring_defl_max_slope: float = -0.310
@@ -460,6 +462,10 @@ class GarageOutputModel:
         front_static_raw = self.predict_front_static_rh_raw(setup)
         front_static_ok = front_static_raw >= self.front_rh_floor_mm - 1e-6
         slider_ok = outputs.heave_slider_defl_static_mm <= self.max_slider_mm + 1e-6
+        torsion_defl_ok = (
+            True if self.max_torsion_bar_defl_mm is None
+            else outputs.torsion_bar_defl_mm <= self.max_torsion_bar_defl_mm + 1e-6
+        )
         travel_ok = outputs.travel_margin_front_mm >= min_travel_margin_mm - 1e-6
         bottoming_ok = (
             True if front_bottoming_margin_mm is None
@@ -478,6 +484,10 @@ class GarageOutputModel:
             messages.append(
                 f"heave slider {outputs.heave_slider_defl_static_mm:.2f}mm > limit {self.max_slider_mm:.1f}mm"
             )
+        if not torsion_defl_ok:
+            messages.append(
+                f"torsion bar defl {outputs.torsion_bar_defl_mm:.2f}mm > limit {self.max_torsion_bar_defl_mm:.1f}mm"
+            )
         if not travel_ok:
             messages.append(
                 f"front travel margin {outputs.travel_margin_front_mm:.2f}mm < {min_travel_margin_mm:.1f}mm"
@@ -486,11 +496,12 @@ class GarageOutputModel:
             messages.append(f"front bottoming margin {front_bottoming_margin_mm:.2f}mm < 0")
         if not vortex_ok and vortex_burst_margin_mm is not None:
             messages.append(f"front vortex margin {vortex_burst_margin_mm:.2f}mm < 0")
-        valid = front_static_ok and slider_ok and travel_ok and bottoming_ok and vortex_ok
+        valid = front_static_ok and slider_ok and torsion_defl_ok and travel_ok and bottoming_ok and vortex_ok
         return GarageConstraintResult(
             valid=valid,
             front_static_rh_ok=front_static_ok,
             heave_slider_ok=slider_ok,
+            torsion_defl_ok=torsion_defl_ok,
             travel_margin_ok=travel_ok,
             bottoming_ok=bottoming_ok,
             vortex_ok=vortex_ok,

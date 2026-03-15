@@ -4,7 +4,7 @@
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-15T01:10:35.637506+00:00",
+  "timestamp": "2026-03-15T22:26:56.432241+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -171,7 +171,7 @@
   },
   "diagnosis": {
     "assessment": "compromised",
-    "problem_count": 8,
+    "problem_count": 12,
     "problems": [
       {
         "category": "safety",
@@ -206,6 +206,22 @@
         "speed_context": "high"
       },
       {
+        "category": "platform",
+        "severity": "significant",
+        "symptom": "Braking pitch range 1.44 deg (mean +0.58 deg)",
+        "measured": 1.44,
+        "threshold": 0.9,
+        "speed_context": "braking"
+      },
+      {
+        "category": "thermal",
+        "severity": "minor",
+        "symptom": "LF spread +4.2C vs target +10C (too flat / outer loaded)",
+        "measured": -5.8,
+        "threshold": 4.8,
+        "speed_context": "all"
+      },
+      {
         "category": "thermal",
         "severity": "minor",
         "symptom": "Front hot pressure 180 kPa (target <175)",
@@ -224,17 +240,33 @@
       {
         "category": "grip",
         "severity": "significant",
-        "symptom": "Measured brake bias 69.2% differs from setup 46.0% (delta 23.2%)",
-        "measured": 69.2,
-        "threshold": 46.0,
+        "symptom": "ABS cutting 100% of brake force when active",
+        "measured": 100.0,
+        "threshold": 15.0,
         "speed_context": "braking"
       },
       {
         "category": "grip",
-        "severity": "significant",
-        "symptom": "ABS cutting 100% of brake force when active",
-        "measured": 100.0,
-        "threshold": 15.0,
+        "severity": "minor",
+        "symptom": "Rear traction slip p95 = 0.087 (target <0.08)",
+        "measured": 0.08743757009506226,
+        "threshold": 0.08,
+        "speed_context": "traction"
+      },
+      {
+        "category": "grip",
+        "severity": "minor",
+        "symptom": "Front braking slip p95 = 0.087 (target <0.06)",
+        "measured": 0.08713212609291077,
+        "threshold": 0.06,
+        "speed_context": "braking"
+      },
+      {
+        "category": "grip",
+        "severity": "minor",
+        "symptom": "Hydraulic brake split 69.2% differs from setup 46.0% (delta 23.2%)",
+        "measured": 69.2,
+        "threshold": 46.0,
         "speed_context": "braking"
       }
     ]
