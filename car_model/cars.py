@@ -97,11 +97,10 @@ class RideHeightModel:
     Rear: rear_static_rh = intercept + Σ(coeff_i * param_i)
     Front: front_static_rh = front_intercept + Σ(coeff_i * param_i)
 
-    Calibrated from 13 BMW Sebring sessions (March 2026).
+    Calibrated from 31 unique BMW Sebring configs (41 sessions, March 2026).
 
-    Front model (2 features): R² ~ 0.64, LOO-CV RMSE = 0.066 mm
-      front_camber_deg (r=0.64) and front_heave_nmm (r=0.50)
-    Rear model (4 features): R² = 0.9655, LOO-CV RMSE = 0.845 mm
+    Front model (6 features): R²=0.15, RMSE=0.16mm — front RH nearly constant (~30mm)
+    Rear model (6 features): R²=0.52, RMSE=0.68mm, MaxErr=2.1mm
     """
     # --- Front static RH regression ---
     front_intercept: float = 30.0   # fallback: acts as pinned value when coeffs are 0
@@ -115,6 +114,8 @@ class RideHeightModel:
     rear_coeff_third_nmm: float = 0.0      # mm RH per N/mm third spring rate
     rear_coeff_rear_spring: float = 0.0    # mm RH per N/mm rear spring rate
     rear_coeff_heave_perch: float = 0.0    # mm RH per mm front heave perch offset
+    rear_coeff_fuel_l: float = 0.0         # mm RH per L fuel
+    rear_coeff_spring_perch: float = 0.0   # mm RH per mm rear spring perch offset
     rear_r_squared: float = 0.0
     rear_loo_rmse_mm: float = 0.0
 
@@ -129,17 +130,21 @@ class RideHeightModel:
     def predict_rear_static_rh(
         self, pushrod_mm: float, third_nmm: float,
         rear_spring_nmm: float, heave_perch_mm: float,
+        fuel_l: float = 0.0, spring_perch_mm: float = 0.0,
     ) -> float:
         """Predict rear static RH from setup parameters."""
         return (self.rear_intercept
                 + self.rear_coeff_pushrod * pushrod_mm
                 + self.rear_coeff_third_nmm * third_nmm
                 + self.rear_coeff_rear_spring * rear_spring_nmm
-                + self.rear_coeff_heave_perch * heave_perch_mm)
+                + self.rear_coeff_heave_perch * heave_perch_mm
+                + self.rear_coeff_fuel_l * fuel_l
+                + self.rear_coeff_spring_perch * spring_perch_mm)
 
     def pushrod_for_target_rh(
         self, target_rh_mm: float, third_nmm: float,
         rear_spring_nmm: float, heave_perch_mm: float,
+        fuel_l: float = 0.0, spring_perch_mm: float = 0.0,
     ) -> float:
         """Solve for the pushrod offset that achieves a target rear static RH."""
         if abs(self.rear_coeff_pushrod) < 1e-6:
@@ -147,7 +152,9 @@ class RideHeightModel:
         other = (self.rear_intercept
                  + self.rear_coeff_third_nmm * third_nmm
                  + self.rear_coeff_rear_spring * rear_spring_nmm
-                 + self.rear_coeff_heave_perch * heave_perch_mm)
+                 + self.rear_coeff_heave_perch * heave_perch_mm
+                 + self.rear_coeff_fuel_l * fuel_l
+                 + self.rear_coeff_spring_perch * spring_perch_mm)
         return (target_rh_mm - other) / self.rear_coeff_pushrod
 
     @property
@@ -189,13 +196,14 @@ class HeaveSpringModel:
     perch_offset_front_baseline_mm: float = -13.0  # Verified baseline
     perch_offset_rear_baseline_mm: float = 43.0  # Integer-only in iRacing garage
     # HeaveSpringDeflMax calibration: DeflMax = defl_max_intercept + defl_max_slope * spring_rate
-    # Derived from 19 BMW Sebring sessions (March 2026):
+    # Calibrated from 31 unique setups across 41 BMW Sebring sessions (March 2026), R²=0.985
     #   Heave 30 -> 97.7mm, 50 -> 90.2mm, 70 -> 84.8mm, 90 -> 80.4mm
-    heave_spring_defl_max_intercept_mm: float = 103.4
-    heave_spring_defl_max_slope: float = -0.262  # mm per N/mm of spring rate
-    # Rear third spring DeflMax (mm) — previously hardcoded in extract.py.
-    # Per-car value: BMW calibrated from 19 sessions. Other cars use ESTIMATE.
-    rear_third_defl_max_mm: float = 61.2
+    heave_spring_defl_max_intercept_mm: float = 106.43
+    heave_spring_defl_max_slope: float = -0.310  # mm per N/mm of spring rate
+    # Rear third spring DeflMax (mm) — approximate constant for extract.py travel budget.
+    # For precise values, use DeflectionModel.third_spring_defl_max(rate, perch).
+    # Default is for BMW at typical settings (third=450, perch=42).
+    rear_third_defl_max_mm: float = 50.0
     # Torsion bar turns calibration (OD=13.9 baseline):
     #   Turns = turns_intercept + turns_heave_coeff / heave_spring_nmm
     torsion_bar_turns_intercept: float = 0.0856
@@ -219,6 +227,134 @@ class HeaveSpringModel:
     min_static_defl_mm: float = 3.0
     # Maximum allowed slider position (spring nearly unloaded above this)
     max_slider_mm: float = 45.0
+
+
+@dataclass
+class DeflectionModel:
+    """Calibrated static deflection models for .sto garage display values.
+
+    Predicts iRacing's computed deflection values from setup parameters.
+    Calibrated from BMW Sebring LDX ground truth (S1/S2) and
+    per-car-quirks 10-point dataset (March 2026).
+
+    Front parameters use multi-variable regressions (11 data points).
+    Rear parameters use physics-based force-balance models (exact on S1/S2).
+    Shock deflections use pushrod-offset-based models (exact on S1/S2).
+    """
+    # --- Shock deflection: defl = intercept + coeff * pushrod_offset ---
+    # Calibrated from 31 unique setups across 41 BMW sessions (March 2026)
+    shock_front_intercept: float = 21.228
+    shock_front_pushrod_coeff: float = 0.226
+    shock_rear_intercept: float = 25.924
+    shock_rear_pushrod_coeff: float = 0.266
+
+    # --- TorsionBarDefl ---
+    # TBDefl = (load_intercept + load_heave*heave + load_perch*perch) / k_torsion
+    # where k_torsion = C_torsion * OD^4 (from CornerSpringModel)
+    # Calibrated from 31 unique setups, R²=0.905
+    # Raw fit: defl * OD^4 = 1256447 - 4803*heave + 12547*perch
+    # Scaled by C_torsion (0.0008036) to get load units for division by k_torsion
+    tb_load_intercept: float = 1009.9
+    tb_load_heave_coeff: float = -3.860
+    tb_load_perch_coeff: float = 10.083
+
+    # --- HeaveSpringDeflStatic ---
+    # SprDS = intercept + inv_heave/heave + perch_coeff*perch + inv_od4/OD^4
+    # Calibrated from 31 unique setups, R²=0.953, RMSE=0.97mm
+    heave_defl_intercept: float = -20.756
+    heave_defl_inv_heave_coeff: float = 7.030
+    heave_defl_perch_coeff: float = -0.9146
+    heave_defl_inv_od4_coeff: float = 666311.0
+
+    # --- HeaveSliderDeflStatic ---
+    # SldrS = intercept + heave_coeff*heave + perch_coeff*perch + od_coeff*OD
+    # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.688
+    slider_intercept: float = 102.04
+    slider_heave_coeff: float = -0.000303
+    slider_perch_coeff: float = 0.091
+    slider_od_coeff: float = -4.108
+
+    # --- Rear SpringDeflStatic (force-balance) ---
+    # defl = (load - perch_coeff * spring_perch) / spring_rate
+    # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.828
+    # Regression: defl*rate = 6091.76 - 115.89*perch → perch_coeff stored as positive
+    rear_spring_eff_load: float = 6091.76
+    rear_spring_perch_coeff: float = 115.89
+
+    # --- ThirdSpringDeflStatic (force-balance) ---
+    # defl = (load - perch_coeff * third_perch) / third_rate
+    # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.942
+    # Regression: defl*rate = 17817.75 - 357.96*perch → perch_coeff stored as positive
+    third_spring_eff_load: float = 17817.75
+    third_spring_perch_coeff: float = 357.96
+
+    # --- ThirdSliderDeflStatic ---
+    # slider = intercept + coeff * ThirdSpringDeflStatic
+    # Links slider travel to spring deflection via geometric lever ratio.
+    # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.373
+    third_slider_intercept: float = 18.224
+    third_slider_spring_defl_coeff: float = 0.283
+
+    # --- Rear SpringDeflMax ---
+    # defl_max = intercept + rate_coeff * spring_rate + perch_coeff * spring_perch
+    # Calibrated from 31 unique setups, R²=0.998
+    rear_spring_defl_max_intercept: float = 104.59
+    rear_spring_defl_max_rate_coeff: float = -0.157
+    rear_spring_defl_max_perch_coeff: float = 0.009
+
+    # --- Third SpringDeflMax ---
+    # defl_max = intercept + rate_coeff * third_rate + perch_coeff * third_perch
+    # Calibrated from 31 unique setups, R²=0.996
+    third_spring_defl_max_intercept: float = 85.07
+    third_spring_defl_max_rate_coeff: float = -0.072
+    third_spring_defl_max_perch_coeff: float = -0.036
+
+    def shock_defl_front(self, pushrod_offset_mm: float) -> float:
+        return self.shock_front_intercept + self.shock_front_pushrod_coeff * pushrod_offset_mm
+
+    def shock_defl_rear(self, pushrod_offset_mm: float) -> float:
+        return self.shock_rear_intercept + self.shock_rear_pushrod_coeff * pushrod_offset_mm
+
+    def torsion_bar_defl(self, heave_nmm: float, perch_mm: float, k_torsion: float) -> float:
+        load = (self.tb_load_intercept
+                + self.tb_load_heave_coeff * heave_nmm
+                + self.tb_load_perch_coeff * perch_mm)
+        return load / max(k_torsion, 0.1)
+
+    def heave_spring_defl_static(self, heave_nmm: float, perch_mm: float, od_mm: float) -> float:
+        return (self.heave_defl_intercept
+                + self.heave_defl_inv_heave_coeff / max(heave_nmm, 1.0)
+                + self.heave_defl_perch_coeff * perch_mm
+                + self.heave_defl_inv_od4_coeff / max(od_mm ** 4, 1.0))
+
+    def heave_slider_defl_static(self, heave_nmm: float, perch_mm: float, od_mm: float) -> float:
+        return (self.slider_intercept
+                + self.slider_heave_coeff * heave_nmm
+                + self.slider_perch_coeff * perch_mm
+                + self.slider_od_coeff * od_mm)
+
+    def rear_spring_defl_static(self, spring_rate_nmm: float, spring_perch_mm: float) -> float:
+        return ((self.rear_spring_eff_load - self.rear_spring_perch_coeff * spring_perch_mm)
+                / max(spring_rate_nmm, 1.0))
+
+    def third_spring_defl_static(self, third_rate_nmm: float, third_perch_mm: float) -> float:
+        return ((self.third_spring_eff_load - self.third_spring_perch_coeff * third_perch_mm)
+                / max(third_rate_nmm, 1.0))
+
+    def third_slider_defl_static(self, third_spring_defl_mm: float) -> float:
+        return self.third_slider_intercept + self.third_slider_spring_defl_coeff * third_spring_defl_mm
+
+    def rear_spring_defl_max(self, spring_rate_nmm: float, spring_perch_mm: float) -> float:
+        """Max rear spring deflection (mm) from rate and perch."""
+        return (self.rear_spring_defl_max_intercept
+                + self.rear_spring_defl_max_rate_coeff * spring_rate_nmm
+                + self.rear_spring_defl_max_perch_coeff * spring_perch_mm)
+
+    def third_spring_defl_max(self, third_rate_nmm: float, third_perch_mm: float) -> float:
+        """Max third spring deflection (mm) from rate and perch."""
+        return (self.third_spring_defl_max_intercept
+                + self.third_spring_defl_max_rate_coeff * third_rate_nmm
+                + self.third_spring_defl_max_perch_coeff * third_perch_mm)
 
 
 @dataclass
@@ -507,6 +643,9 @@ class CarModel:
     # Multi-variable ride height prediction model
     ride_height_model: RideHeightModel = field(default_factory=lambda: RideHeightModel())
 
+    # Deflection model for .sto display values
+    deflection: DeflectionModel = field(default_factory=lambda: DeflectionModel())
+
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
 
@@ -588,9 +727,9 @@ class CarModel:
 BMW_M_HYBRID_V8 = CarModel(
     name="BMW M Hybrid V8",
     canonical_name="bmw",
-    mass_car_kg=1030.0,       # GTP minimum ~1030 kg dry
+    mass_car_kg=1050.3,       # Calibrated from 41 sessions (corner weights)
     mass_driver_kg=75.0,
-    weight_dist_front=0.47,
+    weight_dist_front=0.4727,  # Calibrated from 41 sessions (corner weights)
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
     aero_axes_swapped=True,
     min_front_rh_static=30.0,  # sim-enforced floor for all GTP
@@ -748,21 +887,22 @@ BMW_M_HYBRID_V8 = CarModel(
         rear_hs_slope_baseline=10,
     ),
     ride_height_model=RideHeightModel(
-        # Calibrated from 13 BMW Sebring sessions (March 2026).
-        # Front model (2 features): LOO-CV RMSE = 0.066 mm
-        #   front_static_rh = 30.1458 + 0.001614*heave_nmm + 0.074486*camber_deg
-        front_intercept=30.1458,
-        front_coeff_heave_nmm=0.001614,
-        front_coeff_camber_deg=0.074486,
-        front_loo_rmse_mm=0.066,
-        # Rear model (4 features): R² = 0.9655, LOO-CV RMSE = 0.845 mm
-        rear_intercept=48.1799,
-        rear_coeff_pushrod=0.399463,
-        rear_coeff_third_nmm=0.008965,
-        rear_coeff_rear_spring=0.065140,
-        rear_coeff_heave_perch=0.255291,
-        rear_r_squared=0.9655,
-        rear_loo_rmse_mm=0.845,
+        # Calibrated from 31 unique BMW Sebring configs (41 sessions, March 2026).
+        # Front model (6 features): R²=0.15, RMSE=0.16mm — front nearly pinned at 30mm
+        front_intercept=30.5834,
+        front_coeff_heave_nmm=-0.002137,
+        front_coeff_camber_deg=0.236605,
+        front_loo_rmse_mm=0.163,
+        # Rear model (6 features): R²=0.52, RMSE=0.68mm, MaxErr=2.1mm
+        rear_intercept=48.9601,
+        rear_coeff_pushrod=0.226407,
+        rear_coeff_third_nmm=0.010214,
+        rear_coeff_rear_spring=0.010012,
+        rear_coeff_heave_perch=0.138723,
+        rear_coeff_fuel_l=-0.005877,
+        rear_coeff_spring_perch=0.068718,
+        rear_r_squared=0.5155,
+        rear_loo_rmse_mm=0.675,
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
