@@ -304,6 +304,68 @@ class BMWSebringOptimizer:
         )
 
         rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * self.car.corner_spring.rear_motion_ratio ** 2
+        provisional_step6 = self.damper_solver.solve(
+            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            fuel_load_l=fuel_load_l,
+            damping_ratio_scale=damping_ratio_scale,
+            measured=measured,
+            front_heave_nmm=step2.front_heave_nmm,
+            rear_third_nmm=step2.rear_third_nmm,
+        )
+        refined_step2 = self.heave_solver.solve(
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_heave_floor_nmm=seed.front_heave_nmm,
+            rear_third_floor_nmm=seed.rear_third_nmm,
+            front_heave_perch_target_mm=state.front_heave_perch_mm,
+            front_pushrod_mm=state.front_pushrod_mm,
+            rear_pushrod_mm=state.rear_pushrod_mm,
+            front_torsion_od_mm=seed.front_torsion_od_mm,
+            rear_spring_nmm=seed.rear_spring_nmm,
+            rear_spring_perch_mm=state.rear_spring_perch_mm,
+            rear_third_perch_mm=seed.rear_third_perch_mm,
+            fuel_load_l=fuel_load_l,
+            front_camber_deg=state.front_camber_deg,
+            front_hs_damper_nsm=provisional_step6.c_hs_front,
+            rear_hs_damper_nsm=provisional_step6.c_hs_rear,
+        )
+        if (
+            abs(refined_step2.front_heave_nmm - step2.front_heave_nmm) > 0.05
+            or abs(refined_step2.rear_third_nmm - step2.rear_third_nmm) > 0.05
+            or abs(refined_step2.perch_offset_front_mm - step2.perch_offset_front_mm) > 0.05
+        ):
+            step2 = refined_step2
+            step3 = self.corner_solver.solution_from_explicit_rates(
+                front_heave_nmm=step2.front_heave_nmm,
+                rear_third_nmm=step2.rear_third_nmm,
+                front_torsion_od_mm=seed.front_torsion_od_mm,
+                rear_spring_rate_nmm=seed.rear_spring_nmm,
+                fuel_load_l=fuel_load_l,
+                rear_spring_perch_mm=state.rear_spring_perch_mm,
+            )
+            self.heave_solver.reconcile_solution(
+                step1,
+                step2,
+                step3,
+                fuel_load_l=fuel_load_l,
+                front_camber_deg=state.front_camber_deg,
+                front_hs_damper_nsm=provisional_step6.c_hs_front,
+                verbose=False,
+            )
+            reconcile_ride_heights(
+                self.car,
+                step1,
+                step2,
+                step3,
+                fuel_load_l=fuel_load_l,
+                track_name=self.track.track_name,
+                verbose=False,
+            )
+            rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * self.car.corner_spring.rear_motion_ratio ** 2
+
         step4 = self.arb_solver.solve(
             front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
@@ -334,6 +396,8 @@ class BMWSebringOptimizer:
             fuel_load_l=fuel_load_l,
             damping_ratio_scale=damping_ratio_scale,
             measured=measured,
+            front_heave_nmm=step2.front_heave_nmm,
+            rear_third_nmm=step2.rear_third_nmm,
         )
 
         garage_outputs = self.garage_model.predict(

@@ -1,4 +1,4 @@
-"""Full differential physics model for GTP cars.
+"""BMW-first empirical differential model for GTP cars.
 
 The locking differential controls corner exit speed by managing torque
 distribution between driven wheels.
@@ -6,7 +6,7 @@ distribution between driven wheels.
 Lock torque formula:
     lock_torque_Nm = preload_Nm + (n_plates × CLUTCH_TORQUE_PER_PLATE) / tan(ramp_angle_rad)
 
-Key physics:
+Key differential behaviour:
 - Lower ramp angle = MORE locking (sharper wedge). Counterintuitive but correct.
 - Coast ramp: active during braking/coast (entry behaviour)
 - Drive ramp: active during acceleration (exit behaviour)
@@ -81,7 +81,7 @@ class DiffSolution:
     def summary(self, width: int = 63) -> str:
         lines = [
             "=" * width,
-            "  DIFFERENTIAL PHYSICS MODEL",
+            "  DIFFERENTIAL EMPIRICAL MODEL",
             "=" * width,
             "",
             f"  Preload:       {self.preload_nm:.0f} Nm",
@@ -128,13 +128,17 @@ class DiffSolution:
 
 
 class DiffSolver:
-    """Physics-based differential solver.
+    """BMW-first differential solver calibrated for iRacing telemetry.
 
     Derives preload, ramp angles, and lock percentages from:
-    - Car mass and geometry (lateral load transfer at corner exit)
+    - Car mass and a coarse rear-axle load-transfer proxy at corner exit
     - Driver style (trail braking depth, throttle application)
-    - Measured traction state (body slip, rear slip ratios)
+    - Measured traction state (body slip, rear power slip ratios)
     - Track demand (peak lateral g)
+
+    The preload model is intentionally empirical. The available telemetry does
+    not contain enough chassis and tyre-state detail to justify a full
+    first-principles locking-torque derivation.
     """
 
     def __init__(
@@ -169,9 +173,10 @@ class DiffSolver:
             throttle_progressiveness=0.6,
             throttle_classification="moderate",
         )
-        # Nominal measured state: low body slip, typical rear slip
+        # Nominal measured state: low body slip, typical rear power slip
         nominal_measured = MeasuredState(
             body_slip_p95_deg=2.0,
+            rear_power_slip_ratio_p95=0.03,
             rear_slip_ratio_p95=0.03,
         )
 
@@ -202,10 +207,14 @@ class DiffSolver:
         lock_pct_coast = self._lock_pct(preload_nm, clutch_plates, coast_ramp, torque_input)
         lock_pct_drive = self._lock_pct(preload_nm, clutch_plates, drive_ramp, torque_input)
 
-        # Exit understeer index: how much the diff tends to push on exit
-        # Higher drive lock → more understeer tendency on exit
-        # Rear slip → counteracts (oversteer tendency reduces index)
-        exit_oversteer_factor = min(measured.rear_slip_ratio_p95 * 2.0, 0.5)
+        # Exit understeer index: how much the diff tends to push on exit.
+        # Higher drive lock -> more understeer tendency on exit.
+        rear_power_slip = (
+            measured.rear_power_slip_ratio_p95
+            if measured.rear_power_slip_ratio_p95 > 0
+            else measured.rear_slip_ratio_p95
+        )
+        exit_oversteer_factor = min(rear_power_slip * 2.0, 0.5)
         exit_understeer_index = (lock_pct_drive / 100.0) * 0.6 - exit_oversteer_factor
 
         # Entry rotation index: how much the diff allows rotation on entry
@@ -232,11 +241,10 @@ class DiffSolver:
         measured: "MeasuredState",
         track: "TrackProfile | None",
     ) -> tuple[float, str]:
-        """Compute preload from lateral load transfer and driver style.
+        """Compute preload from a rear-axle load-transfer proxy and driver style.
 
-        Physics:
-          At corner exit, wheel load difference = mass × peak_lat_g × g × track_width / 2
-          Min preload to prevent spin: wheel_load_diff × friction × tyre_radius × 0.15
+        This is an empirical preload baseline informed by corner-exit demand and
+        measured traction behaviour. It is not a complete clutch-diff torque model.
         """
         car = self.car
 
@@ -251,8 +259,8 @@ class DiffSolver:
         mass = car.total_mass(89.0)  # use full fuel as conservative case
         track_width_m = car.corner_spring.track_width_mm / 1000.0
 
-        # Lateral load transfer at corner exit (N)
-        # This is the load difference between inside and outside rear wheels.
+        # Coarse corner-exit rear load-transfer proxy (N). This is used only to
+        # scale the baseline preload into a plausible GTP range.
         lateral_load_transfer_n = mass * peak_lat_g * 9.81 * track_width_m / (2.0 * car.wheelbase_m)
 
         # Minimum preload to maintain controlled slip on the inside wheel:
@@ -288,11 +296,15 @@ class DiffSolver:
             preload -= 5.0
             reasons.append("-5 Nm for deep trail braking (rotation on coast)")
 
-        # High rear slip ratio → more preload to protect rear tyres
-        if measured.rear_slip_ratio_p95 > 0.05:
+        rear_power_slip = (
+            measured.rear_power_slip_ratio_p95
+            if measured.rear_power_slip_ratio_p95 > 0
+            else measured.rear_slip_ratio_p95
+        )
+        if rear_power_slip > 0.05:
             preload += 5.0
             reasons.append(
-                f"+5 Nm for rear slip p95={measured.rear_slip_ratio_p95:.3f}"
+                f"+5 Nm for rear power slip p95={rear_power_slip:.3f}"
             )
 
         preload = round(_clamp(preload, 5.0, 40.0), 0)

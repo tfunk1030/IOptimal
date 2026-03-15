@@ -76,7 +76,11 @@ def diagnose(
     diag = Diagnosis(
         lap_time_s=measured.lap_time_s,
         lap_number=measured.lap_number,
-        lltd_pct=measured.lltd_measured * 100 if measured.lltd_measured > 0 else 0.0,
+        lltd_pct=(
+            measured.roll_distribution_proxy * 100
+            if measured.roll_distribution_proxy > 0
+            else measured.lltd_measured * 100 if measured.lltd_measured > 0 else 0.0
+        ),
         weight_dist_front_pct=car.weight_dist_front * 100,
     )
 
@@ -160,7 +164,13 @@ def _check_safety(
     front_clean = (m.bottoming_event_count_front_clean
                    if m.bottoming_event_count_front_clean > 0 or m.bottoming_event_count_front_kerb > 0
                    else m.bottoming_event_count_front)  # fallback for old data
-    if front_clean > front_bottom_thresh:
+    front_direct_bottoming = (
+        m.heave_bottoming_events_front > 0
+        or m.splitter_scrape_events > 0
+        or m.front_heave_travel_used_pct > 85.0
+        or m.front_heave_travel_used_braking_pct > 85.0
+    )
+    if front_clean > front_bottom_thresh and (front_direct_bottoming or front_clean > front_bottom_thresh * 3):
         sev = "critical" if front_clean > front_bottom_thresh * 4 else "significant"
         problems.append(Problem(
             category="safety",
@@ -171,6 +181,22 @@ def _check_safety(
                 "Causes spike loads through chassis, unpredictable handling, "
                 "and potential aero stall. Front heave spring too soft or ride "
                 "height too low."
+            ),
+            speed_context="all",
+            measured=float(front_clean),
+            threshold=float(front_bottom_thresh),
+            units="events",
+            priority=0,
+        ))
+    elif front_clean > front_bottom_thresh:
+        problems.append(Problem(
+            category="safety",
+            severity="minor",
+            symptom=f"{front_clean} front low-RH events (proxy only)",
+            cause=(
+                "Ride-height z-score proxy suggests occasional front platform collapse, "
+                "but direct splitter/heave channels did not confirm hard bottoming. "
+                "Treat this as an advisory platform warning, not a definitive bottoming call."
             ),
             speed_context="all",
             measured=float(front_clean),
@@ -200,7 +226,11 @@ def _check_safety(
     rear_clean = (m.bottoming_event_count_rear_clean
                   if m.bottoming_event_count_rear_clean > 0 or m.bottoming_event_count_rear_kerb > 0
                   else m.bottoming_event_count_rear)
-    if rear_clean > rear_bottom_thresh:
+    rear_direct_bottoming = (
+        m.heave_bottoming_events_rear > 0
+        or m.rear_heave_travel_used_pct > 85.0
+    )
+    if rear_clean > rear_bottom_thresh and (rear_direct_bottoming or rear_clean > rear_bottom_thresh * 3):
         sev = "critical" if rear_clean > rear_bottom_thresh * 4 else "significant"
         problems.append(Problem(
             category="safety",
@@ -210,6 +240,22 @@ def _check_safety(
                 "Rear suspension hitting bump stops on clean track surface. "
                 "Causes rear instability and diffuser stall risk. Stiffen rear "
                 "third spring or raise rear ride height."
+            ),
+            speed_context="all",
+            measured=float(rear_clean),
+            threshold=float(rear_bottom_thresh),
+            units="events",
+            priority=0,
+        ))
+    elif rear_clean > rear_bottom_thresh:
+        problems.append(Problem(
+            category="safety",
+            severity="minor",
+            symptom=f"{rear_clean} rear low-RH events (proxy only)",
+            cause=(
+                "Rear ride-height proxy indicates low-clearance events, but direct third-element "
+                "travel did not confirm a hard mechanical bottom. Treat this as an advisory "
+                "platform warning."
             ),
             speed_context="all",
             measured=float(rear_clean),
@@ -463,6 +509,26 @@ def _check_platform(
                 priority=1,
             ))
 
+    if m.pitch_range_braking_deg > 0.9:
+        problems.append(Problem(
+            category="platform",
+            severity="significant" if m.pitch_range_braking_deg > 1.3 else "minor",
+            symptom=(
+                f"Braking pitch range {m.pitch_range_braking_deg:.2f} deg "
+                f"(mean {m.pitch_mean_braking_deg:+.2f} deg)"
+            ),
+            cause=(
+                "Braking platform is moving too far in pitch. Front ride-height budget is being "
+                "spent in entry transients instead of staying stable for the aero platform. "
+                "Check heave support and front low-speed damping together."
+            ),
+            speed_context="braking",
+            measured=m.pitch_range_braking_deg,
+            threshold=0.9,
+            units="deg",
+            priority=1,
+        ))
+
 
 def _check_balance(
     m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
@@ -557,46 +623,47 @@ def _check_balance(
                     priority=2,
                 ))
 
-    # LLTD check
-    if m.lltd_measured > 0:
+    # Ride-height-based roll distribution proxy check
+    roll_proxy = m.roll_distribution_proxy if m.roll_distribution_proxy > 0 else m.lltd_measured
+    if roll_proxy > 0:
         target_lltd = car.weight_dist_front + 0.05  # 5% above front weight dist (OptimumG baseline)
-        lltd_delta = m.lltd_measured - target_lltd
+        lltd_delta = roll_proxy - target_lltd
 
-        if lltd_delta > t.lltd_high_delta:
+        if lltd_delta > t.lltd_high_delta * 1.25:
             problems.append(Problem(
                 category="balance",
-                severity="significant" if lltd_delta > t.lltd_high_delta * 1.5 else "minor",
+                severity="minor",
                 symptom=(
-                    f"LLTD {m.lltd_measured*100:.1f}% vs target "
+                    f"Roll distribution proxy {roll_proxy*100:.1f}% vs target "
                     f"{target_lltd*100:.0f}% (delta +{lltd_delta*100:.1f}%)"
                 ),
                 cause=(
-                    "LLTD too high: front axle carries too much lateral load "
-                    "transfer. Causes mechanical understeer. "
-                    "Soften front ARB or stiffen rear ARB."
+                    "Ride-height-derived roll support proxy is front-heavy. This often correlates "
+                    "with mechanical understeer, but it is not a direct LLTD measurement. Use it "
+                    "as supporting evidence alongside understeer and body-slip metrics."
                 ),
                 speed_context="all",
-                measured=m.lltd_measured * 100,
-                threshold=(target_lltd + t.lltd_high_delta) * 100,
+                measured=roll_proxy * 100,
+                threshold=(target_lltd + t.lltd_high_delta * 1.25) * 100,
                 units="%",
                 priority=2,
             ))
-        elif lltd_delta < t.lltd_low_delta:
+        elif lltd_delta < t.lltd_low_delta * 1.25:
             problems.append(Problem(
                 category="balance",
-                severity="significant" if lltd_delta < t.lltd_low_delta * 3 else "minor",
+                severity="minor",
                 symptom=(
-                    f"LLTD {m.lltd_measured*100:.1f}% vs target "
+                    f"Roll distribution proxy {roll_proxy*100:.1f}% vs target "
                     f"{target_lltd*100:.0f}% (delta {lltd_delta*100:+.1f}%)"
                 ),
                 cause=(
-                    "LLTD too low: rear axle carries too much lateral load "
-                    "transfer. Risk of snap oversteer at the limit. "
-                    "Stiffen front ARB or soften rear ARB."
+                    "Ride-height-derived roll support proxy is rear-heavy. This can line up with "
+                    "oversteer risk, but it is still only a proxy. Confirm with body-slip, yaw, "
+                    "and driver feedback before making large ARB moves."
                 ),
                 speed_context="all",
-                measured=m.lltd_measured * 100,
-                threshold=(target_lltd + t.lltd_low_delta) * 100,
+                measured=roll_proxy * 100,
+                threshold=(target_lltd + t.lltd_low_delta * 1.25) * 100,
                 units="%",
                 priority=2,
             ))
@@ -745,9 +812,8 @@ def _check_thermal(
 ) -> None:
     """Check tyre thermal: temp spread, carcass temp, pressure."""
 
-    # Temperature spread per corner (inner - outer)
-    # Positive = inner hot = too much camber magnitude
-    # Negative = outer hot = not enough camber
+    # Temperature spread per corner (inner - outer).
+    # Racing slicks want a positive inner-hot bias, not a flat 0C spread.
     spreads = [
         ("LF", m.front_temp_spread_lf_c, "front"),
         ("RF", m.front_temp_spread_rf_c, "front"),
@@ -755,38 +821,66 @@ def _check_thermal(
         ("RR", m.rear_temp_spread_rr_c, "rear"),
     ]
 
-    temp_spread_thresh = t.temp_spread_c
+    carcass_gradients = {
+        "LF": m.front_carcass_gradient_lf_c,
+        "RF": m.front_carcass_gradient_rf_c,
+        "LR": m.rear_carcass_gradient_lr_c,
+        "RR": m.rear_carcass_gradient_rr_c,
+    }
+    spread_targets = {"front": 10.0, "rear": 8.0}
+    spread_delta_thresh = max(4.0, t.temp_spread_c * 0.6)
+    if 0 < m.lap_number < 5:
+        spread_delta_thresh += 2.0  # be more lenient during warm-up/conditioning
+
     for corner, spread, axle in spreads:
-        if abs(spread) > temp_spread_thresh:
-            if spread > 0:
+        target_spread = spread_targets[axle]
+        delta_from_target = spread - target_spread
+        carcass_gradient = carcass_gradients[corner]
+        carcass_confirms = False
+        if delta_from_target > 0.0 and carcass_gradient > target_spread * 0.5:
+            carcass_confirms = True
+        if delta_from_target < 0.0 and carcass_gradient < max(2.0, target_spread * 0.35):
+            carcass_confirms = True
+
+        if abs(delta_from_target) > spread_delta_thresh:
+            severity = "significant" if carcass_confirms or abs(delta_from_target) > spread_delta_thresh * 1.5 else "minor"
+            if delta_from_target > 0:
                 problems.append(Problem(
                     category="thermal",
-                    severity="significant" if abs(spread) > temp_spread_thresh * 1.5 else "minor",
-                    symptom=f"{corner} inner hot by {spread:+.1f}C (threshold {temp_spread_thresh:.0f}C)",
+                    severity=severity,
+                    symptom=(
+                        f"{corner} spread {spread:+.1f}C vs target +{target_spread:.0f}C "
+                        f"(inside too hot)"
+                    ),
                     cause=(
-                        f"{corner} inner edge overheating. Too much negative "
-                        f"camber for this {axle} axle. Reduce camber magnitude "
-                        f"by ~{abs(spread)/20.0:.1f} deg."
+                        f"{corner} is running more inner-hot than the target loaded spread. "
+                        f"This points to excessive negative camber for the current {axle} axle"
+                        + (" and carcass temperatures confirm it." if carcass_confirms else
+                           ". Surface temps suggest it, but carcass confirmation is weak.")
                     ),
                     speed_context="all",
-                    measured=spread,
-                    threshold=temp_spread_thresh,
+                    measured=delta_from_target,
+                    threshold=spread_delta_thresh,
                     units="C",
                     priority=4,
                 ))
             else:
                 problems.append(Problem(
                     category="thermal",
-                    severity="significant" if abs(spread) > temp_spread_thresh * 1.5 else "minor",
-                    symptom=f"{corner} outer hot by {abs(spread):.1f}C (threshold {temp_spread_thresh:.0f}C)",
+                    severity=severity,
+                    symptom=(
+                        f"{corner} spread {spread:+.1f}C vs target +{target_spread:.0f}C "
+                        f"(too flat / outer loaded)"
+                    ),
                     cause=(
-                        f"{corner} outer edge overheating. Not enough negative "
-                        f"camber for this {axle} axle. Increase camber magnitude "
-                        f"by ~{abs(spread)/20.0:.1f} deg."
+                        f"{corner} is flatter than the target inner-hot spread. "
+                        f"That points to insufficient negative camber for the current {axle} axle"
+                        + (" and carcass temperatures support it." if carcass_confirms else
+                           ". Surface temps suggest it, but carcass confirmation is weak.")
                     ),
                     speed_context="all",
-                    measured=spread,
-                    threshold=-8.0,
+                    measured=delta_from_target,
+                    threshold=spread_delta_thresh,
                     units="C",
                     priority=4,
                 ))
@@ -919,37 +1013,45 @@ def _check_grip(
 ) -> None:
     """Check grip utilization: traction slip and braking slip."""
 
-    # Rear traction slip (limited by rear grip)
-    if m.rear_slip_ratio_p95 > 0.08:
+    rear_power_slip = m.rear_power_slip_ratio_p95 or m.rear_slip_ratio_p95
+    if rear_power_slip > t.rear_slip_ratio_p95:
         problems.append(Problem(
             category="grip",
-            severity="significant" if m.rear_slip_ratio_p95 > 0.12 else "minor",
-            symptom=f"Rear traction slip p95 = {m.rear_slip_ratio_p95:.3f} (target <0.08)",
+            severity="significant" if rear_power_slip > 0.12 else "minor",
+            symptom=f"Rear traction slip p95 = {rear_power_slip:.3f} (target <{t.rear_slip_ratio_p95:.2f})",
             cause=(
-                "Rear tyres spinning excessively under power. "
-                "Traction limited. Lower TC slip, increase diff preload, "
-                "or reduce power application aggressiveness."
+                "Power-on rear slip is high in the traction phase. "
+                "This is a traction metric, not a generic axle-speed proxy. "
+                "Check TC slip, diff preload, hybrid deployment, and rear tyre state."
             ),
             speed_context="traction",
-            measured=m.rear_slip_ratio_p95,
-            threshold=0.08,
+            measured=rear_power_slip,
+            threshold=t.rear_slip_ratio_p95,
             units="ratio",
             priority=5,
         ))
 
-    # Front braking slip
-    if m.front_slip_ratio_p95 > 0.06:
+    front_braking_lock = m.front_braking_lock_ratio_p95 or m.front_slip_ratio_p95
+    if front_braking_lock > t.front_slip_ratio_p95:
+        asym_note = ""
+        if m.front_brake_wheel_decel_asymmetry_p95_ms2 > 4.0:
+            asym_note = (
+                f" Front wheel decel asymmetry p95 is "
+                f"{m.front_brake_wheel_decel_asymmetry_p95_ms2:.1f} m/s^2, "
+                "so one front is likely locking first."
+            )
         problems.append(Problem(
             category="grip",
-            severity="significant" if m.front_slip_ratio_p95 > 0.10 else "minor",
-            symptom=f"Front braking slip p95 = {m.front_slip_ratio_p95:.3f} (target <0.06)",
+            severity="significant" if front_braking_lock > 0.10 else "minor",
+            symptom=f"Front braking slip p95 = {front_braking_lock:.3f} (target <{t.front_slip_ratio_p95:.2f})",
             cause=(
-                "Front tyres locking under braking. Brake bias too far "
-                "forward. Shift brake bias rearward 0.5-1.0%."
+                "Front lock proxy is high during the braking phase. Brake balance is likely too "
+                "far forward for the available grip, or ABS is intervening aggressively."
+                + asym_note
             ),
             speed_context="braking",
-            measured=m.front_slip_ratio_p95,
-            threshold=0.06,
+            measured=front_braking_lock,
+            threshold=t.front_slip_ratio_p95,
             units="ratio",
             priority=5,
         ))
@@ -958,27 +1060,29 @@ def _check_grip(
 def _check_brake_system(
     m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
 ) -> None:
-    """Check brake system: measured bias vs setup, ABS intervention."""
+    """Check brake system using hydraulic split and braking-phase evidence."""
 
-    # Measured brake bias vs setup bias (from brake line pressures)
-    if m.measured_brake_bias_pct > 0 and s.brake_bias_pct > 0:
-        bias_delta = abs(m.measured_brake_bias_pct - s.brake_bias_pct)
-        if bias_delta > 3.0:
+    # Hydraulic split is advisory only, and only trustworthy when ABS is not
+    # dominating the brake event.
+    hydraulic_split = m.hydraulic_brake_split_pct or m.measured_brake_bias_pct
+    if hydraulic_split > 0 and s.brake_bias_pct > 0 and m.abs_active_pct < 10.0:
+        bias_delta = abs(hydraulic_split - s.brake_bias_pct)
+        if bias_delta > 4.0 and m.hydraulic_brake_split_confidence > 0.4:
             problems.append(Problem(
                 category="grip",
-                severity="significant" if bias_delta > 5.0 else "minor",
+                severity="minor",
                 symptom=(
-                    f"Measured brake bias {m.measured_brake_bias_pct:.1f}% "
+                    f"Hydraulic brake split {hydraulic_split:.1f}% "
                     f"differs from setup {s.brake_bias_pct:.1f}% "
                     f"(delta {bias_delta:.1f}%)"
                 ),
                 cause=(
-                    "Measured hydraulic brake bias from line pressures does not match "
-                    "the garage setting. This may indicate ABS intervention is skewing "
-                    "the effective bias, or the bias setting is not being applied correctly."
+                    "Brake line pressure distribution is not matching the commanded garage bias. "
+                    "Treat this as a hydraulic-system clue only; it is not direct evidence of "
+                    "brake torque split at the tyre."
                 ),
                 speed_context="braking",
-                measured=m.measured_brake_bias_pct,
+                measured=hydraulic_split,
                 threshold=s.brake_bias_pct,
                 units="%",
                 priority=5,
@@ -991,9 +1095,9 @@ def _check_brake_system(
             severity="significant" if m.abs_active_pct > 50.0 else "minor",
             symptom=f"ABS active {m.abs_active_pct:.0f}% of braking time",
             cause=(
-                "ABS intervening too frequently. Either brake bias is too far "
-                "forward (locking fronts) or ABS level is set too aggressively. "
-                "Shift bias rearward or increase ABS intervention threshold."
+                "ABS is intervening frequently in the braking phase. Combined with front lock "
+                "proxy, this points to too much front brake demand for the available grip or "
+                "too much ABS intervention."
             ),
             speed_context="braking",
             measured=m.abs_active_pct,
@@ -1009,9 +1113,8 @@ def _check_brake_system(
             severity="significant" if m.abs_cut_mean_pct > 25.0 else "minor",
             symptom=f"ABS cutting {m.abs_cut_mean_pct:.0f}% of brake force when active",
             cause=(
-                "ABS is reducing brake force significantly. This means the "
-                "braking system is consistently overloading the tyres. "
-                "Reduce brake bias forward or lower ABS aggressiveness."
+                "ABS is removing a large amount of brake force. The system is repeatedly asking "
+                "for more front brake than the tyre can take, or ABS calibration is too aggressive."
             ),
             speed_context="braking",
             measured=m.abs_cut_mean_pct,
@@ -1069,23 +1172,24 @@ def _check_in_car_adjustments(
 def _check_speed_dependent_balance(
     m: MeasuredState, car: CarModel, problems: list[Problem],
 ) -> None:
-    """Check for speed-dependent LLTD shift (aero vs mechanical balance split)."""
-    if m.lltd_low_speed > 0 and m.lltd_high_speed > 0:
-        lltd_shift = (m.lltd_high_speed - m.lltd_low_speed) * 100  # in %
+    """Check for speed-dependent roll-distribution proxy shift."""
+    low_speed_proxy = m.roll_distribution_proxy_low_speed or m.lltd_low_speed
+    high_speed_proxy = m.roll_distribution_proxy_high_speed or m.lltd_high_speed
+    if low_speed_proxy > 0 and high_speed_proxy > 0:
+        lltd_shift = (high_speed_proxy - low_speed_proxy) * 100  # in %
         if abs(lltd_shift) > 5.0:  # >5% LLTD shift between speed ranges
             if lltd_shift > 0:
                 problems.append(Problem(
                     category="balance",
-                    severity="significant" if abs(lltd_shift) > 8.0 else "minor",
+                    severity="minor",
                     symptom=(
-                        f"LLTD shifts +{lltd_shift:.1f}% from low to high speed "
-                        f"(low {m.lltd_low_speed*100:.1f}%, high {m.lltd_high_speed*100:.1f}%)"
+                        f"Roll distribution proxy shifts +{lltd_shift:.1f}% from low to high speed "
+                        f"(low {low_speed_proxy*100:.1f}%, high {high_speed_proxy*100:.1f}%)"
                     ),
                     cause=(
-                        "Front carries more lateral load transfer at high speed than low speed. "
-                        "Aero roll resistance is adding to front roll stiffness at speed. "
-                        "This causes more understeer at high speed. "
-                        "Soften front ARB or increase rear aero balance."
+                        "The ride-height-based roll support proxy shifts forward at high speed. "
+                        "Use this as supporting evidence for aero-induced understeer, not as a "
+                        "standalone LLTD diagnosis."
                     ),
                     speed_context="high",
                     measured=lltd_shift,
@@ -1096,15 +1200,15 @@ def _check_speed_dependent_balance(
             else:
                 problems.append(Problem(
                     category="balance",
-                    severity="significant" if abs(lltd_shift) > 8.0 else "minor",
+                    severity="minor",
                     symptom=(
-                        f"LLTD shifts {lltd_shift:.1f}% from low to high speed "
-                        f"(low {m.lltd_low_speed*100:.1f}%, high {m.lltd_high_speed*100:.1f}%)"
+                        f"Roll distribution proxy shifts {lltd_shift:.1f}% from low to high speed "
+                        f"(low {low_speed_proxy*100:.1f}%, high {high_speed_proxy*100:.1f}%)"
                     ),
                     cause=(
-                        "Rear carries more lateral load transfer at high speed. "
-                        "This causes more oversteer at high speed — dangerous. "
-                        "Stiffen front heave spring or increase front aero balance."
+                        "The ride-height-based roll support proxy shifts rearward at high speed. "
+                        "Use this as supporting evidence for aero-induced oversteer rather than a "
+                        "standalone mechanical-balance conclusion."
                     ),
                     speed_context="high",
                     measured=lltd_shift,

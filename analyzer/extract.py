@@ -88,7 +88,8 @@ class MeasuredState:
     rear_dominant_freq_hz: float = 0.0
 
     # --- Step 4: Balance ---
-    lltd_measured: float = 0.0
+    lltd_measured: float = 0.0              # Backward-compatible alias of roll_distribution_proxy
+    roll_distribution_proxy: float = 0.0    # RH-based proxy, not true LLTD
     roll_gradient_measured_deg_per_g: float = 0.0
     body_roll_at_peak_g_deg: float = 0.0
     peak_lat_g_measured: float = 0.0
@@ -108,8 +109,11 @@ class MeasuredState:
     understeer_high_speed_deg: float = 0.0
     body_slip_p95_deg: float = 0.0
     body_slip_at_peak_g_deg: float = 0.0
-    rear_slip_ratio_p95: float = 0.0
-    front_slip_ratio_p95: float = 0.0
+    rear_slip_ratio_p95: float = 0.0        # Backward-compatible alias of rear_power_slip_ratio_p95
+    front_slip_ratio_p95: float = 0.0       # Backward-compatible alias of front_braking_lock_ratio_p95
+    rear_power_slip_ratio_p95: float = 0.0
+    front_braking_lock_ratio_p95: float = 0.0
+    front_brake_wheel_decel_asymmetry_p95_ms2: float = 0.0
     yaw_rate_correlation: float = 0.0
     roll_rate_p95_deg_per_s: float = 0.0
     pitch_rate_p95_deg_per_s: float = 0.0
@@ -148,11 +152,15 @@ class MeasuredState:
     front_heave_vel_hs_pct: float = 0.0          # % of samples in HS regime (>100 mm/s)
 
     # --- Brake system ---
-    measured_brake_bias_pct: float = 0.0         # From brake line pressures: front/(front+rear)
+    measured_brake_bias_pct: float = 0.0         # Backward-compatible alias of hydraulic_brake_split_pct
+    hydraulic_brake_split_pct: float = 0.0       # Front hydraulic pressure share, not brake torque split
+    hydraulic_brake_split_confidence: float = 0.0
     abs_active_pct: float = 0.0                  # % of braking time ABS is active
     abs_cut_mean_pct: float = 0.0                # Mean ABS force reduction during engagement
     front_brake_pressure_peak_bar: float = 0.0
     rear_brake_pressure_peak_bar: float = 0.0
+    braking_decel_mean_g: float = 0.0
+    braking_decel_peak_g: float = 0.0
 
     # --- In-car adjustment tracking ---
     brake_bias_adjustments: int = 0              # Number of bias changes during session
@@ -177,8 +185,10 @@ class MeasuredState:
     rpm_at_braking_pct_at_limiter: float = 0.0   # % of braking events hitting rev limiter
 
     # --- Speed-dependent LLTD ---
-    lltd_low_speed: float = 0.0                  # LLTD at <120 kph (mechanical-dominated)
-    lltd_high_speed: float = 0.0                 # LLTD at >180 kph (aero-influenced)
+    lltd_low_speed: float = 0.0                  # Backward-compatible alias of roll_distribution_proxy_low_speed
+    lltd_high_speed: float = 0.0                 # Backward-compatible alias of roll_distribution_proxy_high_speed
+    roll_distribution_proxy_low_speed: float = 0.0
+    roll_distribution_proxy_high_speed: float = 0.0
 
     # --- Directional understeer (left/right split) ---
     understeer_left_turn_deg: float = 0.0
@@ -234,6 +244,8 @@ class MeasuredState:
     # --- Pitch dynamics ---
     pitch_mean_at_speed_deg: float = 0.0    # Mean pitch angle at speed (rake indicator)
     pitch_range_deg: float = 0.0            # p99-p01 pitch range (platform stability)
+    pitch_mean_braking_deg: float = 0.0
+    pitch_range_braking_deg: float = 0.0
 
     # --- In-car adjustment tracking (extended) ---
     arb_front_adjustments: int = 0          # dcAntiRollFront changes
@@ -255,6 +267,7 @@ class MeasuredState:
     speed_mean_kph: float = 0.0
     speed_max_kph: float = 0.0
     mean_speed_at_speed_kph: float = 0.0
+    metric_fallbacks: list[str] = field(default_factory=list)
 
 
 def extract_measurements(
@@ -418,9 +431,9 @@ def extract_measurements(
             state.front_rh_excursion_measured_mm = float(np.percentile(front_deviation, 99))
             state.rear_rh_excursion_measured_mm = float(np.percentile(rear_deviation, 99))
 
-        # --- LLTD from ride height deflections ---
-        # Weight by track_width² to convert deflection ratio to load transfer ratio.
-        # RH deflection (mm) × track_width² ∝ roll moment ∝ lateral load transfer.
+        # --- Roll distribution proxy from ride-height deflections ---
+        # This is NOT true LLTD. It is a ride-height-based proxy for how much
+        # each axle appears to contribute to roll support through the corner.
         tw_f = getattr(car.arb, "track_width_front_mm", 1730.0)
         tw_r = getattr(car.arb, "track_width_rear_mm", 1650.0)
         tw_f_sq = tw_f ** 2
@@ -437,9 +450,10 @@ def extract_measurements(
             rear_moment = mean_rear_defl * tw_r_sq
             total_moment = front_moment + rear_moment
             if total_moment > 0.1:
-                state.lltd_measured = front_moment / total_moment
+                state.roll_distribution_proxy = front_moment / total_moment
+                state.lltd_measured = state.roll_distribution_proxy
 
-        # --- Speed-dependent LLTD ---
+        # --- Speed-dependent roll distribution proxy ---
         if np.sum(corner_mask) > 100:
             low_speed_corner = corner_mask & (speed_kph < 120)
             high_speed_corner = corner_mask & (speed_kph > 180)
@@ -451,7 +465,8 @@ def extract_measurements(
                 r_mom_ls = float(np.mean(r_defl_ls)) * tw_r_sq
                 total_ls = f_mom_ls + r_mom_ls
                 if total_ls > 0.1:
-                    state.lltd_low_speed = f_mom_ls / total_ls
+                    state.roll_distribution_proxy_low_speed = f_mom_ls / total_ls
+                    state.lltd_low_speed = state.roll_distribution_proxy_low_speed
 
             if np.sum(high_speed_corner) > 30:
                 f_defl_hs = np.abs(lf_rh[high_speed_corner] - rf_rh[high_speed_corner])
@@ -460,7 +475,8 @@ def extract_measurements(
                 r_mom_hs = float(np.mean(r_defl_hs)) * tw_r_sq
                 total_hs = f_mom_hs + r_mom_hs
                 if total_hs > 0.1:
-                    state.lltd_high_speed = f_mom_hs / total_hs
+                    state.roll_distribution_proxy_high_speed = f_mom_hs / total_hs
+                    state.lltd_high_speed = state.roll_distribution_proxy_high_speed
 
         # --- Body roll ---
         if ibt.has_channel("Roll"):
@@ -627,6 +643,13 @@ def _extract_handling(
     # Body-frame velocities
     vx = ibt.channel("VelocityX")[start:end + 1]  # m/s (forward)
     vy = ibt.channel("VelocityY")[start:end + 1]  # m/s (lateral)
+    brake = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else np.zeros(n)
+    if ibt.has_channel("ThrottleRaw"):
+        throttle = ibt.channel("ThrottleRaw")[start:end + 1]
+    elif ibt.has_channel("Throttle"):
+        throttle = ibt.channel("Throttle")[start:end + 1]
+    else:
+        throttle = np.zeros(n)
 
     # --- Understeer angle ---
     ratio = car.steering_ratio
@@ -683,18 +706,58 @@ def _extract_handling(
         lr_ws = ibt.channel("LRspeed")[start:end + 1]
         rr_ws = ibt.channel("RRspeed")[start:end + 1]
 
-        safe_car_speed = np.maximum(speed_ms, 2.0)
+        vehicle_speed = np.maximum(np.hypot(vx, vy), 2.0)
+        front_min_ws = np.minimum(lf_ws, rf_ws)
+        rear_max_ws = np.maximum(lr_ws, rr_ws)
 
-        rear_avg_ws = (lr_ws + rr_ws) / 2.0
-        rear_slip = (rear_avg_ws - safe_car_speed) / safe_car_speed
+        front_lock = np.maximum(0.0, vehicle_speed - front_min_ws) / vehicle_speed
+        rear_power_slip = np.maximum(0.0, rear_max_ws - vehicle_speed) / vehicle_speed
 
-        front_avg_ws = (lf_ws + rf_ws) / 2.0
-        front_slip = (front_avg_ws - safe_car_speed) / safe_car_speed
+        braking_mask = (
+            (brake > 0.25)
+            & (throttle < 0.15)
+            & (speed_kph > 60)
+            & (np.abs(lat_g) < 1.4)
+        )
+        if np.sum(braking_mask) < 40:
+            braking_mask = (brake > 0.25) & (speed_kph > 60)
+            if np.sum(braking_mask) > 20:
+                state.metric_fallbacks.append("front_braking_lock_ratio_p95=fallback_brake_mask")
 
-        driving_mask = speed_kph > 60
-        if np.sum(driving_mask) > 100:
-            state.rear_slip_ratio_p95 = float(np.percentile(np.abs(rear_slip[driving_mask]), 95))
-            state.front_slip_ratio_p95 = float(np.percentile(np.abs(front_slip[driving_mask]), 95))
+        power_mask = (
+            (throttle > 0.45)
+            & (brake < 0.05)
+            & (speed_kph > 60)
+            & (np.abs(lat_g) < 1.1)
+        )
+        if np.sum(power_mask) < 40:
+            power_mask = (throttle > 0.35) & (brake < 0.10) & (speed_kph > 60)
+            if np.sum(power_mask) > 20:
+                state.metric_fallbacks.append("rear_power_slip_ratio_p95=fallback_power_mask")
+
+        if np.sum(braking_mask) > 20:
+            state.front_braking_lock_ratio_p95 = float(np.percentile(front_lock[braking_mask], 95))
+            state.front_slip_ratio_p95 = state.front_braking_lock_ratio_p95
+
+            dt = 1.0 / max(float(getattr(ibt, "tick_rate", 60.0)), 1.0)
+            lf_decel = -np.gradient(lf_ws, dt)
+            rf_decel = -np.gradient(rf_ws, dt)
+            asym = np.abs(lf_decel - rf_decel)
+            state.front_brake_wheel_decel_asymmetry_p95_ms2 = float(
+                np.percentile(asym[braking_mask], 95)
+            )
+        elif np.sum(speed_kph > 60) > 100:
+            state.front_slip_ratio_p95 = float(np.percentile(front_lock[speed_kph > 60], 95))
+            state.front_braking_lock_ratio_p95 = state.front_slip_ratio_p95
+            state.metric_fallbacks.append("front_braking_lock_ratio_p95=legacy_speed_mask")
+
+        if np.sum(power_mask) > 20:
+            state.rear_power_slip_ratio_p95 = float(np.percentile(rear_power_slip[power_mask], 95))
+            state.rear_slip_ratio_p95 = state.rear_power_slip_ratio_p95
+        elif np.sum(speed_kph > 60) > 100:
+            state.rear_slip_ratio_p95 = float(np.percentile(rear_power_slip[speed_kph > 60], 95))
+            state.rear_power_slip_ratio_p95 = state.rear_slip_ratio_p95
+            state.metric_fallbacks.append("rear_power_slip_ratio_p95=legacy_speed_mask")
 
     # --- Yaw rate correlation ---
     if np.sum(cornering) > 100:
@@ -1207,11 +1270,12 @@ def _extract_brake_system(
     ibt: IBTFile, start: int, end: int,
     state: MeasuredState,
 ) -> None:
-    """Extract brake line pressures, ABS data, and compute measured brake bias.
+    """Extract brake line pressures, ABS data, and hydraulic split metrics.
 
-    Per-corner brake line pressure shows the ACTUAL force distribution including
-    the bias setting and ABS intervention. Comparing front vs rear pressure gives
-    the true hydraulic bias.
+    Per-corner brake line pressure captures the hydraulic pressure share, not the
+    actual brake torque distribution. ABS, pad mu, disc radius, and hybrid regen
+    can all change the real tyre force split, so this metric is kept explicitly
+    hydraulic-only.
     """
     brake = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else None
     braking = (brake > 0.3) if brake is not None else None
@@ -1238,8 +1302,29 @@ def _extract_brake_system(
             total = front_braking + rear_braking
             valid = total > 1.0  # bar
             if np.sum(valid) > 10:
-                bias_samples = front_braking[valid] / total[valid] * 100
-                state.measured_brake_bias_pct = round(float(np.mean(bias_samples)), 1)
+                split_samples = front_braking[valid] / total[valid] * 100
+                hydraulic_split = round(float(np.mean(split_samples)), 1)
+                state.hydraulic_brake_split_pct = hydraulic_split
+                state.measured_brake_bias_pct = hydraulic_split
+                state.hydraulic_brake_split_confidence = round(
+                    float(np.sum(valid) / max(np.sum(braking), 1)),
+                    3,
+                )
+
+                if ibt.has_channel("LongAccel"):
+                    long_accel = ibt.channel("LongAccel")[start:end + 1]
+                    braking_decel = np.maximum(0.0, -long_accel[braking] / 9.81)
+                else:
+                    speed = ibt.channel("Speed")[start:end + 1] if ibt.has_channel("Speed") else None
+                    if speed is not None:
+                        dt = 1.0 / max(float(getattr(ibt, "tick_rate", 60.0)), 1.0)
+                        braking_decel = np.maximum(0.0, -np.gradient(speed, dt)[braking] / 9.81)
+                    else:
+                        braking_decel = np.array([])
+
+                if braking_decel.size > 0:
+                    state.braking_decel_mean_g = round(float(np.mean(braking_decel)), 3)
+                    state.braking_decel_peak_g = round(float(np.percentile(braking_decel, 95)), 3)
 
     # ABS activity
     if ibt.has_channel("BrakeABSactive") and braking is not None:
@@ -1469,6 +1554,13 @@ def _extract_pitch(
             state.pitch_mean_at_speed_deg = round(float(np.mean(pitch[at_speed])), 3)
         state.pitch_range_deg = round(
             float(np.percentile(pitch, 99) - np.percentile(pitch, 1)), 2)
+        braking_pitch = (brake > 0.20) & (speed_kph > 80)
+        if np.sum(braking_pitch) > 30:
+            state.pitch_mean_braking_deg = round(float(np.mean(pitch[braking_pitch])), 3)
+            state.pitch_range_braking_deg = round(
+                float(np.percentile(pitch[braking_pitch], 99) - np.percentile(pitch[braking_pitch], 1)),
+                2,
+            )
 
 
 def _extract_extended_adjustments(

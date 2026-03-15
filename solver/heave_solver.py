@@ -10,17 +10,10 @@ Physics:
     oscillation but also reduce mechanical grip (harsher ride). The solver
     finds the minimum stiffness that prevents bottoming.
 
-    The excursion model:
-        excursion(k) = v_p99 * sqrt(m_eff / k)
-
-    Where:
-        v_p99 = 99th percentile shock velocity from track profile (m/s)
-        m_eff = calibrated effective heave mass (kg)
-        k     = spring rate (N/m)
-
-    This comes from energy conservation: the kinetic energy of the effective
-    mass at the shock velocity equals the potential energy stored in the spring
-    at maximum compression: 0.5 * m_eff * v^2 = 0.5 * k * x^2.
+    The excursion model is BMW-calibrated but now includes tyre compliance,
+    a rear corner-spring parallel path, and damper work during compression.
+    The calibrated effective masses are remapped so the shared vertical model
+    preserves the original telemetry fit instead of double-counting tyre spring.
 
     Two constraints per axle:
     - Bottoming: excursion_p99 < dynamic_RH
@@ -32,10 +25,9 @@ Physics:
     The solver picks the binding constraint (whichever requires stiffer spring).
 
 Validated against BMW Sebring telemetry:
-    - Front heave 50 N/mm: excursion = 14.9mm = dynamic RH (boundary) -> OK
-    - Front heave 30 N/mm: excursion = 19.2mm > 14.9mm -> bottoming by 4.3mm
-    - Rear third 530 N/mm: sigma = 9.9mm <= 10mm target -> OK
-    - Rear third minimum for no bottoming: 177 N/mm (variance is binding)
+    - Front and rear use the same compliant vertical model in Step 1/2/6.
+    - Rear third sizing now respects the real 900 N/mm garage limit.
+    - Rear variance sizing includes rear corner spring contribution.
 """
 
 from __future__ import annotations
@@ -46,6 +38,7 @@ from dataclasses import dataclass, field
 from car_model.garage import GarageSetupState
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
+from vertical_dynamics import damped_excursion_mm, legacy_mass_to_shared_model_kg
 
 
 @dataclass
@@ -186,10 +179,7 @@ class SpringSafetyCheck:
 class HeaveSolver:
     """Step 2 solver: find minimum heave/third spring rates.
 
-    Uses the calibrated excursion model:
-        excursion(k) = v_p99 * sqrt(m_eff / k)
-
-    to find the minimum spring rate that satisfies:
+    Uses the calibrated shared vertical model to find the minimum spring rate that satisfies:
         1. No bottoming: excursion < dynamic_RH
         2. Platform stability: sigma = excursion/2.33 < sigma_target
     """
@@ -198,7 +188,54 @@ class HeaveSolver:
         self.car = car
         self.track = track
 
-    def excursion(self, v_p99_mps: float, m_eff_kg: float, k_nmm: float) -> float:
+    def _rear_corner_wheel_rate_nmm(self, rear_spring_nmm: float | None = None) -> float:
+        """Estimate rear wheel rate contribution from the corner springs."""
+        rear_spring_rate_nmm = rear_spring_nmm
+        if rear_spring_rate_nmm is None:
+            garage_model = self.car.active_garage_output_model(self.track.track_name)
+            if garage_model is not None:
+                rear_spring_rate_nmm = garage_model.default_state().rear_spring_nmm
+            else:
+                lo, hi = self.car.corner_spring.rear_spring_range_nmm
+                rear_spring_rate_nmm = 0.5 * (lo + hi)
+        return max(rear_spring_rate_nmm, 0.0) * self.car.corner_spring.rear_motion_ratio ** 2
+
+    def _shared_vertical_mass_kg(
+        self,
+        axle: str,
+        legacy_m_eff_kg: float,
+        *,
+        parallel_wheel_rate_nmm: float = 0.0,
+    ) -> float:
+        """Preserve the legacy BMW heave calibration inside the shared compliant model."""
+        is_front = axle == "front"
+        tyre_rate_nmm = (
+            self.car.tyre_vertical_rate_front_nmm
+            if is_front
+            else self.car.tyre_vertical_rate_rear_nmm
+        )
+        reference_rate_nmm = (
+            self.car.front_heave_spring_nmm
+            if is_front
+            else self.car.rear_third_spring_nmm
+        )
+        return legacy_mass_to_shared_model_kg(
+            legacy_m_eff_kg,
+            reference_rate_nmm,
+            tyre_vertical_rate_nmm=tyre_rate_nmm,
+            parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+        )
+
+    def excursion(
+        self,
+        v_p99_mps: float,
+        m_eff_kg: float,
+        k_nmm: float,
+        *,
+        axle: str = "front",
+        damper_coeff_nsm: float = 0.0,
+        parallel_wheel_rate_nmm: float = 0.0,
+    ) -> float:
         """Calculate p99 ride height excursion (mm).
 
         Args:
@@ -209,9 +246,24 @@ class HeaveSolver:
         Returns:
             Excursion in mm
         """
-        k_nm = k_nmm * 1000.0  # N/mm -> N/m
-        # excursion = v * sqrt(m/k), result in meters, convert to mm
-        return v_p99_mps * math.sqrt(m_eff_kg / k_nm) * 1000.0
+        tyre_rate = (
+            self.car.tyre_vertical_rate_front_nmm
+            if axle == "front"
+            else self.car.tyre_vertical_rate_rear_nmm
+        )
+        model_mass_kg = self._shared_vertical_mass_kg(
+            axle,
+            m_eff_kg,
+            parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+        )
+        return damped_excursion_mm(
+            v_p99_mps,
+            model_mass_kg,
+            k_nmm,
+            tyre_vertical_rate_nmm=tyre_rate,
+            parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+            damper_coeff_nsm=damper_coeff_nsm,
+        )
 
     def sigma_from_excursion(self, excursion_mm: float) -> float:
         """Convert p99 excursion to standard deviation (sigma).
@@ -221,34 +273,74 @@ class HeaveSolver:
         return excursion_mm / 2.33
 
     def min_rate_for_no_bottoming(
-        self, v_p99_mps: float, m_eff_kg: float, dynamic_rh_mm: float
+        self,
+        v_p99_mps: float,
+        m_eff_kg: float,
+        dynamic_rh_mm: float,
+        *,
+        axle: str = "front",
+        damper_coeff_nsm: float = 0.0,
+        parallel_wheel_rate_nmm: float = 0.0,
     ) -> float:
         """Minimum spring rate (N/mm) to prevent bottoming.
-
-        Solve: v_p99 * sqrt(m_eff / k) * 1000 = dynamic_rh_mm
-        -> k = m_eff * (v_p99 * 1000 / dynamic_rh_mm)^2
-        -> k_nmm = k / 1000
         """
         if dynamic_rh_mm <= 0:
             return float("inf")
-        v_mm = v_p99_mps * 1000.0  # m/s -> mm/s
-        k_nm = m_eff_kg * (v_mm / dynamic_rh_mm) ** 2
-        return k_nm / 1000.0  # N/m -> N/mm
+        lo, hi = (
+            self._heave_hard_bounds()
+            if axle == "front"
+            else self.car.heave_spring.rear_spring_range_nmm
+        )
+        best = float("inf")
+        for rate in range(int(math.ceil(lo / 10.0) * 10), int(hi) + 10, 10):
+            excursion_mm = self.excursion(
+                v_p99_mps,
+                m_eff_kg,
+                float(rate),
+                axle=axle,
+                damper_coeff_nsm=damper_coeff_nsm,
+                parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+            )
+            if excursion_mm <= dynamic_rh_mm + 1e-6:
+                best = float(rate)
+                break
+        return best
 
     def min_rate_for_sigma(
-        self, v_p99_mps: float, m_eff_kg: float, sigma_target_mm: float
+        self,
+        v_p99_mps: float,
+        m_eff_kg: float,
+        sigma_target_mm: float,
+        *,
+        axle: str = "front",
+        damper_coeff_nsm: float = 0.0,
+        parallel_wheel_rate_nmm: float = 0.0,
     ) -> float:
         """Minimum spring rate (N/mm) to keep sigma below target.
-
-        sigma = excursion / 2.33, so excursion_limit = sigma_target * 2.33
-        Then solve: v_p99 * sqrt(m_eff / k) * 1000 = excursion_limit
         """
         excursion_limit = sigma_target_mm * 2.33
         if excursion_limit <= 0:
             return float("inf")
-        v_mm = v_p99_mps * 1000.0
-        k_nm = m_eff_kg * (v_mm / excursion_limit) ** 2
-        return k_nm / 1000.0
+        lo, hi = (
+            self._heave_hard_bounds()
+            if axle == "front"
+            else self.car.heave_spring.rear_spring_range_nmm
+        )
+        best = float("inf")
+        for rate in range(int(math.ceil(lo / 10.0) * 10), int(hi) + 10, 10):
+            excursion_mm = self.excursion(
+                v_p99_mps,
+                m_eff_kg,
+                float(rate),
+                axle=axle,
+                damper_coeff_nsm=damper_coeff_nsm,
+                parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+            )
+            sigma_mm = self.sigma_from_excursion(excursion_mm)
+            if sigma_mm <= sigma_target_mm + 1e-6:
+                best = float(rate)
+                break
+        return best
 
     def check_spring_rate(
         self,
@@ -256,6 +348,7 @@ class HeaveSolver:
         axle: str,
         dynamic_rh_mm: float,
         label: str = "",
+        parallel_wheel_rate_nmm: float = 0.0,
     ) -> SpringSafetyCheck:
         """Check if a given spring rate is safe for the specified axle.
 
@@ -278,7 +371,19 @@ class HeaveSolver:
                      else self.track.shock_vel_p99_rear_mps)
             m_eff = hsm.rear_m_eff_kg
 
-        exc = self.excursion(v_p99, m_eff, rate_nmm)
+        damper_coeff = (
+            self.car.damper.front_hs_coefficient_nsm
+            if axle == "front"
+            else self.car.damper.rear_hs_coefficient_nsm
+        )
+        exc = self.excursion(
+            v_p99,
+            m_eff,
+            rate_nmm,
+            axle=axle,
+            damper_coeff_nsm=damper_coeff,
+            parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+        )
         sigma = self.sigma_from_excursion(exc)
         bottoming = exc - dynamic_rh_mm  # positive = bottoming
 
@@ -488,6 +593,7 @@ class HeaveSolver:
         fuel_load_l: float,
         front_camber_deg: float,
         front_heave_perch_target_mm: float | None,
+        front_hs_damper_nsm: float,
     ) -> tuple[float, float, float, float, object, object]:
         """Search the minimum front-heave rate that satisfies hard garage constraints."""
         garage_model = self.car.active_garage_output_model(self.track.track_name)
@@ -506,7 +612,13 @@ class HeaveSolver:
         best_fallback_penalty = float("inf")
 
         for rate in range(int(start_rate), int(hi) + 10, 10):
-            front_exc = self.excursion(v_front, m_front, rate)
+            front_exc = self.excursion(
+                v_front,
+                m_front,
+                rate,
+                axle="front",
+                damper_coeff_nsm=front_hs_damper_nsm,
+            )
             front_sigma = self.sigma_from_excursion(front_exc)
             perch, outputs, constraint = self._best_front_perch_with_garage_model(
                 front_heave_nmm=rate,
@@ -558,6 +670,8 @@ class HeaveSolver:
         rear_third_perch_mm: float | None = None,
         fuel_load_l: float = 0.0,
         front_camber_deg: float | None = None,
+        front_hs_damper_nsm: float | None = None,
+        rear_hs_damper_nsm: float | None = None,
     ) -> HeaveSolution:
         """Find minimum safe heave/third spring rates.
 
@@ -574,6 +688,16 @@ class HeaveSolver:
             HeaveSolution with recommended rates and constraint analysis
         """
         hsm = self.car.heave_spring
+        front_damper_coeff = (
+            self.car.damper.front_hs_coefficient_nsm
+            if front_hs_damper_nsm is None
+            else float(front_hs_damper_nsm)
+        )
+        rear_damper_coeff = (
+            self.car.damper.rear_hs_coefficient_nsm
+            if rear_hs_damper_nsm is None
+            else float(rear_hs_damper_nsm)
+        )
 
         # --- Front axle ---
         # Use clean-track p99 (kerb strikes excluded) for spring sizing.
@@ -585,10 +709,18 @@ class HeaveSolver:
         m_front = hsm.front_m_eff_kg
 
         k_front_bottoming = self.min_rate_for_no_bottoming(
-            v_front, m_front, dynamic_front_rh_mm
+            v_front,
+            m_front,
+            dynamic_front_rh_mm,
+            axle="front",
+            damper_coeff_nsm=front_damper_coeff,
         )
         k_front_sigma = self.min_rate_for_sigma(
-            v_front, m_front, hsm.sigma_target_mm
+            v_front,
+            m_front,
+            hsm.sigma_target_mm,
+            axle="front",
+            damper_coeff_nsm=front_damper_coeff,
         )
 
         if k_front_bottoming >= k_front_sigma:
@@ -611,7 +743,13 @@ class HeaveSolver:
         # Round up to nearest 10 N/mm (iRacing garage step)
         k_front = math.ceil(k_front / 10) * 10
 
-        front_exc = self.excursion(v_front, m_front, k_front)
+        front_exc = self.excursion(
+            v_front,
+            m_front,
+            k_front,
+            axle="front",
+            damper_coeff_nsm=front_damper_coeff,
+        )
         front_sigma = self.sigma_from_excursion(front_exc)
 
         # --- Rear axle ---
@@ -619,12 +757,23 @@ class HeaveSolver:
                   if self.track.shock_vel_p99_rear_clean_mps > 0
                   else self.track.shock_vel_p99_rear_mps)
         m_rear = hsm.rear_m_eff_kg
+        rear_corner_wheel_rate_nmm = self._rear_corner_wheel_rate_nmm(rear_spring_nmm)
 
         k_rear_bottoming = self.min_rate_for_no_bottoming(
-            v_rear, m_rear, dynamic_rear_rh_mm
+            v_rear,
+            m_rear,
+            dynamic_rear_rh_mm,
+            axle="rear",
+            damper_coeff_nsm=rear_damper_coeff,
+            parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
         )
         k_rear_sigma = self.min_rate_for_sigma(
-            v_rear, m_rear, hsm.sigma_target_mm
+            v_rear,
+            m_rear,
+            hsm.sigma_target_mm,
+            axle="rear",
+            damper_coeff_nsm=rear_damper_coeff,
+            parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
         )
 
         if k_rear_bottoming >= k_rear_sigma:
@@ -644,7 +793,14 @@ class HeaveSolver:
         k_rear = min(k_rear, hsm.rear_spring_range_nmm[1])
         k_rear = math.ceil(k_rear / 10) * 10
 
-        rear_exc = self.excursion(v_rear, m_rear, k_rear)
+        rear_exc = self.excursion(
+            v_rear,
+            m_rear,
+            k_rear,
+            axle="rear",
+            damper_coeff_nsm=rear_damper_coeff,
+            parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
+        )
         rear_sigma = self.sigma_from_excursion(rear_exc)
 
         # --- Safety checks ---
@@ -660,7 +816,8 @@ class HeaveSolver:
         safety_checks.append(
             self.check_spring_rate(
                 k_rear, "rear", dynamic_rear_rh_mm,
-                f"Recommended rear third {k_rear} N/mm"
+                f"Recommended rear third {k_rear} N/mm",
+                parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
             )
         )
 
@@ -736,6 +893,7 @@ class HeaveSolver:
                 fuel_load_l=fuel_load_l,
                 front_camber_deg=front_camber_val,
                 front_heave_perch_target_mm=front_heave_perch_target_mm,
+                front_hs_damper_nsm=front_damper_coeff,
             )
             k_front, perch_front, front_exc, front_sigma, outputs, constraint = selected
             if k_front > initial_front_rate:
@@ -850,12 +1008,19 @@ class HeaveSolver:
         *,
         fuel_load_l: float = 0.0,
         front_camber_deg: float | None = None,
+        front_hs_damper_nsm: float | None = None,
         verbose: bool = True,
     ) -> None:
         """Round-trip the front heave travel budget after torsion/spring choices are known."""
         garage_model = self.car.active_garage_output_model(self.track.track_name)
         if garage_model is None:
             return
+
+        front_damper_coeff = (
+            self.car.damper.front_hs_coefficient_nsm
+            if front_hs_damper_nsm is None
+            else float(front_hs_damper_nsm)
+        )
 
         selected = self._garage_constrained_front_solution(
             base_front_heave_nmm=step2.front_heave_nmm,
@@ -874,6 +1039,7 @@ class HeaveSolver:
                 else garage_model.default_front_camber_deg
             ),
             front_heave_perch_target_mm=None,
+            front_hs_damper_nsm=front_damper_coeff,
         )
         new_rate, new_perch, front_exc, front_sigma, outputs, constraint = selected
 

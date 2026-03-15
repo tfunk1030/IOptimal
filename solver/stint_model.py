@@ -286,18 +286,21 @@ def compute_fuel_states(
 
     dry_mass_kg = car.mass_car_kg + car.mass_driver_kg  # car + driver mass without fuel
     wheelbase_m = car.wheelbase_m
-    front_weight_base = car.weight_dist_front
+    dry_front_weight = car.weight_dist_front
+    dry_cg_from_front_m = wheelbase_m * (1.0 - dry_front_weight)
 
     states = []
     for fuel_l in fuel_levels_l:
         fuel_mass = fuel_l * FUEL_DENSITY_KG_PER_L
         total_mass = dry_mass_kg + fuel_mass
 
-        # Fuel CG effect on front weight distribution
-        # Fuel behind CG → reduces front weight %
-        fuel_moment = fuel_mass * FUEL_TANK_POSITION_FRACTION * wheelbase_m
-        total_moment = (dry_mass_kg * front_weight_base * wheelbase_m + fuel_moment)
-        front_weight = total_moment / (total_mass * wheelbase_m)
+        # Combine dry-car CG and fuel-tank CG in wheelbase coordinates.
+        # Front axle load fraction = (wheelbase - x_cg) / wheelbase.
+        fuel_cg_from_front_m = FUEL_TANK_POSITION_FRACTION * wheelbase_m
+        combined_cg_from_front_m = (
+            dry_mass_kg * dry_cg_from_front_m + fuel_mass * fuel_cg_from_front_m
+        ) / max(total_mass, 1e-9)
+        front_weight = (wheelbase_m - combined_cg_from_front_m) / max(wheelbase_m, 1e-9)
 
         # CG height shift (fuel tank is ~200mm above ground)
         cg_shift = fuel_mass * 0.200 / total_mass  # approximate contribution
