@@ -225,70 +225,69 @@ class DamperSolver:
         return 2.0 * math.sqrt(k_nm * mass_kg)
 
     def _damping_ratio_ls(self, is_front: bool) -> float:
-        """LS damping ratio derived from quarter-car dynamics.
+        """LS damping ratio — track-adaptive.
 
-        The front and rear have VERY different requirements because of
-        the asymmetry in spring rates and the car's dynamic behavior:
+        Base targets derived from quarter-car eigenvalue analysis for
+        the BMW's spring rate asymmetry (soft front torsion ~30 N/mm,
+        stiff rear coil ~170 N/mm). Adjusted for track surface roughness:
+        rougher tracks need more compliance (lower ζ).
 
-        Front (ζ ≈ 0.85-0.90):
-            The front suspension has LOW spring rate (~30 N/mm wheel rate
-            from the torsion bar). Low spring rate → low natural frequency
-            → low critical damping coefficient. To control weight transfer
-            on corner entry and braking (which generates large forces at
-            low shaft velocities), the damping ratio must be HIGH — near
-            critical — to prevent excessive dive and roll oscillation.
+        Front base ζ ≈ 0.88 (near-critical for entry control with soft spring)
+        Rear base ζ ≈ 0.30 (light for rear traction with stiff spring)
 
-            At ζ=0.88, the front body settles in <0.5 oscillations after
-            a weight transfer event. This gives the driver immediate,
-            predictable front-end response on turn-in.
-
-        Rear (ζ ≈ 0.28-0.32):
-            The rear has HIGH spring rate (~170 N/mm). High spring rate
-            → high natural frequency → high critical damping coefficient.
-            The rear needs MUCH less damping ratio because:
-            1. The spring itself provides most of the resistance
-            2. The driven rear wheels need compliance for traction
-            3. Over-damping the rear LS causes snap oversteer on entry
-               (the inside rear can't extend fast enough → loses contact)
-
-            At ζ=0.30, the rear is lightly damped — it follows the road
-            surface faithfully rather than fighting it.
-
-        The ratio ζ_front/ζ_rear ≈ 2.9 is a direct consequence of the
-        spring rate asymmetry: c_crit_rear/c_crit_front ≈ 2.5, so to
-        get similar absolute LS force behavior, the ratios must diverge.
+        Roughness scaling: ±0.08 ζ from clean-track p95 shock velocity.
+        Smooth track (p95 < 0.08 m/s) → +0.04 ζ (more platform control)
+        Rough track (p95 > 0.20 m/s) → -0.08 ζ (more compliance)
         """
+        # Track roughness from clean-track shock velocity p95
         if is_front:
-            return 0.88  # Near-critical for entry control
-        return 0.30  # Light for rear traction
+            sv_p95 = getattr(self.track, 'shock_vel_p95_front_clean_mps',
+                           self.track.shock_vel_p95_front_mps)
+        else:
+            sv_p95 = getattr(self.track, 'shock_vel_p95_rear_clean_mps',
+                           self.track.shock_vel_p95_rear_mps)
+
+        # Normalize roughness: 0 = smooth (p95 < 0.08), 1 = rough (p95 > 0.20)
+        roughness = max(0.0, min(1.0, (sv_p95 - 0.08) / 0.12))
+
+        # Smooth → +0.04 (more control), Rough → -0.08 (more compliance)
+        roughness_offset = 0.04 - roughness * 0.12  # range: +0.04 to -0.08
+
+        if is_front:
+            return max(0.60, min(0.95, 0.88 + roughness_offset))
+        return max(0.20, min(0.40, 0.30 + roughness_offset))
 
     def _damping_ratio_hs(self, is_front: bool) -> float:
-        """HS damping ratio from bump energy analysis.
+        """HS damping ratio — track-adaptive.
 
-        HS events are transient (bumps, kerbs). The key physics:
-        - Energy in = ½ * m * v_bump² (kinetic energy of bump event)
-        - Energy out = damper dissipation + spring storage
-        - The damper must absorb enough energy to prevent bottoming
-          but not so much that the tyre lifts off (wheel hop)
+        HS events are transient (bumps, kerbs). Rougher tracks with more
+        extreme HS events need softer HS damping for bump compliance.
 
-        Front HS (ζ ≈ 0.45):
-            The front handles aero platform control. Moderate HS damping
-            prevents pitch oscillation that would disrupt the diffuser
-            seal. The front can tolerate momentary tyre unloading because
-            the front contributes less to traction than the rear.
+        Front base ζ ≈ 0.45 (platform control)
+        Rear base ζ ≈ 0.14 (maximum compliance for traction)
 
-        Rear HS (ζ ≈ 0.13-0.15):
-            The rear must be VERY compliant over bumps. The driven wheels
-            need continuous contact for traction. Over-damped rear HS is
-            the most dangerous mode in a GTP car — it causes the rear to
-            "skip" over bumps, losing traction unpredictably.
-
-            The compliance ratio rear/front HS (0.14/0.45 ≈ 0.31) is
-            fundamentally driven by the traction requirement asymmetry.
+        Track adaptation uses the p99/p95 ratio to detect spike severity.
+        High ratio → more extreme events → need softer HS for compliance.
         """
         if is_front:
-            return 0.45  # Platform control
-        return 0.14  # Maximum compliance for traction
+            p95 = self.track.shock_vel_p95_front_mps
+            p99 = self.track.shock_vel_p99_front_mps
+        else:
+            p95 = self.track.shock_vel_p95_rear_mps
+            p99 = self.track.shock_vel_p99_rear_mps
+
+        # Spike severity: p99/p95 ratio
+        # Low (1.2) = uniform surface → can run stiffer HS
+        # High (1.8+) = spiky surface → need softer HS
+        spike_ratio = (p99 / p95) if p95 > 1e-6 else 1.3
+        spike_severity = max(0.0, min(1.0, (spike_ratio - 1.2) / 0.6))
+
+        # More severe spikes → reduce ζ for compliance
+        spike_offset = -spike_severity * 0.10  # range: 0 to -0.10
+
+        if is_front:
+            return max(0.30, min(0.55, 0.45 + spike_offset))
+        return max(0.08, min(0.22, 0.14 + spike_offset))
 
     def _rbd_comp_ratio(self, is_ls: bool, is_front: bool) -> float:
         """Physics-derived rebound/compression ratio.

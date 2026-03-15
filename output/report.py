@@ -94,6 +94,7 @@ def print_full_setup_report(
     sensitivity_result: Any = None,
     space_result: Any = None,
     supporting: Any = None,
+    car: Any = None,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
@@ -111,9 +112,19 @@ def print_full_setup_report(
     a(_box_top("GARAGE CARD"))
     a(_blank())
     a(_row("  RIDE HEIGHTS & PUSHRODS", "  SPRINGS"))
-    _tb_turns = round(
-        0.1089 - 0.1642 / max(step2.front_heave_nmm, 1) + 0.000368 * step2.perch_offset_front_mm, 3
-    )
+    if car is not None:
+        _dm = car.deflection
+        _k_torsion = car.corner_spring.torsion_bar_rate(step3.front_torsion_od_mm)
+        _tb_turns = round(_dm.torsion_bar_turns(
+            step2.front_heave_nmm, step2.perch_offset_front_mm,
+            _k_torsion, step3.front_torsion_od_mm,
+            camber_deg=step5.front_camber_deg), 3)
+    else:
+        _tb_turns = round(
+            0.141141 - 0.001885 * step3.front_torsion_od_mm
+            - 0.000192 * step2.front_heave_nmm
+            + 0.000571 * step2.perch_offset_front_mm
+            - 0.000666 * step5.front_camber_deg, 3)
     a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
            f"  Heave F:    {step2.front_heave_nmm:5.0f} N/mm  perch {step2.perch_offset_front_mm:+.0f}mm"))
     a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",

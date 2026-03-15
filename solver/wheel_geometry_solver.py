@@ -172,18 +172,30 @@ class WheelGeometrySolver:
                         fuel_load_l: float = 89.0) -> float:
         """Estimate body roll angle at a given lateral g.
 
-        roll = m * ay * h_cg / K_roll_total
+        roll = m * ay * h_effective / K_roll_total
+
+        where h_effective = h_cg - h_rc (distance from CG to roll axis).
+        Using h_cg directly (without subtracting roll center height)
+        overestimates roll by ~10-15% for GTP cars.
+
         Returns degrees.
         """
         mass_kg = self.car.total_mass(fuel_load_l=fuel_load_l)
         ay_ms2 = lat_g * 9.81
         h_cg_m = self.car.corner_spring.cg_height_mm / 1000.0
-        t_avg_m = (
-            self.car.arb.track_width_front_mm + self.car.arb.track_width_rear_mm
-        ) / 2.0 / 1000.0
 
-        # Roll moment: m * ay * h_cg (N·m)
-        roll_moment = mass_kg * ay_ms2 * h_cg_m
+        # Roll center height — weighted average front/rear by weight distribution
+        geo = self.car.geometry
+        h_rc_front = getattr(geo, 'roll_center_height_front_mm', 0.0) / 1000.0
+        h_rc_rear = getattr(geo, 'roll_center_height_rear_mm', 0.0) / 1000.0
+        wf = self.car.weight_dist_front
+        h_rc_avg = h_rc_front * wf + h_rc_rear * (1.0 - wf)
+
+        # Effective moment arm: CG to roll axis
+        h_effective = h_cg_m - h_rc_avg
+
+        # Roll moment: m * ay * h_effective (N·m)
+        roll_moment = mass_kg * ay_ms2 * h_effective
         # Roll stiffness in N·m/deg → roll_deg = moment / stiffness
         if k_roll_total_nm_deg < 1.0:
             return 2.0  # fallback if stiffness not computed
@@ -303,6 +315,8 @@ class WheelGeometrySolver:
         rear_wheel_rate_nmm: float,
         fuel_load_l: float = 89.0,
         camber_confidence: str = "estimated",
+        calibrated_front_roll_gain: float | None = None,
+        calibrated_rear_roll_gain: float | None = None,
     ) -> WheelGeometrySolution:
         """Compute optimal wheel geometry.
 
@@ -316,6 +330,10 @@ class WheelGeometrySolver:
         """
         geo = self.car.geometry
         peak_lat_g = self.track.peak_lat_g
+
+        # Use calibrated roll gains from learner if provided, else car defaults
+        front_roll_gain = calibrated_front_roll_gain if calibrated_front_roll_gain is not None else geo.front_roll_gain
+        rear_roll_gain = calibrated_rear_roll_gain if calibrated_rear_roll_gain is not None else geo.rear_roll_gain
 
         # Representative cornering load for camber optimization.
         #
@@ -356,10 +374,10 @@ class WheelGeometrySolver:
 
         # Optimal static camber — optimized for p95 cornering load
         front_camber = self._optimal_camber(
-            representative_roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg
+            representative_roll_deg, front_roll_gain, geo.front_camber_baseline_deg
         )
         rear_camber = self._optimal_camber(
-            representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg,
+            representative_roll_deg, rear_roll_gain, geo.rear_camber_baseline_deg,
             is_front=False,
         )
         # Rear range already applied in _optimal_camber via is_front=False
@@ -367,8 +385,8 @@ class WheelGeometrySolver:
         rear_camber = max(r_min, min(r_max, rear_camber))
 
         # Dynamic camber at peak lateral g (what the tyre actually sees)
-        front_camber_change = roll_deg * geo.front_roll_gain
-        rear_camber_change = roll_deg * geo.rear_roll_gain
+        front_camber_change = roll_deg * front_roll_gain
+        rear_camber_change = roll_deg * rear_roll_gain
         front_dynamic = front_camber + front_camber_change
         rear_dynamic = rear_camber + rear_camber_change
 
@@ -439,8 +457,9 @@ class WheelGeometrySolver:
             f"kerb_weight={kerb_weight:.1f}). "
             f"Roll: {representative_roll_deg:.1f}° at representative, "
             f"{roll_deg:.1f}° at peak.",
-            "Tyre temperature spread diagnosis: inner hotter = correct camber. "
-            "If outer runs hotter -> reduce negative camber by 0.2-0.3 deg.",
+            "Tyre temperature spread diagnosis: inner slightly hotter = correct camber. "
+            "If outer runs hotter -> INCREASE negative camber by 0.2-0.3 deg "
+            "(tyre is rolling onto outer shoulder, needs more static negative).",
             "BMW Vision tread conditioning (Sebring): fronts +2.4°C/lap, "
             "rears +3.2°C/lap. Full operating temp by lap 13-15 (fronts), 8-9 (rears).",
             "For sprint qualifying: add 0.3° more negative camber + 0.2mm extra "

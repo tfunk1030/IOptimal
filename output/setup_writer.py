@@ -496,20 +496,33 @@ def write_sto(
     # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
     _w_num("lf_torsion_od", step3.front_torsion_od_mm, "mm")
     _w_num("rf_torsion_od", step3.front_torsion_od_mm, "mm")
-    # Torsion bar turns — computed by iRacing from heave/perch/OD.
-    # Only write when include_computed=True (for engineering reports).
-    if include_computed:
-        # turns = 0.0989 + 0.432/heave + 0.000699*perch + 0.000002*OD
-        # Calibrated from 31 unique setups across 41 BMW sessions, R²=0.800
+    # Torsion bar turns — iRacing auto-computes this on .sto load; written
+    # value is ignored. We write a plausible prediction for file completeness.
+    # Verified: optimalnf.sto wrote 0.109, IBT showed 0.101 for same params.
+    if _car is not None:
+        _dm = _car.deflection
+        _k_torsion = _car.corner_spring.torsion_bar_rate(step3.front_torsion_od_mm)
+        _camber = step5.front_camber_deg if step5 is not None else -2.0
         _tb_turns = round(
-            0.0989
-            + 0.432 / max(step2.front_heave_nmm, 1)
-            + 0.000699 * step2.perch_offset_front_mm
-            + 0.000002 * step3.front_torsion_od_mm,
+            _dm.torsion_bar_turns(
+                step2.front_heave_nmm, step2.perch_offset_front_mm,
+                _k_torsion, step3.front_torsion_od_mm,
+                camber_deg=_camber,
+            ),
             3,
         )
-        _w_num("lf_torsion_turns", _tb_turns, "Turns")
-        _w_num("rf_torsion_turns", _tb_turns, "Turns")
+    else:
+        # Fallback for uncalibrated cars
+        _tb_turns = round(
+            0.141141
+            - 0.001885 * step3.front_torsion_od_mm
+            - 0.000192 * step2.front_heave_nmm
+            + 0.000571 * step2.perch_offset_front_mm
+            - 0.000666 * (step5.front_camber_deg if step5 is not None else -2.0),
+            3,
+        )
+    _w_num("lf_torsion_turns", _tb_turns, "Turns")
+    _w_num("rf_torsion_turns", _tb_turns, "Turns")
     # Porsche roll spring (only if car maps it)
     if "lf_roll_spring" in ids:
         _numeric(details, ids["lf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")

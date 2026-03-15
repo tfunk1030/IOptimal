@@ -235,10 +235,11 @@ When heave spring is softened, it carries less of the front static weight. The r
 2. Corner weight distribution and crossweight (must be re-checked in garage)
 3. The effective static stiffness of the front platform at rest
 
-**Three Methods to Adjust Front Ride Height (ranked by side effects):**
+**Two Methods to Adjust Front Ride Height (ranked by side effects):**
 1. **Pushrod Length Offset** — Cleanest. Changes RH only. No preload, crossweight, or torsion bar effects.
 2. **Heave Perch Offset** — Changes RH + heave spring preload. Affects HeaveSpringDeflStatic, HeaveSliderDeflStatic, and indirectly shifts load to/from torsion bars.
-3. **Torsion Bar Turns** — Most side effects. Changes corner weight, crossweight, and torsion bar deflection. Use ONLY for crossweight tuning, not ride height.
+
+Note: TorsionBarTurns is NOT a ride height adjuster — it is read-only, auto-computed by iRacing from OD, heave, perch, and camber. Verified: .sto files with incorrect turns values are overridden by iRacing on load.
 
 **HeaveSpringDefl Budget (critical constraint):**
 ```

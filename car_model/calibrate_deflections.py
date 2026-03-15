@@ -145,6 +145,7 @@ def main():
         return np.array([r[name] for r in source])
 
     # ─── 1. Front Ride Height ───
+    # BMW manual: front pushrod and heave perch both adjust front RH.
     X = np.column_stack([
         col("heave_nmm"), col("heave_perch_mm"), col("front_camber_deg"),
         col("fuel_l"), col("front_pushrod_mm"), col("torsion_od_mm"),
@@ -155,26 +156,32 @@ def main():
                "Front Ride Height (mm)")
 
     # ─── 2. Rear Ride Height ───
+    # Added rear_third_perch_mm — improves R² from ~0.52 to ~0.91
     X = np.column_stack([
         col("rear_pushrod_mm"), col("rear_third_nmm"),
         col("rear_spring_nmm"), col("heave_perch_mm"),
         col("fuel_l"), col("rear_spring_perch_mm"),
+        col("rear_third_perch_mm"),
     ])
     fit_linear(X, col("rear_rh_mm"),
                ["rear_pushrod_mm", "rear_third_nmm", "rear_spring_nmm",
-                "heave_perch_mm", "fuel_l", "rear_spring_perch_mm"],
+                "heave_perch_mm", "fuel_l", "rear_spring_perch_mm",
+                "rear_third_perch_mm"],
                "Rear Ride Height (mm)")
 
-    # ─── 3. Torsion Bar Turns ───
+    # ─── 3. Torsion Bar Turns (iRacing-computed display value) ───
+    # iRacing recomputes turns on .sto load — written value has no effect.
+    # This model is for display accuracy only.
     heave = col("heave_nmm")
     X = np.column_stack([
-        1.0 / np.maximum(heave, 1.0),
-        col("heave_perch_mm"),
         col("torsion_od_mm"),
+        heave,
+        col("heave_perch_mm"),
+        col("front_camber_deg"),
     ])
     fit_linear(X, col("tb_turns"),
-               ["1/heave_nmm", "heave_perch_mm", "torsion_od_mm"],
-               "Torsion Bar Turns")
+               ["torsion_od_mm", "heave_nmm", "heave_perch_mm", "front_camber_deg"],
+               "Torsion Bar Turns (display only)")
 
     # ─── 4. Torsion Bar Deflection ───
     # Physics form: defl = load / k_torsion

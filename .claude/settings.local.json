@@ -58,7 +58,8 @@
       "Bash(python -c \"from car_model.cars import BMW_M_HYBRID_V8; dm = BMW_M_HYBRID_V8.deflection; print\\(''Shock front @-25.5:'', dm.shock_defl_front\\(-25.5\\)\\); print\\(''Rear spring defl max @150/30:'', dm.rear_spring_defl_max\\(150, 30\\)\\); print\\(''Third spring defl max @450/42:'', dm.third_spring_defl_max\\(450, 42\\)\\); print\\(''Heave defl max @50:'', BMW_M_HYBRID_V8.heave_spring.heave_spring_defl_max_intercept_mm + BMW_M_HYBRID_V8.heave_spring.heave_spring_defl_max_slope * 50\\); rh = BMW_M_HYBRID_V8.ride_height_model; print\\(''Rear RH @-21.5/450/150/-17/89/30:'', rh.predict_rear_static_rh\\(-21.5, 450, 150, -17, 89, 30\\)\\)\")",
       "Bash(xxd -l 64 \"C:/Users/VYRAL/Documents/iRacing/setups/bmwlmdh/SPR_26S2_BMWGTP_S12hr_JJ12_1.2R.sto\")",
       "Bash(xxd -l 16 \"C:/Users/VYRAL/Documents/iRacing/setups/bmwlmdh/Garage 61/funkbmwidkjack3.sto\")",
-      "Bash(xxd -l 16 \"C:/Users/VYRAL/Documents/iRacing/setups/bmwlmdh/2026 Season 1/sebring international/VRS_26S1MK_MHV8_Sebring_Q.sto\")"
+      "Bash(xxd -l 16 \"C:/Users/VYRAL/Documents/iRacing/setups/bmwlmdh/2026 Season 1/sebring international/VRS_26S1MK_MHV8_Sebring_Q.sto\")",
+      "Bash(pip install:*)"
     ]
   }
 }

@@ -167,8 +167,13 @@ def build_observation(
     }
 
     # ── Performance ──
+    # Plausibility filter: reject lap times that are clearly invalid
+    # (in/out laps, aborted laps, multi-lap sessions parsed as one)
+    lap_time = diag.lap_time_s
+    if lap_time is not None and (lap_time < 50.0 or lap_time > 300.0):
+        lap_time = None  # Mark as invalid — won't corrupt delta detection
     performance = {
-        "best_lap_time_s": diag.lap_time_s,
+        "best_lap_time_s": lap_time,
         "lap_number": diag.lap_number,
         "median_speed_kph": tp.median_speed_kph,
         "max_speed_kph": tp.max_speed_kph,

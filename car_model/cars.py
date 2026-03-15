@@ -99,13 +99,18 @@ class RideHeightModel:
 
     Calibrated from 31 unique BMW Sebring configs (41 sessions, March 2026).
 
-    Front model (6 features): R²=0.15, RMSE=0.16mm — front RH nearly constant (~30mm)
-    Rear model (6 features): R²=0.52, RMSE=0.68mm, MaxErr=2.1mm
+    Front model (6 features): R²=0.15, RMSE=0.16mm — includes pushrod, heave_perch, OD
+    Rear model (7 features): R²=0.92, RMSE=0.27mm, MaxErr=0.59mm — includes third_perch
     """
     # --- Front static RH regression ---
+    # BMW manual (p15): front pushrod IS a ride-height adjuster.
+    # BMW manual (p14): lower heave perch = more preload = raises front RH.
     front_intercept: float = 30.0   # fallback: acts as pinned value when coeffs are 0
     front_coeff_heave_nmm: float = 0.0     # mm RH per N/mm heave spring rate
     front_coeff_camber_deg: float = 0.0    # mm RH per deg front camber
+    front_coeff_pushrod: float = 0.0       # mm RH per mm front pushrod offset
+    front_coeff_heave_perch: float = 0.0   # mm RH per mm front heave perch offset
+    front_coeff_torsion_od: float = 0.0    # mm RH per mm torsion bar OD
     front_loo_rmse_mm: float = 0.0
 
     # --- Rear static RH regression ---
@@ -116,21 +121,28 @@ class RideHeightModel:
     rear_coeff_heave_perch: float = 0.0    # mm RH per mm front heave perch offset
     rear_coeff_fuel_l: float = 0.0         # mm RH per L fuel
     rear_coeff_spring_perch: float = 0.0   # mm RH per mm rear spring perch offset
+    rear_coeff_third_perch: float = 0.0    # mm RH per mm rear third perch offset
     rear_r_squared: float = 0.0
     rear_loo_rmse_mm: float = 0.0
 
     def predict_front_static_rh(
         self, heave_nmm: float, camber_deg: float,
+        pushrod_mm: float = 0.0, heave_perch_mm: float = 0.0,
+        torsion_od_mm: float = 0.0,
     ) -> float:
         """Predict front static RH from setup parameters."""
         return (self.front_intercept
                 + self.front_coeff_heave_nmm * heave_nmm
-                + self.front_coeff_camber_deg * camber_deg)
+                + self.front_coeff_camber_deg * camber_deg
+                + self.front_coeff_pushrod * pushrod_mm
+                + self.front_coeff_heave_perch * heave_perch_mm
+                + self.front_coeff_torsion_od * torsion_od_mm)
 
     def predict_rear_static_rh(
         self, pushrod_mm: float, third_nmm: float,
         rear_spring_nmm: float, heave_perch_mm: float,
         fuel_l: float = 0.0, spring_perch_mm: float = 0.0,
+        third_perch_mm: float = 0.0,
     ) -> float:
         """Predict rear static RH from setup parameters."""
         return (self.rear_intercept
@@ -139,12 +151,14 @@ class RideHeightModel:
                 + self.rear_coeff_rear_spring * rear_spring_nmm
                 + self.rear_coeff_heave_perch * heave_perch_mm
                 + self.rear_coeff_fuel_l * fuel_l
-                + self.rear_coeff_spring_perch * spring_perch_mm)
+                + self.rear_coeff_spring_perch * spring_perch_mm
+                + self.rear_coeff_third_perch * third_perch_mm)
 
     def pushrod_for_target_rh(
         self, target_rh_mm: float, third_nmm: float,
         rear_spring_nmm: float, heave_perch_mm: float,
         fuel_l: float = 0.0, spring_perch_mm: float = 0.0,
+        third_perch_mm: float = 0.0,
     ) -> float:
         """Solve for the pushrod offset that achieves a target rear static RH."""
         if abs(self.rear_coeff_pushrod) < 1e-6:
@@ -154,7 +168,8 @@ class RideHeightModel:
                  + self.rear_coeff_rear_spring * rear_spring_nmm
                  + self.rear_coeff_heave_perch * heave_perch_mm
                  + self.rear_coeff_fuel_l * fuel_l
-                 + self.rear_coeff_spring_perch * spring_perch_mm)
+                 + self.rear_coeff_spring_perch * spring_perch_mm
+                 + self.rear_coeff_third_perch * third_perch_mm)
         return (target_rh_mm - other) / self.rear_coeff_pushrod
 
     @property
@@ -166,7 +181,9 @@ class RideHeightModel:
     def front_is_calibrated(self) -> bool:
         """True if front model has non-zero coefficients."""
         return (abs(self.front_coeff_heave_nmm) > 1e-6
-                or abs(self.front_coeff_camber_deg) > 1e-6)
+                or abs(self.front_coeff_camber_deg) > 1e-6
+                or abs(self.front_coeff_pushrod) > 1e-6
+                or abs(self.front_coeff_heave_perch) > 1e-6)
 
 
 @dataclass
@@ -356,6 +373,37 @@ class DeflectionModel:
                 + self.third_spring_defl_max_rate_coeff * third_rate_nmm
                 + self.third_spring_defl_max_perch_coeff * third_perch_mm)
 
+    # --- TorsionBarTurns (iRacing-computed display value) ---
+    # iRacing auto-computes turns from suspension geometry on .sto load.
+    # The value written to .sto is ignored — iRacing recomputes it.
+    # Verified: optimalnf.sto writes 0.109, IBT shows 0.101 for same params.
+    # This formula is for display accuracy only (report, garage card).
+    # Calibrated from 31 unique BMW configs, R²=0.87, RMSE=0.001, MaxErr=0.004
+    # turns = intercept + od_coeff*OD + heave_coeff*heave + perch_coeff*perch + camber_coeff*camber
+    turns_intercept: float = 0.141141
+    turns_od_coeff: float = -0.001885
+    turns_heave_coeff: float = -0.000192
+    turns_perch_coeff: float = 0.000571
+    turns_camber_coeff: float = -0.000666
+
+    def torsion_bar_turns(
+        self, heave_nmm: float, perch_mm: float,
+        k_torsion: float, od_mm: float,
+        camber_deg: float = -2.0,
+    ) -> float:
+        """Predict iRacing's auto-computed torsion bar turns (display only).
+
+        iRacing recomputes this value on .sto load — the written value
+        has no effect on car behavior. This is for report/display accuracy.
+        k_torsion arg kept for API compatibility but unused.
+        """
+        turns = (self.turns_intercept
+                 + self.turns_od_coeff * od_mm
+                 + self.turns_heave_coeff * heave_nmm
+                 + self.turns_perch_coeff * perch_mm
+                 + self.turns_camber_coeff * camber_deg)
+        return max(0.0, turns)
+
 
 @dataclass
 class CornerSpringModel:
@@ -485,6 +533,12 @@ class WheelGeometryModel:
     rear_toe_baseline_mm: float = 0.0
     front_toe_heating_coeff: float = 2.5
     rear_toe_heating_coeff: float = 1.8
+    # Roll center heights (mm above ground). Used to compute the effective
+    # roll moment arm = h_cg - h_rc (distance from CG to roll axis).
+    # GTP pushrod suspension: typical 30-50mm front, 40-60mm rear.
+    # Set to 0.0 to disable roll center correction (uses h_cg directly).
+    roll_center_height_front_mm: float = 0.0
+    roll_center_height_rear_mm: float = 0.0
 
 
 @dataclass
@@ -862,6 +916,8 @@ BMW_M_HYBRID_V8 = CarModel(
         rear_roll_gain=0.50,
         front_toe_heating_coeff=2.5,
         rear_toe_heating_coeff=1.8,
+        roll_center_height_front_mm=40.0,   # Estimated for GTP pushrod geometry
+        roll_center_height_rear_mm=50.0,    # Rear typically higher
     ),
     damper=DamperModel(
         # BMW damper scale — all clicks max at 11. Different from Ferrari.
@@ -888,21 +944,27 @@ BMW_M_HYBRID_V8 = CarModel(
     ),
     ride_height_model=RideHeightModel(
         # Calibrated from 31 unique BMW Sebring configs (41 sessions, March 2026).
-        # Front model (6 features): R²=0.15, RMSE=0.16mm — front nearly pinned at 30mm
+        # Front model (6 features): R²=0.15, RMSE=0.16mm
+        # BMW manual: pushrod and heave perch both adjust front RH
         front_intercept=30.5834,
         front_coeff_heave_nmm=-0.002137,
         front_coeff_camber_deg=0.236605,
+        front_coeff_pushrod=0.053019,
+        front_coeff_heave_perch=-0.000117,
+        front_coeff_torsion_od=0.117027,
         front_loo_rmse_mm=0.163,
-        # Rear model (6 features): R²=0.52, RMSE=0.68mm, MaxErr=2.1mm
-        rear_intercept=48.9601,
-        rear_coeff_pushrod=0.226407,
-        rear_coeff_third_nmm=0.010214,
-        rear_coeff_rear_spring=0.010012,
-        rear_coeff_heave_perch=0.138723,
-        rear_coeff_fuel_l=-0.005877,
-        rear_coeff_spring_perch=0.068718,
-        rear_r_squared=0.5155,
-        rear_loo_rmse_mm=0.675,
+        # Rear model (7 features): R²=0.92, RMSE=0.27mm, MaxErr=0.59mm
+        # Added rear_third_perch — strongest predictor after pushrod (coeff=-0.838)
+        rear_intercept=100.7861,
+        rear_coeff_pushrod=0.378070,
+        rear_coeff_third_nmm=0.013849,
+        rear_coeff_rear_spring=0.039309,
+        rear_coeff_heave_perch=0.056240,
+        rear_coeff_fuel_l=-0.005197,
+        rear_coeff_spring_perch=-0.612441,
+        rear_coeff_third_perch=-0.838157,
+        rear_r_squared=0.9217,
+        rear_loo_rmse_mm=0.271,
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )

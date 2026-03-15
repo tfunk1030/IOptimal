@@ -153,7 +153,7 @@ Note: BMW has relatively low damper click values compared to Ferrari. The scales
 ```
 HeaveSpringDeflMax = 103.4 - 0.262 * HeaveSpring    (depends ONLY on spring rate)
 HeaveSliderDeflStatic = 46.2 + 0.012 * Heave + 0.251 * Perch   (perch dominates 21.8:1)
-TorsionBarTurns = 0.0856 + 0.668 / HeaveSpring      (at OD=13.9mm)
+TorsionBarTurns = 0.134 - 0.00136*OD - 0.000192*Heave + 0.000595*Perch - 0.000631*Camber  (R²=0.90)
 ```
 
 **Key data points (unique setups):**

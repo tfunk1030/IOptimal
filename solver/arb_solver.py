@@ -115,6 +115,11 @@ class ARBSolution:
     # Notes
     car_specific_notes: list[str] = field(default_factory=list)
 
+    # Per-speed-band LLTD targets
+    lltd_target_low_speed: float = 0.0    # Target LLTD for < 120 kph (mechanical domain)
+    lltd_target_mid_speed: float = 0.0    # Target LLTD for 120-200 kph (transition)
+    lltd_target_high_speed: float = 0.0   # Target LLTD for > 200 kph (aero domain)
+
     def summary(self) -> str:
         lines = [
             "===========================================================",
@@ -132,6 +137,14 @@ class ARBSolution:
             f"    Target LLTD:          {self.lltd_target:.1%}  (static + 5%)",
             f"    Achieved LLTD:        {self.lltd_achieved:.1%}",
             f"    LLTD error:           {self.lltd_error:.1%}",
+            "",
+            "  PER-SPEED LLTD TARGETS",
+            f"    Low speed (<120 kph):   {self.lltd_target_low_speed:.1%}  "
+            f"(softer rear, no aero)",
+            f"    Mid speed (120-200):    {self.lltd_target_mid_speed:.1%}  "
+            f"(baseline)",
+            f"    High speed (>200 kph):  {self.lltd_target_high_speed:.1%}  "
+            f"(stiffer rear, aero grip)",
             "",
             "  ROLL STIFFNESS BREAKDOWN (N·m/deg)",
             f"    Front springs:  {self.k_roll_front_springs:8.0f}",
@@ -231,6 +244,28 @@ class ARBSolver:
         lltd = self._lltd_from_roll_stiffness(k_front, k_rear)
         return lltd, k_farb, k_rarb, k_front, k_rear
 
+    def _speed_band_lltd_targets(
+        self,
+        base_target: float,
+    ) -> dict[str, float]:
+        """Compute per-speed-band LLTD targets.
+
+        At low speed (< 120 kph), the car has minimal aero load, so
+        LLTD needs to be closer to static weight distribution to avoid
+        snap oversteer. At high speed (> 200 kph), aero load adds
+        significant front downforce, so LLTD can be shifted higher
+        (more front load transfer) to sharpen front-end response.
+
+        The base target (static + 5%) is for the "median" speed band.
+        Low speed: target - 0.02 (softer rear for stability without aero)
+        High speed: target + 0.02 (stiffer rear for front bite with aero)
+        """
+        return {
+            "low": round(base_target - 0.02, 4),   # More rear compliance
+            "mid": round(base_target, 4),           # Baseline
+            "high": round(base_target + 0.02, 4),   # More front load transfer
+        }
+
     def solve(
         self,
         front_wheel_rate_nmm: float,
@@ -261,6 +296,7 @@ class ARBSolver:
 
         # Target LLTD (OptimumG: static front weight + 5%) + modifier offset
         target_lltd = self.car.weight_dist_front + 0.05 + lltd_offset
+        speed_targets = self._speed_band_lltd_targets(target_lltd)
 
         # ─── BMW ARB strategy ────────────────────────────────────────────────
         # Per SKILL.md and per-car-quirks.md:
@@ -356,6 +392,9 @@ class ARBSolver:
             "Stiffer RARB -> shifts load transfer rear -> front GAINS grip via LLTD -> "
             "sharpens front-end bite. Softer RARB -> stable/planted rear.",
             "Cold tyre out-lap: RARB at blade 1 to prevent snap oversteer before tyres are up to temperature.",
+            f"Per-speed targets: low {speed_targets['low']:.1%} / "
+            f"mid {speed_targets['mid']:.1%} / high {speed_targets['high']:.1%}. "
+            f"RARB blade maps these targets across corner speeds.",
         ]
 
         return ARBSolution(
@@ -381,4 +420,7 @@ class ARBSolver:
             lltd_at_rarb_max=round(lltd_max, 4),
             constraints=constraints,
             car_specific_notes=notes,
+            lltd_target_low_speed=speed_targets["low"],
+            lltd_target_mid_speed=speed_targets["mid"],
+            lltd_target_high_speed=speed_targets["high"],
         )

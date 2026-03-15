@@ -294,7 +294,10 @@ def compute_fuel_states(
         total_mass = dry_mass_kg + fuel_mass
 
         # Fuel CG effect on front weight distribution
-        # Fuel behind CG → reduces front weight %
+        # Tank at 55% of wheelbase (behind CG at ~47%) → adding fuel shifts
+        # CG rearward → REDUCES front weight %. Burning fuel shifts CG forward
+        # → INCREASES front weight % over the stint.
+        # NOTE: front_weight_base must be the dry (no fuel) weight distribution.
         fuel_moment = fuel_mass * FUEL_TANK_POSITION_FRACTION * wheelbase_m
         total_moment = (dry_mass_kg * front_weight_base * wheelbase_m + fuel_moment)
         front_weight = total_moment / (total_mass * wheelbase_m)

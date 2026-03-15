@@ -98,6 +98,12 @@ class RakeSolution:
     aero_state: str = "nominal"      # "nominal" | "stall_warning" | "stall_risk"
     stall_factor: float = 0.0        # 0.0 (clear) to 1.0 (full stall)
 
+    # Speed-binned aero evaluation
+    aero_balance_at_low_speed_pct: float = 0.0     # DF balance at ~120 kph
+    aero_balance_at_mid_speed_pct: float = 0.0     # DF balance at ~180 kph
+    aero_balance_at_high_speed_pct: float = 0.0    # DF balance at ~250 kph
+    aero_balance_speed_gradient: float = 0.0        # %/100kph: how balance shifts with speed
+
     def summary(self) -> str:
         """Human-readable summary of the solution."""
         lines = [
@@ -215,6 +221,66 @@ class RakeSolver:
             )
             return fallback
 
+    def _speed_binned_aero_check(
+        self,
+        actual_front_dyn: float,
+        actual_rear_dyn: float,
+    ) -> dict[str, float]:
+        """Evaluate aero balance at multiple speed bins.
+
+        At different speeds, aero compression changes the effective ride height,
+        which shifts the DF balance. A setup that's balanced at median speed
+        may be unbalanced at low speed (less compression) or high speed (more).
+
+        Returns dict with balance at each speed bin and the speed gradient.
+        """
+        comp = self.car.aero_compression
+        ref_speed = comp.ref_speed_kph
+
+        bins = {"low": 120.0, "mid": 180.0, "high": 250.0}
+        balances = {}
+
+        for label, speed in bins.items():
+            # At each speed, the ride heights shift due to different compression
+            # The front/rear compression ratio changes, shifting effective RH
+            front_comp_at_speed = comp.front_at_speed(speed)
+            rear_comp_at_speed = comp.rear_at_speed(speed)
+
+            # The actual dynamic RH at this speed (relative to the operating point)
+            # We know the car sits at actual_front_dyn at median speed.
+            # At a different speed, compression differs.
+            median_speed = self.track.median_speed_kph if self.track.median_speed_kph > 0 else ref_speed
+            front_comp_median = comp.front_at_speed(median_speed)
+            rear_comp_median = comp.rear_at_speed(median_speed)
+
+            # Delta compression from the operating point
+            delta_front = front_comp_at_speed - front_comp_median
+            delta_rear = rear_comp_at_speed - rear_comp_median
+
+            # Effective dynamic RH at this speed
+            eff_front = actual_front_dyn - delta_front
+            eff_rear = actual_rear_dyn - delta_rear
+
+            # Clamp to aero map bounds
+            eff_front = max(self.car.min_front_rh_dynamic, min(self.car.max_front_rh_dynamic, eff_front))
+            eff_rear = max(self.car.min_rear_rh_dynamic, min(self.car.max_rear_rh_dynamic, eff_rear))
+
+            bal, _ = self._query_aero(eff_front, eff_rear)
+            balances[label] = round(bal, 2)
+
+        # Speed gradient: change in balance per 100 kph
+        if balances.get("high", 0) and balances.get("low", 0):
+            gradient = (balances["high"] - balances["low"]) / ((250.0 - 120.0) / 100.0)
+        else:
+            gradient = 0.0
+
+        return {
+            "low": balances.get("low", 0.0),
+            "mid": balances.get("mid", 0.0),
+            "high": balances.get("high", 0.0),
+            "gradient": round(gradient, 3),
+        }
+
     def _build_solution(
         self,
         actual_front_dyn: float,
@@ -253,9 +319,13 @@ class RakeSolver:
             baseline_third_nmm = self.car.rear_third_spring_nmm  # car default
             baseline_heave_perch = self.car.heave_spring.perch_offset_front_baseline_mm
             baseline_rear_spring = self.car.corner_spring.rear_spring_range_nmm[0]
+            baseline_third_perch = self.car.heave_spring.perch_offset_rear_baseline_mm
+            baseline_spring_perch = self.car.corner_spring.rear_spring_perch_baseline_mm
             rear_pushrod = rh_model.pushrod_for_target_rh(
                 static_rear, baseline_third_nmm,
                 baseline_rear_spring, baseline_heave_perch,
+                spring_perch_mm=baseline_spring_perch,
+                third_perch_mm=baseline_third_perch,
             )
         else:
             rear_pushrod = self.car.pushrod.rear_offset_for_rh(static_rear)
@@ -263,9 +333,13 @@ class RakeSolver:
 
         # Recompute actual static RH from snapped pushrod
         if rh_model.front_is_calibrated:
+            baseline_od = self.car.corner_spring.front_torsion_od_ref_mm
             static_front = rh_model.predict_front_static_rh(
                 heave_nmm=self.car.front_heave_spring_nmm,
                 camber_deg=self.car.geometry.front_camber_baseline_deg,
+                pushrod_mm=front_pushrod,
+                heave_perch_mm=baseline_heave_perch,
+                torsion_od_mm=baseline_od,
             )
         else:
             static_front = self.car.pushrod.front_rh_for_offset(front_pushrod)
@@ -273,6 +347,8 @@ class RakeSolver:
             static_rear = rh_model.predict_rear_static_rh(
                 rear_pushrod, baseline_third_nmm,
                 baseline_rear_spring, baseline_heave_perch,
+                spring_perch_mm=baseline_spring_perch,
+                third_perch_mm=baseline_third_perch,
             )
         else:
             static_rear = self.car.pushrod.rear_rh_for_offset(rear_pushrod)
@@ -284,6 +360,8 @@ class RakeSolver:
 
         # Compute aero stall proximity at the dynamic front ride height
         stall = self.surface.stall_proximity(actual_front_dyn)
+
+        speed_aero = self._speed_binned_aero_check(actual_front_dyn, actual_rear_dyn)
 
         return RakeSolution(
             dynamic_front_rh_mm=round(actual_front_dyn, 1),
@@ -311,6 +389,10 @@ class RakeSolver:
             ld_cost_of_pinning=round(ld_cost, 3) if free_opt_ld > 0 else 0.0,
             aero_state=stall["aero_state"],
             stall_factor=stall["stall_factor"],
+            aero_balance_at_low_speed_pct=speed_aero["low"],
+            aero_balance_at_mid_speed_pct=speed_aero["mid"],
+            aero_balance_at_high_speed_pct=speed_aero["high"],
+            aero_balance_speed_gradient=speed_aero["gradient"],
         )
 
     def solve(
@@ -525,6 +607,9 @@ def reconcile_ride_heights(
         front_camber = car.geometry.front_camber_baseline_deg
         new_front_rh = rh_model.predict_front_static_rh(
             step2.front_heave_nmm, front_camber,
+            pushrod_mm=step1.front_pushrod_offset_mm,
+            heave_perch_mm=step2.perch_offset_front_mm,
+            torsion_od_mm=step3.front_torsion_od_mm,
         )
         if abs(new_front_rh - step1.static_front_rh_mm) > 0.05:
             if verbose:
@@ -537,13 +622,14 @@ def reconcile_ride_heights(
         actual_third_nmm = step2.rear_third_nmm
         actual_heave_perch = step2.perch_offset_front_mm
         actual_rear_spring = step3.rear_spring_rate_nmm
-
         actual_spring_perch = step3.rear_spring_perch_mm
+        actual_third_perch = step2.perch_offset_rear_mm
 
         predicted_rh = rh_model.predict_rear_static_rh(
             step1.rear_pushrod_offset_mm, actual_third_nmm,
             actual_rear_spring, actual_heave_perch,
             spring_perch_mm=actual_spring_perch,
+            third_perch_mm=actual_third_perch,
         )
         rh_error = predicted_rh - step1.static_rear_rh_mm
 
@@ -552,12 +638,14 @@ def reconcile_ride_heights(
                 step1.static_rear_rh_mm, actual_third_nmm,
                 actual_rear_spring, actual_heave_perch,
                 spring_perch_mm=actual_spring_perch,
+                third_perch_mm=actual_third_perch,
             )
             new_pushrod = round(new_pushrod * 2) / 2  # snap to 0.5mm
             new_rh = rh_model.predict_rear_static_rh(
                 new_pushrod, actual_third_nmm,
                 actual_rear_spring, actual_heave_perch,
                 spring_perch_mm=actual_spring_perch,
+                third_perch_mm=actual_third_perch,
             )
             if verbose:
                 print(f"  RH reconciliation: pushrod {step1.rear_pushrod_offset_mm:.1f} "
@@ -569,6 +657,48 @@ def reconcile_ride_heights(
             print(f"  RH model check: predicted {predicted_rh:.1f} mm "
                   f"vs target {step1.static_rear_rh_mm:.1f} mm "
                   f"(error {rh_error:+.2f} mm — OK)")
+
+    # --- Perch re-optimization with actual OD from Step 3 ---
+    # Step 2 computed perch using worst-case OD (minimum). Now that Step 3
+    # determined the actual OD, re-optimize the perch if needed.
+    dm = car.deflection
+    hsm = car.heave_spring
+    if abs(dm.slider_perch_coeff) > 1e-6 and hasattr(step3, 'front_torsion_od_mm'):
+        actual_od = step3.front_torsion_od_mm
+        heave_nmm = step2.front_heave_nmm
+        current_perch = step2.perch_offset_front_mm
+
+        actual_slider = dm.heave_slider_defl_static(heave_nmm, current_perch, actual_od)
+        actual_defl = max(0, dm.heave_spring_defl_static(heave_nmm, current_perch, actual_od))
+
+        # Re-optimize if slider exceeds limit OR if there's room to optimize upward
+        target_slider = hsm.max_slider_mm - 3.0
+        if actual_slider > hsm.max_slider_mm or abs(actual_slider - target_slider) > 2.0:
+            new_perch = (
+                (target_slider - dm.slider_intercept
+                 - dm.slider_heave_coeff * heave_nmm
+                 - dm.slider_od_coeff * actual_od)
+                / dm.slider_perch_coeff
+            )
+            new_perch = round(new_perch * 2) / 2
+
+            # Verify minimum static deflection with new perch
+            new_defl = max(0, dm.heave_spring_defl_static(heave_nmm, new_perch, actual_od))
+            if new_defl < hsm.min_static_defl_mm:
+                # Need more negative perch for preload
+                for _ in range(5):
+                    new_perch -= 1.0
+                    new_perch = round(new_perch * 2) / 2
+                    new_defl = max(0, dm.heave_spring_defl_static(heave_nmm, new_perch, actual_od))
+                    if new_defl >= hsm.min_static_defl_mm:
+                        break
+
+            new_slider = dm.heave_slider_defl_static(heave_nmm, new_perch, actual_od)
+            if verbose:
+                print(f"  Perch re-optimized for OD {actual_od:.2f}mm: "
+                      f"{current_perch:.1f} -> {new_perch:.1f} mm "
+                      f"(slider {actual_slider:.1f} -> {new_slider:.1f} mm)")
+            step2.perch_offset_front_mm = new_perch
 
     # Update static rake from (possibly refined) front + rear
     step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)

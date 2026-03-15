@@ -122,7 +122,7 @@ def generate_report(
         car_name=car.name,
         track_name=f"{track.track_name} — {track.track_config}",
         wing=wing,
-        target_balance=aero_grad.df_balance_pct,
+        target_balance=step1.df_balance_pct,
         step1=step1,
         step2=step2,
         step3=step3,
@@ -134,6 +134,7 @@ def generate_report(
         sensitivity_result=sensitivity_result,
         space_result=space_result,
         supporting=supporting,
+        car=car,
     ))
 
     # ── CURRENT vs RECOMMENDED ────────────────────────────────────────

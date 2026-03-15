@@ -250,10 +250,13 @@ class DiffSolver:
 
         mass = car.total_mass(89.0)  # use full fuel as conservative case
         track_width_m = car.corner_spring.track_width_mm / 1000.0
+        cg_height_m = car.corner_spring.cg_height_mm / 1000.0
 
         # Lateral load transfer at corner exit (N)
-        # This is the load difference between inside and outside rear wheels.
-        lateral_load_transfer_n = mass * peak_lat_g * 9.81 * track_width_m / (2.0 * car.wheelbase_m)
+        # ΔFz = m × ay × h_cg / track_width (standard formula)
+        # This is the total LLT — the rear axle share depends on LLTD,
+        # but for preload sizing we use total as a conservative estimate.
+        lateral_load_transfer_n = mass * peak_lat_g * 9.81 * cg_height_m / track_width_m
 
         # Minimum preload to maintain controlled slip on the inside wheel:
         #   preload_min ≈ load_transfer * slip_fraction * coupling_factor

@@ -4,7 +4,7 @@
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-14T14:56:30.875098+00:00",
+  "timestamp": "2026-03-15T07:40:15.935447+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -85,8 +85,8 @@
     "front_bottoming_events": 0,
     "rear_bottoming_events": 9,
     "front_heave_defl_p99_mm": 85.25,
-    "front_heave_travel_used_pct": 91.2,
-    "front_heave_travel_used_braking_pct": 91.8,
+    "front_heave_travel_used_pct": 90.2,
+    "front_heave_travel_used_braking_pct": 90.7,
     "rear_heave_defl_p99_mm": 0.0,
     "rear_heave_travel_used_pct": 0.0,
     "heave_bottoming_events_front": 0,
@@ -184,16 +184,16 @@
       {
         "category": "safety",
         "severity": "significant",
-        "symptom": "Front heave spring travel 92% exhausted under braking (p99 defl 85.3mm)",
-        "measured": 91.8,
+        "symptom": "Front heave spring travel 91% exhausted under braking (p99 defl 85.3mm)",
+        "measured": 90.7,
         "threshold": 85.0,
         "speed_context": "braking"
       },
       {
         "category": "safety",
         "severity": "significant",
-        "symptom": "Front heave spring travel 91% used at speed (p99 defl 85.2mm)",
-        "measured": 91.2,
+        "symptom": "Front heave spring travel 90% used at speed (p99 defl 85.2mm)",
+        "measured": 90.2,
         "threshold": 85.0,
         "speed_context": "high"
       },

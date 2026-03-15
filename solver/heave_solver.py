@@ -484,6 +484,9 @@ class HeaveSolver:
         # --- Perch offset optimization (travel budget) ---
         # Compute DeflMax, then find optimal perch that maximizes available travel
         # while maintaining minimum preload.
+        #
+        # Uses DeflectionModel (OD-aware) when calibrated, falling back to
+        # HeaveSpringModel's simpler formulas for uncalibrated cars.
         defl_max = 0.0
         slider_static = 0.0
         static_defl = 0.0
@@ -491,59 +494,78 @@ class HeaveSolver:
         travel_margin = 0.0
         perch_front = hsm.perch_offset_front_baseline_mm
 
+        # Get DeflectionModel for OD-aware slider/deflection formulas
+        dm = self.car.deflection
+        csm = self.car.corner_spring
+        # Use worst-case OD (minimum) for conservative first pass.
+        # Step 3 hasn't run yet, so we don't know the actual OD.
+        # Minimum OD = maximum slider value (OD coeff is negative).
+        if csm.front_torsion_od_options:
+            worst_od = min(csm.front_torsion_od_options)
+        else:
+            worst_od = csm.front_torsion_od_range_mm[0]
+        use_dm = abs(dm.slider_perch_coeff) > 1e-6  # DeflectionModel calibrated?
+
         if hsm.heave_spring_defl_max_intercept_mm > 0:
             defl_max = (hsm.heave_spring_defl_max_intercept_mm
                         + hsm.heave_spring_defl_max_slope * k_front)
 
-            # Optimize perch: find value that maximizes available travel
-            # while keeping static deflection >= min_static_defl_mm
-            # and slider position <= max_slider_mm.
-            #
-            # SliderStatic = slider_intercept + slider_heave_coeff * heave + slider_perch_coeff * perch
-            # StaticDefl = defl_static_intercept + defl_static_heave_coeff * heave
-            #   (static deflection depends primarily on heave rate, not perch directly)
-            # AvailableTravel = DeflMax - StaticDefl
-            #
-            # But perch affects slider position, which indicates how much preload is on the spring.
-            # Lower slider = more preload = higher static defl = less available travel.
-            # Higher slider = less preload = lower static defl = more available travel,
-            #   BUT slider > max_slider_mm means spring is nearly unloaded (risky).
-            #
-            # Strategy: target slider that maximizes travel while staying below max_slider_mm.
-            # Solve for perch from slider constraint:
-            #   target_slider = slider_intercept + slider_heave_coeff * heave + slider_perch_coeff * perch
-            #   perch = (target_slider - slider_intercept - slider_heave_coeff * heave) / slider_perch_coeff
+            # Optimize perch using OD-aware DeflectionModel slider formula:
+            #   SldrS = dm.slider_intercept + dm.slider_heave_coeff*heave
+            #         + dm.slider_perch_coeff*perch + dm.slider_od_coeff*od
+            # OD term is -4.108/mm — the dominant predictor!
 
-            if hsm.slider_perch_coeff > 0:
-                # Target slider: leave 3mm margin below max_slider (spring stays loaded)
+            if use_dm:
+                # Target slider: leave 3mm margin below max_slider
+                target_slider = hsm.max_slider_mm - 3.0
+                perch_front = (
+                    (target_slider - dm.slider_intercept
+                     - dm.slider_heave_coeff * k_front
+                     - dm.slider_od_coeff * worst_od)
+                    / dm.slider_perch_coeff
+                )
+                perch_front = round(perch_front * 2) / 2
+
+                # Verify slider with DeflectionModel
+                slider_static = dm.heave_slider_defl_static(k_front, perch_front, worst_od)
+
+                # Static deflection using DeflectionModel (includes perch and OD)
+                static_defl = max(0, dm.heave_spring_defl_static(k_front, perch_front, worst_od))
+
+                # Ensure minimum preload
+                if static_defl < hsm.min_static_defl_mm:
+                    # More negative perch increases static deflection
+                    # Iteratively adjust (DeflectionModel is nonlinear in 1/heave)
+                    for _ in range(5):
+                        perch_front -= 1.0
+                        perch_front = round(perch_front * 2) / 2
+                        static_defl = max(0, dm.heave_spring_defl_static(
+                            k_front, perch_front, worst_od))
+                        if static_defl >= hsm.min_static_defl_mm:
+                            break
+                    slider_static = dm.heave_slider_defl_static(k_front, perch_front, worst_od)
+
+                available_travel = max(0, defl_max - static_defl)
+                travel_margin = available_travel - front_exc
+            elif hsm.slider_perch_coeff > 0:
+                # Fallback: HeaveSpringModel (no OD, uncalibrated cars)
                 target_slider = hsm.max_slider_mm - 3.0
                 perch_front = (
                     (target_slider - hsm.slider_intercept - hsm.slider_heave_coeff * k_front)
                     / hsm.slider_perch_coeff
                 )
-                # Round to 0.5mm (iRacing garage precision)
                 perch_front = round(perch_front * 2) / 2
-
-                # Verify slider position with computed perch
                 slider_static = (hsm.slider_intercept
                                  + hsm.slider_heave_coeff * k_front
                                  + hsm.slider_perch_coeff * perch_front)
-
-                # Static deflection from heave rate
                 static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
-
-                # Ensure minimum preload: static defl must be >= min_static_defl_mm
                 if static_defl < hsm.min_static_defl_mm:
-                    # Need more negative perch to increase preload
-                    # Each mm more negative perch adds ~0.251mm to slider depression
-                    # which adds more static deflection
                     perch_front -= (hsm.min_static_defl_mm - static_defl) / 0.5
                     perch_front = round(perch_front * 2) / 2
                     slider_static = (hsm.slider_intercept
                                      + hsm.slider_heave_coeff * k_front
                                      + hsm.slider_perch_coeff * perch_front)
                     static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
-
                 available_travel = max(0, defl_max - static_defl)
                 travel_margin = available_travel - front_exc
             else:
@@ -557,11 +579,16 @@ class HeaveSolver:
             if front_heave_perch_target_mm is not None:
                 perch_front = round(front_heave_perch_target_mm * 2) / 2
                 # Recompute slider and travel budget with overridden perch
-                if hsm.slider_perch_coeff > 0:
+                if use_dm:
+                    slider_static = dm.heave_slider_defl_static(k_front, perch_front, worst_od)
+                    static_defl = max(0, dm.heave_spring_defl_static(k_front, perch_front, worst_od))
+                elif hsm.slider_perch_coeff > 0:
                     slider_static = (hsm.slider_intercept
                                      + hsm.slider_heave_coeff * k_front
                                      + hsm.slider_perch_coeff * perch_front)
-                static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
+                    static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
+                else:
+                    static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
                 available_travel = max(0, defl_max - static_defl)
                 travel_margin = available_travel - front_exc
 

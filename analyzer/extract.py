@@ -256,6 +256,32 @@ class MeasuredState:
     speed_max_kph: float = 0.0
     mean_speed_at_speed_kph: float = 0.0
 
+    # --- Phase-gated per-wheel slip ratios ---
+    front_braking_slip_lf: float = 0.0   # LF slip ratio during braking phase
+    front_braking_slip_rf: float = 0.0   # RF slip ratio during braking phase
+    rear_traction_slip_lr: float = 0.0   # LR slip ratio during traction phase
+    rear_traction_slip_rr: float = 0.0   # RR slip ratio during traction phase
+    front_braking_slip_p95: float = 0.0  # Front axle braking slip p95 (phase-gated)
+    rear_traction_slip_p95: float = 0.0  # Rear axle traction slip p95 (phase-gated)
+
+    # --- Hydraulic pressure split (renamed from measured_brake_bias_pct) ---
+    hydraulic_pressure_split_pct: float = 0.0  # Front/(front+rear) line pressure ratio
+
+    # --- Travel-to-limit bottoming (replaces z-score method) ---
+    rear_third_travel_used_pct: float = 0.0    # peak HRshockDefl / DeflMax
+    front_heave_bottoming_events: int = 0      # HFshockDefl within 2mm of DeflMax
+    rear_third_bottoming_events: int = 0       # HRshockDefl within 2mm of DeflMax
+    front_heave_travel_braking_pct: float = 0.0  # travel used during braking specifically
+
+    # --- Tyre slip angles (per-corner) ---
+    lf_slip_angle_deg: float = 0.0
+    rf_slip_angle_deg: float = 0.0
+    lr_slip_angle_deg: float = 0.0
+    rr_slip_angle_deg: float = 0.0
+    understeer_gradient_deg_per_g: float = 0.0  # d(front_slip - rear_slip)/d(lat_g)
+    front_slip_angle_mean_deg: float = 0.0      # Mean front slip angle in cornering
+    rear_slip_angle_mean_deg: float = 0.0       # Mean rear slip angle in cornering
+
 
 def extract_measurements(
     ibt_path: str | Path,
@@ -418,6 +444,35 @@ def extract_measurements(
             state.front_rh_excursion_measured_mm = float(np.percentile(front_deviation, 99))
             state.rear_rh_excursion_measured_mm = float(np.percentile(rear_deviation, 99))
 
+    # --- Travel-to-limit bottoming (mechanical, not statistical) ---
+    # Uses actual heave spring deflection vs known maximum travel.
+    # This is the physically correct bottoming metric — it detects
+    # when the spring approaches its travel limit (packer engagement).
+    if ibt.has_channel("HFshockDefl"):
+        hf_defl = np.abs(ibt.channel("HFshockDefl")[start:end + 1]) * 1000  # m -> mm
+        defl_max_front = getattr(car.heave_spring, 'max_slider_mm', 50.0)
+        if defl_max_front > 0:
+            state.front_heave_travel_used_pct = round(
+                float(np.percentile(hf_defl, 99)) / defl_max_front * 100, 1)
+            # Bottoming: within 2mm of travel limit
+            state.front_heave_bottoming_events = int(np.sum(hf_defl > (defl_max_front - 2.0)))
+            # Braking-specific travel (most critical for front)
+            brake_ch = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else None
+            if brake_ch is not None:
+                braking_ttl = brake_ch > 0.3
+                if np.sum(braking_ttl) > 20:
+                    state.front_heave_travel_braking_pct = round(
+                        float(np.percentile(hf_defl[braking_ttl], 99)) / defl_max_front * 100, 1)
+
+    if ibt.has_channel("HRshockDefl"):
+        hr_defl = np.abs(ibt.channel("HRshockDefl")[start:end + 1]) * 1000  # m -> mm
+        defl_max_rear = getattr(car.heave_spring, 'max_slider_mm', 50.0)
+        if defl_max_rear > 0:
+            state.rear_third_travel_used_pct = round(
+                float(np.percentile(hr_defl, 99)) / defl_max_rear * 100, 1)
+            state.rear_third_bottoming_events = int(np.sum(hr_defl > (defl_max_rear - 2.0)))
+
+    if has_rh:
         # --- LLTD from ride height deflections ---
         # Weight by track_width² to convert deflection ratio to load transfer ratio.
         # RH deflection (mm) × track_width² ∝ roll moment ∝ lateral load transfer.
@@ -676,7 +731,10 @@ def _extract_handling(
         if np.sum(peak_mask) > 10:
             state.body_slip_at_peak_g_deg = float(np.mean(abs_body_slip[peak_mask]))
 
-    # --- Wheel slip ratios ---
+    # --- Phase-gated per-wheel slip ratios ---
+    # Gate braking: brake > 0.3 AND throttle < 0.1 AND speed > 60 kph
+    # Gate traction: throttle > 0.3 AND brake < 0.05 AND speed > 60 kph
+    # Exclude high-steer states (|steer| > 90 deg) to avoid path-radius effects
     if all(ibt.has_channel(c) for c in ["LFspeed", "RFspeed", "LRspeed", "RRspeed"]):
         lf_ws = ibt.channel("LFspeed")[start:end + 1]
         rf_ws = ibt.channel("RFspeed")[start:end + 1]
@@ -684,17 +742,78 @@ def _extract_handling(
         rr_ws = ibt.channel("RRspeed")[start:end + 1]
 
         safe_car_speed = np.maximum(speed_ms, 2.0)
+        steer_abs = np.abs(steer)
+        low_steer = steer_abs < math.radians(90)  # exclude heavy steering
 
+        # Load brake/throttle for phase gating
+        _brake = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else np.zeros(n)
+        _throttle = ibt.channel("Throttle")[start:end + 1] if ibt.has_channel("Throttle") else np.zeros(n)
+
+        # Braking phase: brake applied, no throttle, at speed, moderate steer
+        braking_phase = (_brake > 0.3) & (_throttle < 0.1) & (speed_kph > 60) & low_steer
+        # Traction phase: throttle applied, no brake, at speed, moderate steer
+        traction_phase = (_throttle > 0.3) & (_brake < 0.05) & (speed_kph > 60) & low_steer
+
+        # Per-wheel slip = (wheel_speed - car_speed) / car_speed
+        lf_slip = (lf_ws - safe_car_speed) / safe_car_speed
+        rf_slip = (rf_ws - safe_car_speed) / safe_car_speed
+        lr_slip = (lr_ws - safe_car_speed) / safe_car_speed
+        rr_slip = (rr_ws - safe_car_speed) / safe_car_speed
+
+        if np.sum(braking_phase) > 30:
+            state.front_braking_slip_lf = float(np.percentile(np.abs(lf_slip[braking_phase]), 95))
+            state.front_braking_slip_rf = float(np.percentile(np.abs(rf_slip[braking_phase]), 95))
+            state.front_braking_slip_p95 = float(np.percentile(
+                np.abs(np.concatenate([lf_slip[braking_phase], rf_slip[braking_phase]])), 95))
+
+        if np.sum(traction_phase) > 30:
+            state.rear_traction_slip_lr = float(np.percentile(np.abs(lr_slip[traction_phase]), 95))
+            state.rear_traction_slip_rr = float(np.percentile(np.abs(rr_slip[traction_phase]), 95))
+            state.rear_traction_slip_p95 = float(np.percentile(
+                np.abs(np.concatenate([lr_slip[traction_phase], rr_slip[traction_phase]])), 95))
+
+        # Keep legacy axle-average metrics for backward compatibility
         rear_avg_ws = (lr_ws + rr_ws) / 2.0
         rear_slip = (rear_avg_ws - safe_car_speed) / safe_car_speed
-
         front_avg_ws = (lf_ws + rf_ws) / 2.0
         front_slip = (front_avg_ws - safe_car_speed) / safe_car_speed
-
         driving_mask = speed_kph > 60
         if np.sum(driving_mask) > 100:
             state.rear_slip_ratio_p95 = float(np.percentile(np.abs(rear_slip[driving_mask]), 95))
             state.front_slip_ratio_p95 = float(np.percentile(np.abs(front_slip[driving_mask]), 95))
+
+    # --- Tyre slip angles (direct from iRacing) ---
+    slip_angle_chs = ["LFtireSlipAngle", "RFtireSlipAngle", "LRtireSlipAngle", "RRtireSlipAngle"]
+    if all(ibt.has_channel(c) for c in slip_angle_chs):
+        lf_sa = np.degrees(ibt.channel("LFtireSlipAngle")[start:end + 1])
+        rf_sa = np.degrees(ibt.channel("RFtireSlipAngle")[start:end + 1])
+        lr_sa = np.degrees(ibt.channel("LRtireSlipAngle")[start:end + 1])
+        rr_sa = np.degrees(ibt.channel("RRtireSlipAngle")[start:end + 1])
+
+        cornering_sa = (np.abs(lat_g) > 0.5) & (speed_kph > 40)
+        if np.sum(cornering_sa) > 100:
+            state.lf_slip_angle_deg = float(np.mean(np.abs(lf_sa[cornering_sa])))
+            state.rf_slip_angle_deg = float(np.mean(np.abs(rf_sa[cornering_sa])))
+            state.lr_slip_angle_deg = float(np.mean(np.abs(lr_sa[cornering_sa])))
+            state.rr_slip_angle_deg = float(np.mean(np.abs(rr_sa[cornering_sa])))
+
+            # Front vs rear mean slip angle (for understeer gradient)
+            front_sa_mean = (np.abs(lf_sa[cornering_sa]) + np.abs(rf_sa[cornering_sa])) / 2.0
+            rear_sa_mean = (np.abs(lr_sa[cornering_sa]) + np.abs(rr_sa[cornering_sa])) / 2.0
+            state.front_slip_angle_mean_deg = float(np.mean(front_sa_mean))
+            state.rear_slip_angle_mean_deg = float(np.mean(rear_sa_mean))
+
+            # Understeer gradient: slope of (front_sa - rear_sa) vs lat_g
+            # Bin by lat_g to get a gradient
+            abs_lat = np.abs(lat_g[cornering_sa])
+            sa_diff = front_sa_mean - rear_sa_mean
+            if len(abs_lat) > 50:
+                # Linear fit: sa_diff = gradient * lat_g + intercept
+                try:
+                    coeffs = np.polyfit(abs_lat, sa_diff, 1)
+                    state.understeer_gradient_deg_per_g = float(coeffs[0])
+                except (np.linalg.LinAlgError, ValueError):
+                    pass
 
     # --- Yaw rate correlation ---
     if np.sum(cornering) > 100:
@@ -1211,7 +1330,7 @@ def _extract_brake_system(
 
     Per-corner brake line pressure shows the ACTUAL force distribution including
     the bias setting and ABS intervention. Comparing front vs rear pressure gives
-    the true hydraulic bias.
+    the hydraulic pressure split (NOT brake torque split).
     """
     brake = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else None
     braking = (brake > 0.3) if brake is not None else None
@@ -1240,6 +1359,7 @@ def _extract_brake_system(
             if np.sum(valid) > 10:
                 bias_samples = front_braking[valid] / total[valid] * 100
                 state.measured_brake_bias_pct = round(float(np.mean(bias_samples)), 1)
+                state.hydraulic_pressure_split_pct = state.measured_brake_bias_pct
 
     # ABS activity
     if ibt.has_channel("BrakeABSactive") and braking is not None:

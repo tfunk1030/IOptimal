@@ -231,6 +231,23 @@ def run_solver(args: "argparse.Namespace") -> None:
         car, step1, step2, step3,
         verbose=not args.json and not args.report_only,
     )
+
+    # ─── Final deflection validation ──
+    dm = car.deflection
+    if abs(dm.slider_perch_coeff) > 1e-6:
+        _od = step3.front_torsion_od_mm
+        _slider = dm.heave_slider_defl_static(step2.front_heave_nmm, step2.perch_offset_front_mm, _od)
+        _defl = dm.heave_spring_defl_static(step2.front_heave_nmm, step2.perch_offset_front_mm, _od)
+        if not args.json and not args.report_only:
+            print(f"  Deflection check: slider={_slider:.1f}mm (limit {car.heave_spring.max_slider_mm}), "
+                  f"static_defl={_defl:.1f}mm (min {car.heave_spring.min_static_defl_mm})")
+        if _slider > car.heave_spring.max_slider_mm:
+            print(f"  WARNING: HeaveSliderDeflStatic {_slider:.1f}mm exceeds limit "
+                  f"{car.heave_spring.max_slider_mm}mm!")
+        if _defl < car.heave_spring.min_static_defl_mm:
+            print(f"  WARNING: HeaveSpringDeflStatic {_defl:.1f}mm below minimum "
+                  f"{car.heave_spring.min_static_defl_mm}mm!")
+
     if not args.json and not args.report_only:
         print()
 
@@ -263,6 +280,8 @@ def run_solver(args: "argparse.Namespace") -> None:
         rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         fuel_load_l=args.fuel,
         camber_confidence=_camber_conf,
+        calibrated_front_roll_gain=(learned.calibrated_front_roll_gain if learned else None),
+        calibrated_rear_roll_gain=(learned.calibrated_rear_roll_gain if learned else None),
     )
 
     if not args.json and not args.report_only:
@@ -420,6 +439,7 @@ def run_solver(args: "argparse.Namespace") -> None:
         sensitivity_result=sensitivity_result,
         space_result=space_result,
         supporting=_supporting,
+        car=car,
     )
     print(report)
 
