@@ -150,25 +150,18 @@ def compute_modifiers(
                     f"Front bottoming {problem.measured:.0f} events → heave floor raised"
                 )
 
-        # Safety: heave spring travel exhaustion → perch adjustment
+        # Safety: heave spring travel exhaustion -> perch adjustment
         # Match both "exhausted under braking" and "used at speed" symptom strings
         if cat == "safety" and "travel" in symptom and ("exhausted" in symptom or "used" in symptom):
-            # Travel exhaustion under braking: reduce slider position by lowering perch
-            # Each -1mm perch ≈ -0.251mm slider (from calibration)
-            # Target: bring travel usage below 80%
             travel_pct = problem.measured
             if travel_pct > 85:
-                # Estimate perch reduction needed: want to gain ~10-15mm of available travel
-                # More negative perch → lower slider → more static deflection →
-                # actually LESS available travel. The fix is to keep slider low
-                # so the spring is properly preloaded but the solver should
-                # optimize perch directly. Set a target perch that's more negative.
-                current_perch = getattr(measured, "front_heave_defl_mean_mm", 0)
-                # Use a reasonable target perch that gives slider ~41mm
-                mods.front_heave_perch_target_mm = -17.0  # Conservative safe value
+                # More negative perch lowers the slider and consumes available
+                # travel. When the front heave spring is running out of travel,
+                # the target must move LESS negative so the slider regains room.
+                mods.front_heave_perch_target_mm = -11.0
                 mods.reasons.append(
-                    f"Heave travel {travel_pct:.0f}% exhausted → perch target -17mm "
-                    f"(reduce slider position for more preload)"
+                    f"Heave travel {travel_pct:.0f}% exhausted -> perch target -11mm "
+                    f"(less negative perch preserves available slider travel)"
                 )
 
         # Damper: settle time
