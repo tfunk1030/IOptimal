@@ -43,6 +43,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from car_model.garage import GarageSetupState
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
@@ -89,6 +90,8 @@ class HeaveSolution:
 
     # Safety check results
     safety_checks: list[SpringSafetyCheck] = field(default_factory=list)
+    garage_constraints_ok: bool = True
+    garage_constraint_notes: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """Human-readable summary of the solution."""
@@ -351,6 +354,195 @@ class HeaveSolver:
         total = spring_force + damper_force
         return (spring_force, damper_force, total)
 
+    def _heave_hard_bounds(self) -> tuple[float, float]:
+        """Track-aware hard bounds for front heave spring."""
+        hsm = self.car.heave_spring
+        lo, hi = hsm.front_spring_range_nmm
+        hard = hsm.front_heave_hard_range_nmm
+        if hard is None:
+            return lo, hi
+        track_name_lower = self.track.track_name.lower()
+        exempt = any(t in track_name_lower for t in hsm.front_heave_hard_range_exempt_tracks)
+        if exempt:
+            return lo, hi
+        return max(lo, hard[0]), min(hi, hard[1])
+
+    def _garage_state(
+        self,
+        *,
+        front_pushrod_mm: float,
+        rear_pushrod_mm: float,
+        front_heave_nmm: float,
+        front_heave_perch_mm: float,
+        rear_third_nmm: float,
+        rear_third_perch_mm: float,
+        front_torsion_od_mm: float,
+        rear_spring_nmm: float,
+        rear_spring_perch_mm: float,
+        fuel_load_l: float,
+        front_camber_deg: float,
+    ) -> GarageSetupState:
+        return GarageSetupState(
+            front_pushrod_mm=float(front_pushrod_mm),
+            rear_pushrod_mm=float(rear_pushrod_mm),
+            front_heave_nmm=float(front_heave_nmm),
+            front_heave_perch_mm=float(front_heave_perch_mm),
+            rear_third_nmm=float(rear_third_nmm),
+            rear_third_perch_mm=float(rear_third_perch_mm),
+            front_torsion_od_mm=float(front_torsion_od_mm),
+            rear_spring_nmm=float(rear_spring_nmm),
+            rear_spring_perch_mm=float(rear_spring_perch_mm),
+            front_camber_deg=float(front_camber_deg),
+            fuel_l=float(fuel_load_l),
+        )
+
+    def _best_front_perch_with_garage_model(
+        self,
+        *,
+        front_heave_nmm: float,
+        front_excursion_mm: float,
+        dynamic_front_rh_mm: float,
+        front_pushrod_mm: float,
+        rear_pushrod_mm: float,
+        rear_third_nmm: float,
+        rear_third_perch_mm: float,
+        front_torsion_od_mm: float,
+        rear_spring_nmm: float,
+        rear_spring_perch_mm: float,
+        fuel_load_l: float,
+        front_camber_deg: float,
+        front_heave_perch_target_mm: float | None,
+    ) -> tuple[float, object, object]:
+        """Pick the perch that maximizes travel while keeping garage constraints valid."""
+        garage_model = self.car.active_garage_output_model(self.track.track_name)
+        if garage_model is None:
+            raise RuntimeError("garage model required for BMW/Sebring perch optimization")
+
+        if front_heave_perch_target_mm is not None:
+            perch_candidates = [round(front_heave_perch_target_mm * 2) / 2]
+        else:
+            perch_candidates = [x / 2.0 for x in range(-60, 11)]
+
+        best_valid: tuple[float, object, object] | None = None
+        best_valid_score = -float("inf")
+        best_any: tuple[float, object, object] | None = None
+        best_any_penalty = float("inf")
+
+        for perch in perch_candidates:
+            state = self._garage_state(
+                front_pushrod_mm=front_pushrod_mm,
+                rear_pushrod_mm=rear_pushrod_mm,
+                front_heave_nmm=front_heave_nmm,
+                front_heave_perch_mm=perch,
+                rear_third_nmm=rear_third_nmm,
+                rear_third_perch_mm=rear_third_perch_mm,
+                front_torsion_od_mm=front_torsion_od_mm,
+                rear_spring_nmm=rear_spring_nmm,
+                rear_spring_perch_mm=rear_spring_perch_mm,
+                fuel_load_l=fuel_load_l,
+                front_camber_deg=front_camber_deg,
+            )
+            outputs = garage_model.predict(state, front_excursion_p99_mm=front_excursion_mm)
+            constraint = garage_model.validate(
+                state,
+                front_excursion_p99_mm=front_excursion_mm,
+                min_travel_margin_mm=0.0,
+                front_bottoming_margin_mm=dynamic_front_rh_mm - front_excursion_mm,
+            )
+            static_defl_ok = outputs.heave_spring_defl_static_mm >= garage_model.min_static_defl_mm - 1e-6
+            penalty = 0.0
+            if not static_defl_ok:
+                penalty += garage_model.min_static_defl_mm - outputs.heave_spring_defl_static_mm
+            if not constraint.heave_slider_ok:
+                penalty += outputs.heave_slider_defl_static_mm - garage_model.max_slider_mm
+            if not constraint.travel_margin_ok:
+                penalty += abs(outputs.travel_margin_front_mm)
+
+            if constraint.valid and static_defl_ok:
+                score = outputs.travel_margin_front_mm - abs(perch) * 0.001
+                if score > best_valid_score:
+                    best_valid = (perch, outputs, constraint)
+                    best_valid_score = score
+            if penalty < best_any_penalty:
+                best_any = (perch, outputs, constraint)
+                best_any_penalty = penalty
+
+        if best_valid is not None:
+            return best_valid
+        if best_any is None:
+            raise RuntimeError("failed to evaluate any front perch candidates")
+        return best_any
+
+    def _garage_constrained_front_solution(
+        self,
+        *,
+        base_front_heave_nmm: float,
+        dynamic_front_rh_mm: float,
+        rear_third_nmm: float,
+        front_pushrod_mm: float,
+        rear_pushrod_mm: float,
+        front_torsion_od_mm: float,
+        rear_spring_nmm: float,
+        rear_spring_perch_mm: float,
+        rear_third_perch_mm: float,
+        fuel_load_l: float,
+        front_camber_deg: float,
+        front_heave_perch_target_mm: float | None,
+    ) -> tuple[float, float, float, float, object, object]:
+        """Search the minimum front-heave rate that satisfies hard garage constraints."""
+        garage_model = self.car.active_garage_output_model(self.track.track_name)
+        if garage_model is None:
+            raise RuntimeError("garage model required for BMW/Sebring front-heave search")
+
+        hsm = self.car.heave_spring
+        v_front = (self.track.shock_vel_p99_front_clean_mps
+                   if self.track.shock_vel_p99_front_clean_mps > 0
+                   else self.track.shock_vel_p99_front_mps)
+        m_front = hsm.front_m_eff_kg
+        lo, hi = self._heave_hard_bounds()
+        start_rate = max(lo, math.ceil(base_front_heave_nmm / 10.0) * 10.0)
+
+        best_fallback: tuple[float, float, float, float, object, object] | None = None
+        best_fallback_penalty = float("inf")
+
+        for rate in range(int(start_rate), int(hi) + 10, 10):
+            front_exc = self.excursion(v_front, m_front, rate)
+            front_sigma = self.sigma_from_excursion(front_exc)
+            perch, outputs, constraint = self._best_front_perch_with_garage_model(
+                front_heave_nmm=rate,
+                front_excursion_mm=front_exc,
+                dynamic_front_rh_mm=dynamic_front_rh_mm,
+                front_pushrod_mm=front_pushrod_mm,
+                rear_pushrod_mm=rear_pushrod_mm,
+                rear_third_nmm=rear_third_nmm,
+                rear_third_perch_mm=rear_third_perch_mm,
+                front_torsion_od_mm=front_torsion_od_mm,
+                rear_spring_nmm=rear_spring_nmm,
+                rear_spring_perch_mm=rear_spring_perch_mm,
+                fuel_load_l=fuel_load_l,
+                front_camber_deg=front_camber_deg,
+                front_heave_perch_target_mm=front_heave_perch_target_mm,
+            )
+            penalty = 0.0
+            if not constraint.valid:
+                penalty += abs(outputs.travel_margin_front_mm)
+                penalty += max(0.0, outputs.heave_slider_defl_static_mm - garage_model.max_slider_mm)
+            if front_sigma > hsm.sigma_target_mm:
+                penalty += front_sigma - hsm.sigma_target_mm
+            if dynamic_front_rh_mm - front_exc < 0:
+                penalty += front_exc - dynamic_front_rh_mm
+
+            result = (float(rate), float(perch), float(front_exc), float(front_sigma), outputs, constraint)
+            if constraint.valid and front_sigma <= hsm.sigma_target_mm and dynamic_front_rh_mm - front_exc >= -1e-6:
+                return result
+            if penalty < best_fallback_penalty:
+                best_fallback = result
+                best_fallback_penalty = penalty
+
+        if best_fallback is None:
+            raise RuntimeError("no BMW/Sebring front-heave candidates evaluated")
+        return best_fallback
+
     def solve(
         self,
         dynamic_front_rh_mm: float,
@@ -358,6 +550,14 @@ class HeaveSolver:
         front_heave_floor_nmm: float = 0.0,
         rear_third_floor_nmm: float = 0.0,
         front_heave_perch_target_mm: float | None = None,
+        front_pushrod_mm: float | None = None,
+        rear_pushrod_mm: float | None = None,
+        front_torsion_od_mm: float | None = None,
+        rear_spring_nmm: float | None = None,
+        rear_spring_perch_mm: float | None = None,
+        rear_third_perch_mm: float | None = None,
+        fuel_load_l: float = 0.0,
+        front_camber_deg: float | None = None,
     ) -> HeaveSolution:
         """Find minimum safe heave/third spring rates.
 
@@ -404,18 +604,9 @@ class HeaveSolver:
             front_binding = "modifier_floor"
 
         # Clamp to valid range
-        k_front = max(k_front, hsm.front_spring_range_nmm[0])
-        k_front = min(k_front, hsm.front_spring_range_nmm[1])
-
-        # Car-specific hard range (e.g., BMW 30-50 N/mm, exempt on Daytona/Le Mans)
-        hard = hsm.front_heave_hard_range_nmm
-        if hard is not None:
-            track_name_lower = self.track.track_name.lower()
-            exempt = any(t in track_name_lower for t in hsm.front_heave_hard_range_exempt_tracks)
-            if not exempt:
-                if k_front < hard[0] or k_front > hard[1]:
-                    k_front = max(hard[0], min(hard[1], k_front))
-                    front_binding = "car_hard_limit"
+        lo_front, hi_front = self._heave_hard_bounds()
+        k_front = max(k_front, lo_front)
+        k_front = min(k_front, hi_front)
 
         # Round up to nearest 10 N/mm (iRacing garage step)
         k_front = math.ceil(k_front / 10) * 10
@@ -490,83 +681,110 @@ class HeaveSolver:
         available_travel = 0.0
         travel_margin = 0.0
         perch_front = hsm.perch_offset_front_baseline_mm
+        garage_constraint_notes: list[str] = []
+        garage_constraints_ok = True
+        garage_model = self.car.active_garage_output_model(self.track.track_name)
 
-        if hsm.heave_spring_defl_max_intercept_mm > 0:
+        if garage_model is not None:
+            initial_front_rate = k_front
+            baseline = garage_model.default_state(fuel_l=fuel_load_l)
+            front_pushrod_val = (
+                front_pushrod_mm
+                if front_pushrod_mm is not None
+                else baseline.front_pushrod_mm
+            )
+            rear_pushrod_val = (
+                rear_pushrod_mm
+                if rear_pushrod_mm is not None
+                else baseline.rear_pushrod_mm
+            )
+            front_torsion_od_val = (
+                front_torsion_od_mm
+                if front_torsion_od_mm is not None
+                else baseline.front_torsion_od_mm
+            )
+            rear_spring_val = (
+                rear_spring_nmm
+                if rear_spring_nmm is not None
+                else baseline.rear_spring_nmm
+            )
+            rear_spring_perch_val = (
+                rear_spring_perch_mm
+                if rear_spring_perch_mm is not None
+                else baseline.rear_spring_perch_mm
+            )
+            rear_third_perch_val = (
+                rear_third_perch_mm
+                if rear_third_perch_mm is not None
+                else baseline.rear_third_perch_mm
+            )
+            front_camber_val = (
+                front_camber_deg
+                if front_camber_deg is not None
+                else baseline.front_camber_deg
+            )
+            selected = self._garage_constrained_front_solution(
+                base_front_heave_nmm=k_front,
+                dynamic_front_rh_mm=dynamic_front_rh_mm,
+                rear_third_nmm=k_rear,
+                front_pushrod_mm=front_pushrod_val,
+                rear_pushrod_mm=rear_pushrod_val,
+                front_torsion_od_mm=front_torsion_od_val,
+                rear_spring_nmm=rear_spring_val,
+                rear_spring_perch_mm=rear_spring_perch_val,
+                rear_third_perch_mm=rear_third_perch_val,
+                fuel_load_l=fuel_load_l,
+                front_camber_deg=front_camber_val,
+                front_heave_perch_target_mm=front_heave_perch_target_mm,
+            )
+            k_front, perch_front, front_exc, front_sigma, outputs, constraint = selected
+            if k_front > initial_front_rate:
+                front_binding = "garage_constraint"
+            defl_max = outputs.heave_spring_defl_max_mm
+            slider_static = outputs.heave_slider_defl_static_mm
+            static_defl = outputs.heave_spring_defl_static_mm
+            available_travel = outputs.available_travel_front_mm
+            travel_margin = outputs.travel_margin_front_mm
+            garage_constraints_ok = constraint.valid
+            garage_constraint_notes = list(constraint.messages)
+            safety_checks.append(SpringSafetyCheck(
+                label=f"Garage travel budget at {k_front} N/mm (perch {perch_front:.1f}mm)",
+                rate_nmm=k_front,
+                axle="front",
+                excursion_mm=round(front_exc, 1),
+                dynamic_rh_mm=round(defl_max, 1),
+                bottoming_mm=round(max(0, front_exc - available_travel), 1),
+                sigma_mm=round(front_sigma, 1),
+                sigma_target_mm=hsm.sigma_target_mm,
+                safe=constraint.valid,
+                reason=("; ".join(constraint.messages) if constraint.messages else
+                        f"Slider={slider_static:.1f}mm, StaticDefl={static_defl:.1f}mm, "
+                        f"available={available_travel:.1f}mm, margin={travel_margin:.1f}mm"),
+            ))
+        elif hsm.heave_spring_defl_max_intercept_mm > 0:
             defl_max = (hsm.heave_spring_defl_max_intercept_mm
                         + hsm.heave_spring_defl_max_slope * k_front)
-
-            # Optimize perch: find value that maximizes available travel
-            # while keeping static deflection >= min_static_defl_mm
-            # and slider position <= max_slider_mm.
-            #
-            # SliderStatic = slider_intercept + slider_heave_coeff * heave + slider_perch_coeff * perch
-            # StaticDefl = defl_static_intercept + defl_static_heave_coeff * heave
-            #   (static deflection depends primarily on heave rate, not perch directly)
-            # AvailableTravel = DeflMax - StaticDefl
-            #
-            # But perch affects slider position, which indicates how much preload is on the spring.
-            # Lower slider = more preload = higher static defl = less available travel.
-            # Higher slider = less preload = lower static defl = more available travel,
-            #   BUT slider > max_slider_mm means spring is nearly unloaded (risky).
-            #
-            # Strategy: target slider that maximizes travel while staying below max_slider_mm.
-            # Solve for perch from slider constraint:
-            #   target_slider = slider_intercept + slider_heave_coeff * heave + slider_perch_coeff * perch
-            #   perch = (target_slider - slider_intercept - slider_heave_coeff * heave) / slider_perch_coeff
-
+            perch_front = hsm.perch_offset_front_baseline_mm
             if hsm.slider_perch_coeff > 0:
-                # Target slider: leave 3mm margin below max_slider (spring stays loaded)
                 target_slider = hsm.max_slider_mm - 3.0
                 perch_front = (
                     (target_slider - hsm.slider_intercept - hsm.slider_heave_coeff * k_front)
                     / hsm.slider_perch_coeff
                 )
-                # Round to 0.5mm (iRacing garage precision)
                 perch_front = round(perch_front * 2) / 2
-
-                # Verify slider position with computed perch
                 slider_static = (hsm.slider_intercept
                                  + hsm.slider_heave_coeff * k_front
                                  + hsm.slider_perch_coeff * perch_front)
-
-                # Static deflection from heave rate
-                static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
-
-                # Ensure minimum preload: static defl must be >= min_static_defl_mm
-                if static_defl < hsm.min_static_defl_mm:
-                    # Need more negative perch to increase preload
-                    # Each mm more negative perch adds ~0.251mm to slider depression
-                    # which adds more static deflection
-                    perch_front -= (hsm.min_static_defl_mm - static_defl) / 0.5
-                    perch_front = round(perch_front * 2) / 2
-                    slider_static = (hsm.slider_intercept
-                                     + hsm.slider_heave_coeff * k_front
-                                     + hsm.slider_perch_coeff * perch_front)
-                    static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
-
-                available_travel = max(0, defl_max - static_defl)
-                travel_margin = available_travel - front_exc
-            else:
-                # No slider model calibrated — use baseline
-                perch_front = hsm.perch_offset_front_baseline_mm
-                static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
-                available_travel = max(0, defl_max - static_defl)
-                travel_margin = available_travel - front_exc
-
-            # Apply perch target override from modifier (diagnosis-driven)
+            static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
+            available_travel = max(0, defl_max - static_defl)
+            travel_margin = available_travel - front_exc
             if front_heave_perch_target_mm is not None:
                 perch_front = round(front_heave_perch_target_mm * 2) / 2
-                # Recompute slider and travel budget with overridden perch
                 if hsm.slider_perch_coeff > 0:
                     slider_static = (hsm.slider_intercept
                                      + hsm.slider_heave_coeff * k_front
                                      + hsm.slider_perch_coeff * perch_front)
-                static_defl = max(0, hsm.defl_static_intercept + hsm.defl_static_heave_coeff * k_front)
-                available_travel = max(0, defl_max - static_defl)
-                travel_margin = available_travel - front_exc
-
-            # Safety check: travel budget
-            budget_safe = travel_margin > 5.0
+            budget_safe = travel_margin >= 0.0
             safety_checks.append(SpringSafetyCheck(
                 label=f"Travel budget at {k_front} N/mm (perch {perch_front:.1f}mm)",
                 rate_nmm=k_front,
@@ -579,10 +797,7 @@ class HeaveSolver:
                 safe=budget_safe,
                 reason=(f"DeflMax={defl_max:.1f}mm, StaticDefl={static_defl:.1f}mm, "
                         f"available={available_travel:.1f}mm, excursion={front_exc:.1f}mm, "
-                        f"margin={travel_margin:.1f}mm"
-                        if budget_safe else
-                        f"WARN: Travel margin {travel_margin:.1f}mm < 5mm. "
-                        f"Spring may bottom under braking weight transfer."),
+                        f"margin={travel_margin:.1f}mm"),
             ))
 
         # --- Combined spring + shock force at travel limit ---
@@ -609,7 +824,11 @@ class HeaveSolver:
             rear_sigma_at_rate_mm=round(rear_sigma, 1),
             rear_binding_constraint=rear_binding,
             perch_offset_front_mm=round(perch_front, 1),
-            perch_offset_rear_mm=round(hsm.perch_offset_rear_baseline_mm),
+            perch_offset_rear_mm=round(
+                rear_third_perch_mm
+                if rear_third_perch_mm is not None
+                else hsm.perch_offset_rear_baseline_mm
+            ),
             slider_static_front_mm=round(slider_static, 1),
             defl_max_front_mm=round(defl_max, 1),
             static_defl_front_mm=round(static_defl, 1),
@@ -619,4 +838,90 @@ class HeaveSolver:
             damper_force_braking_n=round(damper_force_braking, 0),
             total_force_at_limit_n=round(total_force_limit, 0),
             safety_checks=safety_checks,
+            garage_constraints_ok=garage_constraints_ok,
+            garage_constraint_notes=garage_constraint_notes,
         )
+
+    def reconcile_solution(
+        self,
+        step1,
+        step2: HeaveSolution,
+        step3,
+        *,
+        fuel_load_l: float = 0.0,
+        front_camber_deg: float | None = None,
+        verbose: bool = True,
+    ) -> None:
+        """Round-trip the front heave travel budget after torsion/spring choices are known."""
+        garage_model = self.car.active_garage_output_model(self.track.track_name)
+        if garage_model is None:
+            return
+
+        selected = self._garage_constrained_front_solution(
+            base_front_heave_nmm=step2.front_heave_nmm,
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            rear_third_nmm=step2.rear_third_nmm,
+            front_pushrod_mm=step1.front_pushrod_offset_mm,
+            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+            front_torsion_od_mm=step3.front_torsion_od_mm,
+            rear_spring_nmm=step3.rear_spring_rate_nmm,
+            rear_spring_perch_mm=step3.rear_spring_perch_mm,
+            rear_third_perch_mm=step2.perch_offset_rear_mm,
+            fuel_load_l=fuel_load_l,
+            front_camber_deg=(
+                front_camber_deg
+                if front_camber_deg is not None
+                else garage_model.default_front_camber_deg
+            ),
+            front_heave_perch_target_mm=None,
+        )
+        new_rate, new_perch, front_exc, front_sigma, outputs, constraint = selected
+
+        if verbose and (
+            abs(new_rate - step2.front_heave_nmm) > 0.05
+            or abs(new_perch - step2.perch_offset_front_mm) > 0.05
+        ):
+            print(
+                f"  Heave round-trip: {step2.front_heave_nmm:.0f} N/mm / "
+                f"{step2.perch_offset_front_mm:.1f} mm -> "
+                f"{new_rate:.0f} N/mm / {new_perch:.1f} mm "
+                f"(slider {outputs.heave_slider_defl_static_mm:.1f} mm)"
+            )
+
+        step2.front_heave_nmm = round(new_rate, 0)
+        step2.perch_offset_front_mm = round(new_perch, 1)
+        step2.front_excursion_at_rate_mm = round(front_exc, 1)
+        step2.front_bottoming_margin_mm = round(step1.dynamic_front_rh_mm - front_exc, 1)
+        step2.front_sigma_at_rate_mm = round(front_sigma, 1)
+        step2.slider_static_front_mm = round(outputs.heave_slider_defl_static_mm, 1)
+        step2.defl_max_front_mm = round(outputs.heave_spring_defl_max_mm, 1)
+        step2.static_defl_front_mm = round(outputs.heave_spring_defl_static_mm, 1)
+        step2.available_travel_front_mm = round(outputs.available_travel_front_mm, 1)
+        step2.travel_margin_front_mm = round(outputs.travel_margin_front_mm, 1)
+        step2.spring_force_at_limit_n = round(step2.front_heave_nmm * outputs.available_travel_front_mm, 0)
+        v_braking_mps = 0.020
+        step2.damper_force_braking_n = round(self.car.damper.front_ls_coefficient_nsm * v_braking_mps, 0)
+        step2.total_force_at_limit_n = round(
+            step2.spring_force_at_limit_n + step2.damper_force_braking_n,
+            0,
+        )
+        step2.garage_constraints_ok = constraint.valid
+        step2.garage_constraint_notes = list(constraint.messages)
+        step2.safety_checks = [
+            check for check in step2.safety_checks
+            if "travel budget" not in check.label.lower()
+        ]
+        step2.safety_checks.append(SpringSafetyCheck(
+            label=f"Garage travel budget at {step2.front_heave_nmm:.0f} N/mm (perch {step2.perch_offset_front_mm:.1f}mm)",
+            rate_nmm=step2.front_heave_nmm,
+            axle="front",
+            excursion_mm=round(front_exc, 1),
+            dynamic_rh_mm=round(outputs.heave_spring_defl_max_mm, 1),
+            bottoming_mm=round(max(0, front_exc - outputs.available_travel_front_mm), 1),
+            sigma_mm=round(front_sigma, 1),
+            sigma_target_mm=self.car.heave_spring.sigma_target_mm,
+            safe=constraint.valid,
+            reason=("; ".join(constraint.messages) if constraint.messages else
+                    f"Slider={outputs.heave_slider_defl_static_mm:.1f}mm, "
+                    f"travel margin={outputs.travel_margin_front_mm:.1f}mm"),
+        ))

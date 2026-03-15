@@ -248,6 +248,36 @@ class CornerSpringSolver:
 
         rear_freq = self.natural_freq(rear_rate, m_r_corner)
 
+        return self.solution_from_explicit_rates(
+            front_heave_nmm=front_heave_nmm,
+            rear_third_nmm=rear_third_nmm,
+            front_torsion_od_mm=front_od,
+            rear_spring_rate_nmm=rear_rate,
+            fuel_load_l=fuel_load_l,
+            rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
+        )
+
+    def solution_from_explicit_rates(
+        self,
+        front_heave_nmm: float,
+        rear_third_nmm: float,
+        front_torsion_od_mm: float,
+        rear_spring_rate_nmm: float,
+        fuel_load_l: float = 89.0,
+        rear_spring_perch_mm: float | None = None,
+    ) -> CornerSpringSolution:
+        """Build a corner-spring solution from explicit garage selections."""
+        csm = self.car.corner_spring
+        total_mass = self.car.total_mass(fuel_load_l)
+        m_f_corner = total_mass * self.car.weight_dist_front / 2
+        m_r_corner = total_mass * (1 - self.car.weight_dist_front) / 2
+
+        bump_freq = self.car.rh_variance.dominant_bump_freq_hz
+        front_rate = csm.torsion_bar_rate(front_torsion_od_mm)
+        front_freq = self.natural_freq(front_rate, m_f_corner)
+        rear_rate = rear_spring_rate_nmm
+        rear_freq = self.natural_freq(rear_rate, m_r_corner)
+
         # === Compute derived values ===
         total_front_heave = front_heave_nmm + 2 * front_rate  # front MR=1.0
         total_rear_heave = rear_third_nmm + 2 * rear_rate * csm.rear_motion_ratio ** 2
@@ -283,7 +313,7 @@ class CornerSpringSolver:
         )
 
         return CornerSpringSolution(
-            front_torsion_od_mm=front_od,
+            front_torsion_od_mm=front_torsion_od_mm,
             front_wheel_rate_nmm=round(front_rate, 1),
             front_natural_freq_hz=round(front_freq, 2),
             front_heave_corner_ratio=round(front_heave_ratio, 1),
@@ -299,7 +329,11 @@ class CornerSpringSolver:
             track_bump_freq_hz=bump_freq,
             front_freq_isolation_ratio=round(front_isolation, 1),
             rear_freq_isolation_ratio=round(rear_isolation, 1),
-            rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
+            rear_spring_perch_mm=(
+                csm.rear_spring_perch_baseline_mm
+                if rear_spring_perch_mm is None
+                else rear_spring_perch_mm
+            ),
             constraints=constraints,
         )
 

@@ -5,14 +5,15 @@ suitable for entering into iRacing garage, with engineering rationale.
 
 Layout:
   1. Header
-  2. GARAGE CARD  — every value you need, two-column layout
-  3. TOP ACTIONS  — prioritized list with lap time impact
-  4. STINT CARD   — condensed balance curve + pushrod schedule
-  5. LAP TIME SENSITIVITY — ranked table
-  6. SECTOR COMPROMISE — conflict table
-  7. SETUP SPACE  — feasible range table (if --space)
-  8. AERO / BALANCE checks
-  9. VALIDATION CHECKLIST
+  2. SETUP TO ENTER — full garage parameter list, grouped for readability
+  3. GARAGE CARD  — condensed overview
+  4. TOP ACTIONS  — prioritized list with lap time impact
+  5. STINT CARD   — condensed balance curve + pushrod schedule
+  6. LAP TIME SENSITIVITY — ranked table
+  7. SECTOR COMPROMISE — conflict table
+  8. SETUP SPACE  — feasible range table (if --space)
+  9. AERO / BALANCE checks
+ 10. VALIDATION CHECKLIST
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from car_model.garage import GarageSetupState
 from solver.rake_solver import RakeSolution
 from solver.heave_solver import HeaveSolution
 from solver.corner_spring_solver import CornerSpringSolution
@@ -78,6 +80,15 @@ def _ok(val: bool) -> str:
     return "✓" if val else "✗"
 
 
+def _setting(label: str, value: str, note: str = "") -> str:
+    text = f"  {label:<24} {value}"
+    if note:
+        text += f"  {note}"
+    if len(text) > W - 2:
+        text = text[:W - 5] + "..."
+    return _full(text)
+
+
 def print_full_setup_report(
     car_name: str,
     track_name: str,
@@ -94,10 +105,58 @@ def print_full_setup_report(
     sensitivity_result: Any = None,
     space_result: Any = None,
     supporting: Any = None,
+    car: Any = None,
+    fuel_l: float = 0.0,
+    garage_outputs: Any = None,
+    compact: bool = False,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
     a = lines.append
+
+    if garage_outputs is None and car is not None:
+        garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track_name)
+        if garage_model is not None:
+            garage_outputs = garage_model.predict(
+                GarageSetupState.from_solver_steps(
+                    step1=step1,
+                    step2=step2,
+                    step3=step3,
+                    step5=step5,
+                    fuel_l=fuel_l,
+                ),
+                front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
+            )
+
+    tyre_fl = getattr(supporting, "tyre_cold_fl_kpa", 152.0) if supporting is not None else 152.0
+    tyre_fr = getattr(supporting, "tyre_cold_fr_kpa", 152.0) if supporting is not None else 152.0
+    tyre_rl = getattr(supporting, "tyre_cold_rl_kpa", 152.0) if supporting is not None else 152.0
+    tyre_rr = getattr(supporting, "tyre_cold_rr_kpa", 152.0) if supporting is not None else 152.0
+    brake_bias_val = getattr(supporting, "brake_bias_pct", None) if supporting is not None else None
+    diff_preload_val = getattr(supporting, "diff_preload_nm", None) if supporting is not None else None
+    diff_coast_val = getattr(supporting, "diff_ramp_coast", None) if supporting is not None else None
+    diff_drive_val = getattr(supporting, "diff_ramp_drive", None) if supporting is not None else None
+    diff_plates_val = getattr(supporting, "diff_clutch_plates", None) if supporting is not None else None
+    tc_gain_val = getattr(supporting, "tc_gain", None) if supporting is not None else None
+    tc_slip_val = getattr(supporting, "tc_slip", None) if supporting is not None else None
+
+    brake_bias_str = f"{brake_bias_val:.1f}%" if brake_bias_val is not None else "(pipeline)"
+    diff_preload_str = f"{diff_preload_val:.0f} Nm" if diff_preload_val is not None else "(pipeline)"
+    diff_coast_str = f"{diff_coast_val} deg" if diff_coast_val is not None else "(pipeline)"
+    diff_drive_str = f"{diff_drive_val} deg" if diff_drive_val is not None else "(pipeline)"
+    diff_plates_str = f"{diff_plates_val}" if diff_plates_val is not None else "(pipeline)"
+    tc_gain_str = f"{tc_gain_val}" if tc_gain_val is not None else "(pipeline)"
+    tc_slip_str = f"{tc_slip_val}" if tc_slip_val is not None else "(pipeline)"
+    _tb_turns = (
+        round(float(garage_outputs.torsion_bar_turns), 3)
+        if garage_outputs is not None and getattr(garage_outputs, "torsion_bar_turns", 0) > 0
+        else round(
+            0.1089 - 0.1642 / max(step2.front_heave_nmm, 1) + 0.000368 * step2.perch_offset_front_mm, 3
+        )
+    )
+    df_ok = abs(step1.df_balance_pct - target_balance) < 0.2
+    stall_ok = step1.vortex_burst_margin_mm > 0
+    garage_ok = getattr(step2, "garage_constraints_ok", True)
 
     # ── Header ────────────────────────────────────────────────────────
     a("═" * W)
@@ -107,13 +166,109 @@ def print_full_setup_report(
     a("═" * W)
     a("")
 
+    # ── FULL PARAMETER SHEET ─────────────────────────────────────────
+    a(_box_top("SETUP TO ENTER"))
+    a(_full("  PLATFORM / SPRINGS"))
+    a(_setting("Wing", f"{wing:.1f} deg"))
+    a(_setting("Fuel load", f"{fuel_l:.0f} L"))
+    a(_setting("Front static RH target", f"{step1.static_front_rh_mm:.1f} mm"))
+    a(_setting("Rear static RH target", f"{step1.static_rear_rh_mm:.1f} mm"))
+    a(_setting("Front pushrod", f"{step1.front_pushrod_offset_mm:+.1f} mm"))
+    a(_setting("Rear pushrod", f"{step1.rear_pushrod_offset_mm:+.1f} mm"))
+    a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} N/mm"))
+    a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
+    a(_setting("Rear third spring", f"{step2.rear_third_nmm:.0f} N/mm"))
+    a(_setting("Rear third perch", f"{step2.perch_offset_rear_mm:+.1f} mm"))
+    a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm"))
+    a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
+    a(_setting("Rear coil spring", f"{step3.rear_spring_rate_nmm:.0f} N/mm"))
+    a(_setting("Rear spring perch", f"{step3.rear_spring_perch_mm:.1f} mm"))
+    if garage_outputs is not None:
+        a(_setting(
+            "Heave slider static",
+            f"{garage_outputs.heave_slider_defl_static_mm:.1f} / {garage_outputs.heave_slider_defl_max_mm:.1f} mm",
+        ))
+        a(_setting(
+            "Heave spring deflection",
+            f"{garage_outputs.heave_spring_defl_static_mm:.1f} / {garage_outputs.heave_spring_defl_max_mm:.1f} mm",
+        ))
+    a(_blank())
+    a(_full("  ARBS / GEOMETRY"))
+    a(_setting("Front ARB size / blade", f"{step4.front_arb_size} / {step4.front_arb_blade_start}"))
+    a(_setting("Rear ARB size / blade", f"{step4.rear_arb_size} / {step4.rear_arb_blade_start}"))
+    a(_setting("Rear ARB live slow", f"blade {step4.rarb_blade_slow_corner}"))
+    a(_setting("Rear ARB live fast", f"blade {step4.rarb_blade_fast_corner}"))
+    a(_setting("Front camber", f"{step5.front_camber_deg:+.1f} deg"))
+    a(_setting("Rear camber", f"{step5.rear_camber_deg:+.1f} deg"))
+    a(_setting("Front toe", f"{step5.front_toe_mm:+.1f} mm"))
+    a(_setting("Rear toe", f"{step5.rear_toe_mm:+.1f} mm"))
+    a(_blank())
+    a(_full("  BRAKES / DIFF / TC / TYRES"))
+    a(_setting("Brake bias", brake_bias_str))
+    a(_setting("Diff preload", diff_preload_str))
+    a(_setting("Diff coast ramp", diff_coast_str))
+    a(_setting("Diff drive ramp", diff_drive_str))
+    a(_setting("Diff clutch plates", diff_plates_str))
+    a(_setting("TC gain / slip", f"{tc_gain_str} / {tc_slip_str}"))
+    a(_setting("Tyre cold FL / FR", f"{tyre_fl:.0f} / {tyre_fr:.0f} kPa"))
+    a(_setting("Tyre cold RL / RR", f"{tyre_rl:.0f} / {tyre_rr:.0f} kPa"))
+    a(_blank())
+    a(_full("  DAMPERS"))
+    for corner_name, corner in (
+        ("LF", step6.lf),
+        ("RF", step6.rf),
+        ("LR", step6.lr),
+        ("RR", step6.rr),
+    ):
+        a(_setting(f"{corner_name} LS comp / rbd", f"{corner.ls_comp} / {corner.ls_rbd} clicks"))
+        a(_setting(f"{corner_name} HS comp / rbd / slope", f"{corner.hs_comp} / {corner.hs_rbd} / {corner.hs_slope}"))
+    a(_blank())
+    a(_full("  TARGETS / LIMITS"))
+    a(_setting("DF balance", f"{step1.df_balance_pct:.2f}% (target {target_balance:.2f}%)", _ok(df_ok)))
+    a(_setting("LLTD", f"{step4.lltd_achieved:.1%} (target {step4.lltd_target:.1%})"))
+    a(_setting("Dynamic RH front / rear", f"{step1.dynamic_front_rh_mm:.1f} / {step1.dynamic_rear_rh_mm:.1f} mm"))
+    a(_setting(
+        "Heave travel margin",
+        f"{(garage_outputs.travel_margin_front_mm if garage_outputs is not None else step2.travel_margin_front_mm):.1f} mm",
+    ))
+    a(_setting("Front bottoming margin", f"{step2.front_bottoming_margin_mm:.1f} mm"))
+    a(_setting("Stall margin", f"{step1.vortex_burst_margin_mm:+.1f} mm", _ok(stall_ok)))
+    if garage_outputs is not None:
+        a(_setting(
+            "Garage constraints",
+            "OK" if garage_ok else "CHECK",
+            "" if garage_ok else "; ".join(getattr(step2, "garage_constraint_notes", [])[:2]),
+        ))
+    a(_box_bot())
+    a("")
+
+    if compact:
+        a(_box_top("VALIDATION SUMMARY"))
+        a(_full(f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}    target {target_balance:.2f}%"))
+        a(_full(f"  Front static RH: {step1.static_front_rh_mm:.1f} mm    Rear static RH: {step1.static_rear_rh_mm:.1f} mm"))
+        if garage_outputs is not None:
+            a(_full(
+                f"  Heave slider: {garage_outputs.heave_slider_defl_static_mm:.1f}/{garage_outputs.heave_slider_defl_max_mm:.1f} mm"
+                f"    Travel margin: {garage_outputs.travel_margin_front_mm:.1f} mm"
+            ))
+        else:
+            a(_full(
+                f"  Heave slider: {step2.slider_static_front_mm:.1f} mm"
+                f"    Travel margin: {step2.travel_margin_front_mm:.1f} mm"
+            ))
+        a(_full(f"  Stall margin: {step1.vortex_burst_margin_mm:+.1f} mm  {_ok(stall_ok)}    LLTD: {step4.lltd_achieved:.1%}"))
+        a(_full(
+            f"  RARB live: blade {step4.rarb_blade_slow_corner} slow  ->  blade {step4.rarb_blade_fast_corner} fast"
+        ))
+        a(_box_bot())
+        a("")
+        a("═" * W)
+        return "\n".join(lines)
+
     # ── GARAGE CARD ───────────────────────────────────────────────────
     a(_box_top("GARAGE CARD"))
     a(_blank())
     a(_row("  RIDE HEIGHTS & PUSHRODS", "  SPRINGS"))
-    _tb_turns = round(
-        0.1089 - 0.1642 / max(step2.front_heave_nmm, 1) + 0.000368 * step2.perch_offset_front_mm, 3
-    )
     a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
            f"  Heave F:    {step2.front_heave_nmm:5.0f} N/mm  perch {step2.perch_offset_front_mm:+.0f}mm"))
     a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
@@ -150,20 +305,21 @@ def print_full_setup_report(
 
     a(_row("  BRAKES & DIFF", "  TYRES"))
     a(_row(bias_str,
-           f"  Cold pres: 152 kPa"))
+           f"  Cold FL/FR: {tyre_fl:.0f}/{tyre_fr:.0f} kPa"))
     if diff_str:
-        a(_row(diff_str, ""))
+        a(_row(diff_str, f"  Cold RL/RR: {tyre_rl:.0f}/{tyre_rr:.0f} kPa"))
+    else:
+        a(_row("", f"  Cold RL/RR: {tyre_rl:.0f}/{tyre_rr:.0f} kPa"))
     a(_blank())
 
     # Dampers
     a(_full("  DAMPERS (clicks)                     AERO STATUS"))
     a(_row(f"            LF   RF   LR   RR",
-           f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(abs(step1.df_balance_pct - target_balance) < 0.2)}"))
+           f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
     a(_row(f"  LS Comp: {step6.lf.ls_comp:3d}  {step6.rf.ls_comp:3d}  {step6.lr.ls_comp:3d}  {step6.rr.ls_comp:3d}",
            f"  L/D:    {step1.ld_ratio:.3f}"))
-    margin_ok = step1.vortex_burst_margin_mm > 0
     a(_row(f"  LS Rbd:  {step6.lf.ls_rbd:3d}  {step6.rf.ls_rbd:3d}  {step6.lr.ls_rbd:3d}  {step6.rr.ls_rbd:3d}",
-           f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(margin_ok)}"))
+           f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
     a(_row(f"  HS Comp: {step6.lf.hs_comp:3d}  {step6.rf.hs_comp:3d}  {step6.lr.hs_comp:3d}  {step6.rr.hs_comp:3d}",
            f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})"))
     a(_row(f"  HS Rbd:  {step6.lf.hs_rbd:3d}  {step6.rf.hs_rbd:3d}  {step6.lr.hs_rbd:3d}  {step6.rr.hs_rbd:3d}",
@@ -378,6 +534,9 @@ def print_full_setup_report(
       f"RARB sensitivity: {step4.rarb_sensitivity_per_blade:+.1%}/blade")
     a(f"  RARB 1→{step4.rarb_blade_fast_corner} range: {step4.lltd_at_rarb_min:.1%}→{step4.lltd_at_rarb_max:.1%}")
     a(f"  Heave: {step2.front_heave_nmm:.0f} N/mm  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
+    if garage_outputs is not None:
+        a(f"  Heave slider: {garage_outputs.heave_slider_defl_static_mm:.1f}/{garage_outputs.heave_slider_defl_max_mm:.1f} mm  "
+          f"travel margin: {garage_outputs.travel_margin_front_mm:.1f} mm")
     a(f"  Torsion: {step3.front_torsion_od_mm:.2f}mm OD  {step3.front_natural_freq_hz:.2f}Hz  "
       f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
     a(f"  Rear coil: {step3.rear_spring_rate_nmm:.0f} N/mm  {step3.rear_natural_freq_hz:.2f}Hz  "
