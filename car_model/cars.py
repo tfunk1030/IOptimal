@@ -493,11 +493,11 @@ class WheelGeometryModel:
 @dataclass
 class DamperModel:
     """Damper model parameterized in garage clicks."""
-    ls_comp_range: tuple[int, int] = (1, 11)   # BMW/Dallara default; Ferrari overrides
-    ls_rbd_range: tuple[int, int] = (1, 11)
-    hs_comp_range: tuple[int, int] = (1, 11)
-    hs_rbd_range: tuple[int, int] = (1, 11)
-    hs_slope_range: tuple[int, int] = (1, 11)
+    ls_comp_range: tuple[int, int] = (0, 11)   # BMW/Dallara default; Ferrari overrides
+    ls_rbd_range: tuple[int, int] = (0, 11)
+    hs_comp_range: tuple[int, int] = (0, 11)
+    hs_rbd_range: tuple[int, int] = (0, 11)
+    hs_slope_range: tuple[int, int] = (0, 11)
     # Force-per-click calibrated by reverse-engineering from physics:
     # c_damping * v_ref / clicks = fpc
     # Front LS: 5060 * 0.025 / 7 = 18.1 N/click
@@ -552,18 +552,18 @@ class GarageRanges:
     Each range is (min, max) inclusive.  Resolution fields define the
     quantisation step that iRacing's garage enforces for each parameter.
     """
-    front_pushrod_mm: tuple[float, float] = (-32.0, -15.0)
-    rear_pushrod_mm: tuple[float, float] = (-32.0, -15.0)
-    front_heave_nmm: tuple[float, float] = (10.0, 200.0)
+    front_pushrod_mm: tuple[float, float] = (-40.0, 40.0)
+    rear_pushrod_mm: tuple[float, float] = (-40.0, 40.0)
+    front_heave_nmm: tuple[float, float] = (0.0, 900.0)
     rear_third_nmm: tuple[float, float] = (10.0, 900.0)
-    front_heave_perch_mm: tuple[float, float] = (-35.0, -5.0)  # Data: -31.5 to -10.0
+    front_heave_perch_mm: tuple[float, float] = (-100.0, 100.0)
     rear_third_perch_mm: tuple[float, float] = (20.0, 55.0)
     front_torsion_od_mm: tuple[float, float] = (13.9, 18.2)
     rear_spring_nmm: tuple[float, float] = (100.0, 300.0)
     rear_spring_perch_mm: tuple[float, float] = (25.0, 45.0)
     static_rh_mm: tuple[float, float] = (10.0, 80.0)
     arb_blade: tuple[int, int] = (1, 5)
-    damper_click: tuple[int, int] = (1, 11)  # BMW verified; Ferrari overrides
+    damper_click: tuple[int, int] = (0, 11)  # BMW verified; Ferrari overrides
     camber_front_deg: tuple[float, float] = (-5.0, 0.0)
     camber_rear_deg: tuple[float, float] = (-4.0, 0.0)
     toe_front_mm: tuple[float, float] = (-3.0, 3.0)
@@ -571,8 +571,40 @@ class GarageRanges:
     # Resolution (quantisation step sizes)
     pushrod_resolution_mm: float = 0.5
     heave_spring_resolution_nmm: float = 10.0  # iRacing garage steps in 10 N/mm
-    rear_spring_resolution_nmm: float = 10.0   # iRacing garage steps in 10 N/mm
+    rear_spring_resolution_nmm: float = 5.0    # iRacing garage steps in 5 N/mm
     perch_resolution_mm: float = 1.0
+    rear_spring_perch_resolution_mm: float = 0.5  # rear spring perch uses 0.5 mm steps
+
+    # Differential
+    diff_preload_nm: tuple[float, float] = (0.0, 150.0)
+    diff_preload_step_nm: float = 5.0
+    diff_coast_drive_ramp_options: list[tuple[int, int]] = field(
+        default_factory=lambda: [(40, 65), (45, 70), (50, 75)]
+    )
+    diff_clutch_plates_options: list[int] = field(
+        default_factory=lambda: [2, 4, 6]
+    )
+
+    # Brakes
+    brake_master_cyl_options_mm: list[float] = field(
+        default_factory=lambda: [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8]
+    )
+    brake_pad_compound_options: list[str] = field(
+        default_factory=lambda: ["Low", "Medium", "High"]
+    )
+    brake_bias_target: tuple[float, float] = (-5.0, 5.0)
+    brake_bias_migration: tuple[float, float] = (-5.0, 5.0)
+
+    # Fuel
+    max_fuel_l: float = 89.0
+
+    # Deflection validation limits (iRacing calculated fields)
+    heave_spring_defl_mm: tuple[float, float] = (0.6, 25.0)
+    heave_slider_defl_mm: tuple[float, float] = (25.0, 45.0)
+    front_torsion_defl_max_mm: float = 24.9
+    front_shock_defl_max_mm: float = 19.9
+    rear_shock_defl_min_mm: float = 15.0
+    rear_spring_defl_max_mm: float = 24.9
 
 
 @dataclass
@@ -858,12 +890,12 @@ BMW_M_HYBRID_V8 = CarModel(
         #   rear m_eff = 540000 * (21.6 / 324.5)^2 = 2395.3 kg
         front_m_eff_kg=228.0,
         rear_m_eff_kg=2395.3,
-        front_spring_range_nmm=(20.0, 200.0),
+        front_spring_range_nmm=(0.0, 900.0),
         rear_spring_range_nmm=(100.0, 900.0),
         sigma_target_mm=10.0,   # SKILL.md: sigma > 5mm at >200 kph = unstable
         perch_offset_front_baseline_mm=-13.0,
         perch_offset_rear_baseline_mm=42.0,  # Verified from 2026-03-11 session
-        front_heave_hard_range_nmm=(30.0, 90.0),
+        front_heave_hard_range_nmm=(0.0, 900.0),
         front_heave_hard_range_exempt_tracks=["daytona", "le_mans"],
     ),
     corner_spring=CornerSpringModel(
@@ -913,8 +945,8 @@ BMW_M_HYBRID_V8 = CarModel(
         # FARB stays large relative to RARB because the front springs are soft
         # (30 N/mm wheel rate) — the front ARB is the primary roll stiffness
         # contributor at the front axle. This is typical for GTP cars.
-        front_size_labels=["Soft", "Medium", "Stiff"],
-        front_stiffness_nmm_deg=[5500.0, 11000.0, 16500.0],
+        front_size_labels=["Disconnected", "Soft", "Medium", "Stiff"],
+        front_stiffness_nmm_deg=[0.0, 5500.0, 11000.0, 16500.0],
         rear_size_labels=["Soft", "Medium", "Stiff"],
         rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],
         front_blade_count=5,
@@ -942,11 +974,11 @@ BMW_M_HYBRID_V8 = CarModel(
         # BMW damper scale — all clicks max at 11. Different from Ferrari.
         # Do NOT transfer values between cars.
         # Verified from real LDX: HS slope 11, HS Rbd rear 11 (at max).
-        ls_comp_range=(1, 11),
-        ls_rbd_range=(1, 11),
-        hs_comp_range=(1, 11),
-        hs_rbd_range=(1, 11),
-        hs_slope_range=(1, 11),
+        ls_comp_range=(0, 11),
+        ls_rbd_range=(0, 11),
+        hs_comp_range=(0, 11),
+        hs_rbd_range=(0, 11),
+        hs_slope_range=(0, 11),
         ls_force_per_click_n=18.0,  # calibrated: c*v/clicks matches real data
         hs_force_per_click_n=80.0,
         # Calibrated from real BMW Sebring Setup 2 (locked platform)

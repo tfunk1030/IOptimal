@@ -481,7 +481,7 @@ def _recommend_balance(
     elif "body slip" in problem.symptom.lower():
         # High body slip = rear instability. Increase diff preload.
         current_preload = setup.diff_preload_nm
-        new_preload = min(current_preload + 5.0, 40.0)  # +5 Nm, cap at 40
+        new_preload = min(current_preload + 5.0, 150.0)  # +5 Nm, cap at 150
         if new_preload > current_preload:
             changes.append(SetupChange(
                 parameter="diff_preload_nm",

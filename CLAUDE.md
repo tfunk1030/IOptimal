@@ -144,10 +144,23 @@ IBT → analyzer pipeline → Observation (structured snapshot)
 Key features:
 - **Controlled experiment detection**: if only one solver step changed between sessions,
   causal confidence is high. Multi-change sessions get lower confidence.
+- **Expanded causal knowledge**: `KNOWN_CAUSALITY` covers ~40 setup→effect pairs across
+  all 6 solver steps plus supporting parameters. Unknown relationships are dropped (not
+  stored at low confidence). Reverse-direction entries auto-generated.
+- **Prediction-vs-measurement feedback loop**: pipeline stores solver predictions in each
+  observation; `fit_prediction_errors()` computes exponentially-weighted corrections from
+  the gap between predicted and measured values. Solver can query via `get_prediction_corrections()`.
+- **Time decay**: recent observations carry more weight (0.95^days). 30-day-old sessions
+  contribute ~22% vs 95% for yesterday's. Prevents stale data from dominating corrections.
+- **Experiment gating for sensitivity**: lap time sensitivity only uses deltas with ≤2 setup
+  changes (single-change weighted 1.0, two-change 0.5, multi-change excluded).
 - **Empirical corrections**: measured roll gradient, LLTD, m_eff, aero compression
   accumulate and the solver can query them to refine its physics predictions.
+  Minimum 5 sessions required for non-prediction corrections.
 - **Lap time sensitivity**: tracks which parameters had the biggest lap time effect.
 - **Recurring problem detection**: flags issues that appear in >50% of sessions.
+- **Damper oscillation validation**: rear shock oscillation frequency extracted from
+  telemetry; if >1.5× natural frequency, damper solver bumps ζ_hs_rear (0.14→0.21).
 
 ### Data Files
 - `data/aeromaps/` — Raw xlsx files (provided)
@@ -201,8 +214,13 @@ Key features:
 **Known limitations:**
 - Ferrari rear suspension is modeled as coil spring (placeholder) — actually a torsion bar. Corner spring and LLTD outputs for Ferrari are unreliable until the index→OD mapping is decoded.
 - `m_eff` empirical correction uses lap-wide statistics (not filtered to high-speed straights), causing overestimation. Treat as rough indicator.
-- `min_sessions=3` gate for learned corrections is weak — corrections from only 3 sessions may be noisy.
+- `min_sessions=5` gate for non-prediction learned corrections. Prediction-based corrections
+  (from solver feedback loop) need only 3 sessions since they measure specific prediction errors.
 - Knowledge store has no file locking — safe for single-user CLI but not concurrent access.
+- LLTD measurement from telemetry is actually a roll stiffness distribution proxy (not true LLTD).
+  The `lltd_measured` field name is a backward-compatible alias for `roll_distribution_proxy`.
+- High-speed m_eff filtering available via `front_heave_vel_p95_hs_mps` and `front_rh_std_hs_mm`
+  (>200 kph only) but not yet used by the solver's m_eff correction — uses lap-wide stats.
 
 ## Usage
 

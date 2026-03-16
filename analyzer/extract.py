@@ -254,6 +254,14 @@ class MeasuredState:
     abs_adjustments: int = 0                # dcABS changes
     deploy_mode_adjustments: int = 0        # dcMGUKDeployMode changes
 
+    # --- Rear shock oscillation analysis (P2: damper validation) ---
+    rear_shock_oscillation_hz: float = 0.0   # Zero-crossing frequency of rear shock vel
+    front_shock_oscillation_hz: float = 0.0  # Zero-crossing frequency of front shock vel
+
+    # --- High-speed m_eff filtering (P3c) ---
+    front_heave_vel_p95_hs_mps: float = 0.0  # Front heave vel p95 at >200 kph only
+    front_rh_std_hs_mm: float = 0.0          # Front RH std at >200 kph only
+
     # --- Wind ---
     wind_speed_ms: float = 0.0
     wind_dir_deg: float = 0.0
@@ -332,6 +340,24 @@ def extract_measurements(
     state.rear_shock_vel_p95_mps = float(np.percentile(rear_sv, 95))
     state.rear_shock_vel_p99_mps = float(np.percentile(rear_sv, 99))
 
+    # --- Shock oscillation frequency (P2: damper underdamping detection) ---
+    # Zero-crossings of signed shock velocity → oscillation frequency proxy.
+    # If zero_crossing_freq > 1.5× natural frequency → underdamped evidence.
+    duration_s = n / ibt.tick_rate
+    if duration_s > 1.0:
+        # Use signed shock velocity (not abs) for zero-crossing detection
+        lr_sv_signed = ibt.channel("LRshockVel")[start:end + 1]
+        rr_sv_signed = ibt.channel("RRshockVel")[start:end + 1]
+        rear_sv_signed = (lr_sv_signed + rr_sv_signed) / 2.0
+        rear_zc = int(np.sum(np.diff(np.sign(rear_sv_signed)) != 0))
+        state.rear_shock_oscillation_hz = round(rear_zc / 2.0 / duration_s, 2)
+
+        lf_sv_signed = ibt.channel("LFshockVel")[start:end + 1]
+        rf_sv_signed = ibt.channel("RFshockVel")[start:end + 1]
+        front_sv_signed = (lf_sv_signed + rf_sv_signed) / 2.0
+        front_zc = int(np.sum(np.diff(np.sign(front_sv_signed)) != 0))
+        state.front_shock_oscillation_hz = round(front_zc / 2.0 / duration_s, 2)
+
     # --- Ride heights ---
     has_rh = all(ibt.has_channel(c) for c in
                  ["LFrideHeight", "RFrideHeight", "LRrideHeight", "RRrideHeight"])
@@ -357,6 +383,18 @@ def extract_measurements(
             state.front_rh_p01_mm = float(np.percentile(front_rh[at_speed], 1))
             state.rear_rh_p01_mm = float(np.percentile(rear_rh[at_speed], 1))
             state.mean_speed_at_speed_kph = float(np.mean(speed_kph[at_speed]))
+
+        # High-speed aero regime: >200 kph (P3c: filtered m_eff)
+        # These values exclude low-speed corners and pit exit, giving
+        # more accurate m_eff calibration for the aero platform regime.
+        hs_aero_mask = (speed_kph > 200) & (brake < 0.05)
+        if np.sum(hs_aero_mask) > 30:
+            state.front_rh_std_hs_mm = float(np.std(front_rh[hs_aero_mask]))
+            if ibt.has_channel("HFshockVel"):
+                hf_hs = np.abs(ibt.channel("HFshockVel")[start:end + 1])
+                state.front_heave_vel_p95_hs_mps = round(
+                    float(np.percentile(hf_hs[hs_aero_mask], 95)), 4
+                )
 
         # Aero compression: static - dynamic (offset-independent)
         pit_mask = speed_kph < 5.0
@@ -431,9 +469,14 @@ def extract_measurements(
             state.front_rh_excursion_measured_mm = float(np.percentile(front_deviation, 99))
             state.rear_rh_excursion_measured_mm = float(np.percentile(rear_deviation, 99))
 
-        # --- Roll distribution proxy from ride-height deflections ---
-        # This is NOT true LLTD. It is a ride-height-based proxy for how much
-        # each axle appears to contribute to roll support through the corner.
+        # --- Roll stiffness distribution proxy from ride-height deflections ---
+        # WARNING: This is NOT true LLTD (Lateral Load Transfer Distribution).
+        # It measures ROLL STIFFNESS DISTRIBUTION: how much each axle contributes
+        # to total roll resistance, approximated from ride height differential.
+        # True LLTD = (K_roll_f/t_f) / (K_roll_f/t_f + K_roll_r/t_r) and also
+        # includes geometric and direct components. This proxy correlates with
+        # LLTD but is not identical — use the field name "roll_distribution_proxy"
+        # and treat "lltd_measured" as a backward-compatible alias.
         tw_f = getattr(car.arb, "track_width_front_mm", 1730.0)
         tw_r = getattr(car.arb, "track_width_rear_mm", 1650.0)
         tw_f_sq = tw_f ** 2

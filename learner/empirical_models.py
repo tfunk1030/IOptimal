@@ -26,6 +26,13 @@ from typing import Any
 import numpy as np
 
 
+# Time decay: weight *= 0.95 ^ days_since_observation
+TIME_DECAY_BASE = 0.95
+
+# Minimum sessions for non-prediction corrections
+MIN_SESSIONS_FOR_CORRECTIONS = 5
+
+
 @dataclass
 class FittedRelationship:
     """A single empirical relationship derived from data."""
@@ -203,6 +210,9 @@ def fit_models(
         models.corrections["roll_gain_calibration_confidence"] = thermal_cal["confidence"]
         models.corrections["roll_gain_calibration_samples"] = thermal_cal["sample_count"]
 
+    # ── 10. Prediction-vs-measurement feedback loop ───────────────
+    fit_prediction_errors(observations, models)
+
     return models
 
 
@@ -378,7 +388,13 @@ def _fit_settle_time(obs_list: list[dict], models: EmpiricalModelSet) -> None:
 
 
 def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> None:
-    """Estimate which parameters most affect lap time from delta history."""
+    """Estimate which parameters most affect lap time from delta history.
+
+    Controlled experiment gating (P1 Phase 3):
+    - Single-change deltas: weight 1.0
+    - Two-change deltas: weight 0.5
+    - Multi-change (3+): weight 0.0 (excluded)
+    """
     param_effects: dict[str, list[tuple[float, float]]] = {}
 
     for d in deltas:
@@ -389,7 +405,15 @@ def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> 
             continue
         if d.get("confidence_level") not in ("high", "medium"):
             continue
-        weight = 1.0 if d.get("confidence_level") == "high" else 0.6
+
+        # Controlled experiment gating: only trust deltas with few changes
+        num_changes = d.get("num_setup_changes", 99)
+        if num_changes > 2:
+            continue  # multi-change sessions are too noisy for sensitivity
+        experiment_weight = 1.0 if num_changes <= 1 else 0.5
+
+        confidence_weight = 1.0 if d.get("confidence_level") == "high" else 0.6
+        weight = experiment_weight * confidence_weight
 
         for sc in d.get("setup_changes", []):
             if sc.get("significance") == "trivial":
@@ -423,7 +447,8 @@ def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> 
 
         weighted_mean = float(np.average(vals, weights=weights))
         # Shrink toward zero when validated sample weight is low.
-        shrink = float(np.sum(weights) / (np.sum(weights) + 3.0))
+        # Increased shrinkage denominator from 3.0 to 5.0 for more conservative estimates
+        shrink = float(np.sum(weights) / (np.sum(weights) + 5.0))
         regularized_mean = weighted_mean * shrink
         sensitivities.append((param, abs(regularized_mean), regularized_mean))
 
@@ -530,31 +555,41 @@ def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> Non
 
     These corrections are the key output — they tell the solver "your physics
     predicts X, but the data consistently shows Y, so multiply by Y/X."
+
+    Time decay: recent observations carry more weight than old ones.
+    Minimum sessions gate: need >= MIN_SESSIONS_FOR_CORRECTIONS for non-prediction corrections.
     """
-    # Roll stiffness correction
-    # Physics model predicts roll. If measured roll is consistently different,
-    # the roll stiffness in the model needs a correction factor.
-    roll_pred = []
-    roll_meas = []
+    now = datetime.now(timezone.utc)
+
+    # Roll stiffness correction (time-weighted)
+    roll_vals = []
+    roll_weights = []
     for obs in obs_list:
         rg = obs.get("telemetry", {}).get("roll_gradient_deg_per_g", 0)
         if rg > 0.1:
-            roll_meas.append(rg)
+            roll_vals.append(rg)
+            roll_weights.append(_obs_time_weight(obs, now))
 
-    if len(roll_meas) >= 2:
-        models.corrections["roll_gradient_measured_mean"] = float(np.mean(roll_meas))
-        models.corrections["roll_gradient_measured_std"] = float(np.std(roll_meas))
-        models.corrections["roll_gradient_sample_count"] = len(roll_meas)
+    if len(roll_vals) >= MIN_SESSIONS_FOR_CORRECTIONS:
+        rv = np.array(roll_vals, dtype=float)
+        rw = np.array(roll_weights, dtype=float)
+        models.corrections["roll_gradient_measured_mean"] = float(np.average(rv, weights=rw))
+        models.corrections["roll_gradient_measured_std"] = float(np.std(rv))
+        models.corrections["roll_gradient_sample_count"] = len(roll_vals)
 
-    # LLTD correction
+    # LLTD correction (time-weighted)
     lltd_vals = []
+    lltd_weights = []
     for obs in obs_list:
         lltd = obs.get("telemetry", {}).get("lltd_measured", 0)
         if lltd > 0:
             lltd_vals.append(lltd)
-    if lltd_vals:
-        models.corrections["lltd_measured_mean"] = float(np.mean(lltd_vals))
-        models.corrections["lltd_measured_std"] = float(np.std(lltd_vals))
+            lltd_weights.append(_obs_time_weight(obs, now))
+    if len(lltd_vals) >= MIN_SESSIONS_FOR_CORRECTIONS:
+        lv = np.array(lltd_vals, dtype=float)
+        lw = np.array(lltd_weights, dtype=float)
+        models.corrections["lltd_measured_mean"] = float(np.average(lv, weights=lw))
+        models.corrections["lltd_measured_std"] = float(np.std(lv))
 
     # Effective mass correction (from variance data + spring rates)
     for obs in obs_list:
@@ -578,3 +613,87 @@ def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> Non
     if m_eff_samples:
         models.corrections["m_eff_front_empirical_mean"] = float(np.mean(m_eff_samples))
         models.corrections["m_eff_front_empirical_std"] = float(np.std(m_eff_samples))
+
+
+def _obs_time_weight(obs: dict, now: datetime | None = None) -> float:
+    """Compute time-decay weight for an observation.
+
+    Returns TIME_DECAY_BASE ^ days_since_observation.
+    Recent sessions weigh more; old sessions decay toward zero.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    ts_str = obs.get("timestamp", "")
+    if not ts_str:
+        return 0.5  # unknown age → half weight
+    try:
+        ts = datetime.fromisoformat(ts_str)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        days = max(0.0, (now - ts).total_seconds() / 86400.0)
+        return TIME_DECAY_BASE ** days
+    except (ValueError, TypeError):
+        return 0.5
+
+
+def fit_prediction_errors(
+    observations: list[dict],
+    models: EmpiricalModelSet,
+) -> None:
+    """Fit prediction-vs-measurement corrections from solver predictions.
+
+    For each observation that has both solver_predictions and measured telemetry,
+    compute the error (measured - predicted) and store an exponentially-weighted
+    moving average as correction factors the solver can query.
+
+    This is the core feedback loop: solver predicts → we measure → we correct.
+    """
+    # Metrics we can compare: solver prediction key → telemetry measurement key
+    PREDICTION_METRICS = {
+        "front_rh_std_mm": "front_rh_std_mm",
+        "rear_rh_std_mm": "rear_rh_std_mm",
+        "lltd_predicted": "lltd_measured",
+        "body_roll_predicted_deg_per_g": "roll_gradient_deg_per_g",
+        "front_bottoming_predicted": "front_bottoming_events",
+        "m_eff_front_kg": None,  # no direct telemetry equivalent
+    }
+
+    now = datetime.now(timezone.utc)
+
+    for pred_key, meas_key in PREDICTION_METRICS.items():
+        if meas_key is None:
+            continue
+
+        errors: list[float] = []
+        weights: list[float] = []
+
+        for obs in observations:
+            pred = obs.get("solver_predictions", {}).get(pred_key)
+            meas = obs.get("telemetry", {}).get(meas_key)
+            if pred is None or meas is None:
+                continue
+            try:
+                error = float(meas) - float(pred)
+            except (TypeError, ValueError):
+                continue
+
+            w = _obs_time_weight(obs, now)
+            errors.append(error)
+            weights.append(w)
+
+        if len(errors) < 3:
+            continue
+
+        errors_arr = np.array(errors, dtype=float)
+        weights_arr = np.array(weights, dtype=float)
+
+        # Exponentially-weighted mean error = correction
+        weighted_mean = float(np.average(errors_arr, weights=weights_arr))
+        weighted_std = float(np.sqrt(
+            np.average((errors_arr - weighted_mean) ** 2, weights=weights_arr)
+        ))
+
+        correction_key = f"prediction_correction_{pred_key}"
+        models.corrections[correction_key] = round(weighted_mean, 4)
+        models.corrections[f"{correction_key}_std"] = round(weighted_std, 4)
+        models.corrections[f"{correction_key}_n"] = len(errors)

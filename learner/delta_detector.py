@@ -75,7 +75,17 @@ EFFECT_METRICS = {
 # Known causal relationships: setup_param → expected effect direction
 # Format: (param, direction_of_increase) → [(metric, expected_direction)]
 # direction: "+" means metric increases, "-" means it decreases
+# "~" means effect is expected but direction is indeterminate
 KNOWN_CAUSALITY = {
+    # ── Step 1: Rake / Ride Heights ──
+    ("front_pushrod", "+"): [
+        ("dynamic_front_rh_mm", "+"),       # pushrod up → higher front RH
+    ],
+    ("rear_pushrod", "+"): [
+        ("dynamic_rear_rh_mm", "+"),
+    ],
+
+    # ── Step 2: Heave / Third Springs ──
     ("front_heave_nmm", "+"): [
         ("front_rh_std_mm", "-"),
         ("front_bottoming_events", "-"),
@@ -83,6 +93,8 @@ KNOWN_CAUSALITY = {
         ("front_heave_travel_used_pct", "-"),    # stiffer spring = more DeflMax headroom
         ("front_heave_travel_used_braking_pct", "-"),
         ("heave_bottoming_events_front", "-"),
+        ("front_shock_vel_p95_mps", "-"),        # stiffer platform = less shock travel
+        ("front_dominant_freq_hz", "+"),          # stiffer spring = higher natural freq
     ],
     ("rear_third_nmm", "+"): [
         ("rear_rh_std_mm", "-"),
@@ -90,26 +102,97 @@ KNOWN_CAUSALITY = {
         ("rear_heave_defl_p99_mm", "-"),
         ("rear_heave_travel_used_pct", "-"),
         ("heave_bottoming_events_rear", "-"),
+        ("rear_shock_vel_p95_mps", "-"),
+        ("rear_dominant_freq_hz", "+"),
+    ],
+
+    # ── Step 3: Corner Springs ──
+    ("torsion_bar_od_mm", "+"): [
+        ("front_dominant_freq_hz", "+"),
+        ("front_rh_std_mm", "-"),       # stiffer spring = less RH variance
+        ("front_rh_settle_time_ms", "-"),  # stiffer = faster response
+    ],
+    ("rear_spring_nmm", "+"): [
+        ("rear_dominant_freq_hz", "+"),
+        ("rear_rh_std_mm", "-"),
+        ("rear_rh_settle_time_ms", "-"),
+        ("roll_gradient_deg_per_g", "-"),  # stiffer rear = less roll
+    ],
+
+    # ── Step 4: ARBs ──
+    ("front_arb_blade", "+"): [
+        ("lltd_measured", "-"),         # more front ARB → front takes more roll → LLTD decreases
+        ("roll_gradient_deg_per_g", "-"),  # stiffer front roll = less total roll
+        ("understeer_mean_deg", "-"),   # less understeer (front stiffer)
     ],
     ("rear_arb_blade", "+"): [
         ("lltd_measured", "+"),         # more rear ARB → more rear roll resistance → higher front LLTD
         ("understeer_mean_deg", "+"),   # more understeer (front lighter)
+        ("roll_gradient_deg_per_g", "-"),  # stiffer rear roll = less total roll
+        ("body_slip_p95_deg", "-"),     # more rear roll stiffness = less oversteer
     ],
+
+    # ── Step 5: Wheel Geometry ──
     ("front_camber_deg", "-"): [        # more negative = more static camber
-        ("body_roll_p95_deg", "~"),     # minimal direct effect
+        ("understeer_mean_deg", "~"),   # affects contact patch, complex
     ],
-    ("torsion_bar_od_mm", "+"): [
-        ("front_dominant_freq_hz", "+"),
-        ("front_rh_std_mm", "-"),       # stiffer spring = less RH variance
+    ("rear_camber_deg", "-"): [
+        ("body_slip_p95_deg", "~"),     # affects rear grip
     ],
-    ("rear_spring_nmm", "+"): [
-        ("rear_dominant_freq_hz", "+"),
+
+    # ── Step 6: Dampers ──
+    # LS dampers
+    ("damper_lf_ls_comp", "+"): [
+        ("front_rh_settle_time_ms", "-"),  # more damping = faster settle
     ],
+    ("damper_lr_ls_comp", "+"): [
+        ("rear_rh_settle_time_ms", "-"),
+    ],
+    ("damper_lf_ls_rbd", "+"): [
+        ("front_rh_settle_time_ms", "-"),
+    ],
+    ("damper_lr_ls_rbd", "+"): [
+        ("rear_rh_settle_time_ms", "-"),
+    ],
+    # HS dampers
+    ("damper_lf_hs_comp", "+"): [
+        ("front_shock_vel_p95_mps", "-"),   # more HS damping = less shock travel
+        ("front_bottoming_events", "-"),
+    ],
+    ("damper_lr_hs_comp", "+"): [
+        ("rear_shock_vel_p95_mps", "-"),
+        ("rear_bottoming_events", "-"),
+    ],
+    ("damper_lf_hs_rbd", "+"): [
+        ("front_shock_vel_p95_mps", "-"),
+    ],
+    ("damper_lr_hs_rbd", "+"): [
+        ("rear_shock_vel_p95_mps", "-"),
+    ],
+
+    # ── Aero ──
     ("wing", "+"): [
         ("dynamic_front_rh_mm", "-"),   # more downforce = more compression
         ("dynamic_rear_rh_mm", "-"),
     ],
+
+    # ── Supporting Parameters ──
+    ("brake_bias_pct", "+"): [
+        ("braking_decel_peak_g", "~"),   # bias change can go either way on decel
+    ],
 }
+
+# Build reverse-direction entries: if (param, "+") has entries,
+# create (param, "-") with flipped directions automatically.
+_reverse_dir = {"+": "-", "-": "+", "~": "~"}
+_reverse_entries = {}
+for (param, direction), effects in list(KNOWN_CAUSALITY.items()):
+    opposite = "-" if direction == "+" else "+"
+    if (param, opposite) not in KNOWN_CAUSALITY:
+        _reverse_entries[(param, opposite)] = [
+            (metric, _reverse_dir[edir]) for metric, edir in effects
+        ]
+KNOWN_CAUSALITY.update(_reverse_entries)
 
 
 @dataclass
@@ -375,6 +458,9 @@ def detect_delta(obs_before: Observation, obs_after: Observation) -> SessionDelt
         delta.lap_time_delta_s = round(lt_a - lt_b, 3)
 
     # ── 4. Generate causal hypotheses ────────────────────────────────
+    # Only generate hypotheses for KNOWN causal relationships to avoid
+    # a cartesian explosion of noise. Unknown setup→effect pairs are
+    # dropped entirely (previously stored at confidence 0.1).
     for sc in delta.setup_changes:
         if sc.significance == "trivial":
             continue
@@ -384,43 +470,45 @@ def detect_delta(obs_before: Observation, obs_after: Observation) -> SessionDelt
         direction = "+" if sc.delta > 0 else "-"
         key = (sc.parameter, direction)
 
+        # Skip parameters with no known causal relationships
+        known = KNOWN_CAUSALITY.get(key, [])
+        if not known:
+            continue
+
         for te in delta.telemetry_effects:
             if te.significance == "noise":
                 continue
 
-            # Check if this is a known causal relationship
-            known = KNOWN_CAUSALITY.get(key, [])
+            # Only generate hypothesis if this metric is in the known set
             known_match = None
             for k_metric, k_dir in known:
                 if k_metric == te.metric:
                     known_match = k_dir
                     break
 
+            if known_match is None:
+                continue  # no known causal link → skip entirely
+
             effect_dir = "+" if te.delta > 0 else "-"
+            direction_match = (known_match == effect_dir) or (known_match == "~")
+            confidence = 0.8 if direction_match else 0.3
+            if delta.controlled_experiment:
+                confidence = min(1.0, confidence + 0.15)
 
-            if known_match:
-                direction_match = (known_match == effect_dir) or (known_match == "~")
-                confidence = 0.8 if direction_match else 0.3
-                if delta.controlled_experiment:
-                    confidence = min(1.0, confidence + 0.15)
-                mechanism = (f"{sc.parameter} {direction} -> expected "
-                             f"{te.metric} {known_match}, observed {effect_dir}")
-            else:
-                # Unknown relationship — lower confidence, worth logging
-                direction_match = False
-                confidence = 0.2 if delta.controlled_experiment else 0.1
-                mechanism = (f"{sc.parameter} {direction} -> observed "
-                             f"{te.metric} {effect_dir} (no known causal link)")
+            mechanism = (f"{sc.parameter} {direction} -> expected "
+                         f"{te.metric} {known_match}, observed {effect_dir}")
 
-            delta.hypotheses.append(CausalHypothesis(
-                cause_param=sc.parameter,
-                cause_delta=sc.delta,
-                effect_metric=te.metric,
-                effect_delta=te.delta,
-                direction_match=direction_match,
-                confidence=confidence,
-                mechanism=mechanism,
-            ))
+            # Only store hypotheses with meaningful confidence
+            if confidence >= 0.2:
+                delta.hypotheses.append(CausalHypothesis(
+                    cause_param=sc.parameter,
+                    cause_delta=sc.delta,
+                    effect_metric=te.metric,
+                    effect_delta=te.delta,
+                    direction_match=direction_match,
+                    confidence=confidence,
+                    mechanism=mechanism,
+                ))
 
     # ── 5. Driver style change detection ─────────────────────────────
     dp_b = obs_before.driver_profile

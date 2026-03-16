@@ -474,6 +474,23 @@ def write_sto(
         except Exception:
             brake_bias_pct = 56.0  # fallback only if car model unavailable
 
+    # ── Validate and clamp brake/diff/TC kwargs against garage ranges ─────
+    if _car is not None:
+        _gr = _car.garage_ranges
+        # Brake bias target/migration
+        brake_bias_target = max(_gr.brake_bias_target[0], min(_gr.brake_bias_target[1], brake_bias_target))
+        brake_bias_migration = max(_gr.brake_bias_migration[0], min(_gr.brake_bias_migration[1], brake_bias_migration))
+        # Diff preload
+        diff_preload_nm = max(_gr.diff_preload_nm[0], min(_gr.diff_preload_nm[1], diff_preload_nm))
+        diff_preload_nm = round(diff_preload_nm / _gr.diff_preload_step_nm) * _gr.diff_preload_step_nm
+        # Master cylinders — snap to nearest valid option
+        _mc_opts = _gr.brake_master_cyl_options_mm
+        front_master_cyl_mm = min(_mc_opts, key=lambda x: abs(x - front_master_cyl_mm))
+        rear_master_cyl_mm = min(_mc_opts, key=lambda x: abs(x - rear_master_cyl_mm))
+        # Pad compound
+        if pad_compound not in _gr.brake_pad_compound_options:
+            pad_compound = "Medium"
+
     # ── Corner weights (physics-computed) ─────────────────────────────────
     if _car is not None:
         _total_mass   = _car.mass_car_kg + _car.mass_driver_kg + fuel_l * _car.fuel_density_kg_per_l
