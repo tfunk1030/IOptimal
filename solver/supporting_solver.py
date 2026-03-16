@@ -240,13 +240,12 @@ class SupportingSolver:
             bias += 0.3
             reasons.append(f"+0.3% for high body slip p95={measured.body_slip_p95_deg:.1f}°")
 
-        # Measured brake pressure split validation
-        if measured.front_brake_pressure_peak_bar > 0 and measured.rear_brake_pressure_peak_bar > 0:
-            total_pressure = measured.front_brake_pressure_peak_bar + measured.rear_brake_pressure_peak_bar
-            measured_split = measured.front_brake_pressure_peak_bar / total_pressure * 100
+        # Measured brake pressure split validation (synchronous per-sample split)
+        measured_split = getattr(measured, "hydraulic_brake_split_pct", 0.0)
+        if measured_split > 0:
             if abs(measured_split - bias) > 2.0:
                 reasons.append(
-                    f"Note: measured pressure split {measured_split:.1f}% vs "
+                    f"Note: measured hydraulic split {measured_split:.1f}% vs "
                     f"recommended {bias:.1f}% (delta {measured_split - bias:+.1f}%)"
                 )
 
@@ -325,7 +324,7 @@ class SupportingSolver:
             preload += 5
             reasons.append(f"+5 Nm for rear power slip p95={rear_power_slip:.3f}")
 
-        sol.diff_preload_nm = round(_clamp(preload, 5.0, 40.0) / 5) * 5  # 5 Nm increments
+        sol.diff_preload_nm = round(_clamp(preload, 0.0, 150.0) / 5) * 5  # 5 Nm increments
 
         # ── Coast ramp ── (lower angle = more locking on coast/decel)
         coast = 45 - int(driver.trail_brake_depth_mean * 10)
@@ -346,7 +345,7 @@ class SupportingSolver:
 
         sol.diff_ramp_coast = coast
         sol.diff_ramp_drive = drive
-        sol.diff_clutch_plates = 6  # BMW default, rarely changed
+        sol.diff_clutch_plates = self.car.garage_ranges.diff_clutch_plates_options[-1]  # highest available
         sol.diff_reasoning = "; ".join(reasons)
 
     def _solve_tc(self, sol: SupportingSolution) -> None:

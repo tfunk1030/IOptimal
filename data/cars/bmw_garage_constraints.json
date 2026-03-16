@@ -1,0 +1,151 @@
+{
+  "car": "BMW M Hybrid V8 LMDh",
+  "source": "iRacing garage UI - verified 2026-03-15",
+  "notes": "All values are iRacing-enforced min/max. 'calculated' fields are derived by iRacing and shown as warnings if exceeded.",
+
+  "front_suspension": {
+    "heave_spring_nmm": {
+      "min": 0,
+      "max": 900,
+      "step": 10,
+      "unit": "N/mm"
+    },
+    "heave_perch_offset_mm": {
+      "min": -100,
+      "max": 100,
+      "step": 1,
+      "unit": "mm"
+    },
+    "heave_spring_defl_mm": {
+      "min": 0.6,
+      "max": 25.0,
+      "unit": "mm",
+      "type": "calculated"
+    },
+    "heave_slider_defl_mm": {
+      "min": 25.0,
+      "max": 45.0,
+      "unit": "mm",
+      "type": "calculated"
+    },
+    "pushrod_length_offset_mm": {
+      "min": -40,
+      "max": 40,
+      "step": 0.5,
+      "unit": "mm"
+    },
+    "torsion_bar_od_mm": {
+      "options": [13.90, 14.34, 14.76, 15.14, 15.51, 15.86, 16.19, 16.51, 16.81, 17.11, 17.39, 17.67, 17.94, 18.20],
+      "unit": "mm",
+      "type": "discrete"
+    },
+    "torsion_bar_defl_mm": {
+      "max": 24.9,
+      "unit": "mm",
+      "type": "calculated"
+    },
+    "shock_defl_mm": {
+      "max": 19.9,
+      "unit": "mm",
+      "type": "calculated"
+    },
+    "arb_size": {
+      "options": ["Disconnected", "Soft", "Medium", "Hard"],
+      "type": "discrete"
+    },
+    "arb_blades": {
+      "min": 1,
+      "max": 5,
+      "step": 1
+    }
+  },
+
+  "rear_suspension": {
+    "pushrod_length_offset_mm": {
+      "min": -40,
+      "max": 40,
+      "step": 0.5,
+      "unit": "mm"
+    },
+    "spring_rate_nmm": {
+      "min": 100,
+      "max": 300,
+      "step": 5,
+      "unit": "N/mm"
+    },
+    "spring_perch_offset_mm": {
+      "min": 25.0,
+      "max": 45.0,
+      "step": 0.5,
+      "unit": "mm"
+    },
+    "spring_defl_mm": {
+      "max": 24.9,
+      "unit": "mm",
+      "type": "calculated"
+    },
+    "shock_defl_mm": {
+      "min": 15.0,
+      "unit": "mm",
+      "type": "calculated"
+    }
+  },
+
+  "dampers": {
+    "all_clicks": {
+      "min": 0,
+      "max": 11,
+      "step": 1,
+      "note": "Applies to LS/HS compression and rebound, plus slope"
+    }
+  },
+
+  "differential": {
+    "coast_drive_ramp_angles": {
+      "options": [[40, 65], [45, 70], [50, 75]],
+      "type": "discrete",
+      "format": "[coast, drive]"
+    },
+    "clutch_friction_plates": {
+      "options": [2, 4, 6],
+      "type": "discrete"
+    },
+    "preload_nm": {
+      "min": 0,
+      "max": 150,
+      "step": 5,
+      "unit": "Nm"
+    }
+  },
+
+  "brakes": {
+    "pad_compound": {
+      "options": ["Low", "Medium", "High"],
+      "type": "discrete"
+    },
+    "master_cylinder_front_mm": {
+      "options": [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8],
+      "type": "discrete",
+      "unit": "mm"
+    },
+    "master_cylinder_rear_mm": {
+      "options": [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8],
+      "type": "discrete",
+      "unit": "mm"
+    },
+    "bias_target_pct": {
+      "min": -5.0,
+      "max": 5.0,
+      "unit": "%"
+    },
+    "bias_migration_pct": {
+      "min": -5.0,
+      "max": 5.0,
+      "unit": "%"
+    }
+  },
+
+  "fuel": {
+    "max_litres": 89
+  }
+}

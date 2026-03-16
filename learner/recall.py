@@ -50,12 +50,31 @@ class KnowledgeRecall:
         """Get all empirical correction factors for a car/track combination.
 
         Returns a dict of correction_name → value. The solver can use these
-        to adjust its physics predictions.
+        to adjust its physics predictions. Prediction-based corrections
+        (from fit_prediction_errors) are included with 'prediction_correction_' prefix.
         """
         models = self._load_models(car, track)
         if models is None:
             return {}
         return models.corrections
+
+    def get_prediction_corrections(self, car: str, track: str) -> dict:
+        """Get prediction-vs-measurement corrections only.
+
+        These are exponentially-weighted mean errors between what the solver
+        predicted and what was actually measured. The solver should ADD these
+        corrections to its predictions for better accuracy.
+
+        Returns dict like: {"front_rh_std_mm": -0.3, "lltd_predicted": 0.01, ...}
+        """
+        corrections = self.get_corrections(car, track)
+        result = {}
+        prefix = "prediction_correction_"
+        for key, value in corrections.items():
+            if key.startswith(prefix) and not key.endswith(("_std", "_n")):
+                clean_key = key[len(prefix):]
+                result[clean_key] = value
+        return result
 
     def get_correction(self, car: str, track: str, name: str) -> RecallResult:
         """Get a specific correction factor."""

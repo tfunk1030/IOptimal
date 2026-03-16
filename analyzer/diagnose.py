@@ -646,6 +646,7 @@ def _check_balance(
                 measured=directional_delta,
                 threshold=0.3,
                 units="deg",
+                priority=2,
             ))
 
     # Ride-height-based roll distribution proxy check

@@ -182,7 +182,7 @@ def _clamp_step3(step3, gr) -> list[str]:
         step3.rear_spring_rate_nmm = float(val)
 
     old = step3.rear_spring_perch_mm
-    val = _snap(_clamp(old, *gr.rear_spring_perch_mm), gr.perch_resolution_mm)
+    val = _snap(_clamp(old, *gr.rear_spring_perch_mm), gr.rear_spring_perch_resolution_mm)
     if abs(val - old) > 0.01:
         msgs.append(f"rear_spring_perch: {old:.1f} -> {val:.1f} mm (clamped/snapped)")
         step3.rear_spring_perch_mm = val

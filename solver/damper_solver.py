@@ -466,6 +466,20 @@ class DamperSolver:
         zeta_hs_f = self._damping_ratio_hs(is_front=True) * damping_ratio_scale
         zeta_hs_r = self._damping_ratio_hs(is_front=False) * damping_ratio_scale
 
+        # ─── Telemetry-based oscillation validation (P2) ──────────────────────
+        # If measured rear shock oscillation frequency exceeds 1.5× natural
+        # frequency, the rear is underdamped. Bump ζ_hs_rear to reduce oscillation.
+        if measured is not None:
+            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0)
+            rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
+            if rear_osc_hz > 1.5 * rear_nat_freq_hz and rear_nat_freq_hz > 0:
+                # Underdamped evidence — increase HS ζ by 50% (capped at 0.25)
+                zeta_hs_r_original = zeta_hs_r
+                zeta_hs_r = min(zeta_hs_r * 1.5, 0.25)
+                # Also bump LS slightly if oscillation is severe
+                if rear_osc_hz > 2.0 * rear_nat_freq_hz:
+                    zeta_ls_r = min(zeta_ls_r * 1.15, 0.45)
+
         c_ls_front = zeta_ls_f * c_crit_front
         c_ls_rear = zeta_ls_r * c_crit_rear
         c_hs_front = zeta_hs_f * c_crit_front
@@ -618,6 +632,23 @@ class DamperSolver:
                 note="Front controls entry. If violated: car will be nervous on entry.",
             ),
         ]
+
+        # Add oscillation validation constraint if telemetry is available
+        if measured is not None:
+            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0)
+            rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
+            if rear_osc_hz > 0 and rear_nat_freq_hz > 0:
+                osc_ratio = rear_osc_hz / rear_nat_freq_hz
+                constraints.append(DamperConstraintCheck(
+                    name="Rear shock oscillation vs natural freq",
+                    passed=osc_ratio <= 1.5,
+                    value=rear_osc_hz,
+                    target=1.5 * rear_nat_freq_hz,
+                    units="Hz",
+                    note=(f"Ratio: {osc_ratio:.2f}x natural freq ({rear_nat_freq_hz:.2f} Hz). "
+                          f">1.5x = underdamped evidence."
+                          + (f" ζ_hs_rear bumped to {zeta_hs_r:.3f}." if osc_ratio > 1.5 else "")),
+                ))
 
         notes = [
             f"Front critical damping: {c_crit_front:.0f} N*s/m "
