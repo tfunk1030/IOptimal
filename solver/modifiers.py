@@ -179,6 +179,52 @@ def compute_modifiers(
                     f"Settle time {problem.measured:.0f}ms < 50ms → LS rbd -1 (overdamped)"
                 )
 
+    # ── From Heave Shock Velocity (platform stability) ──
+    if measured.front_heave_vel_hs_pct > 40:
+        # >40% of heave velocity in HS regime = platform is getting pounded by surface
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 40.0)
+        mods.reasons.append(
+            f"Heave HS regime {measured.front_heave_vel_hs_pct:.0f}% > 40% → heave floor 40 N/mm"
+        )
+    if measured.front_heave_vel_p95_mps > 0.4:
+        # Very high heave velocity → increase HS damping to control platform
+        mods.front_hs_comp_offset += 1
+        mods.reasons.append(
+            f"Heave vel p95 {measured.front_heave_vel_p95_mps:.3f} m/s > 0.4 → F HS comp +1"
+        )
+
+    # ── From Pitch Dynamics (platform stability) ──
+    if measured.pitch_range_deg > 1.5:
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 38.0)
+        mods.reasons.append(
+            f"Pitch range {measured.pitch_range_deg:.2f}° > 1.5° → heave floor 38 N/mm"
+        )
+
+    # ── From Directional Understeer (balance weighting) ──
+    us_left = measured.understeer_left_turn_deg
+    us_right = measured.understeer_right_turn_deg
+    if abs(us_left) > 0.05 and abs(us_right) > 0.05:
+        directional_delta = us_left - us_right
+        # If one direction has significantly more understeer, weight LLTD offset
+        # toward fixing the dominant direction
+        if abs(directional_delta) > 0.3:
+            # Positive delta = more US in left turns; negative = more US in right
+            # Scale LLTD offset by directional bias (max ±0.01 additional offset)
+            directional_lltd_adj = -0.01 if directional_delta > 0 else 0.01
+            mods.lltd_offset += directional_lltd_adj
+            mods.reasons.append(
+                f"Directional US asymmetry: left={us_left:.2f}° right={us_right:.2f}° "
+                f"→ LLTD {directional_lltd_adj:+.3f}"
+            )
+
+    # ── From Corner Deflections (travel proximity) ──
+    if measured.front_corner_defl_p99_mm > 30:
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 35.0)
+        mods.reasons.append(
+            f"Front corner defl p99 {measured.front_corner_defl_p99_mm:.1f}mm > 30mm "
+            f"→ heave floor 35 N/mm (travel proximity)"
+        )
+
     # ── From Driver Style ──
     if driver.steering_smoothness == "smooth":
         mods.damping_ratio_scale *= 0.92

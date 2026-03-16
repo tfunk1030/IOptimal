@@ -186,13 +186,38 @@ class SupportingSolver:
         bias, base_reason = compute_brake_bias(self.car, fuel_load_l=fuel_l)
         reasons = [base_reason]
 
-        # Driver style adjustments
-        if driver.trail_brake_classification == "deep":
+        # Driver style adjustments — use quantitative trail brake depth when available,
+        # fall back to classification string
+        if driver.trail_brake_depth_p95 > 0:
+            # Continuous scaling: 0.3 = neutral, deeper = more forward bias
+            trail_adj = (driver.trail_brake_depth_p95 - 0.3) * 1.5
+            trail_adj = round(_clamp(trail_adj, -0.5, 0.75), 1)
+            if abs(trail_adj) >= 0.1:
+                bias += trail_adj
+                reasons.append(
+                    f"{trail_adj:+.1f}% from trail brake depth p95={driver.trail_brake_depth_p95:.2f}"
+                )
+        elif driver.trail_brake_classification == "deep":
             bias += 0.5
             reasons.append("+0.5% for deep trail braking")
         elif driver.trail_brake_classification == "light":
             bias -= 0.3
             reasons.append("-0.3% for light trail braking")
+
+        # Braking deceleration validation
+        if measured.braking_decel_peak_g > 0:
+            # Forward weight transfer under braking: ΔW_f = m*a*h/L
+            # Higher decel → more forward weight → front needs more capacity
+            if measured.braking_decel_peak_g > 2.0:
+                bias += 0.2
+                reasons.append(
+                    f"+0.2% for high braking decel p95={measured.braking_decel_peak_g:.2f}g"
+                )
+            elif measured.braking_decel_peak_g < 1.2:
+                reasons.append(
+                    f"Note: low braking decel p95={measured.braking_decel_peak_g:.2f}g — "
+                    f"driver may not be braking hard enough to reveal bias issues"
+                )
 
         front_lock = (
             measured.front_braking_lock_ratio_p95
@@ -214,6 +239,25 @@ class SupportingSolver:
         if measured.body_slip_p95_deg > 5.0:
             bias += 0.3
             reasons.append(f"+0.3% for high body slip p95={measured.body_slip_p95_deg:.1f}°")
+
+        # Measured brake pressure split validation
+        if measured.front_brake_pressure_peak_bar > 0 and measured.rear_brake_pressure_peak_bar > 0:
+            total_pressure = measured.front_brake_pressure_peak_bar + measured.rear_brake_pressure_peak_bar
+            measured_split = measured.front_brake_pressure_peak_bar / total_pressure * 100
+            if abs(measured_split - bias) > 2.0:
+                reasons.append(
+                    f"Note: measured pressure split {measured_split:.1f}% vs "
+                    f"recommended {bias:.1f}% (delta {measured_split - bias:+.1f}%)"
+                )
+
+        # ABS engagement feedback
+        if measured.abs_active_pct > 10.0:
+            if measured.abs_cut_mean_pct > 20.0:
+                bias -= 0.3
+                reasons.append(
+                    f"-0.3% for ABS active {measured.abs_active_pct:.0f}% "
+                    f"with {measured.abs_cut_mean_pct:.0f}% force cut (front locking)"
+                )
 
         sol.brake_bias_pct = round(bias, 1)
         sol.brake_bias_reasoning = "; ".join(reasons)
@@ -291,6 +335,11 @@ class SupportingSolver:
 
         # ── Drive ramp ── (higher angle = less locking on accel)
         drive = 65 + int(driver.throttle_progressiveness * 10)
+        # Throttle onset rate: faster onset → more abrupt power → open diff more (higher ramp)
+        onset_rate = driver.throttle_onset_rate_pct_per_s
+        if onset_rate > 300:
+            drive += 5
+            reasons.append(f"Drive ramp +5° for fast throttle onset {onset_rate:.0f}%/s")
         drive = round(drive / 5) * 5
         drive = int(_clamp(drive, 65, 75))
         reasons.append(f"Drive ramp: {drive} deg (from throttle R2={driver.throttle_progressiveness:.2f})")
@@ -332,6 +381,38 @@ class SupportingSolver:
         if driver.throttle_classification == "binary":
             tc_gain += 1
             reasons.append("+1 gain for binary throttle")
+
+        # TC intervention feedback from telemetry
+        if measured.tc_intervention_pct > 30:
+            reasons.append(
+                f"Warning: TC intervening {measured.tc_intervention_pct:.0f}% of time "
+                f"— consider lower gain if driver finds it intrusive"
+            )
+        elif measured.tc_intervention_pct < 5 and rear_power_slip > 0.04:
+            tc_gain += 1
+            reasons.append(
+                f"+1 gain: TC barely active ({measured.tc_intervention_pct:.0f}%) "
+                f"but rear slip p95={rear_power_slip:.3f}"
+            )
+
+        # ERS/hybrid torque feedback
+        if measured.mguk_torque_peak_nm > 200:
+            tc_slip += 1
+            reasons.append(
+                f"+1 slip for high MGU-K torque {measured.mguk_torque_peak_nm:.0f} Nm"
+            )
+        if 0 < measured.ers_battery_min_pct < 20:
+            reasons.append(
+                f"Note: ERS depleted to {measured.ers_battery_min_pct:.0f}% — "
+                f"late-stint TC may be too aggressive"
+            )
+
+        # ABS engagement may indicate TC should catch wheelspin earlier
+        if measured.abs_active_pct > 15 and measured.abs_cut_mean_pct > 15:
+            reasons.append(
+                f"Note: ABS active {measured.abs_active_pct:.0f}% — "
+                f"check if rear-end instability triggers front lock under braking"
+            )
 
         sol.tc_gain = int(_clamp(tc_gain, 1, 10))
         sol.tc_slip = int(_clamp(tc_slip, 1, 10))
