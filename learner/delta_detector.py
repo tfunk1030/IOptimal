@@ -428,13 +428,41 @@ def detect_delta(obs_before: Observation, obs_after: Observation) -> SessionDelt
     if dp_b.get("style") != dp_a.get("style"):
         delta.driver_style_changed = True
 
-    # ── 6. Confidence and summary ────────────────────────────────────
-    if delta.controlled_experiment and not delta.driver_style_changed:
+    # ── 6. In-car adjustment penalty ─────────────────────────────────
+    # High in-session adjustments mean the baseline setup was unstable —
+    # reduces confidence in any delta attribution from that session.
+    tel_b = obs_before.telemetry if obs_before.telemetry else {}
+    tel_a = obs_after.telemetry if obs_after.telemetry else {}
+    in_car_adj_before = (
+        tel_b.get("brake_bias_adjustments", 0)
+        + tel_b.get("tc_adjustments", 0)
+        + tel_b.get("arb_front_adjustments", 0)
+        + tel_b.get("arb_rear_adjustments", 0)
+    )
+    in_car_adj_after = (
+        tel_a.get("brake_bias_adjustments", 0)
+        + tel_a.get("tc_adjustments", 0)
+        + tel_a.get("arb_front_adjustments", 0)
+        + tel_a.get("arb_rear_adjustments", 0)
+    )
+    high_in_car_tuning = in_car_adj_before > 15 or in_car_adj_after > 15
+
+    # ── 7. Environmental confounders ──────────────────────────────────
+    wind_before = tel_b.get("wind_speed_ms", 0.0)
+    wind_after = tel_a.get("wind_speed_ms", 0.0)
+    wind_changed = abs(wind_before - wind_after) > 3.0
+
+    # ── 8. Confidence and summary ─────────────────────────────────────
+    if delta.controlled_experiment and not delta.driver_style_changed and not high_in_car_tuning:
         delta.confidence_level = "high"
-    elif delta.num_setup_changes <= 3 and not delta.driver_style_changed:
+    elif delta.num_setup_changes <= 3 and not delta.driver_style_changed and not high_in_car_tuning:
         delta.confidence_level = "medium"
     else:
         delta.confidence_level = "low"
+
+    # Downgrade confidence if environmental conditions changed significantly
+    if wind_changed and delta.confidence_level == "high":
+        delta.confidence_level = "medium"
 
     # Generate key finding
     delta.key_finding = _summarize_delta(delta)
