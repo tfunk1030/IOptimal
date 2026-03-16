@@ -5,10 +5,13 @@ querying DF balance and L/D at any (front_RH, rear_RH) within the grid.
 """
 
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
+
+logger = logging.getLogger(__name__)
 
 PARSED_DIR = Path(__file__).parent.parent / "data" / "aeromaps_parsed"
 
@@ -45,19 +48,42 @@ class AeroSurface:
 
     def _clamp_rh(self, front_rh: float, rear_rh: float) -> tuple[float, float]:
         """Clamp ride heights to the grid boundaries to prevent extrapolation."""
-        front_rh = float(np.clip(front_rh, self.front_rh[0], self.front_rh[-1]))
-        rear_rh = float(np.clip(rear_rh, self.rear_rh[0], self.rear_rh[-1]))
-        return front_rh, rear_rh
+        clamped_front = float(np.clip(front_rh, self.front_rh[0], self.front_rh[-1]))
+        clamped_rear = float(np.clip(rear_rh, self.rear_rh[0], self.rear_rh[-1]))
+        # Warn when clamping moves the value significantly (>2mm)
+        if abs(clamped_front - front_rh) > 2.0:
+            logger.warning(
+                "Aero query front_rh=%.1f clamped to %.1f (grid: %.0f-%.0f)",
+                front_rh, clamped_front, self.front_rh[0], self.front_rh[-1],
+            )
+        if abs(clamped_rear - rear_rh) > 2.0:
+            logger.warning(
+                "Aero query rear_rh=%.1f clamped to %.1f (grid: %.0f-%.0f)",
+                rear_rh, clamped_rear, self.rear_rh[0], self.rear_rh[-1],
+            )
+        return clamped_front, clamped_rear
 
     def df_balance(self, front_rh: float, rear_rh: float) -> float:
         """Query DF balance (%) at given ride heights."""
         front_rh, rear_rh = self._clamp_rh(front_rh, rear_rh)
-        return float(self._balance_interp([[front_rh, rear_rh]])[0])
+        result = float(self._balance_interp([[front_rh, rear_rh]])[0])
+        if np.isnan(result):
+            raise ValueError(
+                f"Aero interpolation returned NaN for df_balance at "
+                f"front_rh={front_rh:.1f}, rear_rh={rear_rh:.1f}"
+            )
+        return result
 
     def lift_drag(self, front_rh: float, rear_rh: float) -> float:
         """Query L/D ratio at given ride heights."""
         front_rh, rear_rh = self._clamp_rh(front_rh, rear_rh)
-        return float(self._ld_interp([[front_rh, rear_rh]])[0])
+        result = float(self._ld_interp([[front_rh, rear_rh]])[0])
+        if np.isnan(result):
+            raise ValueError(
+                f"Aero interpolation returned NaN for L/D at "
+                f"front_rh={front_rh:.1f}, rear_rh={rear_rh:.1f}"
+            )
+        return result
 
     def query(self, front_rh: float, rear_rh: float) -> dict:
         """Query both DF balance and L/D at given ride heights.
@@ -78,8 +104,10 @@ class AeroSurface:
         }
 
     # Stall model constants — calibrated for GTP ground effect vehicles
+    # Source: BMW aero map gradient analysis at low front RH
     STALL_ONSET_MM = 8.0    # Front RH at which stall begins to develop (mm)
     STALL_HARD_MM = 2.0     # Front RH at which full stall is reached (mm)
+    assert STALL_HARD_MM < STALL_ONSET_MM, "STALL_HARD_MM must be < STALL_ONSET_MM"
 
     def stall_proximity(self, front_rh_mm: float) -> dict:
         """Compute aerodynamic stall proximity and effects at a given front ride height.

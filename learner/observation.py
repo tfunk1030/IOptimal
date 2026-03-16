@@ -227,13 +227,29 @@ def build_observation(
         "abs_cut_mean_pct": getattr(m, "abs_cut_mean_pct", 0.0),
         "brake_bias_adjustments": getattr(m, "brake_bias_adjustments", 0),
         "tc_adjustments": getattr(m, "tc_adjustments", 0),
-        # New Phase 3: Environmental & hybrid
+        # Environmental, hybrid, & fuel
         "fuel_level_at_measurement_l": getattr(m, "fuel_level_at_measurement_l", 0.0),
+        "fuel_used_per_lap_l": getattr(m, "fuel_used_per_lap_l", 0.0),
         "ers_battery_mean_pct": getattr(m, "ers_battery_mean_pct", 0.0),
+        "ers_battery_min_pct": getattr(m, "ers_battery_min_pct", 0.0),
         "mguk_torque_peak_nm": getattr(m, "mguk_torque_peak_nm", 0.0),
         "air_temp_c": getattr(m, "air_temp_c", 0.0),
         "track_temp_c": getattr(m, "track_temp_c", 0.0),
+        "air_density_kg_m3": getattr(m, "air_density_kg_m3", 0.0),
+        "wind_speed_ms": getattr(m, "wind_speed_ms", 0.0),
+        "wind_dir_deg": getattr(m, "wind_dir_deg", 0.0),
         "rpm_at_braking_pct_at_limiter": getattr(m, "rpm_at_braking_pct_at_limiter", 0.0),
+        # In-car adjustment counts (for delta confidence scoring)
+        "arb_front_adjustments": getattr(m, "arb_front_adjustments", 0),
+        "arb_rear_adjustments": getattr(m, "arb_rear_adjustments", 0),
+        # Brake system telemetry
+        "front_brake_pressure_peak_bar": getattr(m, "front_brake_pressure_peak_bar", 0.0),
+        "rear_brake_pressure_peak_bar": getattr(m, "rear_brake_pressure_peak_bar", 0.0),
+        "braking_decel_peak_g": getattr(m, "braking_decel_peak_g", 0.0),
+        "tc_intervention_pct": getattr(m, "tc_intervention_pct", 0.0),
+        # Pitch dynamics
+        "pitch_mean_at_speed_deg": getattr(m, "pitch_mean_at_speed_deg", 0.0),
+        "pitch_range_deg": getattr(m, "pitch_range_deg", 0.0),
         # New Phase 4: Directional understeer & per-corner shock vel
         "understeer_left_turn_deg": getattr(m, "understeer_left_turn_deg", 0.0),
         "understeer_right_turn_deg": getattr(m, "understeer_right_turn_deg", 0.0),
