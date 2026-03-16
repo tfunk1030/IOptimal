@@ -6,7 +6,7 @@
   <Layers>
     <Details>
       <String Id="Event" Value="GTP Setup Builder" Unit="" />
-      <String Id="Session" Value="Generated 2026-03-15 22:44 UTC" Unit="" />
+      <String Id="Session" Value="Generated 2026-03-15 23:15 UTC" Unit="" />
       <String Id="Venue" Value="Sebring International Raceway — International" Unit="" />
       <String Id="Vehicle Type" Value="Car" Unit="" />
       <Numeric Id="CarSetup_TiresAero_AeroSettings_RearWingAngle" Value="17.0" Unit="deg" />
@@ -19,41 +19,41 @@
       <Numeric Id="CarSetup_Chassis_LeftRear_RideHeight" Value="49.0" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_RightRear_RideHeight" Value="49.0" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Front_PushrodLengthOffset" Value="-25.5" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Rear_PushrodLengthOffset" Value="-18.5" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Front_HeaveSpring" Value="30" Unit="N/mm" />
-      <Numeric Id="CarSetup_Chassis_Front_HeavePerchOffset" Value="-14" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_Rear_ThirdSpring" Value="380" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_Rear_PushrodLengthOffset" Value="-28.5" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_Front_HeaveSpring" Value="40" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_Front_HeavePerchOffset" Value="-10" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_Rear_ThirdSpring" Value="530" Unit="N/mm" />
       <Numeric Id="CarSetup_Chassis_Rear_ThirdPerchOffset" Value="42" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_TorsionBarOD" Value="13.9" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightFront_TorsionBarOD" Value="13.9" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_SpringRate" Value="130" Unit="N/mm" />
-      <Numeric Id="CarSetup_Chassis_RightRear_SpringRate" Value="130" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_TorsionBarOD" Value="14.3" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightFront_TorsionBarOD" Value="14.3" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_SpringRate" Value="170" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_SpringRate" Value="170" Unit="N/mm" />
       <Numeric Id="CarSetup_Chassis_LeftRear_SpringPerchOffset" Value="30.0" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_RightRear_SpringPerchOffset" Value="30.0" Unit="mm" />
       <String Id="CarSetup_Chassis_Front_ArbSize" Value="Soft" Unit="" />
       <Numeric Id="CarSetup_Chassis_Front_ArbBlades" Value="1" Unit="" />
       <String Id="CarSetup_Chassis_Rear_ArbSize" Value="Soft" Unit="" />
-      <Numeric Id="CarSetup_Chassis_Rear_ArbBlades" Value="4" Unit="" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_Camber" Value="-2.1" Unit="deg" />
-      <Numeric Id="CarSetup_Chassis_RightFront_Camber" Value="-2.1" Unit="deg" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_Camber" Value="-1.7" Unit="deg" />
-      <Numeric Id="CarSetup_Chassis_RightRear_Camber" Value="-1.7" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_Rear_ArbBlades" Value="2" Unit="" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_Camber" Value="-1.9" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_RightFront_Camber" Value="-1.9" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_Camber" Value="-1.5" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_RightRear_Camber" Value="-1.5" Unit="deg" />
       <Numeric Id="CarSetup_Chassis_Front_ToeIn" Value="-0.4" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_LeftRear_ToeIn" Value="0.0" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_RightRear_ToeIn" Value="0.0" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_LsCompDamping" Value="7" Unit="clicks" />
-      <Numeric Id="CarSetup_Chassis_LeftFront_LsRbdDamping" Value="6" Unit="clicks" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_LsCompDamping" Value="8" Unit="clicks" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_LsRbdDamping" Value="7" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_LeftFront_HsCompDamping" Value="5" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_LeftFront_HsRbdDamping" Value="8" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_LeftFront_HsCompDampSlope" Value="11" Unit="clicks" />
-      <Numeric Id="CarSetup_Chassis_RightFront_LsCompDamping" Value="7" Unit="clicks" />
-      <Numeric Id="CarSetup_Chassis_RightFront_LsRbdDamping" Value="6" Unit="clicks" />
+      <Numeric Id="CarSetup_Chassis_RightFront_LsCompDamping" Value="8" Unit="clicks" />
+      <Numeric Id="CarSetup_Chassis_RightFront_LsRbdDamping" Value="7" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_RightFront_HsCompDamping" Value="6" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_RightFront_HsRbdDamping" Value="8" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_RightFront_HsCompDampSlope" Value="11" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_LeftRear_LsCompDamping" Value="5" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_LeftRear_LsRbdDamping" Value="6" Unit="clicks" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_HsCompDamping" Value="5" Unit="clicks" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_HsCompDamping" Value="4" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_LeftRear_HsRbdDamping" Value="11" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_LeftRear_HsCompDampSlope" Value="11" Unit="clicks" />
       <Numeric Id="CarSetup_Chassis_RightRear_LsCompDamping" Value="5" Unit="clicks" />
