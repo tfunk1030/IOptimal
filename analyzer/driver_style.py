@@ -352,7 +352,9 @@ def refine_driver_with_measured(
     """
     bb_adj = getattr(measured, "brake_bias_adjustments", 0)
     tc_adj = getattr(measured, "tc_adjustments", 0)
-    total_adj = bb_adj + tc_adj
+    arb_f_adj = getattr(measured, "arb_front_adjustments", 0)
+    arb_r_adj = getattr(measured, "arb_rear_adjustments", 0)
+    total_adj = bb_adj + tc_adj + arb_f_adj + arb_r_adj
 
     if total_adj > 15 and profile.consistency == "consistent":
         # Driver was hunting for setup — consistency metric is unreliable
