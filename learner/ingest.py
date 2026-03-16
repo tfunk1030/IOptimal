@@ -42,7 +42,7 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     """
     from analyzer.adaptive_thresholds import compute_adaptive_thresholds
     from analyzer.diagnose import diagnose
-    from analyzer.driver_style import analyze_driver
+    from analyzer.driver_style import analyze_driver, refine_driver_with_measured
     from analyzer.extract import extract_measurements
     from analyzer.segment import segment_lap
     from analyzer.setup_reader import CurrentSetup
@@ -67,6 +67,7 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     setup = CurrentSetup.from_ibt(ibt)
     corners = segment_lap(ibt, start, end, car=car, tick_rate=ibt.tick_rate)
     driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
+    refine_driver_with_measured(driver, measured)
     thresholds = compute_adaptive_thresholds(track, car, driver)
     diag = diagnose(measured, setup, car, thresholds)
 

@@ -584,13 +584,36 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
     if not getattr(args, "no_learn", False):
         try:
             from learner.ingest import ingest_ibt
+            from learner.knowledge_store import KnowledgeStore
+
+            # Build solver predictions dict for the feedback loop.
+            # These are what the solver PREDICTED for this session's telemetry.
+            solver_predictions = {
+                "front_rh_std_mm": getattr(step2, "front_rh_sigma_mm", 0.0),
+                "rear_rh_std_mm": getattr(step2, "rear_rh_sigma_mm", 0.0),
+                "lltd_predicted": getattr(step4, "lltd_achieved", 0.0),
+                "body_roll_predicted_deg_per_g": getattr(step4, "roll_gradient_deg_per_g", 0.0),
+                "front_bottoming_predicted": getattr(step2, "bottoming_events_front", 0),
+            }
+
+            store = KnowledgeStore()
             result = ingest_ibt(
                 car_name=args.car,
                 ibt_path=args.ibt,
                 wing=wing,
                 lap=args.lap,
+                store=store,
                 verbose=False,
             )
+
+            # Attach solver predictions to the stored observation
+            session_id = result.get("session_id", "")
+            if session_id:
+                obs_data = store.load_observation(session_id)
+                if obs_data:
+                    obs_data["solver_predictions"] = solver_predictions
+                    store.save_observation(session_id, obs_data)
+
             if result.get("new_learnings"):
                 for ln in result["new_learnings"]:
                     log(f"[learn] {ln}")

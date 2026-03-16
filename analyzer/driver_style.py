@@ -218,8 +218,9 @@ def analyze_driver(
                 if ss_tot > 0:
                     r2 = 1.0 - ss_res / ss_tot
                     seg_r2.append(max(r2, 0.0))
-                    # Onset rate: slope in %/s
-                    onset_rates.append(coeffs[0] * 100)
+                    # Onset rate: slope in %/s (positive = throttle application only)
+                    if coeffs[0] > 0:
+                        onset_rates.append(coeffs[0] * 100)
 
             if seg_r2:
                 profile.throttle_progressiveness = float(np.mean(seg_r2))

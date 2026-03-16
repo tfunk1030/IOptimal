@@ -13,7 +13,7 @@ from pathlib import Path
 
 from analyzer.adaptive_thresholds import compute_adaptive_thresholds
 from analyzer.diagnose import Diagnosis, diagnose
-from analyzer.driver_style import DriverProfile, analyze_driver
+from analyzer.driver_style import DriverProfile, analyze_driver, refine_driver_with_measured
 from analyzer.extract import MeasuredState, extract_measurements
 from analyzer.segment import CornerAnalysis, segment_lap
 from analyzer.setup_reader import CurrentSetup
@@ -121,6 +121,7 @@ def analyze_session(
 
     # Driver style
     driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
+    refine_driver_with_measured(driver, measured)
 
     # Adaptive thresholds + diagnosis
     adaptive = compute_adaptive_thresholds(track, car, driver)

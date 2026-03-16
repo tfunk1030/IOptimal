@@ -180,17 +180,17 @@ def compute_modifiers(
                 )
 
     # ── From Heave Shock Velocity (platform stability) ──
-    if measured.front_heave_vel_hs_pct > 40:
-        # >40% of heave velocity in HS regime = platform is getting pounded by surface
+    if measured.front_heave_vel_hs_pct > 33:
+        # >33% of heave velocity in HS regime = platform is getting pounded by surface
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 40.0)
         mods.reasons.append(
-            f"Heave HS regime {measured.front_heave_vel_hs_pct:.0f}% > 40% → heave floor 40 N/mm"
+            f"Heave HS regime {measured.front_heave_vel_hs_pct:.0f}% > 33% → heave floor 40 N/mm"
         )
-    if measured.front_heave_vel_p95_mps > 0.4:
+    if measured.front_heave_vel_p95_mps > 0.35:
         # Very high heave velocity → increase HS damping to control platform
         mods.front_hs_comp_offset += 1
         mods.reasons.append(
-            f"Heave vel p95 {measured.front_heave_vel_p95_mps:.3f} m/s > 0.4 → F HS comp +1"
+            f"Heave vel p95 {measured.front_heave_vel_p95_mps:.3f} m/s > 0.35 → F HS comp +1"
         )
 
     # ── From Pitch Dynamics (platform stability) ──

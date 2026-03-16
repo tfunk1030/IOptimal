@@ -80,6 +80,12 @@ class Observation:
     conditions: dict = field(default_factory=dict)
     # Keys: surface_temp_c, air_temp_c, track_state
 
+    # ── Solver Predictions (what the solver predicted for this session) ──
+    solver_predictions: dict = field(default_factory=dict)
+    # Keys: front_rh_std_mm, rear_rh_std_mm, lltd_predicted,
+    #        body_roll_predicted_deg_per_g, front_bottoming_predicted, etc.
+    # Populated by pipeline.produce when --learn is active.
+
     # ── Solver Comparison (if solver was also run) ──
     solver_comparison: dict = field(default_factory=dict)
     # Keys: parameters_exact_match, parameters_within_2, parameters_off,
@@ -274,6 +280,12 @@ def build_observation(
         "rf_temp_middle_c": getattr(m, "rf_temp_middle_c", 0.0),
         "lr_temp_middle_c": getattr(m, "lr_temp_middle_c", 0.0),
         "rr_temp_middle_c": getattr(m, "rr_temp_middle_c", 0.0),
+        # Shock oscillation analysis (P2: damper validation)
+        "rear_shock_oscillation_hz": getattr(m, "rear_shock_oscillation_hz", 0.0),
+        "front_shock_oscillation_hz": getattr(m, "front_shock_oscillation_hz", 0.0),
+        # High-speed m_eff filtering (P3c)
+        "front_heave_vel_p95_hs_mps": getattr(m, "front_heave_vel_p95_hs_mps", 0.0),
+        "front_rh_std_hs_mm": getattr(m, "front_rh_std_hs_mm", 0.0),
         # Raw driver inputs
         "throttle_raw_mean": getattr(m, "throttle_raw_mean", 0.0),
         "brake_raw_peak": getattr(m, "brake_raw_peak", 0.0),

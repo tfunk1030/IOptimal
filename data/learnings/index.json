@@ -48,10 +48,13 @@
     "porsche_sebring_international_raceway_porsche963gtp_sebring_international_2026-03-10_16-26-23",
     "porsche_sebring_international_raceway_porsche963gtp_sebring_international_2026-03-10_17-00-22",
     "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_12-48-55",
-    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_17-47-58"
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_17-47-58",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_22-07-57",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_22-48-44",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_23-12-49"
   ],
-  "total_observations": 47,
-  "total_deltas": 57,
+  "total_observations": 50,
+  "total_deltas": 64,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -60,5 +63,5 @@
   "tracks_seen": [
     "Sebring International Raceway_International"
   ],
-  "last_updated": "2026-03-15T23:15:36.336419+00:00"
+  "last_updated": "2026-03-16T04:27:23.100139+00:00"
 }

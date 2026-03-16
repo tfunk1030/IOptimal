@@ -269,7 +269,7 @@ class DiffSolver:
         # that the diff must control, and coupling_factor is the preload-to-torque ratio.
         # Empirically calibrated for GTP: 10-15 Nm baseline covers typical cornering.
         preload_min = lateral_load_transfer_n * 0.002  # yields ~5-15 Nm for GTP
-        preload_min = max(preload_min, 5.0)  # absolute minimum
+        preload_min = max(preload_min, 0.0)  # absolute minimum
 
         # Baseline preload: 12 Nm gives neutral rotation for most GTP drivers
         preload = max(preload_min, 12.0)
@@ -307,7 +307,7 @@ class DiffSolver:
                 f"+5 Nm for rear power slip p95={rear_power_slip:.3f}"
             )
 
-        preload = round(_clamp(preload, 5.0, 40.0), 0)
+        preload = round(_clamp(preload, 0.0, 150.0), 0)
         return preload, "; ".join(reasons)
 
     def _compute_ramps(
@@ -360,6 +360,14 @@ class DiffSolver:
             reasons.append(
                 f"Drive {drive_ramp} deg (from throttle R^2={prog:.2f})"
             )
+
+        # Throttle onset rate: fast onset → more abrupt power → open diff more
+        onset_rate = getattr(driver, "throttle_onset_rate_pct_per_s", 0.0)
+        if onset_rate > 300:
+            drive_ramp = _snap_to_options(
+                min(drive_ramp + 5, DRIVE_RAMP_OPTIONS[-1]), DRIVE_RAMP_OPTIONS
+            )
+            reasons.append(f"Drive +5 deg for fast throttle onset {onset_rate:.0f}%/s")
 
         return coast_ramp, drive_ramp, "; ".join(reasons)
 
