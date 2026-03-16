@@ -284,6 +284,7 @@ def extract_measurements(
     lap: int | None = None,
     min_lap_time: float = 108.0,
     outlier_pct: float = 0.115,
+    ibt: IBTFile | None = None,
 ) -> MeasuredState:
     """Extract all analysis-relevant measurements from an IBT session.
 
@@ -291,11 +292,13 @@ def extract_measurements(
         ibt_path: Path to .ibt or .zip file
         car: Car model for thresholds (vortex burst, etc.)
         lap: Specific lap number to analyze (None = best lap)
+        ibt: Optional pre-opened IBTFile to avoid re-parsing the file.
 
     Returns:
         MeasuredState with all measured quantities
     """
-    ibt = IBTFile(ibt_path)
+    if ibt is None:
+        ibt = IBTFile(ibt_path)
     state = MeasuredState()
 
     # --- Find lap boundaries ---
