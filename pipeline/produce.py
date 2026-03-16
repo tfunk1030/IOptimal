@@ -138,6 +138,27 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
     )
     log(f"  Lap {measured.lap_number}: {measured.lap_time_s:.3f}s")
 
+    # ── Phase B.5: Stint evolution (if --stint) ──
+    stint_evolution = None
+    if getattr(args, "stint", False):
+        from analyzer.stint_analysis import analyze_stint_evolution
+        log("\nAnalyzing stint evolution (all qualifying laps)...")
+        stint_evolution = analyze_stint_evolution(
+            ibt_path=args.ibt,
+            car=car,
+            threshold_pct=getattr(args, "stint_threshold", 1.5),
+            min_lap_time=getattr(args, "min_lap_time", 108.0),
+            ibt=ibt,
+        )
+        log(f"  {stint_evolution.qualifying_lap_count}/{stint_evolution.total_lap_count} "
+            f"laps within {stint_evolution.threshold_pct}% of fastest "
+            f"({stint_evolution.fastest_lap_time_s:.3f}s)")
+        if stint_evolution.rates:
+            log(f"  Fuel burn: {stint_evolution.rates.fuel_burn_l_per_lap:.2f} L/lap")
+            log(f"  Understeer drift: {stint_evolution.rates.understeer_deg_per_lap:+.3f} deg/lap")
+            log(f"  Grip trend: {stint_evolution.rates.peak_lat_g_per_lap:+.4f} g/lap")
+            log(f"  Lap time trend: {stint_evolution.rates.lap_time_s_per_lap:+.3f} s/lap")
+
     # ── Phase C: Segment corners ──
     log("Segmenting lap into corners...")
     if args.lap:
@@ -426,6 +447,113 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         if not args.report_only:
             print(step6.summary())
 
+    # ── Phase H.5: Multi-solve stint compromise (if --stint) ──
+    stint_compromise_info: list[str] = []
+    if stint_evolution is not None and stint_evolution.qualifying_lap_count >= 3:
+        log("\nRunning multi-solve stint compromise (start/mid/end)...")
+        _stint_solves: dict[str, tuple] = {}
+        for _label, _snap in [("start", stint_evolution.start_snapshot),
+                               ("mid", stint_evolution.mid_snapshot),
+                               ("end", stint_evolution.end_snapshot)]:
+            _fuel_at = _snap.fuel_level_l or fuel
+            _rs = RakeSolver(car, surface, track)
+            _s1 = _rs.solve(
+                target_balance=target_balance,
+                balance_tolerance=args.tolerance,
+                fuel_load_l=_fuel_at,
+                pin_front_min=not args.free,
+            )
+            _hs = HeaveSolver(car, track)
+            _s2 = _hs.solve(
+                dynamic_front_rh_mm=_s1.dynamic_front_rh_mm,
+                dynamic_rear_rh_mm=_s1.dynamic_rear_rh_mm,
+                front_pushrod_mm=_s1.front_pushrod_offset_mm,
+                rear_pushrod_mm=_s1.rear_pushrod_offset_mm,
+                fuel_load_l=_fuel_at,
+                front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+            )
+            _cs = CornerSpringSolver(car, track)
+            _s3 = _cs.solve(
+                front_heave_nmm=_s2.front_heave_nmm,
+                rear_third_nmm=_s2.rear_third_nmm,
+                fuel_load_l=_fuel_at,
+            )
+            _rwr = _s3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+            _as = ARBSolver(car, track)
+            _s4 = _as.solve(
+                front_wheel_rate_nmm=_s3.front_wheel_rate_nmm,
+                rear_wheel_rate_nmm=_rwr,
+                lltd_offset=modifiers.lltd_offset,
+            )
+            _gs = WheelGeometrySolver(car, track)
+            _s5 = _gs.solve(
+                k_roll_total_nm_deg=_s4.k_roll_front_total + _s4.k_roll_rear_total,
+                front_wheel_rate_nmm=_s3.front_wheel_rate_nmm,
+                rear_wheel_rate_nmm=_rwr,
+                fuel_load_l=_fuel_at,
+                camber_confidence=_camber_conf,
+            )
+            _ds = DamperSolver(car, track)
+            _s6 = _ds.solve(
+                front_wheel_rate_nmm=_s3.front_wheel_rate_nmm,
+                rear_wheel_rate_nmm=_rwr,
+                front_dynamic_rh_mm=_s1.dynamic_front_rh_mm,
+                rear_dynamic_rh_mm=_s1.dynamic_rear_rh_mm,
+                fuel_load_l=_fuel_at,
+                damping_ratio_scale=modifiers.damping_ratio_scale,
+                measured=measured,
+                front_heave_nmm=_s2.front_heave_nmm,
+                rear_third_nmm=_s2.rear_third_nmm,
+            )
+            _stint_solves[_label] = (_s1, _s2, _s3, _s4, _s5, _s6)
+            log(f"  [{_label}] fuel={_fuel_at:.1f}L heave={_s2.front_heave_nmm:.0f} "
+                f"third={_s2.rear_third_nmm:.0f} LLTD={_s4.lltd_achieved:.1f}%")
+
+        # Compromise: safety-binding springs, averaged balance, mid-stint dampers
+        _start = _stint_solves["start"]
+        _mid = _stint_solves["mid"]
+        _end = _stint_solves["end"]
+
+        # Safety-binding: max heave/third across conditions (full fuel is heaviest)
+        max_heave = max(s[1].front_heave_nmm for s in _stint_solves.values())
+        max_third = max(s[1].rear_third_nmm for s in _stint_solves.values())
+        if max_heave > step2.front_heave_nmm:
+            stint_compromise_info.append(
+                f"Heave spring: {max_heave:.0f} N/mm (safety-bound from start condition, "
+                f"was {step2.front_heave_nmm:.0f})"
+            )
+            step2.front_heave_nmm = max_heave
+        if max_third > step2.rear_third_nmm:
+            stint_compromise_info.append(
+                f"Third spring: {max_third:.0f} N/mm (safety-bound from start condition, "
+                f"was {step2.rear_third_nmm:.0f})"
+            )
+            step2.rear_third_nmm = max_third
+
+        # Averaged LLTD target: use mid-stint ARB solution
+        avg_lltd = sum(s[3].lltd_achieved for s in _stint_solves.values()) / 3.0
+        stint_compromise_info.append(
+            f"LLTD target: {avg_lltd:.1f}% (avg of start {_start[3].lltd_achieved:.1f}% / "
+            f"mid {_mid[3].lltd_achieved:.1f}% / end {_end[3].lltd_achieved:.1f}%)"
+        )
+        # Use mid-stint ARB solution as best compromise
+        step4 = _mid[3]
+
+        # Camber/toe: average from three conditions
+        avg_front_camber = sum(s[4].front_camber_deg for s in _stint_solves.values()) / 3.0
+        avg_rear_camber = sum(s[4].rear_camber_deg for s in _stint_solves.values()) / 3.0
+        step5.front_camber_deg = round(avg_front_camber, 2)
+        step5.rear_camber_deg = round(avg_rear_camber, 2)
+
+        # Dampers: use mid-stint solution (best single compromise)
+        step6 = _mid[5]
+        _apply_damper_modifiers(step6, modifiers, car)
+        stint_compromise_info.append("Dampers: mid-stint condition (best single compromise)")
+
+        log(f"\n  Stint compromise applied ({len(stint_compromise_info)} adjustments)")
+        for info in stint_compromise_info:
+            log(f"    {info}")
+
     # ── Phase I: Compute supporting params ──
     log("\nComputing supporting parameters...")
     supporting_solver = SupportingSolver(car, driver, measured, diagnosis, track=track)
@@ -443,6 +571,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             base_third_nmm=step2.rear_third_nmm,
             v_p99_front_mps=track.shock_vel_p99_front_mps,
             v_p99_rear_mps=track.shock_vel_p99_rear_mps,
+            evolution=stint_evolution,
         )
     except (KeyError, AttributeError) as e:
         stint_result = None
@@ -559,6 +688,8 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         stint_result=stint_result,
         sector_result=sector_result,
         sensitivity_result=sensitivity_result,
+        stint_evolution=stint_evolution,
+        stint_compromise_info=stint_compromise_info,
         compact=quiet,
     )
     print(report)
@@ -705,6 +836,12 @@ def main():
     parser.add_argument("--outlier-pct", type=float, default=0.115, dest="outlier_pct",
                         help="Max fractional deviation above median to accept (default: 0.115 = 11.5%%). "
                              "Drops anomalously slow laps. Pass 0 to disable.")
+    # Stint analysis
+    parser.add_argument("--stint", action="store_true",
+                        help="Enable stint analysis: analyze all qualifying laps, "
+                             "run solver at start/mid/end conditions, produce compromise setup")
+    parser.add_argument("--stint-threshold", type=float, default=1.5, dest="stint_threshold",
+                        help="Max %% slower than fastest lap to include (default: 1.5)")
     # Legacy flags (kept for backward-compat; no-op since auto is default)
     parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)
