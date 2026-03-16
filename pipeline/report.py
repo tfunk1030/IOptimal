@@ -82,6 +82,8 @@ def generate_report(
     sector_result: SectorCompromiseResult | None = None,
     sensitivity_result: LaptimeSensitivityReport | None = None,
     space_result: object = None,
+    stint_evolution: object = None,
+    stint_compromise_info: list[str] | None = None,
     compact: bool = False,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
@@ -253,6 +255,74 @@ def generate_report(
             flag = " *** WARNING ***" if pct > 85 else ""
             a(f"  Under braking:      {pct:.0f}%{flag}")
         a("")
+
+    # ── STINT EVOLUTION (telemetry-based) ─────────────────────────────
+    if stint_evolution is not None and getattr(stint_evolution, "qualifying_lap_count", 0) >= 3:
+        a(_hdr("STINT EVOLUTION (TELEMETRY)"))
+        _se = stint_evolution
+        _ss = _se.start_snapshot
+        _ms = _se.mid_snapshot
+        _es = _se.end_snapshot
+        a(f"  Qualifying laps: {_se.qualifying_lap_count}/{_se.total_lap_count}  "
+          f"(within {_se.threshold_pct}% of {_se.fastest_lap_time_s:.3f}s)")
+        a(f"  Stint range: lap {_ss.lap_number} -> lap {_es.lap_number}  "
+          f"({_se.qualifying_lap_count} laps analyzed)")
+        a("")
+        a(f"  {'CONDITION EVOLUTION':^{W - 4}}")
+        a(f"  {'':22s}  {'Start':>8}  {'Mid':>8}  {'End':>8}")
+        a("  " + "-" * (W - 4))
+        a(f"  {'Fuel level':<22}  {_ss.fuel_level_l:>7.1f}L  {_ms.fuel_level_l:>7.1f}L  {_es.fuel_level_l:>7.1f}L")
+        a(f"  {'Lap time':<22}  {_ss.lap_time_s:>7.3f}s  {_ms.lap_time_s:>7.3f}s  {_es.lap_time_s:>7.3f}s")
+        a(f"  {'Front pressure':<22}  {_ss.front_pressure_mean_kpa:>6.1f}kPa  {_ms.front_pressure_mean_kpa:>6.1f}kPa  {_es.front_pressure_mean_kpa:>6.1f}kPa")
+        a(f"  {'Rear pressure':<22}  {_ss.rear_pressure_mean_kpa:>6.1f}kPa  {_ms.rear_pressure_mean_kpa:>6.1f}kPa  {_es.rear_pressure_mean_kpa:>6.1f}kPa")
+        f_wear_s = (_ss.lf_wear_pct + _ss.rf_wear_pct) / 2
+        f_wear_m = (_ms.lf_wear_pct + _ms.rf_wear_pct) / 2
+        f_wear_e = (_es.lf_wear_pct + _es.rf_wear_pct) / 2
+        r_wear_s = (_ss.lr_wear_pct + _ss.rr_wear_pct) / 2
+        r_wear_m = (_ms.lr_wear_pct + _ms.rr_wear_pct) / 2
+        r_wear_e = (_es.lr_wear_pct + _es.rr_wear_pct) / 2
+        a(f"  {'Front wear':<22}  {f_wear_s:>7.1f}%  {f_wear_m:>7.1f}%  {f_wear_e:>7.1f}%")
+        a(f"  {'Rear wear':<22}  {r_wear_s:>7.1f}%  {r_wear_m:>7.1f}%  {r_wear_e:>7.1f}%")
+        a(f"  {'Front carcass temp':<22}  {_ss.front_carcass_mean_c:>6.1f} C  {_ms.front_carcass_mean_c:>6.1f} C  {_es.front_carcass_mean_c:>6.1f} C")
+        a(f"  {'Rear carcass temp':<22}  {_ss.rear_carcass_mean_c:>6.1f} C  {_ms.rear_carcass_mean_c:>6.1f} C  {_es.rear_carcass_mean_c:>6.1f} C")
+        a(f"  {'Track temp':<22}  {_ss.track_temp_c:>6.1f} C  {_ms.track_temp_c:>6.1f} C  {_es.track_temp_c:>6.1f} C")
+        a(f"  {'Understeer':<22}  {_ss.understeer_mean_deg:>+7.2f}d  {_ms.understeer_mean_deg:>+7.2f}d  {_es.understeer_mean_deg:>+7.2f}d")
+        a(f"  {'Peak lateral g':<22}  {_ss.peak_lat_g_measured:>7.2f}g  {_ms.peak_lat_g_measured:>7.2f}g  {_es.peak_lat_g_measured:>7.2f}g")
+        a(f"  {'Front RH (dynamic)':<22}  {_ss.mean_front_rh_at_speed_mm:>6.1f}mm  {_ms.mean_front_rh_at_speed_mm:>6.1f}mm  {_es.mean_front_rh_at_speed_mm:>6.1f}mm")
+        a(f"  {'Bottoming events F':<22}  {_ss.bottoming_event_count_front:>8d}  {_ms.bottoming_event_count_front:>8d}  {_es.bottoming_event_count_front:>8d}")
+        a("")
+
+        # Degradation rates
+        _rates = _se.rates
+        if _rates is not None:
+            _rsq = _rates.r_squared or {}
+            a(f"  {'DEGRADATION RATES (per lap, linear fit)':^{W - 4}}")
+            a("  " + "-" * (W - 4))
+
+            def _rate_row(label: str, val: float, unit: str, key: str) -> str:
+                r2 = _rsq.get(key, 0.0)
+                conf = "low" if r2 < 0.3 else ""
+                return f"  {label:<26} {val:>+8.4f} {unit:<8} (R2={r2:.2f}){' ' + conf if conf else ''}"
+
+            a(_rate_row("Fuel burn",        -_rates.fuel_burn_l_per_lap,       "L/lap",    "fuel_burn_l_per_lap"))
+            a(_rate_row("Lap time",         _rates.lap_time_s_per_lap,         "s/lap",    "lap_time_s_per_lap"))
+            a(_rate_row("Front pressure",   _rates.front_pressure_kpa_per_lap, "kPa/lap",  "front_pressure_kpa_per_lap"))
+            a(_rate_row("Rear pressure",    _rates.rear_pressure_kpa_per_lap,  "kPa/lap",  "rear_pressure_kpa_per_lap"))
+            a(_rate_row("Front wear",       _rates.front_wear_pct_per_lap,     "%/lap",    "front_wear_pct_per_lap"))
+            a(_rate_row("Rear wear",        _rates.rear_wear_pct_per_lap,      "%/lap",    "rear_wear_pct_per_lap"))
+            a(_rate_row("Understeer drift", _rates.understeer_deg_per_lap,     "deg/lap",  "understeer_deg_per_lap"))
+            a(_rate_row("Grip trend",       _rates.peak_lat_g_per_lap,         "g/lap",    "peak_lat_g_per_lap"))
+            a(_rate_row("Track temp",       _rates.track_temp_c_per_lap,       "C/lap",    "track_temp_c_per_lap"))
+            a(_rate_row("Front RH drift",   _rates.front_rh_mm_per_lap,        "mm/lap",   "front_rh_mm_per_lap"))
+            a("")
+
+        # Multi-solve compromise info
+        if stint_compromise_info:
+            a(f"  {'MULTI-SOLVE COMPROMISE':^{W - 4}}")
+            a("  " + "-" * (W - 4))
+            for info in stint_compromise_info:
+                a(f"  {info}")
+            a("")
 
     # ── LEARNING SUMMARY ──────────────────────────────────────────────
     try:

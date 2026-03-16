@@ -133,6 +133,9 @@ class StintStrategy:
     setup_bias_reasoning: str = ""
     heave_recommendation: HeaveRecommendation = field(default_factory=HeaveRecommendation)
 
+    # Telemetry-based stint evolution (populated when --stint is used)
+    evolution: object = None  # StintEvolution | None (avoid circular import)
+
     def summary(self, width: int = 63) -> str:
         lines = [
             "=" * width,
@@ -323,6 +326,91 @@ def compute_fuel_states(
 
 
 # ── Tyre degradation model ───────────────────────────────────────────
+
+# Minimum R² to trust a telemetry-derived degradation rate
+_MIN_R_SQUARED = 0.3
+
+
+def telemetry_degradation_from_evolution(
+    evolution,
+    stint_laps: int = 30,
+    car_name: str = "bmw",
+) -> TyreDegradation:
+    """Build TyreDegradation from actual telemetry degradation rates.
+
+    Uses measured rates from ``evolution.rates`` where R² exceeds the
+    confidence threshold, falling back to the theoretical
+    ``predict_tyre_degradation()`` defaults otherwise.
+
+    Args:
+        evolution: StintEvolution from analyzer.stint_analysis.
+        stint_laps: Expected stint length (for cold-pressure offset calc).
+        car_name: Car name for theoretical fallback defaults.
+
+    Returns:
+        TyreDegradation populated from telemetry where confident.
+    """
+    defaults = predict_tyre_degradation(stint_laps, car_name)
+
+    rates = getattr(evolution, "rates", None)
+    if rates is None:
+        return defaults
+
+    r_sq = getattr(rates, "r_squared", {})
+
+    # Grip loss: derive from wear rate (1% wear ≈ 1% grip loss, scaled to 10 laps)
+    front_wear = getattr(rates, "front_wear_pct_per_lap", 0.0)
+    rear_wear = getattr(rates, "rear_wear_pct_per_lap", 0.0)
+    # Wear rates are negative (tread decreases); average magnitude
+    avg_wear_per_lap = (abs(front_wear) + abs(rear_wear)) / 2.0
+    wear_r2 = min(
+        r_sq.get("front_wear_pct_per_lap", 0.0),
+        r_sq.get("rear_wear_pct_per_lap", 0.0),
+    )
+    if wear_r2 >= _MIN_R_SQUARED and avg_wear_per_lap > 0:
+        grip_loss_per_10 = avg_wear_per_lap * 10.0
+    else:
+        grip_loss_per_10 = defaults.grip_loss_per_10_laps_pct
+
+    # Balance shift: direct from understeer drift rate
+    us_rate = getattr(rates, "understeer_deg_per_lap", 0.0)
+    us_r2 = r_sq.get("understeer_deg_per_lap", 0.0)
+    if us_r2 >= _MIN_R_SQUARED:
+        balance_shift_per_10 = us_rate * 10.0
+    else:
+        balance_shift_per_10 = defaults.balance_shift_per_10_laps_deg
+
+    # Pressure rise: from pressure rate
+    fp_rate = getattr(rates, "front_pressure_kpa_per_lap", 0.0)
+    rp_rate = getattr(rates, "rear_pressure_kpa_per_lap", 0.0)
+    p_r2 = min(
+        r_sq.get("front_pressure_kpa_per_lap", 0.0),
+        r_sq.get("rear_pressure_kpa_per_lap", 0.0),
+    )
+    if p_r2 >= _MIN_R_SQUARED:
+        pressure_rise_per_10 = ((fp_rate + rp_rate) / 2.0) * 10.0
+    else:
+        pressure_rise_per_10 = defaults.pressure_rise_per_10_laps_kpa
+
+    # Preemptive RARB offset (same logic as theoretical, using new rates)
+    preemptive_rarb = 0
+    if stint_laps > 20 and balance_shift_per_10 > 0.3:
+        preemptive_rarb = -1
+    if stint_laps > 40 and balance_shift_per_10 > 0.3:
+        preemptive_rarb = -2
+
+    # Cold pressure offset
+    total_pressure_rise = pressure_rise_per_10 * stint_laps / 10
+    pressure_cold_offset = -min(total_pressure_rise / 3, 5.0)
+
+    return TyreDegradation(
+        grip_loss_per_10_laps_pct=round(grip_loss_per_10, 2),
+        balance_shift_per_10_laps_deg=round(balance_shift_per_10, 2),
+        pressure_rise_per_10_laps_kpa=round(pressure_rise_per_10, 2),
+        preemptive_rarb_offset=preemptive_rarb,
+        pressure_cold_offset_kpa=round(pressure_cold_offset, 1),
+    )
+
 
 def predict_tyre_degradation(
     stint_laps: int = 30,
@@ -577,6 +665,7 @@ def analyze_stint(
     v_p99_front_mps: float = 0.260,
     v_p99_rear_mps: float = 0.324,
     base_understeer_deg: float = 0.0,
+    evolution: object = None,
 ) -> StintStrategy:
     """Analyze setup sensitivity across a full stint.
 
@@ -589,10 +678,31 @@ def analyze_stint(
         v_p99_front_mps: Track front shock velocity p99
         v_p99_rear_mps: Track rear shock velocity p99
         base_understeer_deg: Starting understeer at lap 0 (from diagnosis)
+        evolution: Optional StintEvolution from analyzer.stint_analysis.
+            When provided, uses telemetry-measured degradation rates instead
+            of theoretical defaults, and derives fuel levels from the actual
+            stint start/mid/end snapshots.
 
     Returns:
         StintStrategy with multi-condition analysis, balance curve, and compromise parameters
     """
+    # When evolution is provided, derive parameters from telemetry
+    if evolution is not None:
+        snapshots = getattr(evolution, "snapshots", [])
+        if len(snapshots) >= 3:
+            start_snap = getattr(evolution, "start_snapshot", None)
+            mid_snap = getattr(evolution, "mid_snapshot", None)
+            end_snap = getattr(evolution, "end_snapshot", None)
+            if start_snap and mid_snap and end_snap:
+                if fuel_levels_l is None:
+                    fuel_levels_l = [
+                        start_snap.fuel_level_l,
+                        mid_snap.fuel_level_l,
+                        end_snap.fuel_level_l,
+                    ]
+                stint_laps = max(stint_laps, len(snapshots))
+                base_understeer_deg = start_snap.understeer_mean_deg
+
     if fuel_levels_l is None:
         fuel_levels_l = [89.0, 50.0, 12.0]
 
@@ -633,8 +743,13 @@ def analyze_stint(
             third_optimal_nmm=third_at_fuel,
         ))
 
-    # Tyre degradation
-    degradation = predict_tyre_degradation(stint_laps, car.canonical_name)
+    # Tyre degradation — use telemetry rates when available
+    if evolution is not None:
+        degradation = telemetry_degradation_from_evolution(
+            evolution, stint_laps, car.canonical_name,
+        )
+    else:
+        degradation = predict_tyre_degradation(stint_laps, car.canonical_name)
 
     # Compromise parameters
     compromise, reasoning = find_compromise_parameters(conditions)
@@ -665,4 +780,5 @@ def analyze_stint(
         setup_bias=setup_bias,
         setup_bias_reasoning=setup_bias_reasoning,
         heave_recommendation=heave_rec,
+        evolution=evolution,
     )
