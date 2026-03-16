@@ -1338,7 +1338,9 @@ def _extract_brake_system(
     if ibt.has_channel("BrakeABScutPct") and braking is not None:
         abs_cut = ibt.channel("BrakeABScutPct")[start:end + 1]
         abs_engaged = braking & (abs_cut > 0.01)
-        if np.sum(abs_engaged) > 5:
+        # Require meaningful ABS engagement: at least 50 samples AND abs_active > 5%
+        # to avoid noise artifacts (previously 5 samples produced 100% cut on near-zero ABS)
+        if np.sum(abs_engaged) > 50 and state.abs_active_pct > 5.0:
             state.abs_cut_mean_pct = round(float(np.mean(abs_cut[abs_engaged]) * 100), 1)
 
 

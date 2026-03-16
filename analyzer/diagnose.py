@@ -623,6 +623,31 @@ def _check_balance(
                     priority=2,
                 ))
 
+    # Directional balance asymmetry (left vs right turns)
+    if m.understeer_left_turn_deg != 0 and m.understeer_right_turn_deg != 0:
+        directional_delta = abs(m.understeer_left_turn_deg - m.understeer_right_turn_deg)
+        if directional_delta > 0.3:
+            worse_dir = "left" if m.understeer_left_turn_deg > m.understeer_right_turn_deg else "right"
+            problems.append(Problem(
+                category="balance",
+                severity="minor",
+                symptom=(
+                    f"Directional balance asymmetry {directional_delta:.2f}° "
+                    f"(left={m.understeer_left_turn_deg:+.2f}°, "
+                    f"right={m.understeer_right_turn_deg:+.2f}°)"
+                ),
+                cause=(
+                    f"More understeer in {worse_dir} turns. "
+                    f"This may reflect track layout (more {worse_dir} turns with higher demands) "
+                    f"or a setup asymmetry (camber, toe, or tyre wear L/R imbalance). "
+                    f"Check per-corner tyre temps and camber spread."
+                ),
+                speed_context="cornering",
+                measured=directional_delta,
+                threshold=0.3,
+                units="deg",
+            ))
+
     # Ride-height-based roll distribution proxy check
     roll_proxy = m.roll_distribution_proxy if m.roll_distribution_proxy > 0 else m.lltd_measured
     if roll_proxy > 0:
