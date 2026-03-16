@@ -336,7 +336,7 @@ class SupportingSolver:
         # ── Drive ramp ── (higher angle = less locking on accel)
         drive = 65 + int(driver.throttle_progressiveness * 10)
         # Throttle onset rate: faster onset → more abrupt power → open diff more (higher ramp)
-        onset_rate = getattr(driver, "throttle_onset_rate_pct_per_s", 0.0)
+        onset_rate = driver.throttle_onset_rate_pct_per_s
         if onset_rate > 300:
             drive += 5
             reasons.append(f"Drive ramp +5° for fast throttle onset {onset_rate:.0f}%/s")
