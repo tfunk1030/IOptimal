@@ -170,7 +170,7 @@ def extract_measurements(
 
     state.speed_mean_kph = float(np.mean(speed_kph))
     state.speed_max_kph = float(np.max(speed_kph))
-    state.peak_lat_g_measured = float(np.max(np.abs(lat_g)))
+    state.peak_lat_g_measured = float(np.percentile(np.abs(lat_g), 99.9))
 
     # Shock velocities
     lf_sv = np.abs(ibt.channel("LFshockVel")[start:end + 1])

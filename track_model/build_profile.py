@@ -70,11 +70,12 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
     all_long_g = ibt.channel("LongAccel") / 9.81
     all_vert_g = ibt.channel("VertAccel") / 9.81
 
-    peak_lat_g = float(np.max(np.abs(all_lat_g[ot_mask])))
-    peak_braking_g = float(np.max(-all_long_g[ot_mask]))
-    peak_accel_g = float(np.max(all_long_g[ot_mask]))
-    peak_vert_g = float(np.max(np.abs(all_vert_g[ot_mask])))
-    session_max_speed = float(np.max(all_speed_kph[ot_mask]))
+    # Use 99.99th percentile to avoid crash/glitch spikes (like 20g impacts)
+    peak_lat_g = float(np.percentile(np.abs(all_lat_g[ot_mask]), 99.99))
+    peak_braking_g = float(np.percentile(-all_long_g[ot_mask], 99.99))
+    peak_accel_g = float(np.percentile(all_long_g[ot_mask], 99.99))
+    peak_vert_g = float(np.percentile(np.abs(all_vert_g[ot_mask]), 99.99))
+    session_max_speed = float(np.percentile(all_speed_kph[ot_mask], 99.99))
 
     # === Speed profile (best lap) ===
     speed_profile = _build_speed_profile(speed_kph)
@@ -135,7 +136,7 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         "p90": round(float(np.percentile(abs_lat_g_ot, 90)), 2),
         "p95": round(float(np.percentile(abs_lat_g_ot, 95)), 2),
         "p99": round(float(np.percentile(abs_lat_g_ot, 99)), 2),
-        "max": round(float(np.max(abs_lat_g_ot)), 2),
+        "max": round(float(np.percentile(abs_lat_g_ot, 99.99)), 2),
     }
 
     # === Body roll distribution ===
@@ -149,7 +150,7 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         body_roll_dist = {
             "mean_abs": round(float(np.mean(abs_roll)), 2),
             "p95": round(float(np.percentile(abs_roll, 95)), 2),
-            "max": round(float(np.max(abs_roll)), 2),
+            "max": round(float(np.percentile(abs_roll, 99.99)), 2),
         }
 
         # Roll gradient: linear fit of |Roll| vs |LatAccel| in the 1-2.5g range
@@ -181,7 +182,7 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
             body_roll_dist = {
                 "mean_abs": round(float(np.mean(abs_roll_rh)), 2),
                 "p95": round(float(np.percentile(abs_roll_rh, 95)), 2),
-                "max": round(float(np.max(abs_roll_rh)), 2),
+                "max": round(float(np.percentile(abs_roll_rh, 99.99)), 2),
             }
             regression_mask = (abs_lat_g_ot > 1.0) & (abs_lat_g_ot < 2.5)
             if np.sum(regression_mask) > 50:
