@@ -23,7 +23,7 @@ from aero_model import load_car_surfaces
 from aero_model.gradient import compute_gradients
 from analyzer.adaptive_thresholds import compute_adaptive_thresholds
 from analyzer.diagnose import diagnose
-from analyzer.driver_style import analyze_driver
+from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 from analyzer.extract import extract_measurements
 from analyzer.segment import segment_lap
 from analyzer.setup_reader import CurrentSetup
@@ -165,6 +165,8 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
     # ── Phase D: Analyze driver style ──
     log("Analyzing driver style...")
     driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
+    # Refine consistency using in-car adjustment counts from telemetry
+    refine_driver_with_measured(driver, measured)
     log(f"  {driver.summary()}")
 
     # ── Phase E: Compute adaptive thresholds & diagnose handling ──

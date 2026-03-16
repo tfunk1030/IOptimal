@@ -125,11 +125,20 @@ class EmpiricalModelSet:
 
 
 def _safe_linear_fit(x: list[float], y: list[float]) -> tuple[list[float], float]:
-    """Fit y = a*x + b, return (coefficients, r²)."""
-    if len(x) < 2:
+    """Fit y = a*x + b, return (coefficients, r²).
+
+    Requires >= 4 points for a meaningful fit. With only 2 points a linear fit
+    is always perfect (R²=1.0) and tells us nothing about the relationship.
+    """
+    if len(x) < 4:
         return [], 0.0
     x_arr = np.array(x, dtype=float)
     y_arr = np.array(y, dtype=float)
+    # Guard against NaN/inf in input data
+    mask = np.isfinite(x_arr) & np.isfinite(y_arr)
+    if np.sum(mask) < 4:
+        return [], 0.0
+    x_arr, y_arr = x_arr[mask], y_arr[mask]
     try:
         coeffs = np.polyfit(x_arr, y_arr, 1)
         y_pred = np.polyval(coeffs, x_arr)
@@ -208,7 +217,7 @@ def _fit_roll_gradient(obs_list: list[dict], models: EmpiricalModelSet) -> None:
             x.append(lat)
             y.append(rg)
 
-    if len(x) >= 2:
+    if len(x) >= 4:
         mean_rg = float(np.mean(y))
         std_rg = float(np.std(y))
         # For a constant model, R² measures consistency of the data (low std = high R²)
@@ -241,7 +250,7 @@ def _fit_lltd_vs_arb(obs_list: list[dict], models: EmpiricalModelSet) -> None:
             x.append(float(blade))
             y.append(lltd)
 
-    if len(x) >= 2:
+    if len(x) >= 4:
         coeffs, r2 = _safe_linear_fit(x, y)
         if coeffs:
             models.relationships["lltd_vs_rear_arb"] = FittedRelationship(
@@ -270,7 +279,7 @@ def _fit_heave_to_variance(obs_list: list[dict], models: EmpiricalModelSet) -> N
             x.append(float(heave))
             y.append(var)
 
-    if len(x) >= 2:
+    if len(x) >= 4:
         coeffs, r2 = _safe_linear_fit(x, y)
         if coeffs:
             models.relationships["front_rh_var_vs_heave"] = FittedRelationship(
@@ -298,7 +307,7 @@ def _fit_third_to_variance(obs_list: list[dict], models: EmpiricalModelSet) -> N
             x.append(float(third))
             y.append(var)
 
-    if len(x) >= 2:
+    if len(x) >= 4:
         coeffs, r2 = _safe_linear_fit(x, y)
         if coeffs:
             models.relationships["rear_rh_var_vs_third"] = FittedRelationship(
@@ -350,7 +359,7 @@ def _fit_settle_time(obs_list: list[dict], models: EmpiricalModelSet) -> None:
             x.append(float(ls_rbd))
             y.append(settle)
 
-    if len(x) >= 2:
+    if len(x) >= 4:
         coeffs, r2 = _safe_linear_fit(x, y)
         if coeffs:
             models.relationships["settle_time_vs_ls_rbd"] = FittedRelationship(

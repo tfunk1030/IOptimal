@@ -336,3 +336,29 @@ def analyze_driver(
     )
 
     return profile
+
+
+def refine_driver_with_measured(
+    profile: DriverProfile,
+    measured: object,
+) -> None:
+    """Refine driver profile using MeasuredState in-car adjustment data.
+
+    High in-session adjustment counts indicate the driver was still searching
+    for the right setup, which reduces confidence in consistency classification.
+    Called after both analyze_driver() and extract() have completed.
+
+    Modifies profile in-place.
+    """
+    bb_adj = getattr(measured, "brake_bias_adjustments", 0)
+    tc_adj = getattr(measured, "tc_adjustments", 0)
+    total_adj = bb_adj + tc_adj
+
+    if total_adj > 15 and profile.consistency == "consistent":
+        # Driver was hunting for setup — consistency metric is unreliable
+        profile.consistency = "variable"
+        profile.style = _compute_style(
+            profile.steering_smoothness,
+            profile.consistency,
+            profile.cornering_aggression,
+        )
