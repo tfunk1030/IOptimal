@@ -70,6 +70,39 @@ def _estimate_cost_ms(parameter: str, proposed_value: Any, current_value: Any) -
     return round(delta * 0.5, 1)
 
 
+def _append_pass_through_decision(
+    decisions: list[ParameterDecision],
+    *,
+    parameter: str,
+    current_value: Any,
+    proposed_value: Any,
+    unit: str,
+    rationale: str,
+    legality_text: str,
+    fallback_text: str,
+) -> None:
+    decisions.append(
+        ParameterDecision(
+            parameter=parameter,
+            current_value=current_value,
+            proposed_value=proposed_value,
+            unit=unit,
+            confidence=0.0,
+            legality_status="pass_through",
+            fallback_reason=fallback_text,
+            evidence=ParameterEvidence(
+                telemetry=[],
+                physics_rationale=rationale,
+                legality=legality_text,
+                expected_gain_ms=0.0,
+                expected_cost_ms=0.0,
+                confidence=0.0,
+                source_tier="pass_through",
+            ),
+        )
+    )
+
+
 def _parameter_spec(car_name: str) -> list[dict[str, Any]]:
     is_ferrari = car_name.lower() == "ferrari"
     rear_heave_label = "rear_third_nmm" if not is_ferrari else "rear_heave_index"
@@ -231,6 +264,57 @@ def build_parameter_decisions(
                 ),
             )
         )
+
+    _append_pass_through_decision(
+        decisions,
+        parameter="brake_bias_target",
+        current_value=getattr(current_setup, "brake_bias_target", None),
+        proposed_value=getattr(supporting, "brake_bias_target", None),
+        unit="",
+        rationale="Brake bias target is passed through from hardware/session context because the solver only solves static brake bias.",
+        legality_text=legality_text,
+        fallback_text=fallback_text,
+    )
+    _append_pass_through_decision(
+        decisions,
+        parameter="brake_bias_migration",
+        current_value=getattr(current_setup, "brake_bias_migration", None),
+        proposed_value=getattr(supporting, "brake_bias_migration", None),
+        unit="",
+        rationale="Brake migration is carried forward as hardware context; no migration model is currently solved by the pipeline.",
+        legality_text=legality_text,
+        fallback_text=fallback_text,
+    )
+    _append_pass_through_decision(
+        decisions,
+        parameter="front_master_cyl_mm",
+        current_value=getattr(current_setup, "front_master_cyl_mm", None),
+        proposed_value=getattr(supporting, "front_master_cyl_mm", None),
+        unit="mm",
+        rationale="Front master cylinder sizing is treated as pass-through hardware context rather than a solved setup output.",
+        legality_text=legality_text,
+        fallback_text=fallback_text,
+    )
+    _append_pass_through_decision(
+        decisions,
+        parameter="rear_master_cyl_mm",
+        current_value=getattr(current_setup, "rear_master_cyl_mm", None),
+        proposed_value=getattr(supporting, "rear_master_cyl_mm", None),
+        unit="mm",
+        rationale="Rear master cylinder sizing is treated as pass-through hardware context rather than a solved setup output.",
+        legality_text=legality_text,
+        fallback_text=fallback_text,
+    )
+    _append_pass_through_decision(
+        decisions,
+        parameter="pad_compound",
+        current_value=getattr(current_setup, "pad_compound", None),
+        proposed_value=getattr(supporting, "pad_compound", None),
+        unit="",
+        rationale="Pad compound is reported honestly as pass-through brake hardware context, not as a solved telemetry output.",
+        legality_text=legality_text,
+        fallback_text=fallback_text,
+    )
 
     if car_name.lower() == "ferrari":
         warnings = list(getattr(current_setup, "decode_warnings", []) or [])

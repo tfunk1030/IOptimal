@@ -72,11 +72,16 @@ class OutputReportSupportingTests(unittest.TestCase):
                 tyre_cold_rl_kpa=152.0,
                 tyre_cold_rr_kpa=152.0,
                 brake_bias_pct=46.0,
+                brake_bias_status="solved",
                 brake_bias_target=1.5,
+                brake_bias_target_status="pass-through",
                 brake_bias_migration=-0.5,
+                brake_bias_migration_status="pass-through",
                 front_master_cyl_mm=19.1,
                 rear_master_cyl_mm=20.6,
+                master_cylinder_status="pass-through",
                 pad_compound="Medium",
+                pad_compound_status="pass-through",
                 diff_preload_nm=20.0,
                 diff_ramp_coast=40,
                 diff_ramp_drive=65,
@@ -94,6 +99,7 @@ class OutputReportSupportingTests(unittest.TestCase):
         )
 
         self.assertIn("Brake target/mig: +1.5 / -0.5", report)
+        self.assertIn("Brake semantics: bias=solved", report)
         self.assertIn("Master cyl: 19.1/20.6 mm", report)
         self.assertIn("Diff lock coast/drive: 47.0% / 31.0%", report)
         self.assertIn("Diff preload / plate %   5.0% / 42.0%", report)
@@ -190,11 +196,16 @@ class OutputReportSupportingTests(unittest.TestCase):
                 tyre_cold_rl_kpa=152.0,
                 tyre_cold_rr_kpa=152.0,
                 brake_bias_pct=45.5,
+                brake_bias_status="solved",
                 brake_bias_target=1.5,
+                brake_bias_target_status="pass-through",
                 brake_bias_migration=-0.5,
+                brake_bias_migration_status="pass-through",
                 front_master_cyl_mm=19.1,
                 rear_master_cyl_mm=20.6,
+                master_cylinder_status="pass-through",
                 pad_compound="Medium",
+                pad_compound_status="pass-through",
                 brake_hardware_status="static bias solved; target/migration/master cylinders/pad are pass-through only",
                 diff_preload_nm=20.0,
                 diff_ramp_coast=40,
