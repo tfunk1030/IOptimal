@@ -74,26 +74,47 @@ def validate_and_fix_garage_correlation(
         state,
         front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
     )
-    if constraint.valid:
-        return warnings
+    if not constraint.valid:
+        # Something is wrong — attempt auto-correction
+        warnings.extend(_fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
+        warnings.extend(_fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
+        warnings.extend(_fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
 
-    # Something is wrong — attempt auto-correction
-    warnings.extend(_fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
-    warnings.extend(_fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
-    warnings.extend(_fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
+        # Final verification
+        state = GarageSetupState.from_solver_steps(
+            step1=step1, step2=step2, step3=step3,
+            step5=step5, fuel_l=fuel_l,
+        )
+        final = garage_model.validate(
+            state,
+            front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
+        )
+        if not final.valid:
+            for msg in final.messages:
+                warnings.append(f"UNCORRECTABLE: {msg}")
 
-    # Final verification
+    # --- Phase 3: Reconcile step1 RH to match garage model prediction ---
+    # Ensures the .sto ride heights match what iRacing will actually display.
     state = GarageSetupState.from_solver_steps(
         step1=step1, step2=step2, step3=step3,
         step5=step5, fuel_l=fuel_l,
     )
-    final = garage_model.validate(
-        state,
-        front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
-    )
-    if not final.valid:
-        for msg in final.messages:
-            warnings.append(f"UNCORRECTABLE: {msg}")
+    predicted_front = garage_model.predict_front_static_rh(state)
+    predicted_rear = garage_model.predict_rear_static_rh(state)
+    if abs(predicted_front - step1.static_front_rh_mm) > 0.05:
+        warnings.append(
+            f"front RH reconciled: {step1.static_front_rh_mm:.1f} -> "
+            f"{predicted_front:.1f} mm (garage model prediction)"
+        )
+        step1.static_front_rh_mm = round(predicted_front, 1)
+        step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
+    if abs(predicted_rear - step1.static_rear_rh_mm) > 0.1:
+        warnings.append(
+            f"rear RH reconciled: {step1.static_rear_rh_mm:.1f} -> "
+            f"{predicted_rear:.1f} mm (garage model prediction)"
+        )
+        step1.static_rear_rh_mm = round(predicted_rear, 1)
+        step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
 
     return warnings
 
@@ -279,23 +300,41 @@ def _fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> li
 def _fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> list[str]:
     """Fix front static RH < floor by adjusting front pushrod offset."""
     msgs: list[str] = []
+    # Use a safety margin above the floor to account for model RMSE (~0.2mm)
     floor = garage_model.front_rh_floor_mm
+    margin = 0.3  # mm — slightly above LOO RMSE to prevent "Too Low" in garage
 
     state = GarageSetupState.from_solver_steps(
         step1=step1, step2=step2, step3=step3,
         step5=step5, fuel_l=fuel_l,
     )
     predicted_rh = garage_model.predict_front_static_rh(state)
-    if predicted_rh >= floor - 0.05:
+    if predicted_rh >= floor + margin - 0.05:
         return msgs
 
-    # Invert the regression to find the pushrod that gives exactly the floor RH
+    # Check if pushrod has enough leverage to fix the RH deficit.
+    # If the coefficient is too small, pushrod changes would be extreme and
+    # counter-productive (pushrod controls shock preload, not ride height).
+    if abs(garage_model.front_coeff_pushrod) < 0.05:
+        # Pushrod is not an effective lever — just accept the predicted RH
+        # and warn that it may display below floor in iRacing.
+        msgs.append(
+            f"front static RH {predicted_rh:.1f}mm near floor {floor:.0f}mm "
+            f"(pushrod coefficient too small for correction, accepting as-is)"
+        )
+        step1.static_front_rh_mm = round(predicted_rh, 1)
+        step1.rake_static_mm = round(
+            step1.static_rear_rh_mm - step1.static_front_rh_mm, 1
+        )
+        return msgs
+
+    # Invert the regression to find the pushrod that gives floor + margin RH
     front_camber = (
         float(step5.front_camber_deg) if step5 is not None else
         float(car.geometry.front_camber_baseline_deg)
     )
     new_pushrod = garage_model.front_pushrod_for_static_rh(
-        floor,
+        floor + margin,
         front_heave_nmm=step2.front_heave_nmm,
         front_heave_perch_mm=step2.perch_offset_front_mm,
         front_torsion_od_mm=step3.front_torsion_od_mm,

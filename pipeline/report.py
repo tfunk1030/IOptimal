@@ -84,6 +84,7 @@ def generate_report(
     space_result: object = None,
     stint_evolution: object = None,
     stint_compromise_info: list[str] | None = None,
+    solve_context_lines: list[str] | None = None,
     compact: bool = False,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
@@ -105,8 +106,14 @@ def generate_report(
             front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
         )
 
+    _ferrari_tb = (
+        current_setup.torsion_bar_turns
+        if current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
+        else None
+    )
+
     if compact:
-        return print_full_setup_report(
+        report = print_full_setup_report(
             car_name=car.name,
             track_name=f"{track.track_name} — {track.track_config}",
             wing=wing,
@@ -126,7 +133,12 @@ def generate_report(
             fuel_l=getattr(current_setup, "fuel_l", 0.0),
             garage_outputs=garage_outputs,
             compact=True,
+            front_tb_turns_override=_ferrari_tb,
         )
+        if solve_context_lines:
+            report += "\n" + _hdr("SOLVE CONTEXT") + "\n"
+            report += "\n".join(f"  {line}" for line in solve_context_lines)
+        return report
 
     # ── PRE-CARD: Driver & Diagnosis ──────────────────────────────────
     a("═" * W)
@@ -179,6 +191,7 @@ def generate_report(
         car=car,
         fuel_l=getattr(current_setup, "fuel_l", 0.0),
         garage_outputs=garage_outputs,
+        front_tb_turns_override=_ferrari_tb,
     ))
 
     # ── CURRENT vs RECOMMENDED ────────────────────────────────────────
@@ -190,10 +203,16 @@ def generate_report(
         a(_cmp("Wing",               current_setup.wing_angle_deg,       wing,                           "°",   ".0f"))
         a(_cmp("Front RH (static)",  current_setup.static_front_rh_mm,   step1.static_front_rh_mm,       "mm"))
         a(_cmp("Rear RH (static)",   current_setup.static_rear_rh_mm,    step1.static_rear_rh_mm,        "mm"))
-        a(_cmp("Front heave",        current_setup.front_heave_nmm,      step2.front_heave_nmm,          "N/mm", ".0f"))
-        a(_cmp("Rear third",         current_setup.rear_third_nmm,       step2.rear_third_nmm,           "N/mm", ".0f"))
-        a(_cmp("Rear spring",        current_setup.rear_spring_nmm,      step3.rear_spring_rate_nmm,     "N/mm", ".0f"))
-        a(_cmp("Torsion bar OD",     current_setup.front_torsion_od_mm,  step3.front_torsion_od_mm,      "mm"))
+        _is_ferrari = getattr(car, "canonical_name", "") == "ferrari"
+        _hu = "idx" if _is_ferrari else "N/mm"
+        _tu = "idx" if _is_ferrari else "mm"
+        a(_cmp("Front heave",        current_setup.front_heave_nmm,      step2.front_heave_nmm,          _hu, ".0f"))
+        _rear_heave_lbl = "Rear heave" if _is_ferrari else "Rear third"
+        a(_cmp(_rear_heave_lbl,      current_setup.rear_third_nmm,       step2.rear_third_nmm,           _hu, ".0f"))
+        _rear_spr_lbl = "Rear TB OD" if _is_ferrari else "Rear spring"
+        a(_cmp(_rear_spr_lbl,        current_setup.rear_spring_nmm,      step3.rear_spring_rate_nmm,     _hu, ".0f"))
+        _tb_lbl = "F torsion bar OD" if _is_ferrari else "Torsion bar OD"
+        a(_cmp(_tb_lbl,              current_setup.front_torsion_od_mm,  step3.front_torsion_od_mm,      _tu))
         a(_cmp("Front camber",       current_setup.front_camber_deg,     step5.front_camber_deg,         "°"))
         a(_cmp("Rear camber",        current_setup.rear_camber_deg,      step5.rear_camber_deg,          "°"))
         a(_cmp("Brake bias",         current_setup.brake_bias_pct,       supporting.brake_bias_pct,      "%"))
@@ -233,7 +252,8 @@ def generate_report(
             step2.travel_margin_front_mm
         )
         a(_hdr("FRONT HEAVE TRAVEL BUDGET"))
-        a(f"  Heave spring:       {step2.front_heave_nmm:.0f} N/mm")
+        _hu2 = "idx" if getattr(car, "canonical_name", "") == "ferrari" else "N/mm"
+        a(f"  Heave spring:       {step2.front_heave_nmm:.0f} {_hu2}")
         a(f"  Perch offset:       {step2.perch_offset_front_mm:.1f} mm")
         a(f"  Slider position:    {budget_slider:.1f} mm")
         a(f"  DeflMax:            {budget_defl_max:.1f} mm")

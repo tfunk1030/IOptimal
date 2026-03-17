@@ -199,12 +199,30 @@ _FERRARI_PARAM_IDS: dict[str, str] = {
     "rf_ride_height":           "CarSetup_Chassis_RightFront_RideHeight",
     "lr_ride_height":           "CarSetup_Chassis_LeftRear_RideHeight",
     "rr_ride_height":           "CarSetup_Chassis_RightRear_RideHeight",
+    # Ferrari uses "PushrodLengthDelta" (not "PushrodLengthOffset" like BMW)
     "front_pushrod_offset":     "CarSetup_Chassis_Front_PushrodLengthDelta",
     "rear_pushrod_offset":      "CarSetup_Chassis_Rear_PushrodLengthDelta",
-    # ARBs — Ferrari uses indexed blade arrays
+    # Heave springs — Ferrari rear has HeaveSpring (not ThirdSpring)
+    "front_heave_spring":       "CarSetup_Chassis_Front_HeaveSpring",
+    "front_heave_perch":        "CarSetup_Chassis_Front_HeavePerchOffset",
+    "rear_third_spring":        "CarSetup_Chassis_Rear_HeaveSpring",
+    "rear_third_perch":         "CarSetup_Chassis_Rear_HeavePerchOffset",
+    # Torsion bars — both front and rear (Ferrari has no rear coil spring)
+    "lf_torsion_od":            "CarSetup_Chassis_LeftFront_TorsionBarOD",
+    "rf_torsion_od":            "CarSetup_Chassis_RightFront_TorsionBarOD",
+    "lf_torsion_turns":         "CarSetup_Chassis_LeftFront_TorsionBarTurns",
+    "rf_torsion_turns":         "CarSetup_Chassis_RightFront_TorsionBarTurns",
+    "lr_spring_rate":           "CarSetup_Chassis_LeftRear_TorsionBarOD",
+    "rr_spring_rate":           "CarSetup_Chassis_RightRear_TorsionBarOD",
+    "lr_torsion_turns":         "CarSetup_Chassis_LeftRear_TorsionBarTurns",
+    "rr_torsion_turns":         "CarSetup_Chassis_RightRear_TorsionBarTurns",
+    # NO lr_spring_perch / rr_spring_perch — Ferrari rear is torsion bar
+    # ARBs — Ferrari uses indexed blade arrays + size dropdown
+    "front_arb_size":           "CarSetup_Chassis_Front_ArbSize",
     "front_arb_blades":         "CarSetup_Chassis_Front_ArbBlades[0]",
+    "rear_arb_size":            "CarSetup_Chassis_Rear_ArbSize",
     "rear_arb_blades":          "CarSetup_Chassis_Rear_ArbBlades[0]",
-    # Camber / toe (same as BMW)
+    # Camber / toe
     "lf_camber":                "CarSetup_Chassis_LeftFront_Camber",
     "rf_camber":                "CarSetup_Chassis_RightFront_Camber",
     "lr_camber":                "CarSetup_Chassis_LeftRear_Camber",
@@ -212,11 +230,44 @@ _FERRARI_PARAM_IDS: dict[str, str] = {
     "front_toe":                "CarSetup_Chassis_Front_ToeIn",
     "lr_toe":                   "CarSetup_Chassis_LeftRear_ToeIn",
     "rr_toe":                   "CarSetup_Chassis_RightRear_ToeIn",
-    # Fuel / brakes (same as BMW)
+    # Dampers (same naming as BMW)
+    "lf_ls_comp":               "CarSetup_Chassis_LeftFront_LsCompDamping",
+    "lf_ls_rbd":                "CarSetup_Chassis_LeftFront_LsRbdDamping",
+    "lf_hs_comp":               "CarSetup_Chassis_LeftFront_HsCompDamping",
+    "lf_hs_rbd":                "CarSetup_Chassis_LeftFront_HsRbdDamping",
+    "lf_hs_slope":              "CarSetup_Chassis_LeftFront_HsCompDampSlope",
+    "rf_ls_comp":               "CarSetup_Chassis_RightFront_LsCompDamping",
+    "rf_ls_rbd":                "CarSetup_Chassis_RightFront_LsRbdDamping",
+    "rf_hs_comp":               "CarSetup_Chassis_RightFront_HsCompDamping",
+    "rf_hs_rbd":                "CarSetup_Chassis_RightFront_HsRbdDamping",
+    "rf_hs_slope":              "CarSetup_Chassis_RightFront_HsCompDampSlope",
+    "lr_ls_comp":               "CarSetup_Chassis_LeftRear_LsCompDamping",
+    "lr_ls_rbd":                "CarSetup_Chassis_LeftRear_LsRbdDamping",
+    "lr_hs_comp":               "CarSetup_Chassis_LeftRear_HsCompDamping",
+    "lr_hs_rbd":                "CarSetup_Chassis_LeftRear_HsRbdDamping",
+    "lr_hs_slope":              "CarSetup_Chassis_LeftRear_HsCompDampSlope",
+    "rr_ls_comp":               "CarSetup_Chassis_RightRear_LsCompDamping",
+    "rr_ls_rbd":                "CarSetup_Chassis_RightRear_LsRbdDamping",
+    "rr_hs_comp":               "CarSetup_Chassis_RightRear_HsCompDamping",
+    "rr_hs_rbd":                "CarSetup_Chassis_RightRear_HsRbdDamping",
+    "rr_hs_slope":              "CarSetup_Chassis_RightRear_HsCompDampSlope",
+    # Tyres
+    "lf_pressure":              "CarSetup_TiresAero_LeftFront_StartingPressure",
+    "rf_pressure":              "CarSetup_TiresAero_RightFront_StartingPressure",
+    "lr_pressure":              "CarSetup_TiresAero_LeftRearTire_StartingPressure",
+    "rr_pressure":              "CarSetup_TiresAero_RightRearTire_StartingPressure",
+    "tyre_type":                "CarSetup_TiresAero_TireType_TireType",
+    # Fuel / brakes / diff / TC
     "fuel_level":               "CarSetup_BrakesDriveUnit_Fuel_FuelLevel",
     "brake_bias":               "CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias",
     "tc_gain":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain",
     "tc_slip":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip",
+    # Ferrari front diff (preload only)
+    "front_diff_preload":       "CarSetup_BrakesDriveUnit_FrontDiffSpec_Preload",
+    # Ferrari rear diff
+    "diff_preload":             "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload",
+    "diff_coast_drive_ramp":    "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles",
+    "diff_clutch_plates":       "CarSetup_BrakesDriveUnit_RearDiffSpec_ClutchFrictionPlates",
 }
 
 
@@ -354,16 +405,25 @@ def _validate_setup_values(
     _clamp_field(step5, "front_toe_mm", *gr.toe_front_mm, "front_toe", "mm")
     _clamp_field(step5, "rear_toe_mm", *gr.toe_rear_mm, "rear_toe", "mm")
 
-    # Damper clicks
-    d_lo, d_hi = gr.damper_click
+    # Damper clicks — use per-parameter ranges from DamperModel when available
+    # (Ferrari has 0-40 comp/rbd but 0-11 slope; BMW is 0-11 all)
+    d = car.damper if car is not None else None
     for corner_name, corner in [
         ("lf", step6.lf), ("rf", step6.rf), ("lr", step6.lr), ("rr", step6.rr)
     ]:
-        _clamp_int_field(corner, "ls_comp", d_lo, d_hi, f"{corner_name}_ls_comp", " clicks")
-        _clamp_int_field(corner, "ls_rbd", d_lo, d_hi, f"{corner_name}_ls_rbd", " clicks")
-        _clamp_int_field(corner, "hs_comp", d_lo, d_hi, f"{corner_name}_hs_comp", " clicks")
-        _clamp_int_field(corner, "hs_rbd", d_lo, d_hi, f"{corner_name}_hs_rbd", " clicks")
-        _clamp_int_field(corner, "hs_slope", d_lo, d_hi, f"{corner_name}_hs_slope", " clicks")
+        if d is not None:
+            _clamp_int_field(corner, "ls_comp", *d.ls_comp_range, f"{corner_name}_ls_comp", " clicks")
+            _clamp_int_field(corner, "ls_rbd", *d.ls_rbd_range, f"{corner_name}_ls_rbd", " clicks")
+            _clamp_int_field(corner, "hs_comp", *d.hs_comp_range, f"{corner_name}_hs_comp", " clicks")
+            _clamp_int_field(corner, "hs_rbd", *d.hs_rbd_range, f"{corner_name}_hs_rbd", " clicks")
+            _clamp_int_field(corner, "hs_slope", *d.hs_slope_range, f"{corner_name}_hs_slope", " clicks")
+        else:
+            d_lo, d_hi = gr.damper_click
+            _clamp_int_field(corner, "ls_comp", d_lo, d_hi, f"{corner_name}_ls_comp", " clicks")
+            _clamp_int_field(corner, "ls_rbd", d_lo, d_hi, f"{corner_name}_ls_rbd", " clicks")
+            _clamp_int_field(corner, "hs_comp", d_lo, d_hi, f"{corner_name}_hs_comp", " clicks")
+            _clamp_int_field(corner, "hs_rbd", d_lo, d_hi, f"{corner_name}_hs_rbd", " clicks")
+            _clamp_int_field(corner, "hs_slope", d_lo, d_hi, f"{corner_name}_hs_slope", " clicks")
 
     return warnings
 
@@ -398,6 +458,8 @@ def write_sto(
     fuel_low_warning_l: float = 8.0,
     roof_light_color: str = "Orange",
     include_computed: bool = False,
+    front_tb_turns: float | None = None,
+    rear_tb_turns: float | None = None,
 ) -> Path:
     """Write an iRacing .sto setup file from solver output.
 
@@ -566,18 +628,29 @@ def write_sto(
     # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
     _w_num("lf_torsion_od", step3.front_torsion_od_mm, "mm")
     _w_num("rf_torsion_od", step3.front_torsion_od_mm, "mm")
-    # Torsion bar turns — computed by iRacing from heave/perch/OD.
-    # Only write when include_computed=True (for engineering reports).
-    if include_computed:
+    # Torsion bar turns — adjustable parameter on both BMW and Ferrari
+    if front_tb_turns is not None:
+        _tb_turns = round(front_tb_turns, 3)
+    elif garage_outputs is not None:
+        _tb_turns = round(garage_outputs.torsion_bar_turns, 3)
+    else:
         _tb_turns = round(
-            garage_outputs.torsion_bar_turns if garage_outputs is not None else 0.0989
+            0.0989
             + 0.432 / max(step2.front_heave_nmm, 1)
             + 0.000699 * step2.perch_offset_front_mm
             + 0.000002 * step3.front_torsion_od_mm,
             3,
         )
-        _w_num("lf_torsion_turns", _tb_turns, "Turns")
-        _w_num("rf_torsion_turns", _tb_turns, "Turns")
+    _w_num("lf_torsion_turns", _tb_turns, "Turns")
+    _w_num("rf_torsion_turns", _tb_turns, "Turns")
+    # Ferrari also has rear torsion bar turns
+    if "lr_torsion_turns" in ids:
+        if rear_tb_turns is not None:
+            _rear_tb_turns = round(rear_tb_turns, 3)
+        else:
+            _rear_tb_turns = round(_tb_turns * 0.55, 3)
+        _w_num("lr_torsion_turns", _rear_tb_turns, "Turns")
+        _w_num("rr_torsion_turns", _rear_tb_turns, "Turns")
     # Porsche roll spring (only if car maps it)
     if "lf_roll_spring" in ids:
         _numeric(details, ids["lf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
@@ -585,8 +658,10 @@ def write_sto(
     # Rear spring
     _w_num("lr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
     _w_num("rr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
-    _w_num("lr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
-    _w_num("rr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
+    # Ferrari has no rear coil spring perch — skip if unmapped
+    if "lr_spring_perch" in ids:
+        _w_num("lr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
+        _w_num("rr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
     # Shock deflection maxes (computed by iRacing)
     if include_computed:
         _w_num("lf_shock_defl_max", 100, "mm")
@@ -738,22 +813,22 @@ def write_sto(
     # === Fuel ===
     _w_num("fuel_level",       fuel_l,            "L")
 
-    # === Brakes, Diff, TC, Gears, Lighting ===
-    # iRacing rejects .sto files containing these parameters.
-    # The proven a2.sto ends at FuelLevel — anything after causes load failure.
-    # Only write these for engineering report mode (include_computed=True).
+    # === Brakes, Diff, TC — settable parameters ===
+    _w_num("brake_bias",           brake_bias_pct,       "%")
+    _w_str("diff_coast_drive_ramp", diff_coast_drive_ramp)
+    _w_num("diff_clutch_plates",    diff_clutch_plates,   "")
+    _w_num("diff_preload",          diff_preload_nm,       "Nm")
+    _w_num("tc_gain", tc_gain, "")
+    _w_num("tc_slip", tc_slip, "")
+
+    # === Computed / display-only brake & drive parameters ===
+    # These may cause iRacing to reject the .sto if unexpected.
     if include_computed:
-        _w_num("brake_bias",           brake_bias_pct,       "%")
         _w_num("brake_bias_migration", brake_bias_migration,  "")
         _w_num("brake_bias_target",    brake_bias_target,     "")
         _w_str("pad_compound",         pad_compound)
         _w_num("front_master_cyl",     front_master_cyl_mm,  "mm")
         _w_num("rear_master_cyl",      rear_master_cyl_mm,   "mm")
-        _w_str("diff_coast_drive_ramp", diff_coast_drive_ramp)
-        _w_num("diff_clutch_plates",    diff_clutch_plates,   "")
-        _w_num("diff_preload",          diff_preload_nm,       "Nm")
-        _w_num("tc_gain", tc_gain, "(TCLAT)")
-        _w_num("tc_slip", tc_slip, "(TCLON)")
         _w_num("fuel_low_warning", fuel_low_warning_l, "L")
         _w_str("gear_stack", gear_stack)
         _w_num("speed_in_first",   116, "Km/h")

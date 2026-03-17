@@ -24,6 +24,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,12 +38,31 @@ from analyzer.driver_style import DriverProfile, analyze_driver, refine_driver_w
 from analyzer.extract import MeasuredState, extract_measurements
 from analyzer.segment import CornerAnalysis, segment_lap
 from analyzer.setup_reader import CurrentSetup
+from analyzer.telemetry_truth import (
+    ParameterDecision,
+    SessionNormalization,
+    build_session_normalization,
+    get_signal,
+    signals_to_dict,
+    summarize_signal_quality,
+    usable_signal_value,
+)
 from car_model.cars import CarModel, get_car
 from learner.delta_detector import (
     KNOWN_CAUSALITY, EFFECT_METRICS,
     detect_delta, SessionDelta,
 )
 from learner.observation import Observation, build_observation
+from solver.setup_fingerprint import (
+    CandidateVeto,
+    SetupFingerprint,
+    ValidationCluster,
+    fingerprint_from_current_setup,
+    fingerprint_from_solver_steps,
+    match_failed_cluster,
+)
+from solver.decision_trace import build_parameter_decisions
+from solver.legality_engine import LegalValidation, validate_solution_legality
 from track_model.build_profile import build_profile
 from track_model.ibt_parser import IBTFile
 from track_model.profile import TrackProfile
@@ -64,6 +85,10 @@ class SessionSnapshot:
     observation: Observation
     lap_time_s: float
     lap_number: int
+    input_order: int = 0
+    sort_timestamp: float = 0.0
+    sort_source: str = "cli"
+    fingerprint: SetupFingerprint | None = None
 
 
 @dataclass
@@ -72,6 +97,7 @@ class WeightedDelta:
     delta: SessionDelta
     pair: tuple[int, int]  # (before_idx, after_idx) into sessions list
     weight: float          # quality weight 0-1
+    normalization: SessionNormalization | None = None
 
 
 @dataclass
@@ -116,14 +142,22 @@ class CornerProfile:
     understeer_per_session: list[float | None] = field(default_factory=list)
     body_slip_per_session: list[float | None] = field(default_factory=list)
     time_loss_per_session: list[float | None] = field(default_factory=list)
+    entry_loss_per_session: list[float | None] = field(default_factory=list)
+    apex_loss_per_session: list[float | None] = field(default_factory=list)
+    exit_loss_per_session: list[float | None] = field(default_factory=list)
     shock_vel_front_per_session: list[float | None] = field(default_factory=list)
     shock_vel_rear_per_session: list[float | None] = field(default_factory=list)
     front_rh_min_per_session: list[float | None] = field(default_factory=list)
     kerb_severity_per_session: list[float | None] = field(default_factory=list)
+    platform_flags_per_session: list[list[str]] = field(default_factory=list)
+    traction_flags_per_session: list[list[str]] = field(default_factory=list)
 
     # Aggregates
     mean_time_loss: float = 0.0
     total_time_loss: float = 0.0
+    mean_entry_loss: float = 0.0
+    mean_apex_loss: float = 0.0
+    mean_exit_loss: float = 0.0
     is_consistent_weakness: bool = False
     primary_issue: str = ""  # "aero_balance" | "mechanical_balance" | "oversteer" | "platform" | "kerb" | ""
 
@@ -133,6 +167,15 @@ class CornerProfile:
         if valid_losses:
             self.mean_time_loss = float(np.mean(valid_losses))
             self.total_time_loss = sum(valid_losses)
+        valid_entry = [t for t in self.entry_loss_per_session if t is not None]
+        valid_apex = [t for t in self.apex_loss_per_session if t is not None]
+        valid_exit = [t for t in self.exit_loss_per_session if t is not None]
+        if valid_entry:
+            self.mean_entry_loss = float(np.mean(valid_entry))
+        if valid_apex:
+            self.mean_apex_loss = float(np.mean(valid_apex))
+        if valid_exit:
+            self.mean_exit_loss = float(np.mean(valid_exit))
 
         # Consistent weakness: >50% of sessions have time loss > 0.05s
         n_valid = len(valid_losses)
@@ -145,6 +188,8 @@ class CornerProfile:
         valid_bs = [b for b in self.body_slip_per_session if b is not None]
         valid_sv = [s for s in self.shock_vel_front_per_session if s is not None]
         valid_kerb = [k for k in self.kerb_severity_per_session if k is not None]
+        platform_flags = [flag for flags in self.platform_flags_per_session for flag in flags]
+        traction_flags = [flag for flags in self.traction_flags_per_session for flag in flags]
 
         us_mean = float(np.mean(valid_us)) if valid_us else 0.0
         bs_mean = float(np.mean(valid_bs)) if valid_bs else 0.0
@@ -159,7 +204,9 @@ class CornerProfile:
             self.primary_issue = "mechanical_balance"
         elif bs_mean > 2.0:
             self.primary_issue = "oversteer"
-        elif sv_mean > 0.3:
+        elif "late_throttle" in traction_flags:
+            self.primary_issue = "traction"
+        elif "front_rh_collapse" in platform_flags or sv_mean > 0.3:
             self.primary_issue = "platform"
 
 
@@ -327,14 +374,231 @@ class ReasoningState:
     # Aggregate understanding
     best_session_idx: int = 0
     worst_session_idx: int = 0
+    authority_session_idx: int = 0
+    latest_session_idx: int = 0
+    solve_basis: str = "best_session"
     persistent_problems: list[str] = field(default_factory=list)
     resolved_problems: list[str] = field(default_factory=list)
+    setup_fingerprints: list[SetupFingerprint] = field(default_factory=list)
+    validation_clusters: list[ValidationCluster] = field(default_factory=list)
+    candidate_vetoes: list[CandidateVeto] = field(default_factory=list)
+    solver_notes: list[str] = field(default_factory=list)
+    normalization_scores: list[dict[str, object]] = field(default_factory=list)
+    decision_trace: list[ParameterDecision] = field(default_factory=list)
+    legal_validation: LegalValidation | None = None
 
     # Phase 8: Confidence-gated modifiers
     modifier_details: list[ModifierWithConfidence] = field(default_factory=list)
 
     # Reasoning log
     reasoning_log: list[str] = field(default_factory=list)
+
+
+_FILENAME_TIMESTAMP_PATTERNS = (
+    re.compile(r"(\d{4}-\d{2}-\d{2})[ _](\d{2})-(\d{2})-(\d{2})"),
+    re.compile(r"(\d{4}-\d{2}-\d{2})[ _](\d{2}):(\d{2}):(\d{2})"),
+)
+
+
+def _parse_filename_timestamp(path: str | Path) -> float | None:
+    stem = Path(path).stem
+    for pattern in _FILENAME_TIMESTAMP_PATTERNS:
+        match = pattern.search(stem)
+        if match:
+            date_str, hour, minute, second = match.groups()
+            try:
+                parsed = dt.datetime.fromisoformat(f"{date_str} {hour}:{minute}:{second}")
+            except ValueError:
+                return None
+            return parsed.timestamp()
+    return None
+
+
+def _resolve_sort_metadata(path: str | Path) -> tuple[float, str]:
+    parsed = _parse_filename_timestamp(path)
+    if parsed is not None:
+        return parsed, "filename"
+    try:
+        return Path(path).stat().st_mtime, "mtime"
+    except OSError:
+        return 0.0, "cli"
+
+
+def _relabel_sessions(sessions: list[SessionSnapshot]) -> None:
+    for idx, snap in enumerate(sessions):
+        label = f"S{idx + 1}"
+        snap.label = label
+        snap.observation.session_id = label
+
+
+def _sort_sessions_chronologically(state: ReasoningState) -> None:
+    priority = {"filename": 0, "mtime": 1, "cli": 2}
+    state.sessions.sort(
+        key=lambda s: (
+            priority.get(s.sort_source, 2),
+            s.sort_timestamp,
+            s.input_order,
+        )
+    )
+    _relabel_sessions(state.sessions)
+    state.setup_fingerprints = [
+        snap.fingerprint if snap.fingerprint is not None else fingerprint_from_current_setup(snap.setup)
+        for snap in state.sessions
+    ]
+
+
+def _settle_deviation(value: float) -> float:
+    return abs(float(value) - 125.0)
+
+
+def _metric_regressions(latest: SessionSnapshot, reference: SessionSnapshot) -> list[str]:
+    latest_m = latest.measured
+    ref_m = reference.measured
+    regressions: list[str] = []
+
+    if (latest_m.understeer_low_speed_deg - ref_m.understeer_low_speed_deg) >= 0.3:
+        regressions.append(
+            f"low_speed_understeer {latest_m.understeer_low_speed_deg:+.2f} vs {ref_m.understeer_low_speed_deg:+.2f}"
+        )
+
+    latest_slip = latest_m.rear_power_slip_ratio_p95 or latest_m.rear_slip_ratio_p95
+    ref_slip = ref_m.rear_power_slip_ratio_p95 or ref_m.rear_slip_ratio_p95
+    if (latest_slip - ref_slip) >= 0.01:
+        regressions.append(f"rear_traction_slip {latest_slip:.3f} vs {ref_slip:.3f}")
+
+    if (latest_m.front_rh_std_mm - ref_m.front_rh_std_mm) >= 0.5:
+        regressions.append(f"front_rh_std {latest_m.front_rh_std_mm:.2f} vs {ref_m.front_rh_std_mm:.2f}")
+    if (latest_m.rear_rh_std_mm - ref_m.rear_rh_std_mm) >= 0.5:
+        regressions.append(f"rear_rh_std {latest_m.rear_rh_std_mm:.2f} vs {ref_m.rear_rh_std_mm:.2f}")
+
+    latest_front_settle = usable_signal_value(latest_m, "front_rh_settle_time_ms")
+    ref_front_settle = usable_signal_value(ref_m, "front_rh_settle_time_ms")
+    latest_rear_settle = usable_signal_value(latest_m, "rear_rh_settle_time_ms")
+    ref_rear_settle = usable_signal_value(ref_m, "rear_rh_settle_time_ms")
+
+    if (
+        latest_front_settle is not None
+        and ref_front_settle is not None
+        and (_settle_deviation(latest_front_settle) - _settle_deviation(ref_front_settle)) >= 20.0
+    ):
+        regressions.append(
+            f"front_settle_dev {_settle_deviation(latest_front_settle):.0f}ms vs "
+            f"{_settle_deviation(ref_front_settle):.0f}ms"
+        )
+    if (
+        latest_rear_settle is not None
+        and ref_rear_settle is not None
+        and (_settle_deviation(latest_rear_settle) - _settle_deviation(ref_rear_settle)) >= 20.0
+    ):
+        regressions.append(
+            f"rear_settle_dev {_settle_deviation(latest_rear_settle):.0f}ms vs "
+            f"{_settle_deviation(ref_rear_settle):.0f}ms"
+        )
+
+    if (latest_m.bottoming_event_count_front_clean - ref_m.bottoming_event_count_front_clean) >= 2:
+        regressions.append(
+            f"front_clean_bottoming {latest_m.bottoming_event_count_front_clean} vs "
+            f"{ref_m.bottoming_event_count_front_clean}"
+        )
+    if (latest_m.bottoming_event_count_rear_clean - ref_m.bottoming_event_count_rear_clean) >= 2:
+        regressions.append(
+            f"rear_clean_bottoming {latest_m.bottoming_event_count_rear_clean} vs "
+            f"{ref_m.bottoming_event_count_rear_clean}"
+        )
+
+    if (latest_m.understeer_mean_deg - ref_m.understeer_mean_deg) >= 0.08:
+        regressions.append(
+            f"understeer_mean {latest_m.understeer_mean_deg:+.2f} vs {ref_m.understeer_mean_deg:+.2f}"
+        )
+    if (latest_m.body_slip_p95_deg - ref_m.body_slip_p95_deg) >= 0.20:
+        regressions.append(
+            f"body_slip {latest_m.body_slip_p95_deg:.2f} vs {ref_m.body_slip_p95_deg:.2f}"
+        )
+
+    return regressions
+
+
+def _conditions_shifted(latest: SessionSnapshot, reference: SessionSnapshot) -> bool:
+    fuel_shift = abs((latest.setup.fuel_l or 0.0) - (reference.setup.fuel_l or 0.0)) > 2.0
+    air_latest = getattr(latest.measured, "air_temp_c", 0.0) or 0.0
+    air_ref = getattr(reference.measured, "air_temp_c", 0.0) or 0.0
+    track_latest = getattr(latest.measured, "track_temp_c", 0.0) or 0.0
+    track_ref = getattr(reference.measured, "track_temp_c", 0.0) or 0.0
+    wind_latest = getattr(latest.measured, "wind_speed_ms", 0.0) or 0.0
+    wind_ref = getattr(reference.measured, "wind_speed_ms", 0.0) or 0.0
+    return (
+        fuel_shift
+        or abs(air_latest - air_ref) > 5.0
+        or abs(track_latest - track_ref) > 5.0
+        or abs(wind_latest - wind_ref) > 3.0
+    )
+
+
+def _find_validation_cluster(
+    clusters: list[ValidationCluster],
+    fingerprint: SetupFingerprint,
+) -> ValidationCluster | None:
+    for cluster in clusters:
+        if cluster.fingerprint.matches_candidate(fingerprint):
+            return cluster
+    return None
+
+
+def _build_validation_clusters(state: ReasoningState) -> None:
+    clusters: list[ValidationCluster] = []
+    for idx, fp in enumerate(state.setup_fingerprints):
+        cluster = _find_validation_cluster(clusters, fp)
+        if cluster is None:
+            cluster = ValidationCluster(fingerprint=fp)
+            clusters.append(cluster)
+        cluster.fingerprint = fp
+        cluster.session_indices.append(idx)
+        cluster.session_labels.append(state.sessions[idx].label)
+
+    for cluster in clusters:
+        latest_idx = max(cluster.session_indices)
+        best_cluster_idx = min(cluster.session_indices, key=lambda i: state.sessions[i].lap_time_s)
+        cluster.latest_session_idx = latest_idx
+        cluster.latest_session_label = state.sessions[latest_idx].label
+        cluster.best_cluster_session_idx = best_cluster_idx
+        cluster.best_cluster_session_label = state.sessions[best_cluster_idx].label
+
+        other_indices = [i for i in range(len(state.sessions)) if i not in cluster.session_indices]
+        if other_indices:
+            ref_idx = min(other_indices, key=lambda i: state.sessions[i].lap_time_s)
+            latest = state.sessions[latest_idx]
+            reference = state.sessions[ref_idx]
+            cluster.comparison_session_idx = ref_idx
+            cluster.comparison_session_label = reference.label
+            cluster.lap_delta_s = round(latest.lap_time_s - reference.lap_time_s, 3)
+            cluster.metric_regressions = _metric_regressions(latest, reference)
+            if cluster.lap_delta_s >= 0.10 and len(cluster.metric_regressions) >= 2:
+                cluster.validated_failed = True
+                cluster.penalty_mode = "soft" if _conditions_shifted(latest, reference) else "hard"
+                cluster.reason = (
+                    f"{latest.label} validated this setup and was {cluster.lap_delta_s:+.3f}s slower than "
+                    f"{reference.label}; regressions: {', '.join(cluster.metric_regressions[:4])}"
+                )
+    clusters.sort(key=lambda c: c.latest_session_idx)
+    state.validation_clusters = clusters
+
+
+def _resolve_authority_session(state: ReasoningState) -> None:
+    state.latest_session_idx = max(len(state.sessions) - 1, 0)
+    state.authority_session_idx = state.best_session_idx
+    state.solve_basis = "best_session"
+    state.solver_notes = []
+
+    for cluster in state.validation_clusters:
+        if cluster.latest_session_idx == state.latest_session_idx and cluster.validated_failed:
+            state.authority_session_idx = state.latest_session_idx
+            state.solve_basis = "latest_validation_veto"
+            mode = "soft" if cluster.penalty_mode == "soft" else "hard"
+            state.solver_notes.append(
+                f"Using {cluster.latest_session_label} as solve authority: {mode} veto against reissuing this setup."
+            )
+            state.solver_notes.append(cluster.reason)
+            break
 
 
 # ── Phase 1: Session analysis ──────────────────────────────────
@@ -347,6 +611,7 @@ def _analyze_session(
 ) -> SessionSnapshot:
     """Run full analysis on one IBT file."""
     ibt = IBTFile(ibt_path)
+    sort_timestamp, sort_source = _resolve_sort_metadata(ibt_path)
     track = build_profile(ibt_path)
     setup = CurrentSetup.from_ibt(ibt)
     measured = extract_measurements(ibt_path, car)
@@ -387,20 +652,36 @@ def _analyze_session(
         observation=obs,
         lap_time_s=measured.lap_time_s,
         lap_number=measured.lap_number,
+        input_order=max(int(label[1:]) - 1, 0),
+        sort_timestamp=sort_timestamp,
+        sort_source=sort_source,
+        fingerprint=fingerprint_from_current_setup(setup),
     )
 
 
 # ── Phase 2: All-pairs delta analysis ──────────────────────────
 
 
-def _compute_delta_weight(delta: SessionDelta) -> float:
-    """Compute quality weight for a delta based on experiment control."""
+def _compute_delta_weight(
+    delta: SessionDelta,
+    before: SessionSnapshot,
+    after: SessionSnapshot,
+) -> tuple[float, SessionNormalization]:
+    """Compute quality weight for a delta based on experiment control and normalization."""
     if delta.controlled_experiment:
-        return 1.0
-    n = max(delta.num_setup_changes, 1)
-    if n <= 2:
-        return 0.5 / n
-    return 0.3 / n
+        base = 1.0
+    else:
+        n = max(delta.num_setup_changes, 1)
+        if n <= 2:
+            base = 0.5 / n
+        else:
+            base = 0.3 / n
+
+    normalization = build_session_normalization(before, after)
+    weight = base * normalization.overall_score
+    if not normalization.comparable:
+        weight *= 0.5
+    return weight, normalization
 
 
 def _all_pairs_deltas(state: ReasoningState) -> None:
@@ -411,10 +692,19 @@ def _all_pairs_deltas(state: ReasoningState) -> None:
             obs_i = state.sessions[i].observation
             obs_j = state.sessions[j].observation
             delta = detect_delta(obs_i, obs_j)
-            weight = _compute_delta_weight(delta)
+            weight, normalization = _compute_delta_weight(delta, state.sessions[i], state.sessions[j])
             state.weighted_deltas.append(WeightedDelta(
-                delta=delta, pair=(i, j), weight=weight,
+                delta=delta, pair=(i, j), weight=weight, normalization=normalization,
             ))
+            state.normalization_scores.append(
+                {
+                    "before": state.sessions[i].label,
+                    "after": state.sessions[j].label,
+                    "overall_score": normalization.overall_score,
+                    "comparable": normalization.comparable,
+                    "notes": normalization.notes,
+                }
+            )
             _update_learnings_weighted(state, delta, weight, i, j)
 
 
@@ -542,69 +832,169 @@ def _determine_directions(state: ReasoningState) -> None:
 # ── Phase 3: Corner profiling ──────────────────────────────────
 
 
+def _find_matching_corner(
+    ref_mid: float,
+    corners: list[CornerAnalysis],
+    *,
+    tolerance_m: float,
+) -> CornerAnalysis | None:
+    matched = None
+    best_dist = tolerance_m
+    for corner in corners:
+        corner_mid = (corner.lap_dist_start_m + corner.lap_dist_end_m) / 2.0
+        dist = abs(corner_mid - ref_mid)
+        if dist < best_dist:
+            best_dist = dist
+            matched = corner
+    return matched
+
+
+def _corner_component_losses(ref_corner: CornerAnalysis, corner: CornerAnalysis) -> tuple[float, float, float, float]:
+    entry_speed_deficit_ms = max(0.0, (ref_corner.entry_speed_kph - corner.entry_speed_kph) / 3.6)
+    brake_overlap_deficit = max(0.0, corner.trail_brake_pct - ref_corner.trail_brake_pct)
+    entry_loss = min(1.5, brake_overlap_deficit * max(ref_corner.entry_phase_s, 0.1) + entry_speed_deficit_ms / 12.0)
+
+    apex_speed_deficit_ms = max(0.0, (ref_corner.apex_speed_kph - corner.apex_speed_kph) / 3.6)
+    apex_avg_speed = max((ref_corner.apex_speed_kph + corner.apex_speed_kph) / 7.2, 5.0)
+    apex_loss = min(
+        1.5,
+        apex_speed_deficit_ms * max(ref_corner.apex_phase_s, corner.apex_phase_s, 0.1) / apex_avg_speed,
+    )
+
+    throttle_delay_deficit = max(0.0, corner.throttle_delay_s - ref_corner.throttle_delay_s)
+    exit_speed_deficit_ms = max(0.0, (ref_corner.exit_speed_kph - corner.exit_speed_kph) / 3.6)
+    exit_avg_speed = max((ref_corner.exit_speed_kph + corner.exit_speed_kph) / 7.2, 8.0)
+    exit_loss = min(
+        1.5,
+        throttle_delay_deficit
+        + exit_speed_deficit_ms * max(ref_corner.exit_phase_s, corner.exit_phase_s, 0.1) / exit_avg_speed,
+    )
+
+    total = min(2.5, entry_loss + apex_loss + exit_loss)
+    if total <= 0.0:
+        return 0.0, 0.0, 0.0, 0.0
+    scale = total / max(entry_loss + apex_loss + exit_loss, 1e-9)
+    return entry_loss * scale, apex_loss * scale, exit_loss * scale, total
+
+
+def _scale_corner_budget(
+    profiles: list[CornerProfile],
+    sessions: list[SessionSnapshot],
+    ref_idx: int,
+) -> None:
+    n = len(sessions)
+    totals = [0.0] * n
+    for cp in profiles:
+        for idx in range(min(n, len(cp.time_loss_per_session))):
+            total = cp.time_loss_per_session[idx]
+            if total is not None:
+                totals[idx] += total
+
+    ref_lap = sessions[ref_idx].lap_time_s
+    for idx, session in enumerate(sessions):
+        if idx == ref_idx:
+            continue
+        actual_delta = max(0.0, session.lap_time_s - ref_lap)
+        if actual_delta <= 0.0:
+            continue
+        budget = actual_delta * 1.25
+        total = totals[idx]
+        if total <= budget or total <= 0.0:
+            continue
+        scale = budget / total
+        for cp in profiles:
+            if idx >= len(cp.time_loss_per_session) or cp.time_loss_per_session[idx] is None:
+                continue
+            cp.time_loss_per_session[idx] *= scale
+            if idx < len(cp.entry_loss_per_session) and cp.entry_loss_per_session[idx] is not None:
+                cp.entry_loss_per_session[idx] *= scale
+            if idx < len(cp.apex_loss_per_session) and cp.apex_loss_per_session[idx] is not None:
+                cp.apex_loss_per_session[idx] *= scale
+            if idx < len(cp.exit_loss_per_session) and cp.exit_loss_per_session[idx] is not None:
+                cp.exit_loss_per_session[idx] *= scale
+
+
 def _match_corners_across_sessions(
     sessions: list[SessionSnapshot],
+    *,
+    reference_idx: int,
 ) -> list[CornerProfile]:
-    """Match corners across sessions by lap distance proximity."""
-    if not sessions or not sessions[0].corners:
+    """Match corners across sessions and build bounded opportunity components."""
+    if not sessions or reference_idx >= len(sessions) or not sessions[reference_idx].corners:
         return []
 
-    ref_corners = sessions[0].corners
+    ref_corners = sessions[reference_idx].corners
     profiles: list[CornerProfile] = []
     match_tolerance_m = 50.0
 
-    for ref_c in ref_corners:
-        mid = (ref_c.lap_dist_start_m + ref_c.lap_dist_end_m) / 2.0
-
+    for ref_corner in ref_corners:
+        mid = (ref_corner.lap_dist_start_m + ref_corner.lap_dist_end_m) / 2.0
         cp = CornerProfile(
-            corner_id=ref_c.corner_id,
+            corner_id=ref_corner.corner_id,
             lap_dist_m=mid,
-            direction=ref_c.direction,
-            speed_class=ref_c.speed_class,
+            direction=ref_corner.direction,
+            speed_class=ref_corner.speed_class,
         )
 
-        # Collect per-session data
         for sess_idx, sess in enumerate(sessions):
-            if sess_idx == 0:
-                matched = ref_c
-            else:
-                matched = None
-                best_dist = match_tolerance_m
-                for c in sess.corners:
-                    c_mid = (c.lap_dist_start_m + c.lap_dist_end_m) / 2.0
-                    dist = abs(c_mid - mid)
-                    if dist < best_dist:
-                        best_dist = dist
-                        matched = c
+            matched = ref_corner if sess_idx == reference_idx else _find_matching_corner(
+                mid,
+                sess.corners,
+                tolerance_m=match_tolerance_m,
+            )
 
-            if matched is not None:
-                cp.understeer_per_session.append(matched.understeer_mean_deg)
-                cp.body_slip_per_session.append(matched.body_slip_peak_deg)
-                cp.time_loss_per_session.append(matched.delta_to_min_time_s)
-                cp.shock_vel_front_per_session.append(matched.front_shock_vel_p95_mps)
-                cp.shock_vel_rear_per_session.append(matched.rear_shock_vel_p95_mps)
-                cp.front_rh_min_per_session.append(matched.front_rh_min_mm)
-                cp.kerb_severity_per_session.append(matched.kerb_severity_max)
-            else:
+            if matched is None:
                 cp.understeer_per_session.append(None)
                 cp.body_slip_per_session.append(None)
                 cp.time_loss_per_session.append(None)
+                cp.entry_loss_per_session.append(None)
+                cp.apex_loss_per_session.append(None)
+                cp.exit_loss_per_session.append(None)
                 cp.shock_vel_front_per_session.append(None)
                 cp.shock_vel_rear_per_session.append(None)
                 cp.front_rh_min_per_session.append(None)
                 cp.kerb_severity_per_session.append(None)
+                cp.platform_flags_per_session.append([])
+                cp.traction_flags_per_session.append([])
+                continue
 
-        cp._compute_aggregates()
+            if sess_idx == reference_idx:
+                entry_loss = 0.0
+                apex_loss = 0.0
+                exit_loss = 0.0
+                total_loss = 0.0
+            else:
+                entry_loss, apex_loss, exit_loss, total_loss = _corner_component_losses(ref_corner, matched)
+
+            cp.understeer_per_session.append(matched.understeer_mean_deg)
+            cp.body_slip_per_session.append(matched.body_slip_peak_deg)
+            cp.time_loss_per_session.append(total_loss)
+            cp.entry_loss_per_session.append(entry_loss)
+            cp.apex_loss_per_session.append(apex_loss)
+            cp.exit_loss_per_session.append(exit_loss)
+            cp.shock_vel_front_per_session.append(matched.front_shock_vel_p95_mps)
+            cp.shock_vel_rear_per_session.append(matched.rear_shock_vel_p95_mps)
+            cp.front_rh_min_per_session.append(matched.front_rh_min_mm)
+            cp.kerb_severity_per_session.append(matched.kerb_severity_max)
+            cp.platform_flags_per_session.append(list(getattr(matched, "platform_risk_flags", [])))
+            cp.traction_flags_per_session.append(list(getattr(matched, "traction_risk_flags", [])))
+
         profiles.append(cp)
 
+    _scale_corner_budget(profiles, sessions, reference_idx)
+    for cp in profiles:
+        cp._compute_aggregates()
     return profiles
 
 
 def _build_corner_profiles(state: ReasoningState) -> None:
     """Build corner profiles and identify top weakness corners."""
-    state.corner_profiles = _match_corners_across_sessions(state.sessions)
+    state.corner_profiles = _match_corners_across_sessions(
+        state.sessions,
+        reference_idx=state.best_session_idx,
+    )
 
-    # Top 5 weakness corners by total time loss
+    # Top 5 weakness corners by bounded opportunity
     weakness = [cp for cp in state.corner_profiles if cp.is_consistent_weakness]
     weakness.sort(key=lambda cp: cp.mean_time_loss, reverse=True)
     state.top_weakness_corners = weakness[:5]
@@ -688,7 +1078,10 @@ def _build_target_profile(state: ReasoningState) -> None:
     for attr, polarity, target_val in METRIC_CATALOG:
         values = []
         for i, s in enumerate(state.sessions):
-            v = getattr(s.measured, attr, None)
+            if attr in {"front_rh_settle_time_ms", "rear_rh_settle_time_ms"}:
+                v = usable_signal_value(s.measured, attr)
+            else:
+                v = getattr(s.measured, attr, None)
             if v is not None and isinstance(v, (int, float)):
                 values.append((i, float(v)))
 
@@ -818,17 +1211,40 @@ def _run_physics_validations(state: ReasoningState) -> None:
 
     # Bottoming source validation: kerb vs clean
     avg_kerb_bottoming = float(np.mean([
-        s.measured.bottoming_kerb_front for s in state.sessions
-        if hasattr(s.measured, 'bottoming_kerb_front') and s.measured.bottoming_kerb_front is not None
+        s.measured.bottoming_event_count_front_kerb for s in state.sessions
+        if hasattr(s.measured, "bottoming_event_count_front_kerb")
+        and s.measured.bottoming_event_count_front_kerb is not None
     ])) if any(
-        hasattr(s.measured, 'bottoming_kerb_front') and s.measured.bottoming_kerb_front is not None
+        hasattr(s.measured, "bottoming_event_count_front_kerb")
+        and s.measured.bottoming_event_count_front_kerb is not None
         for s in state.sessions
     ) else 0.0
     avg_clean_bottoming = float(np.mean([
-        s.measured.bottoming_clean_front for s in state.sessions
-        if hasattr(s.measured, 'bottoming_clean_front') and s.measured.bottoming_clean_front is not None
+        s.measured.bottoming_event_count_front_clean for s in state.sessions
+        if hasattr(s.measured, "bottoming_event_count_front_clean")
+        and s.measured.bottoming_event_count_front_clean is not None
     ])) if any(
-        hasattr(s.measured, 'bottoming_clean_front') and s.measured.bottoming_clean_front is not None
+        hasattr(s.measured, "bottoming_event_count_front_clean")
+        and s.measured.bottoming_event_count_front_clean is not None
+        for s in state.sessions
+    ) else 0.0
+
+    avg_kerb_bottoming += float(np.mean([
+        s.measured.bottoming_event_count_rear_kerb for s in state.sessions
+        if hasattr(s.measured, "bottoming_event_count_rear_kerb")
+        and s.measured.bottoming_event_count_rear_kerb is not None
+    ])) if any(
+        hasattr(s.measured, "bottoming_event_count_rear_kerb")
+        and s.measured.bottoming_event_count_rear_kerb is not None
+        for s in state.sessions
+    ) else 0.0
+    avg_clean_bottoming += float(np.mean([
+        s.measured.bottoming_event_count_rear_clean for s in state.sessions
+        if hasattr(s.measured, "bottoming_event_count_rear_clean")
+        and s.measured.bottoming_event_count_rear_clean is not None
+    ])) if any(
+        hasattr(s.measured, "bottoming_event_count_rear_clean")
+        and s.measured.bottoming_event_count_rear_clean is not None
         for s in state.sessions
     ) else 0.0
 
@@ -873,6 +1289,7 @@ def _score_categories(state: ReasoningState) -> None:
     """Score best session across performance categories (adapted from score.py)."""
     pr = state.physics
     sessions = state.sessions
+    selected_idx = state.authority_session_idx if state.solve_basis == "latest_validation_veto" else state.best_session_idx
 
     # Score each category using the best session's measured state relative to all
     def _norm_lower(vals: list[float]) -> list[float]:
@@ -892,25 +1309,25 @@ def _score_categories(state: ReasoningState) -> None:
 
     # Lap time
     lt_scores = _norm_lower([s.lap_time_s for s in sessions])
-    pr.category_scores["lap_time"] = max(lt_scores)
+    pr.category_scores["lap_time"] = lt_scores[selected_idx]
 
     # Grip
     lat_g = _norm_higher([s.measured.peak_lat_g_measured for s in sessions])
     r_slip = _norm_lower([s.measured.rear_slip_ratio_p95 for s in sessions])
     grip = [(lat_g[i] + r_slip[i]) / 2 for i in range(n)]
-    pr.category_scores["grip"] = max(grip)
+    pr.category_scores["grip"] = grip[selected_idx]
 
     # Balance
     us_abs = _norm_lower([abs(s.measured.understeer_mean_deg) for s in sessions])
     bs = _norm_lower([s.measured.body_slip_p95_deg for s in sessions])
     balance = [(us_abs[i] + bs[i]) / 2 for i in range(n)]
-    pr.category_scores["balance"] = max(balance)
+    pr.category_scores["balance"] = balance[selected_idx]
 
     # Aero efficiency
     top_spd = _norm_higher([s.measured.speed_max_kph for s in sessions])
     rh_var = _norm_lower([s.measured.front_rh_std_mm for s in sessions])
     aero = [(top_spd[i] + rh_var[i]) / 2 for i in range(n)]
-    pr.category_scores["aero_efficiency"] = max(aero)
+    pr.category_scores["aero_efficiency"] = aero[selected_idx]
 
     # High-speed corners (from corner profiles)
     hs_loss = [0.0] * n
@@ -927,16 +1344,21 @@ def _score_categories(state: ReasoningState) -> None:
 
     hs_scores = _norm_lower(hs_loss) if any(h > 0 for h in hs_loss) else [0.5] * n
     ls_scores = _norm_lower(ls_loss) if any(l > 0 for l in ls_loss) else [0.5] * n
-    pr.category_scores["high_speed_corners"] = max(hs_scores)
-    pr.category_scores["low_speed_corners"] = max(ls_scores)
+    pr.category_scores["high_speed_corners"] = hs_scores[selected_idx]
+    pr.category_scores["low_speed_corners"] = ls_scores[selected_idx]
 
     # Damper platform
-    settle = _norm_target(
-        [s.measured.front_rh_settle_time_ms for s in sessions], 125.0
-    )
+    settle_values: list[float] = []
+    settle_known: list[bool] = []
+    for session in sessions:
+        settle_val = usable_signal_value(session.measured, "front_rh_settle_time_ms")
+        settle_known.append(settle_val is not None)
+        settle_values.append(settle_val if settle_val is not None else 125.0)
+    settle = _norm_target(settle_values, 125.0)
+    settle = [settle[i] if settle_known[i] else 0.5 for i in range(n)]
     yaw = _norm_higher([s.measured.yaw_rate_correlation for s in sessions])
     damper = [(settle[i] + yaw[i]) / 2 for i in range(n)]
-    pr.category_scores["damper_platform"] = max(damper)
+    pr.category_scores["damper_platform"] = damper[selected_idx]
 
     # Thermal
     spreads = []
@@ -951,7 +1373,7 @@ def _score_categories(state: ReasoningState) -> None:
     spread_norm = _norm_lower(spreads)
     carc_f = _norm_target([s.measured.front_carcass_mean_c for s in sessions], 92.5)
     thermal = [(spread_norm[i] + carc_f[i]) / 2 for i in range(n)]
-    pr.category_scores["thermal"] = max(thermal)
+    pr.category_scores["thermal"] = thermal[selected_idx]
 
     # Find weakest category
     if pr.category_scores:
@@ -1086,9 +1508,16 @@ def _reason_to_modifiers(
     details: list[ModifierWithConfidence] = []
 
     best = state.sessions[state.best_session_idx]
+    authority = state.sessions[state.authority_session_idx]
+    analysis_sessions = [authority] if state.solve_basis == "latest_validation_veto" else state.sessions
     sra = state.speed_regime
     pr = state.physics
     hc = state.historical
+
+    if state.solve_basis == "latest_validation_veto":
+        reasons.append(
+            f"Authority session {authority.label} overrides best lap {best.label} after failed setup validation."
+        )
 
     # Determine if weakest category should widen clamp ranges
     weak = pr.weakest_category
@@ -1104,16 +1533,16 @@ def _reason_to_modifiers(
         from aero_model import load_car_surfaces
         from aero_model.gradient import compute_gradients
         surfaces = load_car_surfaces(car.canonical_name)
-        wing = best.setup.wing_angle_deg
+        wing = authority.setup.wing_angle_deg
         if wing and wing in surfaces:
             surface = surfaces[wing]
-            f_rh = best.measured.mean_front_rh_at_speed_mm
-            r_rh = best.measured.mean_rear_rh_at_speed_mm
+            f_rh = authority.measured.mean_front_rh_at_speed_mm
+            r_rh = authority.measured.mean_rear_rh_at_speed_mm
             if f_rh and r_rh:
                 grads = compute_gradients(
                     surface, car, f_rh, r_rh,
-                    front_rh_sigma_mm=best.measured.front_rh_std_mm,
-                    rear_rh_sigma_mm=best.measured.rear_rh_std_mm,
+                    front_rh_sigma_mm=authority.measured.front_rh_std_mm,
+                    rear_rh_sigma_mm=authority.measured.rear_rh_std_mm,
                 )
                 # Scale based on gradient steepness
                 max_grad = max(abs(grads.dBalance_dFrontRH), abs(grads.dBalance_dRearRH))
@@ -1125,9 +1554,9 @@ def _reason_to_modifiers(
     except Exception:
         pass
 
-    us_values = [s.measured.understeer_mean_deg for s in state.sessions]
-    us_hs = [s.measured.understeer_high_speed_deg for s in state.sessions]
-    us_ls = [s.measured.understeer_low_speed_deg for s in state.sessions]
+    us_values = [s.measured.understeer_mean_deg for s in analysis_sessions]
+    us_hs = [s.measured.understeer_high_speed_deg for s in analysis_sessions]
+    us_ls = [s.measured.understeer_low_speed_deg for s in analysis_sessions]
 
     mean_us = float(np.mean(us_values)) if us_values else 0.0
     mean_gradient = float(np.mean(us_hs)) - float(np.mean(us_ls)) if us_hs and us_ls else 0.0
@@ -1202,8 +1631,8 @@ def _reason_to_modifiers(
             kerb_dominant_bottoming = True
             break
 
-    front_bottoming = [s.measured.bottoming_event_count_front for s in state.sessions]
-    rear_bottoming = [s.measured.bottoming_event_count_rear for s in state.sessions]
+    front_bottoming = [s.measured.bottoming_event_count_front for s in analysis_sessions]
+    rear_bottoming = [s.measured.bottoming_event_count_rear for s in analysis_sessions]
 
     heave_conf = _compute_modifier_confidence(
         state, "front_heave_min_floor_nmm",
@@ -1212,7 +1641,7 @@ def _reason_to_modifiers(
 
     if float(np.mean(front_bottoming)) > 5 and not kerb_dominant_bottoming:
         heave_rates = [
-            s.setup.front_heave_nmm for s in state.sessions
+            s.setup.front_heave_nmm for s in analysis_sessions
             if s.setup.front_heave_nmm
         ]
         bottoming_at_rate = list(zip(heave_rates, front_bottoming[:len(heave_rates)]))
@@ -1241,7 +1670,7 @@ def _reason_to_modifiers(
     # Rear third floor (currently never set — now we do)
     if float(np.mean(rear_bottoming)) > 5 and not kerb_dominant_bottoming:
         third_rates = [
-            s.setup.rear_third_nmm for s in state.sessions
+            s.setup.rear_third_nmm for s in analysis_sessions
             if hasattr(s.setup, 'rear_third_nmm') and s.setup.rear_third_nmm
         ]
         bottoming_at_rate = list(zip(third_rates, rear_bottoming[:len(third_rates)]))
@@ -1264,7 +1693,11 @@ def _reason_to_modifiers(
 
     # ── 8d. Damper clicks (speed-regime targeted) ──
 
-    settle_times = [s.measured.front_rh_settle_time_ms for s in state.sessions]
+    settle_times = [
+        val
+        for session in analysis_sessions
+        if (val := usable_signal_value(session.measured, "front_rh_settle_time_ms")) is not None
+    ]
     mean_settle = float(np.mean(settle_times)) if settle_times else 125.0
 
     damper_conf = _compute_modifier_confidence(
@@ -1274,25 +1707,42 @@ def _reason_to_modifiers(
     )
 
     # Damping ratio scale from settle time
-    if mean_settle > 200:
+    if settle_times and mean_settle > 200:
         scale = 1.15 if wide_platform else 1.10
         mods.damping_ratio_scale = scale
         reasons.append(
             f"Damping scale {scale:.2f}: slow settle time {mean_settle:.0f}ms (target 100-150ms)"
         )
-    elif mean_settle < 60:
+    elif settle_times and mean_settle < 60:
         scale = 0.88 if wide_platform else 0.92
         mods.damping_ratio_scale = scale
         reasons.append(
             f"Damping scale {scale:.2f}: overdamped settle time {mean_settle:.0f}ms"
         )
+    elif not settle_times:
+        reasons.append("Damping scale unchanged: clean-event settle signal unavailable, using oscillation/shock cross-check only")
 
     # Oscillation frequency cross-check
+    front_osc_freqs = [
+        s.measured.front_shock_oscillation_hz for s in analysis_sessions
+        if hasattr(s.measured, 'front_shock_oscillation_hz')
+        and s.measured.front_shock_oscillation_hz
+        and s.measured.front_shock_oscillation_hz > 0
+    ]
+    if front_osc_freqs:
+        mean_front_osc = float(np.mean(front_osc_freqs))
+        if mean_front_osc > 8.0 and mods.damping_ratio_scale < 1.0:
+            reasons.append(
+                f"  [cross-check] Front oscillation {mean_front_osc:.1f}Hz conflicts with "
+                f"overdamped diagnosis - maintaining current scale"
+            )
+            mods.damping_ratio_scale = 1.0
+
     osc_freqs = [
-        s.measured.rear_shock_oscillation_freq_hz for s in state.sessions
-        if hasattr(s.measured, 'rear_shock_oscillation_freq_hz')
-        and s.measured.rear_shock_oscillation_freq_hz
-        and s.measured.rear_shock_oscillation_freq_hz > 0
+        s.measured.rear_shock_oscillation_hz for s in analysis_sessions
+        if hasattr(s.measured, 'rear_shock_oscillation_hz')
+        and s.measured.rear_shock_oscillation_hz
+        and s.measured.rear_shock_oscillation_hz > 0
     ]
     if osc_freqs:
         mean_osc = float(np.mean(osc_freqs))
@@ -1310,6 +1760,17 @@ def _reason_to_modifiers(
     hs_shock_rears = []
     for cp in state.corner_profiles:
         if cp.speed_class != "high":
+            continue
+        if state.solve_basis == "latest_validation_veto":
+            auth_idx = state.authority_session_idx
+            if auth_idx < len(cp.shock_vel_front_per_session):
+                sv = cp.shock_vel_front_per_session[auth_idx]
+                if sv is not None:
+                    hs_shock_fronts.append(sv)
+            if auth_idx < len(cp.shock_vel_rear_per_session):
+                sv = cp.shock_vel_rear_per_session[auth_idx]
+                if sv is not None:
+                    hs_shock_rears.append(sv)
             continue
         for sv in cp.shock_vel_front_per_session:
             if sv is not None:
@@ -1446,12 +1907,43 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
     for i, snap in enumerate(state.sessions):
         marker = " <-- BEST" if i == state.best_session_idx else ""
         marker = " <-- WORST" if i == state.worst_session_idx and not marker else marker
+        if i == state.authority_session_idx and state.solve_basis != "best_session":
+            marker = f"{marker} <-- AUTHORITY".rstrip()
         lines.append(
             f"  S{i+1}: {snap.lap_time_s:.3f}s  "
             f"{snap.driver.style}  "
             f"[{len(snap.diagnosis.problems)} problems]{marker}"
         )
     lines.append("")
+
+    lines.append("  SOLVE AUTHORITY")
+    lines.append("  " + "-" * (width - 4))
+    lines.append(
+        f"  Basis: {state.solve_basis}  "
+        f"(best=S{state.best_session_idx+1}, authority=S{state.authority_session_idx+1})"
+    )
+    if state.solver_notes:
+        for note in state.solver_notes[:3]:
+            lines.append(f"  {note[:width-2]}")
+    lines.append("")
+
+    failed_clusters = [c for c in state.validation_clusters if c.validated_failed]
+    if failed_clusters:
+        lines.append("  VALIDATION CLUSTERS")
+        lines.append("  " + "-" * (width - 4))
+        for cluster in failed_clusters[:4]:
+            compare = (
+                f" vs {cluster.comparison_session_label}"
+                if cluster.comparison_session_label is not None
+                else ""
+            )
+            lines.append(
+                f"  {cluster.latest_session_label}{compare}: "
+                f"{cluster.penalty_mode.upper()} veto ({cluster.lap_delta_s:+.3f}s)"
+            )
+            for metric in cluster.metric_regressions[:3]:
+                lines.append(f"    {metric[:width-6]}")
+        lines.append("")
 
     # Delta summary (top quality deltas)
     if state.weighted_deltas:
@@ -1492,7 +1984,8 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
             lines.append(
                 f"  T{cp.corner_id:02d} ({cp.speed_class:>4s} "
                 f"{cp.direction:>5s}): "
-                f"avg loss {cp.mean_time_loss:.3f}s  [{issue}]"
+                f"avg opportunity {cp.mean_time_loss:.3f}s  "
+                f"(entry {cp.mean_entry_loss:.3f} / apex {cp.mean_apex_loss:.3f} / exit {cp.mean_exit_loss:.3f})  [{issue}]"
             )
         lines.append("")
 
@@ -1539,7 +2032,8 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
 
     # Category scores (Phase 7b)
     if state.physics.category_scores:
-        lines.append("  CATEGORY SCORES (best session)")
+        title = "  CATEGORY SCORES (selected solve session)"
+        lines.append(title)
         lines.append("  " + "-" * (width - 4))
         for cat, score in sorted(state.physics.category_scores.items(),
                                   key=lambda x: x[1]):
@@ -1691,10 +2185,14 @@ def reason_and_solve(
             f"{snap.driver.style} | {len(snap.diagnosis.problems)} problems | "
             f"{len(snap.corners)} corners")
 
+    _sort_sessions_chronologically(state)
+
     # Find best/worst sessions
     lap_times = [s.lap_time_s for s in state.sessions]
     state.best_session_idx = int(np.argmin(lap_times))
     state.worst_session_idx = int(np.argmax(lap_times))
+    _build_validation_clusters(state)
+    _resolve_authority_session(state)
 
     # ── Phase 2: All-pairs delta analysis ──
     log(f"\n[Phase 2] All-pairs delta analysis...")
@@ -1712,10 +2210,14 @@ def reason_and_solve(
     log(f"\n[Phase 3] Corner profiling...")
     _build_corner_profiles(state)
     log(f"  {len(state.corner_profiles)} corners matched across sessions")
-    log(f"  {len(state.top_weakness_corners)} consistent weakness corners")
+        log(f"  {len(state.top_weakness_corners)} consistent weakness corners")
     for cp in state.top_weakness_corners[:3]:
-        log(f"    T{cp.corner_id:02d} ({cp.speed_class}): "
-            f"avg loss {cp.mean_time_loss:.3f}s [{cp.primary_issue}]")
+        log(
+            f"    T{cp.corner_id:02d} ({cp.speed_class}): "
+            f"avg opportunity {cp.mean_time_loss:.3f}s "
+            f"(E {cp.mean_entry_loss:.3f} / A {cp.mean_apex_loss:.3f} / X {cp.mean_exit_loss:.3f}) "
+            f"[{cp.primary_issue}]"
+        )
 
     # ── Phase 4: Speed-regime analysis ──
     log(f"\n[Phase 4] Speed-regime analysis...")
@@ -1765,12 +2267,17 @@ def reason_and_solve(
     print(report)
 
     best = state.sessions[state.best_session_idx]
-    track = best.track
-    detected_wing = wing or best.setup.wing_angle_deg
-    detected_fuel = fuel or best.setup.fuel_l or 89.0
+    authority = state.sessions[state.authority_session_idx]
+    track = authority.track
+    detected_wing = wing or authority.setup.wing_angle_deg
+    detected_fuel = fuel or authority.setup.fuel_l or 89.0
 
-    log(f"\n[Phase 9] Running 6-step solver (track from S{state.best_session_idx+1}, "
-        f"wing {detected_wing}, fuel {detected_fuel:.0f}L)...")
+    log(
+        f"\n[Phase 9] Running 6-step solver (basis={state.solve_basis}, "
+        f"track from {authority.label}, wing {detected_wing}, fuel {detected_fuel:.0f}L)..."
+    )
+    for note in state.solver_notes:
+        log(f"  {note}")
 
     from aero_model import load_car_surfaces
     from solver.rake_solver import RakeSolver, reconcile_ride_heights
@@ -1792,8 +2299,121 @@ def reason_and_solve(
 
     target_balance = balance_target + mods.df_balance_offset_pct
 
-    # Use the best session's measured state for damper telemetry validation
-    best_measured = best.measured
+    # Use the authority session's measured state for damper telemetry validation
+    authority_measured = authority.measured
+
+    def _candidate_veto_for_solution(step1, step2, step3, step4, step5, step6) -> CandidateVeto | None:
+        fingerprint = fingerprint_from_solver_steps(
+            wing=detected_wing,
+            fuel_l=detected_fuel,
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step4=step4,
+            step5=step5,
+            step6=step6,
+        )
+        matched = match_failed_cluster(fingerprint, state.validation_clusters)
+        if matched is None:
+            return None
+        penalty = 1e6 if matched.penalty_mode == "hard" else 5e4
+        return CandidateVeto(
+            fingerprint=fingerprint,
+            matched_session_label=matched.latest_session_label,
+            matched_session_idx=matched.latest_session_idx,
+            reason=matched.reason,
+            penalty=penalty,
+            penalty_mode=matched.penalty_mode,
+        )
+
+    def _run_sequential_solver():
+        rake_solver = RakeSolver(car, surface, track)
+        _step1 = rake_solver.solve(
+            target_balance=target_balance,
+            fuel_load_l=detected_fuel,
+            pin_front_min=True,
+        )
+
+        heave_solver = HeaveSolver(car, track)
+        _step2 = heave_solver.solve(
+            dynamic_front_rh_mm=_step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=_step1.dynamic_rear_rh_mm,
+            front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
+            rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+            front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
+            front_pushrod_mm=_step1.front_pushrod_offset_mm,
+            rear_pushrod_mm=_step1.rear_pushrod_offset_mm,
+            fuel_load_l=detected_fuel,
+            front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+        )
+
+        corner_solver = CornerSpringSolver(car, track)
+        _step3 = corner_solver.solve(
+            front_heave_nmm=_step2.front_heave_nmm,
+            rear_third_nmm=_step2.rear_third_nmm,
+            fuel_load_l=detected_fuel,
+        )
+
+        _rear_wheel_rate_nmm = _step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+
+        heave_solver.reconcile_solution(
+            _step1,
+            _step2,
+            _step3,
+            fuel_load_l=detected_fuel,
+            front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+            verbose=False,
+        )
+        reconcile_ride_heights(
+            car,
+            _step1,
+            _step2,
+            _step3,
+            fuel_load_l=detected_fuel,
+            track_name=track.track_name,
+            verbose=False,
+        )
+
+        arb_solver = ARBSolver(car, track)
+        _step4 = arb_solver.solve(
+            front_wheel_rate_nmm=_step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=_rear_wheel_rate_nmm,
+            lltd_offset=mods.lltd_offset,
+        )
+
+        geom_solver = WheelGeometrySolver(car, track)
+        _step5 = geom_solver.solve(
+            k_roll_total_nm_deg=_step4.k_roll_front_total + _step4.k_roll_rear_total,
+            front_wheel_rate_nmm=_step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=_rear_wheel_rate_nmm,
+            fuel_load_l=detected_fuel,
+        )
+
+        reconcile_ride_heights(
+            car,
+            _step1,
+            _step2,
+            _step3,
+            step5=_step5,
+            fuel_load_l=detected_fuel,
+            track_name=track.track_name,
+            verbose=False,
+        )
+
+        damper_solver = DamperSolver(car, track)
+        _step6 = damper_solver.solve(
+            front_wheel_rate_nmm=_step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=_rear_wheel_rate_nmm,
+            front_dynamic_rh_mm=_step1.dynamic_front_rh_mm,
+            rear_dynamic_rh_mm=_step1.dynamic_rear_rh_mm,
+            fuel_load_l=detected_fuel,
+            damping_ratio_scale=mods.damping_ratio_scale,
+            measured=authority_measured,
+            front_heave_nmm=_step2.front_heave_nmm,
+            rear_third_nmm=_step2.rear_third_nmm,
+        )
+        _apply_damper_modifiers(_step6, mods, car)
+        return _step1, _step2, _step3, _step4, _step5, _step6, _rear_wheel_rate_nmm
 
     # Try constrained optimizer first
     optimized = optimize_if_supported(
@@ -1804,12 +2424,16 @@ def reason_and_solve(
         balance_tolerance=0.1,
         fuel_load_l=detected_fuel,
         pin_front_min=True,
+        wing_angle=detected_wing,
         damping_ratio_scale=mods.damping_ratio_scale,
         lltd_offset=mods.lltd_offset,
-        measured=best_measured,
+        measured=authority_measured,
+        failed_validation_clusters=state.validation_clusters,
     )
+    state.candidate_vetoes = list(optimized.candidate_vetoes) if optimized is not None else []
+    solver_selection_note = ""
 
-    if optimized is not None:
+    if optimized is not None and not optimized.all_candidates_vetoed:
         step1 = optimized.step1
         step2 = optimized.step2
         step3 = optimized.step3
@@ -1818,86 +2442,36 @@ def reason_and_solve(
         step6 = optimized.step6
         _apply_damper_modifiers(step6, mods, car)
         rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+        solver_selection_note = "Selected BMW/Sebring constrained optimizer candidate."
     else:
-        # Sequential solver path
-        rake_solver = RakeSolver(car, surface, track)
-        step1 = rake_solver.solve(
-            target_balance=target_balance,
-            fuel_load_l=detected_fuel,
-            pin_front_min=True,
-        )
+        if optimized is not None and optimized.all_candidates_vetoed:
+            log("  All optimizer candidates matched a failed validation cluster; trying sequential fallback...")
 
-        heave_solver = HeaveSolver(car, track)
-        step2 = heave_solver.solve(
-            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-            front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
-            rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
-            front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
-            front_pushrod_mm=step1.front_pushrod_offset_mm,
-            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-            fuel_load_l=detected_fuel,
-            front_camber_deg=best.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-        )
+        step1, step2, step3, step4, step5, step6, rear_wheel_rate_nmm = _run_sequential_solver()
+        sequential_veto = _candidate_veto_for_solution(step1, step2, step3, step4, step5, step6)
+        if sequential_veto is None:
+            solver_selection_note = "Rejected vetoed optimizer candidate; selected sequential fallback."
+        elif optimized is None:
+            state.candidate_vetoes.append(sequential_veto)
+            solver_selection_note = (
+                "Sequential solver also matched a failed validation cluster; using best available fallback with warning."
+            )
+        else:
+            state.candidate_vetoes.append(sequential_veto)
+            step1 = optimized.step1
+            step2 = optimized.step2
+            step3 = optimized.step3
+            step4 = optimized.step4
+            step5 = optimized.step5
+            step6 = optimized.step6
+            _apply_damper_modifiers(step6, mods, car)
+            rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+            solver_selection_note = (
+                "Sequential fallback also matched the rejected setup; returning lowest-penalty optimizer candidate with warning."
+            )
 
-        corner_solver = CornerSpringSolver(car, track)
-        step3 = corner_solver.solve(
-            front_heave_nmm=step2.front_heave_nmm,
-            rear_third_nmm=step2.rear_third_nmm,
-            fuel_load_l=detected_fuel,
-        )
-
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-
-        heave_solver.reconcile_solution(
-            step1, step2, step3,
-            fuel_load_l=detected_fuel,
-            front_camber_deg=best.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            verbose=False,
-        )
-        reconcile_ride_heights(
-            car, step1, step2, step3,
-            fuel_load_l=detected_fuel,
-            track_name=track.track_name,
-            verbose=False,
-        )
-
-        arb_solver = ARBSolver(car, track)
-        step4 = arb_solver.solve(
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            lltd_offset=mods.lltd_offset,
-        )
-
-        geom_solver = WheelGeometrySolver(car, track)
-        step5 = geom_solver.solve(
-            k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            fuel_load_l=detected_fuel,
-        )
-
-        reconcile_ride_heights(
-            car, step1, step2, step3,
-            step5=step5,
-            fuel_load_l=detected_fuel,
-            track_name=track.track_name,
-            verbose=False,
-        )
-
-        damper_solver = DamperSolver(car, track)
-        step6 = damper_solver.solve(
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-            fuel_load_l=detected_fuel,
-            damping_ratio_scale=mods.damping_ratio_scale,
-            measured=best_measured,
-            front_heave_nmm=step2.front_heave_nmm,
-            rear_third_nmm=step2.rear_third_nmm,
-        )
-        _apply_damper_modifiers(step6, mods, car)
+    if solver_selection_note:
+        state.solver_notes.append(solver_selection_note)
 
     # Supporting params: use most consistent driver profile
     drivers_by_consistency = sorted(
@@ -1915,6 +2489,26 @@ def reason_and_solve(
     )
     supporting = supporting_solver.solve()
 
+    # Ferrari passthrough: only for indexed params where we can't map index → physical
+    # stiffness. Solver computes dampers, geometry, brake/diff/TC from telemetry.
+    if car.canonical_name == "ferrari":
+        _cs = authority.setup
+        # Pushrod — keep IBT values (calibrated model but limited data points)
+        step1.front_pushrod_offset_mm = _cs.front_pushrod_mm
+        step1.rear_pushrod_offset_mm = _cs.rear_pushrod_mm
+        # Springs — indexed dropdowns, can't map to physical stiffness
+        step2.front_heave_nmm = _cs.front_heave_nmm
+        step2.perch_offset_front_mm = _cs.front_heave_perch_mm
+        step2.rear_third_nmm = _cs.rear_third_nmm
+        step2.perch_offset_rear_mm = _cs.rear_third_perch_mm
+        step3.front_torsion_od_mm = _cs.front_torsion_od_mm
+        step3.rear_spring_rate_nmm = _cs.rear_spring_nmm
+        step3.rear_spring_perch_mm = 0.0
+        # ARBs — stiffness uncalibrated, pass through size (solver computes blade)
+        step4.front_arb_size = _cs.front_arb_size
+        step4.rear_arb_size = _cs.rear_arb_size
+        # Geometry, dampers, brake/diff/TC — solver computes from telemetry
+
     # ── Output ──
     if sto_path:
         from output.setup_writer import write_sto
@@ -1927,6 +2521,23 @@ def reason_and_solve(
         for w in garage_warnings:
             log(f"[garage] {w}")
 
+        _extra_kw = {}
+        if car.canonical_name == "ferrari":
+            _cs = authority.setup
+            _extra_kw["front_tb_turns"] = _cs.torsion_bar_turns
+            _extra_kw["rear_tb_turns"] = _cs.rear_torsion_bar_turns
+        _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
+        _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
+        _extra_kw["diff_coast_drive_ramp"] = (
+            ("More Locking" if supporting.diff_ramp_coast <= 45 else "Less Locking")
+            if car.canonical_name == "ferrari"
+            else f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}"
+        )
+        _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
+        _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
+        _extra_kw["tc_gain"] = supporting.tc_gain
+        _extra_kw["tc_slip"] = supporting.tc_slip
+
         write_sto(
             car_name=car.name,
             track_name=f"{track.track_name} — {track.track_config}",
@@ -1936,13 +2547,7 @@ def reason_and_solve(
             step4=step4, step5=step5, step6=step6,
             output_path=sto_path,
             car_canonical=car.canonical_name,
-            tyre_pressure_kpa=supporting.tyre_cold_fl_kpa,
-            brake_bias_pct=supporting.brake_bias_pct,
-            diff_coast_drive_ramp=f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}",
-            diff_clutch_plates=supporting.diff_clutch_plates,
-            diff_preload_nm=supporting.diff_preload_nm,
-            tc_gain=supporting.tc_gain,
-            tc_slip=supporting.tc_slip,
+            **_extra_kw,
         )
         log(f"\n.sto setup saved to: {sto_path}")
 
@@ -1953,6 +2558,8 @@ def reason_and_solve(
             "car": car.name,
             "sessions_analyzed": len(state.sessions),
             "best_session": state.sessions[state.best_session_idx].label,
+            "authority_session": state.sessions[state.authority_session_idx].label,
+            "solve_basis": state.solve_basis,
             "reasoning_modifiers": {
                 "df_balance_offset": mods.df_balance_offset_pct,
                 "lltd_offset": mods.lltd_offset,
@@ -2025,6 +2632,16 @@ def reason_and_solve(
                 if pl.direction != "unknown"
             },
             "persistent_problems": state.persistent_problems,
+            "setup_fingerprints": [
+                {
+                    "session": state.sessions[idx].label,
+                    "fingerprint": fp.to_dict(),
+                }
+                for idx, fp in enumerate(state.setup_fingerprints)
+            ],
+            "validation_clusters": [cluster.to_dict() for cluster in state.validation_clusters],
+            "candidate_vetoes": [veto.to_dict() for veto in state.candidate_vetoes],
+            "solver_notes": state.solver_notes,
             "step1_rake": dataclasses.asdict(step1),
             "step2_heave": dataclasses.asdict(step2),
             "step3_corner": dataclasses.asdict(step3),
@@ -2043,18 +2660,25 @@ def reason_and_solve(
     report = generate_report(
         car=car,
         track=track,
-        measured=best_measured,
-        driver=best_driver.driver,
-        diagnosis=best.diagnosis,
-        corners=best.corners,
+        measured=authority_measured,
+        driver=authority.driver,
+        diagnosis=authority.diagnosis,
+        corners=authority.corners,
         aero_grad=None,
         modifiers=mods,
         step1=step1, step2=step2, step3=step3,
         step4=step4, step5=step5, step6=step6,
         supporting=supporting,
-        current_setup=best.setup,
+        current_setup=authority.setup,
         wing=detected_wing,
         target_balance=target_balance,
+        solve_context_lines=state.solver_notes + [
+            f"Authority session: {authority.label}",
+            f"Benchmark best session: {best.label}",
+        ] + [
+            f"Rejected prior candidate matching {v.matched_session_label}: {v.reason}"
+            for v in state.candidate_vetoes[:2]
+        ],
         compact=True,
     )
     print(report)
@@ -2081,6 +2705,8 @@ def main() -> None:
     parser.add_argument("--balance", type=float, default=50.14, help="Target DF balance %%")
     parser.add_argument("--sto", type=str, default=None, help="Output .sto file")
     parser.add_argument("--json", type=str, default=None, help="Output JSON file")
+    parser.add_argument("--learn", action="store_true",
+                        help="Ingest sessions into learner knowledge base after solving")
 
     args = parser.parse_args()
 
@@ -2093,7 +2719,7 @@ def main() -> None:
             print(f"ERROR: IBT not found: {p}")
             sys.exit(1)
 
-    reason_and_solve(
+    state = reason_and_solve(
         car_name=args.car,
         ibt_paths=args.ibt,
         wing=args.wing,
@@ -2102,6 +2728,16 @@ def main() -> None:
         sto_path=args.sto,
         json_path=args.json,
     )
+
+    if args.learn:
+        from learner.ingest import ingest_ibt
+        print("\n[learn] Ingesting sessions into knowledge base...")
+        for p in args.ibt:
+            try:
+                ingest_ibt(car_name=args.car, ibt_path=p, wing=args.wing)
+                print(f"  [learn] Ingested: {Path(p).name}")
+            except Exception as e:
+                print(f"  [learn] Failed: {Path(p).name}: {e}")
 
 
 if __name__ == "__main__":
