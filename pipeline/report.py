@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from car_model.garage import GarageSetupState
+from analyzer.telemetry_truth import summarize_signal_quality
 
 if TYPE_CHECKING:
     from aero_model.gradient import AeroGradients
@@ -170,6 +171,31 @@ def generate_report(
     if getattr(diagnosis, "causal_diagnosis", None):
         a(f"  Causal chain: {str(diagnosis.causal_diagnosis)[:W - 16]}")
     a("")
+
+    signal_lines = summarize_signal_quality(measured)
+    if signal_lines:
+        a(_hdr("SIGNAL CONFIDENCE"))
+        for line in signal_lines:
+            a(f"  {line[:W - 2]}")
+        if getattr(measured, "metric_fallbacks", None):
+            for fallback in measured.metric_fallbacks[:5]:
+                a(f"  Fallback: {fallback[:W - 14]}")
+        a("")
+
+    if (
+        current_setup.brake_bias_target != 0.0
+        or current_setup.brake_bias_migration != 0.0
+        or current_setup.front_master_cyl_mm > 0.0
+        or current_setup.rear_master_cyl_mm > 0.0
+        or current_setup.pad_compound
+    ):
+        a(_hdr("BRAKE HARDWARE (FROM IBT)"))
+        a(_row("Brake bias target", f"{current_setup.brake_bias_target:+.1f}"))
+        a(_row("Brake migration", f"{current_setup.brake_bias_migration:+.1f}"))
+        a(_row("Front master cyl", f"{current_setup.front_master_cyl_mm:.1f} mm"))
+        a(_row("Rear master cyl", f"{current_setup.rear_master_cyl_mm:.1f} mm"))
+        a(_row("Pad compound", current_setup.pad_compound or "unknown"))
+        a("")
 
     # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
     a(print_full_setup_report(

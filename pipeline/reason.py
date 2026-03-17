@@ -1927,6 +1927,20 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
             lines.append(f"  {note[:width-2]}")
     lines.append("")
 
+    lines.append("  SIGNAL CONFIDENCE")
+    lines.append("  " + "-" * (width - 4))
+    authority = state.sessions[state.authority_session_idx]
+    signal_lines = summarize_signal_quality(authority.measured)
+    if signal_lines:
+        lines.append(f"  Authority {authority.label}:")
+        for line in signal_lines[:4]:
+            lines.append(f"    {line[:width-6]}")
+        for fallback in authority.measured.metric_fallbacks[:4]:
+            lines.append(f"    Fallback: {fallback[:width-16]}")
+    else:
+        lines.append("  No telemetry signal summary available.")
+    lines.append("")
+
     failed_clusters = [c for c in state.validation_clusters if c.validated_failed]
     if failed_clusters:
         lines.append("  VALIDATION CLUSTERS")
@@ -2638,6 +2652,15 @@ def reason_and_solve(
                     "fingerprint": fp.to_dict(),
                 }
                 for idx, fp in enumerate(state.setup_fingerprints)
+            ],
+            "session_signal_quality": [
+                {
+                    "session": snap.label,
+                    "summary": summarize_signal_quality(snap.measured),
+                    "telemetry_bundle": snap.measured.telemetry_bundle,
+                    "telemetry_signals": signals_to_dict(snap.measured.telemetry_signals),
+                }
+                for snap in state.sessions
             ],
             "validation_clusters": [cluster.to_dict() for cluster in state.validation_clusters],
             "candidate_vetoes": [veto.to_dict() for veto in state.candidate_vetoes],
