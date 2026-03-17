@@ -601,9 +601,9 @@ def _build_health_models(state: ReasoningState) -> None:
         and snap.session_context.comparable_to_baseline
         and snap.diagnosis.assessment in {"fast", "competitive"}
     ]
-    if not healthy_sessions:
+    if len(healthy_sessions) < 3:
         ranked = sorted(state.sessions, key=lambda snap: snap.lap_time_s)
-        healthy_sessions = ranked[: min(2, len(ranked))]
+        healthy_sessions = ranked[: min(3, len(ranked))]
 
     source_labels = [snap.label for snap in healthy_sessions]
     state.telemetry_envelope = build_telemetry_envelope(
@@ -623,6 +623,24 @@ def _build_health_models(state: ReasoningState) -> None:
         snap.label: compute_setup_distance(snap.setup, state.setup_cluster)
         for snap in state.sessions
     }
+    min_sample_gate = 3
+    if state.telemetry_envelope is not None and state.telemetry_envelope.sample_count < min_sample_gate:
+        state.reasoning_log.append("Telemetry envelope sample count below gate; distances are advisory only.")
+    if state.setup_cluster is not None and len(state.setup_cluster.member_sessions) < min_sample_gate:
+        state.reasoning_log.append("Setup cluster sample count below gate; distances are advisory only.")
+
+    from analyzer.overhaul import assess_overhaul
+
+    for snap in state.sessions:
+        env_distance = state.envelope_distances.get(snap.label)
+        setup_distance = state.setup_distances.get(snap.label)
+        gated_env = env_distance.total_score if env_distance is not None and state.telemetry_envelope.sample_count >= min_sample_gate else None
+        gated_setup = setup_distance.distance_score if setup_distance is not None and len(state.setup_cluster.member_sessions) >= min_sample_gate else None
+        snap.diagnosis.overhaul_assessment = assess_overhaul(
+            snap.diagnosis.state_issues,
+            telemetry_envelope_distance=gated_env,
+            setup_cluster_distance=gated_setup,
+        )
 
 
 def _apply_selected_candidate_outputs(
@@ -699,8 +717,16 @@ def _compute_authority_scores(state: ReasoningState) -> None:
         diagnosis_component = assessment_scores.get(snap.diagnosis.assessment, 0.6)
         context_component = snap.session_context.overall_score if snap.session_context is not None else 0.5
         signal_component, signal_notes = _session_signal_quality_score(snap)
-        envelope_penalty = state.envelope_distances.get(snap.label).total_score if snap.label in state.envelope_distances else 0.0
-        setup_penalty = state.setup_distances.get(snap.label).distance_score if snap.label in state.setup_distances else 0.0
+        envelope_penalty = (
+            state.envelope_distances.get(snap.label).total_score
+            if snap.label in state.envelope_distances and state.telemetry_envelope is not None and state.telemetry_envelope.sample_count >= 3
+            else 0.0
+        )
+        setup_penalty = (
+            state.setup_distances.get(snap.label).distance_score
+            if snap.label in state.setup_distances and state.setup_cluster is not None and len(state.setup_cluster.member_sessions) >= 3
+            else 0.0
+        )
         score = (
             lap_component * 0.35
             + diagnosis_component * 0.25
@@ -2780,6 +2806,7 @@ def reason_and_solve(
             "supporting": supporting,
         },
         prediction_corrections=dict(state.historical.prediction_corrections),
+        setup_cluster=state.setup_cluster if state.setup_cluster is not None and len(state.setup_cluster.member_sessions) >= 3 else None,
     )
     selected_candidate = next((candidate for candidate in state.generated_candidates if candidate.selected), None)
     if selected_candidate is not None:

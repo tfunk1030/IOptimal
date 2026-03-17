@@ -65,6 +65,8 @@ class DiffSolution:
     # Computed values
     lock_pct_coast: float       # % locked under coast/braking (0-100)
     lock_pct_drive: float       # % locked under drive/accel (0-100)
+    preload_contribution_pct: float
+    plate_contribution_pct: float
     preload_nm: float           # recommended preload (Nm)
     coast_ramp_deg: int         # recommended coast ramp (40/45/50 deg)
     drive_ramp_deg: int         # recommended drive ramp (65/70/75 deg)
@@ -93,6 +95,7 @@ class DiffSolution:
             "",
             f"  Lock % coast/entry: {self.lock_pct_coast:.1f}%",
             f"  Lock % drive/exit:  {self.lock_pct_drive:.1f}%",
+            f"  Lock contributions: preload={self.preload_contribution_pct:.1f}%  plates={self.plate_contribution_pct:.1f}%",
             "",
             f"  Exit understeer index:  {self.exit_understeer_index:+.3f}",
             f"  Entry rotation index:   {self.entry_rotation_index:+.3f}",
@@ -223,9 +226,14 @@ class DiffSolver:
         # 50% coast lock is neutral — more = stable (less rotation), less = rotating
         entry_rotation_index = (50.0 - lock_pct_coast) / 100.0
 
+        preload_component = self._lock_pct(preload_nm, 0, coast_ramp, torque_input)
+        plate_component = max(0.0, lock_pct_coast - preload_component)
+
         return DiffSolution(
             lock_pct_coast=round(lock_pct_coast, 1),
             lock_pct_drive=round(lock_pct_drive, 1),
+            preload_contribution_pct=round(preload_component, 1),
+            plate_contribution_pct=round(plate_component, 1),
             preload_nm=round(preload_nm / 5) * 5,  # iRacing garage: 5 Nm increments
             coast_ramp_deg=coast_ramp,
             drive_ramp_deg=drive_ramp,
