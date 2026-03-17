@@ -30,7 +30,7 @@ def assess_overhaul(
         )
 
     weighted_score = sum(issue.severity * issue.confidence for issue in state_issues)
-    major_states = [issue for issue in state_issues if issue.severity >= 0.6 and issue.confidence >= 0.55]
+    major_states = [issue for issue in state_issues if issue.severity >= 0.65 and issue.confidence >= 0.6]
     advisory_states = {"thermal_window_invalid"}
     core_states = [issue for issue in state_issues if issue.state_id not in advisory_states]
     core_weighted_score = sum(issue.severity * issue.confidence for issue in core_states)
@@ -68,23 +68,34 @@ def assess_overhaul(
     if setup_cluster_distance is not None:
         reasons.append(f"Setup cluster distance: {setup_cluster_distance:.2f}")
 
+    breadth_score = len(implicated_steps)
     if (
-        core_weighted_score >= 2.3
+        core_weighted_score >= 2.5
         and len(major_core_states) >= 3
         and len(major_platform_safety) >= 2
+        and breadth_score >= 3
         and (len(confirming_reset) >= 1 or len(major_core_states) >= 4)
     ):
         classification = "baseline_reset"
-    elif core_weighted_score >= 1.0 or (len(major_core_states) >= 2 and len(implicated_steps) >= 2):
+    elif core_weighted_score >= 1.2 or len(major_core_states) >= 2 or breadth_score >= 3:
         classification = "moderate_rework"
     else:
         classification = "minor_tweak"
 
     if classification != "baseline_reset":
-        if (telemetry_envelope_distance or 0.0) >= 2.4 or (setup_cluster_distance or 0.0) >= 2.4:
-            classification = "baseline_reset" if core_weighted_score >= 1.7 and len(major_platform_safety) >= 1 else "moderate_rework"
+        if (
+            ((telemetry_envelope_distance or 0.0) >= 3.0 or (setup_cluster_distance or 0.0) >= 3.0)
+            and core_weighted_score >= 2.2
+            and len(major_platform_safety) >= 1
+            and breadth_score >= 3
+        ):
+            classification = "baseline_reset"
         elif classification == "minor_tweak" and (
-            (telemetry_envelope_distance or 0.0) >= 1.5 or (setup_cluster_distance or 0.0) >= 1.5
+            (
+                (telemetry_envelope_distance or 0.0) >= 1.8
+                or (setup_cluster_distance or 0.0) >= 1.8
+            )
+            and core_weighted_score >= 0.9
         ):
             classification = "moderate_rework"
 

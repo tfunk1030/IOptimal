@@ -717,6 +717,14 @@ def _compute_authority_scores(state: ReasoningState) -> None:
         diagnosis_component = assessment_scores.get(snap.diagnosis.assessment, 0.6)
         context_component = snap.session_context.overall_score if snap.session_context is not None else 0.5
         signal_component, signal_notes = _session_signal_quality_score(snap)
+        critical_count = sum(1 for problem in snap.diagnosis.problems if getattr(problem, "severity", "") == "critical")
+        significant_count = sum(1 for problem in snap.diagnosis.problems if getattr(problem, "severity", "") == "significant")
+        hard_failure_penalty = min(0.35, critical_count * 0.18 + significant_count * 0.05)
+        state_risk = sum(
+            getattr(issue, "severity", 0.0) * getattr(issue, "confidence", 0.0)
+            for issue in getattr(snap.diagnosis, "state_issues", [])[:6]
+        )
+        state_component = max(0.0, 1.0 - min(1.0, state_risk / 3.0))
         envelope_penalty = (
             state.envelope_distances.get(snap.label).total_score
             if snap.label in state.envelope_distances and state.telemetry_envelope is not None and state.telemetry_envelope.sample_count >= 3
@@ -728,15 +736,22 @@ def _compute_authority_scores(state: ReasoningState) -> None:
             else 0.0
         )
         score = (
-            lap_component * 0.35
-            + diagnosis_component * 0.25
-            + context_component * 0.2
-            + signal_component * 0.2
+            lap_component * 0.28
+            + diagnosis_component * 0.2
+            + context_component * 0.18
+            + signal_component * 0.16
+            + state_component * 0.18
         )
+        score -= hard_failure_penalty
         score -= min(0.18, envelope_penalty * 0.035)
         score -= min(0.12, setup_penalty * 0.025)
         if snap.session_context is not None and not snap.session_context.comparable_to_baseline:
-            score *= 0.8
+            score *= 0.82
+        if any(
+            cluster.validated_failed and snap.label in cluster.session_labels
+            for cluster in state.validation_clusters
+        ):
+            score -= 0.12
         row = {
             "session_idx": idx,
             "session": snap.label,
@@ -745,9 +760,17 @@ def _compute_authority_scores(state: ReasoningState) -> None:
             "diagnosis_component": round(diagnosis_component, 3),
             "context_component": round(context_component, 3),
             "signal_component": round(signal_component, 3),
+            "state_component": round(state_component, 3),
+            "hard_failure_penalty": round(hard_failure_penalty, 3),
+            "state_risk": round(state_risk, 3),
             "envelope_distance": round(envelope_penalty, 3),
             "setup_distance": round(setup_penalty, 3),
-            "notes": list((snap.session_context.notes if snap.session_context is not None else [])[:4]) + signal_notes,
+            "notes": (
+                list((snap.session_context.notes if snap.session_context is not None else [])[:4])
+                + signal_notes
+                + ([f"critical={critical_count}"] if critical_count else [])
+                + ([f"state_risk={state_risk:.2f}"] if state_risk > 0 else [])
+            ),
         }
         authority_rows.append(row)
 
