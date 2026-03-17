@@ -281,7 +281,10 @@ class ARBSolver:
         best_lltd_error = float("inf")
 
         # Search over all rear ARB sizes and blades
+        # Skip "Disconnected" — 0 stiffness is not a valid race setup
         for rear_size in arb.rear_size_labels:
+            if rear_size.lower() == "disconnected":
+                continue
             for blade in range(1, arb.rear_blade_count + 1):
                 lltd, _, _, _, _ = self._compute_lltd(
                     farb_size, farb_blade, rear_size, blade,

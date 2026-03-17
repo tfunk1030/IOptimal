@@ -64,7 +64,10 @@
       "Bash(git merge-tree:*)",
       "Bash(sort -u -k2)",
       "Bash(python:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(where python:*)",
+      "Bash(ls C:UsersVYRALIOptimal*.py)",
+      "Bash(ls -lh /c/Users/VYRAL/IOptimal/ibtfiles/ferrari*)"
     ]
   }
 }

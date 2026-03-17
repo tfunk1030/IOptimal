@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from analyzer.adaptive_thresholds import AdaptiveThresholds
 from analyzer.extract import MeasuredState
 from analyzer.setup_reader import CurrentSetup
+from analyzer.telemetry_truth import get_signal
 from car_model.cars import CarModel
 
 
@@ -721,37 +722,40 @@ def _check_dampers(
 ) -> None:
     """Check damper response: settle time, yaw correlation, roll rate."""
 
+    front_settle = get_signal(m, "front_rh_settle_time_ms")
+    rear_settle = get_signal(m, "rear_rh_settle_time_ms")
+
     # Settle time too long (underdamped)
     settle_upper = t.settle_time_upper_ms
-    if m.front_rh_settle_time_ms > settle_upper:
+    if front_settle.usable() and float(front_settle.value) > settle_upper:
         problems.append(Problem(
             category="damper",
-            severity="significant" if m.front_rh_settle_time_ms > settle_upper * 1.75 else "minor",
-            symptom=f"Front settle time {m.front_rh_settle_time_ms:.0f}ms (target <{settle_upper:.0f}ms)",
+            severity="significant" if float(front_settle.value) > settle_upper * 1.75 else "minor",
+            symptom=f"Front settle time {float(front_settle.value):.0f}ms (target <{settle_upper:.0f}ms)",
             cause=(
                 "Front suspension takes too long to recover from bumps. "
                 "Underdamped: platform oscillates instead of settling. "
                 "Increase front LS rebound damping."
             ),
             speed_context="all",
-            measured=m.front_rh_settle_time_ms,
+            measured=float(front_settle.value),
             threshold=settle_upper,
             units="ms",
             priority=3,
         ))
 
-    if m.rear_rh_settle_time_ms > settle_upper:
+    if rear_settle.usable() and float(rear_settle.value) > settle_upper:
         problems.append(Problem(
             category="damper",
-            severity="significant" if m.rear_rh_settle_time_ms > settle_upper * 1.75 else "minor",
-            symptom=f"Rear settle time {m.rear_rh_settle_time_ms:.0f}ms (target <{settle_upper:.0f}ms)",
+            severity="significant" if float(rear_settle.value) > settle_upper * 1.75 else "minor",
+            symptom=f"Rear settle time {float(rear_settle.value):.0f}ms (target <{settle_upper:.0f}ms)",
             cause=(
                 "Rear suspension takes too long to recover from bumps. "
                 "Underdamped: platform oscillates instead of settling. "
                 "Increase rear LS rebound damping."
             ),
             speed_context="all",
-            measured=m.rear_rh_settle_time_ms,
+            measured=float(rear_settle.value),
             threshold=settle_upper,
             units="ms",
             priority=3,
@@ -759,34 +763,34 @@ def _check_dampers(
 
     # Settle time too short (overdamped, losing compliance)
     settle_lower = t.settle_time_lower_ms
-    if 0 < m.front_rh_settle_time_ms < settle_lower:
+    if front_settle.usable() and 0 < float(front_settle.value) < settle_lower:
         problems.append(Problem(
             category="damper",
             severity="minor",
-            symptom=f"Front settle time {m.front_rh_settle_time_ms:.0f}ms (too fast, <{settle_lower:.0f}ms)",
+            symptom=f"Front settle time {float(front_settle.value):.0f}ms (too fast, <{settle_lower:.0f}ms)",
             cause=(
                 "Front suspension overdamped. Fast settle but loses "
                 "compliance over bumps. Tyre load variation increases, "
                 "reducing average grip. Reduce front LS rebound."
             ),
             speed_context="all",
-            measured=m.front_rh_settle_time_ms,
+            measured=float(front_settle.value),
             threshold=settle_lower,
             units="ms",
             priority=3,
         ))
 
-    if 0 < m.rear_rh_settle_time_ms < settle_lower:
+    if rear_settle.usable() and 0 < float(rear_settle.value) < settle_lower:
         problems.append(Problem(
             category="damper",
             severity="minor",
-            symptom=f"Rear settle time {m.rear_rh_settle_time_ms:.0f}ms (too fast, <{settle_lower:.0f}ms)",
+            symptom=f"Rear settle time {float(rear_settle.value):.0f}ms (too fast, <{settle_lower:.0f}ms)",
             cause=(
                 "Rear suspension overdamped. Fast settle but loses "
                 "compliance over bumps. Reduce rear LS rebound."
             ),
             speed_context="all",
-            measured=m.rear_rh_settle_time_ms,
+            measured=float(rear_settle.value),
             threshold=settle_lower,
             units="ms",
             priority=3,

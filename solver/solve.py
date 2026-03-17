@@ -195,6 +195,7 @@ def run_solver(args: "argparse.Namespace") -> None:
         balance_tolerance=args.tolerance,
         fuel_load_l=args.fuel,
         pin_front_min=not args.free,
+        wing_angle=args.wing,
         legacy_solver=args.legacy_solver,
         camber_confidence=_camber_conf,
     )

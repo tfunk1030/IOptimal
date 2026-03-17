@@ -1031,23 +1031,25 @@ BMW_M_HYBRID_V8 = CarModel(
         min_static_defl_mm=3.0,
         max_torsion_bar_defl_mm=25.0,
         torsion_bar_rate_c=0.0008036,
-        heave_spring_defl_max_intercept_mm=106.43,
-        heave_spring_defl_max_slope=-0.310,
-        front_intercept=47.51,
-        front_coeff_pushrod=0.70,
-        front_coeff_heave_nmm=-0.001703,
-        front_coeff_heave_perch_mm=-0.003244,
-        front_coeff_torsion_od_mm=0.085293,
-        front_coeff_camber_deg=0.249827,
-        front_coeff_fuel_l=-0.001919,
-        rear_intercept=118.685053,
-        rear_coeff_pushrod=0.371743,
-        rear_coeff_third_nmm=0.014471,
-        rear_coeff_third_perch_mm=-1.101140,
-        rear_coeff_rear_spring_nmm=0.045074,
-        rear_coeff_rear_spring_perch_mm=-0.937916,
-        rear_coeff_front_heave_perch_mm=-0.068204,
-        rear_coeff_fuel_l=-0.008140,
+        heave_spring_defl_max_intercept_mm=96.019667,
+        heave_spring_defl_max_slope=-0.082843,
+        # Front RH: R²=0.896, RMSE=0.174mm (N=38, 2026-03-16)
+        front_intercept=31.637911,
+        front_coeff_pushrod=0.028537,
+        front_coeff_heave_nmm=0.003811,
+        front_coeff_heave_perch_mm=-0.008468,
+        front_coeff_torsion_od_mm=-0.045199,
+        front_coeff_camber_deg=0.161470,
+        front_coeff_fuel_l=-0.001455,
+        # Rear RH: R²=0.381, RMSE=0.721mm (N=38, 2026-03-16)
+        rear_intercept=50.125412,
+        rear_coeff_pushrod=0.108166,
+        rear_coeff_third_nmm=0.008464,
+        rear_coeff_third_perch_mm=0.0,
+        rear_coeff_rear_spring_nmm=-0.001624,
+        rear_coeff_rear_spring_perch_mm=-0.035797,
+        rear_coeff_front_heave_perch_mm=0.008780,
+        rear_coeff_fuel_l=-0.008216,
         torsion_turns_intercept=0.113040865,
         torsion_turns_coeff_heave_nmm=-0.000161078,
         torsion_turns_coeff_heave_perch_mm=0.000540572,
@@ -1060,12 +1062,13 @@ BMW_M_HYBRID_V8 = CarModel(
         heave_defl_coeff_front_pushrod_mm=0.336211,
         heave_defl_coeff_front_rh_mm=-0.310258,
         heave_defl_coeff_torsion_turns=0.0,
-        slider_intercept=118.667844,
-        slider_coeff_heave_nmm=-0.015976,
-        slider_coeff_heave_perch_mm=0.062413,
-        slider_coeff_torsion_od_mm=-4.015412,
-        slider_coeff_front_pushrod_mm=0.336211,
-        slider_coeff_front_rh_mm=-0.310258,
+        # Slider: R²=0.802, RMSE=1.128mm (N=38, 2026-03-16)
+        slider_intercept=92.921639,
+        slider_coeff_heave_nmm=-0.013364,
+        slider_coeff_heave_perch_mm=0.117376,
+        slider_coeff_torsion_od_mm=-3.387887,
+        slider_coeff_front_pushrod_mm=0.0,
+        slider_coeff_front_rh_mm=0.0,
         slider_coeff_torsion_turns=0.0,
         deflection=DeflectionModel(),
     ),
@@ -1163,7 +1166,7 @@ CADILLAC_VSERIES_R = CarModel(
 # VERY different parameter structure from Dallara:
 # - Rear uses torsion bars (indexed OD, not mm)
 # - ARBs use letter indices (A, B, C)
-# - Damper clicks are on a DIFFERENT scale (6-40 range vs BMW 1-20)
+# - Damper clicks: 0-40 comp/rbd, 0-11 HS slope (BMW is 0-11 all)
 # - Has BOTH front and rear diffs
 # Has verified Sebring S1 setup for partial calibration.
 
@@ -1172,10 +1175,9 @@ FERRARI_499P = CarModel(
     canonical_name="ferrari",
     mass_car_kg=1030.0,           # GTP minimum — confirmed same as LMDh
     mass_driver_kg=75.0,
-    weight_dist_front=0.47,       # ESTIMATE — LMH may differ from LMDh
+    weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
+    brake_bias_pct=54.0,          # CALIBRATED from IBT: BrakePressureBias = 54.0%
     aero_axes_swapped=True,       # Ferrari aero map uses same axis convention as Dallara
-                                  # (per-car-quirks.md doesn't document a difference;
-                                  #  if telemetry reveals axes are swapped, update here)
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
     min_rear_rh_static=30.0,
@@ -1185,20 +1187,20 @@ FERRARI_499P = CarModel(
     min_rear_rh_dynamic=25.0,
     max_rear_rh_dynamic=75.0,
     vortex_burst_threshold_mm=2.0,
-    front_heave_spring_nmm=50.0,  # ESTIMATE — indexed in reality (needs IBT calibration)
-    rear_third_spring_nmm=530.0,  # ESTIMATE — indexed in reality (needs IBT calibration)
+    front_heave_spring_nmm=50.0,  # ESTIMATE — indexed in reality (index 1 in reference IBTs)
+    rear_third_spring_nmm=530.0,  # ESTIMATE — indexed in reality (index 2 in reference IBTs)
     aero_compression=AeroCompression(
-        # From verified S1: static front 30.5mm, rear 48.3mm
-        # Dynamic ride heights need telemetry to calibrate
+        # CALIBRATED from IBT: static 30.1mm - dynamic 15.0mm = 15.1mm front
+        # Rear: avg of (47.9-40.0, 48.8-40.0) = 8.3mm
         ref_speed_kph=230.0,
-        front_compression_mm=15.5,  # ESTIMATE from S1 static
-        rear_compression_mm=8.3,    # ESTIMATE
+        front_compression_mm=15.1,  # CALIBRATED from IBT aero calculator
+        rear_compression_mm=8.3,    # CALIBRATED from IBT aero calculator
     ),
     pushrod=PushrodGeometry(
-        front_pinned_rh_mm=30.0,        # iRacing GTP floor — same for LMH
-        front_pushrod_default_mm=-25.5, # ESTIMATE — LMH may differ from Dallara
-        rear_base_rh_mm=46.7,           # ESTIMATE — needs Ferrari IBT calibration
-        rear_pushrod_to_rh=-0.09,       # ESTIMATE — needs Ferrari IBT calibration
+        front_pinned_rh_mm=30.0,        # iRacing GTP floor — confirmed from IBT (30.1mm)
+        front_pushrod_default_mm=-3.0,  # CALIBRATED: both IBTs show pushrod=-3.0, RH=30.1
+        rear_base_rh_mm=42.5,           # CALIBRATED: intercept from 2 IBTs (12→47.9, 14→48.8)
+        rear_pushrod_to_rh=0.45,        # CALIBRATED: slope = (48.8-47.9)/(14-12) = 0.45
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
@@ -1206,29 +1208,29 @@ FERRARI_499P = CarModel(
         rear_m_eff_kg=2870.0,   # ESTIMATE
     ),
     corner_spring=CornerSpringModel(
-        # Ferrari uses torsion bars for BOTH front and rear
-        # The C constant and OD range are different from BMW
-        # S1: front TorsionBarOD = 3 (indexed), rear = 8 (indexed)
-        # Until we decode the index-to-mm mapping, use BMW-like values
-        front_torsion_c=0.0008036,  # ESTIMATE — needs Ferrari-specific calibration
-        front_torsion_od_ref_mm=13.9,  # ESTIMATE
-        front_torsion_od_range_mm=(11.0, 16.0),  # ESTIMATE
-        # WARNING: Ferrari rear is actually a torsion bar (indexed values in iRacing),
-        # but we model it as a coil spring range until the index→OD mapping is decoded.
-        # Corner spring and LLTD outputs for Ferrari are UNRELIABLE until calibrated.
-        rear_spring_range_nmm=(100.0, 300.0),  # PLACEHOLDER — needs torsion bar calibration
-        rear_spring_step_nmm=10.0,
+        # Ferrari uses torsion bars for BOTH front and rear (indexed 0-18)
+        # CALIBRATED from IBT: front index 3 → defl 17.9mm at 2725N → 152.2 N/mm effective
+        # Rear index 8 → defl 19.7mm at 2997N → 152.1 N/mm effective
+        # Both axes give ~152 N/mm at their reference indices — rear bar is likely longer
+        # (lower C) so needs higher index for same rate
+        front_torsion_c=0.0008036,  # Using BMW constant; front index maps to ~20.9mm OD
+        front_torsion_od_ref_mm=20.9,  # CALIBRATED: (152.2/0.0008036)^0.25 = 20.9mm
+        front_torsion_od_range_mm=(16.0, 25.0),  # ESTIMATE range; index 0→18
+        # Rear: modeled as effective wheel rate, not actual coil spring
+        # At index 8 the effective wheel rate is ~152 N/mm
+        rear_spring_range_nmm=(80.0, 350.0),  # ESTIMATE: indexed 0-18 torsion bar range
+        rear_spring_step_nmm=1.0,              # Indexed: step by 1
         front_motion_ratio=1.0,
-        rear_motion_ratio=0.65,  # ESTIMATE — bespoke suspension (needs Ferrari IBT calibration)
+        rear_motion_ratio=1.0,   # CALIBRATED: using effective rates from deflection data
         track_width_mm=1600.0,   # ESTIMATE — needs Ferrari IBT calibration
         cg_height_mm=340.0,      # ESTIMATE — LMH rules allow lower CoG than LMDh
     ),
     arb=ARBModel(
-        # Ferrari uses letter indices: A, B, C
-        front_size_labels=["A", "B", "C"],
-        front_stiffness_nmm_deg=[5000.0, 10000.0, 15000.0],  # ESTIMATE
-        rear_size_labels=["A", "B", "C"],
-        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # ESTIMATE
+        # Ferrari uses: Disconnected, A, B, C, D, E (6 sizes)
+        front_size_labels=["Disconnected", "A", "B", "C", "D", "E"],
+        front_stiffness_nmm_deg=[0.0, 3000.0, 6000.0, 9000.0, 12000.0, 15000.0],  # ESTIMATE
+        rear_size_labels=["Disconnected", "A", "B", "C", "D", "E"],
+        rear_stiffness_nmm_deg=[0.0, 1500.0, 3000.0, 4500.0, 6000.0, 9000.0],     # ESTIMATE
         front_blade_count=5,
         front_baseline_size="A",
         front_baseline_blade=1,
@@ -1239,6 +1241,11 @@ FERRARI_499P = CarModel(
         track_width_rear_mm=1650.0,   # ESTIMATE
     ),
     geometry=WheelGeometryModel(
+        # iRacing legality limits for Ferrari 499P
+        front_camber_range_deg=(-2.9, 0.0),   # hard garage limit
+        rear_camber_range_deg=(-2.5, 0.0),     # hard garage limit
+        front_toe_range_mm=(-3.0, 3.0),
+        rear_toe_range_mm=(-2.0, 3.0),
         # From verified S1: front camber -2.9°, rear -1.8°
         front_camber_baseline_deg=-2.9,
         rear_camber_baseline_deg=-1.8,
@@ -1250,12 +1257,12 @@ FERRARI_499P = CarModel(
         rear_toe_heating_coeff=1.8,
     ),
     damper=DamperModel(
-        # Ferrari damper click scale is DIFFERENT from BMW (6-40 range)
-        ls_comp_range=(1, 50),
-        ls_rbd_range=(1, 50),
-        hs_comp_range=(1, 50),
-        hs_rbd_range=(1, 50),
-        hs_slope_range=(1, 20),
+        # Ferrari damper click scale: 0-40 comp/rbd, 0-11 HS slope (BMW is 0-11 all)
+        ls_comp_range=(0, 40),
+        ls_rbd_range=(0, 40),
+        hs_comp_range=(0, 40),
+        hs_rbd_range=(0, 40),
+        hs_slope_range=(0, 11),
         # Force-per-click needs calibration from Ferrari telemetry
         ls_force_per_click_n=7.0,   # ESTIMATE — smaller per click (more clicks)
         hs_force_per_click_n=30.0,  # ESTIMATE
@@ -1270,6 +1277,27 @@ FERRARI_499P = CarModel(
         rear_hs_comp_baseline=40,
         rear_hs_rbd_baseline=40,
         rear_hs_slope_baseline=11,
+    ),
+    garage_ranges=GarageRanges(
+        damper_click=(0, 40),
+        front_pushrod_mm=(-40.0, 40.0),
+        rear_pushrod_mm=(-40.0, 40.0),
+        front_heave_nmm=(0.0, 8.0),            # indexed 0-8 (not N/mm)
+        rear_third_nmm=(0.0, 9.0),             # rear heave spring indexed 0-9 (no third spring)
+        front_heave_perch_mm=(-150.0, 100.0),
+        rear_third_perch_mm=(-150.0, 100.0),   # rear heave perch offset
+        front_torsion_od_mm=(0.0, 18.0),        # indexed 0-18 (not mm)
+        rear_spring_nmm=(0.0, 18.0),            # rear torsion bar OD indexed 0-18 (no coil spring)
+        rear_spring_perch_mm=(0.0, 0.0),        # N/A — Ferrari has no rear coil spring perch
+        arb_blade=(1, 5),
+        # iRacing legality limits for Ferrari 499P
+        camber_front_deg=(-2.9, 0.0),           # hard garage limit
+        camber_rear_deg=(-2.5, 0.0),            # hard garage limit
+        toe_front_mm=(-3.0, 3.0),
+        toe_rear_mm=(-2.0, 3.0),
+        diff_clutch_plates_options=[2, 4, 6],
+        heave_spring_resolution_nmm=1.0,        # indexed: step by 1
+        rear_spring_resolution_nmm=1.0,         # rear torsion bar OD: step by 1
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
