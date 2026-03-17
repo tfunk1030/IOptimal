@@ -37,6 +37,7 @@ def generate_candidate_families(
     setup_distance: float = 0.0,
     produced_solution: dict[str, Any] | None = None,
     prediction_corrections: dict[str, float] | None = None,
+    setup_cluster: Any | None = None,
 ) -> list[SetupCandidate]:
     """Generate minimal PR4a candidate families.
 
@@ -52,9 +53,9 @@ def generate_candidate_families(
     overhaul_conf = float(getattr(overhaul_assessment, "confidence", 0.55) or 0.55)
     authority_conf = float((authority_score or {}).get("score", 0.6) or 0.6)
     legality_ok = 1.0 if legal_validation is None or getattr(legal_validation, "valid", True) else 0.55
-    incremental_solution = _build_family_solution("incremental", authority_session, produced_solution)
-    reset_solution = _build_family_solution("baseline_reset", authority_session, produced_solution)
-    compromise_solution = _build_family_solution("compromise", authority_session, produced_solution)
+    incremental_solution = _build_family_solution("incremental", authority_session, produced_solution, setup_cluster=setup_cluster)
+    reset_solution = _build_family_solution("baseline_reset", authority_session, produced_solution, setup_cluster=setup_cluster)
+    compromise_solution = _build_family_solution("compromise", authority_session, produced_solution, setup_cluster=setup_cluster)
 
     incremental_notes = [
         f"Authority session: {getattr(authority_session, 'label', 'unknown')}",
@@ -209,12 +210,20 @@ def _safe_attr(obj: Any, parent: str, field: str) -> float | None:
         return None
 
 
-def _build_family_solution(family: str, authority_session: Any, produced_solution: dict[str, Any]) -> dict[str, Any]:
+def _build_family_solution(
+    family: str,
+    authority_session: Any,
+    produced_solution: dict[str, Any],
+    *,
+    setup_cluster: Any | None = None,
+) -> dict[str, Any]:
     if not produced_solution:
         return {}
     setup = getattr(authority_session, "setup", None)
     result = {name: copy.deepcopy(value) for name, value in produced_solution.items()}
     if setup is None or family == "baseline_reset":
+        if family == "baseline_reset" and setup_cluster is not None:
+            _apply_cluster_center(result, setup_cluster)
         return result
 
     if family == "incremental":
@@ -303,6 +312,67 @@ def _build_family_solution(family: str, authority_session: Any, produced_solutio
             if hasattr(setup, field) and hasattr(supporting, field):
                 setattr(supporting, field, getattr(setup, field))
     return result
+
+
+def _apply_cluster_center(result: dict[str, Any], setup_cluster: Any) -> None:
+    center = getattr(setup_cluster, "center", {}) or {}
+    if not center:
+        return
+    step1 = result.get("step1")
+    if step1 is not None:
+        for field, cluster_key in (
+            ("front_pushrod_offset_mm", "front_pushrod_mm"),
+            ("rear_pushrod_offset_mm", "rear_pushrod_mm"),
+        ):
+            if hasattr(step1, field) and cluster_key in center:
+                setattr(step1, field, center[cluster_key])
+    step2 = result.get("step2")
+    if step2 is not None:
+        for field, cluster_key in (
+            ("front_heave_nmm", "front_heave_nmm"),
+            ("rear_third_nmm", "rear_third_nmm"),
+        ):
+            if hasattr(step2, field) and cluster_key in center:
+                setattr(step2, field, center[cluster_key])
+    step3 = result.get("step3")
+    if step3 is not None:
+        for field, cluster_key in (
+            ("front_torsion_od_mm", "front_torsion_od_mm"),
+            ("rear_spring_rate_nmm", "rear_spring_nmm"),
+        ):
+            if hasattr(step3, field) and cluster_key in center:
+                setattr(step3, field, center[cluster_key])
+    step4 = result.get("step4")
+    if step4 is not None:
+        for field, cluster_key in (
+            ("front_arb_blade_start", "front_arb_blade"),
+            ("rear_arb_blade_start", "rear_arb_blade"),
+            ("rarb_blade_slow_corner", "rear_arb_blade"),
+            ("rarb_blade_fast_corner", "rear_arb_blade"),
+        ):
+            if hasattr(step4, field) and cluster_key in center:
+                setattr(step4, field, int(round(center[cluster_key])))
+    step5 = result.get("step5")
+    if step5 is not None:
+        for field, cluster_key in (
+            ("front_camber_deg", "front_camber_deg"),
+            ("rear_camber_deg", "rear_camber_deg"),
+            ("front_toe_mm", "front_toe_mm"),
+            ("rear_toe_mm", "rear_toe_mm"),
+        ):
+            if hasattr(step5, field) and cluster_key in center:
+                setattr(step5, field, center[cluster_key])
+    supporting = result.get("supporting")
+    if supporting is not None:
+        for field, cluster_key in (
+            ("brake_bias_pct", "brake_bias_pct"),
+            ("diff_preload_nm", "diff_preload_nm"),
+            ("tc_gain", "tc_gain"),
+            ("tc_slip", "tc_slip"),
+        ):
+            if hasattr(supporting, field) and cluster_key in center:
+                value = center[cluster_key]
+                setattr(supporting, field, int(round(value)) if field.startswith("tc_") else value)
 
 
 def _blend_obj(obj: Any, targets: dict[str, Any], blend: float, integer: bool = False, integer_fields: set[str] | None = None) -> None:

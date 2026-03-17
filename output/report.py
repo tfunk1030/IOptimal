@@ -147,6 +147,7 @@ def print_full_setup_report(
     front_master_cyl_val = getattr(supporting, "front_master_cyl_mm", None) if supporting is not None else None
     rear_master_cyl_val = getattr(supporting, "rear_master_cyl_mm", None) if supporting is not None else None
     pad_compound_val = getattr(supporting, "pad_compound", "") if supporting is not None else ""
+    brake_hardware_status = getattr(supporting, "brake_hardware_status", "") if supporting is not None else ""
     diff_solution = getattr(supporting, "_diff_solution", None) if supporting is not None else None
 
     _is_ferrari = car is not None and getattr(car, "canonical_name", "") == "ferrari"
@@ -243,6 +244,8 @@ def print_full_setup_report(
     a(_setting("Brake target / migration", f"{brake_target_str} / {brake_migration_str}"))
     a(_setting("Master cyl F / R", master_cyl_str))
     a(_setting("Pad compound", pad_compound_str))
+    if brake_hardware_status:
+        a(_setting("Brake hardware status", brake_hardware_status))
     a(_setting("Diff preload", diff_preload_str))
     if _is_ferrari:
         # Ferrari: single coast/drive ramp label
@@ -307,6 +310,8 @@ def print_full_setup_report(
         a(_full(
             f"  Brake target/mig: {brake_target_str} / {brake_migration_str}    Master cyl: {master_cyl_str}"
         ))
+        if brake_hardware_status:
+            a(_full(f"  Brake hardware status: {brake_hardware_status}"))
         if diff_solution is not None:
             a(_full(
                 f"  Diff lock coast/drive: {diff_solution.lock_pct_coast:.1f}% / {diff_solution.lock_pct_drive:.1f}%"
