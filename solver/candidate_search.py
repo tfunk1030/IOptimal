@@ -134,6 +134,41 @@ def generate_candidate_families(
         reset.reasons.append("Reset candidate penalized because overhaul classification remains minor_tweak.")
 
     candidates = [incremental, reset]
+
+    if produced_solution and hasattr(authority_session, "measured"):
+        compromise_pred = _blend_predictions(incremental.predicted, reset.predicted)
+        compromise_notes = [
+            "Blend authority-session drivability with reset-family safety improvements.",
+            f"Authority score: {authority_conf:.3f}",
+            f"Overhaul classification: {overhaul_class}",
+        ]
+        compromise = SetupCandidate(
+            family="compromise",
+            description="Blend current authority concept with safer reset direction",
+            step1=produced_solution.get("step1"),
+            step2=produced_solution.get("step2"),
+            step3=produced_solution.get("step3"),
+            step4=produced_solution.get("step4"),
+            step5=produced_solution.get("step5"),
+            step6=produced_solution.get("step6"),
+            supporting=produced_solution.get("supporting"),
+            predicted=compromise_pred,
+            confidence=round(min(1.0, (incremental.confidence + reset.confidence) / 2.0), 3),
+            reasons=compromise_notes,
+        )
+        compromise.score = combine_candidate_score(
+            safety=max(0.2, ((incremental.score.safety if incremental.score else 0.5) + (reset.score.safety if reset.score else 0.5)) / 2.0),
+            performance=max(0.2, ((incremental.score.performance if incremental.score else 0.5) + (reset.score.performance if reset.score else 0.5)) / 2.0 + 0.03),
+            stability=max(0.2, ((incremental.score.stability if incremental.score else 0.5) + (reset.score.stability if reset.score else 0.5)) / 2.0),
+            confidence=compromise.confidence,
+            disruption_cost=0.4 if overhaul_class == "moderate_rework" else 0.5,
+            notes=compromise_notes,
+        )
+        if overhaul_class == "moderate_rework":
+            compromise.score.total = round(compromise.score.total + 0.06, 3)
+            compromise.reasons.append("Compromise candidate boosted because overhaul classification is moderate_rework.")
+        candidates.append(compromise)
+
     winner = max(candidates, key=lambda candidate: candidate.score.total if candidate.score is not None else -1.0)
     winner.selected = True
     return candidates
@@ -148,3 +183,38 @@ def _safe_attr(obj: Any, parent: str, field: str) -> float | None:
         return None if value is None else float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _blend_predictions(
+    incremental: PredictedTelemetry | None,
+    reset: PredictedTelemetry | None,
+) -> PredictedTelemetry | None:
+    if incremental is None and reset is None:
+        return None
+    if incremental is None:
+        return reset
+    if reset is None:
+        return incremental
+
+    def _avg(lhs: float | None, rhs: float | None) -> float | None:
+        if lhs is None and rhs is None:
+            return None
+        if lhs is None:
+            return rhs
+        if rhs is None:
+            return lhs
+        return round((lhs + rhs) / 2.0, 4)
+
+    return PredictedTelemetry(
+        front_heave_travel_used_pct=_avg(incremental.front_heave_travel_used_pct, reset.front_heave_travel_used_pct),
+        front_excursion_mm=_avg(incremental.front_excursion_mm, reset.front_excursion_mm),
+        rear_rh_std_mm=_avg(incremental.rear_rh_std_mm, reset.rear_rh_std_mm),
+        braking_pitch_deg=_avg(incremental.braking_pitch_deg, reset.braking_pitch_deg),
+        front_lock_p95=_avg(incremental.front_lock_p95, reset.front_lock_p95),
+        rear_power_slip_p95=_avg(incremental.rear_power_slip_p95, reset.rear_power_slip_p95),
+        body_slip_p95_deg=_avg(incremental.body_slip_p95_deg, reset.body_slip_p95_deg),
+        understeer_low_deg=_avg(incremental.understeer_low_deg, reset.understeer_low_deg),
+        understeer_high_deg=_avg(incremental.understeer_high_deg, reset.understeer_high_deg),
+        front_pressure_hot_kpa=_avg(incremental.front_pressure_hot_kpa, reset.front_pressure_hot_kpa),
+        rear_pressure_hot_kpa=_avg(incremental.rear_pressure_hot_kpa, reset.rear_pressure_hot_kpa),
+    )
