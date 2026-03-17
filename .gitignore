@@ -1,2 +1,5 @@
 __pycache__/
 
+# Large telemetry (MoTeC .ld); use Git LFS if you need to track these
+data/Ferraridata/
+*.ld
