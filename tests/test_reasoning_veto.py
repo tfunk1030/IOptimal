@@ -1,5 +1,6 @@
 import contextlib
 import io
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -150,7 +151,10 @@ def _solver_fp_from_json(data: dict):
     )
 
 
-@unittest.skipUnless(all(path.exists() for path in BMW_FILES), "BMW IBT fixtures not available")
+@unittest.skipUnless(
+    all(path.exists() for path in BMW_FILES) and importlib.util.find_spec("scipy") is not None,
+    "BMW IBT fixtures or scipy not available",
+)
 class ReasoningVetoIntegrationTests(unittest.TestCase):
     def test_bmw_validation_run_becomes_authority_and_changes_output(self):
         with tempfile.TemporaryDirectory() as td:
