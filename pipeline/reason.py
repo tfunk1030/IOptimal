@@ -717,6 +717,14 @@ def _compute_authority_scores(state: ReasoningState) -> None:
         diagnosis_component = assessment_scores.get(snap.diagnosis.assessment, 0.6)
         context_component = snap.session_context.overall_score if snap.session_context is not None else 0.5
         signal_component, signal_notes = _session_signal_quality_score(snap)
+        critical_count = sum(1 for problem in snap.diagnosis.problems if getattr(problem, "severity", "") == "critical")
+        significant_count = sum(1 for problem in snap.diagnosis.problems if getattr(problem, "severity", "") == "significant")
+        hard_failure_penalty = min(0.35, critical_count * 0.18 + significant_count * 0.05)
+        state_risk = sum(
+            getattr(issue, "severity", 0.0) * getattr(issue, "confidence", 0.0)
+            for issue in getattr(snap.diagnosis, "state_issues", [])[:6]
+        )
+        state_component = max(0.0, 1.0 - min(1.0, state_risk / 3.0))
         envelope_penalty = (
             state.envelope_distances.get(snap.label).total_score
             if snap.label in state.envelope_distances and state.telemetry_envelope is not None and state.telemetry_envelope.sample_count >= 3
@@ -728,15 +736,22 @@ def _compute_authority_scores(state: ReasoningState) -> None:
             else 0.0
         )
         score = (
-            lap_component * 0.35
-            + diagnosis_component * 0.25
-            + context_component * 0.2
-            + signal_component * 0.2
+            lap_component * 0.28
+            + diagnosis_component * 0.2
+            + context_component * 0.18
+            + signal_component * 0.16
+            + state_component * 0.18
         )
+        score -= hard_failure_penalty
         score -= min(0.18, envelope_penalty * 0.035)
         score -= min(0.12, setup_penalty * 0.025)
         if snap.session_context is not None and not snap.session_context.comparable_to_baseline:
-            score *= 0.8
+            score *= 0.82
+        if any(
+            cluster.validated_failed and snap.label in cluster.session_labels
+            for cluster in state.validation_clusters
+        ):
+            score -= 0.12
         row = {
             "session_idx": idx,
             "session": snap.label,
@@ -745,9 +760,17 @@ def _compute_authority_scores(state: ReasoningState) -> None:
             "diagnosis_component": round(diagnosis_component, 3),
             "context_component": round(context_component, 3),
             "signal_component": round(signal_component, 3),
+            "state_component": round(state_component, 3),
+            "hard_failure_penalty": round(hard_failure_penalty, 3),
+            "state_risk": round(state_risk, 3),
             "envelope_distance": round(envelope_penalty, 3),
             "setup_distance": round(setup_penalty, 3),
-            "notes": list((snap.session_context.notes if snap.session_context is not None else [])[:4]) + signal_notes,
+            "notes": (
+                list((snap.session_context.notes if snap.session_context is not None else [])[:4])
+                + signal_notes
+                + ([f"critical={critical_count}"] if critical_count else [])
+                + ([f"state_risk={state_risk:.2f}"] if state_risk > 0 else [])
+            ),
         }
         authority_rows.append(row)
 
@@ -2809,6 +2832,7 @@ def reason_and_solve(
         setup_cluster=state.setup_cluster if state.setup_cluster is not None and len(state.setup_cluster.member_sessions) >= 3 else None,
     )
     selected_candidate = next((candidate for candidate in state.generated_candidates if candidate.selected), None)
+    selected_candidate_applied = False
     if selected_candidate is not None:
         state.solver_notes.append(
             f"Candidate family selected: {selected_candidate.family} "
@@ -2825,6 +2849,7 @@ def reason_and_solve(
             supporting=supporting,
         )
         if applied_candidate:
+            selected_candidate_applied = True
             state.solver_notes.append(
                 f"Applied {selected_candidate.family} candidate outputs to final report/JSON/export payloads."
             )
@@ -3042,6 +3067,47 @@ def reason_and_solve(
                     "selected": candidate.selected,
                     "reasons": candidate.reasons,
                     "predicted": candidate.predicted.to_dict() if getattr(candidate, "predicted", None) is not None else None,
+                    "outputs": {
+                        "step1": {
+                            "front_pushrod_offset_mm": getattr(candidate.step1, "front_pushrod_offset_mm", None),
+                            "rear_pushrod_offset_mm": getattr(candidate.step1, "rear_pushrod_offset_mm", None),
+                            "static_front_rh_mm": getattr(candidate.step1, "static_front_rh_mm", None),
+                            "static_rear_rh_mm": getattr(candidate.step1, "static_rear_rh_mm", None),
+                        },
+                        "step2": {
+                            "front_heave_nmm": getattr(candidate.step2, "front_heave_nmm", None),
+                            "rear_third_nmm": getattr(candidate.step2, "rear_third_nmm", None),
+                            "perch_offset_front_mm": getattr(candidate.step2, "perch_offset_front_mm", None),
+                            "perch_offset_rear_mm": getattr(candidate.step2, "perch_offset_rear_mm", None),
+                        },
+                        "step3": {
+                            "front_torsion_od_mm": getattr(candidate.step3, "front_torsion_od_mm", None),
+                            "rear_spring_rate_nmm": getattr(candidate.step3, "rear_spring_rate_nmm", None),
+                        },
+                        "step4": {
+                            "front_arb_blade_start": getattr(candidate.step4, "front_arb_blade_start", None),
+                            "rear_arb_blade_start": getattr(candidate.step4, "rear_arb_blade_start", None),
+                            "lltd_achieved": getattr(candidate.step4, "lltd_achieved", None),
+                        },
+                        "step5": {
+                            "front_camber_deg": getattr(candidate.step5, "front_camber_deg", None),
+                            "rear_camber_deg": getattr(candidate.step5, "rear_camber_deg", None),
+                            "front_toe_mm": getattr(candidate.step5, "front_toe_mm", None),
+                            "rear_toe_mm": getattr(candidate.step5, "rear_toe_mm", None),
+                        },
+                        "step6": {
+                            "front_ls_comp": getattr(getattr(candidate.step6, "lf", None), "ls_comp", None),
+                            "front_ls_rbd": getattr(getattr(candidate.step6, "lf", None), "ls_rbd", None),
+                            "rear_ls_comp": getattr(getattr(candidate.step6, "lr", None), "ls_comp", None),
+                            "rear_ls_rbd": getattr(getattr(candidate.step6, "lr", None), "ls_rbd", None),
+                        },
+                        "supporting": {
+                            "brake_bias_pct": getattr(candidate.supporting, "brake_bias_pct", None),
+                            "diff_preload_nm": getattr(candidate.supporting, "diff_preload_nm", None),
+                            "tc_gain": getattr(candidate.supporting, "tc_gain", None),
+                            "tc_slip": getattr(candidate.supporting, "tc_slip", None),
+                        },
+                    },
                     "score": (
                         {
                             "total": candidate.score.total,
@@ -3058,6 +3124,13 @@ def reason_and_solve(
                 }
                 for candidate in state.generated_candidates
             ],
+            "selected_candidate_family": getattr(selected_candidate, "family", None),
+            "selected_candidate_score": (
+                selected_candidate.score.total
+                if selected_candidate is not None and selected_candidate.score is not None
+                else None
+            ),
+            "selected_candidate_applied": selected_candidate_applied,
             "legal_validation": state.legal_validation.to_dict() if state.legal_validation is not None else None,
             "decision_trace": [decision.to_dict() for decision in state.decision_trace],
             "solver_notes": state.solver_notes,
@@ -3092,6 +3165,12 @@ def reason_and_solve(
         wing=detected_wing,
         target_balance=target_balance,
         prediction_corrections=dict(state.historical.prediction_corrections),
+        selected_candidate_family=getattr(selected_candidate, "family", None),
+        selected_candidate_score=(
+            selected_candidate.score.total
+            if selected_candidate is not None and selected_candidate.score is not None
+            else None
+        ),
         solve_context_lines=state.solver_notes + [
             f"Authority session: {authority.label}",
             f"Benchmark best session: {best.label}",

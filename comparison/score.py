@@ -9,27 +9,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from analyzer.telemetry_truth import usable_signal_value
 from comparison.compare import (
     ComparisonResult,
     CornerComparison,
     SessionAnalysis,
     TELEMETRY_METRICS,
 )
+from learner.envelope import build_telemetry_envelope, compute_envelope_distance
+from learner.setup_clusters import build_setup_cluster, compute_setup_distance
 
 
 # ── Scoring categories and weights ──────────────────────────────
 
 CATEGORY_WEIGHTS: dict[str, float] = {
-    "lap_time": 0.15,
-    "grip": 0.15,
-    "balance": 0.15,
+    "lap_time": 0.12,
+    "grip": 0.14,
+    "balance": 0.14,
     "aero_efficiency": 0.10,
     "high_speed_corners": 0.10,
     "low_speed_corners": 0.10,
     "corner_performance": 0.10,
     "damper_platform": 0.05,
     "thermal": 0.05,
-    "context_health": 0.05,
+    "context_health": 0.10,
 }
 
 CATEGORY_LABELS: dict[str, str] = {
@@ -275,8 +278,17 @@ def _score_damper_platform(sessions: list[SessionAnalysis]) -> list[float]:
     """Settle time, yaw correlation, RH variance, shock velocity control."""
     scores_per_session: list[list[float]] = [[] for _ in sessions]
 
-    settle_f = [s.measured.front_rh_settle_time_ms for s in sessions]
-    settle_r = [s.measured.rear_rh_settle_time_ms for s in sessions]
+    settle_f: list[float] = []
+    settle_r: list[float] = []
+    settle_f_known: list[bool] = []
+    settle_r_known: list[bool] = []
+    for session in sessions:
+        front_val = usable_signal_value(session.measured, "front_rh_settle_time_ms")
+        rear_val = usable_signal_value(session.measured, "rear_rh_settle_time_ms")
+        settle_f_known.append(front_val is not None)
+        settle_r_known.append(rear_val is not None)
+        settle_f.append(front_val if front_val is not None else 125.0)
+        settle_r.append(rear_val if rear_val is not None else 125.0)
     yaw_corr = [s.measured.yaw_rate_correlation for s in sessions]
     rh_var_f = [s.measured.front_rh_std_mm for s in sessions]
     shock_f = [s.measured.front_shock_vel_p99_mps for s in sessions]
@@ -284,6 +296,8 @@ def _score_damper_platform(sessions: list[SessionAnalysis]) -> list[float]:
     # Settle time: target is 50-200ms. Closer to 125ms center = better
     settle_f_norm = _normalize_closer_to_target(settle_f, 125.0)
     settle_r_norm = _normalize_closer_to_target(settle_r, 125.0)
+    settle_f_norm = [settle_f_norm[i] if settle_f_known[i] else 0.5 for i in range(len(sessions))]
+    settle_r_norm = [settle_r_norm[i] if settle_r_known[i] else 0.5 for i in range(len(sessions))]
     yaw_norm = _normalize_higher_better(yaw_corr)
     rh_var_norm = _normalize_lower_better(rh_var_f)
     shock_norm = _normalize_lower_better(shock_f)
@@ -342,15 +356,58 @@ def _score_thermal(sessions: list[SessionAnalysis]) -> list[float]:
 
 def _score_context_health(sessions: list[SessionAnalysis]) -> list[float]:
     """Score session comparability and telemetry health."""
+    healthy_sessions = [
+        sess
+        for sess in sessions
+        if getattr(sess, "session_context", None) is not None
+        and sess.session_context.comparable_to_baseline
+        and getattr(sess.diagnosis, "assessment", "competitive") in {"fast", "competitive"}
+    ]
+    if len(healthy_sessions) >= 2:
+        telemetry_envelope = build_telemetry_envelope(
+            [sess.measured for sess in healthy_sessions],
+            source_sessions=[sess.label for sess in healthy_sessions],
+        )
+        setup_cluster = build_setup_cluster(
+            [sess.setup for sess in healthy_sessions],
+            member_sessions=[sess.label for sess in healthy_sessions],
+            label="comparison healthy cluster",
+        )
+    else:
+        telemetry_envelope = None
+        setup_cluster = None
+
     scores: list[float] = []
     for sess in sessions:
         ctx = getattr(sess, "session_context", None)
+        signal_map = getattr(sess.measured, "telemetry_signals", {}) or {}
+        trusted = [sig.confidence for sig in signal_map.values() if getattr(sig, "quality", "") == "trusted" and getattr(sig, "value", None) is not None]
+        proxy = [sig.confidence for sig in signal_map.values() if getattr(sig, "quality", "") == "proxy" and getattr(sig, "value", None) is not None]
+        signal_score = 0.45
+        if trusted or proxy:
+            signal_score = min(1.0, (sum(trusted) / len(trusted) if trusted else 0.0) * 0.75 + (sum(proxy) / len(proxy) if proxy else 0.0) * 0.15 + 0.1)
+        state_risk = sum(
+            getattr(issue, "severity", 0.0) * getattr(issue, "confidence", 0.0)
+            for issue in getattr(sess.diagnosis, "state_issues", [])[:6]
+        )
+        state_score = max(0.0, 1.0 - min(1.0, state_risk / 3.0))
+        hard_fail_penalty = min(
+            0.35,
+            sum(1 for p in getattr(sess.diagnosis, "problems", []) if getattr(p, "severity", "") == "critical") * 0.18
+            + sum(1 for p in getattr(sess.diagnosis, "problems", []) if getattr(p, "severity", "") == "significant") * 0.05,
+        )
+        family_score = 0.5
+        if telemetry_envelope is not None and setup_cluster is not None:
+            envelope_distance = compute_envelope_distance(sess.measured, telemetry_envelope).total_score
+            setup_distance = compute_setup_distance(sess.setup, setup_cluster).distance_score
+            family_score = max(0.0, 1.0 - min(1.0, (envelope_distance * 0.12 + setup_distance * 0.08)))
         if ctx is None:
-            scores.append(0.5)
-            continue
-        score = ctx.overall_score
-        if not ctx.comparable_to_baseline:
-            score *= 0.8
+            score = 0.5 * 0.35 + signal_score * 0.2 + state_score * 0.25 + family_score * 0.2
+        else:
+            score = ctx.overall_score * 0.35 + signal_score * 0.2 + state_score * 0.25 + family_score * 0.2
+            if not ctx.comparable_to_baseline:
+                score *= 0.8
+        score = max(0.0, score - hard_fail_penalty)
         scores.append(score)
     return scores
 

@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from analyzer.adaptive_thresholds import AdaptiveThresholds, compute_adaptive_thresholds
 from analyzer.diagnose import diagnose
@@ -132,6 +133,65 @@ class StateInferenceTests(unittest.TestCase):
                 allowed,
                 msg=f"{fixture_name} classified as {diag.overhaul_assessment.classification}",
             )
+
+    def test_driver_noise_reduces_phase_based_state_confidence(self) -> None:
+        measured = MeasuredState(
+            understeer_low_speed_deg=1.8,
+            rear_power_slip_ratio_p95=0.10,
+            body_slip_p95_deg=4.5,
+            telemetry_signals={
+                "understeer_low_speed_deg": TelemetrySignal(value=1.8, quality="proxy", confidence=0.65, source="test"),
+                "rear_power_slip_ratio_p95": TelemetrySignal(value=0.10, quality="trusted", confidence=0.8, source="test"),
+                "body_slip_p95_deg": TelemetrySignal(value=4.5, quality="proxy", confidence=0.6, source="test"),
+            },
+        )
+        corners = [
+            SimpleNamespace(
+                trail_brake_pct=0.3,
+                understeer_mean_deg=1.4,
+                corner_confidence=0.9,
+                entry_pitch_severity=0.7,
+                entry_loss_s=0.10,
+                throttle_delay_s=0.32,
+                traction_risk_flags=["late_throttle"],
+                exit_slip_severity=0.8,
+            ),
+            SimpleNamespace(
+                trail_brake_pct=0.28,
+                understeer_mean_deg=1.2,
+                corner_confidence=0.85,
+                entry_pitch_severity=0.6,
+                entry_loss_s=0.08,
+                throttle_delay_s=0.28,
+                traction_risk_flags=["late_throttle"],
+                exit_slip_severity=0.75,
+            ),
+        ]
+        smooth_driver = DriverProfile(classification_confidence=0.92, driver_noise_index=0.05)
+        noisy_driver = DriverProfile(classification_confidence=0.35, driver_noise_index=0.8)
+
+        smooth_issues = infer_car_states(
+            measured=measured,
+            setup=self.setup,
+            problems=[],
+            driver=smooth_driver,
+            corners=corners,
+        )
+        noisy_issues = infer_car_states(
+            measured=measured,
+            setup=self.setup,
+            problems=[],
+            driver=noisy_driver,
+            corners=corners,
+        )
+
+        smooth_entry = next(issue for issue in smooth_issues if issue.state_id == "entry_front_limited")
+        noisy_entry = next(issue for issue in noisy_issues if issue.state_id == "entry_front_limited")
+        smooth_exit = next(issue for issue in smooth_issues if issue.state_id == "exit_traction_limited")
+        noisy_exit = next(issue for issue in noisy_issues if issue.state_id == "exit_traction_limited")
+
+        self.assertGreater(smooth_entry.confidence, noisy_entry.confidence)
+        self.assertGreater(smooth_exit.confidence, noisy_exit.confidence)
 
 
 if __name__ == "__main__":

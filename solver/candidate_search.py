@@ -4,8 +4,8 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any
 
-from solver.candidate_ranker import CandidateScore, combine_candidate_score, score_from_prediction
-from solver.predictor import PredictedTelemetry, PredictionConfidence, predict_candidate_telemetry
+from solver.candidate_ranker import CandidateScore, score_from_prediction
+from solver.predictor import PredictedTelemetry, predict_candidate_telemetry
 
 
 @dataclass
@@ -26,6 +26,46 @@ class SetupCandidate:
     selected: bool = False
 
 
+def _safe_float(value: Any) -> float | None:
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def _adjust_numeric(obj: Any, field: str, delta: float, *, decimals: int = 3) -> None:
+    current = _safe_float(getattr(obj, field, None))
+    if current is None:
+        return
+    setattr(obj, field, round(current + delta, decimals))
+
+
+def _scale_numeric(obj: Any, field: str, factor: float, *, decimals: int = 3) -> None:
+    current = _safe_float(getattr(obj, field, None))
+    if current is None:
+        return
+    setattr(obj, field, round(current * factor, decimals))
+
+
+def _adjust_integer(obj: Any, field: str, delta: int, *, lo: int | None = None, hi: int | None = None) -> None:
+    current = getattr(obj, field, None)
+    try:
+        if current is None:
+            return
+        value = int(round(float(current))) + int(delta)
+    except (TypeError, ValueError):
+        return
+    if lo is not None:
+        value = max(lo, value)
+    if hi is not None:
+        value = min(hi, value)
+    setattr(obj, field, value)
+
+
 def generate_candidate_families(
     *,
     authority_session: Any,
@@ -39,160 +79,134 @@ def generate_candidate_families(
     prediction_corrections: dict[str, float] | None = None,
     setup_cluster: Any | None = None,
 ) -> list[SetupCandidate]:
-    """Generate minimal PR4a candidate families.
+    """Generate materially distinct candidate setup families.
 
-    This first pass creates two family-level candidates:
-    - incremental: keep iterating from the current authority setup concept
-    - baseline_reset: move toward the newly produced reset-capable solution
-
-    The function is intentionally metadata-driven so it can operate even in
-    reduced environments where the full solver is not runnable in tests.
+    Families are generated from the existing solved setup while preserving the
+    current architecture:
+    - incremental: small-disruption continuation of the authority concept
+    - compromise: moderate reset toward a healthier compromise family
+    - baseline_reset: strong move toward the healthy/validated baseline family
     """
     produced_solution = produced_solution or {}
+    if not produced_solution:
+        return []
+
     overhaul_class = getattr(overhaul_assessment, "classification", "minor_tweak")
     overhaul_conf = float(getattr(overhaul_assessment, "confidence", 0.55) or 0.55)
     authority_conf = float((authority_score or {}).get("score", 0.6) or 0.6)
-    legality_ok = 1.0 if legal_validation is None or getattr(legal_validation, "valid", True) else 0.55
-    incremental_solution = _build_family_solution("incremental", authority_session, produced_solution, setup_cluster=setup_cluster)
-    reset_solution = _build_family_solution("baseline_reset", authority_session, produced_solution, setup_cluster=setup_cluster)
-    compromise_solution = _build_family_solution("compromise", authority_session, produced_solution, setup_cluster=setup_cluster)
+    legality_ok = legal_validation is None or getattr(legal_validation, "valid", True)
+    state_risk = _state_risk(authority_session)
+    family_descriptions = {
+        "incremental": "Refine the authority setup with minimal disruption.",
+        "compromise": "Blend authority drivability with healthier-family safety margins.",
+        "baseline_reset": "Rebase the setup toward the healthy validated family.",
+    }
+    family_prior = {
+        "incremental": 0.03 if overhaul_class == "minor_tweak" else 0.0,
+        "compromise": 0.03 if overhaul_class == "moderate_rework" else 0.0,
+        "baseline_reset": 0.03 if overhaul_class == "baseline_reset" else 0.0,
+    }
+    family_penalty = {
+        "incremental": 0.0,
+        "compromise": 0.0,
+        "baseline_reset": 0.02 if overhaul_class == "minor_tweak" and envelope_distance < 1.5 else 0.0,
+    }
 
-    incremental_notes = [
-        f"Authority session: {getattr(authority_session, 'label', 'unknown')}",
-        f"Authority score: {authority_conf:.3f}",
-        f"Overhaul classification: {overhaul_class}",
-    ]
-    incremental = SetupCandidate(
-        family="incremental",
-        description="Refine current authority setup concept",
-        step1=incremental_solution.get("step1"),
-        step2=incremental_solution.get("step2"),
-        step3=incremental_solution.get("step3"),
-        step4=incremental_solution.get("step4"),
-        step5=incremental_solution.get("step5"),
-        step6=incremental_solution.get("step6"),
-        supporting=incremental_solution.get("supporting"),
-        confidence=round(min(1.0, authority_conf * 0.75 + overhaul_conf * 0.15 + 0.1), 3),
-        reasons=incremental_notes,
-    )
-    if produced_solution and hasattr(authority_session, "setup") and hasattr(authority_session, "measured"):
-        incremental.predicted, incremental_prediction_conf = predict_candidate_telemetry(
-            current_setup=authority_session.setup,
-            baseline_measured=authority_session.measured,
-            step2=incremental.step2,
-            step4=incremental.step4,
-            supporting=incremental.supporting,
-            corrections=prediction_corrections,
+    candidates: list[SetupCandidate] = []
+    for family in ("incremental", "compromise", "baseline_reset"):
+        family_solution = _build_family_solution(
+            family,
+            authority_session,
+            produced_solution,
+            setup_cluster=setup_cluster,
         )
-        incremental.confidence = round(min(1.0, (incremental.confidence + incremental_prediction_conf.overall) / 2.0), 3)
-    else:
-        incremental.predicted = PredictedTelemetry(
-            front_heave_travel_used_pct=_safe_attr(authority_session, "measured", "front_heave_travel_used_pct"),
-            front_excursion_mm=_safe_attr(authority_session, "measured", "front_rh_excursion_measured_mm"),
-            rear_rh_std_mm=_safe_attr(authority_session, "measured", "rear_rh_std_mm"),
-            braking_pitch_deg=_safe_attr(authority_session, "measured", "pitch_range_braking_deg"),
-            front_lock_p95=_safe_attr(authority_session, "measured", "front_braking_lock_ratio_p95"),
-            rear_power_slip_p95=_safe_attr(authority_session, "measured", "rear_power_slip_ratio_p95"),
-            body_slip_p95_deg=_safe_attr(authority_session, "measured", "body_slip_p95_deg"),
-            understeer_low_deg=_safe_attr(authority_session, "measured", "understeer_low_speed_deg"),
-            understeer_high_deg=_safe_attr(authority_session, "measured", "understeer_high_speed_deg"),
-            front_pressure_hot_kpa=_safe_attr(authority_session, "measured", "front_pressure_mean_kpa"),
-            rear_pressure_hot_kpa=_safe_attr(authority_session, "measured", "rear_pressure_mean_kpa"),
+        _apply_family_state_adjustments(
+            family_solution,
+            family=family,
+            authority_session=authority_session,
+            overhaul_class=overhaul_class,
+            envelope_distance=envelope_distance,
+            setup_distance=setup_distance,
+            cluster_seeded=family == "baseline_reset" and setup_cluster is not None,
         )
-    incremental.score = score_from_prediction(
-        baseline_measured=getattr(authority_session, "measured", None),
-        predicted=incremental.predicted,
-        prediction_confidence=incremental.confidence,
-        disruption_cost=0.15,
-        notes=incremental_notes,
-    )
-    incremental.score.total = round(max(0.0, incremental.score.total - envelope_distance * 0.01 - setup_distance * 0.005), 3)
-
-    reset_notes = [
-        f"Best benchmark session: {getattr(best_session, 'label', 'unknown')}",
-        f"Envelope distance: {envelope_distance:.3f}",
-        f"Setup distance: {setup_distance:.3f}",
-    ]
-    reset = SetupCandidate(
-        family="baseline_reset",
-        description="Reset toward a healthier validated baseline",
-        step1=reset_solution.get("step1"),
-        step2=reset_solution.get("step2"),
-        step3=reset_solution.get("step3"),
-        step4=reset_solution.get("step4"),
-        step5=reset_solution.get("step5"),
-        step6=reset_solution.get("step6"),
-        supporting=reset_solution.get("supporting"),
-        confidence=round(min(1.0, overhaul_conf * 0.6 + legality_ok * 0.25 + 0.15), 3),
-        reasons=reset_notes,
-    )
-    if produced_solution and hasattr(authority_session, "setup") and hasattr(authority_session, "measured"):
-        reset.predicted, reset_prediction_conf = predict_candidate_telemetry(
-            current_setup=authority_session.setup,
-            baseline_measured=authority_session.measured,
-            step2=produced_solution.get("step2"),
-            step4=produced_solution.get("step4"),
-            supporting=produced_solution.get("supporting"),
-            corrections=prediction_corrections,
-        )
-        reset.confidence = round(min(1.0, (reset.confidence + reset_prediction_conf.overall) / 2.0), 3)
-    reset.score = score_from_prediction(
-        baseline_measured=getattr(authority_session, "measured", None),
-        predicted=reset.predicted,
-        prediction_confidence=reset.confidence,
-        disruption_cost=0.75 if overhaul_class == "minor_tweak" else 0.55,
-        notes=reset_notes,
-    )
-    reset.score.total = round(min(1.0, reset.score.total + legality_ok * 0.04 + envelope_distance * 0.01), 3)
-
-    if overhaul_class == "baseline_reset":
-        reset.score.total = round(reset.score.total + 0.08, 3)
-        incremental.score.total = round(max(0.0, incremental.score.total - 0.08), 3)
-        reset.reasons.append("Reset candidate boosted because overhaul classification is baseline_reset.")
-    elif overhaul_class == "moderate_rework":
-        reset.score.total = round(reset.score.total + 0.03, 3)
-        incremental.reasons.append("Incremental candidate kept viable despite broader rework need.")
-    else:
-        incremental.score.total = round(incremental.score.total + 0.04, 3)
-        reset.reasons.append("Reset candidate penalized because overhaul classification remains minor_tweak.")
-
-    candidates = [incremental, reset]
-
-    if produced_solution and hasattr(authority_session, "measured"):
-        compromise_pred = _blend_predictions(incremental.predicted, reset.predicted)
-        compromise_notes = [
-            "Blend authority-session drivability with reset-family safety improvements.",
-            f"Authority score: {authority_conf:.3f}",
-            f"Overhaul classification: {overhaul_class}",
-        ]
-        compromise = SetupCandidate(
-            family="compromise",
-            description="Blend current authority concept with safer reset direction",
-            step1=compromise_solution.get("step1"),
-            step2=compromise_solution.get("step2"),
-            step3=compromise_solution.get("step3"),
-            step4=compromise_solution.get("step4"),
-            step5=compromise_solution.get("step5"),
-            step6=compromise_solution.get("step6"),
-            supporting=compromise_solution.get("supporting"),
-            predicted=compromise_pred,
-            confidence=round(min(1.0, (incremental.confidence + reset.confidence) / 2.0), 3),
-            reasons=compromise_notes,
-        )
-        compromise.score = combine_candidate_score(
-            safety=max(0.2, ((incremental.score.safety if incremental.score else 0.5) + (reset.score.safety if reset.score else 0.5)) / 2.0),
-            performance=max(0.2, ((incremental.score.performance if incremental.score else 0.5) + (reset.score.performance if reset.score else 0.5)) / 2.0 + 0.03),
-            stability=max(0.2, ((incremental.score.stability if incremental.score else 0.5) + (reset.score.stability if reset.score else 0.5)) / 2.0),
-            confidence=compromise.confidence,
-            disruption_cost=0.4 if overhaul_class == "moderate_rework" else 0.5,
-            notes=compromise_notes + [
-                "Compromise score is blended from predicted incremental and reset outcomes.",
+        candidate = SetupCandidate(
+            family=family,
+            description=family_descriptions[family],
+            step1=family_solution.get("step1"),
+            step2=family_solution.get("step2"),
+            step3=family_solution.get("step3"),
+            step4=family_solution.get("step4"),
+            step5=family_solution.get("step5"),
+            step6=family_solution.get("step6"),
+            supporting=family_solution.get("supporting"),
+            reasons=[
+                f"Authority session: {getattr(authority_session, 'label', 'unknown')}",
+                f"Authority score: {authority_conf:.3f}",
+                f"Overhaul classification: {overhaul_class}",
             ],
         )
-        if overhaul_class == "moderate_rework":
-            compromise.score.total = round(compromise.score.total + 0.12, 3)
-            compromise.reasons.append("Compromise candidate boosted because overhaul classification is moderate_rework.")
-        candidates.append(compromise)
+        if hasattr(authority_session, "setup") and hasattr(authority_session, "measured"):
+            candidate.predicted, prediction_conf = predict_candidate_telemetry(
+                current_setup=authority_session.setup,
+                baseline_measured=authority_session.measured,
+                step1=candidate.step1,
+                step2=candidate.step2,
+                step3=candidate.step3,
+                step4=candidate.step4,
+                step5=candidate.step5,
+                step6=candidate.step6,
+                supporting=candidate.supporting,
+                corrections=prediction_corrections,
+            )
+            candidate.confidence = round(
+                min(
+                    1.0,
+                    prediction_conf.overall * 0.65
+                    + authority_conf * 0.2
+                    + overhaul_conf * 0.15,
+                ),
+                3,
+            )
+        else:
+            candidate.predicted = PredictedTelemetry(
+                front_heave_travel_used_pct=_safe_attr(authority_session, "measured", "front_heave_travel_used_pct"),
+                front_excursion_mm=_safe_attr(authority_session, "measured", "front_rh_excursion_measured_mm"),
+                rear_rh_std_mm=_safe_attr(authority_session, "measured", "rear_rh_std_mm"),
+                braking_pitch_deg=_safe_attr(authority_session, "measured", "pitch_range_braking_deg"),
+                front_lock_p95=_safe_attr(authority_session, "measured", "front_braking_lock_ratio_p95"),
+                rear_power_slip_p95=_safe_attr(authority_session, "measured", "rear_power_slip_ratio_p95"),
+                body_slip_p95_deg=_safe_attr(authority_session, "measured", "body_slip_p95_deg"),
+                understeer_low_deg=_safe_attr(authority_session, "measured", "understeer_low_speed_deg"),
+                understeer_high_deg=_safe_attr(authority_session, "measured", "understeer_high_speed_deg"),
+                front_pressure_hot_kpa=_safe_attr(authority_session, "measured", "front_pressure_mean_kpa"),
+                rear_pressure_hot_kpa=_safe_attr(authority_session, "measured", "rear_pressure_mean_kpa"),
+            )
+            candidate.confidence = round(min(1.0, authority_conf * 0.7 + overhaul_conf * 0.3), 3)
+
+        disruption_cost = _estimate_candidate_disruption(authority_session, candidate)
+        candidate.score = score_from_prediction(
+            baseline_measured=getattr(authority_session, "measured", None),
+            predicted=candidate.predicted,
+            prediction_confidence=candidate.confidence,
+            disruption_cost=disruption_cost,
+            envelope_distance=envelope_distance,
+            setup_distance=setup_distance,
+            legal_ok=legality_ok,
+            authority_score=authority_conf,
+            state_risk=state_risk,
+            notes=candidate.reasons + [
+                f"Disruption cost: {disruption_cost:.3f}",
+                f"Envelope distance: {envelope_distance:.3f}",
+                f"Setup distance: {setup_distance:.3f}",
+            ],
+        )
+        if family_prior[family]:
+            candidate.score.total = round(min(1.0, candidate.score.total + family_prior[family]), 3)
+            candidate.reasons.append(f"Context prior applied for {family}: +{family_prior[family]:.2f}.")
+        if family_penalty[family]:
+            candidate.score.total = round(max(0.0, candidate.score.total - family_penalty[family]), 3)
+            candidate.reasons.append(f"Context penalty applied for {family}: -{family_penalty[family]:.2f}.")
+        candidates.append(candidate)
 
     winner = max(candidates, key=lambda candidate: candidate.score.total if candidate.score is not None else -1.0)
     winner.selected = True
@@ -227,9 +241,9 @@ def _build_family_solution(
         return result
 
     if family == "incremental":
-        blend = 0.7  # preserve more of the current setup region
+        blend = 0.82  # stay close to the authority setup
     elif family == "compromise":
-        blend = 0.45
+        blend = 0.52
     else:
         blend = 0.0
 
@@ -312,6 +326,170 @@ def _build_family_solution(
             if hasattr(setup, field) and hasattr(supporting, field):
                 setattr(supporting, field, getattr(setup, field))
     return result
+
+
+def _state_risk(authority_session: Any) -> float:
+    diagnosis = getattr(authority_session, "diagnosis", None)
+    issues = getattr(diagnosis, "state_issues", []) or []
+    if not issues:
+        return 0.0
+    return round(sum(getattr(issue, "severity", 0.0) * getattr(issue, "confidence", 0.0) for issue in issues), 3)
+
+
+def _estimate_candidate_disruption(authority_session: Any, candidate: SetupCandidate) -> float:
+    setup = getattr(authority_session, "setup", None)
+    if setup is None:
+        return 0.5
+
+    terms: list[float] = []
+
+    def _append(current: Any, target: Any, scale: float) -> None:
+        try:
+            if current is None or target is None or scale <= 0:
+                return
+            terms.append(min(1.0, abs(float(target) - float(current)) / scale))
+        except (TypeError, ValueError):
+            return
+
+    _append(getattr(setup, "front_pushrod_mm", None), getattr(candidate.step1, "front_pushrod_offset_mm", None), 4.0)
+    _append(getattr(setup, "rear_pushrod_mm", None), getattr(candidate.step1, "rear_pushrod_offset_mm", None), 4.0)
+    _append(getattr(setup, "front_heave_nmm", None), getattr(candidate.step2, "front_heave_nmm", None), 25.0)
+    _append(getattr(setup, "rear_third_nmm", None), getattr(candidate.step2, "rear_third_nmm", None), 150.0)
+    _append(getattr(setup, "front_torsion_od_mm", None), getattr(candidate.step3, "front_torsion_od_mm", None), 1.0)
+    _append(getattr(setup, "rear_spring_nmm", None), getattr(candidate.step3, "rear_spring_rate_nmm", None), 35.0)
+    _append(getattr(setup, "rear_arb_blade", None), getattr(candidate.step4, "rear_arb_blade_start", None), 2.0)
+    _append(getattr(setup, "front_camber_deg", None), getattr(candidate.step5, "front_camber_deg", None), 0.5)
+    _append(getattr(setup, "rear_camber_deg", None), getattr(candidate.step5, "rear_camber_deg", None), 0.4)
+    _append(getattr(setup, "front_hs_comp", None), getattr(getattr(candidate.step6, "lf", None), "hs_comp", None), 3.0)
+    _append(getattr(setup, "rear_hs_comp", None), getattr(getattr(candidate.step6, "lr", None), "hs_comp", None), 3.0)
+    _append(getattr(setup, "brake_bias_pct", None), getattr(candidate.supporting, "brake_bias_pct", None), 0.8)
+    _append(getattr(setup, "diff_preload_nm", None), getattr(candidate.supporting, "diff_preload_nm", None), 20.0)
+    _append(getattr(setup, "tc_gain", None), getattr(candidate.supporting, "tc_gain", None), 2.0)
+    _append(getattr(setup, "tc_slip", None), getattr(candidate.supporting, "tc_slip", None), 2.0)
+
+    if not terms:
+        return 0.5
+    return round(max(0.05, min(0.95, sum(terms) / len(terms))), 3)
+
+
+def _apply_family_state_adjustments(
+    result: dict[str, Any],
+    *,
+    family: str,
+    authority_session: Any,
+    overhaul_class: str,
+    envelope_distance: float,
+    setup_distance: float,
+    cluster_seeded: bool = False,
+) -> None:
+    measured = getattr(authority_session, "measured", None)
+    if measured is None:
+        return
+
+    family_intensity = {
+        "incremental": 0.35,
+        "compromise": 0.7,
+        "baseline_reset": 1.0,
+    }.get(family, 0.5)
+    if overhaul_class == "baseline_reset" and family == "baseline_reset":
+        family_intensity += 0.1
+    if family == "baseline_reset" and (envelope_distance >= 2.0 or setup_distance >= 2.0):
+        family_intensity += 0.05
+
+    front_support = _clamp(
+        max(
+            (((_safe_float(getattr(measured, "front_heave_travel_used_pct", None)) or 0.0) - 80.0) / 20.0),
+            (((_safe_float(getattr(measured, "pitch_range_braking_deg", None)) or 0.0) - 0.9) / 0.8),
+            (_safe_float(getattr(measured, "bottoming_event_count_front_clean", None)) or 0.0) / 6.0,
+        ),
+        0.0,
+        1.25,
+    )
+    rear_support = _clamp(
+        max(
+            (((_safe_float(getattr(measured, "rear_rh_std_mm", None)) or 0.0) - 6.0) / 4.0),
+            (_safe_float(getattr(measured, "bottoming_event_count_rear_clean", None)) or 0.0) / 6.0,
+        ),
+        0.0,
+        1.25,
+    )
+    entry_push = _clamp(((_safe_float(getattr(measured, "understeer_low_speed_deg", None)) or 0.0) - 0.9) / 1.2, 0.0, 1.0)
+    high_speed_push = _clamp(
+        (((_safe_float(getattr(measured, "understeer_high_speed_deg", None)) or 0.0) - (_safe_float(getattr(measured, "understeer_low_speed_deg", None)) or 0.0)) - 0.2) / 0.8,
+        0.0,
+        1.0,
+    )
+    exit_instability = _clamp(
+        max(
+            (((_safe_float(getattr(measured, "rear_power_slip_ratio_p95", None)) or 0.0) - 0.07) / 0.06),
+            (((_safe_float(getattr(measured, "body_slip_p95_deg", None)) or 0.0) - 3.2) / 2.5),
+        ),
+        0.0,
+        1.2,
+    )
+    front_lock = _clamp(((_safe_float(getattr(measured, "front_braking_lock_ratio_p95", None)) or 0.0) - 0.06) / 0.05, 0.0, 1.0)
+
+    step1 = result.get("step1")
+    if step1 is not None:
+        _adjust_numeric(step1, "front_pushrod_offset_mm", 0.8 * front_support * family_intensity, decimals=3)
+        if hasattr(step1, "rake_static_mm") and hasattr(step1, "static_front_rh_mm") and hasattr(step1, "static_rear_rh_mm"):
+            try:
+                step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 3)
+            except TypeError:
+                pass
+
+    step2 = result.get("step2")
+    if step2 is not None:
+        if not cluster_seeded:
+            _scale_numeric(step2, "front_heave_nmm", 1.0 + 0.12 * front_support * family_intensity, decimals=3)
+            _scale_numeric(step2, "rear_third_nmm", 1.0 + 0.12 * rear_support * family_intensity, decimals=3)
+        _adjust_numeric(step2, "perch_offset_front_mm", 1.5 * front_support * family_intensity, decimals=3)
+        _adjust_numeric(step2, "perch_offset_rear_mm", 2.0 * rear_support * family_intensity, decimals=3)
+
+    step3 = result.get("step3")
+    if step3 is not None:
+        _adjust_numeric(step3, "front_torsion_od_mm", -0.12 * entry_push * family_intensity, decimals=4)
+        _adjust_numeric(
+            step3,
+            "rear_spring_rate_nmm",
+            (8.0 * rear_support - 6.0 * exit_instability) * family_intensity,
+            decimals=3,
+        )
+
+    step4 = result.get("step4")
+    if step4 is not None:
+        arb_delta = int(round((entry_push + high_speed_push - exit_instability) * family_intensity))
+        _adjust_integer(step4, "rear_arb_blade_start", arb_delta, lo=1, hi=6)
+        _adjust_integer(step4, "rarb_blade_slow_corner", arb_delta, lo=1, hi=6)
+        _adjust_integer(step4, "rarb_blade_fast_corner", arb_delta, lo=1, hi=6)
+
+    step5 = result.get("step5")
+    if step5 is not None:
+        _adjust_numeric(step5, "front_camber_deg", -0.12 * entry_push * family_intensity, decimals=3)
+        _adjust_numeric(step5, "rear_camber_deg", -0.08 * exit_instability * family_intensity, decimals=3)
+        _adjust_numeric(step5, "front_toe_mm", -0.05 * entry_push * family_intensity, decimals=3)
+
+    step6 = result.get("step6")
+    if step6 is not None:
+        for corner_name in ("lf", "rf"):
+            corner = getattr(step6, corner_name, None)
+            if corner is None:
+                continue
+            _adjust_integer(corner, "hs_comp", int(round(1.5 * front_support * family_intensity)), lo=0, hi=20)
+            _adjust_integer(corner, "ls_rbd", int(round((front_support + front_lock) * family_intensity)), lo=0, hi=20)
+        for corner_name in ("lr", "rr"):
+            corner = getattr(step6, corner_name, None)
+            if corner is None:
+                continue
+            _adjust_integer(corner, "hs_comp", int(round(1.5 * rear_support * family_intensity)), lo=0, hi=20)
+            _adjust_integer(corner, "ls_rbd", int(round(rear_support * family_intensity)), lo=0, hi=20)
+
+    supporting = result.get("supporting")
+    if supporting is not None:
+        _adjust_numeric(supporting, "brake_bias_pct", -0.3 * front_lock * family_intensity, decimals=3)
+        _adjust_numeric(supporting, "diff_preload_nm", 5.0 * exit_instability * family_intensity, decimals=3)
+        _adjust_integer(supporting, "tc_gain", int(round(exit_instability * family_intensity)), lo=1, hi=10)
+        _adjust_integer(supporting, "tc_slip", int(round(0.8 * exit_instability * family_intensity)), lo=1, hi=10)
 
 
 def _apply_cluster_center(result: dict[str, Any], setup_cluster: Any) -> None:
