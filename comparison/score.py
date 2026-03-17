@@ -108,9 +108,21 @@ def _safe_avg(values: list[float]) -> float:
 
 
 def _score_lap_time(sessions: list[SessionAnalysis]) -> list[float]:
-    """Lower lap time = better."""
-    times = [s.lap_time_s for s in sessions]
-    return _normalize_lower_better(times)
+    """Lower lap time = better, but with soft penalties for small gaps.
+
+    Using min/max normalization made any tiny lap-time delta dominate the score,
+    especially in 2-session comparisons. Instead, scale lap-time authority by
+    relative gap to the fastest lap over a 1.5% window.
+    """
+    if not sessions:
+        return []
+    fastest = min(s.lap_time_s for s in sessions)
+    window = max(fastest * 0.015, 0.001)
+    scores: list[float] = []
+    for sess in sessions:
+        delta = max(0.0, sess.lap_time_s - fastest)
+        scores.append(max(0.0, 1.0 - delta / window))
+    return scores
 
 
 def _score_grip(sessions: list[SessionAnalysis]) -> list[float]:

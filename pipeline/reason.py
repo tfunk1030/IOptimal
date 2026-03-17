@@ -616,8 +616,7 @@ def _session_signal_quality_score(snapshot: SessionSnapshot) -> tuple[float, lis
 def _compute_authority_scores(state: ReasoningState) -> None:
     lap_times = [s.lap_time_s for s in state.sessions]
     fastest = min(lap_times)
-    slowest = max(lap_times)
-    span = max(slowest - fastest, 0.001)
+    lap_window = max(fastest * 0.015, 0.001)
     assessment_scores = {
         "fast": 1.0,
         "competitive": 0.8,
@@ -626,7 +625,7 @@ def _compute_authority_scores(state: ReasoningState) -> None:
     }
     authority_rows: list[dict[str, object]] = []
     for idx, snap in enumerate(state.sessions):
-        lap_component = 1.0 - ((snap.lap_time_s - fastest) / span)
+        lap_component = max(0.0, 1.0 - max(0.0, snap.lap_time_s - fastest) / lap_window)
         diagnosis_component = assessment_scores.get(snap.diagnosis.assessment, 0.6)
         context_component = snap.session_context.overall_score if snap.session_context is not None else 0.5
         signal_component, signal_notes = _session_signal_quality_score(snap)
