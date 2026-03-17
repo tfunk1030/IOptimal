@@ -67,7 +67,10 @@
       "Bash(find:*)",
       "Bash(where python:*)",
       "Bash(ls C:UsersVYRALIOptimal*.py)",
-      "Bash(ls -lh /c/Users/VYRAL/IOptimal/ibtfiles/ferrari*)"
+      "Bash(ls -lh /c/Users/VYRAL/IOptimal/ibtfiles/ferrari*)",
+      "Bash(ls -la /c/Users/VYRAL/IOptimal/analyzer/*.py)",
+      "Bash(ls -1 /c/Users/VYRAL/IOptimal/analyzer/*.py)",
+      "Bash(xargs -I {} basename {})"
     ]
   }
 }

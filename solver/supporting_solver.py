@@ -129,6 +129,7 @@ class SupportingSolver:
         ).solve()
         sol.brake_bias_pct = brake_solution.brake_bias_pct
         sol.brake_bias_reasoning = brake_solution.reasoning
+        sol._brake_solution = brake_solution
         sol.brake_bias_target = getattr(self.current_setup, "brake_bias_target", 0.0) or 0.0
         sol.brake_bias_migration = getattr(self.current_setup, "brake_bias_migration", 0.0) or 0.0
         sol.front_master_cyl_mm = getattr(self.current_setup, "front_master_cyl_mm", 0.0) or 0.0

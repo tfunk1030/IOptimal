@@ -52,6 +52,8 @@ class DriverProfile:
     # Confidence / noise separation
     classification_confidence: float = 0.0
     brake_release_quality: float = 0.0
+    setup_noise_index: float = 0.0       # How much noise is setup-induced (0-1)
+    noise_reasoning: str = ""            # Human-readable decomposition
 
     # Cornering aggression (tyre thermal targets)
     avg_peak_lat_g_utilization: float = 0.0  # actual / theoretical limit
@@ -396,3 +398,52 @@ def refine_driver_with_measured(
         )
         profile.driver_noise_index = min(1.0, profile.driver_noise_index + 0.15)
         profile.classification_confidence = max(0.25, profile.classification_confidence - 0.1)
+
+
+def separate_driver_noise(
+    profile: DriverProfile,
+    measured: object,
+) -> tuple[float, float, str]:
+    """Decompose observed noise into driver-caused vs setup-caused components.
+
+    Returns:
+        (driver_component, setup_component, reasoning)
+
+    driver_component: 0-1, how much of the observed variance is driver behavior.
+    setup_component: 0-1, how much is setup-induced instability.
+    """
+    # Driver-controlled factors (should be forgiven by the solver)
+    driver_factors = (
+        profile.apex_speed_cv * 6.0
+        + profile.entry_speed_cv * 3.0
+        + max(0.0, (profile.steering_jerk_p95_rad_per_s2 - 50.0) / 150.0)
+        + max(0.0, (1.0 - profile.brake_release_quality) * 0.3)
+    )
+    driver_component = min(1.0, max(0.0, driver_factors))
+
+    # Setup-induced instability symptoms (demand precise tuning)
+    front_rh_std = getattr(measured, "front_rh_std_mm", 0.0) or 0.0
+    rear_rh_std = getattr(measured, "rear_rh_std_mm", 0.0) or 0.0
+    body_slip = getattr(measured, "body_slip_p95_deg", 0.0) or 0.0
+    rear_slip = getattr(measured, "rear_power_slip_ratio_p95", 0.0) or 0.0
+    front_lock = getattr(measured, "front_braking_lock_ratio_p95", 0.0) or 0.0
+    front_travel = getattr(measured, "front_heave_travel_used_pct", 0.0) or 0.0
+
+    setup_factors = (
+        min(1.0, front_rh_std / 2.0) * 0.25
+        + min(1.0, rear_rh_std / 2.5) * 0.15
+        + min(1.0, body_slip / 3.0) * 0.20
+        + min(1.0, rear_slip / 0.08) * 0.15
+        + min(1.0, front_lock / 0.5) * 0.10
+        + min(1.0, max(0.0, front_travel - 85) / 15) * 0.15
+    )
+    setup_component = min(1.0, max(0.0, setup_factors))
+
+    parts = []
+    if driver_component > 0.3:
+        parts.append(f"driver variance={driver_component:.2f}")
+    if setup_component > 0.3:
+        parts.append(f"setup instability={setup_component:.2f}")
+    reasoning = "; ".join(parts) if parts else "low noise overall"
+
+    return (round(driver_component, 3), round(setup_component, 3), reasoning)
