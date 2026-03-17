@@ -158,6 +158,24 @@ def _check_safety(
             priority=0,
         ))
 
+    # True Aero Stall (Physics-Derived from Downforce/Cl*A drop)
+    if m.aero_stall_detected:
+        problems.append(Problem(
+            category="safety",
+            severity="critical",
+            symptom="Aero Stall Detected (Cl*A drops >5% at front RH < 15mm)",
+            cause=(
+                "Physics derivation confirms that when the front ride height drops low, "
+                "the actual aerodynamic efficiency (downforce) falls off a cliff. "
+                "This is true vortex burst. Stiffen front heave spring or raise static RH immediately."
+            ),
+            speed_context="high",
+            measured=1.0,
+            threshold=0.0,
+            units="bool",
+            priority=0,
+        ))
+
     # Front bottoming — use clean-track count for severity assessment.
     # Kerb bottoming is a driving line choice, not a setup failure.
     front_bottom_thresh = t.bottoming_events_front
@@ -551,6 +569,40 @@ def _check_balance(
             speed_context="all",
             measured=m.understeer_mean_deg,
             threshold=us_thresh,
+            units="deg",
+            priority=2,
+        ))
+
+    # Advanced Tire Slip Balance (Front slip angle - Rear slip angle)
+    if m.slip_balance_mean_deg > 0.5:
+        problems.append(Problem(
+            category="balance",
+            severity="significant",
+            symptom=f"True Tire Slip Balance {m.slip_balance_mean_deg:+.2f} deg (Front slipping more)",
+            cause=(
+                "Direct measurement of tire slip angles confirms the front tires are operating "
+                "at a higher slip angle than the rears (understeer limit). Shift mechanical balance "
+                "rearward or soften front."
+            ),
+            speed_context="cornering",
+            measured=m.slip_balance_mean_deg,
+            threshold=0.5,
+            units="deg",
+            priority=2,
+        ))
+    elif m.slip_balance_mean_deg < -0.5:
+        problems.append(Problem(
+            category="balance",
+            severity="significant",
+            symptom=f"True Tire Slip Balance {m.slip_balance_mean_deg:+.2f} deg (Rear slipping more)",
+            cause=(
+                "Direct measurement of tire slip angles confirms the rear tires are operating "
+                "at a higher slip angle than the fronts (oversteer limit). Shift mechanical balance "
+                "forward or stiffen front."
+            ),
+            speed_context="cornering",
+            measured=m.slip_balance_mean_deg,
+            threshold=-0.5,
             units="deg",
             priority=2,
         ))

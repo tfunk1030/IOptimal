@@ -113,6 +113,12 @@ class MeasuredState:
     understeer_high_speed_deg: float = 0.0
     body_slip_p95_deg: float = 0.0
     body_slip_at_peak_g_deg: float = 0.0
+    
+    # Advanced Tire Slip Dynamics
+    front_slip_angle_p95_deg: float = 0.0
+    rear_slip_angle_p95_deg: float = 0.0
+    slip_balance_mean_deg: float = 0.0  # >0 understeer, <0 oversteer
+    
     rear_slip_ratio_p95: float = 0.0        # Backward-compatible alias of rear_power_slip_ratio_p95
     front_slip_ratio_p95: float = 0.0       # Backward-compatible alias of front_braking_lock_ratio_p95
     rear_power_slip_ratio_p95: float = 0.0
@@ -250,6 +256,14 @@ class MeasuredState:
     pitch_range_deg: float = 0.0            # p99-p01 pitch range (platform stability)
     pitch_mean_braking_deg: float = 0.0
     pitch_range_braking_deg: float = 0.0
+    dynamic_rake_mean_mm: float = 0.0       # Direct measurement of dynamic rake at speed
+
+    # --- Aero Downforce & Stall (Physics-Derived) ---
+    aero_cla_total_mean: float = 0.0        # Overall aero efficiency (Cl*A)
+    aero_cla_front_mean: float = 0.0
+    aero_cla_rear_mean: float = 0.0
+    aero_balance_measured_pct: float = 0.0
+    aero_stall_detected: bool = False       # True if Cl*A drops significantly at low RH
 
     # --- In-car adjustment tracking (extended) ---
     arb_front_adjustments: int = 0          # dcAntiRollFront changes
@@ -668,6 +682,9 @@ def extract_measurements(
     brake_for_pitch = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else np.zeros(n)
     _extract_pitch(ibt, start, end, speed_kph, brake_for_pitch, state)
 
+    # --- Aero Forces & Downforce Efficiency ---
+    _extract_aero_forces(ibt, start, end, speed_ms, speed_kph, brake_for_pitch, lat_g, car, state)
+
     # --- Extended in-car adjustments ---
     _extract_extended_adjustments(ibt, start, end, state)
 
@@ -765,6 +782,25 @@ def _extract_handling(
         peak_mask = np.abs(lat_g) > (state.peak_lat_g_measured * 0.9)
         if np.sum(peak_mask) > 10:
             state.body_slip_at_peak_g_deg = float(np.mean(abs_body_slip[peak_mask]))
+
+    # --- Advanced Tire Slip Angles ---
+    # wb = l_f + l_r. Weight distribution gives l_f and l_r
+    l_f = car.wheelbase_m * (1.0 - car.weight_dist_front)
+    l_r = car.wheelbase_m * car.weight_dist_front
+    
+    vx_safe = np.maximum(vx, 5.0)
+    rear_slip_rad = np.arctan2(vy - yaw_rate * l_r, vx_safe)
+    front_slip_rad = road_wheel_angle - np.arctan2(vy + yaw_rate * l_f, vx_safe)
+    
+    rear_slip_deg = np.degrees(rear_slip_rad)
+    front_slip_deg = np.degrees(front_slip_rad)
+    
+    if np.sum(cornering) > 10:
+        state.front_slip_angle_p95_deg = float(np.percentile(np.abs(front_slip_deg[cornering]), 95))
+        state.rear_slip_angle_p95_deg = float(np.percentile(np.abs(rear_slip_deg[cornering]), 95))
+        
+        balance_slip = np.abs(front_slip_deg) - np.abs(rear_slip_deg)
+        state.slip_balance_mean_deg = float(np.mean(balance_slip[cornering]))
 
     # --- Wheel slip ratios ---
     if all(ibt.has_channel(c) for c in ["LFspeed", "RFspeed", "LRspeed", "RRspeed"]):
@@ -1667,3 +1703,85 @@ def _extract_wind(
         wind_dir = ibt.channel("WindDir")
         if wind_dir is not None and len(wind_dir) > 0:
             state.wind_dir_deg = round(float(np.mean(np.degrees(wind_dir))), 1)
+
+def _extract_aero_forces(
+    ibt: IBTFile, start: int, end: int,
+    speed_ms: np.ndarray, speed_kph: np.ndarray, brake: np.ndarray,
+    lat_g: np.ndarray, car: CarModel, state: MeasuredState
+) -> None:
+    """Extract physics-derived aero downforce from suspension deflections.
+    
+    By multiplying shock deflections by known spring rates, we extract exact
+    dynamic wheel loads (F_z). Subtracting static weight gives exact Downforce.
+    """
+    if not all(ibt.has_channel(c) for c in ["LFshockDefl", "RFshockDefl", "LRshockDefl", "RRshockDefl"]):
+        return
+        
+    lf_defl = ibt.channel("LFshockDefl")[start:end + 1] * 1000
+    rf_defl = ibt.channel("RFshockDefl")[start:end + 1] * 1000
+    lr_defl = ibt.channel("LRshockDefl")[start:end + 1] * 1000
+    rr_defl = ibt.channel("RRshockDefl")[start:end + 1] * 1000
+    
+    hf_defl = ibt.channel("HFshockDefl")[start:end + 1] * 1000 if ibt.has_channel("HFshockDefl") else np.zeros_like(speed_kph)
+    hr_defl = ibt.channel("HRshockDefl")[start:end + 1] * 1000 if ibt.has_channel("HRshockDefl") else np.zeros_like(speed_kph)
+
+    # Convert deflections to Forces (N)
+    # Using typical baseline rates if exact ones aren't available from setup YAML
+    k_corner_f = car.corner_spring.torsion_bar_rate(13.9) 
+    k_corner_r = 170.0 * (car.corner_spring.rear_motion_ratio ** 2)
+    k_heave_f = car.front_heave_spring_nmm
+    k_heave_r = car.rear_third_spring_nmm
+    
+    f_f_corner = (lf_defl + rf_defl) * k_corner_f
+    f_f_heave = hf_defl * k_heave_f
+    front_dyn_force = f_f_corner + f_f_heave
+    
+    f_r_corner = (lr_defl + rr_defl) * k_corner_r
+    f_r_heave = hr_defl * k_heave_r
+    rear_dyn_force = f_r_corner + f_r_heave
+    
+    total_dyn_force = front_dyn_force + rear_dyn_force
+    v_sq = speed_ms ** 2
+    
+    # Straight line aero extraction
+    straight_mask = (speed_kph > 200.0) & (brake < 0.05) & (np.abs(lat_g) < 0.1)
+    if np.sum(straight_mask) > 10:
+        cla_front = front_dyn_force[straight_mask] / (0.5 * 1.225 * v_sq[straight_mask])
+        cla_rear = rear_dyn_force[straight_mask] / (0.5 * 1.225 * v_sq[straight_mask])
+        cla_total = total_dyn_force[straight_mask] / (0.5 * 1.225 * v_sq[straight_mask])
+        
+        state.aero_cla_total_mean = float(np.mean(cla_total))
+        state.aero_cla_front_mean = float(np.mean(cla_front))
+        state.aero_cla_rear_mean = float(np.mean(cla_rear))
+        
+        if state.aero_cla_total_mean > 0:
+            state.aero_balance_measured_pct = float(state.aero_cla_front_mean / state.aero_cla_total_mean * 100.0)
+
+    # Aero stall detection: does Cl*A drop significantly when front RH drops below 15mm?
+    if ibt.has_channel("LFrideHeight") and ibt.has_channel("RFrideHeight"):
+        lf_rh = ibt.channel("LFrideHeight")[start:end + 1] * 1000
+        rf_rh = ibt.channel("RFrideHeight")[start:end + 1] * 1000
+        front_rh_avg = (lf_rh + rf_rh) / 2.0
+        
+        straight_all = (speed_kph > 100.0) & (brake < 0.05) & (np.abs(lat_g) < 0.1)
+        low_rh = (front_rh_avg < 15.0) & straight_all
+        normal_rh = (front_rh_avg > 18.0) & straight_all
+        
+        if np.sum(low_rh) > 5 and np.sum(normal_rh) > 5:
+            cla_front_low = np.mean(front_dyn_force[low_rh] / (0.5 * 1.225 * v_sq[low_rh]))
+            cla_front_normal = np.mean(front_dyn_force[normal_rh] / (0.5 * 1.225 * v_sq[normal_rh]))
+            
+            # If aero efficiency drops by >5% at low ride height, we are stalling
+            if cla_front_low < cla_front_normal * 0.95:
+                state.aero_stall_detected = True
+
+    # Rake Calculation
+    if ibt.has_channel("LRrideHeight") and ibt.has_channel("RRrideHeight"):
+        lr_rh = ibt.channel("LRrideHeight")[start:end + 1] * 1000
+        rr_rh = ibt.channel("RRrideHeight")[start:end + 1] * 1000
+        rear_rh_avg = (lr_rh + rr_rh) / 2.0
+        rake = rear_rh_avg - front_rh_avg
+        
+        at_speed = speed_kph > 200.0
+        if np.sum(at_speed) > 10:
+            state.dynamic_rake_mean_mm = float(np.mean(rake[at_speed]))
