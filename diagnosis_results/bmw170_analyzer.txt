@@ -1,0 +1,59 @@
+===============================================================
+  SETUP ANALYSIS REPORT — bmw170.ibt
+  Analyzer output (python -m analyzer)
+===============================================================
+
+Loading bmw170.ibt ...
+Reading setup from IBT session info ...
+  Wing 17  RH F30/R48  Heave 30/380  FARB Soft/1 RARB Medium/3  Cam F-2.9/R-1.9
+Extracting telemetry measurements ...
+  Lap 20 (109.118s)
+  Speed: mean 191 kph, max 295 kph
+Diagnosing handling ...
+  Assessment: DANGEROUS
+  12 problems found
+Computing recommendations ...
+  5 changes recommended
+
+===============================================================
+  Car:        BMW M Hybrid V8
+  Track:      Sebring International Raceway
+  Session:    bmw170.ibt
+  Lap:        20 (1:49.118)
+  Assessment: DANGEROUS
+===============================================================
+
+================== CURRENT SETUP (from IBT) ===================
+
+  Wing: 17 deg    DF balance: 51.88%    L/D: 3.752
+  Front RH: 30.0mm (static)  15.0mm (dynamic)
+  Rear RH:  48.2mm (static)  45.0mm (dynamic)
+  Heave: 30 N/mm   Third: 380 N/mm
+  FARB: Soft/1     RARB: Medium/3
+  Camber: F -2.9 / R -1.9    Toe: F -1.0 / R 0.3
+  Dampers F: 10/5/9/5/5  R: 5/5/10/6/11
+  Brake bias: 46.0%    Diff preload: 10 Nm    Fuel: 89 L
+  TC gain: 4    TC slip: 3
+
+===================== HANDLING DIAGNOSIS ======================
+
+  [CRITICAL] Front heave spring travel 96% exhausted under braking (p99 defl 92.8mm)
+  [CRITICAL] 16 front heave spring bottoming events (deflection within 2mm of DeflMax)
+  [ISSUE] Front heave spring travel 94% used at speed (p99 defl 90.7mm)
+  [ISSUE] Front excursion p99 15.5mm = 104% of dynamic RH (15mm)
+  [ISSUE] Braking pitch range 1.38 deg (mean +0.56 deg)
+  [NOTE] Front carcass temp 38C (target >80C)
+  [NOTE] Rear carcass temp 39C (target >80C)
+  [NOTE] Front hot pressure 181 kPa (target <175)
+  [NOTE] Rear hot pressure 178 kPa (target <175)
+  [ISSUE] Front braking slip p95 = 0.162 (target <0.06)
+  [NOTE] Rear traction slip p95 = 0.093 (target <0.08)
+  [NOTE] Hydraulic brake split 69.1% differs from setup 46.0% (delta 23.1%)
+
+=============== RECOMMENDED CHANGES (5 changes) ===============
+
+  1. front_heave_nmm: 30 N/mm -> 39 N/mm
+  2. front_toe_mm: -1.0mm -> -1.2mm
+  3. rear_toe_mm: 0.3mm -> 0.5mm
+  4. brake_bias_pct: 46.0% -> 45.5%
+  5. tc_slip: 3 -> 2
