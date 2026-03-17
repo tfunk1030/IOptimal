@@ -66,6 +66,7 @@ from solver.setup_fingerprint import (
 )
 from solver.decision_trace import build_parameter_decisions
 from solver.legality_engine import LegalValidation, validate_solution_legality
+from solver.candidate_search import SetupCandidate, generate_candidate_families
 from track_model.build_profile import build_profile
 from track_model.ibt_parser import IBTFile
 from track_model.profile import TrackProfile
@@ -390,6 +391,7 @@ class ReasoningState:
     setup_fingerprints: list[SetupFingerprint] = field(default_factory=list)
     validation_clusters: list[ValidationCluster] = field(default_factory=list)
     candidate_vetoes: list[CandidateVeto] = field(default_factory=list)
+    generated_candidates: list[SetupCandidate] = field(default_factory=list)
     solver_notes: list[str] = field(default_factory=list)
     authority_scores: list[dict[str, object]] = field(default_factory=list)
     normalization_scores: list[dict[str, object]] = field(default_factory=list)
@@ -2090,6 +2092,20 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
             )
         lines.append("")
 
+    if state.generated_candidates:
+        lines.append("  CANDIDATE FAMILIES")
+        lines.append("  " + "-" * (width - 4))
+        for candidate in state.generated_candidates:
+            selected = " <-- SELECTED" if candidate.selected else ""
+            score = candidate.score.total if candidate.score is not None else 0.0
+            lines.append(
+                f"  {candidate.family}: score={score:.3f} "
+                f"conf={candidate.confidence:.2f}{selected}"
+            )
+            if candidate.reasons:
+                lines.append(f"    {candidate.reasons[0][:width-6]}")
+        lines.append("")
+
     lines.append("  SIGNAL CONFIDENCE")
     lines.append("  " + "-" * (width - 4))
     authority = state.sessions[state.authority_session_idx]
@@ -2687,6 +2703,58 @@ def reason_and_solve(
         step4.rear_arb_size = _cs.rear_arb_size
         # Geometry, dampers, brake/diff/TC — solver computes from telemetry
 
+    state.legal_validation = validate_solution_legality(
+        car=car,
+        track_name=track.track_name,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        fuel_l=detected_fuel,
+        step5=step5,
+    )
+    state.decision_trace = build_parameter_decisions(
+        car_name=car.canonical_name,
+        current_setup=authority.setup,
+        measured=authority.measured,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+        supporting=supporting,
+        legality=state.legal_validation,
+        fallback_reasons=list(getattr(authority.measured, "fallback_reasons", []) or []),
+    )
+    state.generated_candidates = generate_candidate_families(
+        authority_session=authority,
+        best_session=best,
+        overhaul_assessment=authority.diagnosis.overhaul_assessment,
+        legal_validation=state.legal_validation,
+        authority_score=next((row for row in state.authority_scores if row["session"] == authority.label), None),
+        envelope_distance=state.envelope_distances.get(authority.label).total_score
+        if authority.label in state.envelope_distances
+        else 0.0,
+        setup_distance=state.setup_distances.get(authority.label).distance_score
+        if authority.label in state.setup_distances
+        else 0.0,
+        produced_solution={
+            "step1": step1,
+            "step2": step2,
+            "step3": step3,
+            "step4": step4,
+            "step5": step5,
+            "step6": step6,
+            "supporting": supporting,
+        },
+    )
+    selected_candidate = next((candidate for candidate in state.generated_candidates if candidate.selected), None)
+    if selected_candidate is not None:
+        state.solver_notes.append(
+            f"Candidate family selected: {selected_candidate.family} "
+            f"(score {selected_candidate.score.total if selected_candidate.score else 0.0:.3f})"
+        )
+
     # ── Output ──
     if sto_path:
         from output.setup_writer import write_sto
@@ -2864,6 +2932,31 @@ def reason_and_solve(
             ],
             "validation_clusters": [cluster.to_dict() for cluster in state.validation_clusters],
             "candidate_vetoes": [veto.to_dict() for veto in state.candidate_vetoes],
+            "generated_candidates": [
+                {
+                    "family": candidate.family,
+                    "description": candidate.description,
+                    "confidence": candidate.confidence,
+                    "selected": candidate.selected,
+                    "reasons": candidate.reasons,
+                    "score": (
+                        {
+                            "total": candidate.score.total,
+                            "safety": candidate.score.safety,
+                            "performance": candidate.score.performance,
+                            "stability": candidate.score.stability,
+                            "confidence": candidate.score.confidence,
+                            "disruption_cost": candidate.score.disruption_cost,
+                            "notes": candidate.score.notes,
+                        }
+                        if candidate.score is not None
+                        else None
+                    ),
+                }
+                for candidate in state.generated_candidates
+            ],
+            "legal_validation": state.legal_validation.to_dict() if state.legal_validation is not None else None,
+            "decision_trace": [decision.to_dict() for decision in state.decision_trace],
             "solver_notes": state.solver_notes,
             "step1_rake": dataclasses.asdict(step1),
             "step2_heave": dataclasses.asdict(step2),
