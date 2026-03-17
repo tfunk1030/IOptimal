@@ -173,6 +173,7 @@ class CornerSpringSolver:
         front_heave_nmm: float,
         rear_third_nmm: float,
         fuel_load_l: float = 89.0,
+        measured_front_freq: float | None = None,
     ) -> CornerSpringSolution:
         """Find optimal corner spring rates.
 
@@ -180,6 +181,7 @@ class CornerSpringSolver:
             front_heave_nmm: Front heave spring rate from Step 2
             rear_third_nmm: Rear third spring rate from Step 2
             fuel_load_l: Fuel load (affects corner mass)
+            measured_front_freq: Optional measured dominant frequency from telemetry
 
         Returns:
             CornerSpringSolution with torsion bar OD and rear rate
@@ -189,7 +191,10 @@ class CornerSpringSolver:
         m_f_corner = total_mass * self.car.weight_dist_front / 2
         m_r_corner = total_mass * (1 - self.car.weight_dist_front) / 2
 
-        bump_freq = self.car.rh_variance.dominant_bump_freq_hz
+        if measured_front_freq is not None and measured_front_freq > 0:
+            bump_freq = measured_front_freq
+        else:
+            bump_freq = self.car.rh_variance.dominant_bump_freq_hz
 
         # === FRONT: Natural frequency targeting ===
         # Target: corner freq = bump_freq / freq_ratio
@@ -265,6 +270,7 @@ class CornerSpringSolver:
         rear_spring_rate_nmm: float,
         fuel_load_l: float = 89.0,
         rear_spring_perch_mm: float | None = None,
+        measured_front_freq: float | None = None,
     ) -> CornerSpringSolution:
         """Build a corner-spring solution from explicit garage selections."""
         csm = self.car.corner_spring
@@ -272,7 +278,10 @@ class CornerSpringSolver:
         m_f_corner = total_mass * self.car.weight_dist_front / 2
         m_r_corner = total_mass * (1 - self.car.weight_dist_front) / 2
 
-        bump_freq = self.car.rh_variance.dominant_bump_freq_hz
+        if measured_front_freq is not None and measured_front_freq > 0:
+            bump_freq = measured_front_freq
+        else:
+            bump_freq = self.car.rh_variance.dominant_bump_freq_hz
         front_rate = csm.torsion_bar_rate(front_torsion_od_mm)
         front_freq = self.natural_freq(front_rate, m_f_corner)
         rear_rate = rear_spring_rate_nmm
@@ -386,21 +395,21 @@ class CornerSpringSolver:
         csm = self.car.corner_spring
         checks = []
 
-        # 1. Front heave-to-corner ratio
+        # 1. Front heave-to-corner ratio (Soft constraint)
         ratio_lo, ratio_hi = csm.heave_corner_ratio_range
         front_ratio = front_heave_nmm / front_rate if front_rate > 0 else 0
         checks.append(CornerSpringCheck(
             name=f"Front heave/corner ratio ({front_ratio:.1f}x)",
             satisfied=ratio_lo <= front_ratio <= ratio_hi,
-            detail=f"Ratio {front_ratio:.1f}x outside guideline {ratio_lo}-{ratio_hi}x",
+            detail=f"Ratio {front_ratio:.1f}x outside guideline {ratio_lo}-{ratio_hi}x (Allowed if telemetry verified)",
         ))
 
-        # 2. Rear third-to-corner ratio
+        # 2. Rear third-to-corner ratio (Soft constraint)
         rear_ratio = rear_third_nmm / rear_rate if rear_rate > 0 else 0
         checks.append(CornerSpringCheck(
             name=f"Rear third/corner ratio ({rear_ratio:.1f}x)",
             satisfied=ratio_lo <= rear_ratio <= ratio_hi,
-            detail=f"Ratio {rear_ratio:.1f}x outside guideline {ratio_lo}-{ratio_hi}x",
+            detail=f"Ratio {rear_ratio:.1f}x outside guideline {ratio_lo}-{ratio_hi}x (Allowed if telemetry verified)",
         ))
 
         # 3. Front frequency isolation

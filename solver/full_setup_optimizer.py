@@ -333,6 +333,7 @@ class BMWSebringOptimizer:
             rear_spring_rate_nmm=seed.rear_spring_nmm,
             fuel_load_l=fuel_load_l,
             rear_spring_perch_mm=state.rear_spring_perch_mm,
+            measured_front_freq=getattr(measured, "front_dominant_freq_hz", None) if measured else None,
         )
 
         self.heave_solver.reconcile_solution(
@@ -395,6 +396,7 @@ class BMWSebringOptimizer:
                 rear_spring_rate_nmm=seed.rear_spring_nmm,
                 fuel_load_l=fuel_load_l,
                 rear_spring_perch_mm=state.rear_spring_perch_mm,
+                measured_front_freq=getattr(measured, "front_dominant_freq_hz", None) if measured else None,
             )
             self.heave_solver.reconcile_solution(
                 step1,
@@ -427,6 +429,7 @@ class BMWSebringOptimizer:
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
             fuel_load_l=fuel_load_l,
             camber_confidence=camber_confidence,
+            measured=measured,
         )
         reconcile_ride_heights(
             self.car,

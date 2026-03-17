@@ -260,6 +260,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             front_heave_nmm=step2.front_heave_nmm,
             rear_third_nmm=step2.rear_third_nmm,
             fuel_load_l=args.fuel,
+            measured_front_freq=getattr(measured, "front_dominant_freq_hz", None) if 'measured' in locals() else None,
         )
 
         if not args.json and not args.report_only:
@@ -367,6 +368,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
             fuel_load_l=args.fuel,
             camber_confidence=_camber_conf,
+            measured=measured if 'measured' in locals() else None,
         )
 
         if not args.json and not args.report_only:

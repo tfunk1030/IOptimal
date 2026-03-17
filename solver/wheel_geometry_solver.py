@@ -195,45 +195,45 @@ class WheelGeometrySolver:
         roll_gain: float,
         baseline_deg: float,
         is_front: bool = True,
+        measured: Any = None,
     ) -> float:
-        """Compute optimal static camber from roll kinematics.
+        """Compute optimal static camber from roll kinematics and thermal feedback.
 
-        We want dynamic camber ≈ 0° at the REPRESENTATIVE cornering load,
-        which is the track's measured p95 lateral G. This is the load level
-        the driver is at or below for 95% of cornering time — mid-corner,
-        transitions, trail-braking.
-
-        At peak g (>p95), dynamic camber goes slightly positive — acceptable
-        because the tyre inner shoulder is still loaded and the wider contact
-        patch at maximum load is beneficial.
-
-        Args:
-            representative_roll_deg: Body roll at representative (p95) lateral G
-            roll_gain: Camber change per degree of roll (deg/deg)
-            baseline_deg: Calibrated baseline camber for comparison
-            is_front: True for front axle, False for rear axle
+        We want dynamic camber ≈ 0° at the REPRESENTATIVE cornering load.
+        Additionally, we use thermal telemetry (if available) to correct the camber.
         """
         geo = self.car.geometry
 
-        # At representative cornering (p95 lat_g):
-        #   camber_change = representative_roll * roll_gain
-        #   Want dynamic camber ≈ 0° at this load:
-        #   optimal = -(representative_roll * roll_gain)
         optimal = -(representative_roll_deg * roll_gain)
-
-        # Crown profile correction: the tyre's crown radius means the
-        # contact patch shifts inward under negative camber. This is
-        # beneficial for cornering grip. Add 0.2° more negative.
         crown_correction = -0.2
         optimal += crown_correction
 
-        # Clamp to valid range and snap to garage step (axle-specific)
+        # Thermal feedback loop (if telemetry is provided)
+        if measured is not None:
+            if is_front:
+                lf_spread = getattr(measured, "front_temp_spread_lf_c", 0.0)
+                rf_spread = getattr(measured, "front_temp_spread_rf_c", 0.0)
+                spread = max(lf_spread, rf_spread)
+            else:
+                lr_spread = getattr(measured, "rear_temp_spread_lr_c", 0.0)
+                rr_spread = getattr(measured, "rear_temp_spread_rr_c", 0.0)
+                spread = max(lr_spread, rr_spread)
+
+            # Target inner-outer spread is 5-8°C.
+            # If spread > 10°C, inner is overheating -> reduce negative camber
+            if spread > 10.0:
+                optimal += 0.2
+            # If spread < 3°C, outer is doing too much work -> increase negative camber
+            elif spread < 3.0 and spread > -5.0: # ignore wild negative values
+                optimal -= 0.2
+
         if is_front:
             c_min, c_max = geo.front_camber_range_deg
             step = geo.front_camber_step_deg
         else:
             c_min, c_max = geo.rear_camber_range_deg
             step = geo.rear_camber_step_deg
+            
         optimal = max(c_min, min(c_max, optimal))
         return round(optimal / step) * step
 
@@ -303,6 +303,7 @@ class WheelGeometrySolver:
         rear_wheel_rate_nmm: float,
         fuel_load_l: float = 89.0,
         camber_confidence: str = "estimated",
+        measured: Any = None,
     ) -> WheelGeometrySolution:
         """Compute optimal wheel geometry.
 
@@ -354,13 +355,14 @@ class WheelGeometrySolver:
             representative_lat_g, k_roll_total_nm_deg, fuel_load_l
         )
 
-        # Optimal static camber — optimized for p95 cornering load
+        # Optimal static camber — optimized for p95 cornering load and thermal telemetry
         front_camber = self._optimal_camber(
-            representative_roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg
+            representative_roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg,
+            is_front=True, measured=measured
         )
         rear_camber = self._optimal_camber(
             representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg,
-            is_front=False,
+            is_front=False, measured=measured
         )
         # Rear range already applied in _optimal_camber via is_front=False
         r_min, r_max = geo.rear_camber_range_deg

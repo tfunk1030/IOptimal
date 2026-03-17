@@ -259,9 +259,11 @@ class DiffSolver:
         mass = car.total_mass(89.0)  # use full fuel as conservative case
         track_width_m = car.corner_spring.track_width_mm / 1000.0
 
-        # Coarse corner-exit rear load-transfer proxy (N). This is used only to
-        # scale the baseline preload into a plausible GTP range.
-        lateral_load_transfer_n = mass * peak_lat_g * 9.81 * track_width_m / (2.0 * car.wheelbase_m)
+        h_cg_m = car.corner_spring.cg_height_mm / 1000.0
+
+        # Coarse corner-exit rear load-transfer proxy (N). 
+        # Corrected Formula: load_transfer = mass * peak_lat_g * 9.81 * (h_cg / track_width)
+        lateral_load_transfer_n = mass * peak_lat_g * 9.81 * (h_cg_m / track_width_m)
 
         # Minimum preload to maintain controlled slip on the inside wheel:
         #   preload_min ≈ load_transfer * slip_fraction * coupling_factor
