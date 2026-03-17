@@ -119,6 +119,15 @@ class TrackProfile:
     shock_vel_p95_rear_clean_mps: float = 0.0
     shock_vel_p99_rear_clean_mps: float = 0.0
 
+    # High-speed only shock velocity (>200 kph, for aero platform sizing)
+    # These separate aero-compression from bump excitation — critical for
+    # correct heave spring sizing. Without this, lap-wide p99 includes
+    # low-speed bumps that don't matter for aero platform stability.
+    shock_vel_p95_front_hs_mps: float = 0.0  # >200 kph only
+    shock_vel_p99_front_hs_mps: float = 0.0
+    shock_vel_p95_rear_hs_mps: float = 0.0
+    shock_vel_p99_rear_hs_mps: float = 0.0
+
     # Kerb-only shock velocity (for HS damper tuning)
     shock_vel_p95_front_kerb_mps: float = 0.0
     shock_vel_p99_front_kerb_mps: float = 0.0

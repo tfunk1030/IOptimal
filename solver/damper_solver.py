@@ -329,14 +329,17 @@ class DamperSolver:
                           force_per_click: float, lo: int, hi: int) -> int:
         """Convert damping coefficient to clicks.
 
-        F = c * v → clicks = F / force_per_click = (c * v_ref) / fpc
+        Linear: F = c * v → clicks = F / force_per_click
+        Digressive: F = c * v^n → clicks = (c * v_ref^n) / fpc
         """
-        force_n = c_target * v_ref_mps
+        n = getattr(self.car.damper, "digressive_exponent", 1.0)
+        force_n = c_target * (v_ref_mps ** n)
         clicks = round(force_n / max(force_per_click, 1.0))
         return max(lo, min(hi, clicks))
 
     def _clicks_to_coeff(self, clicks: float, v_ref_mps: float, force_per_click: float) -> float:
-        return float(clicks) * max(force_per_click, 1.0) / max(v_ref_mps, 1e-6)
+        n = getattr(self.car.damper, "digressive_exponent", 1.0)
+        return float(clicks) * max(force_per_click, 1.0) / max(v_ref_mps ** n, 1e-6)
 
     def _hs_slope_from_surface(self) -> tuple[int, int, str]:
         """HS slope from the track's bump severity distribution.

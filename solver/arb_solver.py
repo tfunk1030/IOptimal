@@ -129,7 +129,7 @@ class ARBSolution:
             "",
             "  LLTD ANALYSIS",
             f"    Static front weight:  {self.static_front_weight_dist:.1%}",
-            f"    Target LLTD:          {self.lltd_target:.1%}  (static + 5%)",
+            f"    Target LLTD:          {self.lltd_target:.1%}  (tyre-sensitivity optimized)",
             f"    Achieved LLTD:        {self.lltd_achieved:.1%}",
             f"    LLTD error:           {self.lltd_error:.1%}",
             "",
@@ -260,8 +260,21 @@ class ARBSolver:
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )
 
-        # Target LLTD (OptimumG: static front weight + 5%) + modifier offset
-        target_lltd = self.car.weight_dist_front + 0.05 + lltd_offset
+        # Target LLTD — physics-based from tyre load sensitivity when available.
+        # The optimal LLTD equalizes grip margin across axles. With load-sensitive
+        # tyres, the heavier axle loses proportionally more grip, so LLTD should
+        # shift load transfer toward it to compensate.
+        #
+        # For a car with front weight fraction Wf and tyre load sensitivity λ:
+        #   LLTD_optimal ≈ Wf + λ * (0.5 - Wf)
+        # This reduces to the OptimumG +5% rule when λ ≈ 0.20 and Wf ≈ 0.47.
+        tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.0)
+        if tyre_sens > 0:
+            lltd_offset_from_physics = tyre_sens * (0.5 - self.car.weight_dist_front)
+            target_lltd = self.car.weight_dist_front + lltd_offset_from_physics + lltd_offset
+        else:
+            # Fallback: OptimumG baseline (static front weight + 5%)
+            target_lltd = self.car.weight_dist_front + 0.05 + lltd_offset
 
         # ─── BMW ARB strategy ────────────────────────────────────────────────
         # Per SKILL.md and per-car-quirks.md:
@@ -432,7 +445,12 @@ class ARBSolver:
         k_springs_rear = self._corner_spring_roll_stiffness(
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )
-        target_lltd = self.car.weight_dist_front + 0.05 + lltd_offset
+        tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.0)
+        if tyre_sens > 0:
+            lltd_offset_from_physics = tyre_sens * (0.5 - self.car.weight_dist_front)
+            target_lltd = self.car.weight_dist_front + lltd_offset_from_physics + lltd_offset
+        else:
+            target_lltd = self.car.weight_dist_front + 0.05 + lltd_offset
         farb_blade = int(farb_blade_locked if farb_blade_locked is not None else front_arb_blade_start)
         rarb_slow_blade = int(rarb_blade_slow_corner if rarb_blade_slow_corner is not None else 1)
         rarb_fast_blade = int(rarb_blade_fast_corner if rarb_blade_fast_corner is not None else min(4, arb.rear_blade_count))
