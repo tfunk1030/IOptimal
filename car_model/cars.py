@@ -1093,7 +1093,8 @@ CADILLAC_VSERIES_R = CarModel(
     canonical_name="cadillac",
     mass_car_kg=1030.0,           # GTP minimum — confirmed same as BMW
     mass_driver_kg=75.0,
-    weight_dist_front=0.47,       # ESTIMATE — needs Cadillac IBT calibration
+    weight_dist_front=0.485,      # CALIBRATED: IBT corner weights 5500/(5500+5840 N)
+    brake_bias_pct=47.5,          # CALIBRATED: IBT BrakePressureBias = 47.5%
     aero_axes_swapped=True,       # Dallara aero map convention — confirmed same as BMW
     min_front_rh_static=30.0,     # iRacing floor for all GTP cars — confirmed
     max_front_rh_static=80.0,
@@ -1105,7 +1106,7 @@ CADILLAC_VSERIES_R = CarModel(
     max_rear_rh_dynamic=75.0,
     vortex_burst_threshold_mm=2.0,
     front_heave_spring_nmm=50.0,  # ESTIMATE — needs Cadillac IBT calibration
-    rear_third_spring_nmm=530.0,  # ESTIMATE — needs Cadillac IBT calibration
+    rear_third_spring_nmm=600.0,  # UPDATED: 680 N/mm observed at Silverstone; anchor raised from 530
     aero_compression=AeroCompression(
         ref_speed_kph=230.0,
         front_compression_mm=15.0,  # Dallara platform — same as BMW verified
@@ -1114,7 +1115,7 @@ CADILLAC_VSERIES_R = CarModel(
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=30.0,        # iRacing GTP floor — confirmed all cars
         front_pushrod_default_mm=-25.5, # Dallara LMDh geometry — same as BMW
-        rear_base_rh_mm=46.7,           # Dallara geometry — same as BMW
+        rear_base_rh_mm=46.85,          # CALIBRATED: 46.8mm static at +0.5mm pushrod → intercept ~46.85
         rear_pushrod_to_rh=-0.096,      # Dallara geometry — same as BMW verified
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
@@ -1148,8 +1149,8 @@ CADILLAC_VSERIES_R = CarModel(
         track_width_rear_mm=1650.0,   # ESTIMATE — needs Cadillac IBT calibration
     ),
     geometry=WheelGeometryModel(
-        front_camber_baseline_deg=-2.9,  # ESTIMATE — needs Cadillac IBT calibration
-        rear_camber_baseline_deg=-1.8,
+        front_camber_baseline_deg=-2.8,  # CALIBRATED: IBT LeftFront.Camber = -2.8°
+        rear_camber_baseline_deg=-1.9,   # CALIBRATED: IBT LeftRear.Camber = -1.9°
         front_roll_gain=0.62,            # ESTIMATE — needs Cadillac IBT calibration
         rear_roll_gain=0.50,
     ),

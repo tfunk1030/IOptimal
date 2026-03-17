@@ -55,17 +55,20 @@
     "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-09_18-07-31",
     "porsche_sebring_international_raceway_porsche963gtp_sebring_international_2026-03-10_16-26-23",
     "porsche_sebring_international_raceway_porsche963gtp_sebring_international_2026-03-10_17-00-22",
-    "bmw_sebring_international_raceway_bmwunder"
+    "bmw_sebring_international_raceway_bmwunder",
+    "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_19-58-55"
   ],
-  "total_observations": 54,
+  "total_observations": 55,
   "total_deltas": 54,
   "cars_seen": [
     "bmw",
     "ferrari",
-    "porsche"
+    "porsche",
+    "cadillac"
   ],
   "tracks_seen": [
-    "Sebring International Raceway_International"
+    "Sebring International Raceway_International",
+    "Silverstone Circuit_Arena Grand Prix"
   ],
-  "last_updated": "2026-03-17T19:58:38.643583+00:00"
+  "last_updated": "2026-03-17T23:19:20.573872+00:00"
 }

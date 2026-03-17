@@ -2,10 +2,10 @@
 and fit deflection/ride height models.
 
 Usage:
-    python -m car_model.calibrate_deflections
+    python -m car_model.calibrate_deflections [--car bmw|cadillac|porsche|acura]
 
-Reads all BMW IBT files, extracts setup inputs + iRacing-computed garage values,
-fits regression models, and prints new coefficients with R² and RMSE.
+Reads IBT files for the specified car, extracts setup inputs + iRacing-computed
+garage values, fits regression models, and prints new coefficients with R² and RMSE.
 """
 
 from __future__ import annotations
@@ -20,12 +20,12 @@ from track_model.ibt_parser import IBTFile
 from analyzer.setup_reader import CurrentSetup
 
 
-def extract_all_sessions() -> list[dict]:
-    """Extract setup inputs + computed values from all BMW IBT files."""
+def extract_all_sessions(car: str = "bmw") -> list[dict]:
+    """Extract setup inputs + computed values from all IBT files for the given car."""
     ibt_dir = Path("ibtfiles")
     rows = []
 
-    for ibt_path in sorted(ibt_dir.glob("bmw*.ibt")):
+    for ibt_path in sorted(ibt_dir.glob(f"*{car}*.ibt")):
         try:
             ibt = IBTFile(str(ibt_path))
             setup = CurrentSetup.from_ibt(ibt)
@@ -124,8 +124,15 @@ def fit_linear(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_nam
 
 
 def main():
-    print("Extracting ground truth from all BMW IBT files...")
-    rows = extract_all_sessions()
+    import argparse
+    parser = argparse.ArgumentParser(description="Fit deflection/RH models from IBT sessions.")
+    parser.add_argument("--car", default="bmw", choices=["bmw", "cadillac", "porsche", "acura"],
+                        help="Car canonical name to process (default: bmw)")
+    args = parser.parse_args()
+
+    car = args.car
+    print(f"Extracting ground truth from all {car.upper()} IBT files...")
+    rows = extract_all_sessions(car)
     print(f"\nExtracted {len(rows)} sessions with valid data\n")
 
     if len(rows) < 5:
@@ -133,7 +140,7 @@ def main():
         return
 
     # Save raw dataset
-    out_path = Path("data/calibration_dataset.json")
+    out_path = Path(f"data/calibration_dataset_{car}.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(rows, f, indent=2)
