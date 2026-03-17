@@ -39,6 +39,11 @@ class CandidateSearchTests(unittest.TestCase):
         self.assertEqual(selected.family, "baseline_reset")
         self.assertGreaterEqual(len(candidates), 2)
         self.assertIn("compromise", {candidate.family for candidate in candidates})
+        incremental = next(candidate for candidate in candidates if candidate.family == "incremental")
+        self.assertNotEqual(
+            getattr(incremental.step2, "front_heave_nmm", None),
+            getattr(selected.step2, "front_heave_nmm", None),
+        )
 
     def test_incremental_candidate_wins_for_minor_tweak_case(self) -> None:
         authority = SimpleNamespace(
@@ -74,6 +79,11 @@ class CandidateSearchTests(unittest.TestCase):
         self.assertEqual(selected.family, "incremental")
         scores = {candidate.family: candidate.score.total for candidate in candidates}
         self.assertGreater(scores["incremental"], scores["baseline_reset"])
+        compromise = next(candidate for candidate in candidates if candidate.family == "compromise")
+        self.assertNotEqual(
+            getattr(compromise.step2, "front_heave_nmm", None),
+            getattr(candidates[0].step2, "front_heave_nmm", None),
+        )
 
     def test_compromise_candidate_can_win_for_moderate_rework_case(self) -> None:
         authority = SimpleNamespace(
