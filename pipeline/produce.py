@@ -27,6 +27,7 @@ from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 from analyzer.extract import extract_measurements
 from analyzer.segment import segment_lap
 from analyzer.setup_reader import CurrentSetup
+from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
@@ -722,6 +723,8 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             "lap_number": measured.lap_number,
             "driver_style": driver.style,
             "assessment": diagnosis.assessment,
+            "signal_quality_summary": summarize_signal_quality(measured),
+            "telemetry_bundle": measured.telemetry_bundle,
             "step1_rake": dataclasses.asdict(step1),
             "step2_heave": dataclasses.asdict(step2),
             "step3_corner": dataclasses.asdict(step3),
