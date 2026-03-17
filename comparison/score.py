@@ -16,6 +16,8 @@ from comparison.compare import (
     SessionAnalysis,
     TELEMETRY_METRICS,
 )
+from learner.envelope import build_telemetry_envelope, compute_envelope_distance
+from learner.setup_clusters import build_setup_cluster, compute_setup_distance
 
 
 # ── Scoring categories and weights ──────────────────────────────
@@ -354,6 +356,27 @@ def _score_thermal(sessions: list[SessionAnalysis]) -> list[float]:
 
 def _score_context_health(sessions: list[SessionAnalysis]) -> list[float]:
     """Score session comparability and telemetry health."""
+    healthy_sessions = [
+        sess
+        for sess in sessions
+        if getattr(sess, "session_context", None) is not None
+        and sess.session_context.comparable_to_baseline
+        and getattr(sess.diagnosis, "assessment", "competitive") in {"fast", "competitive"}
+    ]
+    if len(healthy_sessions) >= 2:
+        telemetry_envelope = build_telemetry_envelope(
+            [sess.measured for sess in healthy_sessions],
+            source_sessions=[sess.label for sess in healthy_sessions],
+        )
+        setup_cluster = build_setup_cluster(
+            [sess.setup for sess in healthy_sessions],
+            member_sessions=[sess.label for sess in healthy_sessions],
+            label="comparison healthy cluster",
+        )
+    else:
+        telemetry_envelope = None
+        setup_cluster = None
+
     scores: list[float] = []
     for sess in sessions:
         ctx = getattr(sess, "session_context", None)
@@ -373,10 +396,15 @@ def _score_context_health(sessions: list[SessionAnalysis]) -> list[float]:
             sum(1 for p in getattr(sess.diagnosis, "problems", []) if getattr(p, "severity", "") == "critical") * 0.18
             + sum(1 for p in getattr(sess.diagnosis, "problems", []) if getattr(p, "severity", "") == "significant") * 0.05,
         )
+        family_score = 0.5
+        if telemetry_envelope is not None and setup_cluster is not None:
+            envelope_distance = compute_envelope_distance(sess.measured, telemetry_envelope).total_score
+            setup_distance = compute_setup_distance(sess.setup, setup_cluster).distance_score
+            family_score = max(0.0, 1.0 - min(1.0, (envelope_distance * 0.12 + setup_distance * 0.08)))
         if ctx is None:
-            score = 0.5 * 0.45 + signal_score * 0.25 + state_score * 0.3
+            score = 0.5 * 0.35 + signal_score * 0.2 + state_score * 0.25 + family_score * 0.2
         else:
-            score = ctx.overall_score * 0.45 + signal_score * 0.25 + state_score * 0.3
+            score = ctx.overall_score * 0.35 + signal_score * 0.2 + state_score * 0.25 + family_score * 0.2
             if not ctx.comparable_to_baseline:
                 score *= 0.8
         score = max(0.0, score - hard_fail_penalty)
