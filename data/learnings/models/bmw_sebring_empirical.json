@@ -78,15 +78,16 @@
       "y_param": "lltd_measured",
       "fit_type": "linear",
       "coefficients": [
-        -0.0013457865971587683,
-        0.5007626016383555
+        -0.0017090109590494986,
+        0.5020645487017561
       ],
-      "r_squared": 0.01872892317661512,
-      "sample_count": 44,
-      "residual_std": 0.01177130253004168,
+      "r_squared": 0.030292353255103377,
+      "sample_count": 45,
+      "residual_std": 0.011820087718276914,
       "x_values": [
         1.0,
         3.0,
+        1.0,
         5.0,
         5.0,
         5.0,
@@ -133,6 +134,7 @@
       "y_values": [
         0.5088406423147281,
         0.5100081347095395,
+        0.5136910607435542,
         0.48820069927934046,
         0.48820069927934046,
         0.48588121125753486,
@@ -188,15 +190,16 @@
       "y_param": "front_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.00042332952918582636,
-        5.941564577835489
+        -0.00041790862036337177,
+        5.937940700287678
       ],
-      "r_squared": 0.007164910337307928,
-      "sample_count": 44,
+      "r_squared": 0.00698270196936146,
+      "sample_count": 45,
       "residual_std": 0.0,
       "x_values": [
         30.0,
         30.0,
+        40.0,
         50.0,
         50.0,
         30.0,
@@ -243,6 +246,7 @@
       "y_values": [
         6.455498218536377,
         6.275761604309082,
+        5.777819633483887,
         5.880991458892822,
         5.880991458892822,
         6.421426296234131,
@@ -298,15 +302,16 @@
       "y_param": "rear_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.003425480606818864,
-        9.134080390092391
+        -0.003337279795638855,
+        9.083427924243294
       ],
-      "r_squared": 0.276990862444512,
-      "sample_count": 44,
+      "r_squared": 0.26221762823097583,
+      "sample_count": 45,
       "residual_std": 0.0,
       "x_values": [
         380.0,
         380.0,
+        420.0,
         530.0,
         530.0,
         530.0,
@@ -353,6 +358,7 @@
       "y_values": [
         7.21346378326416,
         7.291454792022705,
+        7.2435383796691895,
         7.460980415344238,
         7.460980415344238,
         7.272793292999268,
@@ -403,24 +409,25 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-03-17T00:42:14.603582+00:00",
-  "observation_count": 44,
+  "last_updated": "2026-03-17T12:52:08.239314+00:00",
+  "observation_count": 45,
   "most_sensitive_parameters": [],
   "corrections": {
-    "aero_compression_front_mean_mm": 10.28085085261952,
-    "aero_compression_front_std_mm": 2.0727307856375634,
-    "aero_compression_rear_mean_mm": 21.150845397602428,
-    "aero_compression_rear_std_mm": 1.6084151384923755,
+    "aero_compression_front_mean_mm": 10.305691960652672,
+    "aero_compression_front_std_mm": 2.0561841017432174,
+    "aero_compression_rear_mean_mm": 21.1559189775255,
+    "aero_compression_rear_std_mm": 1.5907994841336195,
     "lap_time_surrogate_regularized": 1.0,
     "lap_time_surrogate_sample_weight": 0.0,
-    "roll_gradient_measured_mean": 0.8059837253886296,
+    "roll_gradient_measured_mean": 0.8059837253886295,
     "roll_gradient_measured_std": 0.019368930269581877,
     "roll_gradient_sample_count": 24,
-    "lltd_measured_mean": 0.4976815121439044,
-    "lltd_measured_std": 0.011883107403448103,
+    "lltd_measured_mean": 0.498091348651035,
+    "lltd_measured_std": 0.012003289739017617,
     "m_eff_front_values": [
       90.4,
       83.4,
+      100.9,
       167.0,
       167.0,
       117.6,
@@ -464,22 +471,22 @@
       132.4,
       161.1
     ],
-    "m_eff_front_empirical_mean": 222.9818181818182,
-    "m_eff_front_empirical_std": 623.6185362546006,
-    "prediction_correction_front_rh_std_mm": 6.6314,
-    "prediction_correction_front_rh_std_mm_std": 1.0552,
-    "prediction_correction_front_rh_std_mm_n": 3,
-    "prediction_correction_rear_rh_std_mm": 7.5706,
-    "prediction_correction_rear_rh_std_mm_std": 0.5544,
-    "prediction_correction_rear_rh_std_mm_n": 3,
-    "prediction_correction_lltd_predicted": -0.0025,
-    "prediction_correction_lltd_predicted_std": 0.0044,
-    "prediction_correction_lltd_predicted_n": 3,
-    "prediction_correction_body_roll_predicted_deg_per_g": -0.1389,
-    "prediction_correction_body_roll_predicted_deg_per_g_std": 0.0417,
-    "prediction_correction_body_roll_predicted_deg_per_g_n": 3,
+    "m_eff_front_empirical_mean": 220.2688888888889,
+    "m_eff_front_empirical_std": 616.9130361268191,
+    "prediction_correction_front_rh_std_mm": 6.5869,
+    "prediction_correction_front_rh_std_mm_std": 0.9152,
+    "prediction_correction_front_rh_std_mm_n": 4,
+    "prediction_correction_rear_rh_std_mm": 7.4802,
+    "prediction_correction_rear_rh_std_mm_std": 0.5037,
+    "prediction_correction_rear_rh_std_mm_n": 4,
+    "prediction_correction_lltd_predicted": -0.0019,
+    "prediction_correction_lltd_predicted_std": 0.004,
+    "prediction_correction_lltd_predicted_n": 4,
+    "prediction_correction_body_roll_predicted_deg_per_g": -0.1336,
+    "prediction_correction_body_roll_predicted_deg_per_g_std": 0.0372,
+    "prediction_correction_body_roll_predicted_deg_per_g_n": 4,
     "prediction_correction_front_bottoming_predicted": 0.0,
     "prediction_correction_front_bottoming_predicted_std": 0.0,
-    "prediction_correction_front_bottoming_predicted_n": 3
+    "prediction_correction_front_bottoming_predicted_n": 4
   }
 }

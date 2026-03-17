@@ -79,7 +79,7 @@ def format_comparison_report(
     lines.append("=" * WIDTH)
     lines.append("  MULTI-SESSION COMPARISON ANALYSIS")
     lines.append("=" * WIDTH)
-    lines.append(f"  Car:      {sessions[0].setup.source if hasattr(sessions[0].setup, 'source') else 'Unknown'}")
+    lines.append(f"  Car:      {sessions[0].car_name or 'Unknown'}")
     lines.append(f"  Track:    {sessions[0].track_name}")
     lines.append(f"  Sessions: {n}")
 
@@ -471,13 +471,24 @@ def _format_synthesis(synthesis: SynthesisResult, best_score: SessionScore) -> s
     """Format the synthesized setup section."""
     lines: list[str] = []
 
-    lines.append(f"  Based on: {len(synthesis.explanations)} merged decisions")
+    lines.append("  Based on: reasoning-driven multi-session solve")
     lines.append(f"  Wing: {synthesis.wing_angle}°  Fuel: {synthesis.fuel_l:.0f}L")
+    if synthesis.solve_basis:
+        lines.append(
+            f"  Basis: {synthesis.solve_basis}  "
+            f"Authority: {synthesis.authority_session_label or '?'}  "
+            f"Best: {synthesis.best_session_label or '?'}"
+        )
+    if synthesis.selected_candidate_family is not None:
+        line = f"  Candidate family: {synthesis.selected_candidate_family}"
+        if synthesis.selected_candidate_score is not None:
+            line += f"  (score {synthesis.selected_candidate_score:.3f})"
+        lines.append(line)
     lines.append("")
 
     # Merged modifiers
     if synthesis.modifiers.reasons:
-        lines.append("  Merged Solver Modifiers:")
+        lines.append("  Solve Modifiers:")
         for r in synthesis.modifiers.reasons:
             lines.append(f"    {r}")
         lines.append("")
@@ -541,6 +552,12 @@ def _format_synthesis(synthesis: SynthesisResult, best_score: SessionScore) -> s
             lines.append(f"    {exp.parameter}: {exp.value}")
             lines.append(f"      {exp.reasoning}")
             lines.append(f"      Source: {sources}")
+        lines.append("")
+
+    if synthesis.solver_notes:
+        lines.append("  Solve Context:")
+        for note in synthesis.solver_notes[:6]:
+            lines.append(f"    {note}")
         lines.append("")
 
     # Confidence
@@ -622,6 +639,10 @@ def save_comparison_json(
             "wing_angle": synthesis.wing_angle,
             "fuel_l": synthesis.fuel_l,
             "best_session": synthesis.best_session_label,
+            "authority_session": synthesis.authority_session_label,
+            "solve_basis": synthesis.solve_basis,
+            "selected_candidate_family": synthesis.selected_candidate_family,
+            "selected_candidate_score": synthesis.selected_candidate_score,
             "modifiers": {
                 "df_balance_offset_pct": synthesis.modifiers.df_balance_offset_pct,
                 "lltd_offset": synthesis.modifiers.lltd_offset,
@@ -638,6 +659,7 @@ def save_comparison_json(
                 for e in synthesis.explanations
             ],
             "confidence": synthesis.confidence,
+            "solver_notes": synthesis.solver_notes,
         }
 
     # Setup deltas

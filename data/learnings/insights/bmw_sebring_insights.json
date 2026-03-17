@@ -1,17 +1,17 @@
 {
   "car": "bmw",
   "track": "Sebring International Raceway",
-  "session_count": 44,
+  "session_count": 45,
   "key_insights": [
-    "Lap time range: 108.829s \u2013 110.492s (1.664s window across 44 sessions)",
+    "Lap time range: 108.829s \u2013 110.492s (1.664s window across 45 sessions)",
     "No setup changes detected between sessions.",
     "Measured roll gradient: 0.806 deg/g (+/- 0.019)"
   ],
   "setup_trends": [
-    "rear_third_nmm: trending decreasing (380.0 -> 360.0 over 44 sessions)",
-    "rear_arb_blade: trending increasing (1.0 -> 3.0 over 44 sessions)",
-    "front_camber_deg: trending increasing (-2.9 -> -2.0 over 44 sessions)",
-    "rear_camber_deg: trending increasing (-1.9 -> -1.7 over 44 sessions)"
+    "rear_third_nmm: trending decreasing (380.0 -> 360.0 over 45 sessions)",
+    "rear_arb_blade: trending increasing (1.0 -> 3.0 over 45 sessions)",
+    "front_camber_deg: trending increasing (-2.9 -> -2.0 over 45 sessions)",
+    "rear_camber_deg: trending increasing (-1.9 -> -1.7 over 45 sessions)"
   ],
   "unresolved_questions": []
 }
