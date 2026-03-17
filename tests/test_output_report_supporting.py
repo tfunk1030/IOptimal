@@ -87,7 +87,12 @@ class OutputReportSupportingTests(unittest.TestCase):
                 diff_clutch_plates=4,
                 tc_gain=4,
                 tc_slip=3,
-                _diff_solution=SimpleNamespace(lock_pct_coast=47.0, lock_pct_drive=31.0),
+                _diff_solution=SimpleNamespace(
+                    lock_pct_coast=47.0,
+                    lock_pct_drive=31.0,
+                    preload_contribution_pct=5.0,
+                    plate_contribution_pct=42.0,
+                ),
             ),
             compact=True,
         )
@@ -95,6 +100,7 @@ class OutputReportSupportingTests(unittest.TestCase):
         self.assertIn("Brake target/mig: +1.5 / -0.5", report)
         self.assertIn("Master cyl: 19.1/20.6 mm", report)
         self.assertIn("Diff lock coast/drive: 47.0% / 31.0%", report)
+        self.assertIn("Diff preload / plate %   5.0% / 42.0%", report)
 
     def test_pipeline_report_renders_predicted_improvements_on_bmw_fixture(self) -> None:
         fixture = Path("/workspace/ibtfiles/bmw151.ibt")
