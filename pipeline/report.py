@@ -261,6 +261,10 @@ def generate_report(
         a(_cmp("Front camber",       current_setup.front_camber_deg,     step5.front_camber_deg,         "°"))
         a(_cmp("Rear camber",        current_setup.rear_camber_deg,      step5.rear_camber_deg,          "°"))
         a(_cmp("Brake bias",         current_setup.brake_bias_pct,       supporting.brake_bias_pct,      "%"))
+        if current_setup.brake_bias_target != 0.0 or supporting.brake_bias_target != 0.0:
+            a(_cmp("Brake bias target", current_setup.brake_bias_target, supporting.brake_bias_target, ""))
+        if current_setup.brake_bias_migration != 0.0 or supporting.brake_bias_migration != 0.0:
+            a(_cmp("Brake migration", current_setup.brake_bias_migration, supporting.brake_bias_migration, ""))
         a(_cmp("Diff preload",       current_setup.diff_preload_nm,      supporting.diff_preload_nm,     "Nm",  ".0f"))
         a(_cmp("TC gain",            current_setup.tc_gain,              supporting.tc_gain,             "",    ".0f"))
         a(_cmp("F LS Comp",          current_setup.front_ls_comp,        step6.lf.ls_comp,               "cl",  ".0f"))

@@ -2776,6 +2776,11 @@ def reason_and_solve(
             _extra_kw["rear_tb_turns"] = _cs.rear_torsion_bar_turns
         _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
         _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
+        _extra_kw["brake_bias_target"] = supporting.brake_bias_target
+        _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration
+        _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
+        _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
+        _extra_kw["pad_compound"] = supporting.pad_compound
         _extra_kw["diff_coast_drive_ramp"] = (
             ("More Locking" if supporting.diff_ramp_coast <= 45 else "Less Locking")
             if car.canonical_name == "ferrari"
