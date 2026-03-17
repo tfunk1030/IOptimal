@@ -527,6 +527,12 @@ class DamperModel:
     rear_hs_coefficient_nsm: float = 2034.0    # Rear HS damping coefficient (N·s/m)
     knee_velocity_mps: float = 0.050           # LS/HS transition velocity (50 mm/s)
 
+    # Digressive exponent: F = c * v^n. n=1.0 is linear, n<1.0 is digressive.
+    # iRacing's damper model is suspected to be digressive (n ≈ 0.7-0.9).
+    # A digressive characteristic means force increases sub-linearly with velocity,
+    # preventing damper "lockup" at high shaft speeds. This is common in racing dampers.
+    digressive_exponent: float = 1.0  # Default: linear. Set < 1.0 for digressive.
+
     def snap_click(self, value: float, param: str) -> int:
         lo, hi = getattr(self, f"{param}_range")
         return max(lo, min(hi, round(value)))
@@ -710,6 +716,16 @@ class CarModel:
     tyre_vertical_rate_front_nmm: float = 300.0
     tyre_vertical_rate_rear_nmm: float = 320.0
 
+    # Default DF balance target (%) — car-specific, derived from weight
+    # distribution + aero characteristics. Used when no --balance override.
+    default_df_balance_pct: float = 50.0
+
+    # Tyre load sensitivity — grip coefficient degrades as vertical load increases.
+    # load_sensitivity = 0.0 means linear (no sensitivity).
+    # Typical racing tyres: 0.15-0.30. Higher = more grip loss under heavy load.
+    # Used by ARB solver to compute optimal LLTD from physics instead of +5% rule.
+    tyre_load_sensitivity: float = 0.20
+
     # Multi-variable ride height prediction model
     ride_height_model: RideHeightModel = field(default_factory=lambda: RideHeightModel())
 
@@ -844,6 +860,8 @@ BMW_M_HYBRID_V8 = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.4727,  # Calibrated from 41 sessions (corner weights)
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
+    default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
+    tyre_load_sensitivity=0.22,    # BMW Michelin compound — moderate sensitivity
     aero_axes_swapped=True,
     min_front_rh_static=30.0,  # sim-enforced floor for all GTP
     max_front_rh_static=80.0,
@@ -1094,6 +1112,8 @@ CADILLAC_VSERIES_R = CarModel(
     mass_car_kg=1030.0,           # GTP minimum — confirmed same as BMW
     mass_driver_kg=75.0,
     weight_dist_front=0.47,       # ESTIMATE — needs Cadillac IBT calibration
+    default_df_balance_pct=50.0,  # ESTIMATE — balanced car, neutral target
+    tyre_load_sensitivity=0.20,   # ESTIMATE — Michelin GTP compound
     aero_axes_swapped=True,       # Dallara aero map convention — confirmed same as BMW
     min_front_rh_static=30.0,     # iRacing floor for all GTP cars — confirmed
     max_front_rh_static=80.0,
@@ -1183,6 +1203,8 @@ FERRARI_499P = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
     brake_bias_pct=54.0,          # CALIBRATED from IBT: BrakePressureBias = 54.0%
+    default_df_balance_pct=49.5,  # Ferrari is front-heavy with 200kW front hybrid — needs less front DF
+    tyre_load_sensitivity=0.25,   # Ferrari bespoke compound — estimated higher sensitivity
     aero_axes_swapped=True,       # Ferrari aero map uses same axis convention as Dallara
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
@@ -1320,6 +1342,8 @@ PORSCHE_963 = CarModel(
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
     weight_dist_front=0.47,  # ESTIMATE
+    default_df_balance_pct=50.5,  # Traction-limited car — benefits from more rear DF
+    tyre_load_sensitivity=0.18,   # DSSV dampers maintain better contact — lower effective sensitivity
     aero_axes_swapped=True,
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
@@ -1400,6 +1424,8 @@ ACURA_ARX06 = CarModel(
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
     weight_dist_front=0.47,  # ESTIMATE — Dallara LMDh
+    default_df_balance_pct=49.0,  # Sharp front end — risk of snap oversteer with too much front DF
+    tyre_load_sensitivity=0.20,   # ESTIMATE — Michelin GTP compound (Dallara platform)
     aero_axes_swapped=True,
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
