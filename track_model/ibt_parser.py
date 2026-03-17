@@ -65,6 +65,10 @@ class IBTFile:
         self._buf_len = struct.unpack_from("i", raw, 36)[0]
         self._buf_offset = struct.unpack_from("i", raw, 52)[0]
         self.record_count = struct.unpack_from("i", raw, 140)[0]
+        # iRacing doesn't always write record_count on disk (e.g. session quit mid-recording).
+        # Fall back to inferring it from the raw buffer length.
+        if self.record_count == 0 and self._buf_len > 0:
+            self.record_count = (len(raw) - self._buf_offset) // self._buf_len
 
         # Parse session info YAML
         sinfo_str = raw[sinfo_off:sinfo_off + sinfo_len].decode("latin-1").rstrip("\x00")
