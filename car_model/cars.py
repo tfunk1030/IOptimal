@@ -559,6 +559,7 @@ class GarageRanges:
     front_heave_perch_mm: tuple[float, float] = (-100.0, 100.0)
     rear_third_perch_mm: tuple[float, float] = (20.0, 55.0)
     front_torsion_od_mm: tuple[float, float] = (13.9, 18.2)
+    front_torsion_od_discrete: list[float] = field(default_factory=list)  # discrete garage options
     rear_spring_nmm: tuple[float, float] = (100.0, 300.0)
     rear_spring_perch_mm: tuple[float, float] = (25.0, 45.0)
     static_rh_mm: tuple[float, float] = (10.0, 80.0)
