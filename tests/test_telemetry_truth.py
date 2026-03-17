@@ -8,7 +8,7 @@ from analyzer.extract import MeasuredState
 from analyzer.report import format_report, save_analysis_json
 from analyzer.recommend import AnalysisResult
 from analyzer.setup_reader import CurrentSetup
-from analyzer.telemetry_truth import TelemetrySignal, summarize_signal_quality
+from analyzer.telemetry_truth import TelemetrySignal, build_signal_map, summarize_signal_quality
 
 
 class FakeIBT:
@@ -200,6 +200,26 @@ class TelemetryTruthSummaryTests(unittest.TestCase):
         self.assertIn("\"signal_quality_summary\"", text)
         self.assertIn("\"telemetry_signals\"", text)
         self.assertIn("\"telemetry_bundle\"", text)
+
+    def test_build_signal_map_marks_fallback_metrics_as_proxy(self) -> None:
+        measured = MeasuredState(
+            front_braking_lock_ratio_p95=0.071,
+            rear_power_slip_ratio_p95=0.083,
+            hydraulic_brake_split_pct=46.2,
+            hydraulic_brake_split_confidence=0.45,
+            metric_fallbacks=[
+                "front_braking_lock_ratio_p95=fallback_brake_mask",
+                "rear_power_slip_ratio_p95=legacy_speed_mask",
+            ],
+        )
+
+        signals = build_signal_map(measured)
+
+        self.assertEqual(signals["front_braking_lock_ratio_p95"].quality, "proxy")
+        self.assertTrue(signals["front_braking_lock_ratio_p95"].fallback_used)
+        self.assertEqual(signals["rear_power_slip_ratio_p95"].quality, "proxy")
+        self.assertTrue(signals["rear_power_slip_ratio_p95"].fallback_used)
+        self.assertEqual(signals["hydraulic_brake_split_pct"].quality, "proxy")
 
 
 if __name__ == "__main__":
