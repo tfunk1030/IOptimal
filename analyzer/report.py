@@ -186,6 +186,29 @@ def format_report(
                 lines.append(f"    - {fallback}")
         lines.append("")
 
+    if diag.state_issues or diag.overhaul_assessment is not None:
+        lines.append(section("PRIMARY CAR STATES"))
+        lines.append("")
+        if diag.overhaul_assessment is not None:
+            lines.append(
+                f"  Overhaul: {diag.overhaul_assessment.classification}  "
+                f"(conf {diag.overhaul_assessment.confidence:.0%}, score {diag.overhaul_assessment.score:.2f})"
+            )
+            for reason in diag.overhaul_assessment.reasons[:3]:
+                wrapped = _wrap_text(reason, width - 6)
+                for line in wrapped:
+                    lines.append(f"    {line}")
+        for issue in diag.state_issues[:5]:
+            lines.append(
+                f"  - {issue.state_id}  sev={issue.severity:.2f}  "
+                f"conf={issue.confidence:.2f}  loss~{issue.estimated_loss_ms:.0f}ms"
+            )
+            if issue.recommended_direction:
+                wrapped = _wrap_text(issue.recommended_direction, width - 6)
+                for line in wrapped:
+                    lines.append(f"    {line}")
+        lines.append("")
+
     # --- Recommended Changes ---
     if result.changes:
         lines.append(section(f"RECOMMENDED CHANGES ({len(result.changes)} changes)"))
