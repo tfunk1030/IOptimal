@@ -818,8 +818,12 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             predicted_telemetry, _prediction_conf = predict_candidate_telemetry(
                 current_setup=current_setup,
                 baseline_measured=measured,
+                step1=step1,
                 step2=step2,
+                step3=step3,
                 step4=step4,
+                step5=step5,
+                step6=step6,
                 supporting=supporting,
             )
             # Build solver predictions dict for the feedback loop.

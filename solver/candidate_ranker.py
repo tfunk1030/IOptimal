@@ -15,6 +15,20 @@ class CandidateScore:
     notes: list[str] = field(default_factory=list)
 
 
+def _safe(value: Any) -> float | None:
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _improvement(before: float | None, after: float | None, *, lower_better: bool = True, scale: float = 1.0) -> float:
+    if before is None or after is None:
+        return 0.5
+    delta = (before - after) if lower_better else (after - before)
+    return max(0.0, min(1.0, 0.5 + delta / max(scale, 1e-6)))
+
+
 def combine_candidate_score(
     *,
     safety: float,
@@ -53,6 +67,11 @@ def score_from_prediction(
     predicted: Any | None,
     prediction_confidence: float,
     disruption_cost: float,
+    envelope_distance: float = 0.0,
+    setup_distance: float = 0.0,
+    legal_ok: bool = True,
+    authority_score: float | None = None,
+    state_risk: float = 0.0,
     notes: list[str] | None = None,
 ) -> CandidateScore:
     """Score a candidate from predicted telemetry changes."""
@@ -66,18 +85,6 @@ def score_from_prediction(
             disruption_cost=disruption_cost,
             notes=notes + ["No predicted telemetry available; using neutral score."],
         )
-
-    def _safe(value: Any) -> float | None:
-        try:
-            return None if value is None else float(value)
-        except (TypeError, ValueError):
-            return None
-
-    def _improvement(before: float | None, after: float | None, *, lower_better: bool = True, scale: float = 1.0) -> float:
-        if before is None or after is None:
-            return 0.5
-        delta = (before - after) if lower_better else (after - before)
-        return max(0.0, min(1.0, 0.5 + delta / max(scale, 1e-6)))
 
     safety = (
         _improvement(_safe(getattr(baseline_measured, "front_heave_travel_used_pct", None)), _safe(getattr(predicted, "front_heave_travel_used_pct", None)), lower_better=True, scale=20.0)
@@ -93,19 +100,41 @@ def score_from_prediction(
         + _improvement(_safe(getattr(baseline_measured, "understeer_high_speed_deg", None)), _safe(getattr(predicted, "understeer_high_deg", None)), lower_better=True, scale=1.0)
         + _improvement(_safe(getattr(baseline_measured, "rear_power_slip_ratio_p95", None)), _safe(getattr(predicted, "rear_power_slip_p95", None)), lower_better=True, scale=0.05)
     ) / 3.0
+    confidence_score = max(0.0, min(1.0, prediction_confidence))
+    if authority_score is not None:
+        confidence_score = max(0.0, min(1.0, confidence_score * 0.8 + authority_score * 0.2))
+    if not legal_ok:
+        confidence_score *= 0.7
+    if envelope_distance > 0.0:
+        confidence_score *= max(0.7, 1.0 - min(0.2, envelope_distance * 0.03))
+    if setup_distance > 0.0:
+        confidence_score *= max(0.75, 1.0 - min(0.15, setup_distance * 0.025))
+    if state_risk > 0.0:
+        confidence_score *= max(0.7, 1.0 - min(0.2, state_risk * 0.15))
 
     notes.extend(
         [
             f"Predicted safety score from travel/pitch/lock = {safety:.2f}",
             f"Predicted stability score from RH variance/body slip = {stability:.2f}",
             f"Predicted performance score from understeer/slip = {performance:.2f}",
+            f"Prediction confidence after context penalties = {confidence_score:.2f}",
         ]
     )
-    return combine_candidate_score(
+    score = combine_candidate_score(
         safety=safety,
         performance=performance,
         stability=stability,
-        confidence=prediction_confidence,
+        confidence=confidence_score,
         disruption_cost=disruption_cost,
         notes=notes,
     )
+    if envelope_distance > 0.0:
+        score.total = round(max(0.0, score.total - min(0.08, envelope_distance * 0.01)), 3)
+    if setup_distance > 0.0:
+        score.total = round(max(0.0, score.total - min(0.06, setup_distance * 0.008)), 3)
+    if not legal_ok:
+        score.total = round(max(0.0, score.total - 0.08), 3)
+        score.notes.append("Legality warning reduced total score.")
+    if state_risk > 0.0:
+        score.total = round(max(0.0, score.total - min(0.05, state_risk * 0.01)), 3)
+    return score

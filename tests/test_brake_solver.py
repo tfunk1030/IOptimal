@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from car_model import get_car
+from solver.decision_trace import build_parameter_decisions
 from solver.brake_solver import BrakeSolver, compute_brake_bias
 from solver.supporting_solver import SupportingSolver
 
@@ -112,6 +113,84 @@ class BrakeSolverTests(unittest.TestCase):
         self.assertEqual(solution.front_master_cyl_mm, 19.1)
         self.assertEqual(solution.rear_master_cyl_mm, 20.6)
         self.assertEqual(solution.pad_compound, "Medium")
+        self.assertEqual(solution.brake_bias_status, "solved")
+        self.assertEqual(solution.brake_bias_target_status, "pass-through")
+        self.assertEqual(solution.brake_bias_migration_status, "pass-through")
+        self.assertEqual(solution.master_cylinder_status, "pass-through")
+        self.assertEqual(solution.pad_compound_status, "pass-through")
+
+    def test_decision_trace_marks_brake_hardware_as_pass_through(self) -> None:
+        current_setup = SimpleNamespace(
+            front_pushrod_mm=-26.5,
+            rear_pushrod_mm=-24.0,
+            front_heave_nmm=50.0,
+            front_heave_perch_mm=-11.0,
+            rear_third_nmm=530.0,
+            rear_third_perch_mm=42.5,
+            front_torsion_od_mm=13.9,
+            rear_spring_nmm=160.0,
+            front_camber_deg=-2.9,
+            rear_camber_deg=-1.9,
+            front_toe_mm=-0.4,
+            rear_toe_mm=0.0,
+            brake_bias_pct=46.0,
+            brake_bias_target=1.5,
+            brake_bias_migration=-0.5,
+            front_master_cyl_mm=19.1,
+            rear_master_cyl_mm=20.6,
+            pad_compound="Medium",
+            diff_preload_nm=20.0,
+            tc_gain=4,
+            tc_slip=3,
+        )
+        measured = SimpleNamespace(
+            front_braking_lock_ratio_p95=0.08,
+            pitch_range_braking_deg=1.1,
+            rear_power_slip_ratio_p95=0.06,
+            front_heave_travel_used_pct=85.0,
+            bottoming_event_count_front_clean=0,
+            rear_rh_std_mm=6.0,
+            front_rh_std_mm=4.0,
+            understeer_mean_deg=0.4,
+            front_carcass_mean_c=92.0,
+            front_pressure_mean_kpa=166.0,
+            rear_carcass_mean_c=93.0,
+            rear_pressure_mean_kpa=167.0,
+            telemetry_signals={},
+        )
+        supporting = SimpleNamespace(
+            brake_bias_pct=45.8,
+            brake_bias_target=1.5,
+            brake_bias_migration=-0.5,
+            front_master_cyl_mm=19.1,
+            rear_master_cyl_mm=20.6,
+            pad_compound="Medium",
+            diff_preload_nm=20.0,
+            tc_gain=4,
+            tc_slip=3,
+        )
+
+        decisions = build_parameter_decisions(
+            car_name="bmw",
+            current_setup=current_setup,
+            measured=measured,
+            step1=SimpleNamespace(front_pushrod_offset_mm=-26.0, rear_pushrod_offset_mm=-24.0),
+            step2=SimpleNamespace(front_heave_nmm=52.0, perch_offset_front_mm=-11.0, rear_third_nmm=540.0),
+            step3=SimpleNamespace(front_torsion_od_mm=13.9, rear_spring_rate_nmm=160.0),
+            step4=SimpleNamespace(),
+            step5=SimpleNamespace(front_camber_deg=-3.0, rear_camber_deg=-1.9, front_toe_mm=-0.5, rear_toe_mm=0.0),
+            step6=SimpleNamespace(),
+            supporting=supporting,
+            legality=SimpleNamespace(valid=True),
+            fallback_reasons=[],
+        )
+
+        statuses = {decision.parameter: decision.legality_status for decision in decisions}
+        self.assertEqual(statuses["brake_bias_target"], "pass_through")
+        self.assertEqual(statuses["brake_bias_migration"], "pass_through")
+        self.assertEqual(statuses["front_master_cyl_mm"], "pass_through")
+        self.assertEqual(statuses["rear_master_cyl_mm"], "pass_through")
+        self.assertEqual(statuses["pad_compound"], "pass_through")
 
 
 if __name__ == "__main__":

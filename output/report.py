@@ -148,6 +148,11 @@ def print_full_setup_report(
     rear_master_cyl_val = getattr(supporting, "rear_master_cyl_mm", None) if supporting is not None else None
     pad_compound_val = getattr(supporting, "pad_compound", "") if supporting is not None else ""
     brake_hardware_status = getattr(supporting, "brake_hardware_status", "") if supporting is not None else ""
+    brake_bias_status = getattr(supporting, "brake_bias_status", "solved") if supporting is not None else "solved"
+    brake_target_status = getattr(supporting, "brake_bias_target_status", "pass-through") if supporting is not None else "pass-through"
+    brake_migration_status = getattr(supporting, "brake_bias_migration_status", "pass-through") if supporting is not None else "pass-through"
+    master_cyl_status = getattr(supporting, "master_cylinder_status", "pass-through") if supporting is not None else "pass-through"
+    pad_compound_status = getattr(supporting, "pad_compound_status", "pass-through") if supporting is not None else "pass-through"
     diff_solution = getattr(supporting, "_diff_solution", None) if supporting is not None else None
 
     _is_ferrari = car is not None and getattr(car, "canonical_name", "") == "ferrari"
@@ -241,9 +246,10 @@ def print_full_setup_report(
     a(_blank())
     a(_full("  BRAKES / DIFF / TC / TYRES"))
     a(_setting("Brake bias", brake_bias_str))
-    a(_setting("Brake target / migration", f"{brake_target_str} / {brake_migration_str}"))
-    a(_setting("Master cyl F / R", master_cyl_str))
-    a(_setting("Pad compound", pad_compound_str))
+    a(_setting("Brake bias status", brake_bias_status))
+    a(_setting("Brake target / migration", f"{brake_target_str} / {brake_migration_str}", f"[{brake_target_status}/{brake_migration_status}]"))
+    a(_setting("Master cyl F / R", master_cyl_str, f"[{master_cyl_status}]"))
+    a(_setting("Pad compound", pad_compound_str, f"[{pad_compound_status}]"))
     if brake_hardware_status:
         a(_setting("Brake hardware status", brake_hardware_status))
     a(_setting("Diff preload", diff_preload_str))
@@ -313,6 +319,9 @@ def print_full_setup_report(
         a(_full(f"  Stall margin: {step1.vortex_burst_margin_mm:+.1f} mm  {_ok(stall_ok)}    LLTD: {step4.lltd_achieved:.1%}"))
         a(_full(
             f"  Brake target/mig: {brake_target_str} / {brake_migration_str}    Master cyl: {master_cyl_str}"
+        ))
+        a(_full(
+            f"  Brake semantics: bias={brake_bias_status}  target/mig={brake_target_status}/{brake_migration_status}"
         ))
         if brake_hardware_status:
             a(_full(f"  Brake hardware status: {brake_hardware_status}"))
