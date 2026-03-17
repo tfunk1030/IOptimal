@@ -33,6 +33,7 @@ from pathlib import Path
 import numpy as np
 
 from analyzer.adaptive_thresholds import compute_adaptive_thresholds
+from analyzer.context import SessionContext, build_session_context
 from analyzer.diagnose import diagnose
 from analyzer.driver_style import DriverProfile, analyze_driver, refine_driver_with_measured
 from analyzer.extract import MeasuredState, extract_measurements
@@ -80,6 +81,7 @@ class SessionSnapshot:
     measured: MeasuredState
     driver: DriverProfile
     diagnosis: object  # Diagnosis
+    session_context: SessionContext | None
     track: TrackProfile
     corners: list
     observation: Observation
@@ -383,6 +385,7 @@ class ReasoningState:
     validation_clusters: list[ValidationCluster] = field(default_factory=list)
     candidate_vetoes: list[CandidateVeto] = field(default_factory=list)
     solver_notes: list[str] = field(default_factory=list)
+    authority_scores: list[dict[str, object]] = field(default_factory=list)
     normalization_scores: list[dict[str, object]] = field(default_factory=list)
     decision_trace: list[ParameterDecision] = field(default_factory=list)
     legal_validation: LegalValidation | None = None
@@ -583,11 +586,92 @@ def _build_validation_clusters(state: ReasoningState) -> None:
     state.validation_clusters = clusters
 
 
+def _session_signal_quality_score(snapshot: SessionSnapshot) -> tuple[float, list[str]]:
+    signal_map = getattr(snapshot.measured, "telemetry_signals", {}) or {}
+    if not signal_map:
+        return 0.45, ["no telemetry signal map available"]
+
+    trusted = [sig.confidence for sig in signal_map.values() if sig.quality == "trusted" and sig.value is not None]
+    proxy = [sig.confidence for sig in signal_map.values() if sig.quality == "proxy" and sig.value is not None]
+    unresolved = [
+        name for name, sig in signal_map.items()
+        if sig.quality in {"unknown", "broken"} or sig.conflict_state != "clear"
+    ]
+    score = 0.0
+    if trusted:
+        score += min(0.75, sum(trusted) / len(trusted) * 0.75)
+    if proxy:
+        score += min(0.2, sum(proxy) / len(proxy) * 0.2)
+    score = max(0.0, score - min(0.2, len(unresolved) * 0.02))
+    notes = [
+        f"trusted={len(trusted)}",
+        f"proxy={len(proxy)}",
+        f"unresolved={len(unresolved)}",
+    ]
+    if getattr(snapshot.measured, "metric_fallbacks", None):
+        notes.append(f"fallbacks={len(snapshot.measured.metric_fallbacks)}")
+    return round(min(1.0, score), 3), notes
+
+
+def _compute_authority_scores(state: ReasoningState) -> None:
+    lap_times = [s.lap_time_s for s in state.sessions]
+    fastest = min(lap_times)
+    slowest = max(lap_times)
+    span = max(slowest - fastest, 0.001)
+    assessment_scores = {
+        "fast": 1.0,
+        "competitive": 0.8,
+        "compromised": 0.45,
+        "dangerous": 0.1,
+    }
+    authority_rows: list[dict[str, object]] = []
+    for idx, snap in enumerate(state.sessions):
+        lap_component = 1.0 - ((snap.lap_time_s - fastest) / span)
+        diagnosis_component = assessment_scores.get(snap.diagnosis.assessment, 0.6)
+        context_component = snap.session_context.overall_score if snap.session_context is not None else 0.5
+        signal_component, signal_notes = _session_signal_quality_score(snap)
+        score = (
+            lap_component * 0.35
+            + diagnosis_component * 0.25
+            + context_component * 0.2
+            + signal_component * 0.2
+        )
+        if snap.session_context is not None and not snap.session_context.comparable_to_baseline:
+            score *= 0.8
+        row = {
+            "session_idx": idx,
+            "session": snap.label,
+            "score": round(score, 3),
+            "lap_component": round(lap_component, 3),
+            "diagnosis_component": round(diagnosis_component, 3),
+            "context_component": round(context_component, 3),
+            "signal_component": round(signal_component, 3),
+            "notes": list((snap.session_context.notes if snap.session_context is not None else [])[:4]) + signal_notes,
+        }
+        authority_rows.append(row)
+
+    authority_rows.sort(key=lambda row: row["score"], reverse=True)
+    state.authority_scores = authority_rows
+
+
 def _resolve_authority_session(state: ReasoningState) -> None:
     state.latest_session_idx = max(len(state.sessions) - 1, 0)
-    state.authority_session_idx = state.best_session_idx
-    state.solve_basis = "best_session"
+    _compute_authority_scores(state)
+    if state.authority_scores:
+        top = state.authority_scores[0]
+        state.authority_session_idx = int(top["session_idx"])
+        state.solve_basis = "authority_score"
+    else:
+        state.authority_session_idx = state.best_session_idx
+        state.solve_basis = "best_session"
     state.solver_notes = []
+    if state.solve_basis == "authority_score" and state.authority_scores:
+        top = state.authority_scores[0]
+        state.solver_notes.append(
+            f"Authority score selected {top['session']} ({top['score']:.3f}) over raw best lap."
+        )
+        for note in top["notes"][:2]:
+            state.solver_notes.append(note)
 
     for cluster in state.validation_clusters:
         if cluster.latest_session_idx == state.latest_session_idx and cluster.validated_failed:
@@ -634,6 +718,7 @@ def _analyze_session(
         driver=driver,
         corners=corners,
     )
+    session_context = build_session_context(measured, setup, diag)
 
     obs = build_observation(
         session_id=label,
@@ -654,6 +739,7 @@ def _analyze_session(
         measured=measured,
         driver=driver,
         diagnosis=diag,
+        session_context=session_context,
         track=track,
         corners=corners,
         observation=obs,
@@ -1932,6 +2018,12 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
     if state.solver_notes:
         for note in state.solver_notes[:3]:
             lines.append(f"  {note[:width-2]}")
+    for row in state.authority_scores[:3]:
+        lines.append(
+            f"  {row['session']}: score={row['score']:.3f} "
+            f"(lap={row['lap_component']:.2f}, health={row['diagnosis_component']:.2f}, "
+            f"context={row['context_component']:.2f}, signal={row['signal_component']:.2f})"
+        )
     lines.append("")
 
     lines.append("  SIGNAL CONFIDENCE")
@@ -2625,6 +2717,7 @@ def reason_and_solve(
             ],
             "category_scores": state.physics.category_scores,
             "weakest_category": state.physics.weakest_category,
+            "authority_scores": state.authority_scores,
             "tradeoffs": [
                 {
                     "parameter": t.parameter,
