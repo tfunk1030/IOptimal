@@ -93,16 +93,24 @@ def _build_prediction_lines(
     *,
     current_setup: Any,
     measured: Any,
+    step1: Any,
     step2: Any,
+    step3: Any,
     step4: Any,
+    step5: Any,
+    step6: Any,
     supporting: Any,
     prediction_corrections: dict[str, float] | None = None,
 ) -> tuple[list[str], Any, Any]:
     predicted_telemetry, prediction_confidence = predict_candidate_telemetry(
         current_setup=current_setup,
         baseline_measured=measured,
+        step1=step1,
         step2=step2,
+        step3=step3,
         step4=step4,
+        step5=step5,
+        step6=step6,
         supporting=supporting,
         corrections=prediction_corrections,
     )
@@ -221,8 +229,12 @@ def generate_report(
     prediction_lines, predicted_telemetry, prediction_confidence = _build_prediction_lines(
         current_setup=current_setup,
         measured=measured,
+        step1=step1,
         step2=step2,
+        step3=step3,
         step4=step4,
+        step5=step5,
+        step6=step6,
         supporting=supporting,
         prediction_corrections=prediction_corrections,
     )
