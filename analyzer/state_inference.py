@@ -38,7 +38,7 @@ def _problem_matches(problems: list["Problem"], *fragments: str) -> bool:
     return all(fragment.lower() in haystack for fragment in fragments)
 
 
-def _signal_confidence(measured: "MeasuredState", name: str, *, default: float = 0.6) -> tuple[float, float | None]:
+def _signal_confidence(measured: "MeasuredState", name: str, *, default: float = 0.25) -> tuple[float, float | None]:
     signal = get_signal(measured, name)
     value = signal.value
     try:
@@ -77,6 +77,33 @@ def _append_issue(
     )
 
 
+def _driver_confidence(driver: "DriverProfile | None") -> float:
+    if driver is None:
+        return 0.75
+    style_conf = float(getattr(driver, "classification_confidence", 0.7) or 0.7)
+    noise = float(getattr(driver, "driver_noise_index", 0.0) or 0.0)
+    return round(max(0.35, min(1.0, style_conf * (1.0 - noise * 0.35))), 3)
+
+
+def _corner_phase_support(
+    corners: list["CornerAnalysis"] | None,
+    predicate,
+    *,
+    severity_attr: str | None = None,
+) -> tuple[float, float, float]:
+    if not corners:
+        return 0.0, 0.0, 0.0
+    relevant = [corner for corner in corners if predicate(corner)]
+    if not relevant:
+        return 0.0, 0.0, 0.0
+    support = min(1.0, len(relevant) / max(len(corners), 1))
+    confidence = sum(getattr(corner, "corner_confidence", 0.6) for corner in relevant) / len(relevant)
+    severity = 0.0
+    if severity_attr is not None:
+        severity = sum(max(0.0, float(getattr(corner, severity_attr, 0.0) or 0.0)) for corner in relevant) / len(relevant)
+    return support, round(confidence, 3), round(severity, 3)
+
+
 def infer_car_states(
     *,
     measured: "MeasuredState",
@@ -86,6 +113,7 @@ def infer_car_states(
     corners: list["CornerAnalysis"] | None = None,
 ) -> list[CarStateIssue]:
     issues: list[CarStateIssue] = []
+    driver_factor = _driver_confidence(driver)
 
     front_travel_conf, front_travel = _signal_confidence(measured, "front_heave_travel_used_pct")
     braking_travel_conf, braking_travel = _signal_confidence(measured, "front_heave_travel_used_braking_pct")
@@ -104,9 +132,15 @@ def infer_car_states(
 
     # Front platform collapse under braking
     if (braking_travel or 0.0) > 85.0 or _problem_matches(problems, "braking pitch range"):
+        braking_support, braking_phase_conf, braking_phase_sev = _corner_phase_support(
+            corners,
+            lambda corner: getattr(corner, "trail_brake_pct", 0.0) > 0.15 or getattr(corner, "braking_phase_s", 0.0) > 0.15,
+            severity_attr="entry_pitch_severity",
+        )
         severity = max(
             ((braking_travel or 0.0) - 85.0) / 15.0,
             max(0.0, getattr(measured, "pitch_range_braking_deg", 0.0) - 0.9) / 0.8,
+            braking_phase_sev,
         )
         evidence = [
             StateEvidence(
@@ -126,7 +160,7 @@ def infer_car_states(
             issues,
             state_id="front_platform_collapse_braking",
             severity=severity,
-            confidence=max(braking_travel_conf, 0.7),
+            confidence=max(braking_travel_conf, 0.35 + braking_support * 0.2 + braking_phase_conf * 0.15) * driver_factor,
             estimated_loss_ms=90.0 + severity * 140.0,
             implicated_steps=[2, 6],
             evidence=evidence,
@@ -136,10 +170,16 @@ def infer_car_states(
 
     # Front high-speed platform near limit
     if (front_travel or 0.0) > 80.0 or (front_var or 0.0) > 5.5 or _problem_matches(problems, "front bottoming"):
+        aero_support, aero_conf, aero_phase_sev = _corner_phase_support(
+            corners,
+            lambda corner: getattr(corner, "speed_class", "") == "high",
+            severity_attr="aero_collapse_severity",
+        )
         severity = max(
             ((front_travel or 0.0) - 80.0) / 20.0,
             max(0.0, (front_var or 0.0) - 5.5) / 4.0,
             max(0.0, getattr(measured, "bottoming_event_count_front_clean", 0)) / 8.0,
+            aero_phase_sev,
         )
         evidence = [
             StateEvidence(
@@ -159,7 +199,7 @@ def infer_car_states(
             issues,
             state_id="front_platform_near_limit_high_speed",
             severity=severity,
-            confidence=max(front_travel_conf, front_var_conf),
+            confidence=max(front_travel_conf, front_var_conf, 0.25 + aero_support * 0.2 + aero_conf * 0.15) * driver_factor,
             estimated_loss_ms=80.0 + severity * 160.0,
             implicated_steps=[1, 2, 6],
             evidence=evidence,
@@ -169,10 +209,16 @@ def infer_car_states(
 
     # Rear platform under-supported
     if (rear_travel or 0.0) > 80.0 or (rear_var or 0.0) > 7.0 or _problem_matches(problems, "rear bottoming"):
+        rear_platform_support, rear_platform_conf, rear_phase_sev = _corner_phase_support(
+            corners,
+            lambda corner: getattr(corner, "speed_class", "") in {"mid", "high"} or getattr(corner, "exit_phase_s", 0.0) > 0.15,
+            severity_attr="exit_slip_severity",
+        )
         severity = max(
             ((rear_travel or 0.0) - 80.0) / 20.0,
             max(0.0, (rear_var or 0.0) - 7.0) / 5.0,
             max(0.0, getattr(measured, "bottoming_event_count_rear_clean", 0)) / 8.0,
+            rear_phase_sev,
         )
         evidence = [
             StateEvidence(
@@ -192,7 +238,7 @@ def infer_car_states(
             issues,
             state_id="rear_platform_under_supported",
             severity=severity,
-            confidence=max(rear_travel_conf, rear_var_conf),
+            confidence=max(rear_travel_conf, rear_var_conf, 0.3 + rear_platform_support * 0.2 + rear_platform_conf * 0.15) * driver_factor,
             estimated_loss_ms=70.0 + severity * 150.0,
             implicated_steps=[2, 3, 6],
             evidence=evidence,
@@ -233,10 +279,19 @@ def infer_car_states(
     if (us_low or 0.0) > 1.3 or _problem_matches(problems, "understeer", "low"):
         severity = max(0.0, ((us_low or 0.0) - 1.3) / 1.5)
         corner_support = 0.0
+        corner_confidence = 0.0
+        entry_phase_sev = 0.0
         if corners:
             trail_corners = [c for c in corners if c.trail_brake_pct > 0.2 and c.understeer_mean_deg > 1.0]
             corner_support = min(1.0, len(trail_corners) / max(len(corners), 1))
+            if trail_corners:
+                corner_confidence = sum(getattr(c, "corner_confidence", 0.6) for c in trail_corners) / len(trail_corners)
+                entry_phase_sev = sum(
+                    max(getattr(c, "entry_pitch_severity", 0.0), getattr(c, "entry_loss_s", 0.0) * 4.0)
+                    for c in trail_corners
+                ) / len(trail_corners)
             severity = max(severity, corner_support)
+            severity = max(severity, entry_phase_sev)
         evidence = [
             StateEvidence(
                 metric="understeer_low_speed_deg",
@@ -249,7 +304,7 @@ def infer_car_states(
             issues,
             state_id="entry_front_limited",
             severity=severity,
-            confidence=max(us_low_conf, 0.6 + corner_support * 0.2),
+            confidence=max(us_low_conf, 0.3 + corner_support * 0.2 + corner_confidence * 0.15) * driver_factor,
             estimated_loss_ms=60.0 + severity * 120.0,
             implicated_steps=[4, 5, 6],
             evidence=evidence,
@@ -264,10 +319,19 @@ def infer_car_states(
             max(0.0, ((body_slip or 0.0) - 4.0) / 2.0),
         )
         corner_support = 0.0
+        corner_confidence = 0.0
+        exit_phase_sev = 0.0
         if corners:
             traction_corners = [c for c in corners if c.throttle_delay_s > 0.25 or "late_throttle" in c.traction_risk_flags]
             corner_support = min(1.0, len(traction_corners) / max(len(corners), 1))
+            if traction_corners:
+                corner_confidence = sum(getattr(c, "corner_confidence", 0.6) for c in traction_corners) / len(traction_corners)
+                exit_phase_sev = sum(
+                    max(getattr(c, "exit_slip_severity", 0.0), min(1.0, getattr(c, "throttle_delay_s", 0.0) / 0.4))
+                    for c in traction_corners
+                ) / len(traction_corners)
             severity = max(severity, corner_support)
+            severity = max(severity, exit_phase_sev)
         evidence = [
             StateEvidence(
                 metric="rear_power_slip_ratio_p95",
@@ -286,7 +350,7 @@ def infer_car_states(
             issues,
             state_id="exit_traction_limited",
             severity=severity,
-            confidence=max(rear_slip_conf, body_slip_conf, 0.55 + corner_support * 0.25),
+            confidence=max(rear_slip_conf, body_slip_conf, 0.3 + corner_support * 0.25 + corner_confidence * 0.15) * driver_factor,
             estimated_loss_ms=80.0 + severity * 130.0,
             implicated_steps=[3, 4, 6],
             evidence=evidence,
@@ -296,7 +360,13 @@ def infer_car_states(
 
     # High-speed aerodynamic balance issue
     if (us_high or 0.0) > 1.0 and ((us_high or 0.0) - (us_low or 0.0)) > 0.4:
+        hs_support, hs_conf, hs_phase_sev = _corner_phase_support(
+            corners,
+            lambda corner: getattr(corner, "speed_class", "") == "high",
+            severity_attr="aero_collapse_severity",
+        )
         severity = max(0.0, ((us_high or 0.0) - (us_low or 0.0) - 0.4) / 1.2)
+        severity = max(severity, hs_phase_sev)
         evidence = [
             StateEvidence(
                 metric="understeer_high_speed_deg",
@@ -309,7 +379,7 @@ def infer_car_states(
             issues,
             state_id="front_platform_near_limit_high_speed",
             severity=severity,
-            confidence=us_high_conf,
+            confidence=max(us_high_conf, 0.3 + hs_support * 0.2 + hs_conf * 0.15) * driver_factor,
             estimated_loss_ms=50.0 + severity * 100.0,
             implicated_steps=[1, 2, 4],
             evidence=evidence,
@@ -429,9 +499,16 @@ def infer_car_states(
 
     # Brake system front limited
     if (front_lock or 0.0) > 0.06 or getattr(measured, "abs_active_pct", 0.0) > 20.0:
+        brake_support, brake_phase_conf, brake_phase_sev = _corner_phase_support(
+            corners,
+            lambda corner: getattr(corner, "trail_brake_pct", 0.0) > 0.12 or getattr(corner, "braking_phase_s", 0.0) > 0.12,
+            severity_attr="entry_pitch_severity",
+        )
+        brake_release_quality = float(getattr(driver, "brake_release_quality", 0.7) or 0.7) if driver is not None else 0.7
         severity = max(
             max(0.0, ((front_lock or 0.0) - 0.06) / 0.05),
             max(0.0, getattr(measured, "abs_active_pct", 0.0) - 20.0) / 35.0,
+            brake_phase_sev,
         )
         evidence = [
             StateEvidence(
@@ -451,7 +528,7 @@ def infer_car_states(
             issues,
             state_id="brake_system_front_limited",
             severity=severity,
-            confidence=max(front_lock_conf, 0.7),
+            confidence=max(front_lock_conf, 0.3 + brake_support * 0.2 + brake_phase_conf * 0.15) * min(1.0, driver_factor * (0.85 + brake_release_quality * 0.15)),
             estimated_loss_ms=55.0 + severity * 95.0,
             implicated_steps=[6],
             evidence=evidence,
