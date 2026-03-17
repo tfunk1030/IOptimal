@@ -182,6 +182,17 @@ class ReasoningVetoIntegrationTests(unittest.TestCase):
             self.assertEqual(failed_clusters[0]["latest_session_label"], data["authority_session"])
             self.assertFalse(output_fp.matches_candidate(s4_fp))
             self.assertIn("solve authority", "\n".join(data["solver_notes"]).lower())
+            self.assertFalse(
+                any("Authority score selected" in note for note in data["solver_notes"]),
+                "final solve notes should not retain the pre-veto authority choice",
+            )
+            self.assertFalse(
+                {
+                    "Selected BMW/Sebring constrained optimizer candidate.",
+                    "Selected constrained optimizer candidate.",
+                }.issubset(set(data["solver_notes"])),
+                "final solve notes should not duplicate optimizer-selection messages",
+            )
             self.assertIn("SOLVE CONTEXT", captured.getvalue())
             self.assertIn("veto", captured.getvalue().lower())
 

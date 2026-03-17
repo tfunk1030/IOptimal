@@ -44,6 +44,7 @@ class SessionAnalysis:
     session_context: SessionContext | None = None
     track_name: str = ""
     wing_angle: float = 0.0
+    car_name: str = ""
 
 
 @dataclass
@@ -155,6 +156,7 @@ def analyze_session(
         session_context=session_context,
         track_name=track_name,
         wing_angle=detected_wing,
+        car_name=car.name,
     )
 
 

@@ -59,13 +59,21 @@ def _find_lap_indices(ibt: IBTFile, lap_num: int) -> tuple[int, int] | None:
     return None
 
 
-def produce(args: argparse.Namespace, _return_result: bool = False) -> None | dict:
+def produce(
+    args: argparse.Namespace,
+    _return_result: bool = False,
+    _emit_report: bool = True,
+    _compact_report: bool | None = None,
+) -> None | dict:
     """Run the full setup production pipeline.
 
     Args:
         args: Parsed CLI args.
         _return_result: If True, return a dict of solver outputs (used by
             batch/multi-IBT compare mode) instead of returning None.
+        _emit_report: If True, print the final engineering report.
+        _compact_report: Override compact/full report selection. Defaults to
+            compact when ``report_only`` is enabled.
     """
 
     # ── Normalize IBT path(s) ──
@@ -873,7 +881,9 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         print(f"\nJSON summary saved to: {json_path}")
 
     # ── Phase K: Engineering report ──
-    if not quiet:
+    report_compact = quiet if _compact_report is None else _compact_report
+
+    if _emit_report and not quiet:
         print()
         print()
     report = generate_report(
@@ -904,18 +914,29 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             else None
         ),
         solve_context_lines=solve_notes,
-        compact=quiet,
+        compact=report_compact,
     )
-    print(report)
+    if _emit_report:
+        print(report)
 
     # ── Build return dict if requested (multi-IBT batch mode) ──
     _result: dict | None = None
     if _return_result:
         _result = {
+            "car": car,
+            "track": track,
             "report": report,
             "lap_time_s": measured.lap_time_s,
             "lap_number": measured.lap_number,
+            "measured": measured,
+            "driver": driver,
+            "diagnosis": diagnosis,
+            "corners": corners,
+            "modifiers": modifiers,
             "current_setup": current_setup,
+            "wing": wing,
+            "fuel_l": fuel,
+            "target_balance": target_balance,
             "step1": step1,
             "step2": step2,
             "step3": step3,
@@ -1000,17 +1021,32 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
     return _result
 
 
-def produce_result(args: argparse.Namespace) -> dict:
+def produce_result(
+    args: argparse.Namespace,
+    *,
+    emit_report: bool = True,
+    compact_report: bool | None = None,
+) -> dict:
     """Run the full pipeline and return structured results for comparison.
 
-    Wraps ``produce(_return_result=True)`` — prints the report and returns
-    a dict with all solver outputs for use by the multi-IBT batch runner.
+    Wraps ``produce(_return_result=True)`` and returns a dict with solver,
+    diagnosis, and report data for downstream callers.
+
+    Args:
+        args: Parsed pipeline args namespace.
+        emit_report: If True, print the final report.
+        compact_report: Override compact/full report selection.
 
     Returns:
         dict with keys: lap_time_s, lap_number, current_setup,
         step1..step6, supporting, report
     """
-    result = produce(args, _return_result=True)
+    result = produce(
+        args,
+        _return_result=True,
+        _emit_report=emit_report,
+        _compact_report=compact_report,
+    )
     if result is None:
         raise RuntimeError("produce_result: produce() did not return data")
     return result

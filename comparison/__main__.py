@@ -160,7 +160,11 @@ def main() -> None:
             balance_target=args.balance,
         )
         print(f"  Synthesis complete. Wing: {synthesis.wing_angle}°")
-        print(f"  Based on best session: {synthesis.best_session_label}")
+        print(
+            f"  Basis: {synthesis.solve_basis or 'reasoning'} "
+            f"(authority {synthesis.authority_session_label or '?'} / "
+            f"best {synthesis.best_session_label or '?'})"
+        )
         print()
 
         # Write .sto if requested

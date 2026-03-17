@@ -404,6 +404,22 @@ class ReasoningState:
     # Reasoning log
     reasoning_log: list[str] = field(default_factory=list)
 
+    # Final solve outputs
+    final_modifiers: object | None = None
+    final_step1: object | None = None
+    final_step2: object | None = None
+    final_step3: object | None = None
+    final_step4: object | None = None
+    final_step5: object | None = None
+    final_step6: object | None = None
+    final_supporting: object | None = None
+    final_report: str = ""
+    final_wing_angle: float = 0.0
+    final_fuel_l: float = 0.0
+    final_selected_candidate_family: str | None = None
+    final_selected_candidate_score: float | None = None
+    final_selected_candidate_applied: bool = False
+
 
 _FILENAME_TIMESTAMP_PATTERNS = (
     re.compile(r"(\d{4}-\d{2}-\d{2})[ _](\d{2})-(\d{2})-(\d{2})"),
@@ -777,6 +793,7 @@ def _resolve_authority_session(state: ReasoningState) -> None:
             state.authority_session_idx = state.latest_session_idx
             state.solve_basis = "latest_validation_veto"
             mode = "soft" if cluster.penalty_mode == "soft" else "hard"
+            state.solver_notes = []
             state.solver_notes.append(
                 f"Using {cluster.latest_session_label} as solve authority: {mode} veto against reissuing this setup."
             )
@@ -2396,6 +2413,7 @@ def reason_and_solve(
     sto_path: str | None = None,
     json_path: str | None = None,
     verbose: bool = True,
+    emit_report: bool = True,
 ) -> ReasoningState:
     """Run the full 9-phase reasoning pipeline.
 
@@ -2513,7 +2531,8 @@ def reason_and_solve(
 
     # ── Phase 9: Print report + run solver ──
     report = _print_reasoning_report(state)
-    print(report)
+    if verbose:
+        print(report)
 
     best = state.sessions[state.best_session_idx]
     authority = state.sessions[state.authority_session_idx]
@@ -2788,7 +2807,13 @@ def reason_and_solve(
     state.candidate_vetoes = list(solve_result.candidate_vetoes)
     state.legal_validation = solve_result.legal_validation
     state.decision_trace = solve_result.decision_trace
-    state.solver_notes.extend(solve_result.notes)
+    solve_result_notes = list(solve_result.notes)
+    if solver_selection_note.startswith("Selected BMW/Sebring constrained optimizer candidate."):
+        solve_result_notes = [
+            note for note in solve_result_notes
+            if note != "Selected constrained optimizer candidate."
+        ]
+    state.solver_notes.extend(solve_result_notes)
     state.generated_candidates = generate_candidate_families(
         authority_session=authority,
         best_session=best,
@@ -3036,7 +3061,25 @@ def reason_and_solve(
             json.dump(output, f, indent=2, default=str)
         log(f"\nJSON saved to: {json_path}")
 
-    # Print the setup
+    state.final_modifiers = mods
+    state.final_step1 = step1
+    state.final_step2 = step2
+    state.final_step3 = step3
+    state.final_step4 = step4
+    state.final_step5 = step5
+    state.final_step6 = step6
+    state.final_supporting = supporting
+    state.final_wing_angle = detected_wing
+    state.final_fuel_l = detected_fuel
+    state.final_selected_candidate_family = getattr(selected_candidate, "family", None)
+    state.final_selected_candidate_score = (
+        selected_candidate.score.total
+        if selected_candidate is not None and selected_candidate.score is not None
+        else None
+    )
+    state.final_selected_candidate_applied = selected_candidate_applied
+
+    # Build the final setup report
     from pipeline.report import generate_report
     report = generate_report(
         car=car,
@@ -3069,7 +3112,9 @@ def reason_and_solve(
         ],
         compact=True,
     )
-    print(report)
+    state.final_report = report
+    if emit_report:
+        print(report)
 
     return state
 
