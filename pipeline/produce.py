@@ -693,6 +693,11 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             # Supporting params: solver computes from telemetry
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
+            _extra_kw["brake_bias_target"] = supporting.brake_bias_target
+            _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration
+            _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
+            _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
+            _extra_kw["pad_compound"] = supporting.pad_compound
             # Ferrari diff ramp uses labels ("More Locking"/"Less Locking")
             if supporting.diff_ramp_coast >= 45:
                 _extra_kw["diff_coast_drive_ramp"] = "Less Locking"
@@ -705,6 +710,11 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         else:
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
+            _extra_kw["brake_bias_target"] = supporting.brake_bias_target
+            _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration
+            _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
+            _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
+            _extra_kw["pad_compound"] = supporting.pad_compound
             _extra_kw["diff_coast_drive_ramp"] = f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}"
             _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm

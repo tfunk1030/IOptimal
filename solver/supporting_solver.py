@@ -28,6 +28,11 @@ class SupportingSolution:
     # Brakes
     brake_bias_pct: float = 56.0
     brake_bias_reasoning: str = ""
+    brake_bias_target: float = 0.0
+    brake_bias_migration: float = 0.0
+    front_master_cyl_mm: float = 0.0
+    rear_master_cyl_mm: float = 0.0
+    pad_compound: str = ""
 
     # Differential
     diff_preload_nm: float = 10.0
@@ -52,6 +57,8 @@ class SupportingSolution:
         lines = [
             f"Brake bias: {self.brake_bias_pct:.1f}%",
             f"  {self.brake_bias_reasoning}",
+            f"Brake target/migration: {self.brake_bias_target:+.1f} / {self.brake_bias_migration:+.1f}",
+            f"  Master cylinders: F {self.front_master_cyl_mm:.1f} mm / R {self.rear_master_cyl_mm:.1f} mm | Pad: {self.pad_compound or 'unknown'}",
             f"Diff: preload={self.diff_preload_nm:.0f} Nm, "
             f"coast={self.diff_ramp_coast}°, drive={self.diff_ramp_drive}°, "
             f"plates={self.diff_clutch_plates}",
@@ -113,6 +120,11 @@ class SupportingSolver:
         ).solve()
         sol.brake_bias_pct = brake_solution.brake_bias_pct
         sol.brake_bias_reasoning = brake_solution.reasoning
+        sol.brake_bias_target = getattr(self.current_setup, "brake_bias_target", 0.0) or 0.0
+        sol.brake_bias_migration = getattr(self.current_setup, "brake_bias_migration", 0.0) or 0.0
+        sol.front_master_cyl_mm = getattr(self.current_setup, "front_master_cyl_mm", 0.0) or 0.0
+        sol.rear_master_cyl_mm = getattr(self.current_setup, "rear_master_cyl_mm", 0.0) or 0.0
+        sol.pad_compound = getattr(self.current_setup, "pad_compound", "") or ""
 
     def _solve_diff(self, sol: SupportingSolution) -> None:
         """Differential from traction demand × driver style.
