@@ -236,6 +236,7 @@ class ARBSolver:
         front_wheel_rate_nmm: float,
         rear_wheel_rate_nmm: float,
         lltd_offset: float = 0.0,
+        current_rear_arb_size: str | None = None,
     ) -> ARBSolution:
         """Find ARB sizes and blades for target LLTD.
 
@@ -280,21 +281,44 @@ class ARBSolver:
         best_blade = arb.rear_baseline_blade
         best_lltd_error = float("inf")
 
-        # Search over all rear ARB sizes and blades
-        # Skip "Disconnected" — 0 stiffness is not a valid race setup
-        for rear_size in arb.rear_size_labels:
-            if rear_size.lower() == "disconnected":
-                continue
+        # Prefer current setup's ARB size — only change size if no blade within
+        # the current size achieves an acceptable LLTD (within 0.015 = 1.5%).
+        # Changing ARB bar size has massive feel implications and shouldn't be
+        # done casually; blade changes within a size are the expected tuning range.
+        preferred_size = current_rear_arb_size or arb.rear_baseline_size
+        preferred_best_blade = arb.rear_baseline_blade
+        preferred_best_error = float("inf")
+        if preferred_size in arb.rear_size_labels and preferred_size.lower() != "disconnected":
             for blade in range(1, arb.rear_blade_count + 1):
                 lltd, _, _, _, _ = self._compute_lltd(
-                    farb_size, farb_blade, rear_size, blade,
+                    farb_size, farb_blade, preferred_size, blade,
                     k_springs_front, k_springs_rear
                 )
                 err = abs(lltd - target_lltd)
-                if err < best_lltd_error:
-                    best_lltd_error = err
-                    best_size = rear_size
-                    best_blade = blade
+                if err < preferred_best_error:
+                    preferred_best_error = err
+                    preferred_best_blade = blade
+
+        # Use the preferred size if it can get within 1.5% LLTD error
+        if preferred_best_error < 0.015:
+            best_size = preferred_size
+            best_blade = preferred_best_blade
+            best_lltd_error = preferred_best_error
+        else:
+            # Preferred size can't achieve target — search all sizes
+            for rear_size in arb.rear_size_labels:
+                if rear_size.lower() == "disconnected":
+                    continue
+                for blade in range(1, arb.rear_blade_count + 1):
+                    lltd, _, _, _, _ = self._compute_lltd(
+                        farb_size, farb_blade, rear_size, blade,
+                        k_springs_front, k_springs_rear
+                    )
+                    err = abs(lltd - target_lltd)
+                    if err < best_lltd_error:
+                        best_lltd_error = err
+                        best_size = rear_size
+                        best_blade = blade
 
         # Compute full solution at chosen ARB setup
         lltd, k_farb, k_rarb, k_front, k_rear = self._compute_lltd(

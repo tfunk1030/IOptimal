@@ -47,12 +47,12 @@ class MeasuredState:
     """
 
     # --- Step 1: Ride heights (IBT sensor coordinates) ---
-    mean_front_rh_at_speed_mm: float = 0.0
-    mean_rear_rh_at_speed_mm: float = 0.0
-    front_rh_std_mm: float = 0.0
-    rear_rh_std_mm: float = 0.0
-    aero_compression_front_mm: float = 0.0
-    aero_compression_rear_mm: float = 0.0
+    mean_front_rh_at_speed_mm: float | None = None
+    mean_rear_rh_at_speed_mm: float | None = None
+    front_rh_std_mm: float | None = None
+    rear_rh_std_mm: float | None = None
+    aero_compression_front_mm: float | None = None
+    aero_compression_rear_mm: float | None = None
     bottoming_event_count_front: int = 0
     bottoming_event_count_rear: int = 0
     bottoming_event_count_front_clean: int = 0
@@ -60,112 +60,112 @@ class MeasuredState:
     bottoming_event_count_front_kerb: int = 0
     bottoming_event_count_rear_kerb: int = 0
     vortex_burst_event_count: int = 0
-    front_rh_p01_mm: float = 0.0
-    rear_rh_p01_mm: float = 0.0
-    static_front_rh_sensor_mm: float = 0.0
-    static_rear_rh_sensor_mm: float = 0.0
+    front_rh_p01_mm: float | None = None
+    rear_rh_p01_mm: float | None = None
+    static_front_rh_sensor_mm: float | None = None
+    static_rear_rh_sensor_mm: float | None = None
 
     # --- Step 2: Platform stability ---
-    front_shock_vel_p99_mps: float = 0.0
-    rear_shock_vel_p99_mps: float = 0.0
-    front_rh_excursion_measured_mm: float = 0.0
-    rear_rh_excursion_measured_mm: float = 0.0
+    front_shock_vel_p99_mps: float | None = None
+    rear_shock_vel_p99_mps: float | None = None
+    front_rh_excursion_measured_mm: float | None = None
+    rear_rh_excursion_measured_mm: float | None = None
 
     # --- Heave/shock deflection (spring travel) ---
-    front_heave_defl_mean_mm: float = 0.0       # Mean HFshockDefl at speed
-    front_heave_defl_p99_mm: float = 0.0        # p99 peak compression
-    front_heave_defl_max_mm: float = 0.0        # Maximum observed compression
-    front_heave_defl_std_mm: float = 0.0        # Variance of heave deflection
-    rear_heave_defl_mean_mm: float = 0.0        # Mean HRshockDefl at speed
-    rear_heave_defl_p99_mm: float = 0.0
-    rear_heave_defl_max_mm: float = 0.0
-    rear_heave_defl_std_mm: float = 0.0
-    front_heave_travel_used_pct: float = 0.0    # p99 defl / DeflMax * 100
-    rear_heave_travel_used_pct: float = 0.0
+    front_heave_defl_mean_mm: float | None = None       # Mean HFshockDefl at speed
+    front_heave_defl_p99_mm: float | None = None        # p99 peak compression
+    front_heave_defl_max_mm: float | None = None        # Maximum observed compression
+    front_heave_defl_std_mm: float | None = None        # Variance of heave deflection
+    rear_heave_defl_mean_mm: float | None = None        # Mean HRshockDefl at speed
+    rear_heave_defl_p99_mm: float | None = None
+    rear_heave_defl_max_mm: float | None = None
+    rear_heave_defl_std_mm: float | None = None
+    front_heave_travel_used_pct: float | None = None    # p99 defl / DeflMax * 100
+    rear_heave_travel_used_pct: float | None = None
     heave_bottoming_events_front: int = 0       # Direct spring travel exhaustion
     heave_bottoming_events_rear: int = 0
     # Braking-specific heave analysis (detects entry rotation → mid-corner push)
-    front_heave_defl_braking_p99_mm: float = 0.0
-    front_heave_travel_used_braking_pct: float = 0.0
+    front_heave_defl_braking_p99_mm: float | None = None
+    front_heave_travel_used_braking_pct: float | None = None
 
     # --- Step 3: Spring response ---
-    front_dominant_freq_hz: float = 0.0
-    rear_dominant_freq_hz: float = 0.0
+    front_dominant_freq_hz: float | None = None
+    rear_dominant_freq_hz: float | None = None
 
     # --- Step 4: Balance ---
-    lltd_measured: float = 0.0              # Backward-compatible alias of roll_distribution_proxy
-    roll_distribution_proxy: float = 0.0    # RH-based proxy, not true LLTD
-    roll_gradient_measured_deg_per_g: float = 0.0
-    body_roll_at_peak_g_deg: float = 0.0
-    peak_lat_g_measured: float = 0.0
+    lltd_measured: float | None = None              # Backward-compatible alias of roll_distribution_proxy
+    roll_distribution_proxy: float | None = None    # RH-based proxy, not true LLTD
+    roll_gradient_measured_deg_per_g: float | None = None
+    body_roll_at_peak_g_deg: float | None = None
+    peak_lat_g_measured: float | None = None
 
     # --- Step 6: Dampers ---
-    front_shock_vel_p95_mps: float = 0.0
-    rear_shock_vel_p95_mps: float = 0.0
+    front_shock_vel_p95_mps: float | None = None
+    rear_shock_vel_p95_mps: float | None = None
     front_rh_settle_time_ms: float = 0.0
     rear_rh_settle_time_ms: float = 0.0
 
     # --- Body roll p95 ---
-    body_roll_p95_deg: float = 0.0
+    body_roll_p95_deg: float | None = None
 
     # --- Handling dynamics ---
-    understeer_mean_deg: float = 0.0
-    understeer_low_speed_deg: float = 0.0
-    understeer_high_speed_deg: float = 0.0
-    body_slip_p95_deg: float = 0.0
-    body_slip_at_peak_g_deg: float = 0.0
+    understeer_mean_deg: float | None = None
+    understeer_low_speed_deg: float | None = None
+    understeer_high_speed_deg: float | None = None
+    body_slip_p95_deg: float | None = None
+    body_slip_at_peak_g_deg: float | None = None
     rear_slip_ratio_p95: float = 0.0        # Backward-compatible alias of rear_power_slip_ratio_p95
     front_slip_ratio_p95: float = 0.0       # Backward-compatible alias of front_braking_lock_ratio_p95
     rear_power_slip_ratio_p95: float = 0.0
     front_braking_lock_ratio_p95: float = 0.0
     front_brake_wheel_decel_asymmetry_p95_ms2: float = 0.0
-    yaw_rate_correlation: float = 0.0
-    roll_rate_p95_deg_per_s: float = 0.0
-    pitch_rate_p95_deg_per_s: float = 0.0
+    yaw_rate_correlation: float | None = None
+    roll_rate_p95_deg_per_s: float | None = None
+    pitch_rate_p95_deg_per_s: float | None = None
 
     # --- Tyre thermal analysis ---
-    front_temp_spread_lf_c: float = 0.0
-    front_temp_spread_rf_c: float = 0.0
-    rear_temp_spread_lr_c: float = 0.0
-    rear_temp_spread_rr_c: float = 0.0
-    front_carcass_mean_c: float = 0.0
-    rear_carcass_mean_c: float = 0.0
-    front_pressure_mean_kpa: float = 0.0
-    rear_pressure_mean_kpa: float = 0.0
+    front_temp_spread_lf_c: float | None = None
+    front_temp_spread_rf_c: float | None = None
+    rear_temp_spread_lr_c: float | None = None
+    rear_temp_spread_rr_c: float | None = None
+    front_carcass_mean_c: float | None = None
+    rear_carcass_mean_c: float | None = None
+    front_pressure_mean_kpa: float | None = None
+    rear_pressure_mean_kpa: float | None = None
     front_wear_mean_pct: float = 0.0
     rear_wear_mean_pct: float = 0.0
 
     # --- Splitter ride height (CFSRrideHeight) ---
-    splitter_rh_mean_at_speed_mm: float = 0.0   # Mean center-front splitter RH at >150kph
-    splitter_rh_min_mm: float = 0.0              # Minimum observed (splitter scrape proximity)
-    splitter_rh_p01_mm: float = 0.0              # 1st percentile (near-worst case)
-    splitter_rh_std_mm: float = 0.0              # Variance at speed
+    splitter_rh_mean_at_speed_mm: float | None = None   # Mean center-front splitter RH at >150kph
+    splitter_rh_min_mm: float | None = None              # Minimum observed (splitter scrape proximity)
+    splitter_rh_p01_mm: float | None = None              # 1st percentile (near-worst case)
+    splitter_rh_std_mm: float | None = None              # Variance at speed
     splitter_scrape_events: int = 0              # Samples where splitter RH < 2mm
 
     # --- Corner shock deflections (LF/RF/LR/RRshockDefl) ---
-    front_corner_defl_p99_mm: float = 0.0        # p99 corner shock deflection (avg LF+RF)
-    rear_corner_defl_p99_mm: float = 0.0         # p99 corner shock deflection (avg LR+RR)
-    front_corner_defl_max_mm: float = 0.0
-    rear_corner_defl_max_mm: float = 0.0
+    front_corner_defl_p99_mm: float | None = None        # p99 corner shock deflection (avg LF+RF)
+    rear_corner_defl_p99_mm: float | None = None         # p99 corner shock deflection (avg LR+RR)
+    front_corner_defl_max_mm: float | None = None
+    rear_corner_defl_max_mm: float | None = None
 
     # --- Heave shock velocities (HFshockVel, HRshockVel) ---
-    front_heave_vel_p95_mps: float = 0.0         # Front heave damper velocity p95
-    front_heave_vel_p99_mps: float = 0.0
-    rear_heave_vel_p95_mps: float = 0.0
-    rear_heave_vel_p99_mps: float = 0.0
+    front_heave_vel_p95_mps: float | None = None         # Front heave damper velocity p95
+    front_heave_vel_p99_mps: float | None = None
+    rear_heave_vel_p95_mps: float | None = None
+    rear_heave_vel_p99_mps: float | None = None
     front_heave_vel_ls_pct: float = 0.0          # % of samples in LS regime (<25 mm/s)
     front_heave_vel_hs_pct: float = 0.0          # % of samples in HS regime (>100 mm/s)
 
     # --- Brake system ---
-    measured_brake_bias_pct: float = 0.0         # Backward-compatible alias of hydraulic_brake_split_pct
-    hydraulic_brake_split_pct: float = 0.0       # Front hydraulic pressure share, not brake torque split
-    hydraulic_brake_split_confidence: float = 0.0
+    measured_brake_bias_pct: float | None = None         # Backward-compatible alias of hydraulic_brake_split_pct
+    hydraulic_brake_split_pct: float | None = None       # Front hydraulic pressure share, not brake torque split
+    hydraulic_brake_split_confidence: float | None = None
     abs_active_pct: float = 0.0                  # % of braking time ABS is active
     abs_cut_mean_pct: float = 0.0                # Mean ABS force reduction during engagement
-    front_brake_pressure_peak_bar: float = 0.0
-    rear_brake_pressure_peak_bar: float = 0.0
-    braking_decel_mean_g: float = 0.0
-    braking_decel_peak_g: float = 0.0
+    front_brake_pressure_peak_bar: float | None = None
+    rear_brake_pressure_peak_bar: float | None = None
+    braking_decel_mean_g: float | None = None
+    braking_decel_peak_g: float | None = None
 
     # --- In-car adjustment tracking ---
     brake_bias_adjustments: int = 0              # Number of bias changes during session
@@ -178,8 +178,8 @@ class MeasuredState:
     live_rear_arb_blade: int | None = None
 
     # --- Fuel and weight ---
-    fuel_level_at_measurement_l: float = 0.0     # Fuel level during analyzed lap
-    fuel_used_per_lap_l: float = 0.0
+    fuel_level_at_measurement_l: float | None = None     # Fuel level during analyzed lap
+    fuel_used_per_lap_l: float | None = None
 
     # --- Hybrid/ERS ---
     ers_battery_mean_pct: float = 0.0            # Mean battery charge during lap
@@ -187,60 +187,60 @@ class MeasuredState:
     mguk_torque_peak_nm: float = 0.0             # Peak hybrid torque contribution
 
     # --- Environmental ---
-    air_temp_c: float = 0.0
-    track_temp_c: float = 0.0
-    air_density_kg_m3: float = 0.0
+    air_temp_c: float | None = None
+    track_temp_c: float | None = None
+    air_density_kg_m3: float | None = None
 
     # --- RPM ---
     rpm_at_braking_pct_at_limiter: float = 0.0   # % of braking events hitting rev limiter
 
     # --- Speed-dependent LLTD ---
-    lltd_low_speed: float = 0.0                  # Backward-compatible alias of roll_distribution_proxy_low_speed
-    lltd_high_speed: float = 0.0                 # Backward-compatible alias of roll_distribution_proxy_high_speed
-    roll_distribution_proxy_low_speed: float = 0.0
-    roll_distribution_proxy_high_speed: float = 0.0
+    lltd_low_speed: float | None = None                  # Backward-compatible alias of roll_distribution_proxy_low_speed
+    lltd_high_speed: float | None = None                 # Backward-compatible alias of roll_distribution_proxy_high_speed
+    roll_distribution_proxy_low_speed: float | None = None
+    roll_distribution_proxy_high_speed: float | None = None
 
     # --- Directional understeer (left/right split) ---
-    understeer_left_turn_deg: float = 0.0
-    understeer_right_turn_deg: float = 0.0
+    understeer_left_turn_deg: float | None = None
+    understeer_right_turn_deg: float | None = None
 
     # --- Per-corner shock velocities (loaded vs unloaded) ---
-    lf_shock_vel_p95_mps: float = 0.0
-    rf_shock_vel_p95_mps: float = 0.0
-    lr_shock_vel_p95_mps: float = 0.0
-    rr_shock_vel_p95_mps: float = 0.0
+    lf_shock_vel_p95_mps: float | None = None
+    rf_shock_vel_p95_mps: float | None = None
+    lr_shock_vel_p95_mps: float | None = None
+    rr_shock_vel_p95_mps: float | None = None
 
     # --- Carcass temperature gradient (inner-outer, for deep camber validation) ---
-    front_carcass_gradient_lf_c: float = 0.0     # LF carcass inner-outer spread
-    front_carcass_gradient_rf_c: float = 0.0
-    rear_carcass_gradient_lr_c: float = 0.0
-    rear_carcass_gradient_rr_c: float = 0.0
+    front_carcass_gradient_lf_c: float | None = None     # LF carcass inner-outer spread
+    front_carcass_gradient_rf_c: float | None = None
+    rear_carcass_gradient_lr_c: float | None = None
+    rear_carcass_gradient_rr_c: float | None = None
 
     # --- Per-corner tyre data (preserves left-right split) ---
-    lf_pressure_kpa: float = 0.0
-    rf_pressure_kpa: float = 0.0
-    lr_pressure_kpa: float = 0.0
-    rr_pressure_kpa: float = 0.0
-    lf_cold_pressure_kpa: float = 0.0
-    rf_cold_pressure_kpa: float = 0.0
-    lr_cold_pressure_kpa: float = 0.0
-    rr_cold_pressure_kpa: float = 0.0
+    lf_pressure_kpa: float | None = None
+    rf_pressure_kpa: float | None = None
+    lr_pressure_kpa: float | None = None
+    rr_pressure_kpa: float | None = None
+    lf_cold_pressure_kpa: float | None = None
+    rf_cold_pressure_kpa: float | None = None
+    lr_cold_pressure_kpa: float | None = None
+    rr_cold_pressure_kpa: float | None = None
     lf_wear_pct: float = 0.0
     rf_wear_pct: float = 0.0
     lr_wear_pct: float = 0.0
     rr_wear_pct: float = 0.0
-    lf_temp_inner_c: float = 0.0   # Inner surface temp at speed
-    rf_temp_inner_c: float = 0.0
-    lr_temp_inner_c: float = 0.0
-    rr_temp_inner_c: float = 0.0
-    lf_temp_middle_c: float = 0.0  # Middle surface temp at speed
-    rf_temp_middle_c: float = 0.0
-    lr_temp_middle_c: float = 0.0
-    rr_temp_middle_c: float = 0.0
-    lf_temp_outer_c: float = 0.0   # Outer surface temp at speed
-    rf_temp_outer_c: float = 0.0
-    lr_temp_outer_c: float = 0.0
-    rr_temp_outer_c: float = 0.0
+    lf_temp_inner_c: float | None = None   # Inner surface temp at speed
+    rf_temp_inner_c: float | None = None
+    lr_temp_inner_c: float | None = None
+    rr_temp_inner_c: float | None = None
+    lf_temp_middle_c: float | None = None  # Middle surface temp at speed
+    rf_temp_middle_c: float | None = None
+    lr_temp_middle_c: float | None = None
+    rr_temp_middle_c: float | None = None
+    lf_temp_outer_c: float | None = None   # Outer surface temp at speed
+    rf_temp_outer_c: float | None = None
+    lr_temp_outer_c: float | None = None
+    rr_temp_outer_c: float | None = None
 
     # --- Raw driver inputs (before TC/ABS intervention) ---
     throttle_raw_mean: float = 0.0          # Mean ThrottleRaw at speed
@@ -252,10 +252,10 @@ class MeasuredState:
     max_gear: int = 0                       # Highest gear used on track
 
     # --- Pitch dynamics ---
-    pitch_mean_at_speed_deg: float = 0.0    # Mean pitch angle at speed (rake indicator)
-    pitch_range_deg: float = 0.0            # p99-p01 pitch range (platform stability)
-    pitch_mean_braking_deg: float = 0.0
-    pitch_range_braking_deg: float = 0.0
+    pitch_mean_at_speed_deg: float | None = None    # Mean pitch angle at speed (rake indicator)
+    pitch_range_deg: float | None = None            # p99-p01 pitch range (platform stability)
+    pitch_mean_braking_deg: float | None = None
+    pitch_range_braking_deg: float | None = None
 
     # --- In-car adjustment tracking (extended) ---
     arb_front_adjustments: int = 0          # dcAntiRollFront changes
@@ -265,26 +265,26 @@ class MeasuredState:
     deploy_mode_adjustments: int = 0        # dcMGUKDeployMode changes
 
     # --- Rear shock oscillation analysis (P2: damper validation) ---
-    rear_shock_oscillation_hz: float = 0.0   # Zero-crossing frequency of rear shock vel
-    front_shock_oscillation_hz: float = 0.0  # Zero-crossing frequency of front shock vel
+    rear_shock_oscillation_hz: float | None = None   # Zero-crossing frequency of rear shock vel
+    front_shock_oscillation_hz: float | None = None  # Zero-crossing frequency of front shock vel
 
     # --- High-speed m_eff filtering (P3c) ---
-    front_heave_vel_p95_hs_mps: float = 0.0  # Front heave vel p95 at >200 kph only
-    front_rh_std_hs_mm: float = 0.0          # Front RH std at >200 kph only
+    front_heave_vel_p95_hs_mps: float | None = None  # Front heave vel p95 at >200 kph only
+    front_rh_std_hs_mm: float | None = None          # Front RH std at >200 kph only
 
     # --- Wind ---
-    wind_speed_ms: float = 0.0
-    wind_dir_deg: float = 0.0
+    wind_speed_ms: float | None = None
+    wind_dir_deg: float | None = None
 
     # --- Full rebuilt track profile ---
     measured_track_profile: TrackProfile | None = None
 
     # --- Session metadata ---
-    lap_time_s: float = 0.0
+    lap_time_s: float | None = None
     lap_number: int = 0
-    speed_mean_kph: float = 0.0
-    speed_max_kph: float = 0.0
-    mean_speed_at_speed_kph: float = 0.0
+    speed_mean_kph: float | None = None
+    speed_max_kph: float | None = None
+    mean_speed_at_speed_kph: float | None = None
     metric_fallbacks: list[str] = field(default_factory=list)
     fallback_reasons: list[str] = field(default_factory=list)
 
@@ -433,11 +433,21 @@ def extract_measurements(
             throttle_signal = np.zeros(n)
         at_speed = (speed_kph > 150) & (brake < 0.05)
 
+        # Kerb-filtered at-speed mask for ride height variance
+        # Kerb strikes inflate RH variance but are driving choices, not setup problems.
+        # Mean RH and p01 still use all samples (needed for aero operating point).
+        if kerb_spatial_mask is not None and len(kerb_spatial_mask) == n:
+            at_speed_clean = at_speed & ~kerb_spatial_mask
+        else:
+            at_speed_clean = at_speed
+
         if np.sum(at_speed) > 50:
             state.mean_front_rh_at_speed_mm = float(np.mean(front_rh[at_speed]))
             state.mean_rear_rh_at_speed_mm = float(np.mean(rear_rh[at_speed]))
-            state.front_rh_std_mm = float(np.std(front_rh[at_speed]))
-            state.rear_rh_std_mm = float(np.std(rear_rh[at_speed]))
+            # Use kerb-filtered mask for variance (avoids over-stiffening from kerb spikes)
+            clean_mask = at_speed_clean if np.sum(at_speed_clean) > 30 else at_speed
+            state.front_rh_std_mm = float(np.std(front_rh[clean_mask]))
+            state.rear_rh_std_mm = float(np.std(rear_rh[clean_mask]))
             state.front_rh_p01_mm = float(np.percentile(front_rh[at_speed], 1))
             state.rear_rh_p01_mm = float(np.percentile(rear_rh[at_speed], 1))
             state.mean_speed_at_speed_kph = float(np.mean(speed_kph[at_speed]))

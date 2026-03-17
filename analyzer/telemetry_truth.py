@@ -126,14 +126,20 @@ def get_signal(measured: Any, name: str) -> TelemetrySignal[Any]:
         return signal
 
     value = getattr(measured, name, None)
-    quality = "trusted" if value not in (None, 0, 0.0, "") else "unknown"
-    confidence = 0.8 if quality == "trusted" else 0.0
+    if value is None or value == 0 or value == 0.0 or value == "":
+        quality = "unknown"
+        confidence = 0.0
+        invalid_reason = "not_extracted"
+    else:
+        quality = "proxy"
+        confidence = 0.5
+        invalid_reason = ""
     return TelemetrySignal(
         value=value,
         quality=quality,
         confidence=confidence,
-        source="legacy_measured_state",
-        invalid_reason="" if quality == "trusted" else "not_extracted",
+        source="legacy_fallback",
+        invalid_reason=invalid_reason,
     )
 
 
@@ -301,6 +307,80 @@ def build_signal_map(measured: "MeasuredState") -> dict[str, TelemetrySignal[Any
         "understeer_high_speed_deg": _proxy(measured.understeer_high_speed_deg, source="steering_yaw_proxy"),
         "body_slip_p95_deg": _proxy(measured.body_slip_p95_deg, source="body_velocity_proxy"),
         "yaw_rate_correlation": _proxy(measured.yaw_rate_correlation, source="yaw_fit_proxy", confidence=0.7),
+        "peak_lat_g_measured": _trusted(
+            measured.peak_lat_g_measured,
+            source="accelerometer",
+            confidence=0.9,
+        ),
+        "front_shock_vel_p99_mps": _trusted(
+            measured.front_shock_vel_p99_mps,
+            source="shock_velocity_channel",
+            confidence=0.85,
+        ),
+        "rear_shock_vel_p99_mps": _trusted(
+            measured.rear_shock_vel_p99_mps,
+            source="shock_velocity_channel",
+            confidence=0.85,
+        ),
+        "front_temp_spread_lf_c": _trusted(
+            measured.front_temp_spread_lf_c,
+            source="tyre_temp_channel",
+            confidence=0.75,
+            invalid_reason="zero_spread" if getattr(measured, "front_temp_spread_lf_c", 0) == 0 else "",
+        ),
+        "front_temp_spread_rf_c": _trusted(
+            measured.front_temp_spread_rf_c,
+            source="tyre_temp_channel",
+            confidence=0.75,
+            invalid_reason="zero_spread" if getattr(measured, "front_temp_spread_rf_c", 0) == 0 else "",
+        ),
+        "rear_temp_spread_lr_c": _trusted(
+            measured.rear_temp_spread_lr_c,
+            source="tyre_temp_channel",
+            confidence=0.75,
+            invalid_reason="zero_spread" if getattr(measured, "rear_temp_spread_lr_c", 0) == 0 else "",
+        ),
+        "rear_temp_spread_rr_c": _trusted(
+            measured.rear_temp_spread_rr_c,
+            source="tyre_temp_channel",
+            confidence=0.75,
+            invalid_reason="zero_spread" if getattr(measured, "rear_temp_spread_rr_c", 0) == 0 else "",
+        ),
+        "speed_max_kph": _trusted(
+            measured.speed_max_kph,
+            source="speed_channel",
+            confidence=0.95,
+        ),
+        "aero_compression_front_mm": _trusted(
+            measured.aero_compression_front_mm,
+            source="ride_height_derived",
+            confidence=0.7,
+        ),
+        "front_rh_excursion_measured_mm": _trusted(
+            measured.front_rh_excursion_measured_mm,
+            source="ride_height_channels",
+            confidence=0.8,
+        ),
+        "rear_rh_excursion_measured_mm": _trusted(
+            measured.rear_rh_excursion_measured_mm,
+            source="ride_height_channels",
+            confidence=0.8,
+        ),
+        "roll_gradient_measured_deg_per_g": _proxy(
+            measured.roll_gradient_measured_deg_per_g,
+            source="roll_lat_g_regression",
+            confidence=0.6,
+        ),
+        "body_roll_p95_deg": _proxy(
+            measured.body_roll_p95_deg,
+            source="ride_height_derived",
+            confidence=0.6,
+        ),
+        "lltd_measured": _proxy(
+            measured.lltd_measured,
+            source="roll_distribution_proxy",
+            confidence=0.55,
+        ),
     }
     if getattr(measured, "hydraulic_brake_split_pct", 0.0) > 0:
         split_signal = (

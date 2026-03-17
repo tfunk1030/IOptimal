@@ -1,0 +1,632 @@
+{
+  "sessions": [
+    {
+      "label": "S1 (bmw22)",
+      "ibt_path": "ibtfiles\\bmw22.ibt",
+      "lap_time_s": 109.09940338134766,
+      "lap_number": 23,
+      "track_name": "Sebring International Raceway",
+      "wing_angle": 17.0,
+      "assessment": "compromised",
+      "problems": 11,
+      "driver_style": "aggressive-erratic"
+    },
+    {
+      "label": "S2 (bmw23)",
+      "ibt_path": "ibtfiles\\bmw23.ibt",
+      "lap_time_s": 109.33973693847656,
+      "lap_number": 28,
+      "track_name": "Sebring International Raceway",
+      "wing_angle": 17.0,
+      "assessment": "compromised",
+      "problems": 11,
+      "driver_style": "aggressive-erratic"
+    },
+    {
+      "label": "S3 (bmw20)",
+      "ibt_path": "ibtfiles\\bmw20.ibt",
+      "lap_time_s": 109.01306915283203,
+      "lap_number": 33,
+      "track_name": "Sebring International Raceway",
+      "wing_angle": 17.0,
+      "assessment": "compromised",
+      "problems": 12,
+      "driver_style": "aggressive-erratic"
+    },
+    {
+      "label": "S4 (bmw151)",
+      "ibt_path": "ibtfiles\\bmw151.ibt",
+      "lap_time_s": 109.1171646118164,
+      "lap_number": 38,
+      "track_name": "Sebring International Raceway",
+      "wing_angle": 17.0,
+      "assessment": "dangerous",
+      "problems": 10,
+      "driver_style": "aggressive-erratic"
+    }
+  ],
+  "rankings": [
+    {
+      "label": "S1 (bmw22)",
+      "rank": 1,
+      "overall_score": 0.697109507908975,
+      "category_scores": {
+        "lap_time": 0.9472025209536495,
+        "grip": 0.5542882836279712,
+        "balance": 0.7573353370352981,
+        "aero_efficiency": 0.5414464877052069,
+        "high_speed_corners": 0.9461416907809828,
+        "low_speed_corners": 0.9575531445737939,
+        "corner_performance": 0.8187694704049847,
+        "damper_platform": 0.6,
+        "thermal": 0.37354664977031543,
+        "context_health": 0.24749486666666665
+      },
+      "strengths": [
+        "Best Balance (76%)",
+        "Best High-Speed Corners (95%)",
+        "Best Low-Speed Corners (96%)",
+        "Best Damper / Platform (60%)",
+        "Best Thermal (37%)"
+      ],
+      "weaknesses": []
+    },
+    {
+      "label": "S3 (bmw20)",
+      "rank": 2,
+      "overall_score": 0.6570071715288568,
+      "category_scores": {
+        "lap_time": 1.0,
+        "grip": 0.6238980025616213,
+        "balance": 0.49459828901734104,
+        "aero_efficiency": 0.6171259738475037,
+        "high_speed_corners": 0.7630486626195747,
+        "low_speed_corners": 0.9472125238153858,
+        "corner_performance": 0.8576487948844076,
+        "damper_platform": 0.4871794871794874,
+        "thermal": 0.30853254997614216,
+        "context_health": 0.22128493333333338
+      },
+      "strengths": [
+        "Best Lap Time (100%)",
+        "Best Grip (62%)"
+      ],
+      "weaknesses": []
+    },
+    {
+      "label": "S2 (bmw23)",
+      "rank": 3,
+      "overall_score": 0.5388479250410427,
+      "category_scores": {
+        "lap_time": 0.8002271420707329,
+        "grip": 0.48724309238470287,
+        "balance": 0.5330211256495211,
+        "aero_efficiency": 0.6928942282677957,
+        "high_speed_corners": 0.5348482262079278,
+        "low_speed_corners": 0.19706637330399707,
+        "corner_performance": 1.0,
+        "damper_platform": 0.4615936589256637,
+        "thermal": 0.1827133015368309,
+        "context_health": 0.25287446666666674
+      },
+      "strengths": [
+        "Best Aero Efficiency (69%)",
+        "Best Corner Performance (100%)",
+        "Best Context / Health (25%)"
+      ],
+      "weaknesses": [
+        "Weakest Lap Time (80%)",
+        "Weakest Low-Speed Corners (20%)",
+        "Weakest Damper / Platform (46%)",
+        "Weakest Thermal (18%)"
+      ]
+    },
+    {
+      "label": "S4 (bmw151)",
+      "rank": 4,
+      "overall_score": 0.4097975811109827,
+      "category_scores": {
+        "lap_time": 0.936340685391622,
+        "grip": 0.29029755933975965,
+        "balance": 0.3333333333333333,
+        "aero_efficiency": 0.35493244378614963,
+        "high_speed_corners": 0.18945024019234813,
+        "low_speed_corners": 0.5725263644906263,
+        "corner_performance": 0.5,
+        "damper_platform": 0.5329718591033288,
+        "thermal": 0.1925741884201902,
+        "context_health": 0.12160166666666672
+      },
+      "strengths": [],
+      "weaknesses": [
+        "Weakest Grip (29%)",
+        "Weakest Balance (33%)",
+        "Weakest Aero Efficiency (35%)",
+        "Weakest High-Speed Corners (19%)",
+        "Weakest Corner Performance (50%)",
+        "Weakest Context / Health (12%)"
+      ]
+    }
+  ],
+  "best_per_category": {
+    "lap_time": 2,
+    "grip": 2,
+    "balance": 0,
+    "aero_efficiency": 1,
+    "high_speed_corners": 0,
+    "low_speed_corners": 0,
+    "corner_performance": 1,
+    "damper_platform": 0,
+    "thermal": 0,
+    "context_health": 1
+  },
+  "synthesis": {
+    "wing_angle": 17.0,
+    "fuel_l": 89.0,
+    "best_session": "S3",
+    "authority_session": "S3",
+    "solve_basis": "authority_score",
+    "selected_candidate_family": "incremental",
+    "selected_candidate_score": 0.602,
+    "modifiers": {
+      "df_balance_offset_pct": 0.0,
+      "lltd_offset": 0.0,
+      "front_heave_floor_nmm": 0.0,
+      "damping_ratio_scale": 1.0
+    },
+    "explanations": [
+      {
+        "parameter": "Solve Basis",
+        "value": "authority_score",
+        "reasoning": "Authority session S3 was used for the final solve; benchmark best remains S3.",
+        "influenced_by": [
+          "S3",
+          "S3"
+        ]
+      },
+      {
+        "parameter": "Candidate Family",
+        "value": "incremental",
+        "reasoning": "The final setup comes from the rematerialized candidate family selected by prediction, legality, and context-aware ranking.",
+        "influenced_by": [
+          "S3",
+          "S3"
+        ]
+      },
+      {
+        "parameter": "Healthy Family Fit",
+        "value": "env=1.32, setup=0.51",
+        "reasoning": "Authority selection and candidate ranking were biased toward sessions closer to the healthy telemetry envelope and setup family.",
+        "influenced_by": [
+          "S3"
+        ]
+      }
+    ],
+    "confidence": {
+      "authority": "low",
+      "telemetry": "low",
+      "candidate_family": "high",
+      "validation": "high"
+    },
+    "solver_notes": [
+      "Authority score selected S3 (0.309) over raw best lap.",
+      "session is not a clean baseline authority candidate",
+      "trusted=33",
+      "Selected BMW/Sebring constrained optimizer candidate.",
+      "Candidate family selected: incremental (score 0.602)",
+      "Applied rematerialized incremental candidate result to final report/JSON/export payloads."
+    ]
+  },
+  "setup_deltas": {
+    "Wing Angle": [
+      17.0,
+      17.0,
+      17.0,
+      17.0
+    ],
+    "Static Front RH": [
+      30.0,
+      30.1,
+      30.0,
+      30.0
+    ],
+    "Static Rear RH": [
+      49.0,
+      49.2,
+      49.9,
+      48.5
+    ],
+    "Front Pushrod": [
+      -26.0,
+      -27.0,
+      -25.5,
+      -28.0
+    ],
+    "Rear Pushrod": [
+      -23.0,
+      -24.0,
+      -11.0,
+      -20.5
+    ],
+    "Front Heave": [
+      40.0,
+      40.0,
+      40.0,
+      40.0
+    ],
+    "Front Heave Perch": [
+      -12.5,
+      -10.0,
+      -21.0,
+      -31.5
+    ],
+    "Rear Third": [
+      460.0,
+      460.0,
+      420.0,
+      400.0
+    ],
+    "Rear Third Perch": [
+      43.5,
+      43.5,
+      43.0,
+      36.0
+    ],
+    "Front Torsion OD": [
+      13.9,
+      14.34,
+      13.9,
+      14.34
+    ],
+    "Rear Spring": [
+      160.0,
+      170.0,
+      165.0,
+      180.0
+    ],
+    "Front ARB Blade": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "Rear ARB Blade": [
+      3,
+      1,
+      3,
+      1
+    ],
+    "Front Camber": [
+      -2.0,
+      -2.0,
+      -2.5,
+      -2.8
+    ],
+    "Rear Camber": [
+      -1.7,
+      -1.6,
+      -1.8,
+      -1.8
+    ],
+    "Front Toe": [
+      -0.4,
+      -0.4,
+      -0.5,
+      -0.5
+    ],
+    "Rear Toe": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Front LS Comp": [
+      8,
+      8,
+      9,
+      10
+    ],
+    "Front LS Rbd": [
+      8,
+      8,
+      7,
+      5
+    ],
+    "Front HS Comp": [
+      5,
+      5,
+      8,
+      9
+    ],
+    "Front HS Rbd": [
+      8,
+      8,
+      6,
+      5
+    ],
+    "Rear LS Comp": [
+      7,
+      7,
+      6,
+      5
+    ],
+    "Rear LS Rbd": [
+      8,
+      8,
+      6,
+      5
+    ],
+    "Rear HS Comp": [
+      5,
+      6,
+      8,
+      10
+    ],
+    "Rear HS Rbd": [
+      11,
+      11,
+      8,
+      6
+    ],
+    "Brake Bias": [
+      46.0,
+      46.0,
+      46.25,
+      46.25
+    ],
+    "Brake Bias Target": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Brake Bias Migration": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Front Master Cyl": [
+      19.1,
+      19.1,
+      19.1,
+      19.1
+    ],
+    "Rear Master Cyl": [
+      20.6,
+      20.6,
+      20.6,
+      20.6
+    ],
+    "Pad Compound": [
+      "Medium",
+      "Medium",
+      "Medium",
+      "Medium"
+    ],
+    "Diff Preload": [
+      35.0,
+      35.0,
+      20.0,
+      15.0
+    ],
+    "Diff Clutch Plates": [
+      6,
+      6,
+      6,
+      6
+    ],
+    "TC Gain": [
+      6,
+      6,
+      4,
+      4
+    ],
+    "TC Slip": [
+      5,
+      5,
+      4,
+      3
+    ]
+  },
+  "telemetry_deltas": {
+    "Lap Time": [
+      109.09940338134766,
+      109.33973693847656,
+      109.01306915283203,
+      109.1171646118164
+    ],
+    "Top Speed": [
+      295.4625244140625,
+      295.89642333984375,
+      294.74139404296875,
+      295.0067443847656
+    ],
+    "Mean Speed": [
+      191.4556121826172,
+      191.16610717773438,
+      191.53692626953125,
+      191.3054656982422
+    ],
+    "Front RH Variance": [
+      5.72556734085083,
+      5.468794822692871,
+      5.320084571838379,
+      5.386963844299316
+    ],
+    "Rear RH Variance": [
+      6.73607873916626,
+      6.689794063568115,
+      6.591409206390381,
+      6.7712812423706055
+    ],
+    "Front RH Excursion": [
+      18.206260681152344,
+      17.653310775756836,
+      15.181066513061523,
+      13.894266128540039
+    ],
+    "Rear RH Excursion": [
+      21.848186492919922,
+      21.700950622558594,
+      21.28724479675293,
+      20.180139541625977
+    ],
+    "Aero Compress F": [
+      12.938653945922852,
+      12.471694946289062,
+      12.81351089477539,
+      12.09663200378418
+    ],
+    "Aero Compress R": [
+      20.905311584472656,
+      20.71595573425293,
+      21.767011642456055,
+      21.03936004638672
+    ],
+    "Bottoming F": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "Bottoming R": [
+      2,
+      4,
+      1,
+      1
+    ],
+    "Vortex Burst": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "Front Shock p99": [
+      0.23808380961418152,
+      0.2437267303466797,
+      0.25543153285980225,
+      0.25438085198402405
+    ],
+    "Rear Shock p99": [
+      0.3039308190345764,
+      0.3059971332550049,
+      0.30669471621513367,
+      0.30613842606544495
+    ],
+    "Front Settle": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Rear Settle": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Peak Lat G": [
+      3.6893770694732666,
+      4.001544952392578,
+      3.8440849781036377,
+      3.7526776790618896
+    ],
+    "LLTD": [
+      0.5101323172499153,
+      0.5085504817277036,
+      0.509289101872747,
+      0.5106079719324188
+    ],
+    "Understeer Mean": [
+      0.0038209869526326656,
+      -0.016872024163603783,
+      -0.02431059628725052,
+      0.00012921993038617074
+    ],
+    "Understeer Low Spd": [
+      -0.02234613336622715,
+      0.15396074950695038,
+      0.04151761531829834,
+      -0.16421115398406982
+    ],
+    "Understeer High Spd": [
+      0.1560865044593811,
+      0.08350194990634918,
+      0.08326991647481918,
+      0.11511215567588806
+    ],
+    "Body Slip p95": [
+      3.009516954421997,
+      3.388287305831909,
+      3.342198371887207,
+      3.653992176055908
+    ],
+    "Rear Slip Ratio p95": [
+      0.08304625004529953,
+      0.08919483423233032,
+      0.09258704632520676,
+      0.09176179021596909
+    ],
+    "Yaw Correlation": [
+      0.829,
+      0.79,
+      0.807,
+      0.82
+    ],
+    "Roll Rate p95": [
+      7.628069877624512,
+      7.1460795402526855,
+      7.6926398277282715,
+      6.868875503540039
+    ],
+    "F Temp Spread LF": [
+      3.3,
+      3.8,
+      5.0,
+      6.8
+    ],
+    "F Temp Spread RF": [
+      5.6,
+      6.6,
+      8.0,
+      8.9
+    ],
+    "R Temp Spread LR": [
+      5.0,
+      6.2,
+      5.6,
+      5.9
+    ],
+    "R Temp Spread RR": [
+      7.6,
+      8.2,
+      8.4,
+      8.4
+    ],
+    "F Carcass Temp": [
+      95.1,
+      98.4,
+      94.9,
+      95.6
+    ],
+    "R Carcass Temp": [
+      99.9,
+      103.2,
+      99.7,
+      100.7
+    ],
+    "F Pressure": [
+      183.6,
+      180.5,
+      180.6,
+      181.0
+    ],
+    "R Pressure": [
+      179.8,
+      177.8,
+      178.2,
+      178.1
+    ]
+  }
+}

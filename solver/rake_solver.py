@@ -681,11 +681,19 @@ def reconcile_ride_heights(
     fuel_load_l: float = 0.0,
     track_name: str | None = None,
     verbose: bool = True,
+    surface=None,
+    track=None,
+    target_balance: float | None = None,
 ) -> None:
     """Reconcile static ride heights after step2+step3 provide actual spring values.
 
     Modifies step1 in-place with refined static RH, pushrod, and rake values.
     Called from both solve.py and produce.py after steps 2 and 3.
+
+    If surface and target_balance are provided, re-derives the correct dynamic
+    rear RH from the aero balance target instead of relying on the potentially
+    stale value in step1.dynamic_rear_rh_mm (which may have been computed with
+    baseline springs in solution_from_explicit_offsets).
     """
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is not None:
@@ -698,9 +706,26 @@ def reconcile_ride_heights(
             car.min_front_rh_static,
             round(step1.dynamic_front_rh_mm + step1.aero_compression_front_mm, 3),
         )
+
+        # If aero surface and balance target are available, re-derive the correct
+        # dynamic rear RH.  solution_from_explicit_offsets may have computed
+        # dynamic_rear_rh_mm with baseline springs, making it stale when the
+        # candidate changed step2/step3 springs.
+        corrected_dynamic_rear = step1.dynamic_rear_rh_mm
+        if surface is not None and target_balance is not None and track is not None:
+            try:
+                rake_solver = RakeSolver(car, surface, track)
+                corrected = rake_solver._find_rear_for_balance(
+                    step1.dynamic_front_rh_mm, target_balance,
+                )
+                if corrected is not None:
+                    corrected_dynamic_rear = corrected
+            except Exception:
+                pass
+
         target_rear_rh = max(
             car.min_rear_rh_static,
-            round(step1.dynamic_rear_rh_mm + step1.aero_compression_rear_mm, 3),
+            round(corrected_dynamic_rear + step1.aero_compression_rear_mm, 3),
         )
 
         # Only invert via pushrod if the coefficient is large enough.
@@ -765,6 +790,23 @@ def reconcile_ride_heights(
         step1.static_front_rh_mm = round(outputs.front_static_rh_mm, 1)
         step1.static_rear_rh_mm = round(outputs.rear_static_rh_mm, 1)
         step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
+
+        # Update dynamic fields if we corrected the rear target from aero balance
+        if corrected_dynamic_rear != step1.dynamic_rear_rh_mm:
+            step1.dynamic_rear_rh_mm = round(corrected_dynamic_rear, 1)
+            step1.rake_dynamic_mm = round(
+                step1.dynamic_rear_rh_mm - step1.dynamic_front_rh_mm, 1
+            )
+            # Re-query aero balance and L/D at corrected operating point
+            if surface is not None:
+                try:
+                    af, ar = car.to_aero_coords(
+                        step1.dynamic_front_rh_mm, step1.dynamic_rear_rh_mm
+                    )
+                    step1.df_balance_pct = round(surface.df_balance(af, ar), 2)
+                    step1.ld_ratio = round(surface.lift_drag(af, ar), 3)
+                except Exception:
+                    pass
         return
 
     rh_model = car.ride_height_model

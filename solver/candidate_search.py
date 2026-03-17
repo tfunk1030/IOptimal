@@ -193,6 +193,13 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def _get_metric(source: Any, key: str) -> Any:
+    """Get a metric from either a dict or an object."""
+    if isinstance(source, dict):
+        return source.get(key)
+    return getattr(source, key, None)
+
+
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
@@ -227,16 +234,6 @@ def _adjust_integer(mapping: dict[str, Any], field: str, delta: int, *, lo: int 
     if hi is not None:
         value = min(hi, value)
     mapping[field] = value
-
-
-def _blend_value(current: Any, target: Any, blend: float, *, integer: bool = False) -> Any:
-    try:
-        current_val = float(current)
-        target_val = float(target)
-    except (TypeError, ValueError):
-        return target if blend >= 0.5 else current
-    blended = current_val * (1.0 - blend) + target_val * blend
-    return int(round(blended)) if integer else round(blended, 4)
 
 
 def _extract_target_maps(base_result: SolveChainResult) -> dict[str, Any]:
@@ -294,91 +291,6 @@ def _extract_target_maps(base_result: SolveChainResult) -> dict[str, Any]:
     }
 
 
-def _blend_toward_authority_setup(targets: dict[str, Any], authority_session: Any, family: str) -> None:
-    setup = getattr(authority_session, "setup", None)
-    if setup is None or family == "baseline_reset":
-        return
-    blend = 0.82 if family == "incremental" else 0.52
-    targets["step1"]["front_pushrod_offset_mm"] = _blend_value(
-        targets["step1"]["front_pushrod_offset_mm"], getattr(setup, "front_pushrod_mm", None), blend
-    )
-    targets["step1"]["rear_pushrod_offset_mm"] = _blend_value(
-        targets["step1"]["rear_pushrod_offset_mm"], getattr(setup, "rear_pushrod_mm", None), blend
-    )
-    targets["step1"]["static_front_rh_mm"] = _blend_value(
-        targets["step1"]["static_front_rh_mm"], getattr(setup, "static_front_rh_mm", None), blend
-    )
-    targets["step1"]["static_rear_rh_mm"] = _blend_value(
-        targets["step1"]["static_rear_rh_mm"], getattr(setup, "static_rear_rh_mm", None), blend
-    )
-
-    for field, setup_field in (
-        ("front_heave_nmm", "front_heave_nmm"),
-        ("perch_offset_front_mm", "front_heave_perch_mm"),
-        ("rear_third_nmm", "rear_third_nmm"),
-        ("perch_offset_rear_mm", "rear_third_perch_mm"),
-    ):
-        targets["step2"][field] = _blend_value(targets["step2"][field], getattr(setup, setup_field, None), blend)
-
-    for field, setup_field in (
-        ("front_torsion_od_mm", "front_torsion_od_mm"),
-        ("rear_spring_rate_nmm", "rear_spring_nmm"),
-        ("rear_spring_perch_mm", "rear_spring_perch_mm"),
-    ):
-        targets["step3"][field] = _blend_value(targets["step3"][field], getattr(setup, setup_field, None), blend)
-
-    for field, setup_field in (
-        ("front_arb_blade_start", "front_arb_blade"),
-        ("rear_arb_blade_start", "rear_arb_blade"),
-        ("rarb_blade_slow_corner", "rear_arb_blade"),
-        ("rarb_blade_fast_corner", "rear_arb_blade"),
-    ):
-        targets["step4"][field] = _blend_value(targets["step4"][field], getattr(setup, setup_field, None), blend, integer=True)
-    if family == "incremental" and getattr(setup, "front_arb_size", ""):
-        targets["step4"]["front_arb_size"] = setup.front_arb_size
-    if family == "incremental" and getattr(setup, "rear_arb_size", ""):
-        targets["step4"]["rear_arb_size"] = setup.rear_arb_size
-
-    for field, setup_field in (
-        ("front_camber_deg", "front_camber_deg"),
-        ("rear_camber_deg", "rear_camber_deg"),
-        ("front_toe_mm", "front_toe_mm"),
-        ("rear_toe_mm", "rear_toe_mm"),
-    ):
-        targets["step5"][field] = _blend_value(targets["step5"][field], getattr(setup, setup_field, None), blend)
-
-    for corner_name, prefix in (("lf", "front"), ("rf", "front"), ("lr", "rear"), ("rr", "rear")):
-        for field, setup_field in (
-            ("ls_comp", f"{prefix}_ls_comp"),
-            ("ls_rbd", f"{prefix}_ls_rbd"),
-            ("hs_comp", f"{prefix}_hs_comp"),
-            ("hs_rbd", f"{prefix}_hs_rbd"),
-            ("hs_slope", f"{prefix}_hs_slope"),
-        ):
-            targets["step6"][corner_name][field] = _blend_value(
-                targets["step6"][corner_name][field],
-                getattr(setup, setup_field, None),
-                blend,
-                integer=True,
-            )
-
-    for field, setup_field in (
-        ("brake_bias_pct", "brake_bias_pct"),
-        ("diff_preload_nm", "diff_preload_nm"),
-        ("tc_gain", "tc_gain"),
-        ("tc_slip", "tc_slip"),
-    ):
-        targets["supporting"][field] = _blend_value(
-            targets["supporting"][field],
-            getattr(setup, setup_field, None),
-            blend,
-            integer=field.startswith("tc_"),
-        )
-    for field in ("brake_bias_target", "brake_bias_migration", "front_master_cyl_mm", "rear_master_cyl_mm", "pad_compound"):
-        if hasattr(setup, field):
-            targets["supporting"][field] = getattr(setup, field)
-
-
 def _apply_cluster_center(targets: dict[str, Any], setup_cluster: Any) -> None:
     center = getattr(setup_cluster, "center", {}) or {}
     if not center:
@@ -423,13 +335,18 @@ def _apply_family_state_adjustments(
     targets: dict[str, Any],
     *,
     family: str,
-    authority_session: Any,
+    aggregate_measured: dict[str, float] | None = None,
     overhaul_class: str,
     envelope_distance: float,
     setup_distance: float,
     cluster_seeded: bool = False,
+    # Backward compat: if aggregate_measured not provided, extract from authority_session
+    authority_session: Any = None,
 ) -> None:
-    measured = getattr(authority_session, "measured", None)
+    if aggregate_measured is not None:
+        measured = aggregate_measured
+    else:
+        measured = getattr(authority_session, "measured", None)
     if measured is None:
         return
 
@@ -445,36 +362,36 @@ def _apply_family_state_adjustments(
 
     front_support = _clamp(
         max(
-            (((_safe_float(getattr(measured, "front_heave_travel_used_pct", None)) or 0.0) - 80.0) / 20.0),
-            (((_safe_float(getattr(measured, "pitch_range_braking_deg", None)) or 0.0) - 0.9) / 0.8),
-            (_safe_float(getattr(measured, "bottoming_event_count_front_clean", None)) or 0.0) / 6.0,
+            (((_safe_float(_get_metric(measured, "front_heave_travel_used_pct")) or 0.0) - 80.0) / 20.0),
+            (((_safe_float(_get_metric(measured, "pitch_range_braking_deg")) or 0.0) - 0.9) / 0.8),
+            (_safe_float(_get_metric(measured, "bottoming_event_count_front_clean")) or 0.0) / 6.0,
         ),
         0.0,
         1.25,
     )
     rear_support = _clamp(
         max(
-            (((_safe_float(getattr(measured, "rear_rh_std_mm", None)) or 0.0) - 6.0) / 4.0),
-            (_safe_float(getattr(measured, "bottoming_event_count_rear_clean", None)) or 0.0) / 6.0,
+            (((_safe_float(_get_metric(measured, "rear_rh_std_mm")) or 0.0) - 6.0) / 4.0),
+            (_safe_float(_get_metric(measured, "bottoming_event_count_rear_clean")) or 0.0) / 6.0,
         ),
         0.0,
         1.25,
     )
-    entry_push = _clamp(((_safe_float(getattr(measured, "understeer_low_speed_deg", None)) or 0.0) - 0.9) / 1.2, 0.0, 1.0)
+    entry_push = _clamp(((_safe_float(_get_metric(measured, "understeer_low_speed_deg")) or 0.0) - 0.9) / 1.2, 0.0, 1.0)
     high_speed_push = _clamp(
-        (((_safe_float(getattr(measured, "understeer_high_speed_deg", None)) or 0.0) - (_safe_float(getattr(measured, "understeer_low_speed_deg", None)) or 0.0)) - 0.2) / 0.8,
+        (((_safe_float(_get_metric(measured, "understeer_high_speed_deg")) or 0.0) - (_safe_float(_get_metric(measured, "understeer_low_speed_deg")) or 0.0)) - 0.2) / 0.8,
         0.0,
         1.0,
     )
     exit_instability = _clamp(
         max(
-            (((_safe_float(getattr(measured, "rear_power_slip_ratio_p95", None)) or 0.0) - 0.07) / 0.06),
-            (((_safe_float(getattr(measured, "body_slip_p95_deg", None)) or 0.0) - 3.2) / 2.5),
+            (((_safe_float(_get_metric(measured, "rear_power_slip_ratio_p95")) or 0.0) - 0.07) / 0.06),
+            (((_safe_float(_get_metric(measured, "body_slip_p95_deg")) or 0.0) - 3.2) / 2.5),
         ),
         0.0,
         1.2,
     )
-    front_lock = _clamp(((_safe_float(getattr(measured, "front_braking_lock_ratio_p95", None)) or 0.0) - 0.06) / 0.05, 0.0, 1.0)
+    front_lock = _clamp(((_safe_float(_get_metric(measured, "front_braking_lock_ratio_p95")) or 0.0) - 0.06) / 0.05, 0.0, 1.0)
 
     _adjust_numeric(targets["step1"], "front_pushrod_offset_mm", 0.8 * front_support * family_intensity, decimals=3)
 
@@ -553,8 +470,20 @@ def _state_risk(authority_session: Any) -> float:
     return round(sum(getattr(issue, "severity", 0.0) * getattr(issue, "confidence", 0.0) for issue in issues), 3)
 
 
-def _estimate_candidate_disruption(authority_session: Any, candidate: SetupCandidate) -> float:
-    setup = getattr(authority_session, "setup", None)
+def _baseline_loss_ms(authority_session: Any) -> float:
+    """Aggregate confidence-weighted estimated lap time loss from all state issues."""
+    diagnosis = getattr(authority_session, "diagnosis", None)
+    issues = getattr(diagnosis, "state_issues", []) or []
+    if not issues:
+        return 0.0
+    return round(sum(
+        getattr(issue, "estimated_loss_ms", 0.0) * getattr(issue, "confidence", 0.0)
+        for issue in issues
+    ), 1)
+
+
+def _estimate_candidate_disruption(current_session: Any, candidate: SetupCandidate) -> float:
+    setup = getattr(current_session, "setup", None)
     if setup is None or candidate.step1 is None:
         return 0.5
 
@@ -600,33 +529,68 @@ def generate_candidate_families(
     base_result: SolveChainResult | None = None,
     solve_inputs: SolveChainInputs | None = None,
     setup_cluster: Any | None = None,
+    current_session: Any | None = None,
+    aggregate_measured: dict[str, float] | None = None,
 ) -> list[SetupCandidate]:
     if base_result is None or solve_inputs is None:
         return []
+
+    # Default current_session to authority_session for backward compat (single-IBT)
+    if current_session is None:
+        current_session = authority_session
 
     overhaul_class = getattr(overhaul_assessment, "classification", "minor_tweak")
     overhaul_conf = float(getattr(overhaul_assessment, "confidence", 0.55) or 0.55)
     authority_conf = float((authority_score or {}).get("score", 0.6) or 0.6)
     state_risk = _state_risk(authority_session)
+    loss_ms = _baseline_loss_ms(authority_session)
     family_descriptions = {
-        "incremental": "Refine the authority setup with minimal disruption.",
-        "compromise": "Blend authority drivability with healthier-family safety margins.",
-        "baseline_reset": "Rebase the setup toward the healthy validated family.",
+        "incremental": "Conservative physics-driven corrections with minimal disruption.",
+        "compromise": "Moderate physics-driven corrections balancing safety and grip.",
+        "baseline_reset": "Full physics-optimal output from the 6-step solver.",
     }
+    # Family priors: reward the family that matches the overhaul classification.
+    # The prior is the "right tool for the job" bonus.
     family_prior = {
-        "incremental": 0.03 if overhaul_class == "minor_tweak" else 0.0,
-        "compromise": 0.03 if overhaul_class == "moderate_rework" else 0.0,
-        "baseline_reset": 0.03 if overhaul_class == "baseline_reset" else 0.0,
+        "incremental": 0.06 if overhaul_class == "minor_tweak" else 0.02,
+        "compromise": 0.06 if overhaul_class == "moderate_rework" else 0.02,
+        "baseline_reset": 0.06 if overhaul_class == "baseline_reset" else 0.0,
     }
+    # Family penalties: penalize over-aggressive changes when not warranted.
+    # baseline_reset should only win when the car genuinely needs a full rework.
     family_penalty = {
         "incremental": 0.0,
-        "compromise": 0.0,
-        "baseline_reset": 0.02 if overhaul_class == "minor_tweak" and envelope_distance < 1.5 else 0.0,
+        "compromise": 0.03 if overhaul_class == "minor_tweak" else 0.0,
+        "baseline_reset": (
+            0.10 if overhaul_class == "minor_tweak"
+            else 0.05 if overhaul_class == "moderate_rework"
+            else 0.0
+        ),
     }
     car = getattr(solve_inputs, "car", None)
 
     candidates: list[SetupCandidate] = []
     for family in ("incremental", "compromise", "baseline_reset"):
+        # Hard gate: baseline_reset requires overhaul assessment to justify it,
+        # OR a large setup cluster distance (>= 3.0) that independently signals wrong region.
+        # A soft prior/penalty alone is insufficient — this prevents unnecessary solver blows.
+        if family == "baseline_reset" and overhaul_class != "baseline_reset":
+            large_setup_distance = setup_distance >= 3.0 or envelope_distance >= 3.0
+            if not large_setup_distance:
+                candidate = SetupCandidate(
+                    family=family,
+                    description=family_descriptions[family],
+                    selectable=False,
+                    status="blocked",
+                    failure_reason=(
+                        f"Overhaul assessment '{overhaul_class}' does not justify baseline_reset "
+                        f"(requires 'baseline_reset' classification or setup_distance >= 3.0)"
+                    ),
+                    notes=[f"Overhaul class: {overhaul_class}, setup_distance: {setup_distance:.2f}, envelope_distance: {envelope_distance:.2f}"],
+                )
+                candidates.append(candidate)
+                continue
+
         if family == "baseline_reset" and setup_cluster is not None:
             cluster_issues = _cluster_center_issues(car, setup_cluster)
             if cluster_issues:
@@ -645,13 +609,16 @@ def generate_candidate_families(
                 candidates.append(candidate)
                 continue
         targets = _extract_target_maps(base_result)
-        _blend_toward_authority_setup(targets, authority_session, family)
+        # No authority blending — solver output IS the physics-optimal starting point.
+        # Candidate families differ by aggressiveness of state adjustments, not by
+        # how much to anchor back to a historical setup.
         cluster_seeded = family == "baseline_reset" and setup_cluster is not None
         if cluster_seeded:
             _apply_cluster_center(targets, setup_cluster)
         _apply_family_state_adjustments(
             targets,
             family=family,
+            aggregate_measured=aggregate_measured,
             authority_session=authority_session,
             overhaul_class=overhaul_class,
             envelope_distance=envelope_distance,
@@ -704,10 +671,14 @@ def generate_candidate_families(
             candidate.failure_reason = str(exc)
             candidate.notes.append(f"Materialization failed: {exc}")
 
-        disruption_cost = _estimate_candidate_disruption(authority_session, candidate)
+        raw_disruption = _estimate_candidate_disruption(current_session, candidate)
+        # Amplify disruption for more aggressive families — bigger changes carry
+        # more prediction risk and driver adaptation cost.
+        disruption_multiplier = {"incremental": 0.7, "compromise": 1.0, "baseline_reset": 1.5}.get(family, 1.0)
+        disruption_cost = min(0.95, raw_disruption * disruption_multiplier)
         legal_ok = bool(getattr(candidate.legality, "valid", False))
         candidate.score = score_from_prediction(
-            baseline_measured=getattr(authority_session, "measured", None),
+            baseline_measured=getattr(current_session, "measured", None),
             predicted=candidate.predicted,
             prediction_confidence=candidate.confidence,
             disruption_cost=disruption_cost,
@@ -716,6 +687,7 @@ def generate_candidate_families(
             legal_ok=legal_ok,
             authority_score=authority_conf,
             state_risk=state_risk,
+            baseline_loss_ms=loss_ms,
             notes=candidate.notes + [
                 f"Disruption cost: {disruption_cost:.3f}",
                 f"Envelope distance: {envelope_distance:.3f}",

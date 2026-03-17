@@ -83,6 +83,15 @@ def build_session_context(
     )
     base_thermal = (sum(temp_terms) + sum(pressure_terms)) / max(len(temp_terms) + len(pressure_terms), 1)
     thermal_validity = round(min(1.0, base_thermal * 0.75 + thermal_signal * 0.25), 3) if (temp_terms or pressure_terms) else 0.4
+
+    # Warm-up discount: early laps have settling tyres, cannot be trusted as baseline authority.
+    # lap1=60%, lap2=70%, lap3=80%, lap4=90%, lap5+=100%
+    lap_number = getattr(measured, "lap_number", 0) or 0
+    if 0 < lap_number < 5:
+        warmup_factor = min(1.0, 0.5 + lap_number * 0.10)
+        thermal_validity = round(thermal_validity * warmup_factor, 3)
+        notes.append(f"Warm-up lap {lap_number}: thermal validity discounted (×{warmup_factor:.2f})")
+
     if thermal_validity < 0.55:
         notes.append("thermal state is weak for fair comparison")
 
@@ -121,7 +130,22 @@ def build_session_context(
     elif getattr(measured, "yaw_rate_correlation", 0.0) > 0.85:
         traffic_confidence = 0.8
 
-    comparable = thermal_validity >= 0.45 and pace_validity >= 0.45 and weather_confidence >= 0.45
+    # Comparability requires: reasonable thermal window, pace, weather,
+    # plus tyre state must not be cold (pre-warm) or overheated (degraded),
+    # and lap must be past the settling phase (lap >= 3 if known).
+    tyre_not_valid = tyre_state in ("cold", "overheated")
+    lap_too_early = 0 < lap_number < 3
+    comparable = (
+        thermal_validity >= 0.45
+        and pace_validity >= 0.45
+        and weather_confidence >= 0.45
+        and not tyre_not_valid
+        and not lap_too_early
+    )
+    if tyre_not_valid:
+        notes.append(f"Tyre state '{tyre_state}' disqualifies session as baseline authority")
+    if lap_too_early:
+        notes.append(f"Lap {lap_number} is too early (settle phase); not a valid baseline")
     if not comparable:
         notes.append("session is not a clean baseline authority candidate")
 

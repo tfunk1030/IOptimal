@@ -191,8 +191,8 @@ def _check_safety(
     front_direct_bottoming = (
         m.heave_bottoming_events_front > 0
         or m.splitter_scrape_events > 0
-        or m.front_heave_travel_used_pct > 85.0
-        or m.front_heave_travel_used_braking_pct > 85.0
+        or (m.front_heave_travel_used_pct or 0) > 85.0
+        or (m.front_heave_travel_used_braking_pct or 0) > 85.0
     )
     if front_clean > front_bottom_thresh and (front_direct_bottoming or front_clean > front_bottom_thresh * 3):
         sev = "critical" if front_clean > front_bottom_thresh * 4 else "significant"
@@ -252,7 +252,7 @@ def _check_safety(
                   else m.bottoming_event_count_rear)
     rear_direct_bottoming = (
         m.heave_bottoming_events_rear > 0
-        or m.rear_heave_travel_used_pct > 85.0
+        or (m.rear_heave_travel_used_pct or 0) > 85.0
     )
     if rear_clean > rear_bottom_thresh and (rear_direct_bottoming or rear_clean > rear_bottom_thresh * 3):
         sev = "critical" if rear_clean > rear_bottom_thresh * 4 else "significant"
@@ -306,14 +306,14 @@ def _check_safety(
     # Front heave spring travel exhaustion (direct deflection measurement)
     # When deflection approaches DeflMax, the spring bottoms out.
     # Under braking this causes: entry rotation (spring compressing) → mid-corner push (bottomed).
-    if m.front_heave_travel_used_braking_pct > 85.0:
+    if (m.front_heave_travel_used_braking_pct or 0) > 85.0:
         sev = "critical" if m.front_heave_travel_used_braking_pct > 95.0 else "significant"
         problems.append(Problem(
             category="safety",
             severity=sev,
             symptom=(
                 f"Front heave spring travel {m.front_heave_travel_used_braking_pct:.0f}% "
-                f"exhausted under braking (p99 defl {m.front_heave_defl_braking_p99_mm:.1f}mm)"
+                f"exhausted under braking (p99 defl {m.front_heave_defl_braking_p99_mm or 0:.1f}mm)"
             ),
             cause=(
                 "Front heave spring travel nearly exhausted under braking. "
@@ -331,14 +331,14 @@ def _check_safety(
         ))
 
     # Front heave spring travel exhaustion at speed (non-braking)
-    if m.front_heave_travel_used_pct > 85.0:
+    if (m.front_heave_travel_used_pct or 0) > 85.0:
         sev = "critical" if m.front_heave_travel_used_pct > 95.0 else "significant"
         problems.append(Problem(
             category="safety",
             severity=sev,
             symptom=(
                 f"Front heave spring travel {m.front_heave_travel_used_pct:.0f}% "
-                f"used at speed (p99 defl {m.front_heave_defl_p99_mm:.1f}mm)"
+                f"used at speed (p99 defl {m.front_heave_defl_p99_mm or 0:.1f}mm)"
             ),
             cause=(
                 "Front heave spring using most of its available travel at speed. "
@@ -354,14 +354,14 @@ def _check_safety(
         ))
 
     # Rear heave spring travel exhaustion at speed
-    if m.rear_heave_travel_used_pct > 85.0:
+    if (m.rear_heave_travel_used_pct or 0) > 85.0:
         sev = "critical" if m.rear_heave_travel_used_pct > 95.0 else "significant"
         problems.append(Problem(
             category="safety",
             severity=sev,
             symptom=(
                 f"Rear third spring travel {m.rear_heave_travel_used_pct:.0f}% "
-                f"used at speed (p99 defl {m.rear_heave_defl_p99_mm:.1f}mm)"
+                f"used at speed (p99 defl {m.rear_heave_defl_p99_mm or 0:.1f}mm)"
             ),
             cause=(
                 "Rear third spring using most of its available travel at speed. "
@@ -398,7 +398,7 @@ def _check_safety(
             priority=0,
         ))
 
-    if m.splitter_rh_mean_at_speed_mm > 0 and m.splitter_rh_p01_mm < 5.0:
+    if (m.splitter_rh_mean_at_speed_mm or 0) > 0 and m.splitter_rh_p01_mm is not None and m.splitter_rh_p01_mm < 5.0:
         problems.append(Problem(
             category="safety",
             severity="significant",
@@ -471,7 +471,7 @@ def _check_platform(
 
     # Front variance (adaptive: relaxed on bumpy tracks, tightened on smooth)
     front_var_thresh = t.front_rh_variance_mm
-    if m.front_rh_std_mm > front_var_thresh:
+    if m.front_rh_std_mm is not None and m.front_rh_std_mm > front_var_thresh:
         sev = "significant" if m.front_rh_std_mm > front_var_thresh * 1.5 else "minor"
         problems.append(Problem(
             category="platform",
@@ -491,7 +491,7 @@ def _check_platform(
 
     # Rear variance
     rear_var_thresh = t.rear_rh_variance_mm
-    if m.rear_rh_std_mm > rear_var_thresh:
+    if m.rear_rh_std_mm is not None and m.rear_rh_std_mm > rear_var_thresh:
         sev = "significant" if m.rear_rh_std_mm > rear_var_thresh * 1.5 else "minor"
         problems.append(Problem(
             category="platform",
@@ -511,7 +511,7 @@ def _check_platform(
 
     # Front excursion near bottoming
     excursion_thresh = t.excursion_pct / 100.0
-    if s.front_rh_at_speed_mm > 0 and m.front_rh_excursion_measured_mm > 0:
+    if s.front_rh_at_speed_mm > 0 and m.front_rh_excursion_measured_mm is not None and m.front_rh_excursion_measured_mm > 0:
         margin = m.front_rh_excursion_measured_mm / s.front_rh_at_speed_mm
         if margin > excursion_thresh:
             problems.append(Problem(
@@ -533,13 +533,13 @@ def _check_platform(
                 priority=1,
             ))
 
-    if m.pitch_range_braking_deg > 0.9:
+    if m.pitch_range_braking_deg is not None and m.pitch_range_braking_deg > 0.9:
         problems.append(Problem(
             category="platform",
             severity="significant" if m.pitch_range_braking_deg > 1.3 else "minor",
             symptom=(
                 f"Braking pitch range {m.pitch_range_braking_deg:.2f} deg "
-                f"(mean {m.pitch_mean_braking_deg:+.2f} deg)"
+                f"(mean {m.pitch_mean_braking_deg or 0:+.2f} deg)"
             ),
             cause=(
                 "Braking platform is moving too far in pitch. Front ride-height budget is being "
@@ -562,7 +562,7 @@ def _check_balance(
 
     # Excessive understeer (adaptive: car/driver-specific threshold)
     us_thresh = t.understeer_all_deg
-    if m.understeer_mean_deg > us_thresh:
+    if m.understeer_mean_deg is not None and m.understeer_mean_deg > us_thresh:
         problems.append(Problem(
             category="balance",
             severity="significant",
@@ -581,7 +581,7 @@ def _check_balance(
 
     # Net oversteer (loose)
     os_thresh = t.oversteer_deg
-    if m.understeer_mean_deg < os_thresh:
+    if m.understeer_mean_deg is not None and m.understeer_mean_deg < os_thresh:
         sev = "significant" if m.understeer_mean_deg < os_thresh - 1.0 else "minor"
         problems.append(Problem(
             category="balance",
@@ -601,7 +601,7 @@ def _check_balance(
 
     # Speed gradient: aero/mechanical mismatch
     grad_thresh = t.speed_gradient_deg
-    if m.understeer_low_speed_deg != 0 and m.understeer_high_speed_deg != 0:
+    if m.understeer_low_speed_deg is not None and m.understeer_high_speed_deg is not None:
         gradient = m.understeer_high_speed_deg - m.understeer_low_speed_deg
         if abs(gradient) > grad_thresh:
             if gradient > 0:
@@ -648,7 +648,7 @@ def _check_balance(
                 ))
 
     # Directional balance asymmetry (left vs right turns)
-    if m.understeer_left_turn_deg != 0 and m.understeer_right_turn_deg != 0:
+    if m.understeer_left_turn_deg is not None and m.understeer_right_turn_deg is not None:
         directional_delta = abs(m.understeer_left_turn_deg - m.understeer_right_turn_deg)
         if directional_delta > 0.3:
             worse_dir = "left" if m.understeer_left_turn_deg > m.understeer_right_turn_deg else "right"
@@ -674,8 +674,8 @@ def _check_balance(
             ))
 
     # Ride-height-based roll distribution proxy check
-    roll_proxy = m.roll_distribution_proxy if m.roll_distribution_proxy > 0 else m.lltd_measured
-    if roll_proxy > 0:
+    roll_proxy = (m.roll_distribution_proxy if (m.roll_distribution_proxy or 0) > 0 else m.lltd_measured)
+    if roll_proxy is not None and roll_proxy > 0:
         target_lltd = car.weight_dist_front + 0.05  # 5% above front weight dist (OptimumG baseline)
         lltd_delta = roll_proxy - target_lltd
 
@@ -720,7 +720,7 @@ def _check_balance(
 
     # Body slip angle (rear instability)
     bs_thresh = t.body_slip_p95_deg
-    if m.body_slip_p95_deg > bs_thresh:
+    if m.body_slip_p95_deg is not None and m.body_slip_p95_deg > bs_thresh:
         problems.append(Problem(
             category="balance",
             severity="significant" if m.body_slip_p95_deg > bs_thresh * 1.5 else "minor",
@@ -821,7 +821,7 @@ def _check_dampers(
 
     # Yaw rate correlation (transient predictability)
     yaw_thresh = t.yaw_correlation_r2
-    if 0 < m.yaw_rate_correlation < yaw_thresh:
+    if m.yaw_rate_correlation is not None and 0 < m.yaw_rate_correlation < yaw_thresh:
         problems.append(Problem(
             category="damper",
             severity="significant" if m.yaw_rate_correlation < yaw_thresh * 0.77 else "minor",
@@ -841,7 +841,7 @@ def _check_dampers(
 
     # Excessive roll rate (LS rebound too soft)
     roll_thresh = t.roll_rate_p95_deg_per_s
-    if m.roll_rate_p95_deg_per_s > roll_thresh:
+    if m.roll_rate_p95_deg_per_s is not None and m.roll_rate_p95_deg_per_s > roll_thresh:
         problems.append(Problem(
             category="damper",
             severity="minor",
@@ -886,13 +886,15 @@ def _check_thermal(
         spread_delta_thresh += 2.0  # be more lenient during warm-up/conditioning
 
     for corner, spread, axle in spreads:
+        if spread is None:
+            continue
         target_spread = spread_targets[axle]
         delta_from_target = spread - target_spread
         carcass_gradient = carcass_gradients[corner]
         carcass_confirms = False
-        if delta_from_target > 0.0 and carcass_gradient > target_spread * 0.5:
+        if delta_from_target > 0.0 and carcass_gradient is not None and carcass_gradient > target_spread * 0.5:
             carcass_confirms = True
-        if delta_from_target < 0.0 and carcass_gradient < max(2.0, target_spread * 0.35):
+        if delta_from_target < 0.0 and carcass_gradient is not None and carcass_gradient < max(2.0, target_spread * 0.35):
             carcass_confirms = True
 
         if abs(delta_from_target) > spread_delta_thresh:
@@ -939,7 +941,7 @@ def _check_thermal(
                 ))
 
     # Carcass temperature window (target 80-105 C)
-    if m.front_carcass_mean_c > 0:
+    if m.front_carcass_mean_c is not None and m.front_carcass_mean_c > 0:
         if m.front_carcass_mean_c > 105:
             problems.append(Problem(
                 category="thermal",
@@ -972,7 +974,7 @@ def _check_thermal(
                 priority=4,
             ))
 
-    if m.rear_carcass_mean_c > 0:
+    if m.rear_carcass_mean_c is not None and m.rear_carcass_mean_c > 0:
         if m.rear_carcass_mean_c > 105:
             problems.append(Problem(
                 category="thermal",
@@ -1007,7 +1009,7 @@ def _check_thermal(
             ))
 
     # Hot pressure window (target 155-175 kPa)
-    if m.front_pressure_mean_kpa > 0:
+    if m.front_pressure_mean_kpa is not None and m.front_pressure_mean_kpa > 0:
         if m.front_pressure_mean_kpa > 175:
             problems.append(Problem(
                 category="thermal",
@@ -1033,7 +1035,7 @@ def _check_thermal(
                 priority=4,
             ))
 
-    if m.rear_pressure_mean_kpa > 0:
+    if m.rear_pressure_mean_kpa is not None and m.rear_pressure_mean_kpa > 0:
         if m.rear_pressure_mean_kpa > 175:
             problems.append(Problem(
                 category="thermal",
@@ -1087,7 +1089,7 @@ def _check_grip(
     front_braking_lock = m.front_braking_lock_ratio_p95 or m.front_slip_ratio_p95
     if front_braking_lock > t.front_slip_ratio_p95:
         asym_note = ""
-        if m.front_brake_wheel_decel_asymmetry_p95_ms2 > 4.0:
+        if (m.front_brake_wheel_decel_asymmetry_p95_ms2 or 0) > 4.0:
             asym_note = (
                 f" Front wheel decel asymmetry p95 is "
                 f"{m.front_brake_wheel_decel_asymmetry_p95_ms2:.1f} m/s^2, "

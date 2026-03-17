@@ -73,6 +73,24 @@ def predict_candidate_telemetry(
     - allow additive learned corrections
     """
     corrections = corrections or {}
+    # Clamp learned corrections to sane magnitudes — an unclamped +7.5mm correction
+    # on rear_rh_std_mm makes the predictor useless and distorts candidate scoring.
+    _MAX_CORRECTIONS = {
+        "front_rh_std_mm": 3.0,
+        "rear_rh_std_mm": 3.0,
+        "front_heave_travel_used_pct": 10.0,
+        "front_excursion_mm": 5.0,
+        "braking_pitch_deg": 0.5,
+        "front_lock_p95": 0.03,
+        "rear_power_slip_p95": 0.03,
+        "body_slip_p95_deg": 2.0,
+        "understeer_low_deg": 0.5,
+        "understeer_high_deg": 0.5,
+    }
+    corrections = {
+        k: max(-cap, min(cap, v)) if (cap := _MAX_CORRECTIONS.get(k)) is not None else v
+        for k, v in corrections.items()
+    }
     current_heave = _safe_float(getattr(current_setup, "front_heave_nmm", None))
     current_third = _safe_float(getattr(current_setup, "rear_third_nmm", None))
     current_bb = _safe_float(getattr(current_setup, "brake_bias_pct", None))
@@ -143,18 +161,28 @@ def predict_candidate_telemetry(
     front_hs_comp_delta = _delta(current_front_hs_comp, target_front_hs_comp, 3.0)
     rear_hs_comp_delta = _delta(current_rear_hs_comp, target_rear_hs_comp, 3.0)
 
+    # Front platform: stiffer heave (ratio < 1) reduces travel.
+    # More negative pushrod (negative delta) lowers front RH → less travel.
+    # Stiffer HS comp (positive delta) and torsion bar (positive delta) also reduce.
     front_platform_factor = _clamp(
         heave_ratio
-        * (1.0 - 0.05 * pushrod_front_delta - 0.02 * front_hs_comp_delta - 0.015 * front_torsion_delta),
+        * (1.0 + 0.05 * pushrod_front_delta - 0.02 * front_hs_comp_delta - 0.015 * front_torsion_delta),
         0.72,
         1.25,
     )
+    # Rear platform: stiffer springs reduce variance (third_ratio < 1 when stiffer),
+    # more negative pushrod lowers RH (reduces variance — pushrod delta is negative
+    # when target < current, so +0.04 makes negative delta shrink the factor).
+    # Stiffer rear spring also reduces variance (positive delta = stiffer target).
     rear_platform_factor = _clamp(
         third_ratio
-        * (1.0 - 0.04 * pushrod_rear_delta - 0.03 * rear_spring_delta - 0.02 * rear_hs_comp_delta),
+        * (1.0 + 0.04 * pushrod_rear_delta - 0.03 * rear_spring_delta - 0.02 * rear_hs_comp_delta),
         0.72,
         1.25,
     )
+    # Traction: higher preload/TC reduces slip (factor < 1).
+    # Stiffer rear ARB reduces rear mechanical grip → MORE slip (factor > 1).
+    # This is correct: rear ARB stiffness trades rear grip for front response.
     traction_factor = _clamp(
         rear_platform_factor
         * (1.0 - 0.08 * diff_preload_delta - 0.05 * tc_gain_delta - 0.04 * tc_slip_delta + 0.03 * rear_arb_delta),
@@ -246,7 +274,7 @@ def predict_candidate_telemetry(
                 + 0.15 * front_torsion_delta
                 - 0.16 * rear_arb_delta
                 - 0.15 * front_camber_delta
-                - 0.10 * pushrod_front_delta
+                + 0.10 * pushrod_front_delta  # lower front RH (negative delta) = more front DF = less understeer
                 - 0.08 * front_hs_comp_delta
                 + corrections.get("understeer_high_deg", 0.0),
                 3,
