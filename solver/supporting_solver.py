@@ -34,6 +34,11 @@ class SupportingSolution:
     rear_master_cyl_mm: float = 0.0
     pad_compound: str = ""
     brake_hardware_status: str = "pass-through only"
+    brake_bias_status: str = "solved"
+    brake_bias_target_status: str = "pass-through"
+    brake_bias_migration_status: str = "pass-through"
+    master_cylinder_status: str = "pass-through"
+    pad_compound_status: str = "pass-through"
 
     # Differential
     diff_preload_nm: float = 10.0
@@ -56,10 +61,12 @@ class SupportingSolution:
 
     def summary(self) -> str:
         lines = [
-            f"Brake bias: {self.brake_bias_pct:.1f}%",
+            f"Brake bias: {self.brake_bias_pct:.1f}% [{self.brake_bias_status}]",
             f"  {self.brake_bias_reasoning}",
-            f"Brake target/migration: {self.brake_bias_target:+.1f} / {self.brake_bias_migration:+.1f}",
-            f"  Master cylinders: F {self.front_master_cyl_mm:.1f} mm / R {self.rear_master_cyl_mm:.1f} mm | Pad: {self.pad_compound or 'unknown'}",
+            f"Brake target/migration: {self.brake_bias_target:+.1f} / {self.brake_bias_migration:+.1f} "
+            f"[{self.brake_bias_target_status}/{self.brake_bias_migration_status}]",
+            f"  Master cylinders: F {self.front_master_cyl_mm:.1f} mm / R {self.rear_master_cyl_mm:.1f} mm "
+            f"[{self.master_cylinder_status}] | Pad: {self.pad_compound or 'unknown'} [{self.pad_compound_status}]",
             f"  Brake hardware status: {self.brake_hardware_status}",
             f"Diff: preload={self.diff_preload_nm:.0f} Nm, "
             f"coast={self.diff_ramp_coast}°, drive={self.diff_ramp_drive}°, "
@@ -127,7 +134,15 @@ class SupportingSolver:
         sol.front_master_cyl_mm = getattr(self.current_setup, "front_master_cyl_mm", 0.0) or 0.0
         sol.rear_master_cyl_mm = getattr(self.current_setup, "rear_master_cyl_mm", 0.0) or 0.0
         sol.pad_compound = getattr(self.current_setup, "pad_compound", "") or ""
-        sol.brake_hardware_status = "static bias solved; target/migration/master cylinders/pad are pass-through only"
+        sol.brake_bias_status = "solved"
+        sol.brake_bias_target_status = "pass-through"
+        sol.brake_bias_migration_status = "pass-through"
+        sol.master_cylinder_status = "pass-through"
+        sol.pad_compound_status = "pass-through"
+        sol.brake_hardware_status = (
+            "Static brake bias is solved from telemetry; brake target, migration, "
+            "master cylinders, and pad compound are pass-through hardware context."
+        )
 
     def _solve_diff(self, sol: SupportingSolution) -> None:
         """Differential from traction demand × driver style.
