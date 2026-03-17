@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from analyzer.telemetry_truth import usable_signal_value
 from comparison.compare import (
     ComparisonResult,
     CornerComparison,
@@ -275,8 +276,17 @@ def _score_damper_platform(sessions: list[SessionAnalysis]) -> list[float]:
     """Settle time, yaw correlation, RH variance, shock velocity control."""
     scores_per_session: list[list[float]] = [[] for _ in sessions]
 
-    settle_f = [s.measured.front_rh_settle_time_ms for s in sessions]
-    settle_r = [s.measured.rear_rh_settle_time_ms for s in sessions]
+    settle_f: list[float] = []
+    settle_r: list[float] = []
+    settle_f_known: list[bool] = []
+    settle_r_known: list[bool] = []
+    for session in sessions:
+        front_val = usable_signal_value(session.measured, "front_rh_settle_time_ms")
+        rear_val = usable_signal_value(session.measured, "rear_rh_settle_time_ms")
+        settle_f_known.append(front_val is not None)
+        settle_r_known.append(rear_val is not None)
+        settle_f.append(front_val if front_val is not None else 125.0)
+        settle_r.append(rear_val if rear_val is not None else 125.0)
     yaw_corr = [s.measured.yaw_rate_correlation for s in sessions]
     rh_var_f = [s.measured.front_rh_std_mm for s in sessions]
     shock_f = [s.measured.front_shock_vel_p99_mps for s in sessions]
@@ -284,6 +294,8 @@ def _score_damper_platform(sessions: list[SessionAnalysis]) -> list[float]:
     # Settle time: target is 50-200ms. Closer to 125ms center = better
     settle_f_norm = _normalize_closer_to_target(settle_f, 125.0)
     settle_r_norm = _normalize_closer_to_target(settle_r, 125.0)
+    settle_f_norm = [settle_f_norm[i] if settle_f_known[i] else 0.5 for i in range(len(sessions))]
+    settle_r_norm = [settle_r_norm[i] if settle_r_known[i] else 0.5 for i in range(len(sessions))]
     yaw_norm = _normalize_higher_better(yaw_corr)
     rh_var_norm = _normalize_lower_better(rh_var_f)
     shock_norm = _normalize_lower_better(shock_f)

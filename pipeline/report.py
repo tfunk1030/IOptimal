@@ -11,10 +11,10 @@ Usage:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from car_model.garage import GarageSetupState
-from analyzer.telemetry_truth import summarize_signal_quality
+from analyzer.telemetry_truth import get_signal, summarize_signal_quality
 from solver.predictor import predict_candidate_telemetry
 
 if TYPE_CHECKING:
@@ -61,6 +61,108 @@ def _cmp(label: str, curr: float | None, prod: float, unit: str = "", fmt: str =
     return f"  {label:22s}  {curr:>8{fmt}}  {prod:>8{fmt}}  {delta:>+8{fmt}} {unit} {arrow}"
 
 
+def _as_float(value: Any) -> float | None:
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _prediction_unavailable_reason(
+    measured: Any,
+    *,
+    attr_name: str,
+    signal_name: str | None = None,
+) -> str:
+    if signal_name is not None:
+        signal = get_signal(measured, signal_name)
+        if signal.conflict_state != "clear":
+            return "signal is conflicted"
+        if signal.value is not None:
+            return "predictor did not return an estimate"
+        if signal.invalid_reason:
+            return signal.invalid_reason
+        return f"{signal.quality} signal"
+    value = getattr(measured, attr_name, None)
+    if value in (None, "", 0, 0.0):
+        return "baseline metric unavailable"
+    return "predictor did not return an estimate"
+
+
+def _build_prediction_lines(
+    *,
+    current_setup: Any,
+    measured: Any,
+    step2: Any,
+    step4: Any,
+    supporting: Any,
+    prediction_corrections: dict[str, float] | None = None,
+) -> tuple[list[str], Any, Any]:
+    predicted_telemetry, prediction_confidence = predict_candidate_telemetry(
+        current_setup=current_setup,
+        baseline_measured=measured,
+        step2=step2,
+        step4=step4,
+        supporting=supporting,
+        corrections=prediction_corrections,
+    )
+
+    lines: list[str] = []
+    if prediction_confidence.overall < 0.45:
+        lines.append(
+            f"Prediction confidence is low ({prediction_confidence.overall:.2f}); "
+            "treat the deltas below as advisory."
+        )
+    else:
+        lines.append(f"Prediction confidence: {prediction_confidence.overall:.2f}")
+
+    metric_specs = [
+        ("Front travel used", "front_heave_travel_used_pct", "front_heave_travel_used_pct", "%", "lower", "front_heave_travel_used_pct"),
+        ("Front excursion", "front_rh_excursion_measured_mm", "front_excursion_mm", "mm", "lower", None),
+        ("Rear RH variance", "rear_rh_std_mm", "rear_rh_std_mm", "mm", "lower", "rear_rh_std_mm"),
+        ("Braking pitch", "pitch_range_braking_deg", "braking_pitch_deg", "deg", "lower", "pitch_range_braking_deg"),
+        ("Front lock p95", "front_braking_lock_ratio_p95", "front_lock_p95", "", "lower", "front_braking_lock_ratio_p95"),
+        ("Rear power slip p95", "rear_power_slip_ratio_p95", "rear_power_slip_p95", "", "lower", "rear_power_slip_ratio_p95"),
+        ("Body slip p95", "body_slip_p95_deg", "body_slip_p95_deg", "deg", "lower", "body_slip_p95_deg"),
+        ("Understeer low", "understeer_low_speed_deg", "understeer_low_deg", "deg", "lower", "understeer_low_speed_deg"),
+        ("Understeer high", "understeer_high_speed_deg", "understeer_high_deg", "deg", "lower", "understeer_high_speed_deg"),
+        ("Front hot pressure", "front_pressure_mean_kpa", "front_pressure_hot_kpa", "kPa", "target", "front_pressure_mean_kpa"),
+        ("Rear hot pressure", "rear_pressure_mean_kpa", "rear_pressure_hot_kpa", "kPa", "target", "rear_pressure_mean_kpa"),
+    ]
+    rendered = 0
+    for label, before_attr, after_attr, unit, better, signal_name in metric_specs:
+        before = _as_float(getattr(measured, before_attr, None))
+        after = _as_float(getattr(predicted_telemetry, after_attr, None))
+        if before is not None and after is not None:
+            delta = after - before
+            if better == "target":
+                direction = "tracks target"
+            else:
+                direction = (
+                    "improves"
+                    if ((delta < 0 and better == "lower") or (delta > 0 and better == "higher"))
+                    else "worsens"
+                )
+            unit_suffix = f" {unit}" if unit else ""
+            lines.append(
+                f"{label}: {before:.3f} -> {after:.3f}{unit_suffix} "
+                f"({delta:+.3f}, {direction})"
+            )
+            rendered += 1
+            continue
+        reason = _prediction_unavailable_reason(
+            measured,
+            attr_name=before_attr,
+            signal_name=signal_name,
+        )
+        lines.append(f"{label}: unavailable ({reason})")
+
+    if rendered == 0:
+        lines.append("No prediction deltas could be rendered from the available baseline telemetry.")
+
+    return lines, predicted_telemetry, prediction_confidence
+
+
 def generate_report(
     car: CarModel,
     track: TrackProfile,
@@ -88,6 +190,8 @@ def generate_report(
     stint_compromise_info: list[str] | None = None,
     solve_context_lines: list[str] | None = None,
     prediction_corrections: dict[str, float] | None = None,
+    selected_candidate_family: str | None = None,
+    selected_candidate_score: float | None = None,
     compact: bool = False,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
@@ -114,6 +218,14 @@ def generate_report(
         if current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
         else None
     )
+    prediction_lines, predicted_telemetry, prediction_confidence = _build_prediction_lines(
+        current_setup=current_setup,
+        measured=measured,
+        step2=step2,
+        step4=step4,
+        supporting=supporting,
+        prediction_corrections=prediction_corrections,
+    )
 
     if compact:
         report = print_full_setup_report(
@@ -138,6 +250,13 @@ def generate_report(
             compact=True,
             front_tb_turns_override=_ferrari_tb,
         )
+        if selected_candidate_family is not None:
+            report += "\n" + _hdr("CANDIDATE SELECTION") + "\n"
+            report += f"  Selected family: {selected_candidate_family}\n"
+            if selected_candidate_score is not None:
+                report += f"  Candidate score: {selected_candidate_score:.3f}\n"
+        report += "\n" + _hdr("PREDICTED IMPROVEMENTS") + "\n"
+        report += "\n".join(f"  {line}" for line in prediction_lines)
         if solve_context_lines:
             report += "\n" + _hdr("SOLVE CONTEXT") + "\n"
             report += "\n".join(f"  {line}" for line in solve_context_lines)
@@ -218,36 +337,16 @@ def generate_report(
                 a(f"    {issue.recommended_direction[:W - 6]}")
         a("")
 
-    predicted_telemetry, prediction_confidence = predict_candidate_telemetry(
-        current_setup=current_setup,
-        baseline_measured=measured,
-        step2=step2,
-        step4=step4,
-        supporting=supporting,
-        corrections=prediction_corrections,
-    )
+    if selected_candidate_family is not None:
+        a(_hdr("CANDIDATE SELECTION"))
+        a(f"  Selected family: {selected_candidate_family}")
+        if selected_candidate_score is not None:
+            a(f"  Candidate score: {selected_candidate_score:.3f}")
+        a("")
+
     a(_hdr("PREDICTED IMPROVEMENTS"))
-    if prediction_confidence.overall < 0.45:
-        a(f"  Prediction confidence is low ({prediction_confidence.overall:.2f}); treat the deltas below as advisory.")
-    else:
-        a(f"  Prediction confidence: {prediction_confidence.overall:.2f}")
-
-    def _pred_line(label: str, before: float | None, after: float | None, unit: str = "", better: str = "lower") -> None:
-        if before is None or after is None:
-            return
-        delta = after - before
-        direction = "improves" if ((delta < 0 and better == "lower") or (delta > 0 and better == "higher")) else "worsens"
-        a(f"  {label}: {before:.3f} -> {after:.3f} {unit} ({delta:+.3f}, {direction})")
-
-    _pred_line("Front travel used", getattr(measured, "front_heave_travel_used_pct", None), predicted_telemetry.front_heave_travel_used_pct, "%", "lower")
-    _pred_line("Front excursion", getattr(measured, "front_rh_excursion_measured_mm", None), predicted_telemetry.front_excursion_mm, "mm", "lower")
-    _pred_line("Rear RH variance", getattr(measured, "rear_rh_std_mm", None), predicted_telemetry.rear_rh_std_mm, "mm", "lower")
-    _pred_line("Braking pitch", getattr(measured, "pitch_range_braking_deg", None), predicted_telemetry.braking_pitch_deg, "deg", "lower")
-    _pred_line("Front lock p95", getattr(measured, "front_braking_lock_ratio_p95", None), predicted_telemetry.front_lock_p95, "", "lower")
-    _pred_line("Rear power slip p95", getattr(measured, "rear_power_slip_ratio_p95", None), predicted_telemetry.rear_power_slip_p95, "", "lower")
-    _pred_line("Body slip p95", getattr(measured, "body_slip_p95_deg", None), predicted_telemetry.body_slip_p95_deg, "deg", "lower")
-    _pred_line("Understeer low", getattr(measured, "understeer_low_speed_deg", None), predicted_telemetry.understeer_low_deg, "deg", "lower")
-    _pred_line("Understeer high", getattr(measured, "understeer_high_speed_deg", None), predicted_telemetry.understeer_high_deg, "deg", "lower")
+    for line in prediction_lines:
+        a(f"  {line}")
     a("")
 
     # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
