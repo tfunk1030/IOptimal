@@ -118,13 +118,13 @@ class DiffSolution:
     exit_understeer_index: float   # 0=neutral, +ve=understeer on exit
     entry_rotation_index: float    # 0=neutral, +ve=rotation on entry
 
-    # Effective lock comparison tools
-    effective_lock_coast_torque_nm: float = 0.0
-    effective_lock_drive_torque_nm: float = 0.0
-
     # Reasoning
     preload_reasoning: str
     ramp_reasoning: str
+
+    # Effective lock comparison tools
+    effective_lock_coast_torque_nm: float = 0.0
+    effective_lock_drive_torque_nm: float = 0.0
     lock_reasoning: str = ""
 
     def summary(self, width: int = 63) -> str:
