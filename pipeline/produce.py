@@ -27,6 +27,7 @@ from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 from analyzer.extract import extract_measurements
 from analyzer.segment import segment_lap
 from analyzer.setup_reader import CurrentSetup
+from analyzer.telemetry_truth import signals_to_dict, summarize_signal_quality
 from car_model.cars import get_car
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
@@ -270,6 +271,9 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         lltd_offset=modifiers.lltd_offset,
         measured=measured,
         camber_confidence=_camber_conf,
+        front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
+        rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
+        front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
     )
 
     if optimized is not None:
@@ -646,18 +650,57 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         step3.front_torsion_od_mm = _cs.front_torsion_od_mm  # index 0-18
         step3.rear_spring_rate_nmm = _cs.rear_spring_nmm     # rear torsion bar OD index
         step3.rear_spring_perch_mm = 0.0                      # N/A for Ferrari
+        supporting.brake_bias_pct = current_setup.brake_bias_pct
+        supporting.diff_preload_nm = current_setup.diff_preload_nm
+        supporting.diff_clutch_plates = current_setup.diff_clutch_plates
+        supporting.tc_gain = current_setup.tc_gain
+        supporting.tc_slip = current_setup.tc_slip
+        if "more" in (current_setup.diff_ramp_angles or "").lower():
+            supporting.diff_ramp_coast = 40
+            supporting.diff_ramp_drive = 65
+        else:
+            supporting.diff_ramp_coast = 50
+            supporting.diff_ramp_drive = 75
 
     # ── Phase J: Output ──
-    if args.sto:
-        # Final garage correlation check before writing .sto
-        from output.garage_validator import validate_and_fix_garage_correlation
-        garage_warnings = validate_and_fix_garage_correlation(
-            car, step1, step2, step3, step5,
-            fuel_l=fuel, track_name=track.track_name,
-        )
-        for w in garage_warnings:
-            print(f"[garage] {w}")
+    legal_validation = validate_solution_legality(
+        car=car,
+        track_name=track.track_name,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step5=step5,
+        fuel_l=fuel,
+    )
+    for warning in legal_validation.warnings:
+        log(f"[garage] {warning}")
 
+    decision_trace = build_parameter_decisions(
+        car_name=car.canonical_name,
+        current_setup=current_setup,
+        measured=measured,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+        supporting=supporting,
+        legality=legal_validation,
+        fallback_reasons=list(getattr(measured, "fallback_reasons", [])),
+    )
+    telemetry_quality_lines = summarize_signal_quality(measured)
+    legality_lines = [
+        f"Legality: {'validated' if legal_validation.valid else 'warning'}",
+        *(f"Garage: {msg}" for msg in legal_validation.messages[:2]),
+    ]
+    decision_trace_lines = [
+        f"{decision.parameter}: {decision.current_value} -> {decision.proposed_value} {decision.unit}".rstrip()
+        for decision in decision_trace[:6]
+        if not decision.blocked_reason
+    ]
+
+    if args.sto:
         # Pass IBT torsion bar turns for Ferrari (solver can't compute these)
         _tb_kw = {}
         if car.canonical_name == "ferrari":
@@ -708,6 +751,13 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             "step5_geometry": dataclasses.asdict(step5),
             "step6_dampers": dataclasses.asdict(step6),
             "supporting": dataclasses.asdict(supporting),
+            "telemetry_quality": signals_to_dict(getattr(measured, "telemetry_signals", {})),
+            "extraction_attempts": getattr(measured, "extraction_attempts", []),
+            "signal_conflicts": getattr(measured, "signal_conflicts", []),
+            "fallback_reasons": getattr(measured, "fallback_reasons", []),
+            "parameter_evidence": [decision.to_dict() for decision in decision_trace],
+            "decision_trace": [decision.to_dict() for decision in decision_trace],
+            "legal_validation": legal_validation.to_dict(),
         }
         with open(json_path, "w") as f:
             json.dump(output, f, indent=2, default=str)
@@ -737,6 +787,9 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         sensitivity_result=sensitivity_result,
         stint_evolution=stint_evolution,
         stint_compromise_info=stint_compromise_info,
+        telemetry_quality_lines=telemetry_quality_lines,
+        legality_lines=legality_lines,
+        decision_trace_lines=decision_trace_lines,
         compact=quiet,
     )
     print(report)
@@ -756,6 +809,8 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             "step5": step5,
             "step6": step6,
             "supporting": supporting,
+            "decision_trace": decision_trace,
+            "legal_validation": legal_validation,
         }
 
     # ── Phase L: Auto-learn (default: on, --no-learn disables) ──

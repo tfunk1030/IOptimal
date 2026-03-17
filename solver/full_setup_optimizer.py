@@ -128,6 +128,9 @@ class BMWSebringOptimizer:
         measured: Any = None,
         camber_confidence: str = "estimated",
         failed_validation_clusters: list[ValidationCluster] | None = None,
+        front_heave_floor_nmm: float | None = None,
+        rear_third_floor_nmm: float | None = None,
+        front_heave_perch_target_mm: float | None = None,
     ) -> OptimizerResult:
         best_any: OptimizerResult | None = None
         best_clean: OptimizerResult | None = None
@@ -143,6 +146,9 @@ class BMWSebringOptimizer:
                 lltd_offset=lltd_offset,
                 measured=measured,
                 camber_confidence=camber_confidence,
+                front_heave_floor_nmm=front_heave_floor_nmm,
+                rear_third_floor_nmm=rear_third_floor_nmm,
+                front_heave_perch_target_mm=front_heave_perch_target_mm,
             )
             if candidate is None:
                 continue
@@ -191,16 +197,27 @@ class BMWSebringOptimizer:
         target_front_static: float,
         target_rear_static: float,
         fuel_load_l: float,
+        front_heave_floor_nmm: float | None = None,
+        rear_third_floor_nmm: float | None = None,
+        front_heave_perch_target_mm: float | None = None,
     ) -> GarageSetupState | None:
         """Solve continuous garage variables for a discrete platform seed."""
+
+        effective_front_heave = max(seed.front_heave_nmm, float(front_heave_floor_nmm or seed.front_heave_nmm))
+        effective_rear_third = max(seed.rear_third_nmm, float(rear_third_floor_nmm or seed.rear_third_nmm))
+        effective_front_heave_perch = (
+            float(front_heave_perch_target_mm)
+            if front_heave_perch_target_mm is not None
+            else seed.front_heave_perch_mm
+        )
 
         def objective(x: np.ndarray) -> float:
             state = GarageSetupState(
                 front_pushrod_mm=float(x[0]),
                 rear_pushrod_mm=float(x[1]),
-                front_heave_nmm=seed.front_heave_nmm,
+                front_heave_nmm=effective_front_heave,
                 front_heave_perch_mm=float(x[2]),
-                rear_third_nmm=seed.rear_third_nmm,
+                rear_third_nmm=effective_rear_third,
                 rear_third_perch_mm=seed.rear_third_perch_mm,
                 front_torsion_od_mm=seed.front_torsion_od_mm,
                 rear_spring_nmm=seed.rear_spring_nmm,
@@ -220,7 +237,7 @@ class BMWSebringOptimizer:
         x0 = np.array([
             seed.front_pushrod_mm,
             seed.rear_pushrod_mm,
-            seed.front_heave_perch_mm,
+            effective_front_heave_perch,
             seed.rear_spring_perch_mm,
             seed.front_camber_deg,
         ], dtype=float)
@@ -231,6 +248,9 @@ class BMWSebringOptimizer:
             (30.0, 42.5),
             (-3.5, -2.0),
         ]
+        if front_heave_perch_target_mm is not None:
+            snapped_perch = round(effective_front_heave_perch * 2.0) / 2.0
+            bounds[2] = (snapped_perch, snapped_perch)
         result = minimize(
             objective,
             x0=x0,
@@ -244,9 +264,9 @@ class BMWSebringOptimizer:
         return GarageSetupState(
             front_pushrod_mm=round(float(x[0]) * 2) / 2,
             rear_pushrod_mm=round(float(x[1]) * 2) / 2,
-            front_heave_nmm=seed.front_heave_nmm,
+            front_heave_nmm=effective_front_heave,
             front_heave_perch_mm=round(float(x[2]) * 2) / 2,
-            rear_third_nmm=seed.rear_third_nmm,
+            rear_third_nmm=effective_rear_third,
             rear_third_perch_mm=seed.rear_third_perch_mm,
             front_torsion_od_mm=seed.front_torsion_od_mm,
             rear_spring_nmm=seed.rear_spring_nmm,
@@ -267,6 +287,9 @@ class BMWSebringOptimizer:
         lltd_offset: float,
         measured: Any,
         camber_confidence: str,
+        front_heave_floor_nmm: float | None,
+        rear_third_floor_nmm: float | None,
+        front_heave_perch_target_mm: float | None,
     ) -> OptimizerResult | None:
         
         front_wheel_rate_nmm = self.car.corner_spring.torsion_bar_rate(seed.front_torsion_od_mm)
@@ -278,8 +301,8 @@ class BMWSebringOptimizer:
             balance_tolerance=balance_tolerance,
             fuel_load_l=fuel_load_l,
             pin_front_min=pin_front_min,
-            front_heave_nmm=seed.front_heave_nmm,
-            rear_third_nmm=seed.rear_third_nmm,
+            front_heave_nmm=max(seed.front_heave_nmm, float(front_heave_floor_nmm or seed.front_heave_nmm)),
+            rear_third_nmm=max(seed.rear_third_nmm, float(rear_third_floor_nmm or seed.rear_third_nmm)),
             front_wheel_rate_nmm=front_wheel_rate_nmm,
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         )
@@ -298,6 +321,9 @@ class BMWSebringOptimizer:
             target_front_static=target_front_static,
             target_rear_static=target_rear_static,
             fuel_load_l=fuel_load_l,
+            front_heave_floor_nmm=front_heave_floor_nmm,
+            rear_third_floor_nmm=rear_third_floor_nmm,
+            front_heave_perch_target_mm=front_heave_perch_target_mm,
         )
         if state is None:
             return None
@@ -311,9 +337,13 @@ class BMWSebringOptimizer:
         step2 = self.heave_solver.solve(
             dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
             dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-            front_heave_floor_nmm=seed.front_heave_nmm,
-            rear_third_floor_nmm=seed.rear_third_nmm,
-            front_heave_perch_target_mm=state.front_heave_perch_mm,
+            front_heave_floor_nmm=max(seed.front_heave_nmm, float(front_heave_floor_nmm or seed.front_heave_nmm)),
+            rear_third_floor_nmm=max(seed.rear_third_nmm, float(rear_third_floor_nmm or seed.rear_third_nmm)),
+            front_heave_perch_target_mm=(
+                float(front_heave_perch_target_mm)
+                if front_heave_perch_target_mm is not None
+                else state.front_heave_perch_mm
+            ),
             front_pushrod_mm=state.front_pushrod_mm,
             rear_pushrod_mm=state.rear_pushrod_mm,
             front_torsion_od_mm=seed.front_torsion_od_mm,
@@ -369,9 +399,13 @@ class BMWSebringOptimizer:
         refined_step2 = self.heave_solver.solve(
             dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
             dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-            front_heave_floor_nmm=seed.front_heave_nmm,
-            rear_third_floor_nmm=seed.rear_third_nmm,
-            front_heave_perch_target_mm=state.front_heave_perch_mm,
+            front_heave_floor_nmm=max(seed.front_heave_nmm, float(front_heave_floor_nmm or seed.front_heave_nmm)),
+            rear_third_floor_nmm=max(seed.rear_third_nmm, float(rear_third_floor_nmm or seed.rear_third_nmm)),
+            front_heave_perch_target_mm=(
+                float(front_heave_perch_target_mm)
+                if front_heave_perch_target_mm is not None
+                else state.front_heave_perch_mm
+            ),
             front_pushrod_mm=state.front_pushrod_mm,
             rear_pushrod_mm=state.rear_pushrod_mm,
             front_torsion_od_mm=seed.front_torsion_od_mm,
@@ -518,6 +552,9 @@ def optimize_if_supported(
     measured: Any = None,
     camber_confidence: str = "estimated",
     failed_validation_clusters: list[ValidationCluster] | None = None,
+    front_heave_floor_nmm: float | None = None,
+    rear_third_floor_nmm: float | None = None,
+    front_heave_perch_target_mm: float | None = None,
 ) -> OptimizerResult | None:
     """Run the BMW/Sebring optimizer when supported and not explicitly disabled."""
     if legacy_solver or not _is_bmw_sebring(car, track):
@@ -534,4 +571,7 @@ def optimize_if_supported(
         measured=measured,
         camber_confidence=camber_confidence,
         failed_validation_clusters=failed_validation_clusters,
+        front_heave_floor_nmm=front_heave_floor_nmm,
+        rear_third_floor_nmm=rear_third_floor_nmm,
+        front_heave_perch_target_mm=front_heave_perch_target_mm,
     )

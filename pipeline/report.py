@@ -85,6 +85,9 @@ def generate_report(
     stint_evolution: object = None,
     stint_compromise_info: list[str] | None = None,
     solve_context_lines: list[str] | None = None,
+    telemetry_quality_lines: list[str] | None = None,
+    legality_lines: list[str] | None = None,
+    decision_trace_lines: list[str] | None = None,
     compact: bool = False,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
@@ -138,6 +141,15 @@ def generate_report(
         if solve_context_lines:
             report += "\n" + _hdr("SOLVE CONTEXT") + "\n"
             report += "\n".join(f"  {line}" for line in solve_context_lines)
+        if telemetry_quality_lines:
+            report += "\n" + _hdr("TELEMETRY TRUTH") + "\n"
+            report += "\n".join(f"  {line}" for line in telemetry_quality_lines)
+        if legality_lines:
+            report += "\n" + _hdr("LEGALITY") + "\n"
+            report += "\n".join(f"  {line}" for line in legality_lines)
+        if decision_trace_lines:
+            report += "\n" + _hdr("DECISION TRACE") + "\n"
+            report += "\n".join(f"  {line}" for line in decision_trace_lines)
         return report
 
     # ── PRE-CARD: Driver & Diagnosis ──────────────────────────────────
@@ -222,6 +234,24 @@ def generate_report(
         a(_cmp("F HS Comp",          current_setup.front_hs_comp,        step6.lf.hs_comp,               "cl",  ".0f"))
         a(_cmp("R LS Comp",          current_setup.rear_ls_comp,         step6.lr.ls_comp,               "cl",  ".0f"))
         a(_cmp("R HS Comp",          current_setup.rear_hs_comp,         step6.lr.hs_comp,               "cl",  ".0f"))
+        a("")
+
+    if telemetry_quality_lines:
+        a(_hdr("TELEMETRY TRUTH"))
+        for line in telemetry_quality_lines:
+            a(f"  {line}")
+        a("")
+
+    if legality_lines:
+        a(_hdr("LEGALITY"))
+        for line in legality_lines:
+            a(f"  {line}")
+        a("")
+
+    if decision_trace_lines:
+        a(_hdr("DECISION TRACE"))
+        for line in decision_trace_lines:
+            a(f"  {line}")
         a("")
 
     # ── HEAVE TRAVEL BUDGET ────────────────────────────────────────────

@@ -38,12 +38,23 @@ from analyzer.driver_style import DriverProfile, analyze_driver, refine_driver_w
 from analyzer.extract import MeasuredState, extract_measurements
 from analyzer.segment import CornerAnalysis, segment_lap
 from analyzer.setup_reader import CurrentSetup
+from analyzer.telemetry_truth import (
+    ParameterDecision,
+    SessionNormalization,
+    build_session_normalization,
+    get_signal,
+    signals_to_dict,
+    summarize_signal_quality,
+    usable_signal_value,
+)
 from car_model.cars import CarModel, get_car
 from learner.delta_detector import (
     KNOWN_CAUSALITY, EFFECT_METRICS,
     detect_delta, SessionDelta,
 )
 from learner.observation import Observation, build_observation
+from solver.decision_trace import build_parameter_decisions
+from solver.legality_engine import LegalValidation, validate_solution_legality
 from solver.setup_fingerprint import (
     CandidateVeto,
     SetupFingerprint,
@@ -1810,7 +1821,7 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
     lines.append("  " + "-" * (width - 4))
     lines.append(f"  Understeer gradient (HS-LS): {sra.understeer_gradient:+.2f} deg")
     lines.append(
-        f"  Time loss — HS: {sra.hs_time_loss_total:.3f}s  "
+        f"  Opportunity — HS: {sra.hs_time_loss_total:.3f}s  "
         f"LS: {sra.ls_time_loss_total:.3f}s  "
         f"Mid: {sra.mid_time_loss_total:.3f}s"
     )
@@ -2035,7 +2046,7 @@ def reason_and_solve(
     _analyze_speed_regimes(state)
     sra = state.speed_regime
     log(f"  Understeer gradient (HS-LS): {sra.understeer_gradient:+.2f} deg")
-    log(f"  Time loss — HS: {sra.hs_time_loss_total:.3f}s  "
+    log(f"  Opportunity — HS: {sra.hs_time_loss_total:.3f}s  "
         f"LS: {sra.ls_time_loss_total:.3f}s")
     log(f"  Dominant problem: {sra.dominant_regime.upper()}")
 
@@ -2240,6 +2251,9 @@ def reason_and_solve(
         lltd_offset=mods.lltd_offset,
         measured=authority_measured,
         failed_validation_clusters=state.validation_clusters,
+        front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
+        rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+        front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
     )
     state.candidate_vetoes = list(optimized.candidate_vetoes) if optimized is not None else []
     solver_selection_note = ""
@@ -2312,18 +2326,48 @@ def reason_and_solve(
         step3.front_torsion_od_mm = _cs.front_torsion_od_mm
         step3.rear_spring_rate_nmm = _cs.rear_spring_nmm
         step3.rear_spring_perch_mm = 0.0
+        supporting.brake_bias_pct = authority.setup.brake_bias_pct
+        supporting.diff_preload_nm = authority.setup.diff_preload_nm
+        supporting.diff_clutch_plates = authority.setup.diff_clutch_plates
+        supporting.tc_gain = authority.setup.tc_gain
+        supporting.tc_slip = authority.setup.tc_slip
+        if "more" in (authority.setup.diff_ramp_angles or "").lower():
+            supporting.diff_ramp_coast = 40
+            supporting.diff_ramp_drive = 65
+        else:
+            supporting.diff_ramp_coast = 50
+            supporting.diff_ramp_drive = 75
+
+    state.legal_validation = validate_solution_legality(
+        car=car,
+        track_name=track.track_name,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step5=step5,
+        fuel_l=detected_fuel,
+    )
+    for warning in state.legal_validation.warnings:
+        log(f"[garage] {warning}")
+
+    state.decision_trace = build_parameter_decisions(
+        car_name=car.canonical_name,
+        current_setup=authority.setup,
+        measured=authority_measured,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+        supporting=supporting,
+        legality=state.legal_validation,
+        fallback_reasons=list(getattr(authority_measured, "fallback_reasons", [])) + state.solver_notes,
+    )
 
     # ── Output ──
     if sto_path:
         from output.setup_writer import write_sto
-        from output.garage_validator import validate_and_fix_garage_correlation
-
-        garage_warnings = validate_and_fix_garage_correlation(
-            car, step1, step2, step3, step5,
-            fuel_l=detected_fuel, track_name=track.track_name,
-        )
-        for w in garage_warnings:
-            log(f"[garage] {w}")
 
         _tb_kw = {}
         if car.canonical_name == "ferrari":
@@ -2379,11 +2423,15 @@ def reason_and_solve(
                 "hs_time_loss": state.speed_regime.hs_time_loss_total,
                 "ls_time_loss": state.speed_regime.ls_time_loss_total,
             },
+            "normalization_scores": state.normalization_scores,
             "top_weakness_corners": [
                 {
                     "corner_id": cp.corner_id,
                     "speed_class": cp.speed_class,
                     "mean_time_loss": cp.mean_time_loss,
+                    "entry_loss": cp.mean_entry_loss,
+                    "apex_loss": cp.mean_apex_loss,
+                    "exit_loss": cp.mean_exit_loss,
                     "primary_issue": cp.primary_issue,
                 }
                 for cp in state.top_weakness_corners
@@ -2445,6 +2493,13 @@ def reason_and_solve(
             "validation_clusters": [cluster.to_dict() for cluster in state.validation_clusters],
             "candidate_vetoes": [veto.to_dict() for veto in state.candidate_vetoes],
             "solver_notes": state.solver_notes,
+            "telemetry_quality": signals_to_dict(getattr(authority_measured, "telemetry_signals", {})),
+            "extraction_attempts": getattr(authority_measured, "extraction_attempts", []),
+            "signal_conflicts": getattr(authority_measured, "signal_conflicts", []),
+            "fallback_reasons": getattr(authority_measured, "fallback_reasons", []),
+            "parameter_evidence": [decision.to_dict() for decision in state.decision_trace],
+            "decision_trace": [decision.to_dict() for decision in state.decision_trace],
+            "legal_validation": state.legal_validation.to_dict() if state.legal_validation is not None else None,
             "step1_rake": dataclasses.asdict(step1),
             "step2_heave": dataclasses.asdict(step2),
             "step3_corner": dataclasses.asdict(step3),
@@ -2460,6 +2515,19 @@ def reason_and_solve(
 
     # Print the setup
     from pipeline.report import generate_report
+    telemetry_quality_lines = summarize_signal_quality(authority_measured)
+    legality_lines = [
+        f"Legality: {'validated' if state.legal_validation and state.legal_validation.valid else 'warning'}",
+        *(
+            f"Garage: {msg}"
+            for msg in (state.legal_validation.messages[:2] if state.legal_validation is not None else [])
+        ),
+    ]
+    decision_trace_lines = [
+        f"{decision.parameter}: {decision.current_value} -> {decision.proposed_value} {decision.unit}".rstrip()
+        for decision in state.decision_trace[:6]
+        if not decision.blocked_reason
+    ]
     report = generate_report(
         car=car,
         track=track,
@@ -2482,6 +2550,9 @@ def reason_and_solve(
             f"Rejected prior candidate matching {v.matched_session_label}: {v.reason}"
             for v in state.candidate_vetoes[:2]
         ],
+        telemetry_quality_lines=telemetry_quality_lines,
+        legality_lines=legality_lines,
+        decision_trace_lines=decision_trace_lines,
         compact=True,
     )
     print(report)

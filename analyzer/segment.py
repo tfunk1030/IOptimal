@@ -56,8 +56,17 @@ class CornerAnalysis:
     has_kerb_overlap: bool = False
     kerb_severity_max: float = 0.0
 
-    # Time loss potential
-    delta_to_min_time_s: float = 0.0  # actual - theoretical minimum
+    # Raw phase timing and bounded opportunity proxies
+    entry_phase_s: float = 0.0
+    apex_phase_s: float = 0.0
+    exit_phase_s: float = 0.0
+    throttle_delay_s: float = 0.0
+    entry_loss_s: float = 0.0
+    apex_loss_s: float = 0.0
+    exit_loss_s: float = 0.0
+    platform_risk_flags: list[str] = field(default_factory=list)
+    traction_risk_flags: list[str] = field(default_factory=list)
+    delta_to_min_time_s: float = 0.0  # backward-compatible alias of bounded total
 
 
 def _classify_speed(apex_speed_kph: float) -> str:
@@ -329,6 +338,7 @@ def segment_lap(
 
         # Throttle onset: lap distance where throttle first exceeds 20% after apex
         throttle_onset = 0.0
+        throttle_delay_s = 0.0
         post_apex_throttle = seg_throttle[apex_local:]
         post_apex_dist = seg_dist[apex_local:]
         if len(post_apex_throttle) > 0:
@@ -336,18 +346,19 @@ def segment_lap(
             if np.any(onset_mask):
                 onset_idx = np.argmax(onset_mask)
                 throttle_onset = float(post_apex_dist[onset_idx])
+                throttle_delay_s = onset_idx * dt
+            else:
+                throttle_delay_s = len(post_apex_throttle) * dt
 
-        # Delta to minimum time: theoretical = corner_length / v_min_possible
-        # v_min_possible from centripetal: v = sqrt(a_lat * g * r)
         corner_length = float(seg_dist[-1] - seg_dist[0]) if len(seg_dist) > 1 else 0.0
         if corner_length < 0:
-            corner_length = 0.0  # wrap-around protection
-        if peak_lat > 0.3 and radius > 1:
-            v_theoretical = np.sqrt(peak_lat * 9.81 * radius)
-            t_theoretical = corner_length / max(v_theoretical, 1.0)
-            delta_t = duration - t_theoretical
-        else:
-            delta_t = 0.0
+            corner_length = 0.0
+        entry_phase_s = apex_local * dt
+        apex_window = max(3, min(len(seg_speed) // 3, int(0.25 * tick_rate)))
+        apex_start = max(0, apex_local - apex_window // 2)
+        apex_end = min(len(seg_speed), apex_local + apex_window // 2)
+        apex_phase_s = (apex_end - apex_start) * dt
+        exit_phase_s = max(0.0, (len(seg_speed) - apex_end) * dt)
 
         # Check for kerb overlap: any kerb event within this corner's distance range
         corner_has_kerb = False
@@ -360,6 +371,21 @@ def segment_lap(
                 if (corner_start_m - buffer_m) <= ke.lap_dist_m <= (corner_end_m + buffer_m):
                     corner_has_kerb = True
                     corner_kerb_sev = max(corner_kerb_sev, ke.severity)
+
+        platform_flags: list[str] = []
+        traction_flags: list[str] = []
+        if f_rh_mean > 0 and (f_rh_mean - f_rh_min) > 6.0:
+            platform_flags.append("front_rh_collapse")
+        if f_sv_p99 > 0.45 or r_sv_p99 > 0.45:
+            platform_flags.append("high_shock_velocity")
+        if corner_has_kerb and corner_kerb_sev > 2.0:
+            platform_flags.append("kerb_overlap")
+        if throttle_delay_s > 0.25:
+            traction_flags.append("late_throttle")
+        if bs_peak > 3.0:
+            traction_flags.append("body_slip_peak")
+        if exit_speed < apex_speed + 12.0:
+            traction_flags.append("weak_exit_speed_recovery")
 
         results.append(CornerAnalysis(
             corner_id=cid,
@@ -386,7 +412,16 @@ def segment_lap(
             throttle_onset_dist_m=round(throttle_onset, 1),
             has_kerb_overlap=corner_has_kerb,
             kerb_severity_max=round(corner_kerb_sev, 2),
-            delta_to_min_time_s=round(max(delta_t, 0.0), 3),
+            entry_phase_s=round(entry_phase_s, 3),
+            apex_phase_s=round(apex_phase_s, 3),
+            exit_phase_s=round(exit_phase_s, 3),
+            throttle_delay_s=round(throttle_delay_s, 3),
+            entry_loss_s=0.0,
+            apex_loss_s=0.0,
+            exit_loss_s=0.0,
+            platform_risk_flags=platform_flags,
+            traction_risk_flags=traction_flags,
+            delta_to_min_time_s=0.0,
         ))
 
     # Sort by lap distance

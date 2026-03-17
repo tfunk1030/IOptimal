@@ -21,6 +21,11 @@ from pathlib import Path
 
 import numpy as np
 
+from analyzer.telemetry_truth import (
+    TelemetrySignal,
+    build_signal_map,
+    build_telemetry_bundle,
+)
 from track_model.ibt_parser import IBTFile
 from track_model.build_profile import build_profile
 from track_model.profile import TrackProfile, build_kerb_spatial_mask
@@ -306,6 +311,17 @@ class MeasuredState:
     speed_max_kph: float = 0.0
     mean_speed_at_speed_kph: float = 0.0
     metric_fallbacks: list[str] = field(default_factory=list)
+    fallback_reasons: list[str] = field(default_factory=list)
+    front_settle_total_events: int = 0
+    rear_settle_total_events: int = 0
+    front_settle_valid_clean_events: int = 0
+    rear_settle_valid_clean_events: int = 0
+    front_settle_invalid_reason: str = ""
+    rear_settle_invalid_reason: str = ""
+    extraction_attempts: list[dict[str, object]] = field(default_factory=list, repr=False)
+    signal_conflicts: list[str] = field(default_factory=list)
+    telemetry_signals: dict[str, TelemetrySignal[float]] = field(default_factory=dict, repr=False)
+    telemetry_bundle: dict[str, object] = field(default_factory=dict, repr=False)
 
 
 def extract_measurements(
@@ -330,6 +346,16 @@ def extract_measurements(
     if ibt is None:
         ibt = IBTFile(ibt_path)
     state = MeasuredState()
+    state.extraction_attempts.append({"phase": "primary_channels", "source": "ibt_channels", "status": "ok"})
+    try:
+        state.measured_track_profile = build_profile(ibt_path)
+        state.extraction_attempts.append({"phase": "track_profile", "source": "build_profile", "status": "ok"})
+    except Exception as exc:
+        state.measured_track_profile = None
+        state.extraction_attempts.append(
+            {"phase": "track_profile", "source": "build_profile", "status": f"failed: {exc}"}
+        )
+        state.fallback_reasons.append("track_profile_unavailable")
 
     # --- Find lap boundaries ---
     if lap is not None:
@@ -354,6 +380,17 @@ def extract_measurements(
     speed_kph = speed_ms * 3.6
     lat_accel = ibt.channel("LatAccel")[start:end + 1]
     lat_g = lat_accel / 9.81
+    lap_dist = ibt.channel("LapDist")[start:end + 1] if ibt.has_channel("LapDist") else np.zeros(n)
+    kerb_spatial_mask = None
+    if (
+        state.measured_track_profile is not None
+        and getattr(state.measured_track_profile, "kerb_events", None)
+        and len(lap_dist) == n
+    ):
+        kerb_spatial_mask = build_kerb_spatial_mask(
+            lap_dist,
+            state.measured_track_profile.kerb_events,
+        )
 
     state.speed_mean_kph = float(np.mean(speed_kph))
     state.speed_max_kph = float(np.max(speed_kph))
@@ -423,6 +460,12 @@ def extract_measurements(
 
         # At-speed mask: >150 kph, no braking, reasonably straight
         brake = ibt.channel("Brake")[start:end + 1] if ibt.has_channel("Brake") else np.zeros(n)
+        if ibt.has_channel("ThrottleRaw"):
+            throttle_signal = ibt.channel("ThrottleRaw")[start:end + 1]
+        elif ibt.has_channel("Throttle"):
+            throttle_signal = ibt.channel("Throttle")[start:end + 1]
+        else:
+            throttle_signal = np.zeros(n)
         at_speed = (speed_kph > 150) & (brake < 0.05)
 
         if np.sum(at_speed) > 50:
@@ -635,15 +678,42 @@ def extract_measurements(
             rear_rh, speed_kph, brake, ibt.tick_rate,
         )
 
-        # --- Settle time after bump events ---
-        # Average LF+RF shock velocities for front settle time (not just LF)
+        # --- Settle time after bump events (clean-event gated) ---
         front_sv_avg = (lf_sv + rf_sv) / 2
-        state.front_rh_settle_time_ms = _settle_time(
-            front_rh, front_sv_avg, ibt.tick_rate,
+        front_settle = _settle_time_signal(
+            front_rh,
+            front_sv_avg,
+            ibt.tick_rate,
+            brake=brake,
+            throttle=throttle_signal,
+            kerb_mask=kerb_spatial_mask,
         )
+        state.front_rh_settle_time_ms = float(front_settle.value) if front_settle.value is not None else 0.0
+        state.front_settle_total_events = int(getattr(front_settle, "total_events", 0))
+        state.front_settle_valid_clean_events = int(getattr(front_settle, "valid_clean_events", 0))
+        state.front_settle_invalid_reason = str(front_settle.invalid_reason or "")
         rear_sv_avg = (lr_sv + rr_sv) / 2
-        state.rear_rh_settle_time_ms = _settle_time(
-            rear_rh, rear_sv_avg, ibt.tick_rate,
+        rear_settle = _settle_time_signal(
+            rear_rh,
+            rear_sv_avg,
+            ibt.tick_rate,
+            brake=brake,
+            throttle=throttle_signal,
+            kerb_mask=kerb_spatial_mask,
+        )
+        state.rear_rh_settle_time_ms = float(rear_settle.value) if rear_settle.value is not None else 0.0
+        state.rear_settle_total_events = int(getattr(rear_settle, "total_events", 0))
+        state.rear_settle_valid_clean_events = int(getattr(rear_settle, "valid_clean_events", 0))
+        state.rear_settle_invalid_reason = str(rear_settle.invalid_reason or "")
+        state.extraction_attempts.append(
+            {
+                "phase": "settle_time",
+                "source": "event_based_clean_response",
+                "front_valid_clean_events": state.front_settle_valid_clean_events,
+                "rear_valid_clean_events": state.rear_settle_valid_clean_events,
+                "front_total_events": state.front_settle_total_events,
+                "rear_total_events": state.rear_settle_total_events,
+            }
         )
 
     # --- Heave shock deflection (direct spring travel measurement) ---
@@ -1143,59 +1213,115 @@ def _dominant_frequency(
     return round(float(valid_freqs[peak_idx]), 2)
 
 
-def _settle_time(
+def _settle_time_signal(
     rh_signal: np.ndarray,
     shock_vel: np.ndarray,
     tick_rate: int,
-    max_search_ms: float = 500.0,
-) -> float:
-    """Measure average time for ride height to settle after a bump event.
+    *,
+    brake: np.ndarray | None = None,
+    throttle: np.ndarray | None = None,
+    kerb_mask: np.ndarray | None = None,
+    max_search_ms: float = 700.0,
+) -> TelemetrySignal[float]:
+    """Extract settle time from valid clean disturbance events only."""
+    signal = TelemetrySignal[float](
+        value=None,
+        quality="unknown",
+        confidence=0.0,
+        source="event_based_clean_disturbance_response",
+        invalid_reason="insufficient_samples",
+    )
+    signal.total_events = 0
+    signal.valid_clean_events = 0
 
-    A bump event is defined as a shock velocity exceeding the p95 threshold.
-    Settle time is when the ride height returns within 1-sigma of the
-    running mean.
-
-    Returns average settle time in ms, or 0.0 if insufficient events.
-    """
     if len(rh_signal) < 100 or len(shock_vel) < 100:
-        return 0.0
+        return signal
 
     n = min(len(rh_signal), len(shock_vel))
-    rh_signal = rh_signal[:n]
-    shock_vel = shock_vel[:n]
+    rh_signal = np.asarray(rh_signal[:n], dtype=float)
+    shock_vel = np.asarray(shock_vel[:n], dtype=float)
+    abs_shock = np.abs(shock_vel)
+    brake = np.asarray(brake[:n], dtype=float) if brake is not None and len(brake) >= n else np.zeros(n)
+    throttle = np.asarray(throttle[:n], dtype=float) if throttle is not None and len(throttle) >= n else np.zeros(n)
+    kerb_mask = np.asarray(kerb_mask[:n], dtype=bool) if kerb_mask is not None and len(kerb_mask) >= n else np.zeros(n, dtype=bool)
 
-    p95 = float(np.percentile(shock_vel, 95))
-    if p95 < 0.01:
-        return 0.0
+    shock_threshold = max(
+        float(np.percentile(abs_shock, 97)),
+        float(np.median(abs_shock) + 3.0 * np.median(np.abs(abs_shock - np.median(abs_shock)))),
+    )
+    if shock_threshold < 0.01:
+        signal.invalid_reason = "no_disturbance_events"
+        return signal
 
-    sigma = float(np.std(rh_signal))
-    if sigma < 0.1:
-        return 0.0
+    noise_floor = max(float(np.std(rh_signal[: max(10, tick_rate // 3)])), 0.15)
+    refractory = max(4, int(0.12 * tick_rate))
+    candidate_indices = np.where(abs_shock >= shock_threshold)[0]
+    event_starts: list[int] = []
+    last_start = -refractory
+    for idx in candidate_indices:
+        if idx - last_start >= refractory:
+            event_starts.append(int(idx))
+            last_start = int(idx)
 
-    window = min(int(tick_rate * 0.5), n // 4)
-    if window < 5:
-        return 0.0
-    kernel = np.ones(window) / window
-    running_mean = np.convolve(rh_signal, kernel, mode="same")
+    signal.total_events = len(event_starts)
+    if not event_starts:
+        signal.invalid_reason = "no_disturbance_events"
+        return signal
 
-    bump_mask = shock_vel > p95
-    edges = np.diff(bump_mask.astype(int))
-    bump_starts = np.where(edges == 1)[0] + 1
-
+    settle_window = max(3, int(0.15 * tick_rate))
     max_search_samples = int(max_search_ms / 1000.0 * tick_rate)
-    settle_times = []
+    settle_times_ms: list[float] = []
 
-    for bs in bump_starts:
-        search_end = min(bs + max_search_samples, n)
-        for j in range(bs, search_end):
-            if abs(rh_signal[j] - running_mean[j]) < sigma:
-                settle_times.append((j - bs) / tick_rate * 1000.0)
+    for start_idx in event_starts:
+        pre_start = max(0, start_idx - max(3, int(0.12 * tick_rate)))
+        peak_search_end = min(n, start_idx + max(3, int(0.12 * tick_rate)))
+        baseline = float(np.median(rh_signal[pre_start:start_idx])) if start_idx > pre_start else float(rh_signal[start_idx])
+        peak_local = rh_signal[start_idx:peak_search_end]
+        if peak_local.size == 0:
+            continue
+        rel_peak_idx = int(np.argmax(np.abs(peak_local - baseline)))
+        peak_idx = start_idx + rel_peak_idx
+        amplitude = float(abs(rh_signal[peak_idx] - baseline))
+        if amplitude < max(0.5, noise_floor * 1.5):
+            continue
+
+        event_slice = slice(max(0, start_idx - 2), min(n, peak_idx + 2))
+        if np.any(kerb_mask[event_slice]):
+            continue
+        if float(np.mean(brake[event_slice])) > 0.15:
+            continue
+        if float(np.mean(throttle[event_slice])) > 0.25:
+            continue
+
+        peak_shock = float(np.max(abs_shock[pre_start:peak_search_end]))
+        band_mm = max(0.2, amplitude * 0.10)
+        vel_band = max(0.02, peak_shock * 0.20)
+        signal.valid_clean_events += 1
+
+        search_end = min(n - settle_window, peak_idx + max_search_samples)
+        settled = False
+        for idx in range(peak_idx, search_end):
+            rh_window = rh_signal[idx:idx + settle_window]
+            vel_window = abs_shock[idx:idx + settle_window]
+            if np.all(np.abs(rh_window - baseline) <= band_mm) and np.all(vel_window <= vel_band):
+                settle_times_ms.append((idx - start_idx) / tick_rate * 1000.0)
+                settled = True
                 break
+        if not settled and signal.invalid_reason in {"", "insufficient_samples", "insufficient_clean_events"}:
+            signal.invalid_reason = "no_sustained_settle_window"
 
-    if not settle_times:
-        return 0.0
+    if signal.valid_clean_events < 3:
+        signal.invalid_reason = "insufficient_clean_events"
+        return signal
+    if not settle_times_ms:
+        signal.invalid_reason = signal.invalid_reason or "no_sustained_settle_window"
+        return signal
 
-    return round(float(np.median(settle_times)), 1)
+    signal.value = round(float(np.median(settle_times_ms)), 1)
+    signal.quality = "trusted"
+    signal.confidence = min(0.95, 0.55 + len(settle_times_ms) * 0.08)
+    signal.invalid_reason = ""
+    return signal
 
 
 def _extract_heave_deflection(
