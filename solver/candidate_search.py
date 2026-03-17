@@ -4,7 +4,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any
 
-from solver.candidate_ranker import CandidateScore, combine_candidate_score
+from solver.candidate_ranker import CandidateScore, combine_candidate_score, score_from_prediction
 from solver.predictor import PredictedTelemetry, PredictionConfidence, predict_candidate_telemetry
 
 
@@ -98,14 +98,14 @@ def generate_candidate_families(
             front_pressure_hot_kpa=_safe_attr(authority_session, "measured", "front_pressure_mean_kpa"),
             rear_pressure_hot_kpa=_safe_attr(authority_session, "measured", "rear_pressure_mean_kpa"),
         )
-    incremental.score = combine_candidate_score(
-        safety=max(0.2, 0.85 - envelope_distance * 0.08),
-        performance=max(0.2, authority_conf),
-        stability=max(0.2, 0.8 - setup_distance * 0.05),
-        confidence=incremental.confidence,
+    incremental.score = score_from_prediction(
+        baseline_measured=getattr(authority_session, "measured", None),
+        predicted=incremental.predicted,
+        prediction_confidence=incremental.confidence,
         disruption_cost=0.15,
         notes=incremental_notes,
     )
+    incremental.score.total = round(max(0.0, incremental.score.total - envelope_distance * 0.01 - setup_distance * 0.005), 3)
 
     reset_notes = [
         f"Best benchmark session: {getattr(best_session, 'label', 'unknown')}",
@@ -135,14 +135,14 @@ def generate_candidate_families(
             corrections=prediction_corrections,
         )
         reset.confidence = round(min(1.0, (reset.confidence + reset_prediction_conf.overall) / 2.0), 3)
-    reset.score = combine_candidate_score(
-        safety=max(0.25, legality_ok * 0.9 + min(0.25, envelope_distance * 0.04)),
-        performance=max(0.2, 0.7 + min(0.15, envelope_distance * 0.03)),
-        stability=max(0.2, 0.72 + min(0.18, setup_distance * 0.03)),
-        confidence=reset.confidence,
+    reset.score = score_from_prediction(
+        baseline_measured=getattr(authority_session, "measured", None),
+        predicted=reset.predicted,
+        prediction_confidence=reset.confidence,
         disruption_cost=0.75 if overhaul_class == "minor_tweak" else 0.55,
         notes=reset_notes,
     )
+    reset.score.total = round(min(1.0, reset.score.total + legality_ok * 0.04 + envelope_distance * 0.01), 3)
 
     if overhaul_class == "baseline_reset":
         reset.score.total = round(reset.score.total + 0.08, 3)
@@ -184,10 +184,12 @@ def generate_candidate_families(
             stability=max(0.2, ((incremental.score.stability if incremental.score else 0.5) + (reset.score.stability if reset.score else 0.5)) / 2.0),
             confidence=compromise.confidence,
             disruption_cost=0.4 if overhaul_class == "moderate_rework" else 0.5,
-            notes=compromise_notes,
+            notes=compromise_notes + [
+                "Compromise score is blended from predicted incremental and reset outcomes.",
+            ],
         )
         if overhaul_class == "moderate_rework":
-            compromise.score.total = round(compromise.score.total + 0.06, 3)
+            compromise.score.total = round(compromise.score.total + 0.12, 3)
             compromise.reasons.append("Compromise candidate boosted because overhaul classification is moderate_rework.")
         candidates.append(compromise)
 
