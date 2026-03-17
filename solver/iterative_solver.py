@@ -294,10 +294,21 @@ def run_iterative_solver(
         adjusted_balance = target_balance + cumulative_adjustments.get("df_balance_target_pct", 0)
 
         # ── Run 6-step solver ──
+        prev_front_heave = locals().get('step2').front_heave_nmm if 'step2' in locals() else None
+        prev_rear_third = locals().get('step2').rear_third_nmm if 'step2' in locals() else None
+        prev_front_wheel = locals().get('step3').front_wheel_rate_nmm if 'step3' in locals() else None
+        prev_rear_wheel = None
+        if 'step3' in locals() and 'car' in locals():
+            prev_rear_wheel = locals().get('step3').rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+
         rake_solver = RakeSolver(car, surface, track)
         step1 = rake_solver.solve(
             target_balance=adjusted_balance,
             fuel_load_l=fuel_load_l,
+            front_heave_nmm=prev_front_heave,
+            rear_third_nmm=prev_rear_third,
+            front_wheel_rate_nmm=prev_front_wheel,
+            rear_wheel_rate_nmm=prev_rear_wheel,
         )
 
         heave_solver = HeaveSolver(car, track)

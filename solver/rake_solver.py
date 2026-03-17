@@ -227,6 +227,10 @@ class RakeSolver:
         iterations: int,
         mode: str,
         free_opt_ld: float = 0.0,
+        front_heave_nmm: float | None = None,
+        rear_third_nmm: float | None = None,
+        front_wheel_rate_nmm: float | None = None,
+        rear_wheel_rate_nmm: float | None = None,
     ) -> RakeSolution:
         """Build a RakeSolution from dynamic ride heights."""
         bal, ld = self._query_aero(actual_front_dyn, actual_rear_dyn)
@@ -234,8 +238,17 @@ class RakeSolver:
         comp = self.car.aero_compression
         # Use track median speed for compression instead of fixed reference speed
         track_speed = self.track.median_speed_kph if self.track.median_speed_kph > 0 else comp.ref_speed_kph
-        front_comp = comp.front_at_speed(track_speed)
-        rear_comp = comp.rear_at_speed(track_speed)
+        
+        front_comp = comp.front_at_speed(
+            track_speed, 
+            current_heave_nmm=front_heave_nmm, 
+            current_wheel_nmm=front_wheel_rate_nmm
+        )
+        rear_comp = comp.rear_at_speed(
+            track_speed, 
+            current_third_nmm=rear_third_nmm, 
+            current_wheel_nmm=rear_wheel_rate_nmm
+        )
 
         static_front = actual_front_dyn + front_comp
         static_rear = actual_rear_dyn + rear_comp
@@ -359,6 +372,10 @@ class RakeSolver:
         balance_tolerance: float = 0.1,
         fuel_load_l: float = 89.0,
         pin_front_min: bool = False,
+        front_heave_nmm: float | None = None,
+        rear_third_nmm: float | None = None,
+        front_wheel_rate_nmm: float | None = None,
+        rear_wheel_rate_nmm: float | None = None,
     ) -> RakeSolution:
         """Find optimal ride heights for target DF balance.
 
@@ -383,11 +400,13 @@ class RakeSolver:
 
         if pin_front_min:
             return self._solve_pinned_front(
-                target_balance, front_excursion_p99, fuel_load_l
+                target_balance, front_excursion_p99, fuel_load_l,
+                front_heave_nmm, rear_third_nmm, front_wheel_rate_nmm, rear_wheel_rate_nmm
             )
         else:
             return self._solve_free(
-                target_balance, balance_tolerance, front_excursion_p99, fuel_load_l
+                target_balance, balance_tolerance, front_excursion_p99, fuel_load_l,
+                front_heave_nmm, rear_third_nmm, front_wheel_rate_nmm, rear_wheel_rate_nmm
             )
 
     def _solve_pinned_front(
@@ -395,6 +414,10 @@ class RakeSolver:
         target_balance: float,
         front_excursion_p99: float,
         fuel_load_l: float,
+        front_heave_nmm: float | None = None,
+        rear_third_nmm: float | None = None,
+        front_wheel_rate_nmm: float | None = None,
+        rear_wheel_rate_nmm: float | None = None,
     ) -> RakeSolution:
         """Solve with front static RH pinned at sim minimum.
 
@@ -408,7 +431,12 @@ class RakeSolver:
 
         # Front static = sim minimum → front dynamic = minimum - compression
         static_front = self.car.min_front_rh_static
-        dyn_front = static_front - comp.front_at_speed(track_speed)
+        front_comp = comp.front_at_speed(
+            track_speed, 
+            current_heave_nmm=front_heave_nmm, 
+            current_wheel_nmm=front_wheel_rate_nmm
+        )
+        dyn_front = static_front - front_comp
 
         # Check vortex burst constraint
         min_front_for_vortex = (
@@ -417,7 +445,7 @@ class RakeSolver:
         if dyn_front < min_front_for_vortex:
             # Front too low — would vortex burst. Raise to safe minimum.
             dyn_front = min_front_for_vortex
-            static_front = dyn_front + comp.front_at_speed(track_speed)
+            static_front = dyn_front + front_comp
 
         # Find rear RH for target balance
         dyn_rear = self._find_rear_for_balance(dyn_front, target_balance)
@@ -441,6 +469,10 @@ class RakeSolver:
             iterations=1,  # Root finding, not iterative optimization
             mode="pinned_front",
             free_opt_ld=free_opt_ld,
+            front_heave_nmm=front_heave_nmm,
+            rear_third_nmm=rear_third_nmm,
+            front_wheel_rate_nmm=front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         )
 
     def _solve_free(
@@ -449,6 +481,10 @@ class RakeSolver:
         balance_tolerance: float,
         front_excursion_p99: float,
         fuel_load_l: float,
+        front_heave_nmm: float | None = None,
+        rear_third_nmm: float | None = None,
+        front_wheel_rate_nmm: float | None = None,
+        rear_wheel_rate_nmm: float | None = None,
     ) -> RakeSolution:
         """Solve with both front and rear freely optimized for max L/D."""
         min_front_for_vortex = (
@@ -456,7 +492,13 @@ class RakeSolver:
         )
         # Also enforce static minimum constraint
         comp = self.car.aero_compression
-        min_front_for_static = self.car.min_front_rh_static - comp.front_compression_mm
+        track_speed = self.track.median_speed_kph if self.track.median_speed_kph > 0 else comp.ref_speed_kph
+        front_comp = comp.front_at_speed(
+            track_speed, 
+            current_heave_nmm=front_heave_nmm, 
+            current_wheel_nmm=front_wheel_rate_nmm
+        )
+        min_front_for_static = self.car.min_front_rh_static - front_comp
 
         front_lo = max(
             self.car.min_front_rh_dynamic,

@@ -129,32 +129,15 @@ class BMWSebringOptimizer:
         camber_confidence: str = "estimated",
         failed_validation_clusters: list[ValidationCluster] | None = None,
     ) -> OptimizerResult:
-        base_step1 = self.rake_solver.solve(
-            target_balance=target_balance,
-            balance_tolerance=balance_tolerance,
-            fuel_load_l=fuel_load_l,
-            pin_front_min=pin_front_min,
-        )
-
-        target_front_static = max(
-            self.car.min_front_rh_static,
-            base_step1.dynamic_front_rh_mm + base_step1.aero_compression_front_mm,
-        )
-        target_rear_static = max(
-            self.car.min_rear_rh_static,
-            base_step1.dynamic_rear_rh_mm + base_step1.aero_compression_rear_mm,
-        )
-
         best_any: OptimizerResult | None = None
         best_clean: OptimizerResult | None = None
         candidate_vetoes: list[CandidateVeto] = []
         for seed in _load_bmw_sebring_seeds():
             candidate = self._evaluate_seed(
-                base_step1=base_step1,
                 seed=seed,
-                target_front_static=target_front_static,
-                target_rear_static=target_rear_static,
                 target_balance=target_balance,
+                balance_tolerance=balance_tolerance,
+                pin_front_min=pin_front_min,
                 fuel_load_l=fuel_load_l,
                 damping_ratio_scale=damping_ratio_scale,
                 lltd_offset=lltd_offset,
@@ -275,17 +258,41 @@ class BMWSebringOptimizer:
     def _evaluate_seed(
         self,
         *,
-        base_step1: RakeSolution,
         seed: BMWSebringSeed,
-        target_front_static: float,
-        target_rear_static: float,
         target_balance: float,
+        balance_tolerance: float,
+        pin_front_min: bool,
         fuel_load_l: float,
         damping_ratio_scale: float,
         lltd_offset: float,
         measured: Any,
         camber_confidence: str,
     ) -> OptimizerResult | None:
+        
+        front_wheel_rate_nmm = self.car.corner_spring.torsion_bar_rate(seed.front_torsion_od_mm)
+        rear_wheel_rate_nmm = seed.rear_spring_nmm * self.car.corner_spring.rear_motion_ratio ** 2
+        
+        # Re-solve Step 1 with dynamic aero compression for this specific seed's spring rates
+        step1 = self.rake_solver.solve(
+            target_balance=target_balance,
+            balance_tolerance=balance_tolerance,
+            fuel_load_l=fuel_load_l,
+            pin_front_min=pin_front_min,
+            front_heave_nmm=seed.front_heave_nmm,
+            rear_third_nmm=seed.rear_third_nmm,
+            front_wheel_rate_nmm=front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+        )
+
+        target_front_static = max(
+            self.car.min_front_rh_static,
+            step1.dynamic_front_rh_mm + step1.aero_compression_front_mm,
+        )
+        target_rear_static = max(
+            self.car.min_rear_rh_static,
+            step1.dynamic_rear_rh_mm + step1.aero_compression_rear_mm,
+        )
+
         state = self._optimize_continuous_state(
             seed,
             target_front_static=target_front_static,
@@ -295,7 +302,6 @@ class BMWSebringOptimizer:
         if state is None:
             return None
 
-        step1 = replace(base_step1)
         step1.front_pushrod_offset_mm = state.front_pushrod_mm
         step1.rear_pushrod_offset_mm = state.rear_pushrod_mm
         step1.static_front_rh_mm = round(target_front_static, 1)

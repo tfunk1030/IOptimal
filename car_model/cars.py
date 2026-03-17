@@ -35,13 +35,40 @@ class AeroCompression:
     front_compression_mm: float      # Front RH compression at ref speed
     rear_compression_mm: float       # Rear RH compression at ref speed
 
-    def front_at_speed(self, speed_kph: float) -> float:
-        """Front aero compression (mm) at a given speed."""
-        return self.front_compression_mm * (speed_kph / self.ref_speed_kph) ** 2
+    # Spring rates at which the baseline compression was measured
+    # (used to scale compression dynamically when springs change)
+    baseline_front_heave_nmm: float = 50.0
+    baseline_front_wheel_rate_nmm: float = 30.0
+    baseline_rear_third_nmm: float = 530.0
+    baseline_rear_wheel_rate_nmm: float = 61.2
 
-    def rear_at_speed(self, speed_kph: float) -> float:
+    def front_at_speed(self, speed_kph: float, current_heave_nmm: float | None = None, current_wheel_nmm: float | None = None) -> float:
+        """Front aero compression (mm) at a given speed.
+        
+        Dynamically scales with spring rate if provided.
+        """
+        comp = self.front_compression_mm * (speed_kph / self.ref_speed_kph) ** 2
+        
+        if current_heave_nmm is not None and current_wheel_nmm is not None:
+            # Physical scaling: compression is inversely proportional to axle vertical stiffness
+            base_k = self.baseline_front_heave_nmm + 2.0 * self.baseline_front_wheel_rate_nmm
+            current_k = current_heave_nmm + 2.0 * current_wheel_nmm
+            if current_k > 0:
+                comp = comp * (base_k / current_k)
+                
+        return comp
+
+    def rear_at_speed(self, speed_kph: float, current_third_nmm: float | None = None, current_wheel_nmm: float | None = None) -> float:
         """Rear aero compression (mm) at a given speed."""
-        return self.rear_compression_mm * (speed_kph / self.ref_speed_kph) ** 2
+        comp = self.rear_compression_mm * (speed_kph / self.ref_speed_kph) ** 2
+        
+        if current_third_nmm is not None and current_wheel_nmm is not None:
+            base_k = self.baseline_rear_third_nmm + 2.0 * self.baseline_rear_wheel_rate_nmm
+            current_k = current_third_nmm + 2.0 * current_wheel_nmm
+            if current_k > 0:
+                comp = comp * (base_k / current_k)
+                
+        return comp
 
 
 @dataclass
