@@ -148,6 +148,7 @@ class CurrentSetup:
     brake_bias_pct: float = 0.0
     brake_bias_target: float = 0.0
     brake_bias_migration: float = 0.0
+    brake_bias_migration_gain: float = 0.0
     front_master_cyl_mm: float = 0.0
     rear_master_cyl_mm: float = 0.0
     pad_compound: str = ""
@@ -158,6 +159,19 @@ class CurrentSetup:
     tc_gain: int = 0
     tc_slip: int = 0
     fuel_l: float = 0.0
+    fuel_low_warning_l: float = 0.0
+    fuel_target_l: float = 0.0
+    gear_stack: str = ""
+    speed_in_first_kph: float = 0.0
+    speed_in_second_kph: float = 0.0
+    speed_in_third_kph: float = 0.0
+    speed_in_fourth_kph: float = 0.0
+    speed_in_fifth_kph: float = 0.0
+    speed_in_sixth_kph: float = 0.0
+    speed_in_seventh_kph: float = 0.0
+    hybrid_rear_drive_enabled: str = ""
+    hybrid_rear_drive_corner_pct: float = 0.0
+    roof_light_color: str = ""
 
     # --- iRacing-computed garage display values ---
     # These are computed by iRacing from the settable parameters above.
@@ -228,6 +242,9 @@ class CurrentSetup:
         front_diff_spec = systems.get("FrontDiffSpec", {}) or brakes.get("FrontDiffSpec", {})
         tc = systems.get("TractionControl", {}) or brakes.get("TractionControl", {})
         fuel = systems.get("Fuel", {}) or brakes.get("Fuel", {})
+        gear_ratios = systems.get("GearRatios", {}) or brakes.get("GearRatios", {})
+        hybrid_config = systems.get("HybridConfig") or brakes.get("HybridConfig") or {}
+        lighting = systems.get("Lighting", {}) or brakes.get("Lighting", {})
 
         # Ferrari puts dampers under "Dampers.LeftFrontDamper"; BMW under "Chassis.LeftFront"
         dampers = cs.get("Dampers", {})
@@ -314,7 +331,10 @@ class CurrentSetup:
             # Brakes / Diff / TC
             brake_bias_pct=_parse_float(brake_spec.get("BrakePressureBias")),
             brake_bias_target=_parse_float(brake_spec.get("BrakeBiasTarget")),
-            brake_bias_migration=_parse_float(brake_spec.get("BrakeBiasMigration")),
+            brake_bias_migration=_parse_float(
+                brake_spec.get("BrakeBiasMigration") or brake_spec.get("BiasMigration")
+            ),
+            brake_bias_migration_gain=_parse_float(brake_spec.get("BiasMigrationGain")),
             front_master_cyl_mm=_parse_float(brake_spec.get("FrontMasterCyl")),
             rear_master_cyl_mm=_parse_float(brake_spec.get("RearMasterCyl")),
             pad_compound=str(brake_spec.get("PadCompound", "") or ""),
@@ -325,6 +345,19 @@ class CurrentSetup:
             tc_gain=_parse_int(tc.get("TractionControlGain")),
             tc_slip=_parse_int(tc.get("TractionControlSlip")),
             fuel_l=_parse_float(fuel.get("FuelLevel")) or _parse_float(rear.get("FuelLevel")),
+            fuel_low_warning_l=_parse_float(fuel.get("FuelLowWarning")),
+            fuel_target_l=_parse_float(fuel.get("FuelTarget")),
+            gear_stack=str(gear_ratios.get("GearStack", "") or ""),
+            speed_in_first_kph=_parse_float(gear_ratios.get("SpeedInFirst")),
+            speed_in_second_kph=_parse_float(gear_ratios.get("SpeedInSecond")),
+            speed_in_third_kph=_parse_float(gear_ratios.get("SpeedInThird")),
+            speed_in_fourth_kph=_parse_float(gear_ratios.get("SpeedInFourth")),
+            speed_in_fifth_kph=_parse_float(gear_ratios.get("SpeedInFifth")),
+            speed_in_sixth_kph=_parse_float(gear_ratios.get("SpeedInSixth")),
+            speed_in_seventh_kph=_parse_float(gear_ratios.get("SpeedInSeventh")),
+            hybrid_rear_drive_enabled=str(hybrid_config.get("HybridRearDriveEnabled", "") or ""),
+            hybrid_rear_drive_corner_pct=_parse_float(hybrid_config.get("HybridRearDriveCornerPct")),
+            roof_light_color=str(lighting.get("RoofIdLightColor", "") or ""),
 
             # iRacing-computed display values (ground truth for calibration)
             torsion_bar_turns=_parse_float(lf.get("TorsionBarTurns")),

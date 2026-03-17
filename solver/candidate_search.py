@@ -14,6 +14,148 @@ from solver.solve_chain import (
 
 STEP6_FIELDS = ("ls_comp", "ls_rbd", "hs_comp", "hs_rbd", "hs_slope")
 
+# BMW torsion bar OD discrete options (iRacing garage)
+_TORSION_OD_OPTIONS = [13.90, 14.34, 14.76, 15.14, 15.51, 15.86, 16.19, 16.51, 16.81, 17.11, 17.39, 17.67, 17.94, 18.20]
+
+
+def _snap_nearest(value: float, options: list[float]) -> float:
+    return min(options, key=lambda x: abs(x - value))
+
+
+def _snap_step(value: float, step: float, lo: float | None = None, hi: float | None = None) -> float:
+    snapped = round(round(value / step) * step, 4)
+    if lo is not None:
+        snapped = max(lo, snapped)
+    if hi is not None:
+        snapped = min(hi, snapped)
+    return snapped
+
+
+def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> None:
+    """Snap all blended target values to valid iRacing garage increments."""
+    gr = getattr(car, "garage_ranges", None)
+    s1 = targets["step1"]
+    s2 = targets["step2"]
+    s3 = targets["step3"]
+    s5 = targets["step5"]
+    sup = targets["supporting"]
+
+    # Step 1: pushrods (0.5 mm step)
+    pushrod_step = getattr(gr, "pushrod_resolution_mm", 0.5) or 0.5
+    pushrod_lo = getattr(gr, "front_pushrod_mm", (-40.0, 40.0))[0] if gr is not None else -40.0
+    pushrod_hi = getattr(gr, "front_pushrod_mm", (-40.0, 40.0))[1] if gr is not None else 40.0
+    for f in ("front_pushrod_offset_mm", "rear_pushrod_offset_mm"):
+        if f in s1 and isinstance(s1[f], (int, float)):
+            s1[f] = _snap_step(s1[f], pushrod_step, pushrod_lo, pushrod_hi)
+
+    # Step 2: heave spring (10 N/mm), third spring (10 N/mm), perches (1 mm / 0.5 mm)
+    heave_step = getattr(gr, "heave_spring_resolution_nmm", 10.0) or 10.0
+    front_heave_range = getattr(gr, "front_heave_nmm", (0.0, 900.0)) if gr is not None else (0.0, 900.0)
+    rear_heave_range = getattr(gr, "rear_third_nmm", (0.0, 900.0)) if gr is not None else (0.0, 900.0)
+    perch_step = getattr(gr, "perch_resolution_mm", 1.0) or 1.0
+    front_perch_range = getattr(gr, "front_heave_perch_mm", (-100.0, 100.0)) if gr is not None else (-100.0, 100.0)
+    rear_perch_range = getattr(gr, "rear_third_perch_mm", (-100.0, 100.0)) if gr is not None else (-100.0, 100.0)
+    if "front_heave_nmm" in s2 and isinstance(s2["front_heave_nmm"], (int, float)):
+        s2["front_heave_nmm"] = _snap_step(s2["front_heave_nmm"], heave_step, front_heave_range[0], front_heave_range[1])
+    if "rear_third_nmm" in s2 and isinstance(s2["rear_third_nmm"], (int, float)):
+        s2["rear_third_nmm"] = _snap_step(s2["rear_third_nmm"], heave_step, rear_heave_range[0], rear_heave_range[1])
+    if "perch_offset_front_mm" in s2 and isinstance(s2["perch_offset_front_mm"], (int, float)):
+        s2["perch_offset_front_mm"] = _snap_step(s2["perch_offset_front_mm"], perch_step, front_perch_range[0], front_perch_range[1])
+    if "perch_offset_rear_mm" in s2 and isinstance(s2["perch_offset_rear_mm"], (int, float)):
+        s2["perch_offset_rear_mm"] = _snap_step(s2["perch_offset_rear_mm"], perch_step, rear_perch_range[0], rear_perch_range[1])
+
+    # Step 3: torsion OD (discrete), rear spring (5 N/mm step), rear spring perch (0.5 mm)
+    torsion_range = getattr(gr, "front_torsion_od_mm", (13.9, 18.2)) if gr is not None else (13.9, 18.2)
+    rear_spring_range = getattr(gr, "rear_spring_nmm", (100.0, 300.0)) if gr is not None else (100.0, 300.0)
+    rear_spring_step = getattr(gr, "rear_spring_resolution_nmm", 5.0) or 5.0
+    rear_spring_perch_range = getattr(gr, "rear_spring_perch_mm", (25.0, 45.0)) if gr is not None else (25.0, 45.0)
+    rear_spring_perch_step = getattr(gr, "rear_spring_perch_resolution_mm", 0.5) or 0.5
+    if "front_torsion_od_mm" in s3 and isinstance(s3["front_torsion_od_mm"], (int, float)):
+        if getattr(car, "canonical_name", "") == "ferrari":
+            s3["front_torsion_od_mm"] = _snap_step(s3["front_torsion_od_mm"], rear_spring_step, torsion_range[0], torsion_range[1])
+        else:
+            options = getattr(getattr(car, "corner_spring", None), "front_torsion_od_options", None) or _TORSION_OD_OPTIONS
+            s3["front_torsion_od_mm"] = _snap_nearest(s3["front_torsion_od_mm"], list(options))
+    if "rear_spring_rate_nmm" in s3 and isinstance(s3["rear_spring_rate_nmm"], (int, float)):
+        s3["rear_spring_rate_nmm"] = _snap_step(s3["rear_spring_rate_nmm"], rear_spring_step, rear_spring_range[0], rear_spring_range[1])
+    if "rear_spring_perch_mm" in s3 and isinstance(s3["rear_spring_perch_mm"], (int, float)):
+        s3["rear_spring_perch_mm"] = _snap_step(
+            s3["rear_spring_perch_mm"],
+            rear_spring_perch_step,
+            rear_spring_perch_range[0],
+            rear_spring_perch_range[1],
+        )
+
+    arb_range = getattr(gr, "arb_blade", (1, 5)) if gr is not None else (1, 5)
+    for field in ("front_arb_blade_start", "rarb_blade_slow_corner", "rarb_blade_fast_corner", "rear_arb_blade_start", "farb_blade_locked"):
+        target = targets["step4"]
+        if field in target and isinstance(target[field], (int, float)):
+            target[field] = int(round(_clamp(float(target[field]), arb_range[0], arb_range[1])))
+
+    # Step 5: camber (0.1 deg step), toe (0.5 mm step)
+    camber_front = getattr(gr, "camber_front_deg", (-5.0, 0.0)) if gr is not None else (-5.0, 0.0)
+    camber_rear = getattr(gr, "camber_rear_deg", (-4.0, 0.0)) if gr is not None else (-4.0, 0.0)
+    toe_front = getattr(gr, "toe_front_mm", (-3.0, 3.0)) if gr is not None else (-3.0, 3.0)
+    toe_rear = getattr(gr, "toe_rear_mm", (-2.0, 3.0)) if gr is not None else (-2.0, 3.0)
+    for f in ("front_camber_deg", "rear_camber_deg"):
+        if f in s5 and isinstance(s5[f], (int, float)):
+            limits = camber_front if "front" in f else camber_rear
+            s5[f] = round(_clamp(round(round(s5[f] / 0.1) * 0.1, 1), limits[0], limits[1]), 1)
+    for f in ("front_toe_mm", "rear_toe_mm"):
+        if f in s5 and isinstance(s5[f], (int, float)):
+            limits = toe_front if "front" in f else toe_rear
+            s5[f] = _snap_step(s5[f], 0.1, limits[0], limits[1])
+
+    # Supporting: diff preload (5 Nm), TC (integer), brake bias (0.1%)
+    if "diff_preload_nm" in sup and isinstance(sup["diff_preload_nm"], (int, float)):
+        diff_range = getattr(gr, "diff_preload_nm", (0.0, 150.0)) if gr is not None else (0.0, 150.0)
+        diff_step = getattr(gr, "diff_preload_step_nm", 5.0) or 5.0
+        sup["diff_preload_nm"] = _snap_step(sup["diff_preload_nm"], diff_step, diff_range[0], diff_range[1])
+    for f in ("tc_gain", "tc_slip"):
+        if f in sup and isinstance(sup[f], (int, float)):
+            sup[f] = int(round(max(1, min(10, sup[f]))))
+    if "brake_bias_pct" in sup and isinstance(sup["brake_bias_pct"], (int, float)):
+        sup["brake_bias_pct"] = round(sup["brake_bias_pct"], 1)
+
+
+def _cluster_center_issues(car: Any | None, setup_cluster: Any | None) -> list[str]:
+    center = getattr(setup_cluster, "center", {}) or {}
+    if not center:
+        return ["setup cluster has no center"]
+    if car is None:
+        return []
+    gr = getattr(car, "garage_ranges", None)
+    issues: list[str] = []
+    checks = [
+        ("front_pushrod_mm", getattr(gr, "front_pushrod_mm", None)),
+        ("rear_pushrod_mm", getattr(gr, "rear_pushrod_mm", None)),
+        ("front_heave_nmm", getattr(gr, "front_heave_nmm", None)),
+        ("rear_third_nmm", getattr(gr, "rear_third_nmm", None)),
+        ("front_torsion_od_mm", getattr(gr, "front_torsion_od_mm", None)),
+        ("rear_spring_nmm", getattr(gr, "rear_spring_nmm", None)),
+        ("front_arb_blade", getattr(gr, "arb_blade", None)),
+        ("rear_arb_blade", getattr(gr, "arb_blade", None)),
+        ("front_camber_deg", getattr(gr, "camber_front_deg", None)),
+        ("rear_camber_deg", getattr(gr, "camber_rear_deg", None)),
+        ("front_toe_mm", getattr(gr, "toe_front_mm", None)),
+        ("rear_toe_mm", getattr(gr, "toe_rear_mm", None)),
+        ("diff_preload_nm", getattr(gr, "diff_preload_nm", None)),
+    ]
+    for key, limits in checks:
+        value = _safe_float(center.get(key))
+        if value is None or limits is None:
+            continue
+        if value < float(limits[0]) or value > float(limits[1]):
+            issues.append(f"{key} center {value:.3f} is outside legal range {limits}")
+    brake_bias = _safe_float(center.get("brake_bias_pct"))
+    baseline_bias = _safe_float(getattr(car, "brake_bias_pct", None))
+    if brake_bias is not None and baseline_bias is not None:
+        if brake_bias < baseline_bias - 10.0 or brake_bias > baseline_bias + 10.0:
+            issues.append(
+                f"brake_bias_pct center {brake_bias:.3f} is implausible for {getattr(car, 'canonical_name', 'car')}"
+            )
+    return issues
+
 
 @dataclass
 class SetupCandidate:
@@ -481,9 +623,27 @@ def generate_candidate_families(
         "compromise": 0.0,
         "baseline_reset": 0.02 if overhaul_class == "minor_tweak" and envelope_distance < 1.5 else 0.0,
     }
+    car = getattr(solve_inputs, "car", None)
 
     candidates: list[SetupCandidate] = []
     for family in ("incremental", "compromise", "baseline_reset"):
+        if family == "baseline_reset" and setup_cluster is not None:
+            cluster_issues = _cluster_center_issues(car, setup_cluster)
+            if cluster_issues:
+                candidate = SetupCandidate(
+                    family=family,
+                    description=family_descriptions[family],
+                    selectable=False,
+                    status="blocked",
+                    failure_reason="; ".join(cluster_issues),
+                    notes=[
+                        f"Authority session: {getattr(authority_session, 'label', 'unknown')}",
+                        f"Best session: {getattr(best_session, 'label', 'unknown')}",
+                        "Baseline-reset cluster blocked before materialization.",
+                    ] + cluster_issues,
+                )
+                candidates.append(candidate)
+                continue
         targets = _extract_target_maps(base_result)
         _blend_toward_authority_setup(targets, authority_session, family)
         cluster_seeded = family == "baseline_reset" and setup_cluster is not None
@@ -498,6 +658,7 @@ def generate_candidate_families(
             setup_distance=setup_distance,
             cluster_seeded=cluster_seeded,
         )
+        _snap_targets_to_garage(targets, car)
         overrides = _target_overrides(base_result, targets)
         candidate = SetupCandidate(
             family=family,

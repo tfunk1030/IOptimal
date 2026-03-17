@@ -319,6 +319,31 @@ python track_model/build_profile.py session.ibt -o data/tracks/sebring.json
 
 ---
 
+### 8. Web App
+
+Local-first FastAPI UI for the existing solver stack. App metadata is stored in SQLite, while uploads and generated artifacts are kept in your local app-data directory.
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m webapp
+```
+
+Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+**Default local storage:**
+
+- Windows: `%LOCALAPPDATA%\IOptimal`
+- Override path: set `IOPTIMAL_APP_DATA_DIR`
+
+**Main views:**
+
+- `New Run` — single-session solve, multi-session compare, and track-only solve
+- `Sessions` — run history backed by SQLite metadata
+- `Compare` — recent comparison runs
+- `Knowledge` — learner summaries without manually opening JSON files
+
+---
+
 ## Typical Workflows
 
 ### First time at a new track

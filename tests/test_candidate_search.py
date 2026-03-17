@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from aero_model import load_car_surfaces
 from car_model.cars import get_car
+from learner.setup_clusters import SetupCluster
 from solver.candidate_ranker import score_from_prediction
 from solver.candidate_search import generate_candidate_families
 from solver.solve_chain import SolveChainInputs, SolveChainOverrides, SolveChainResult, materialize_overrides, run_base_solve
@@ -302,6 +303,33 @@ class CandidateSearchTests(unittest.TestCase):
         self.assertTrue(all(not candidate.selectable for candidate in candidates))
         self.assertTrue(all(candidate.status == "illegal" for candidate in candidates))
         self.assertFalse(any(candidate.selected for candidate in candidates))
+
+    def test_ferrari_baseline_reset_candidate_is_blocked_for_implausible_cluster_center(self) -> None:
+        ferrari_cluster = SetupCluster(
+            center={"brake_bias_pct": 15.0},
+            spreads={},
+            member_sessions=["S1", "S2"],
+            label="polluted ferrari cluster",
+        )
+        ferrari_inputs = SimpleNamespace(car=get_car("ferrari"))
+
+        with patch("solver.candidate_search.materialize_overrides", return_value=self.base_result):
+            candidates = generate_candidate_families(
+                authority_session=self.authority_session,
+                best_session=self.authority_session,
+                overhaul_assessment=SimpleNamespace(classification="baseline_reset", confidence=0.82),
+                authority_score={"score": 0.75},
+                envelope_distance=2.0,
+                setup_distance=1.8,
+                base_result=self.base_result,
+                solve_inputs=ferrari_inputs,
+                setup_cluster=ferrari_cluster,
+            )
+
+        blocked = next(candidate for candidate in candidates if candidate.family == "baseline_reset")
+        self.assertFalse(blocked.selectable)
+        self.assertEqual(blocked.status, "blocked")
+        self.assertIn("brake_bias_pct center 15.000 is implausible for ferrari", blocked.failure_reason)
 
     def test_signed_understeer_scoring_rewards_move_toward_zero(self) -> None:
         baseline = SimpleNamespace(

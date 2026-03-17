@@ -236,9 +236,14 @@ class GarageOutputModel:
         )
 
     def predict_front_static_rh(self, setup: GarageSetupState) -> float:
-        """Predict front static ride height and enforce the garage floor."""
-        raw = self.predict_front_static_rh_raw(setup)
-        return max(self.front_rh_floor_mm, raw)
+        """Predict front static ride height.
+
+        Returns the raw prediction without floor clamping so that downstream
+        code can detect when a setup combination would produce a sub-legal
+        ride height.  Callers that need the floor-clamped value should use
+        ``max(model.front_rh_floor_mm, prediction)`` explicitly.
+        """
+        return self.predict_front_static_rh_raw(setup)
 
     def predict_rear_static_rh(self, setup: GarageSetupState) -> float:
         """Predict rear static ride height."""

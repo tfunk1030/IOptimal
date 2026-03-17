@@ -3,3 +3,8 @@ scipy
 openpyxl
 pyyaml
 pytest
+fastapi
+jinja2
+python-multipart
+uvicorn
+httpx

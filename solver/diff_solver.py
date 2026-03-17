@@ -202,7 +202,8 @@ class DiffSolver:
         Returns:
             DiffSolution with recommended preload, ramps, and full reasoning
         """
-        preload_nm, preload_reasoning = self._compute_preload(driver, measured, track)
+        preload_nm_raw, preload_reasoning = self._compute_preload(driver, measured, track)
+        preload_nm = round(preload_nm_raw / 5) * 5  # iRacing garage: 5 Nm increments
         coast_ramp, drive_ramp, ramp_reasoning = self._compute_ramps(driver)
 
         clutch_plates = current_clutch_plates or BMW_DEFAULT_CLUTCH_PLATES
@@ -234,7 +235,7 @@ class DiffSolver:
             lock_pct_drive=round(lock_pct_drive, 1),
             preload_contribution_pct=round(preload_component, 1),
             plate_contribution_pct=round(plate_component, 1),
-            preload_nm=round(preload_nm / 5) * 5,  # iRacing garage: 5 Nm increments
+            preload_nm=preload_nm,
             coast_ramp_deg=coast_ramp,
             drive_ramp_deg=drive_ramp,
             clutch_plates=clutch_plates,

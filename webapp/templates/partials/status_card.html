@@ -1,0 +1,30 @@
+<section id="status-card" class="panel status-panel">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Run {{ run_id[:8] }}</p>
+      <h2>{{ run.mode.replace('_', ' ')|title }}</h2>
+    </div>
+    <span class="status-pill status-{{ run.state }}">{{ run.state|title }}</span>
+  </div>
+  <div class="status-grid">
+    <div>
+      <strong>Phase</strong>
+      <p>{{ run.phase }}</p>
+    </div>
+    <div>
+      <strong>Created</strong>
+      <p>{{ run.created_at }}</p>
+    </div>
+    <div>
+      <strong>Started</strong>
+      <p>{{ run.started_at or 'Waiting for worker' }}</p>
+    </div>
+    <div>
+      <strong>Finished</strong>
+      <p>{{ run.finished_at or 'Still running' }}</p>
+    </div>
+  </div>
+  {% if run.error %}
+    <div class="banner banner-error">{{ run.error }}</div>
+  {% endif %}
+</section>

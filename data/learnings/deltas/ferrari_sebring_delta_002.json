@@ -5,11 +5,11 @@
   "track": "Sebring International Raceway",
   "setup_changes": [
     {
-      "parameter": "front_rh_static",
-      "before": 30.5,
-      "after": 30.1,
-      "delta": -0.3999999999999986,
-      "step_group": "step1_rake",
+      "parameter": "hybrid_rear_drive_corner_pct",
+      "before": 80.0,
+      "after": 90.0,
+      "delta": 10.0,
+      "step_group": "other",
       "significance": "minor"
     },
     {
@@ -19,222 +19,171 @@
       "delta": -0.3999999999999986,
       "step_group": "step1_rake",
       "significance": "minor"
+    },
+    {
+      "parameter": "rear_pushrod",
+      "before": 12.5,
+      "after": 12.0,
+      "delta": -0.5,
+      "step_group": "step1_rake",
+      "significance": "minor"
+    },
+    {
+      "parameter": "brake_bias_pct",
+      "before": 56.5,
+      "after": 55.0,
+      "delta": -1.5,
+      "step_group": "other",
+      "significance": "major"
+    },
+    {
+      "parameter": "front_pushrod",
+      "before": -2.5,
+      "after": -3.0,
+      "delta": -0.5,
+      "step_group": "step1_rake",
+      "significance": "minor"
+    },
+    {
+      "parameter": "front_rh_static",
+      "before": 30.5,
+      "after": 30.1,
+      "delta": -0.3999999999999986,
+      "step_group": "step1_rake",
+      "significance": "minor"
     }
   ],
   "telemetry_effects": [
     {
       "metric": "front_rh_std_mm",
       "category": "platform",
-      "before": 4.402283191680908,
+      "before": 4.615478038787842,
       "after": 5.256772041320801,
-      "delta": 0.8545,
-      "pct_change": 19.4,
+      "delta": 0.6413,
+      "pct_change": 13.9,
       "significance": "moderate"
+    },
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.11308316141366959,
+      "after": 0.10853761434555054,
+      "delta": -0.0045,
+      "pct_change": -4.0,
+      "significance": "small"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.1236070916056633,
+      "after": 0.11681999266147614,
+      "delta": -0.0068,
+      "pct_change": -5.5,
+      "significance": "moderate"
+    },
+    {
+      "metric": "heave_bottoming_events_rear",
+      "category": "platform",
+      "before": 8.0,
+      "after": 18.0,
+      "delta": 10.0,
+      "pct_change": 125.0,
+      "significance": "large"
     },
     {
       "metric": "understeer_high_speed_deg",
       "category": "balance",
-      "before": 0.07995729148387909,
+      "before": 0.13193948566913605,
       "after": 0.1303151249885559,
-      "delta": 0.0504,
-      "pct_change": 63.0,
-      "significance": "large"
+      "delta": -0.0016,
+      "pct_change": -1.2,
+      "significance": "small"
     },
     {
       "metric": "understeer_low_speed_deg",
       "category": "balance",
-      "before": 0.04246969521045685,
+      "before": 0.07862503826618195,
       "after": 0.11603416502475739,
-      "delta": 0.0736,
-      "pct_change": 173.2,
+      "delta": 0.0374,
+      "pct_change": 47.6,
       "significance": "large"
     },
     {
       "metric": "body_slip_p95_deg",
       "category": "balance",
-      "before": 3.3405840396881104,
+      "before": 3.347555160522461,
       "after": 3.7701783180236816,
-      "delta": 0.4296,
-      "pct_change": 12.9,
+      "delta": 0.4226,
+      "pct_change": 12.6,
       "significance": "moderate"
     },
     {
       "metric": "dynamic_front_rh_mm",
       "category": "aero",
-      "before": 21.87973403930664,
+      "before": 22.484941482543945,
       "after": 22.22051429748535,
-      "delta": 0.3408,
-      "pct_change": 1.6,
+      "delta": -0.2644,
+      "pct_change": -1.2,
+      "significance": "small"
+    },
+    {
+      "metric": "dynamic_rear_rh_mm",
+      "category": "aero",
+      "before": 30.49335479736328,
+      "after": 29.92179298400879,
+      "delta": -0.5716,
+      "pct_change": -1.9,
       "significance": "small"
     },
     {
       "metric": "front_dominant_freq_hz",
       "category": "damper",
-      "before": 2.14,
+      "before": 4.82,
       "after": 2.93,
-      "delta": 0.79,
-      "pct_change": 36.9,
+      "delta": -1.89,
+      "pct_change": -39.2,
       "significance": "large"
     },
     {
       "metric": "rear_dominant_freq_hz",
       "category": "damper",
-      "before": 5.0,
+      "before": 4.82,
       "after": 4.88,
-      "delta": -0.12,
-      "pct_change": -2.4,
+      "delta": 0.06,
+      "pct_change": 1.2,
       "significance": "small"
     }
   ],
   "hypotheses": [
     {
-      "cause_param": "front_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "front_rh_std_mm",
-      "effect_delta": 0.8545,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "front_rh_static - -> observed front_rh_std_mm + (no known causal link)",
+      "cause_param": "rear_pushrod",
+      "cause_delta": -0.5,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": -0.5716,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "rear_pushrod - -> expected dynamic_rear_rh_mm -, observed -",
       "corroborated_by": 0
     },
     {
-      "cause_param": "front_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "understeer_high_speed_deg",
-      "effect_delta": 0.0504,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "front_rh_static - -> observed understeer_high_speed_deg + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "front_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "understeer_low_speed_deg",
-      "effect_delta": 0.0736,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "front_rh_static - -> observed understeer_low_speed_deg + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "front_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "body_slip_p95_deg",
-      "effect_delta": 0.4296,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "front_rh_static - -> observed body_slip_p95_deg + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "front_rh_static",
-      "cause_delta": -0.3999999999999986,
+      "cause_param": "front_pushrod",
+      "cause_delta": -0.5,
       "effect_metric": "dynamic_front_rh_mm",
-      "effect_delta": 0.3408,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "front_rh_static - -> observed dynamic_front_rh_mm + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "front_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "front_dominant_freq_hz",
-      "effect_delta": 0.79,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "front_rh_static - -> observed front_dominant_freq_hz + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "front_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "rear_dominant_freq_hz",
-      "effect_delta": -0.12,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "front_rh_static - -> observed rear_dominant_freq_hz - (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "rear_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "front_rh_std_mm",
-      "effect_delta": 0.8545,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "rear_rh_static - -> observed front_rh_std_mm + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "rear_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "understeer_high_speed_deg",
-      "effect_delta": 0.0504,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "rear_rh_static - -> observed understeer_high_speed_deg + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "rear_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "understeer_low_speed_deg",
-      "effect_delta": 0.0736,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "rear_rh_static - -> observed understeer_low_speed_deg + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "rear_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "body_slip_p95_deg",
-      "effect_delta": 0.4296,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "rear_rh_static - -> observed body_slip_p95_deg + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "rear_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "dynamic_front_rh_mm",
-      "effect_delta": 0.3408,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "rear_rh_static - -> observed dynamic_front_rh_mm + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "rear_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "front_dominant_freq_hz",
-      "effect_delta": 0.79,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "rear_rh_static - -> observed front_dominant_freq_hz + (no known causal link)",
-      "corroborated_by": 0
-    },
-    {
-      "cause_param": "rear_rh_static",
-      "cause_delta": -0.3999999999999986,
-      "effect_metric": "rear_dominant_freq_hz",
-      "effect_delta": -0.12,
-      "direction_match": false,
-      "confidence": 0.2,
-      "mechanism": "rear_rh_static - -> observed rear_dominant_freq_hz - (no known causal link)",
+      "effect_delta": -0.2644,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "front_pushrod - -> expected dynamic_front_rh_mm -, observed -",
       "corroborated_by": 0
     }
   ],
-  "num_setup_changes": 2,
-  "controlled_experiment": true,
+  "num_setup_changes": 6,
+  "controlled_experiment": false,
   "changed_steps": [
+    "other",
     "step1_rake"
   ],
-  "lap_time_delta_s": 45.62,
+  "lap_time_delta_s": -1.229,
   "driver_style_changed": false,
-  "key_finding": "Changed front_rh_static: -0.3999999999999986, rear_rh_static: -0.3999999999999986 (45.620s slower); effects: understeer_high_speed_deg +0.05, understeer_low_speed_deg +0.07, front_dominant_freq_hz +0.79 [high confidence]",
-  "confidence_level": "high"
+  "key_finding": "Changed brake_bias_pct: -1.5 (1.229s faster); effects: heave_bottoming_events_rear +10.00, understeer_low_speed_deg +0.04, front_dominant_freq_hz -1.89 [low confidence]",
+  "confidence_level": "low"
 }

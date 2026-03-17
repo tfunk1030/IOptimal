@@ -171,6 +171,11 @@ class MeasuredState:
     brake_bias_adjustments: int = 0              # Number of bias changes during session
     tc_adjustments: int = 0                      # Number of TC changes during session
     brake_bias_range: tuple[float, float] = (0.0, 0.0)  # Min/max bias values used
+    live_brake_bias_pct: float | None = None
+    live_tc_gain: int | None = None
+    live_tc_slip: int | None = None
+    live_front_arb_blade: int | None = None
+    live_rear_arb_blade: int | None = None
 
     # --- Fuel and weight ---
     fuel_level_at_measurement_l: float = 0.0     # Fuel level during analyzed lap
@@ -1569,12 +1574,31 @@ def _extract_in_car_adjustments(
             changes = np.sum(np.abs(np.diff(bias)) > 0.001)
             state.brake_bias_adjustments = int(changes)
             state.brake_bias_range = (round(float(np.min(bias)), 2), round(float(np.max(bias)), 2))
+            if float(np.max(bias) - np.min(bias)) <= 0.25:
+                state.live_brake_bias_pct = round(float(np.median(bias)), 1)
 
     if ibt.has_channel("dcTractionControl"):
         tc = ibt.channel("dcTractionControl")
         if tc is not None and len(tc) > 100:
             changes = np.sum(np.abs(np.diff(tc)) > 0.001)
             state.tc_adjustments = int(changes)
+            if float(np.max(tc) - np.min(tc)) <= 0.1:
+                state.live_tc_slip = int(round(float(np.median(tc))))
+
+    if ibt.has_channel("dcTractionControl2"):
+        tc2 = ibt.channel("dcTractionControl2")
+        if tc2 is not None and len(tc2) > 100 and float(np.max(tc2) - np.min(tc2)) <= 0.1:
+            state.live_tc_gain = int(round(float(np.median(tc2))))
+
+    if ibt.has_channel("dcAntiRollFront"):
+        arb_front = ibt.channel("dcAntiRollFront")
+        if arb_front is not None and len(arb_front) > 100 and float(np.max(arb_front) - np.min(arb_front)) <= 0.1:
+            state.live_front_arb_blade = int(round(float(np.median(arb_front))))
+
+    if ibt.has_channel("dcAntiRollRear"):
+        arb_rear = ibt.channel("dcAntiRollRear")
+        if arb_rear is not None and len(arb_rear) > 100 and float(np.max(arb_rear) - np.min(arb_rear)) <= 0.1:
+            state.live_rear_arb_blade = int(round(float(np.median(arb_rear))))
 
 
 def _extract_fuel(

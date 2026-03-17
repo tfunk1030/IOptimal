@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Run history</p>
+    <h1>Recent sessions and solver runs.</h1>
+    <p class="lede">SQLite stores the app metadata while the generated artifacts stay on disk in local app storage.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Mode</th>
+          <th>Car</th>
+          <th>Track</th>
+          <th>State</th>
+          <th>Phase</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+          <tr>
+            <td><a href="/runs/{{ run.id }}">{{ run.mode.replace('_', ' ')|title }}</a></td>
+            <td>{{ run.car or '-' }}</td>
+            <td>{{ run.track or '-' }}</td>
+            <td>{{ run.state|title }}</td>
+            <td>{{ run.phase }}</td>
+            <td>{{ run.created_at }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

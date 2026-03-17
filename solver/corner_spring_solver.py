@@ -268,6 +268,10 @@ class CornerSpringSolver:
     ) -> CornerSpringSolution:
         """Build a corner-spring solution from explicit garage selections."""
         csm = self.car.corner_spring
+        # Snap torsion OD to discrete garage option
+        front_torsion_od_mm = csm.snap_torsion_od(front_torsion_od_mm)
+        # Snap rear spring to garage step
+        rear_spring_rate_nmm = csm.snap_rear_rate(rear_spring_rate_nmm)
         total_mass = self.car.total_mass(fuel_load_l)
         m_f_corner = total_mass * self.car.weight_dist_front / 2
         m_r_corner = total_mass * (1 - self.car.weight_dist_front) / 2
