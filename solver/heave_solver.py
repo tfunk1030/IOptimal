@@ -1000,6 +1000,44 @@ class HeaveSolver:
             garage_constraint_notes=garage_constraint_notes,
         )
 
+    def solution_from_explicit_settings(
+        self,
+        *,
+        dynamic_front_rh_mm: float,
+        dynamic_rear_rh_mm: float,
+        front_heave_nmm: float,
+        rear_third_nmm: float,
+        front_heave_perch_mm: float | None = None,
+        rear_third_perch_mm: float | None = None,
+        front_pushrod_mm: float | None = None,
+        rear_pushrod_mm: float | None = None,
+        front_torsion_od_mm: float | None = None,
+        rear_spring_nmm: float | None = None,
+        rear_spring_perch_mm: float | None = None,
+        fuel_load_l: float = 0.0,
+        front_camber_deg: float | None = None,
+        front_hs_damper_nsm: float | None = None,
+        rear_hs_damper_nsm: float | None = None,
+    ) -> HeaveSolution:
+        """Materialize Step 2 from explicit rates/perches while recomputing margins."""
+        return self.solve(
+            dynamic_front_rh_mm=dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=dynamic_rear_rh_mm,
+            front_heave_floor_nmm=float(front_heave_nmm),
+            rear_third_floor_nmm=float(rear_third_nmm),
+            front_heave_perch_target_mm=front_heave_perch_mm,
+            front_pushrod_mm=front_pushrod_mm,
+            rear_pushrod_mm=rear_pushrod_mm,
+            front_torsion_od_mm=front_torsion_od_mm,
+            rear_spring_nmm=rear_spring_nmm,
+            rear_spring_perch_mm=rear_spring_perch_mm,
+            rear_third_perch_mm=rear_third_perch_mm,
+            fuel_load_l=fuel_load_l,
+            front_camber_deg=front_camber_deg,
+            front_hs_damper_nsm=front_hs_damper_nsm,
+            rear_hs_damper_nsm=rear_hs_damper_nsm,
+        )
+
     def reconcile_solution(
         self,
         step1,

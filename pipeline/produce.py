@@ -18,6 +18,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from aero_model import load_car_surfaces
 from aero_model.gradient import compute_gradients
@@ -31,6 +32,7 @@ from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
+from solver.candidate_search import candidate_to_dict, generate_candidate_families
 from solver.arb_solver import ARBSolver
 from solver.corner_spring_solver import CornerSpringSolver
 from solver.damper_solver import DamperSolver
@@ -44,6 +46,7 @@ from solver.wheel_geometry_solver import WheelGeometrySolver
 from solver.decision_trace import build_parameter_decisions
 from solver.full_setup_optimizer import optimize_if_supported
 from solver.legality_engine import validate_solution_legality
+from solver.solve_chain import SolveChainInputs, run_base_solve
 from track_model.build_profile import build_profile
 from track_model.ibt_parser import IBTFile
 
@@ -484,6 +487,36 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             print(step6.summary())
 
     # ── Phase H.5: Multi-solve stint compromise (if --stint) ──
+    solve_inputs = SolveChainInputs(
+        car=car,
+        surface=surface,
+        track=track,
+        measured=measured,
+        driver=driver,
+        diagnosis=diagnosis,
+        current_setup=current_setup,
+        target_balance=target_balance,
+        fuel_load_l=fuel,
+        wing_angle=wing,
+        modifiers=modifiers,
+        prediction_corrections={},
+        balance_tolerance=args.tolerance,
+        pin_front_min=not args.free,
+        legacy_solver=getattr(args, "legacy_solver", False),
+        camber_confidence=_camber_conf,
+    )
+    base_solve_result = run_base_solve(solve_inputs)
+    step1 = base_solve_result.step1
+    step2 = base_solve_result.step2
+    step3 = base_solve_result.step3
+    step4 = base_solve_result.step4
+    step5 = base_solve_result.step5
+    step6 = base_solve_result.step6
+    supporting = base_solve_result.supporting
+    legal_validation = base_solve_result.legal_validation
+    decision_trace = base_solve_result.decision_trace
+    solve_notes = list(base_solve_result.notes)
+
     stint_compromise_info: list[str] = []
     if stint_evolution is not None and stint_evolution.qualifying_lap_count >= 3:
         log("\nRunning multi-solve stint compromise (start/mid/end)...")
@@ -592,15 +625,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
 
     # ── Phase I: Compute supporting params ──
     log("\nComputing supporting parameters...")
-    supporting_solver = SupportingSolver(
-        car,
-        driver,
-        measured,
-        diagnosis,
-        track=track,
-        current_setup=current_setup,
-    )
-    supporting = supporting_solver.solve()
+    supporting = base_solve_result.supporting
     log(f"  {supporting.summary()}")
 
     # ── Phase I.5: Stint analysis ──
@@ -676,6 +701,80 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         # Geometry, dampers, brake/diff/TC — solver computes from telemetry
 
     # ── Phase J: Output ──
+    legal_validation = validate_solution_legality(
+        car=car,
+        track_name=track.track_name,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        fuel_l=fuel,
+        step5=step5,
+    )
+    decision_trace = build_parameter_decisions(
+        car_name=car.canonical_name,
+        current_setup=current_setup,
+        measured=measured,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+        supporting=supporting,
+        legality=legal_validation,
+        fallback_reasons=list(getattr(measured, "fallback_reasons", []) or []),
+    )
+
+    base_solve_result.step1 = step1
+    base_solve_result.step2 = step2
+    base_solve_result.step3 = step3
+    base_solve_result.step4 = step4
+    base_solve_result.step5 = step5
+    base_solve_result.step6 = step6
+    base_solve_result.supporting = supporting
+    base_solve_result.legal_validation = legal_validation
+    base_solve_result.decision_trace = decision_trace
+
+    single_session = SimpleNamespace(
+        label="S1",
+        setup=current_setup,
+        measured=measured,
+        driver=driver,
+        diagnosis=diagnosis,
+    )
+    generated_candidates = generate_candidate_families(
+        authority_session=single_session,
+        best_session=single_session,
+        overhaul_assessment=getattr(diagnosis, "overhaul_assessment", None),
+        authority_score={"session": "S1", "score": 0.75},
+        envelope_distance=0.0,
+        setup_distance=0.0,
+        base_result=base_solve_result,
+        solve_inputs=solve_inputs,
+        setup_cluster=None,
+    )
+    selected_candidate = next((candidate for candidate in generated_candidates if candidate.selected), None)
+    selected_candidate_applied = False
+    if selected_candidate is not None:
+        solve_notes.append(
+            f"Candidate family selected: {selected_candidate.family} "
+            f"(score {selected_candidate.score.total if selected_candidate.score else 0.0:.3f})"
+        )
+        if selected_candidate.selectable and selected_candidate.result is not None:
+            selected_candidate_applied = True
+            step1 = selected_candidate.result.step1
+            step2 = selected_candidate.result.step2
+            step3 = selected_candidate.result.step3
+            step4 = selected_candidate.result.step4
+            step5 = selected_candidate.result.step5
+            step6 = selected_candidate.result.step6
+            supporting = selected_candidate.result.supporting
+            legal_validation = selected_candidate.result.legal_validation
+            decision_trace = selected_candidate.result.decision_trace
+            solve_notes.append(
+                f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
+            )
+
     if args.sto:
         # Final garage correlation check before writing .sto
         from output.garage_validator import validate_and_fix_garage_correlation
@@ -748,9 +847,19 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             "lap_number": measured.lap_number,
             "driver_style": driver.style,
             "assessment": diagnosis.assessment,
-            "candidate_family_selection": "single-session pipeline uses direct solver path; candidate-family selection lives in pipeline.reason",
             "signal_quality_summary": summarize_signal_quality(measured),
             "telemetry_bundle": measured.telemetry_bundle,
+            "generated_candidates": [candidate_to_dict(candidate) for candidate in generated_candidates],
+            "selected_candidate_family": getattr(selected_candidate, "family", None),
+            "selected_candidate_score": (
+                selected_candidate.score.total
+                if selected_candidate is not None and selected_candidate.score is not None
+                else None
+            ),
+            "selected_candidate_applied": selected_candidate_applied,
+            "legal_validation": legal_validation.to_dict() if legal_validation is not None else None,
+            "decision_trace": [decision.to_dict() for decision in decision_trace],
+            "solver_notes": solve_notes,
             "step1_rake": dataclasses.asdict(step1),
             "step2_heave": dataclasses.asdict(step2),
             "step3_corner": dataclasses.asdict(step3),
@@ -788,6 +897,13 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         stint_evolution=stint_evolution,
         stint_compromise_info=stint_compromise_info,
         prediction_corrections={},
+        selected_candidate_family=getattr(selected_candidate, "family", None),
+        selected_candidate_score=(
+            selected_candidate.score.total
+            if selected_candidate is not None and selected_candidate.score is not None
+            else None
+        ),
+        solve_context_lines=solve_notes,
         compact=quiet,
     )
     print(report)
@@ -807,6 +923,17 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             "step5": step5,
             "step6": step6,
             "supporting": supporting,
+            "generated_candidates": generated_candidates,
+            "selected_candidate_family": getattr(selected_candidate, "family", None),
+            "selected_candidate_score": (
+                selected_candidate.score.total
+                if selected_candidate is not None and selected_candidate.score is not None
+                else None
+            ),
+            "selected_candidate_applied": selected_candidate_applied,
+            "legal_validation": legal_validation,
+            "decision_trace": decision_trace,
+            "solver_notes": solve_notes,
         }
 
     # ── Phase L: Auto-learn (default: on, --no-learn disables) ──

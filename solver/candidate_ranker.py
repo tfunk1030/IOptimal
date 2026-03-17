@@ -29,6 +29,21 @@ def _improvement(before: float | None, after: float | None, *, lower_better: boo
     return max(0.0, min(1.0, 0.5 + delta / max(scale, 1e-6)))
 
 
+def _target_distance_improvement(
+    before: float | None,
+    after: float | None,
+    *,
+    target: float = 0.0,
+    scale: float = 1.0,
+) -> float:
+    if before is None or after is None:
+        return 0.5
+    before_distance = abs(before - target)
+    after_distance = abs(after - target)
+    delta = before_distance - after_distance
+    return max(0.0, min(1.0, 0.5 + delta / max(scale, 1e-6)))
+
+
 def combine_candidate_score(
     *,
     safety: float,
@@ -96,8 +111,18 @@ def score_from_prediction(
         + _improvement(_safe(getattr(baseline_measured, "body_slip_p95_deg", None)), _safe(getattr(predicted, "body_slip_p95_deg", None)), lower_better=True, scale=2.0)
     ) / 2.0
     performance = (
-        _improvement(_safe(getattr(baseline_measured, "understeer_low_speed_deg", None)), _safe(getattr(predicted, "understeer_low_deg", None)), lower_better=True, scale=1.0)
-        + _improvement(_safe(getattr(baseline_measured, "understeer_high_speed_deg", None)), _safe(getattr(predicted, "understeer_high_deg", None)), lower_better=True, scale=1.0)
+        _target_distance_improvement(
+            _safe(getattr(baseline_measured, "understeer_low_speed_deg", None)),
+            _safe(getattr(predicted, "understeer_low_deg", None)),
+            target=0.0,
+            scale=1.0,
+        )
+        + _target_distance_improvement(
+            _safe(getattr(baseline_measured, "understeer_high_speed_deg", None)),
+            _safe(getattr(predicted, "understeer_high_deg", None)),
+            target=0.0,
+            scale=1.0,
+        )
         + _improvement(_safe(getattr(baseline_measured, "rear_power_slip_ratio_p95", None)), _safe(getattr(predicted, "rear_power_slip_p95", None)), lower_better=True, scale=0.05)
     ) / 3.0
     confidence_score = max(0.0, min(1.0, prediction_confidence))
