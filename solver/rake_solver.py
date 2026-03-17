@@ -390,6 +390,130 @@ class RakeSolver:
                 target_balance, balance_tolerance, front_excursion_p99, fuel_load_l
             )
 
+    def solution_from_explicit_offsets(
+        self,
+        *,
+        target_balance: float,
+        fuel_load_l: float,
+        front_pushrod_offset_mm: float | None = None,
+        rear_pushrod_offset_mm: float | None = None,
+        static_front_rh_mm: float | None = None,
+        static_rear_rh_mm: float | None = None,
+    ) -> RakeSolution:
+        """Build a Step 1 solution from explicit garage ride-height controls."""
+        comp = self.car.aero_compression
+        track_speed = self.track.median_speed_kph if self.track.median_speed_kph > 0 else comp.ref_speed_kph
+        front_comp = comp.front_at_speed(track_speed)
+        rear_comp = comp.rear_at_speed(track_speed)
+        garage_model = self.car.active_garage_output_model(self.track.track_name)
+
+        if garage_model is not None:
+            baseline = garage_model.default_state(fuel_l=fuel_load_l)
+            baseline_outputs = garage_model.predict(baseline)
+            front_pushrod = (
+                round(float(front_pushrod_offset_mm) * 2.0) / 2.0
+                if front_pushrod_offset_mm is not None
+                else round(
+                    garage_model.front_pushrod_for_static_rh(
+                        float(static_front_rh_mm if static_front_rh_mm is not None else baseline_outputs.front_static_rh_mm),
+                        front_heave_nmm=baseline.front_heave_nmm,
+                        front_heave_perch_mm=baseline.front_heave_perch_mm,
+                        front_torsion_od_mm=baseline.front_torsion_od_mm,
+                        front_camber_deg=baseline.front_camber_deg,
+                        fuel_l=fuel_load_l,
+                    ) * 2.0
+                ) / 2.0
+            )
+            rear_pushrod = (
+                round(float(rear_pushrod_offset_mm) * 2.0) / 2.0
+                if rear_pushrod_offset_mm is not None
+                else round(
+                    garage_model.rear_pushrod_for_static_rh(
+                        float(static_rear_rh_mm if static_rear_rh_mm is not None else baseline_outputs.rear_static_rh_mm),
+                        rear_third_nmm=baseline.rear_third_nmm,
+                        rear_third_perch_mm=baseline.rear_third_perch_mm,
+                        rear_spring_nmm=baseline.rear_spring_nmm,
+                        rear_spring_perch_mm=baseline.rear_spring_perch_mm,
+                        front_heave_perch_mm=baseline.front_heave_perch_mm,
+                        fuel_l=fuel_load_l,
+                    ) * 2.0
+                ) / 2.0
+            )
+            outputs = garage_model.predict(GarageSetupState(
+                front_pushrod_mm=front_pushrod,
+                rear_pushrod_mm=rear_pushrod,
+                front_heave_nmm=baseline.front_heave_nmm,
+                front_heave_perch_mm=baseline.front_heave_perch_mm,
+                rear_third_nmm=baseline.rear_third_nmm,
+                rear_third_perch_mm=baseline.rear_third_perch_mm,
+                front_torsion_od_mm=baseline.front_torsion_od_mm,
+                rear_spring_nmm=baseline.rear_spring_nmm,
+                rear_spring_perch_mm=baseline.rear_spring_perch_mm,
+                front_camber_deg=baseline.front_camber_deg,
+                fuel_l=fuel_load_l,
+            ))
+            static_front = float(outputs.front_static_rh_mm)
+            static_rear = float(outputs.rear_static_rh_mm)
+        else:
+            front_pushrod = (
+                round(float(front_pushrod_offset_mm) * 2.0) / 2.0
+                if front_pushrod_offset_mm is not None
+                else round(self.car.pushrod.front_offset_for_rh(float(static_front_rh_mm or self.car.min_front_rh_static)) * 2.0) / 2.0
+            )
+            rear_pushrod = (
+                round(float(rear_pushrod_offset_mm) * 2.0) / 2.0
+                if rear_pushrod_offset_mm is not None
+                else round(self.car.pushrod.rear_offset_for_rh(float(static_rear_rh_mm or self.car.min_rear_rh_static)) * 2.0) / 2.0
+            )
+            static_front = float(
+                static_front_rh_mm
+                if static_front_rh_mm is not None
+                else self.car.pushrod.front_rh_for_offset(front_pushrod)
+            )
+            static_rear = float(
+                static_rear_rh_mm
+                if static_rear_rh_mm is not None
+                else self.car.pushrod.rear_rh_for_offset(rear_pushrod)
+            )
+
+        actual_front_dyn = max(self.car.min_front_rh_dynamic, static_front - front_comp)
+        actual_rear_dyn = max(self.car.min_rear_rh_dynamic, static_rear - rear_comp)
+        bal, ld = self._query_aero(actual_front_dyn, actual_rear_dyn)
+        front_sv_p99 = (self.track.shock_vel_p99_front_clean_mps
+                        if self.track.shock_vel_p99_front_clean_mps > 0
+                        else self.track.shock_vel_p99_front_mps)
+        front_excursion_p99 = self.car.rh_excursion_p99(front_sv_p99)
+        front_min_p99 = actual_front_dyn - front_excursion_p99
+        vb_margin = front_min_p99 - self.car.vortex_burst_threshold_mm
+        stall = self.surface.stall_proximity(actual_front_dyn)
+        return RakeSolution(
+            dynamic_front_rh_mm=round(actual_front_dyn, 1),
+            dynamic_rear_rh_mm=round(actual_rear_dyn, 1),
+            rake_dynamic_mm=round(actual_rear_dyn - actual_front_dyn, 1),
+            df_balance_pct=round(bal, 2),
+            ld_ratio=round(ld, 3),
+            front_rh_excursion_p99_mm=round(front_excursion_p99, 1),
+            front_rh_min_p99_mm=round(front_min_p99, 1),
+            vortex_burst_threshold_mm=self.car.vortex_burst_threshold_mm,
+            vortex_burst_margin_mm=round(vb_margin, 1),
+            static_front_rh_mm=round(static_front, 1),
+            static_rear_rh_mm=round(static_rear, 1),
+            rake_static_mm=round(static_rear - static_front, 1),
+            front_pushrod_offset_mm=round(front_pushrod, 1),
+            rear_pushrod_offset_mm=round(rear_pushrod, 1),
+            aero_compression_front_mm=round(front_comp, 1),
+            aero_compression_rear_mm=round(rear_comp, 1),
+            compression_ref_speed_kph=track_speed,
+            balance_error_pct=round(abs(bal - target_balance), 3),
+            converged=True,
+            iterations=0,
+            mode="explicit_overrides",
+            free_opt_ld=0.0,
+            ld_cost_of_pinning=0.0,
+            aero_state=stall["aero_state"],
+            stall_factor=stall["stall_factor"],
+        )
+
     def _solve_pinned_front(
         self,
         target_balance: float,

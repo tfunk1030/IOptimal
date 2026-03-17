@@ -385,3 +385,102 @@ class ARBSolver:
             constraints=constraints,
             car_specific_notes=notes,
         )
+
+    def solution_from_explicit_settings(
+        self,
+        *,
+        front_wheel_rate_nmm: float,
+        rear_wheel_rate_nmm: float,
+        front_arb_size: str,
+        front_arb_blade_start: int,
+        rear_arb_size: str,
+        rear_arb_blade_start: int,
+        lltd_offset: float = 0.0,
+        rarb_blade_slow_corner: int | None = None,
+        rarb_blade_fast_corner: int | None = None,
+        farb_blade_locked: int | None = None,
+    ) -> ARBSolution:
+        """Build a Step 4 solution from explicit ARB settings."""
+        arb = self.car.arb
+        k_springs_front = self._corner_spring_roll_stiffness(
+            front_wheel_rate_nmm, arb.track_width_front_mm,
+        )
+        k_springs_rear = self._corner_spring_roll_stiffness(
+            rear_wheel_rate_nmm, arb.track_width_rear_mm,
+        )
+        target_lltd = self.car.weight_dist_front + 0.05 + lltd_offset
+        farb_blade = int(farb_blade_locked if farb_blade_locked is not None else front_arb_blade_start)
+        rarb_slow_blade = int(rarb_blade_slow_corner if rarb_blade_slow_corner is not None else 1)
+        rarb_fast_blade = int(rarb_blade_fast_corner if rarb_blade_fast_corner is not None else min(4, arb.rear_blade_count))
+        lltd, k_farb, k_rarb, k_front, k_rear = self._compute_lltd(
+            front_arb_size,
+            int(front_arb_blade_start),
+            rear_arb_size,
+            int(rear_arb_blade_start),
+            k_springs_front,
+            k_springs_rear,
+        )
+        k_rarb_step_plus = self.car.arb.rear_roll_stiffness(rear_arb_size, min(int(rear_arb_blade_start) + 1, arb.rear_blade_count))
+        k_rarb_step_minus = self.car.arb.rear_roll_stiffness(rear_arb_size, max(int(rear_arb_blade_start) - 1, 1))
+        lltd_plus = self._lltd_from_roll_stiffness(k_front, k_rear - k_rarb + k_rarb_step_plus)
+        lltd_minus = self._lltd_from_roll_stiffness(k_front, k_rear - k_rarb + k_rarb_step_minus)
+        sensitivity = (lltd_plus - lltd_minus) / 2
+        lltd_min, _, _, _, _ = self._compute_lltd(
+            front_arb_size, farb_blade, rear_arb_size, rarb_slow_blade, k_springs_front, k_springs_rear
+        )
+        lltd_max, _, _, _, _ = self._compute_lltd(
+            front_arb_size, farb_blade, rear_arb_size, rarb_fast_blade, k_springs_front, k_springs_rear
+        )
+        constraints = [
+            ARBConstraintCheck(
+                name="LLTD target",
+                passed=abs(lltd - target_lltd) < 0.05,
+                value=lltd,
+                target=target_lltd,
+                units="fraction",
+                note=f"Error: {abs(lltd - target_lltd):.1%}",
+            ),
+            ARBConstraintCheck(
+                name="RARB range covers slow-corner blade",
+                passed=rarb_slow_blade >= 1,
+                value=float(rarb_slow_blade),
+                target=1.0,
+                units="blade",
+            ),
+            ARBConstraintCheck(
+                name="RARB sensitivity within useful range",
+                passed=0.005 < abs(sensitivity) < 0.05,
+                value=abs(sensitivity),
+                target=0.02,
+                units="LLTD/blade",
+                note="<0.005 = insensitive (wrong bar size), >0.05 = too sensitive (step down)",
+            ),
+        ]
+        notes = [
+            "Explicit ARB materialization preserves the selected bar/blade family and recomputes LLTD.",
+            f"Front ARB {front_arb_size}/{int(front_arb_blade_start)}, rear ARB {rear_arb_size}/{int(rear_arb_blade_start)}.",
+        ]
+        return ARBSolution(
+            front_arb_size=front_arb_size,
+            front_arb_blade_start=int(front_arb_blade_start),
+            rear_arb_size=rear_arb_size,
+            rear_arb_blade_start=int(rear_arb_blade_start),
+            lltd_achieved=round(lltd, 4),
+            lltd_target=round(target_lltd, 4),
+            lltd_error=round(abs(lltd - target_lltd), 4),
+            static_front_weight_dist=self.car.weight_dist_front,
+            k_roll_front_springs=round(k_springs_front, 0),
+            k_roll_rear_springs=round(k_springs_rear, 0),
+            k_roll_front_arb=round(k_farb, 0),
+            k_roll_rear_arb=round(k_rarb, 0),
+            k_roll_front_total=round(k_front, 0),
+            k_roll_rear_total=round(k_rear, 0),
+            rarb_sensitivity_per_blade=round(sensitivity, 4),
+            rarb_blade_slow_corner=rarb_slow_blade,
+            rarb_blade_fast_corner=rarb_fast_blade,
+            farb_blade_locked=farb_blade,
+            lltd_at_rarb_min=round(lltd_min, 4),
+            lltd_at_rarb_max=round(lltd_max, 4),
+            constraints=constraints,
+            car_specific_notes=notes,
+        )

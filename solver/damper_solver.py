@@ -335,6 +335,9 @@ class DamperSolver:
         clicks = round(force_n / max(force_per_click, 1.0))
         return max(lo, min(hi, clicks))
 
+    def _clicks_to_coeff(self, clicks: float, v_ref_mps: float, force_per_click: float) -> float:
+        return float(clicks) * max(force_per_click, 1.0) / max(v_ref_mps, 1e-6)
+
     def _hs_slope_from_surface(self) -> tuple[int, int, str]:
         """HS slope from the track's bump severity distribution.
 
@@ -690,6 +693,117 @@ class DamperSolver:
             ls_rbd_comp_ratio_rear=round(lr.rbd_comp_ratio_ls(), 2),
             hs_rbd_comp_ratio_rear=round(lr.rbd_comp_ratio_hs(), 2),
             hs_slope_reasoning=slope_reason,
+            constraints=constraints,
+            notes=notes,
+        )
+
+    def solution_from_explicit_settings(
+        self,
+        *,
+        front_wheel_rate_nmm: float,
+        rear_wheel_rate_nmm: float,
+        front_dynamic_rh_mm: float,
+        rear_dynamic_rh_mm: float,
+        lf: CornerDamperSettings,
+        rf: CornerDamperSettings,
+        lr: CornerDamperSettings,
+        rr: CornerDamperSettings,
+        fuel_load_l: float = 89.0,
+        damping_ratio_scale: float = 1.0,
+        measured: "MeasuredState | None" = None,
+        front_heave_nmm: float | None = None,
+        rear_third_nmm: float | None = None,
+    ) -> DamperSolution:
+        """Build a Step 6 solution from explicit click/slope settings."""
+        base = self.solve(
+            front_wheel_rate_nmm=front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            front_dynamic_rh_mm=front_dynamic_rh_mm,
+            rear_dynamic_rh_mm=rear_dynamic_rh_mm,
+            fuel_load_l=fuel_load_l,
+            damping_ratio_scale=damping_ratio_scale,
+            measured=measured,
+            front_heave_nmm=front_heave_nmm,
+            rear_third_nmm=rear_third_nmm,
+        )
+        d = self.car.damper
+        v_ls_ref = 0.025
+        v_hs_ref_front = max(self.track.shock_vel_p95_front_mps, 0.050)
+        v_hs_ref_rear = max(self.track.shock_vel_p95_rear_mps, 0.050)
+        front_ls_comp = (lf.ls_comp + rf.ls_comp) / 2.0
+        rear_ls_comp = (lr.ls_comp + rr.ls_comp) / 2.0
+        front_hs_comp = (lf.hs_comp + rf.hs_comp) / 2.0
+        rear_hs_comp = (lr.hs_comp + rr.hs_comp) / 2.0
+        c_ls_front = self._clicks_to_coeff(front_ls_comp, v_ls_ref, d.ls_force_per_click_n)
+        c_ls_rear = self._clicks_to_coeff(rear_ls_comp, v_ls_ref, d.ls_force_per_click_n)
+        c_hs_front = self._clicks_to_coeff(front_hs_comp, v_hs_ref_front, d.hs_force_per_click_n)
+        c_hs_rear = self._clicks_to_coeff(rear_hs_comp, v_hs_ref_rear, d.hs_force_per_click_n)
+        zeta_ls_front = c_ls_front / max(base.c_crit_front, 1e-6)
+        zeta_ls_rear = c_ls_rear / max(base.c_crit_rear, 1e-6)
+        zeta_hs_front = c_hs_front / max(base.c_crit_front, 1e-6)
+        zeta_hs_rear = c_hs_rear / max(base.c_crit_rear, 1e-6)
+        constraints = [
+            DamperConstraintCheck(
+                name="Front LS damping ratio",
+                passed=0.3 <= zeta_ls_front <= 1.0,
+                value=zeta_ls_front,
+                target=0.88,
+                units="zeta",
+                note="Explicit click materialization recomputed from selected clicks.",
+            ),
+            DamperConstraintCheck(
+                name="Rear HS damping ratio",
+                passed=0.15 <= zeta_hs_rear <= 0.40,
+                value=zeta_hs_rear,
+                target=0.22,
+                units="zeta",
+                note="Explicit click materialization recomputed from selected clicks.",
+            ),
+            DamperConstraintCheck(
+                name="Front HS rbd > HS comp",
+                passed=((lf.hs_rbd + rf.hs_rbd) / 2.0) > front_hs_comp,
+                value=float((lf.hs_rbd + rf.hs_rbd) / 2.0),
+                target=float(front_hs_comp),
+                units="clicks",
+                note="Rebound must exceed comp to prevent wheel bounce.",
+            ),
+            DamperConstraintCheck(
+                name="Rear HS comp < Front HS comp",
+                passed=rear_hs_comp <= front_hs_comp,
+                value=float(rear_hs_comp),
+                target=float(front_hs_comp),
+                units="clicks",
+                note="Compliance hierarchy: rear yields to bumps more than front.",
+            ),
+        ]
+        notes = list(base.notes)
+        notes.append(
+            "Explicit damper materialization recomputed axle coefficients and damping ratios from selected clicks."
+        )
+        return DamperSolution(
+            lf=lf,
+            rf=rf,
+            lr=lr,
+            rr=rr,
+            track_shock_vel_p95_front_mps=base.track_shock_vel_p95_front_mps,
+            track_shock_vel_p95_rear_mps=base.track_shock_vel_p95_rear_mps,
+            track_shock_vel_p99_front_mps=base.track_shock_vel_p99_front_mps,
+            track_shock_vel_p99_rear_mps=base.track_shock_vel_p99_rear_mps,
+            c_ls_front=round(c_ls_front, 0),
+            c_ls_rear=round(c_ls_rear, 0),
+            c_hs_front=round(c_hs_front, 0),
+            c_hs_rear=round(c_hs_rear, 0),
+            c_crit_front=base.c_crit_front,
+            c_crit_rear=base.c_crit_rear,
+            zeta_ls_front=round(zeta_ls_front, 3),
+            zeta_ls_rear=round(zeta_ls_rear, 3),
+            zeta_hs_front=round(zeta_hs_front, 3),
+            zeta_hs_rear=round(zeta_hs_rear, 3),
+            ls_rbd_comp_ratio_front=round((lf.rbd_comp_ratio_ls() + rf.rbd_comp_ratio_ls()) / 2.0, 2),
+            hs_rbd_comp_ratio_front=round((lf.rbd_comp_ratio_hs() + rf.rbd_comp_ratio_hs()) / 2.0, 2),
+            ls_rbd_comp_ratio_rear=round((lr.rbd_comp_ratio_ls() + rr.rbd_comp_ratio_ls()) / 2.0, 2),
+            hs_rbd_comp_ratio_rear=round((lr.rbd_comp_ratio_hs() + rr.rbd_comp_ratio_hs()) / 2.0, 2),
+            hs_slope_reasoning="Explicit click/slope materialization from selected family settings.",
             constraints=constraints,
             notes=notes,
         )

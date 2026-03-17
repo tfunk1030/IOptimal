@@ -469,3 +469,106 @@ class WheelGeometrySolver:
             constraints=constraints,
             notes=notes,
         )
+
+    def solution_from_explicit_settings(
+        self,
+        *,
+        k_roll_total_nm_deg: float,
+        front_wheel_rate_nmm: float,
+        rear_wheel_rate_nmm: float,
+        front_camber_deg: float,
+        rear_camber_deg: float,
+        front_toe_mm: float,
+        rear_toe_mm: float,
+        fuel_load_l: float = 89.0,
+        camber_confidence: str = "estimated",
+    ) -> WheelGeometrySolution:
+        """Build a Step 5 solution from explicit geometry settings."""
+        geo = self.car.geometry
+        peak_lat_g = self.track.peak_lat_g
+        if self.track.lateral_g and self.track.lateral_g.get("p95"):
+            p95_lat_g = self.track.lateral_g["p95"]
+        else:
+            p95_lat_g = peak_lat_g * 0.47
+        n_kerbs = len(self.track.kerb_events)
+        if n_kerbs > 10:
+            kerb_weight = 0.7
+        elif n_kerbs > 5:
+            kerb_weight = 0.5
+        else:
+            kerb_weight = 0.3
+        representative_lat_g = p95_lat_g + kerb_weight * (peak_lat_g - p95_lat_g)
+        roll_deg = self._body_roll_at_g(peak_lat_g, k_roll_total_nm_deg, fuel_load_l)
+        representative_roll_deg = self._body_roll_at_g(representative_lat_g, k_roll_total_nm_deg, fuel_load_l)
+        front_camber = float(front_camber_deg)
+        rear_camber = float(rear_camber_deg)
+        front_toe = float(front_toe_mm)
+        rear_toe = float(rear_toe_mm)
+        front_camber_change = roll_deg * geo.front_roll_gain
+        rear_camber_change = roll_deg * geo.rear_roll_gain
+        front_dynamic = front_camber + front_camber_change
+        rear_dynamic = rear_camber + rear_camber_change
+        front_conditioning_rate = 2.4
+        rear_conditioning_rate = 3.2
+        laps_front = self._laps_to_operating_temp(front_conditioning_rate, front_toe, is_front=True)
+        laps_rear = self._laps_to_operating_temp(rear_conditioning_rate, rear_toe, is_front=False)
+        constraints = [
+            GeometryConstraintCheck(
+                name="Front dynamic camber at peak g",
+                passed=abs(front_dynamic) < 1.0,
+                value=front_dynamic,
+                target=0.0,
+                units="deg",
+                note=f"Dynamic = static {front_camber:+.1f}° + roll change {front_camber_change:+.1f}°",
+            ),
+            GeometryConstraintCheck(
+                name="Rear dynamic camber at peak g",
+                passed=abs(rear_dynamic) < 1.0,
+                value=rear_dynamic,
+                target=0.0,
+                units="deg",
+                note=f"Dynamic = static {rear_camber:+.1f}° + roll change {rear_camber_change:+.1f}°",
+            ),
+            GeometryConstraintCheck(
+                name="Front toe within reasonable range",
+                passed=-1.5 <= front_toe <= 0.5,
+                value=front_toe,
+                target=-0.4,
+                units="mm",
+                note="Excessive toe-out increases tyre scrub and lap time" if front_toe < -1.0 else "",
+            ),
+            GeometryConstraintCheck(
+                name="Rear toe non-destabilizing",
+                passed=rear_toe >= 0.0,
+                value=rear_toe,
+                target=0.0,
+                units="mm",
+                note="Rear toe-out is destabilizing — keep at or above 0mm",
+            ),
+        ]
+        notes = [
+            f"Explicit geometry materialization at representative roll {representative_roll_deg:.1f}°.",
+            f"Front/rear wheel-rate context preserved: {front_wheel_rate_nmm:.1f} / {rear_wheel_rate_nmm:.1f} N/mm.",
+        ]
+        return WheelGeometrySolution(
+            front_camber_deg=round(front_camber, 1),
+            rear_camber_deg=round(rear_camber, 1),
+            front_toe_mm=round(front_toe, 1),
+            rear_toe_mm=round(rear_toe, 1),
+            peak_lat_g=round(peak_lat_g, 2),
+            body_roll_at_peak_deg=round(roll_deg, 2),
+            front_camber_change_at_peak_deg=round(front_camber_change, 2),
+            rear_camber_change_at_peak_deg=round(rear_camber_change, 2),
+            front_dynamic_camber_at_peak_deg=round(front_dynamic, 2),
+            rear_dynamic_camber_at_peak_deg=round(rear_dynamic, 2),
+            front_camber_delta_from_baseline=round(front_camber - geo.front_camber_baseline_deg, 1),
+            rear_camber_delta_from_baseline=round(rear_camber - geo.rear_camber_baseline_deg, 1),
+            front_toe_delta_from_baseline=round(front_toe - geo.front_toe_baseline_mm, 1),
+            rear_toe_delta_from_baseline=round(rear_toe - geo.rear_toe_baseline_mm, 1),
+            expected_conditioning_laps_front=round(laps_front, 1),
+            expected_conditioning_laps_rear=round(laps_rear, 1),
+            k_roll_total_nm_deg=round(k_roll_total_nm_deg, 0),
+            constraints=constraints,
+            camber_confidence=camber_confidence,
+            notes=notes,
+        )

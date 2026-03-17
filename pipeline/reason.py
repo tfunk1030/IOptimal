@@ -64,9 +64,9 @@ from solver.setup_fingerprint import (
     fingerprint_from_solver_steps,
     match_failed_cluster,
 )
-from solver.decision_trace import build_parameter_decisions
-from solver.legality_engine import LegalValidation, validate_solution_legality
-from solver.candidate_search import SetupCandidate, generate_candidate_families
+from solver.legality_engine import LegalValidation
+from solver.candidate_search import SetupCandidate, candidate_to_dict, generate_candidate_families
+from solver.solve_chain import SolveChainInputs, run_base_solve
 from track_model.build_profile import build_profile
 from track_model.ibt_parser import IBTFile
 from track_model.profile import TrackProfile
@@ -643,35 +643,10 @@ def _build_health_models(state: ReasoningState) -> None:
         )
 
 
-def _apply_selected_candidate_outputs(
-    selected_candidate: SetupCandidate | None,
-    *,
-    step1: Any,
-    step2: Any,
-    step3: Any,
-    step4: Any,
-    step5: Any,
-    step6: Any,
-    supporting: Any,
-) -> tuple[Any, Any, Any, Any, Any, Any, Any, bool]:
-    if selected_candidate is None:
-        return step1, step2, step3, step4, step5, step6, supporting, False
-    selected_has_outputs = all(
-        getattr(selected_candidate, name, None) is not None
-        for name in ("step1", "step2", "step3", "step4", "step5", "step6", "supporting")
-    )
-    if not selected_has_outputs:
-        return step1, step2, step3, step4, step5, step6, supporting, False
-    return (
-        selected_candidate.step1,
-        selected_candidate.step2,
-        selected_candidate.step3,
-        selected_candidate.step4,
-        selected_candidate.step5,
-        selected_candidate.step6,
-        selected_candidate.supporting,
-        True,
-    )
+def _selected_candidate_result(selected_candidate: SetupCandidate | None) -> object | None:
+    if selected_candidate is None or not getattr(selected_candidate, "selectable", False):
+        return None
+    return getattr(selected_candidate, "result", None)
 
 
 def _session_signal_quality_score(snapshot: SessionSnapshot) -> tuple[float, list[str]]:
@@ -2182,8 +2157,8 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
                 f"  {candidate.family}: score={score:.3f} "
                 f"conf={candidate.confidence:.2f}{selected}"
             )
-            if candidate.reasons:
-                lines.append(f"    {candidate.reasons[0][:width-6]}")
+            if candidate.notes:
+                lines.append(f"    {candidate.notes[0][:width-6]}")
         lines.append("")
 
     lines.append("  SIGNAL CONFIDENCE")
@@ -2784,34 +2759,40 @@ def reason_and_solve(
         step4.rear_arb_size = _cs.rear_arb_size
         # Geometry, dampers, brake/diff/TC — solver computes from telemetry
 
-    state.legal_validation = validate_solution_legality(
+    solve_inputs = SolveChainInputs(
         car=car,
-        track_name=track.track_name,
-        step1=step1,
-        step2=step2,
-        step3=step3,
-        fuel_l=detected_fuel,
-        step5=step5,
-    )
-    state.decision_trace = build_parameter_decisions(
-        car_name=car.canonical_name,
+        surface=surface,
+        track=track,
+        measured=authority_measured,
+        driver=authority.driver,
+        diagnosis=authority.diagnosis,
         current_setup=authority.setup,
-        measured=authority.measured,
-        step1=step1,
-        step2=step2,
-        step3=step3,
-        step4=step4,
-        step5=step5,
-        step6=step6,
-        supporting=supporting,
-        legality=state.legal_validation,
-        fallback_reasons=list(getattr(authority.measured, "fallback_reasons", []) or []),
+        target_balance=target_balance,
+        fuel_load_l=detected_fuel,
+        wing_angle=detected_wing,
+        modifiers=mods,
+        prediction_corrections=dict(state.historical.prediction_corrections),
+        failed_validation_clusters=state.validation_clusters,
+        supporting_driver=best_driver.driver,
+        supporting_measured=best_driver.measured,
+        supporting_diagnosis=best_driver.diagnosis,
     )
+    solve_result = run_base_solve(solve_inputs)
+    step1 = solve_result.step1
+    step2 = solve_result.step2
+    step3 = solve_result.step3
+    step4 = solve_result.step4
+    step5 = solve_result.step5
+    step6 = solve_result.step6
+    supporting = solve_result.supporting
+    state.candidate_vetoes = list(solve_result.candidate_vetoes)
+    state.legal_validation = solve_result.legal_validation
+    state.decision_trace = solve_result.decision_trace
+    state.solver_notes.extend(solve_result.notes)
     state.generated_candidates = generate_candidate_families(
         authority_session=authority,
         best_session=best,
         overhaul_assessment=authority.diagnosis.overhaul_assessment,
-        legal_validation=state.legal_validation,
         authority_score=next((row for row in state.authority_scores if row["session"] == authority.label), None),
         envelope_distance=state.envelope_distances.get(authority.label).total_score
         if authority.label in state.envelope_distances
@@ -2819,16 +2800,8 @@ def reason_and_solve(
         setup_distance=state.setup_distances.get(authority.label).distance_score
         if authority.label in state.setup_distances
         else 0.0,
-        produced_solution={
-            "step1": step1,
-            "step2": step2,
-            "step3": step3,
-            "step4": step4,
-            "step5": step5,
-            "step6": step6,
-            "supporting": supporting,
-        },
-        prediction_corrections=dict(state.historical.prediction_corrections),
+        base_result=solve_result,
+        solve_inputs=solve_inputs,
         setup_cluster=state.setup_cluster if state.setup_cluster is not None and len(state.setup_cluster.member_sessions) >= 3 else None,
     )
     selected_candidate = next((candidate for candidate in state.generated_candidates if candidate.selected), None)
@@ -2838,43 +2811,20 @@ def reason_and_solve(
             f"Candidate family selected: {selected_candidate.family} "
             f"(score {selected_candidate.score.total if selected_candidate.score else 0.0:.3f})"
         )
-        step1, step2, step3, step4, step5, step6, supporting, applied_candidate = _apply_selected_candidate_outputs(
-            selected_candidate,
-            step1=step1,
-            step2=step2,
-            step3=step3,
-            step4=step4,
-            step5=step5,
-            step6=step6,
-            supporting=supporting,
-        )
-        if applied_candidate:
+        candidate_result = _selected_candidate_result(selected_candidate)
+        if candidate_result is not None:
             selected_candidate_applied = True
+            step1 = candidate_result.step1
+            step2 = candidate_result.step2
+            step3 = candidate_result.step3
+            step4 = candidate_result.step4
+            step5 = candidate_result.step5
+            step6 = candidate_result.step6
+            supporting = candidate_result.supporting
+            state.legal_validation = candidate_result.legal_validation
+            state.decision_trace = candidate_result.decision_trace
             state.solver_notes.append(
-                f"Applied {selected_candidate.family} candidate outputs to final report/JSON/export payloads."
-            )
-            state.legal_validation = validate_solution_legality(
-                car=car,
-                track_name=track.track_name,
-                step1=step1,
-                step2=step2,
-                step3=step3,
-                fuel_l=detected_fuel,
-                step5=step5,
-            )
-            state.decision_trace = build_parameter_decisions(
-                car_name=car.canonical_name,
-                current_setup=authority.setup,
-                measured=authority.measured,
-                step1=step1,
-                step2=step2,
-                step3=step3,
-                step4=step4,
-                step5=step5,
-                step6=step6,
-                supporting=supporting,
-                legality=state.legal_validation,
-                fallback_reasons=list(getattr(authority.measured, "fallback_reasons", []) or []),
+                f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
 
     # ── Output ──
@@ -3060,68 +3010,7 @@ def reason_and_solve(
             "validation_clusters": [cluster.to_dict() for cluster in state.validation_clusters],
             "candidate_vetoes": [veto.to_dict() for veto in state.candidate_vetoes],
             "generated_candidates": [
-                {
-                    "family": candidate.family,
-                    "description": candidate.description,
-                    "confidence": candidate.confidence,
-                    "selected": candidate.selected,
-                    "reasons": candidate.reasons,
-                    "predicted": candidate.predicted.to_dict() if getattr(candidate, "predicted", None) is not None else None,
-                    "outputs": {
-                        "step1": {
-                            "front_pushrod_offset_mm": getattr(candidate.step1, "front_pushrod_offset_mm", None),
-                            "rear_pushrod_offset_mm": getattr(candidate.step1, "rear_pushrod_offset_mm", None),
-                            "static_front_rh_mm": getattr(candidate.step1, "static_front_rh_mm", None),
-                            "static_rear_rh_mm": getattr(candidate.step1, "static_rear_rh_mm", None),
-                        },
-                        "step2": {
-                            "front_heave_nmm": getattr(candidate.step2, "front_heave_nmm", None),
-                            "rear_third_nmm": getattr(candidate.step2, "rear_third_nmm", None),
-                            "perch_offset_front_mm": getattr(candidate.step2, "perch_offset_front_mm", None),
-                            "perch_offset_rear_mm": getattr(candidate.step2, "perch_offset_rear_mm", None),
-                        },
-                        "step3": {
-                            "front_torsion_od_mm": getattr(candidate.step3, "front_torsion_od_mm", None),
-                            "rear_spring_rate_nmm": getattr(candidate.step3, "rear_spring_rate_nmm", None),
-                        },
-                        "step4": {
-                            "front_arb_blade_start": getattr(candidate.step4, "front_arb_blade_start", None),
-                            "rear_arb_blade_start": getattr(candidate.step4, "rear_arb_blade_start", None),
-                            "lltd_achieved": getattr(candidate.step4, "lltd_achieved", None),
-                        },
-                        "step5": {
-                            "front_camber_deg": getattr(candidate.step5, "front_camber_deg", None),
-                            "rear_camber_deg": getattr(candidate.step5, "rear_camber_deg", None),
-                            "front_toe_mm": getattr(candidate.step5, "front_toe_mm", None),
-                            "rear_toe_mm": getattr(candidate.step5, "rear_toe_mm", None),
-                        },
-                        "step6": {
-                            "front_ls_comp": getattr(getattr(candidate.step6, "lf", None), "ls_comp", None),
-                            "front_ls_rbd": getattr(getattr(candidate.step6, "lf", None), "ls_rbd", None),
-                            "rear_ls_comp": getattr(getattr(candidate.step6, "lr", None), "ls_comp", None),
-                            "rear_ls_rbd": getattr(getattr(candidate.step6, "lr", None), "ls_rbd", None),
-                        },
-                        "supporting": {
-                            "brake_bias_pct": getattr(candidate.supporting, "brake_bias_pct", None),
-                            "diff_preload_nm": getattr(candidate.supporting, "diff_preload_nm", None),
-                            "tc_gain": getattr(candidate.supporting, "tc_gain", None),
-                            "tc_slip": getattr(candidate.supporting, "tc_slip", None),
-                        },
-                    },
-                    "score": (
-                        {
-                            "total": candidate.score.total,
-                            "safety": candidate.score.safety,
-                            "performance": candidate.score.performance,
-                            "stability": candidate.score.stability,
-                            "confidence": candidate.score.confidence,
-                            "disruption_cost": candidate.score.disruption_cost,
-                            "notes": candidate.score.notes,
-                        }
-                        if candidate.score is not None
-                        else None
-                    ),
-                }
+                candidate_to_dict(candidate)
                 for candidate in state.generated_candidates
             ],
             "selected_candidate_family": getattr(selected_candidate, "family", None),

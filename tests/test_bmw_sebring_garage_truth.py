@@ -119,6 +119,10 @@ class BMWSebringGarageTruthTests(unittest.TestCase):
         self.assertLessEqual(result["step2"].slider_static_front_mm, 45.0)
         self.assertLessEqual(result["step2"].rear_third_nmm, 900.0)
         self.assertLessEqual(result["step2"].rear_sigma_at_rate_mm, self.car.heave_spring.sigma_target_mm)
+        self.assertIn("generated_candidates", result)
+        self.assertIn("selected_candidate_applied", result)
+        self.assertIn("legal_validation", result)
+        self.assertIsInstance(result["generated_candidates"], list)
 
         expected_outputs = self.garage_model.predict(
             GarageSetupState.from_solver_steps(
