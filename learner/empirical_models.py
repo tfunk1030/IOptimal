@@ -655,6 +655,16 @@ def fit_prediction_errors(
         "lltd_predicted": "lltd_measured",
         "body_roll_predicted_deg_per_g": "roll_gradient_deg_per_g",
         "front_bottoming_predicted": "front_bottoming_events",
+        "front_heave_travel_used_pct": "front_heave_travel_used_pct",
+        "front_excursion_mm": "front_rh_excursion_measured_mm",
+        "braking_pitch_deg": "pitch_range_braking_deg",
+        "front_lock_p95": "front_braking_lock_ratio_p95",
+        "rear_power_slip_p95": "rear_power_slip_ratio_p95",
+        "body_slip_p95_deg": "body_slip_p95_deg",
+        "understeer_low_deg": "understeer_low_speed_deg",
+        "understeer_high_deg": "understeer_high_speed_deg",
+        "front_pressure_hot_kpa": "front_pressure_mean_kpa",
+        "rear_pressure_hot_kpa": "rear_pressure_mean_kpa",
         "m_eff_front_kg": None,  # no direct telemetry equivalent
     }
 
