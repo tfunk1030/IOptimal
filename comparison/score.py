@@ -21,16 +21,16 @@ from comparison.compare import (
 # ── Scoring categories and weights ──────────────────────────────
 
 CATEGORY_WEIGHTS: dict[str, float] = {
-    "lap_time": 0.15,
-    "grip": 0.15,
-    "balance": 0.15,
+    "lap_time": 0.12,
+    "grip": 0.14,
+    "balance": 0.14,
     "aero_efficiency": 0.10,
     "high_speed_corners": 0.10,
     "low_speed_corners": 0.10,
     "corner_performance": 0.10,
     "damper_platform": 0.05,
     "thermal": 0.05,
-    "context_health": 0.05,
+    "context_health": 0.10,
 }
 
 CATEGORY_LABELS: dict[str, str] = {
@@ -357,12 +357,29 @@ def _score_context_health(sessions: list[SessionAnalysis]) -> list[float]:
     scores: list[float] = []
     for sess in sessions:
         ctx = getattr(sess, "session_context", None)
+        signal_map = getattr(sess.measured, "telemetry_signals", {}) or {}
+        trusted = [sig.confidence for sig in signal_map.values() if getattr(sig, "quality", "") == "trusted" and getattr(sig, "value", None) is not None]
+        proxy = [sig.confidence for sig in signal_map.values() if getattr(sig, "quality", "") == "proxy" and getattr(sig, "value", None) is not None]
+        signal_score = 0.45
+        if trusted or proxy:
+            signal_score = min(1.0, (sum(trusted) / len(trusted) if trusted else 0.0) * 0.75 + (sum(proxy) / len(proxy) if proxy else 0.0) * 0.15 + 0.1)
+        state_risk = sum(
+            getattr(issue, "severity", 0.0) * getattr(issue, "confidence", 0.0)
+            for issue in getattr(sess.diagnosis, "state_issues", [])[:6]
+        )
+        state_score = max(0.0, 1.0 - min(1.0, state_risk / 3.0))
+        hard_fail_penalty = min(
+            0.35,
+            sum(1 for p in getattr(sess.diagnosis, "problems", []) if getattr(p, "severity", "") == "critical") * 0.18
+            + sum(1 for p in getattr(sess.diagnosis, "problems", []) if getattr(p, "severity", "") == "significant") * 0.05,
+        )
         if ctx is None:
-            scores.append(0.5)
-            continue
-        score = ctx.overall_score
-        if not ctx.comparable_to_baseline:
-            score *= 0.8
+            score = 0.5 * 0.45 + signal_score * 0.25 + state_score * 0.3
+        else:
+            score = ctx.overall_score * 0.45 + signal_score * 0.25 + state_score * 0.3
+            if not ctx.comparable_to_baseline:
+                score *= 0.8
+        score = max(0.0, score - hard_fail_penalty)
         scores.append(score)
     return scores
 
