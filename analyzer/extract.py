@@ -97,6 +97,10 @@ class MeasuredState:
     # --- Step 6: Dampers ---
     front_shock_vel_p95_mps: float = 0.0
     rear_shock_vel_p95_mps: float = 0.0
+    front_shock_vel_bump_p95_mps: float = 0.0
+    front_shock_vel_rebound_p95_mps: float = 0.0
+    rear_shock_vel_bump_p95_mps: float = 0.0
+    rear_shock_vel_rebound_p95_mps: float = 0.0
     front_rh_settle_time_ms: float = 0.0
     rear_rh_settle_time_ms: float = 0.0
 
@@ -330,18 +334,35 @@ def extract_measurements(
     state.peak_lat_g_measured = float(np.max(np.abs(lat_g)))
 
     # Shock velocities
-    lf_sv = np.abs(ibt.channel("LFshockVel")[start:end + 1])
-    rf_sv = np.abs(ibt.channel("RFshockVel")[start:end + 1])
-    lr_sv = np.abs(ibt.channel("LRshockVel")[start:end + 1])
-    rr_sv = np.abs(ibt.channel("RRshockVel")[start:end + 1])
+    lf_sv_raw = ibt.channel("LFshockVel")[start:end + 1]
+    rf_sv_raw = ibt.channel("RFshockVel")[start:end + 1]
+    lr_sv_raw = ibt.channel("LRshockVel")[start:end + 1]
+    rr_sv_raw = ibt.channel("RRshockVel")[start:end + 1]
+
+    lf_sv = np.abs(lf_sv_raw)
+    rf_sv = np.abs(rf_sv_raw)
+    lr_sv = np.abs(lr_sv_raw)
+    rr_sv = np.abs(rr_sv_raw)
 
     front_sv = np.concatenate([lf_sv, rf_sv])
     rear_sv = np.concatenate([lr_sv, rr_sv])
+
+    front_sv_raw = np.concatenate([lf_sv_raw, rf_sv_raw])
+    rear_sv_raw = np.concatenate([lr_sv_raw, rr_sv_raw])
 
     state.front_shock_vel_p95_mps = float(np.percentile(front_sv, 95))
     state.front_shock_vel_p99_mps = float(np.percentile(front_sv, 99))
     state.rear_shock_vel_p95_mps = float(np.percentile(rear_sv, 95))
     state.rear_shock_vel_p99_mps = float(np.percentile(rear_sv, 99))
+
+    if np.any(front_sv_raw > 0):
+        state.front_shock_vel_bump_p95_mps = float(np.percentile(front_sv_raw[front_sv_raw > 0], 95))
+    if np.any(front_sv_raw < 0):
+        state.front_shock_vel_rebound_p95_mps = float(np.percentile(np.abs(front_sv_raw[front_sv_raw < 0]), 95))
+    if np.any(rear_sv_raw > 0):
+        state.rear_shock_vel_bump_p95_mps = float(np.percentile(rear_sv_raw[rear_sv_raw > 0], 95))
+    if np.any(rear_sv_raw < 0):
+        state.rear_shock_vel_rebound_p95_mps = float(np.percentile(np.abs(rear_sv_raw[rear_sv_raw < 0]), 95))
 
     # --- Shock oscillation frequency (P2: damper underdamping detection) ---
     # Zero-crossings of signed shock velocity → oscillation frequency proxy.

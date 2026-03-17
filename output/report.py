@@ -175,6 +175,46 @@ def print_full_setup_report(
     a("═" * W)
     a("")
 
+    # ── SETUP PHILOSOPHY ─────────────────────────────────────────────
+    dominant_sector = "balanced"
+    if sector_result is not None:
+        try:
+            sc = sector_result.slow_sector_time_pct
+            fc = sector_result.fast_sector_time_pct
+            dominant_sector = "fast-corner" if fc > sc + 10 else ("slow-corner" if sc > fc + 10 else "balanced")
+        except:
+            pass
+
+    philosophy_lines = []
+    if dominant_sector == "fast-corner":
+        philosophy_lines.append(f"Track is heavily {dominant_sector} dominated. Prioritizing aero platform stability and high-speed downforce.")
+    elif dominant_sector == "slow-corner":
+        philosophy_lines.append(f"Track is heavily {dominant_sector} dominated. Prioritizing mechanical grip, compliance, and slow-speed rotation.")
+    else:
+        philosophy_lines.append(f"Track profile is {dominant_sector}. Seeking a balanced compromise between aero stability and mechanical grip.")
+
+    if step1.vortex_burst_margin_mm < 2.0:
+        philosophy_lines.append(f"Running an aggressive front ride height (margin {step1.vortex_burst_margin_mm:+.1f}mm) for maximum L/D at the risk of kerb sensitivity.")
+    else:
+        philosophy_lines.append(f"Running a conservative front ride height (margin {step1.vortex_burst_margin_mm:+.1f}mm) to absorb track features safely.")
+
+    if hasattr(step4, 'rear_arb_size'):
+        philosophy_lines.append(f"Using {step4.rear_arb_size} rear ARB to maintain {step4.lltd_target:.1%} LLTD for turn-in response.")
+
+    a(_box_top("SETUP PHILOSOPHY"))
+    for p_line in philosophy_lines:
+        max_len = W - 6
+        while p_line:
+            chunk = p_line[:max_len]
+            if len(p_line) > max_len:
+                bp = chunk.rfind(" ")
+                if bp > 0:
+                    chunk = chunk[:bp]
+            a(_full("  " + chunk))
+            p_line = p_line[len(chunk):].lstrip()
+    a(_box_bot())
+    a("")
+
     # ── FULL PARAMETER SHEET ─────────────────────────────────────────
     a(_box_top("SETUP TO ENTER"))
     a(_full("  PLATFORM / SPRINGS"))
@@ -237,6 +277,9 @@ def print_full_setup_report(
     a(_setting("Tyre cold RL / RR", f"{tyre_rl:.0f} / {tyre_rr:.0f} kPa"))
     a(_blank())
     a(_full("  DAMPERS"))
+    a(_setting("Front damping ratios", f"LS \u03b6={step6.zeta_ls_front:.2f} (platform), HS \u03b6={step6.zeta_hs_front:.2f}"))
+    a(_setting("Rear damping ratios", f"LS \u03b6={step6.zeta_ls_rear:.2f} (traction), HS \u03b6={step6.zeta_hs_rear:.2f}"))
+    a(_setting("Rebound/Comp ratios", f"F LS={step6.ls_rbd_comp_ratio_front:.2f}:1, R HS={step6.hs_rbd_comp_ratio_rear:.2f}:1"))
     for corner_name, corner in (
         ("LF", step6.lf),
         ("RF", step6.rf),
@@ -574,7 +617,11 @@ def print_full_setup_report(
     a(_hdr("BALANCE & PLATFORM"))
     a(f"  LLTD achieved: {step4.lltd_achieved:.1%}  target: {step4.lltd_target:.1%}  "
       f"RARB sensitivity: {step4.rarb_sensitivity_per_blade:+.1%}/blade")
-    a(f"  RARB 1→{step4.rarb_blade_fast_corner} range: {step4.lltd_at_rarb_min:.1%}→{step4.lltd_at_rarb_max:.1%}")
+    a(f"  RARB 1\u2192{step4.rarb_blade_fast_corner} range: {step4.lltd_at_rarb_min:.1%}\u2192{step4.lltd_at_rarb_max:.1%}")
+    a(f"  Roll stiffness F: {step4.k_roll_front_total:.0f} N\u00b7m/deg "
+      f"({step4.k_roll_front_springs/max(1, step4.k_roll_front_total):.0%} spring) "
+      f"| R: {step4.k_roll_rear_total:.0f} N\u00b7m/deg "
+      f"({step4.k_roll_rear_springs/max(1, step4.k_roll_rear_total):.0%} spring)")
     if _is_ferrari:
         a(f"  Heave: {step2.front_heave_nmm:.0f} idx  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
     else:

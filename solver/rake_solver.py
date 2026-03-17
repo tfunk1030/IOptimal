@@ -358,7 +358,7 @@ class RakeSolver:
         target_balance: float = 50.14,
         balance_tolerance: float = 0.1,
         fuel_load_l: float = 89.0,
-        pin_front_min: bool = True,
+        pin_front_min: bool = False,
     ) -> RakeSolution:
         """Find optimal ride heights for target DF balance.
 

@@ -123,7 +123,7 @@ class ARBSolution:
             "",
             "  ARB SETUP",
             f"    Front ARB size:   {self.front_arb_size}",
-            f"    Front ARB blade:  {self.front_arb_blade_start}  (locked — FARB is not the live variable)",
+            f"    Front ARB blade:  {self.front_arb_blade_start}  (baseline)",
             f"    Rear ARB size:    {self.rear_arb_size}",
             f"    Rear ARB blade:   {self.rear_arb_blade_start}  (baseline, adjust live)",
             "",
@@ -262,39 +262,45 @@ class ARBSolver:
         # Target LLTD (OptimumG: static front weight + 5%) + modifier offset
         target_lltd = self.car.weight_dist_front + 0.05 + lltd_offset
 
-        # ─── BMW ARB strategy ────────────────────────────────────────────────
-        # Per SKILL.md and per-car-quirks.md:
-        # - Keep FARB at blade 1 (minimum). Front ARB blades at/near 1 for
-        #   maximum front mechanical grip.
-        # - Use RARB as the primary live balance variable (blades 1→5)
-        # - Blade 1 for slow corners (rotation without snap)
-        # - Blade 4-5 for fast corners (front bite via LLTD shift)
-        #
-        # Find the rear ARB size such that, at its baseline blade (3),
-        # LLTD is close to target with FARB at baseline.
+        # Find the best ARB combination that hits the target LLTD.
+        # We search over all front and rear ARB sizes and blades.
+        # To maintain front mechanical grip, we apply a small penalty to stiffer front ARBs,
+        # but allow them if the target LLTD requires it.
 
-        farb_size = arb.front_baseline_size
-        farb_blade = arb.front_baseline_blade  # blade 1
-
-        best_size = arb.rear_baseline_size
-        best_blade = arb.rear_baseline_blade
+        best_front_size = arb.front_baseline_size
+        best_front_blade = arb.front_baseline_blade
+        best_rear_size = arb.rear_baseline_size
+        best_rear_blade = arb.rear_baseline_blade
         best_lltd_error = float("inf")
 
-        # Search over all rear ARB sizes and blades
-        # Skip "Disconnected" — 0 stiffness is not a valid race setup
-        for rear_size in arb.rear_size_labels:
-            if rear_size.lower() == "disconnected":
+        for front_size in arb.front_size_labels:
+            if front_size.lower() == "disconnected":
                 continue
-            for blade in range(1, arb.rear_blade_count + 1):
-                lltd, _, _, _, _ = self._compute_lltd(
-                    farb_size, farb_blade, rear_size, blade,
-                    k_springs_front, k_springs_rear
-                )
-                err = abs(lltd - target_lltd)
-                if err < best_lltd_error:
-                    best_lltd_error = err
-                    best_size = rear_size
-                    best_blade = blade
+            for f_blade in range(1, getattr(arb, 'front_blade_count', 6) + 1):
+                for rear_size in arb.rear_size_labels:
+                    if rear_size.lower() == "disconnected":
+                        continue
+                    for r_blade in range(1, getattr(arb, 'rear_blade_count', 6) + 1):
+                        lltd, _, _, _, _ = self._compute_lltd(
+                            front_size, f_blade, rear_size, r_blade,
+                            k_springs_front, k_springs_rear
+                        )
+                        err = abs(lltd - target_lltd)
+                        # Penalty to prefer softer front ARB (better mechanical grip)
+                        # but still allow it to optimize freely.
+                        err += (f_blade - 1) * 0.001
+                        
+                        if err < best_lltd_error:
+                            best_lltd_error = err
+                            best_front_size = front_size
+                            best_front_blade = f_blade
+                            best_rear_size = rear_size
+                            best_rear_blade = r_blade
+
+        farb_size = best_front_size
+        farb_blade = best_front_blade
+        best_size = best_rear_size
+        best_blade = best_rear_blade
 
         # Compute full solution at chosen ARB setup
         lltd, k_farb, k_rarb, k_front, k_rear = self._compute_lltd(
@@ -352,10 +358,7 @@ class ARBSolver:
 
         # Car-specific notes (BMW)
         notes: list[str] = [
-            "BMW: keep FARB at blade 1 (maximum front mechanical grip). "
-            "Use RARB as the only live balance variable.",
-            f"Rear ARB '{best_size}' provides the correct blade range. "
-            "If blade runs out of range, change ARB diameter — not FARB.",
+            f"Rear ARB '{best_size}' provides the primary live adjustment range.",
             "Stiffer RARB -> shifts load transfer rear -> front GAINS grip via LLTD -> "
             "sharpens front-end bite. Softer RARB -> stable/planted rear.",
             "Cold tyre out-lap: RARB at blade 1 to prevent snap oversteer before tyres are up to temperature.",
