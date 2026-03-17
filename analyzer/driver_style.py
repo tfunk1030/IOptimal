@@ -54,6 +54,22 @@ class DriverProfile:
     # Summary
     style: str = "moderate-consistent"
 
+    # Confidence on classifications (0-1)
+    trail_brake_confidence: float = 0.5
+    throttle_confidence: float = 0.5
+    steering_confidence: float = 0.5
+    consistency_confidence: float = 0.5
+
+    # Additional brake-release metrics
+    brake_release_rate_mean_pct_per_s: float = 0.0  # avg brake release rate
+    brake_release_classification: str = "moderate"   # "abrupt" | "moderate" | "gradual"
+
+    # Additional throttle-onset metrics
+    throttle_onset_classification: str = "moderate"  # "snap" | "moderate" | "gradual"
+
+    # Driver noise estimate (0-1, how much of what we see is driver not setup)
+    driver_noise_estimate: float = 0.0
+
     def summary(self) -> str:
         """One-line summary of driver profile."""
         return (
@@ -155,6 +171,11 @@ def analyze_driver(
             profile.trail_brake_depth_mean
         )
 
+    # Trail brake confidence: more corners = higher confidence
+    if corners:
+        n_corners = len(corners)
+        profile.trail_brake_confidence = min(1.0, n_corners / 8.0)  # full confidence at 8+ corners
+
     # ── Throttle Progressiveness ──
     # Fit linear ramp to throttle in exit phase (apex → full power) per corner
     # Use full telemetry for precise per-sample analysis
@@ -224,9 +245,16 @@ def analyze_driver(
 
             if seg_r2:
                 profile.throttle_progressiveness = float(np.mean(seg_r2))
+                profile.throttle_confidence = min(1.0, len(seg_r2) / 5.0)  # full at 5+ segments
 
     if onset_rates:
         profile.throttle_onset_rate_pct_per_s = float(np.mean(onset_rates))
+    # Classify throttle onset
+    if profile.throttle_onset_rate_pct_per_s > 400:
+        profile.throttle_onset_classification = "snap"
+    elif profile.throttle_onset_rate_pct_per_s < 150:
+        profile.throttle_onset_classification = "gradual"
+
     profile.throttle_classification = _classify_throttle(
         profile.throttle_progressiveness
     )
@@ -248,6 +276,7 @@ def analyze_driver(
                 profile.steering_jerk_p95_rad_per_s2 = float(
                     np.percentile(jerk[cornering_mask], 95)
                 )
+                profile.steering_confidence = min(1.0, float(np.sum(cornering_mask)) / 100.0)
             else:
                 profile.steering_jerk_p95_rad_per_s2 = float(np.percentile(jerk, 95))
 
@@ -306,6 +335,7 @@ def analyze_driver(
 
         if apex_cvs:
             profile.apex_speed_cv = float(np.mean(apex_cvs))
+            profile.consistency_confidence = min(1.0, len(apex_cvs) / 5.0)
         if entry_cvs:
             profile.entry_speed_cv = float(np.mean(entry_cvs))
 
@@ -335,6 +365,16 @@ def analyze_driver(
         profile.consistency,
         profile.cornering_aggression,
     )
+
+    # Driver noise estimate: high CV + low confidence = more noise
+    noise_factors = []
+    if profile.apex_speed_cv > 0.05:
+        noise_factors.append(0.3)
+    if profile.consistency == "erratic":
+        noise_factors.append(0.3)
+    if profile.entry_speed_cv > 0.05:
+        noise_factors.append(0.2)
+    profile.driver_noise_estimate = min(1.0, sum(noise_factors))
 
     return profile
 

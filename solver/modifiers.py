@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from analyzer.diagnose import Diagnosis
     from analyzer.driver_style import DriverProfile
     from analyzer.extract import MeasuredState
+    from analyzer.state_inference import CarStateIssue
 
 
 @dataclass
@@ -44,6 +45,12 @@ class SolverModifiers:
     front_hs_comp_offset: int = 0
     rear_hs_comp_offset: int = 0
     damping_ratio_scale: float = 1.0
+
+    # Confidence-weighted modifier tracking
+    modifier_confidence: float = 1.0  # overall confidence in modifiers
+
+    # State-based modifier confidence (0-1)
+    overall_confidence: float = 1.0
 
     # Reasoning trace
     reasons: list[str] = field(default_factory=list)
@@ -84,6 +91,7 @@ def compute_modifiers(
     diagnosis: Diagnosis,
     driver: DriverProfile,
     measured: MeasuredState,
+    state_issues: list[CarStateIssue] | None = None,
 ) -> SolverModifiers:
     """Compute solver modifiers from diagnosis, driver profile, and measurements.
 
@@ -178,6 +186,68 @@ def compute_modifiers(
                 mods.reasons.append(
                     f"Settle time {problem.measured:.0f}ms < 50ms → LS rbd -1 (overdamped)"
                 )
+
+    # ── From Inferred Car State Issues (confidence-weighted) ──
+    if state_issues:
+        for issue in state_issues:
+            if issue.confidence < 0.3:
+                continue  # skip low-confidence states
+
+            weight = issue.confidence  # scale modifier by confidence
+
+            if issue.state_id == "front_platform_collapse_braking":
+                floor_adj = 38.0 + issue.severity * 7.0  # 38-45 N/mm
+                mods.front_heave_min_floor_nmm = max(
+                    mods.front_heave_min_floor_nmm, floor_adj
+                )
+                mods.reasons.append(
+                    f"State: {issue.state_id} (sev={issue.severity:.2f}, "
+                    f"conf={issue.confidence:.2f}) → heave floor {floor_adj:.0f}"
+                )
+
+            elif issue.state_id == "front_platform_near_limit_high_speed":
+                mods.front_hs_comp_offset += round(1 * weight)
+                mods.reasons.append(
+                    f"State: {issue.state_id} → F HS comp +{round(1 * weight)}"
+                )
+
+            elif issue.state_id == "rear_platform_under_supported":
+                floor_adj = 35.0 + issue.severity * 10.0
+                mods.rear_third_min_floor_nmm = max(
+                    mods.rear_third_min_floor_nmm, floor_adj
+                )
+                mods.reasons.append(
+                    f"State: {issue.state_id} → rear third floor {floor_adj:.0f}"
+                )
+
+            elif issue.state_id == "entry_front_limited":
+                lltd_adj = -0.015 * weight
+                mods.lltd_offset += lltd_adj
+                mods.reasons.append(
+                    f"State: {issue.state_id} → LLTD {lltd_adj:+.3f}"
+                )
+
+            elif issue.state_id == "exit_traction_limited":
+                mods.rear_ls_rbd_offset += round(1 * weight)
+                mods.reasons.append(
+                    f"State: {issue.state_id} → R LS rbd +{round(1 * weight)}"
+                )
+
+            elif issue.state_id == "brake_system_front_limited":
+                mods.reasons.append(
+                    f"State: {issue.state_id} (sev={issue.severity:.2f}) → "
+                    f"brake bias adjustment deferred to brake_solver"
+                )
+
+        # Compute overall confidence from state issues
+        if state_issues:
+            avg_conf = sum(i.confidence for i in state_issues) / len(state_issues)
+            mods.overall_confidence = round(avg_conf, 3)
+
+        # Re-clamp after state-based additions
+        mods.lltd_offset = max(-0.05, min(0.05, mods.lltd_offset))
+        mods.front_hs_comp_offset = max(-2, min(2, mods.front_hs_comp_offset))
+        mods.rear_ls_rbd_offset = max(-2, min(2, mods.rear_ls_rbd_offset))
 
     # ── From Heave Shock Velocity (platform stability) ──
     if measured.front_heave_vel_hs_pct > 33:

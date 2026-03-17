@@ -7,6 +7,7 @@ per-corner performance.
 
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -64,6 +65,10 @@ class ComparisonResult:
     telemetry_deltas: dict[str, list]  # metric_name → [value_per_session]
     corner_comparisons: list[CornerComparison]
     problem_matrix: dict[str, list[bool]]  # problem_desc → [present_per_session]
+    context_compatible: bool = True  # whether sessions are fair to compare
+    context_notes: list[str] = field(default_factory=list)
+    diff_lock_comparison: dict[str, list[float]] = field(default_factory=dict)
+    brake_system_comparison: dict[str, list] = field(default_factory=dict)
 
 
 # ── Per-IBT analysis ────────────────────────────────────────────
@@ -181,6 +186,13 @@ SETUP_PARAMS: list[tuple[str, str, str]] = [
     ("Diff Preload", "diff_preload_nm", "Nm"),
     ("TC Gain", "tc_gain", ""),
     ("TC Slip", "tc_slip", ""),
+    ("Diff Coast Ramp", "diff_coast_ramp", "°"),
+    ("Diff Drive Ramp", "diff_drive_ramp", "°"),
+    ("Diff Clutch Plates", "diff_clutch_plates", ""),
+    ("Brake Bias Target", "brake_bias_target", "%"),
+    ("Brake Migration", "brake_bias_migration", ""),
+    ("Front Master Cyl", "front_master_cyl_mm", "mm"),
+    ("Rear Master Cyl", "rear_master_cyl_mm", "mm"),
 ]
 
 # Telemetry metrics to compare
@@ -219,6 +231,10 @@ TELEMETRY_METRICS: list[tuple[str, str, str, bool]] = [
     ("R Carcass Temp", "rear_carcass_mean_c", "°C", None),
     ("F Pressure", "front_pressure_mean_kpa", "kPa", None),  # 155-175 window
     ("R Pressure", "rear_pressure_mean_kpa", "kPa", None),
+    ("Front Lock p95", "front_braking_lock_ratio_p95", "", True),
+    ("Rear Power Slip p95", "rear_power_slip_ratio_p95", "", True),
+    ("ABS Active", "abs_active_pct", "%", True),
+    ("TC Intervention", "tc_intervention_pct", "%", None),
 ]
 
 
@@ -312,6 +328,26 @@ def _build_problem_matrix(sessions: list[SessionAnalysis]) -> dict[str, list[boo
     return matrix
 
 
+def _effective_diff_lock(setup: "CurrentSetup") -> dict[str, float]:
+    """Compute effective diff lock percentages from setup parameters."""
+    preload = getattr(setup, "diff_preload_nm", 0.0)
+    coast_ramp = getattr(setup, "diff_ramp_coast", 45)
+    drive_ramp = getattr(setup, "diff_ramp_drive", 70)
+    plates = getattr(setup, "diff_clutch_plates", 6)
+    torque_per_plate = 45.0  # BMW constant
+    max_torque = 700.0 * 0.7  # typical cornering torque
+
+    def _lock(ramp_deg: int) -> float:
+        ramp_rad = math.radians(max(ramp_deg, 1))
+        lock_torque = preload + (plates * torque_per_plate) / math.tan(ramp_rad)
+        return min(100.0, (lock_torque / max(max_torque, 1.0)) * 100.0)
+
+    return {
+        "coast_lock_pct": round(_lock(coast_ramp), 1),
+        "drive_lock_pct": round(_lock(drive_ramp), 1),
+    }
+
+
 def compare_sessions(sessions: list[SessionAnalysis]) -> ComparisonResult:
     """Build a full comparison across analyzed sessions.
 
@@ -344,10 +380,44 @@ def compare_sessions(sessions: list[SessionAnalysis]) -> ComparisonResult:
                 f"{', '.join(s.track_name for s in sessions)}"
             )
 
+    # Check session context compatibility
+    context_compatible = True
+    context_notes: list[str] = []
+
+    # Check fuel level spread
+    fuel_levels = [s.measured.fuel_level_at_measurement_l for s in sessions
+                   if hasattr(s.measured, 'fuel_level_at_measurement_l') and s.measured.fuel_level_at_measurement_l > 0]
+    if fuel_levels and (max(fuel_levels) - min(fuel_levels)) > 30:
+        context_notes.append(f"Fuel spread {max(fuel_levels) - min(fuel_levels):.0f}L — comparison may not be fair")
+
+    # Check tyre thermal state
+    carcass_temps = [s.measured.front_carcass_mean_c for s in sessions if s.measured.front_carcass_mean_c > 0]
+    if carcass_temps and (max(carcass_temps) - min(carcass_temps)) > 15:
+        context_notes.append(f"Carcass temp spread {max(carcass_temps) - min(carcass_temps):.0f}°C — thermal state mismatch")
+        context_compatible = False
+
+    # Effective diff lock comparison
+    diff_lock_comp: dict[str, list[float]] = {"coast_lock_pct": [], "drive_lock_pct": []}
+    for s in sessions:
+        locks = _effective_diff_lock(s.setup)
+        diff_lock_comp["coast_lock_pct"].append(locks["coast_lock_pct"])
+        diff_lock_comp["drive_lock_pct"].append(locks["drive_lock_pct"])
+
+    # Brake system comparison
+    brake_sys: dict[str, list] = {
+        "bias": [s.setup.brake_bias_pct for s in sessions],
+        "front_lock_p95": [s.measured.front_braking_lock_ratio_p95 for s in sessions],
+        "abs_active_pct": [s.measured.abs_active_pct for s in sessions],
+    }
+
     return ComparisonResult(
         sessions=sessions,
         setup_deltas=_build_setup_deltas(sessions),
         telemetry_deltas=_build_telemetry_deltas(sessions),
         corner_comparisons=_match_corners(sessions),
         problem_matrix=_build_problem_matrix(sessions),
+        context_compatible=context_compatible,
+        context_notes=context_notes,
+        diff_lock_comparison=diff_lock_comp,
+        brake_system_comparison=brake_sys,
     )

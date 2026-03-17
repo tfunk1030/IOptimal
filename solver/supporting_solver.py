@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from analyzer.diagnose import Diagnosis
     from analyzer.driver_style import DriverProfile
     from analyzer.extract import MeasuredState
+    from analyzer.setup_reader import CurrentSetup
     from car_model.cars import CarModel
     from track_model.profile import TrackProfile
 
@@ -47,6 +48,9 @@ class SupportingSolution:
     tyre_cold_rl_kpa: float = 152.0
     tyre_cold_rr_kpa: float = 152.0
     pressure_reasoning: str = ""
+
+    # Brake solver detailed solution (optional)
+    brake_solution: object = None  # BrakeSolution when available
 
     def summary(self) -> str:
         lines = [
@@ -151,12 +155,14 @@ class SupportingSolver:
         measured: MeasuredState,
         diagnosis: Diagnosis,
         track: "TrackProfile | None" = None,
+        setup: "CurrentSetup | None" = None,
     ) -> None:
         self.car = car
         self.driver = driver
         self.measured = measured
         self.diagnosis = diagnosis
         self.track = track
+        self.setup = setup
         self._fuel_load_l = (
             measured.fuel_level_at_measurement_l
             if getattr(measured, "fuel_level_at_measurement_l", 0.0) > 0
@@ -261,6 +267,36 @@ class SupportingSolver:
         sol.brake_bias_pct = round(bias, 1)
         sol.brake_bias_reasoning = "; ".join(reasons)
 
+        # Cross-validate with physics-based brake solver
+        try:
+            from solver.brake_solver import BrakeSolution, solve_brake_bias as solve_brake_physics
+            from analyzer.setup_reader import CurrentSetup as _CS
+            # Build a minimal setup for brake solver
+            _setup = _CS(source="supporting_solver")
+            _setup.brake_bias_target = getattr(self.measured, "brake_bias_pct", 0.0)
+            _setup.front_master_cyl_mm = getattr(self.car, "front_master_cyl_mm", 19.1)
+            _setup.rear_master_cyl_mm = getattr(self.car, "rear_master_cyl_mm", 20.6)
+            _setup.pad_compound = ""
+            _setup.brake_bias_migration = 0.0
+
+            brake_sol = solve_brake_physics(
+                self.car,
+                self.measured,
+                _setup,
+                driver_trail_brake_depth=self.driver.trail_brake_depth_p95 if self.driver.trail_brake_depth_p95 > 0 else 0.5,
+            )
+            sol.brake_solution = brake_sol
+
+            # Note disagreement if physics solver differs significantly
+            if abs(brake_sol.bias_pct - sol.brake_bias_pct) > 1.5:
+                sol.brake_bias_reasoning += (
+                    f"; NOTE: physics brake solver suggests {brake_sol.bias_pct:.1f}% "
+                    f"(delta {brake_sol.bias_pct - sol.brake_bias_pct:+.1f}%, "
+                    f"confidence={brake_sol.confidence:.2f})"
+                )
+        except Exception:
+            pass  # brake solver cross-validation is advisory
+
     def _solve_diff(self, sol: SupportingSolution) -> None:
         """Differential from traction demand × driver style.
 
@@ -345,7 +381,11 @@ class SupportingSolver:
 
         sol.diff_ramp_coast = coast
         sol.diff_ramp_drive = drive
-        sol.diff_clutch_plates = self.car.garage_ranges.diff_clutch_plates_options[-1]  # highest available
+        # Use setup's clutch plate count if available, else highest option
+        if self.setup is not None and hasattr(self.setup, 'diff_clutch_plates') and self.setup.diff_clutch_plates > 0:
+            sol.diff_clutch_plates = self.setup.diff_clutch_plates
+        else:
+            sol.diff_clutch_plates = self.car.garage_ranges.diff_clutch_plates_options[-1]
         sol.diff_reasoning = "; ".join(reasons)
 
     def _solve_tc(self, sol: SupportingSolution) -> None:

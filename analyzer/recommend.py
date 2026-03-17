@@ -16,10 +16,14 @@ from __future__ import annotations
 import copy
 import math
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from analyzer.diagnose import Diagnosis, Problem
 from analyzer.setup_reader import CurrentSetup
 from car_model.cars import CarModel
+
+if TYPE_CHECKING:
+    from analyzer.overhaul import OverhaulAssessment
 
 
 @dataclass
@@ -49,6 +53,7 @@ def recommend(
     diagnosis: Diagnosis,
     setup: CurrentSetup,
     car: CarModel,
+    overhaul: OverhaulAssessment | None = None,
 ) -> AnalysisResult:
     """Compute specific parameter changes for each diagnosed problem.
 
@@ -63,6 +68,16 @@ def recommend(
     changes: list[SetupChange] = []
     improved = copy.deepcopy(setup)
     improved.source = "analyzer"
+
+    # If overhaul assessment says baseline_reset, defer to solver pipeline
+    # Only provide recommendations for minor_tweak and moderate_rework cases
+    if overhaul is not None and overhaul.classification == "baseline_reset":
+        return AnalysisResult(
+            diagnosis=diagnosis,
+            changes=[],
+            current_setup=setup,
+            improved_setup=improved,
+        )
 
     for problem in diagnosis.problems:
         new_changes = _recommend_for_problem(problem, setup, improved, car)
@@ -83,6 +98,10 @@ def recommend(
         changes = conflict_report.resolved_changes
     except Exception:
         pass  # conflict resolution is advisory — never block recommendations
+
+    # For moderate rework, only keep high-priority changes (priority <= 2)
+    if overhaul is not None and overhaul.classification == "moderate_rework":
+        changes = [ch for ch in changes if ch.priority <= 2]
 
     # Apply all changes to the improved setup
     for ch in changes:

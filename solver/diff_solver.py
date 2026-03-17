@@ -58,6 +58,50 @@ def _snap_to_options(value: int, options: list[int]) -> int:
     return min(options, key=lambda x: abs(x - value))
 
 
+def compute_effective_lock_pct(
+    preload_nm: float,
+    n_plates: int,
+    ramp_deg: int,
+    torque_input_nm: float = DEFAULT_MAX_TORQUE_NM * 0.7,
+) -> float:
+    """Public utility: compute effective diff lock percentage.
+
+    Useful for comparing diff setups without instantiating DiffSolver.
+
+    Args:
+        preload_nm: Diff preload in Nm.
+        n_plates: Number of clutch plates.
+        ramp_deg: Ramp angle in degrees.
+        torque_input_nm: Input torque (default: 70% of max).
+
+    Returns:
+        Lock percentage 0-100.
+    """
+    ramp_rad = math.radians(ramp_deg)
+    lock_torque = preload_nm + (n_plates * CLUTCH_TORQUE_PER_PLATE) / math.tan(ramp_rad)
+    return min(100.0, (lock_torque / max(torque_input_nm, 1.0)) * 100.0)
+
+
+def compare_diff_configs(
+    config_a: tuple[float, int, int],
+    config_b: tuple[float, int, int],
+    torque_nm: float = DEFAULT_MAX_TORQUE_NM * 0.7,
+) -> dict[str, float]:
+    """Compare two diff configurations: (preload_nm, n_plates, ramp_deg).
+
+    Returns dict with lock percentages and delta for both coast and drive.
+    """
+    preload_a, plates_a, ramp_a = config_a
+    preload_b, plates_b, ramp_b = config_b
+    lock_a = compute_effective_lock_pct(preload_a, plates_a, ramp_a, torque_nm)
+    lock_b = compute_effective_lock_pct(preload_b, plates_b, ramp_b, torque_nm)
+    return {
+        "lock_pct_a": round(lock_a, 1),
+        "lock_pct_b": round(lock_b, 1),
+        "delta_pct": round(lock_b - lock_a, 1),
+    }
+
+
 @dataclass
 class DiffSolution:
     """Computed differential setup recommendation."""
@@ -74,9 +118,14 @@ class DiffSolution:
     exit_understeer_index: float   # 0=neutral, +ve=understeer on exit
     entry_rotation_index: float    # 0=neutral, +ve=rotation on entry
 
+    # Effective lock comparison tools
+    effective_lock_coast_torque_nm: float = 0.0
+    effective_lock_drive_torque_nm: float = 0.0
+
     # Reasoning
     preload_reasoning: str
     ramp_reasoning: str
+    lock_reasoning: str = ""
 
     def summary(self, width: int = 63) -> str:
         lines = [
@@ -201,11 +250,24 @@ class DiffSolver:
         preload_nm, preload_reasoning = self._compute_preload(driver, measured, track)
         coast_ramp, drive_ramp, ramp_reasoning = self._compute_ramps(driver)
 
-        clutch_plates = BMW_DEFAULT_CLUTCH_PLATES
+        # Use actual clutch plate count from car model if available
+        clutch_plates = getattr(self.car, 'diff_clutch_plates', 0)
+        if clutch_plates <= 0:
+            garage = getattr(self.car, 'garage_ranges', None)
+            if garage is not None and hasattr(garage, 'diff_clutch_plates_options'):
+                clutch_plates = garage.diff_clutch_plates_options[-1]
+            else:
+                clutch_plates = BMW_DEFAULT_CLUTCH_PLATES
         torque_input = self.max_torque_nm * 0.7  # typical cornering torque
 
         lock_pct_coast = self._lock_pct(preload_nm, clutch_plates, coast_ramp, torque_input)
         lock_pct_drive = self._lock_pct(preload_nm, clutch_plates, drive_ramp, torque_input)
+
+        # Compute effective lock torques for comparison
+        coast_ramp_rad = math.radians(coast_ramp)
+        drive_ramp_rad = math.radians(drive_ramp)
+        effective_lock_coast_torque = preload_nm + (clutch_plates * CLUTCH_TORQUE_PER_PLATE) / math.tan(coast_ramp_rad)
+        effective_lock_drive_torque = preload_nm + (clutch_plates * CLUTCH_TORQUE_PER_PLATE) / math.tan(drive_ramp_rad)
 
         # Exit understeer index: how much the diff tends to push on exit.
         # Higher drive lock -> more understeer tendency on exit.
@@ -222,6 +284,13 @@ class DiffSolver:
         # 50% coast lock is neutral — more = stable (less rotation), less = rotating
         entry_rotation_index = (50.0 - lock_pct_coast) / 100.0
 
+        lock_reasoning = (
+            f"Coast: {lock_pct_coast:.1f}% locked ({clutch_plates} plates × "
+            f"{CLUTCH_TORQUE_PER_PLATE:.0f} Nm/plate, ramp={coast_ramp}°, "
+            f"preload={preload_nm:.0f} Nm); "
+            f"Drive: {lock_pct_drive:.1f}% locked (ramp={drive_ramp}°)"
+        )
+
         return DiffSolution(
             lock_pct_coast=round(lock_pct_coast, 1),
             lock_pct_drive=round(lock_pct_drive, 1),
@@ -231,8 +300,11 @@ class DiffSolver:
             clutch_plates=clutch_plates,
             exit_understeer_index=round(exit_understeer_index, 3),
             entry_rotation_index=round(entry_rotation_index, 3),
+            effective_lock_coast_torque_nm=round(effective_lock_coast_torque, 1),
+            effective_lock_drive_torque_nm=round(effective_lock_drive_torque, 1),
             preload_reasoning=preload_reasoning,
             ramp_reasoning=ramp_reasoning,
+            lock_reasoning=lock_reasoning,
         )
 
     def _compute_preload(
@@ -389,3 +461,62 @@ class DiffSolver:
         ramp_rad = math.radians(ramp_deg)
         lock_torque = preload + (n_plates * CLUTCH_TORQUE_PER_PLATE) / math.tan(ramp_rad)
         return min(100.0, (lock_torque / max(torque_input, 1.0)) * 100.0)
+
+    @staticmethod
+    def compute_effective_lock(
+        preload_nm: float,
+        n_plates: int,
+        ramp_deg: int,
+        torque_input_nm: float = 490.0,
+    ) -> float:
+        """Public utility: compute effective diff lock % for any configuration.
+
+        Useful for comparing setups or exploring parameter space.
+
+        Args:
+            preload_nm: Diff preload in Nm
+            n_plates: Number of clutch plates
+            ramp_deg: Ramp angle in degrees
+            torque_input_nm: Input torque (default: 70% of 700 Nm)
+
+        Returns:
+            Lock percentage (0-100)
+        """
+        return DiffSolver._lock_pct(preload_nm, n_plates, ramp_deg, torque_input_nm)
+
+    @staticmethod
+    def compare_diff_configs(
+        config_a: dict,
+        config_b: dict,
+        torque_nm: float = 490.0,
+    ) -> dict:
+        """Compare two diff configurations and return lock % differences.
+
+        Each config dict should have: preload_nm, n_plates, coast_ramp_deg, drive_ramp_deg
+
+        Returns dict with coast_lock_a/b, drive_lock_a/b, and deltas.
+        """
+        coast_a = DiffSolver._lock_pct(
+            config_a.get("preload_nm", 10), config_a.get("n_plates", 6),
+            config_a.get("coast_ramp_deg", 45), torque_nm,
+        )
+        coast_b = DiffSolver._lock_pct(
+            config_b.get("preload_nm", 10), config_b.get("n_plates", 6),
+            config_b.get("coast_ramp_deg", 45), torque_nm,
+        )
+        drive_a = DiffSolver._lock_pct(
+            config_a.get("preload_nm", 10), config_a.get("n_plates", 6),
+            config_a.get("drive_ramp_deg", 70), torque_nm,
+        )
+        drive_b = DiffSolver._lock_pct(
+            config_b.get("preload_nm", 10), config_b.get("n_plates", 6),
+            config_b.get("drive_ramp_deg", 70), torque_nm,
+        )
+        return {
+            "coast_lock_a": round(coast_a, 1),
+            "coast_lock_b": round(coast_b, 1),
+            "drive_lock_a": round(drive_a, 1),
+            "drive_lock_b": round(drive_b, 1),
+            "coast_delta": round(coast_b - coast_a, 1),
+            "drive_delta": round(drive_b - drive_a, 1),
+        }

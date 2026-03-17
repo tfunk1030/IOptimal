@@ -20,7 +20,7 @@ from comparison.compare import (
 # ── Scoring categories and weights ──────────────────────────────
 
 CATEGORY_WEIGHTS: dict[str, float] = {
-    "lap_time": 0.20,
+    "lap_time": 0.12,
     "grip": 0.15,
     "balance": 0.15,
     "aero_efficiency": 0.10,
@@ -29,6 +29,8 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "corner_performance": 0.10,
     "damper_platform": 0.05,
     "thermal": 0.05,
+    "telemetry_health": 0.05,
+    "signal_quality": 0.03,
 }
 
 CATEGORY_LABELS: dict[str, str] = {
@@ -41,6 +43,8 @@ CATEGORY_LABELS: dict[str, str] = {
     "corner_performance": "Corner Performance",
     "damper_platform": "Damper / Platform",
     "thermal": "Thermal",
+    "telemetry_health": "Telemetry Health",
+    "signal_quality": "Signal Quality",
 }
 
 
@@ -326,6 +330,52 @@ def _score_thermal(sessions: list[SessionAnalysis]) -> list[float]:
     return [_safe_avg(s) for s in scores_per_session]
 
 
+def _score_telemetry_health(sessions: list[SessionAnalysis]) -> list[float]:
+    """Score telemetry health: fewer problems, better safety margins."""
+    scores_per_session: list[list[float]] = [[] for _ in sessions]
+
+    # Fewer diagnosed problems = healthier
+    n_problems = [len(s.diagnosis.problems) for s in sessions]
+    prob_norm = _normalize_lower_better(n_problems)
+
+    # Fewer bottoming events = safer
+    bottom_f = [s.measured.bottoming_event_count_front for s in sessions]
+    bottom_r = [s.measured.bottoming_event_count_rear for s in sessions]
+    bottom_f_norm = _normalize_lower_better(bottom_f)
+    bottom_r_norm = _normalize_lower_better(bottom_r)
+
+    # Lower vortex burst count = safer
+    vortex = [s.measured.vortex_burst_event_count for s in sessions]
+    vortex_norm = _normalize_lower_better(vortex)
+
+    for i in range(len(sessions)):
+        scores_per_session[i].extend([
+            prob_norm[i],
+            bottom_f_norm[i],
+            bottom_r_norm[i],
+            vortex_norm[i],
+        ])
+
+    return [_safe_avg(s) for s in scores_per_session]
+
+
+def _score_signal_quality(sessions: list[SessionAnalysis]) -> list[float]:
+    """Score based on signal confidence — sessions with better data quality rank higher."""
+    scores: list[float] = []
+    for s in sessions:
+        signal_values = getattr(s.measured, "signal_values", {})
+        if not signal_values:
+            scores.append(0.5)  # neutral if no signal data
+            continue
+        # Average confidence across all signal values
+        confidences = []
+        for sv in signal_values.values():
+            confidences.append(sv.confidence if hasattr(sv, "confidence") else 0.5)
+        scores.append(sum(confidences) / len(confidences) if confidences else 0.5)
+    # Normalize so best signal quality gets 1.0
+    return _normalize_higher_better(scores)
+
+
 # ── Main scorer ─────────────────────────────────────────────────
 
 
@@ -350,6 +400,8 @@ def score_sessions(comparison: ComparisonResult) -> ScoringResult:
         "corner_performance": _score_corner_performance(sessions, corner_comps),
         "damper_platform": _score_damper_platform(sessions),
         "thermal": _score_thermal(sessions),
+        "telemetry_health": _score_telemetry_health(sessions),
+        "signal_quality": _score_signal_quality(sessions),
     }
 
     # Per-corner speed class scores for each session

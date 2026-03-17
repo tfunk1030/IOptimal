@@ -68,6 +68,28 @@ class CornerAnalysis:
     traction_risk_flags: list[str] = field(default_factory=list)
     delta_to_min_time_s: float = 0.0  # backward-compatible alias of bounded total
 
+    # Phase decomposition (richer than entry/apex/exit)
+    braking_phase_s: float = 0.0       # time spent braking before corner
+    turn_in_phase_s: float = 0.0       # time from brake release to apex
+    throttle_pickup_phase_s: float = 0.0  # time from apex to throttle > 20%
+    straight_carry_speed_kph: float = 0.0  # speed at exit of corner
+
+    # Braking metrics
+    brake_release_rate_pct_per_s: float = 0.0  # how fast driver releases brake
+    peak_brake_pct: float = 0.0        # maximum brake pressure in approach
+
+    # Exit slip severity
+    exit_rear_slip_mean: float = 0.0   # mean rear slip ratio in exit phase
+
+    # Entry pitch severity
+    entry_pitch_rate_deg_per_s: float = 0.0  # pitch rate during braking into corner
+
+    # Aero collapse severity
+    aero_collapse_mm: float = 0.0      # front RH drop from entry to mid-corner
+
+    # Corner confidence (0-1, how trustworthy this corner's data is)
+    corner_confidence: float = 1.0
+
 
 def _classify_speed(apex_speed_kph: float) -> str:
     """Classify corner by apex speed into aero-relevance bands."""
@@ -387,6 +409,100 @@ def segment_lap(
         if exit_speed < apex_speed + 12.0:
             traction_flags.append("weak_exit_speed_recovery")
 
+        # --- Phase decomposition and richer metrics ---
+
+        # Braking phase: time spent braking before corner
+        braking_phase_s = 0.0
+        matched_bz = _match_braking_to_corner(braking_zones, cs, lap_dist)
+        if matched_bz is not None:
+            bz_start, bz_end = matched_bz
+            braking_phase_s = (bz_end - bz_start) * dt
+
+        # Turn-in phase: time from brake release (< 5%) to apex
+        turn_in_phase_s = 0.0
+        if len(pre_apex_brake) > 0:
+            brake_below_5 = pre_apex_brake < 0.05
+            if np.any(brake_below_5):
+                # First sample where brake drops below 5% in pre-apex
+                release_idx = int(np.argmax(brake_below_5))
+                turn_in_phase_s = (apex_local - release_idx) * dt
+            else:
+                # Brake never released before apex — turn-in is 0
+                turn_in_phase_s = 0.0
+
+        # Throttle pickup phase: same as throttle_delay_s
+        throttle_pickup_phase_s = throttle_delay_s
+
+        # Straight carry speed: speed at exit of corner
+        straight_carry_speed_kph = exit_speed
+
+        # Peak brake pressure in approach (full corner segment)
+        peak_brake_pct = float(np.max(seg_brake)) if len(seg_brake) > 0 else 0.0
+
+        # Brake release rate: slope of brake decrease in pre-apex segment
+        brake_release_rate = 0.0
+        if len(pre_apex_brake) > 3:
+            # Find the region where brake is decreasing
+            brake_diff = np.diff(pre_apex_brake)
+            decreasing = brake_diff < -0.01
+            if np.any(decreasing):
+                dec_indices = np.where(decreasing)[0]
+                if len(dec_indices) >= 2:
+                    # Use the continuous decreasing region
+                    first_dec = dec_indices[0]
+                    # Find end of continuous decrease (allow 1-sample gaps)
+                    last_dec = first_dec
+                    for di in dec_indices[1:]:
+                        if di - last_dec <= 2:
+                            last_dec = di
+                        else:
+                            break
+                    release_samples = last_dec - first_dec + 1
+                    if release_samples > 0:
+                        brake_drop = float(pre_apex_brake[first_dec] - pre_apex_brake[last_dec + 1])
+                        release_duration = release_samples * dt
+                        if release_duration > 0:
+                            brake_release_rate = brake_drop / release_duration
+
+        # Exit rear slip mean: placeholder (actual slip channels may not exist)
+        exit_rear_slip_mean = 0.0
+
+        # Entry pitch rate: pitch change rate during entry phase
+        entry_pitch_rate = 0.0
+        if has_rh and apex_local > 2:
+            entry_front_rh = seg_front_rh[:apex_local]
+            entry_rear_rh = seg_rear_rh[:apex_local]
+            if len(entry_front_rh) > 2 and len(entry_rear_rh) > 2:
+                # Pitch ~ (front_rh - rear_rh); positive = nose down
+                # Use wheelbase approximation for angle conversion
+                wheelbase_mm = 2800.0  # approximate, ~2.8m
+                if car is not None:
+                    wheelbase_mm = car.wheelbase_m * 1000.0
+                pitch_start = float(entry_front_rh[0] - entry_rear_rh[0])
+                pitch_end = float(entry_front_rh[-1] - entry_rear_rh[-1])
+                pitch_change_mm = pitch_end - pitch_start
+                pitch_change_deg = np.degrees(pitch_change_mm / wheelbase_mm)
+                entry_duration = len(entry_front_rh) * dt
+                if entry_duration > 0:
+                    entry_pitch_rate = pitch_change_deg / entry_duration
+
+        # Aero collapse: front RH drop from entry to minimum during corner
+        aero_collapse_mm_val = 0.0
+        if has_rh and len(seg_front_rh) > 0:
+            entry_rh = float(seg_front_rh[0])
+            min_rh = float(np.min(seg_front_rh))
+            aero_collapse_mm_val = max(0.0, entry_rh - min_rh)
+
+        # Corner confidence
+        corner_conf = 1.0
+        if duration < 0.5:
+            corner_conf -= 0.2
+        if (ce - cs) < 15:
+            corner_conf -= 0.2
+        if corner_has_kerb:
+            corner_conf -= 0.1
+        corner_conf = max(0.0, corner_conf)
+
         results.append(CornerAnalysis(
             corner_id=cid,
             lap_dist_start_m=round(float(lap_dist[cs]), 1),
@@ -422,6 +538,16 @@ def segment_lap(
             platform_risk_flags=platform_flags,
             traction_risk_flags=traction_flags,
             delta_to_min_time_s=0.0,
+            braking_phase_s=round(braking_phase_s, 3),
+            turn_in_phase_s=round(turn_in_phase_s, 3),
+            throttle_pickup_phase_s=round(throttle_pickup_phase_s, 3),
+            straight_carry_speed_kph=round(straight_carry_speed_kph, 1),
+            brake_release_rate_pct_per_s=round(brake_release_rate, 2),
+            peak_brake_pct=round(peak_brake_pct, 3),
+            exit_rear_slip_mean=exit_rear_slip_mean,
+            entry_pitch_rate_deg_per_s=round(entry_pitch_rate, 4),
+            aero_collapse_mm=round(aero_collapse_mm_val, 1),
+            corner_confidence=round(corner_conf, 2),
         ))
 
     # Sort by lap distance

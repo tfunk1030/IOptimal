@@ -20,8 +20,10 @@ if TYPE_CHECKING:
     from analyzer.diagnose import Diagnosis
     from analyzer.driver_style import DriverProfile
     from analyzer.extract import MeasuredState
+    from analyzer.overhaul import OverhaulAssessment
     from analyzer.segment import CornerAnalysis
     from analyzer.setup_reader import CurrentSetup
+    from analyzer.state_inference import CarStateIssue
     from car_model.cars import CarModel
     from solver.arb_solver import ARBSolution
     from solver.corner_spring_solver import CornerSpringSolution
@@ -85,6 +87,8 @@ def generate_report(
     stint_evolution: object = None,
     stint_compromise_info: list[str] | None = None,
     solve_context_lines: list[str] | None = None,
+    car_state_issues: list["CarStateIssue"] | None = None,
+    overhaul_assessment: "OverhaulAssessment | None" = None,
     compact: bool = False,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
@@ -171,6 +175,37 @@ def generate_report(
         a(f"  Causal chain: {str(diagnosis.causal_diagnosis)[:W - 16]}")
     a("")
 
+    # ── CAR STATE ANALYSIS ─────────────────────────────────────────
+    if car_state_issues:
+        a(_hdr("INFERRED CAR STATES"))
+        for issue in car_state_issues[:5]:
+            sev_bar = "█" * int(issue.severity * 10) + "░" * (10 - int(issue.severity * 10))
+            a(f"  [{sev_bar}] {issue.state_id}")
+            a(f"    Severity: {issue.severity:.2f}  Confidence: {issue.confidence:.2f}  "
+              f"Loss: ~{issue.estimated_loss_ms:.0f}ms")
+            if issue.recommended_direction:
+                a(f"    Direction: {issue.recommended_direction}")
+            steps_str = ", ".join(f"Step {s}" for s in issue.implicated_steps)
+            a(f"    Affects: {steps_str}")
+        a("")
+
+    # ── OVERHAUL CLASSIFICATION ────────────────────────────────────
+    if overhaul_assessment is not None:
+        a(_hdr("SETUP CLASSIFICATION"))
+        cls_icon = {
+            "minor_tweak": "✓",
+            "moderate_rework": "⚠",
+            "baseline_reset": "✗",
+        }
+        icon = cls_icon.get(overhaul_assessment.classification, "?")
+        a(f"  {icon} {overhaul_assessment.classification.replace('_', ' ').title()}")
+        a(f"    Confidence: {overhaul_assessment.confidence:.0%}  "
+          f"Score: {overhaul_assessment.score:.2f}")
+        if overhaul_assessment.reasons:
+            for reason in overhaul_assessment.reasons[:3]:
+                a(f"    • {reason}")
+        a("")
+
     # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
     a(print_full_setup_report(
         car_name=car.name,
@@ -223,6 +258,34 @@ def generate_report(
         a(_cmp("R LS Comp",          current_setup.rear_ls_comp,         step6.lr.ls_comp,               "cl",  ".0f"))
         a(_cmp("R HS Comp",          current_setup.rear_hs_comp,         step6.lr.hs_comp,               "cl",  ".0f"))
         a("")
+
+    # ── CONFIDENCE SUMMARY ─────────────────────────────────────────
+    if hasattr(modifiers, 'overall_confidence'):
+        a(_hdr("SOLVER CONFIDENCE"))
+        conf = modifiers.overall_confidence
+        conf_bar = "█" * int(conf * 20) + "░" * (20 - int(conf * 20))
+        a(f"  Overall: [{conf_bar}] {conf:.0%}")
+        if modifiers.reasons:
+            a(f"  Modifiers applied: {len(modifiers.reasons)}")
+            for r in modifiers.reasons[:5]:
+                a(f"    • {r[:W-6]}")
+        a("")
+
+    # ── SIGNAL CONFIDENCE ──────────────────────────────────────────
+    signal_values = getattr(measured, "signal_values", None)
+    if signal_values:
+        trusted = [k for k, sv in signal_values.items() if sv.valid and sv.confidence >= 0.8]
+        weak = [k for k, sv in signal_values.items() if sv.valid and sv.confidence < 0.8]
+        unavail = [k for k, sv in signal_values.items() if not sv.valid]
+        if weak or unavail:
+            a(_hdr("SIGNAL CONFIDENCE"))
+            if trusted:
+                a(f"  Trusted ({len(trusted)}): {', '.join(trusted[:8])}")
+            if weak:
+                a(f"  Weak ({len(weak)}): {', '.join(weak[:8])}")
+            if unavail:
+                a(f"  Unavailable ({len(unavail)}): {', '.join(unavail[:5])}")
+            a("")
 
     # ── HEAVE TRAVEL BUDGET ────────────────────────────────────────────
     if step2.defl_max_front_mm > 0:
