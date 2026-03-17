@@ -2210,7 +2210,7 @@ def reason_and_solve(
     log(f"\n[Phase 3] Corner profiling...")
     _build_corner_profiles(state)
     log(f"  {len(state.corner_profiles)} corners matched across sessions")
-        log(f"  {len(state.top_weakness_corners)} consistent weakness corners")
+    log(f"  {len(state.top_weakness_corners)} consistent weakness corners")
     for cp in state.top_weakness_corners[:3]:
         log(
             f"    T{cp.corner_id:02d} ({cp.speed_class}): "
