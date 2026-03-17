@@ -18,6 +18,7 @@ class TelemetrySignal(Generic[T]):
     confidence: float = 0.0
     source: str = ""
     invalid_reason: str = ""
+    fallback_used: bool = False
     conflict_state: str = "clear"  # clear | conflicted
     retry_attempts: int = 1
 
@@ -153,6 +154,7 @@ def build_signal_map(measured: "MeasuredState") -> dict[str, TelemetrySignal[Any
         source: str,
         confidence: float = 0.85,
         invalid_reason: str = "",
+        fallback_used: bool = False,
     ) -> TelemetrySignal[Any]:
         quality = "trusted" if value not in (None, "") else "unknown"
         if isinstance(value, (int, float)) and float(value) == 0.0 and invalid_reason:
@@ -166,9 +168,16 @@ def build_signal_map(measured: "MeasuredState") -> dict[str, TelemetrySignal[Any
             confidence=confidence_local,
             source=source,
             invalid_reason=invalid_reason if quality != "trusted" else "",
+            fallback_used=fallback_used,
         )
 
-    def _proxy(value: Any, *, source: str, confidence: float = 0.6) -> TelemetrySignal[Any]:
+    def _proxy(
+        value: Any,
+        *,
+        source: str,
+        confidence: float = 0.6,
+        fallback_used: bool = False,
+    ) -> TelemetrySignal[Any]:
         quality = "proxy" if value not in (None, "") else "unknown"
         return TelemetrySignal(
             value=value,
@@ -176,12 +185,27 @@ def build_signal_map(measured: "MeasuredState") -> dict[str, TelemetrySignal[Any
             confidence=confidence if quality == "proxy" else 0.0,
             source=source,
             invalid_reason="" if quality == "proxy" else "not_extracted",
+            fallback_used=fallback_used,
         )
 
     front_settle_reason = getattr(measured, "front_settle_invalid_reason", "") or ""
     rear_settle_reason = getattr(measured, "rear_settle_invalid_reason", "") or ""
-    front_settle_valid = getattr(measured, "front_settle_valid_clean_events", 0) >= 3
-    rear_settle_valid = getattr(measured, "rear_settle_valid_clean_events", 0) >= 3
+    front_settle_valid = (
+        getattr(measured, "front_settle_valid_clean_events", 0) >= 3
+        and front_settle_reason in {"", "trusted"}
+    )
+    rear_settle_valid = (
+        getattr(measured, "rear_settle_valid_clean_events", 0) >= 3
+        and rear_settle_reason in {"", "trusted"}
+    )
+    metric_fallbacks = set(getattr(measured, "metric_fallbacks", []) or [])
+    front_lock_fallback = any(
+        item.startswith("front_braking_lock_ratio_p95=") for item in metric_fallbacks
+    )
+    rear_slip_fallback = any(
+        item.startswith("rear_power_slip_ratio_p95=") for item in metric_fallbacks
+    )
+    hydraulic_split_conf = float(getattr(measured, "hydraulic_brake_split_confidence", 0.0) or 0.0)
 
     signals: dict[str, TelemetrySignal[Any]] = {
         "mean_front_rh_at_speed_mm": _trusted(
@@ -213,15 +237,33 @@ def build_signal_map(measured: "MeasuredState") -> dict[str, TelemetrySignal[Any
             measured.rear_heave_travel_used_pct,
             source="heave_deflection_channel",
         ),
-        "front_braking_lock_ratio_p95": _trusted(
-            measured.front_braking_lock_ratio_p95,
-            source="wheel_speed_delta",
-            confidence=0.82,
+        "front_braking_lock_ratio_p95": (
+            _proxy(
+                measured.front_braking_lock_ratio_p95,
+                source="wheel_speed_delta_fallback",
+                confidence=0.62,
+                fallback_used=True,
+            )
+            if front_lock_fallback
+            else _trusted(
+                measured.front_braking_lock_ratio_p95,
+                source="wheel_speed_delta",
+                confidence=0.82,
+            )
         ),
-        "rear_power_slip_ratio_p95": _trusted(
-            measured.rear_power_slip_ratio_p95,
-            source="wheel_speed_delta",
-            confidence=0.82,
+        "rear_power_slip_ratio_p95": (
+            _proxy(
+                measured.rear_power_slip_ratio_p95,
+                source="wheel_speed_delta_fallback",
+                confidence=0.62,
+                fallback_used=True,
+            )
+            if rear_slip_fallback
+            else _trusted(
+                measured.rear_power_slip_ratio_p95,
+                source="wheel_speed_delta",
+                confidence=0.82,
+            )
         ),
         "bottoming_event_count_front_clean": _trusted(
             measured.bottoming_event_count_front_clean,
@@ -260,6 +302,29 @@ def build_signal_map(measured: "MeasuredState") -> dict[str, TelemetrySignal[Any
         "body_slip_p95_deg": _proxy(measured.body_slip_p95_deg, source="body_velocity_proxy"),
         "yaw_rate_correlation": _proxy(measured.yaw_rate_correlation, source="yaw_fit_proxy", confidence=0.7),
     }
+    if getattr(measured, "hydraulic_brake_split_pct", 0.0) > 0:
+        split_signal = (
+            _trusted(
+                measured.hydraulic_brake_split_pct,
+                source="hydraulic_brake_line_pressure",
+                confidence=max(0.55, min(0.95, hydraulic_split_conf)),
+            )
+            if hydraulic_split_conf >= 0.7
+            else _proxy(
+                measured.hydraulic_brake_split_pct,
+                source="hydraulic_brake_line_pressure",
+                confidence=max(0.3, hydraulic_split_conf),
+            )
+        )
+    else:
+        split_signal = TelemetrySignal(
+            value=None,
+            quality="unknown",
+            confidence=0.0,
+            source="hydraulic_brake_line_pressure",
+            invalid_reason="insufficient_braking_samples",
+        )
+    signals["hydraulic_brake_split_pct"] = split_signal
 
     signals["front_rh_settle_time_ms"] = TelemetrySignal(
         value=measured.front_rh_settle_time_ms if front_settle_valid else None,
@@ -293,6 +358,7 @@ def build_telemetry_bundle(signals: dict[str, TelemetrySignal[Any]]) -> Telemetr
         },
         braking_platform={
             "front_braking_lock_ratio_p95": signals.get("front_braking_lock_ratio_p95", TelemetrySignal()),
+            "hydraulic_brake_split_pct": signals.get("hydraulic_brake_split_pct", TelemetrySignal()),
             "pitch_range_braking_deg": signals.get("pitch_range_braking_deg", TelemetrySignal()),
             "pitch_mean_braking_deg": signals.get("pitch_mean_braking_deg", TelemetrySignal()),
             "front_rh_settle_time_ms": signals.get("front_rh_settle_time_ms", TelemetrySignal()),

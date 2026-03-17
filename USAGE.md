@@ -15,6 +15,14 @@ Install dependencies:
 pip install numpy scipy openpyxl
 ```
 
+For local development / cloud-agent test execution, install the dev test stack:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
+This installs `pytest` plus the Python solver dependencies used by the focused regression suite and CI workflow.
+
 ## Supported Cars
 
 | Name | CLI Flag | Full Name |
@@ -259,6 +267,26 @@ python -m solver.solve --car bmw --track sebring --wing 17 --save solver_output.
 # Step 3: Validate predictions against reality
 python -m validator --car bmw --track sebring --wing 17 --ibt new_session.ibt --setup solver_output.json
 ```
+
+---
+
+## Running Tests
+
+The repository ships a focused Python regression suite under `tests/`.
+
+Install the development dependencies first:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
+Then run the suite with either `pytest` or the Python module form:
+
+```bash
+python3 -m pytest -q tests
+```
+
+If you are in a minimal environment, some integration coverage may still be skipped when optional scientific dependencies are unavailable. The CI workflow installs the full dev stack, including `pytest`.
 
 Exit codes: `0` = predictions match, `1` = needs tweaking, `2` = significant mismatch.
 

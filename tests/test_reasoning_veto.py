@@ -1,5 +1,6 @@
 import contextlib
 import io
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ from pipeline.reason import (
     PhysicsReasoning,
     ReasoningState,
     SpeedRegimeAnalysis,
+    _apply_selected_candidate_outputs,
     _build_validation_clusters,
     _reason_to_modifiers,
     _run_physics_validations,
@@ -23,6 +25,7 @@ from solver.setup_fingerprint import (
     fingerprint_from_solver_steps,
     match_failed_cluster,
 )
+from solver.candidate_search import SetupCandidate
 from track_model.ibt_parser import IBTFile
 
 
@@ -150,7 +153,10 @@ def _solver_fp_from_json(data: dict):
     )
 
 
-@unittest.skipUnless(all(path.exists() for path in BMW_FILES), "BMW IBT fixtures not available")
+@unittest.skipUnless(
+    all(path.exists() for path in BMW_FILES) and importlib.util.find_spec("scipy") is not None,
+    "BMW IBT fixtures or scipy not available",
+)
 class ReasoningVetoIntegrationTests(unittest.TestCase):
     def test_bmw_validation_run_becomes_authority_and_changes_output(self):
         with tempfile.TemporaryDirectory() as td:
@@ -181,6 +187,36 @@ class ReasoningVetoIntegrationTests(unittest.TestCase):
 
 
 class ReasoningVetoUnitTests(unittest.TestCase):
+    def test_selected_candidate_outputs_replace_final_payload(self):
+        selected = SetupCandidate(
+            family="baseline_reset",
+            description="selected",
+            step1=SimpleNamespace(front_pushrod_offset_mm=-30.0),
+            step2=SimpleNamespace(front_heave_nmm=60.0),
+            step3=SimpleNamespace(front_torsion_od_mm=14.2),
+            step4=SimpleNamespace(front_arb_blade_start=2),
+            step5=SimpleNamespace(front_camber_deg=-3.2),
+            step6=SimpleNamespace(lf=SimpleNamespace(ls_comp=9)),
+            supporting=SimpleNamespace(brake_bias_pct=47.0),
+            selected=True,
+        )
+
+        step1, step2, step3, step4, step5, step6, supporting, applied = _apply_selected_candidate_outputs(
+            selected,
+            step1=SimpleNamespace(front_pushrod_offset_mm=-26.5),
+            step2=SimpleNamespace(front_heave_nmm=50.0),
+            step3=SimpleNamespace(front_torsion_od_mm=13.9),
+            step4=SimpleNamespace(front_arb_blade_start=1),
+            step5=SimpleNamespace(front_camber_deg=-2.9),
+            step6=SimpleNamespace(lf=SimpleNamespace(ls_comp=7)),
+            supporting=SimpleNamespace(brake_bias_pct=46.0),
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(step1.front_pushrod_offset_mm, -30.0)
+        self.assertEqual(step2.front_heave_nmm, 60.0)
+        self.assertEqual(supporting.brake_bias_pct, 47.0)
+
     def test_physics_validation_uses_split_bottoming_fields(self):
         state = ReasoningState(
             sessions=[

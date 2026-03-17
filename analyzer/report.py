@@ -18,6 +18,7 @@ from analyzer.diagnose import Diagnosis, Problem
 from analyzer.recommend import AnalysisResult, SetupChange
 from analyzer.setup_reader import CurrentSetup
 from analyzer.extract import MeasuredState
+from analyzer.telemetry_truth import summarize_signal_quality
 
 
 def _safe_dict(obj: Any) -> Any:
@@ -128,6 +129,22 @@ def format_report(
     lines.append(
         f"  TC gain: {setup.tc_gain}    TC slip: {setup.tc_slip}"
     )
+    if (
+        setup.brake_bias_target != 0.0
+        or setup.brake_bias_migration != 0.0
+        or setup.front_master_cyl_mm > 0.0
+        or setup.rear_master_cyl_mm > 0.0
+        or setup.pad_compound
+    ):
+        lines.append(
+            f"  Brake target: {setup.brake_bias_target:+.1f}    "
+            f"Migration: {setup.brake_bias_migration:+.1f}"
+        )
+        lines.append(
+            f"  Master cyl: F {setup.front_master_cyl_mm:.1f} / "
+            f"R {setup.rear_master_cyl_mm:.1f} mm    "
+            f"Pad: {setup.pad_compound or 'unknown'}"
+        )
     lines.append("")
 
     # --- Handling Diagnosis ---
@@ -154,6 +171,43 @@ def format_report(
             lines.append(f"          {line}")
 
     lines.append("")
+
+    signal_lines = summarize_signal_quality(measured) if measured is not None else []
+    if signal_lines:
+        lines.append(section("SIGNAL CONFIDENCE"))
+        lines.append("")
+        for signal_line in signal_lines:
+            wrapped = _wrap_text(signal_line, width - 4)
+            for line in wrapped:
+                lines.append(f"  {line}")
+        if measured is not None and measured.metric_fallbacks:
+            lines.append("  Fallbacks used:")
+            for fallback in measured.metric_fallbacks[:8]:
+                lines.append(f"    - {fallback}")
+        lines.append("")
+
+    if diag.state_issues or diag.overhaul_assessment is not None:
+        lines.append(section("PRIMARY CAR STATES"))
+        lines.append("")
+        if diag.overhaul_assessment is not None:
+            lines.append(
+                f"  Overhaul: {diag.overhaul_assessment.classification}  "
+                f"(conf {diag.overhaul_assessment.confidence:.0%}, score {diag.overhaul_assessment.score:.2f})"
+            )
+            for reason in diag.overhaul_assessment.reasons[:3]:
+                wrapped = _wrap_text(reason, width - 6)
+                for line in wrapped:
+                    lines.append(f"    {line}")
+        for issue in diag.state_issues[:5]:
+            lines.append(
+                f"  - {issue.state_id}  sev={issue.severity:.2f}  "
+                f"conf={issue.confidence:.2f}  loss~{issue.estimated_loss_ms:.0f}ms"
+            )
+            if issue.recommended_direction:
+                wrapped = _wrap_text(issue.recommended_direction, width - 6)
+                for line in wrapped:
+                    lines.append(f"    {line}")
+        lines.append("")
 
     # --- Recommended Changes ---
     if result.changes:
@@ -387,6 +441,9 @@ def save_analysis_json(
 
     if measured is not None:
         summary["measured"] = _safe_dict(measured)
+        summary["signal_quality_summary"] = summarize_signal_quality(measured)
+        summary["telemetry_signals"] = _safe_dict(getattr(measured, "telemetry_signals", {}))
+        summary["telemetry_bundle"] = _safe_dict(getattr(measured, "telemetry_bundle", {}))
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     Path(output_path).write_text(json.dumps(summary, indent=2))

@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class CandidateScore:
+    total: float
+    safety: float
+    performance: float
+    stability: float
+    confidence: float
+    disruption_cost: float
+    notes: list[str] = field(default_factory=list)
+
+
+def combine_candidate_score(
+    *,
+    safety: float,
+    performance: float,
+    stability: float,
+    confidence: float,
+    disruption_cost: float,
+    notes: list[str] | None = None,
+) -> CandidateScore:
+    safety = max(0.0, min(1.0, safety))
+    performance = max(0.0, min(1.0, performance))
+    stability = max(0.0, min(1.0, stability))
+    confidence = max(0.0, min(1.0, confidence))
+    disruption_cost = max(0.0, min(1.0, disruption_cost))
+    total = (
+        safety * 0.30
+        + performance * 0.30
+        + stability * 0.20
+        + confidence * 0.10
+        + (1.0 - disruption_cost) * 0.10
+    )
+    return CandidateScore(
+        total=round(total, 3),
+        safety=round(safety, 3),
+        performance=round(performance, 3),
+        stability=round(stability, 3),
+        confidence=round(confidence, 3),
+        disruption_cost=round(disruption_cost, 3),
+        notes=list(notes or []),
+    )
+
+
+def score_from_prediction(
+    *,
+    baseline_measured: Any,
+    predicted: Any | None,
+    prediction_confidence: float,
+    disruption_cost: float,
+    notes: list[str] | None = None,
+) -> CandidateScore:
+    """Score a candidate from predicted telemetry changes."""
+    notes = list(notes or [])
+    if predicted is None:
+        return combine_candidate_score(
+            safety=0.45,
+            performance=0.45,
+            stability=0.45,
+            confidence=prediction_confidence,
+            disruption_cost=disruption_cost,
+            notes=notes + ["No predicted telemetry available; using neutral score."],
+        )
+
+    def _safe(value: Any) -> float | None:
+        try:
+            return None if value is None else float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _improvement(before: float | None, after: float | None, *, lower_better: bool = True, scale: float = 1.0) -> float:
+        if before is None or after is None:
+            return 0.5
+        delta = (before - after) if lower_better else (after - before)
+        return max(0.0, min(1.0, 0.5 + delta / max(scale, 1e-6)))
+
+    safety = (
+        _improvement(_safe(getattr(baseline_measured, "front_heave_travel_used_pct", None)), _safe(getattr(predicted, "front_heave_travel_used_pct", None)), lower_better=True, scale=20.0)
+        + _improvement(_safe(getattr(baseline_measured, "pitch_range_braking_deg", None)), _safe(getattr(predicted, "braking_pitch_deg", None)), lower_better=True, scale=0.8)
+        + _improvement(_safe(getattr(baseline_measured, "front_braking_lock_ratio_p95", None)), _safe(getattr(predicted, "front_lock_p95", None)), lower_better=True, scale=0.04)
+    ) / 3.0
+    stability = (
+        _improvement(_safe(getattr(baseline_measured, "rear_rh_std_mm", None)), _safe(getattr(predicted, "rear_rh_std_mm", None)), lower_better=True, scale=3.0)
+        + _improvement(_safe(getattr(baseline_measured, "body_slip_p95_deg", None)), _safe(getattr(predicted, "body_slip_p95_deg", None)), lower_better=True, scale=2.0)
+    ) / 2.0
+    performance = (
+        _improvement(_safe(getattr(baseline_measured, "understeer_low_speed_deg", None)), _safe(getattr(predicted, "understeer_low_deg", None)), lower_better=True, scale=1.0)
+        + _improvement(_safe(getattr(baseline_measured, "understeer_high_speed_deg", None)), _safe(getattr(predicted, "understeer_high_deg", None)), lower_better=True, scale=1.0)
+        + _improvement(_safe(getattr(baseline_measured, "rear_power_slip_ratio_p95", None)), _safe(getattr(predicted, "rear_power_slip_p95", None)), lower_better=True, scale=0.05)
+    ) / 3.0
+
+    notes.extend(
+        [
+            f"Predicted safety score from travel/pitch/lock = {safety:.2f}",
+            f"Predicted stability score from RH variance/body slip = {stability:.2f}",
+            f"Predicted performance score from understeer/slip = {performance:.2f}",
+        ]
+    )
+    return combine_candidate_score(
+        safety=safety,
+        performance=performance,
+        stability=stability,
+        confidence=prediction_confidence,
+        disruption_cost=disruption_cost,
+        notes=notes,
+    )
