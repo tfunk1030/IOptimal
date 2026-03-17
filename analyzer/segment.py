@@ -68,6 +68,9 @@ class CornerAnalysis:
     entry_loss_s: float = 0.0
     apex_loss_s: float = 0.0
     exit_loss_s: float = 0.0
+    entry_pitch_severity: float = 0.0
+    aero_collapse_severity: float = 0.0
+    exit_slip_severity: float = 0.0
     platform_risk_flags: list[str] = field(default_factory=list)
     traction_risk_flags: list[str] = field(default_factory=list)
     delta_to_min_time_s: float = 0.0  # backward-compatible alias of bounded total
@@ -407,6 +410,9 @@ def segment_lap(
             traction_flags.append("body_slip_peak")
         if exit_speed < apex_speed + 12.0:
             traction_flags.append("weak_exit_speed_recovery")
+        entry_pitch_severity = max(0.0, (trail_pct - 0.25) / 0.5)
+        aero_collapse_severity = max(0.0, ((f_rh_mean - f_rh_min) - 5.0) / 8.0)
+        exit_slip_severity = max(0.0, (bs_peak - 2.5) / 3.0)
 
         confidence = 0.55
         if duration > 0.8:
@@ -457,6 +463,9 @@ def segment_lap(
             entry_loss_s=0.0,
             apex_loss_s=0.0,
             exit_loss_s=0.0,
+            entry_pitch_severity=round(entry_pitch_severity, 3),
+            aero_collapse_severity=round(aero_collapse_severity, 3),
+            exit_slip_severity=round(exit_slip_severity, 3),
             platform_risk_flags=platform_flags,
             traction_risk_flags=traction_flags,
             delta_to_min_time_s=0.0,
