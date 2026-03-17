@@ -146,6 +146,11 @@ class CurrentSetup:
 
     # --- Brakes / Diff / TC ---
     brake_bias_pct: float = 0.0
+    brake_bias_target: float = 0.0
+    brake_bias_migration: float = 0.0
+    front_master_cyl_mm: float = 0.0
+    rear_master_cyl_mm: float = 0.0
+    pad_compound: str = ""
     front_diff_preload_nm: float = 0.0  # Ferrari only (has front diff)
     diff_preload_nm: float = 0.0        # Rear diff preload
     diff_ramp_angles: str = ""
@@ -308,6 +313,11 @@ class CurrentSetup:
 
             # Brakes / Diff / TC
             brake_bias_pct=_parse_float(brake_spec.get("BrakePressureBias")),
+            brake_bias_target=_parse_float(brake_spec.get("BrakeBiasTarget")),
+            brake_bias_migration=_parse_float(brake_spec.get("BrakeBiasMigration")),
+            front_master_cyl_mm=_parse_float(brake_spec.get("FrontMasterCyl")),
+            rear_master_cyl_mm=_parse_float(brake_spec.get("RearMasterCyl")),
+            pad_compound=str(brake_spec.get("PadCompound", "") or ""),
             front_diff_preload_nm=_parse_float(front_diff_spec.get("Preload")),
             diff_preload_nm=_parse_float(diff_spec.get("Preload")),
             diff_ramp_angles=str(diff_spec.get("CoastDriveRampAngles", "") or diff_spec.get("CoastDriveRampOptions", "")),
@@ -370,5 +380,6 @@ class CurrentSetup:
             f"Heave {self.front_heave_nmm:.0f}/{self.rear_third_nmm:.0f}  "
             f"FARB {self.front_arb_size}/{self.front_arb_blade} "
             f"RARB {self.rear_arb_size}/{self.rear_arb_blade}  "
-            f"Cam F{self.front_camber_deg:.1f}/R{self.rear_camber_deg:.1f}"
+            f"Cam F{self.front_camber_deg:.1f}/R{self.rear_camber_deg:.1f}  "
+            f"BB {self.brake_bias_pct:.1f}%"
         )
