@@ -18,6 +18,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from analyzer.overhaul import OverhaulAssessment, assess_overhaul
+from analyzer.state_inference import CarStateIssue, infer_car_states
 from analyzer.adaptive_thresholds import AdaptiveThresholds
 from analyzer.extract import MeasuredState
 from analyzer.setup_reader import CurrentSetup
@@ -49,6 +51,9 @@ class Diagnosis:
     # Summary metrics for the report
     lltd_pct: float = 0.0
     weight_dist_front_pct: float = 0.0
+    state_issues: list[CarStateIssue] = field(default_factory=list)
+    overhaul_assessment: OverhaulAssessment | None = None
+    evidence_strength: float = 0.0
     # Causal analysis (populated after problems are identified)
     causal_diagnosis: object = field(default=None, repr=False)  # CausalDiagnosis | None
 
@@ -58,6 +63,8 @@ def diagnose(
     setup: CurrentSetup,
     car: CarModel,
     thresholds: AdaptiveThresholds | None = None,
+    driver: object | None = None,
+    corners: list | None = None,
 ) -> Diagnosis:
     """Analyze telemetry and identify handling problems from physics.
 
@@ -128,6 +135,22 @@ def diagnose(
             diag.causal_diagnosis = None  # causal analysis is advisory — never block
     else:
         diag.causal_diagnosis = None
+
+    diag.state_issues = infer_car_states(
+        measured=measured,
+        setup=setup,
+        problems=problems,
+        driver=driver,
+        corners=corners,
+    )
+    diag.overhaul_assessment = assess_overhaul(diag.state_issues)
+    if diag.state_issues:
+        diag.evidence_strength = round(
+            sum(issue.confidence for issue in diag.state_issues) / len(diag.state_issues),
+            3,
+        )
+    else:
+        diag.evidence_strength = 0.0
 
     # Overall assessment
     diag.assessment = _compute_assessment(problems)

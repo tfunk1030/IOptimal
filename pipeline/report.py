@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from car_model.garage import GarageSetupState
+from analyzer.telemetry_truth import summarize_signal_quality
+from solver.predictor import predict_candidate_telemetry
 
 if TYPE_CHECKING:
     from aero_model.gradient import AeroGradients
@@ -85,6 +87,7 @@ def generate_report(
     stint_evolution: object = None,
     stint_compromise_info: list[str] | None = None,
     solve_context_lines: list[str] | None = None,
+    prediction_corrections: dict[str, float] | None = None,
     compact: bool = False,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
@@ -171,6 +174,82 @@ def generate_report(
         a(f"  Causal chain: {str(diagnosis.causal_diagnosis)[:W - 16]}")
     a("")
 
+    signal_lines = summarize_signal_quality(measured)
+    if signal_lines:
+        a(_hdr("SIGNAL CONFIDENCE"))
+        for line in signal_lines:
+            a(f"  {line[:W - 2]}")
+        if getattr(measured, "metric_fallbacks", None):
+            for fallback in measured.metric_fallbacks[:5]:
+                a(f"  Fallback: {fallback[:W - 14]}")
+        a("")
+
+    if (
+        current_setup.brake_bias_target != 0.0
+        or current_setup.brake_bias_migration != 0.0
+        or current_setup.front_master_cyl_mm > 0.0
+        or current_setup.rear_master_cyl_mm > 0.0
+        or current_setup.pad_compound
+    ):
+        a(_hdr("BRAKE HARDWARE (FROM IBT)"))
+        a(_row("Brake bias target", f"{current_setup.brake_bias_target:+.1f}"))
+        a(_row("Brake migration", f"{current_setup.brake_bias_migration:+.1f}"))
+        a(_row("Front master cyl", f"{current_setup.front_master_cyl_mm:.1f} mm"))
+        a(_row("Rear master cyl", f"{current_setup.rear_master_cyl_mm:.1f} mm"))
+        a(_row("Pad compound", current_setup.pad_compound or "unknown"))
+        a("")
+
+    if getattr(diagnosis, "state_issues", None) or getattr(diagnosis, "overhaul_assessment", None) is not None:
+        a(_hdr("PRIMARY CAR STATES"))
+        if getattr(diagnosis, "overhaul_assessment", None) is not None:
+            oa = diagnosis.overhaul_assessment
+            a(
+                f"  Overhaul: {oa.classification}  "
+                f"(conf {oa.confidence:.0%}, score {oa.score:.2f})"
+            )
+            for reason in oa.reasons[:3]:
+                a(f"  {reason[:W - 2]}")
+        for issue in diagnosis.state_issues[:4]:
+            a(
+                f"  - {issue.state_id}  sev={issue.severity:.2f}  "
+                f"conf={issue.confidence:.2f}  loss~{issue.estimated_loss_ms:.0f}ms"
+            )
+            if issue.recommended_direction:
+                a(f"    {issue.recommended_direction[:W - 6]}")
+        a("")
+
+    predicted_telemetry, prediction_confidence = predict_candidate_telemetry(
+        current_setup=current_setup,
+        baseline_measured=measured,
+        step2=step2,
+        step4=step4,
+        supporting=supporting,
+        corrections=prediction_corrections,
+    )
+    a(_hdr("PREDICTED IMPROVEMENTS"))
+    if prediction_confidence.overall < 0.45:
+        a(f"  Prediction confidence is low ({prediction_confidence.overall:.2f}); treat the deltas below as advisory.")
+    else:
+        a(f"  Prediction confidence: {prediction_confidence.overall:.2f}")
+
+    def _pred_line(label: str, before: float | None, after: float | None, unit: str = "", better: str = "lower") -> None:
+        if before is None or after is None:
+            return
+        delta = after - before
+        direction = "improves" if ((delta < 0 and better == "lower") or (delta > 0 and better == "higher")) else "worsens"
+        a(f"  {label}: {before:.3f} -> {after:.3f} {unit} ({delta:+.3f}, {direction})")
+
+    _pred_line("Front travel used", getattr(measured, "front_heave_travel_used_pct", None), predicted_telemetry.front_heave_travel_used_pct, "%", "lower")
+    _pred_line("Front excursion", getattr(measured, "front_rh_excursion_measured_mm", None), predicted_telemetry.front_excursion_mm, "mm", "lower")
+    _pred_line("Rear RH variance", getattr(measured, "rear_rh_std_mm", None), predicted_telemetry.rear_rh_std_mm, "mm", "lower")
+    _pred_line("Braking pitch", getattr(measured, "pitch_range_braking_deg", None), predicted_telemetry.braking_pitch_deg, "deg", "lower")
+    _pred_line("Front lock p95", getattr(measured, "front_braking_lock_ratio_p95", None), predicted_telemetry.front_lock_p95, "", "lower")
+    _pred_line("Rear power slip p95", getattr(measured, "rear_power_slip_ratio_p95", None), predicted_telemetry.rear_power_slip_p95, "", "lower")
+    _pred_line("Body slip p95", getattr(measured, "body_slip_p95_deg", None), predicted_telemetry.body_slip_p95_deg, "deg", "lower")
+    _pred_line("Understeer low", getattr(measured, "understeer_low_speed_deg", None), predicted_telemetry.understeer_low_deg, "deg", "lower")
+    _pred_line("Understeer high", getattr(measured, "understeer_high_speed_deg", None), predicted_telemetry.understeer_high_deg, "deg", "lower")
+    a("")
+
     # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
     a(print_full_setup_report(
         car_name=car.name,
@@ -216,6 +295,10 @@ def generate_report(
         a(_cmp("Front camber",       current_setup.front_camber_deg,     step5.front_camber_deg,         "°"))
         a(_cmp("Rear camber",        current_setup.rear_camber_deg,      step5.rear_camber_deg,          "°"))
         a(_cmp("Brake bias",         current_setup.brake_bias_pct,       supporting.brake_bias_pct,      "%"))
+        if current_setup.brake_bias_target != 0.0 or supporting.brake_bias_target != 0.0:
+            a(_cmp("Brake bias target", current_setup.brake_bias_target, supporting.brake_bias_target, ""))
+        if current_setup.brake_bias_migration != 0.0 or supporting.brake_bias_migration != 0.0:
+            a(_cmp("Brake migration", current_setup.brake_bias_migration, supporting.brake_bias_migration, ""))
         a(_cmp("Diff preload",       current_setup.diff_preload_nm,      supporting.diff_preload_nm,     "Nm",  ".0f"))
         a(_cmp("TC gain",            current_setup.tc_gain,              supporting.tc_gain,             "",    ".0f"))
         a(_cmp("F LS Comp",          current_setup.front_ls_comp,        step6.lf.ls_comp,               "cl",  ".0f"))

@@ -304,12 +304,16 @@ def build_observation(
         "trail_braking_depth": d.trail_brake_depth_mean,
         "trail_braking_p95": d.trail_brake_depth_p95,
         "trail_braking_class": d.trail_brake_classification,
+        "brake_release_quality": getattr(d, "brake_release_quality", 0.0),
         "throttle_progressiveness": d.throttle_progressiveness,
         "throttle_onset_rate_pct_per_s": d.throttle_onset_rate_pct_per_s,
+        "throttle_onset_aggression": getattr(d, "throttle_onset_aggression", 0.0),
         "throttle_classification": d.throttle_classification,
         "steering_smoothness": d.steering_smoothness,
         "steering_jerk_p95_rad_per_s2": d.steering_jerk_p95_rad_per_s2,
         "apex_speed_cv": d.apex_speed_cv,
+        "driver_noise_index": getattr(d, "driver_noise_index", 0.0),
+        "classification_confidence": getattr(d, "classification_confidence", 0.0),
         "consistency": d.consistency,
         "cornering_aggression": d.cornering_aggression,
         "avg_peak_lat_g_utilization": d.avg_peak_lat_g_utilization,
@@ -319,6 +323,29 @@ def build_observation(
     diagnosis_dict = {
         "assessment": diag.assessment,
         "problem_count": len(diag.problems),
+        "evidence_strength": getattr(diag, "evidence_strength", 0.0),
+        "overhaul_assessment": (
+            {
+                "classification": diag.overhaul_assessment.classification,
+                "confidence": diag.overhaul_assessment.confidence,
+                "score": diag.overhaul_assessment.score,
+                "reasons": list(diag.overhaul_assessment.reasons),
+            }
+            if getattr(diag, "overhaul_assessment", None) is not None
+            else None
+        ),
+        "state_issues": [
+            {
+                "state_id": issue.state_id,
+                "severity": issue.severity,
+                "confidence": issue.confidence,
+                "estimated_loss_ms": issue.estimated_loss_ms,
+                "implicated_steps": list(issue.implicated_steps),
+                "likely_causes": list(issue.likely_causes),
+                "recommended_direction": issue.recommended_direction,
+            }
+            for issue in getattr(diag, "state_issues", [])
+        ],
         "problems": [
             {
                 "category": p.category,
@@ -349,6 +376,16 @@ def build_observation(
                 "speed_kph": getattr(c, "apex_speed_kph", 0.0),
                 "understeer_deg": getattr(c, "understeer_mean_deg", 0.0),
                 "body_slip_deg": getattr(c, "body_slip_peak_deg", 0.0),
+                "braking_phase_s": getattr(c, "braking_phase_s", 0.0),
+                "release_phase_s": getattr(c, "release_phase_s", 0.0),
+                "turn_in_phase_s": getattr(c, "turn_in_phase_s", 0.0),
+                "apex_phase_s": getattr(c, "apex_phase_s", 0.0),
+                "throttle_pickup_phase_s": getattr(c, "throttle_pickup_phase_s", 0.0),
+                "exit_phase_s": getattr(c, "exit_phase_s", 0.0),
+                "corner_confidence": getattr(c, "corner_confidence", 0.0),
+                "entry_pitch_severity": getattr(c, "entry_pitch_severity", 0.0),
+                "aero_collapse_severity": getattr(c, "aero_collapse_severity", 0.0),
+                "exit_slip_severity": getattr(c, "exit_slip_severity", 0.0),
             })
 
     return Observation(

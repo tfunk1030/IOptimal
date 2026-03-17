@@ -341,7 +341,11 @@ def synthesize_setup(
 
     # Supporting parameters: use the best overall session's driver + telemetry
     supporting_solver = SupportingSolver(
-        car, best_session.driver, best_session.measured, best_session.diagnosis,
+        car,
+        best_session.driver,
+        best_session.measured,
+        best_session.diagnosis,
+        current_setup=best_session.setup,
     )
     supporting = supporting_solver.solve()
 

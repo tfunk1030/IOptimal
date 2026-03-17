@@ -27,6 +27,7 @@ from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 from analyzer.extract import extract_measurements
 from analyzer.segment import segment_lap
 from analyzer.setup_reader import CurrentSetup
+from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
@@ -36,6 +37,7 @@ from solver.damper_solver import DamperSolver
 from solver.heave_solver import HeaveSolver
 from solver.modifiers import SolverModifiers, compute_modifiers
 from solver.learned_corrections import apply_learned_corrections
+from solver.predictor import predict_candidate_telemetry
 from solver.rake_solver import RakeSolver, reconcile_ride_heights
 from solver.supporting_solver import SupportingSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
@@ -223,7 +225,14 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         log("  Using baseline thresholds (no adaptations)")
 
     log("Diagnosing handling...")
-    diagnosis = diagnose(measured, current_setup, car, thresholds=adaptive_thresh)
+    diagnosis = diagnose(
+        measured,
+        current_setup,
+        car,
+        thresholds=adaptive_thresh,
+        driver=driver,
+        corners=corners,
+    )
     log(f"  Assessment: {diagnosis.assessment}")
     log(f"  Problems: {len(diagnosis.problems)}")
 
@@ -583,7 +592,14 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
 
     # ── Phase I: Compute supporting params ──
     log("\nComputing supporting parameters...")
-    supporting_solver = SupportingSolver(car, driver, measured, diagnosis, track=track)
+    supporting_solver = SupportingSolver(
+        car,
+        driver,
+        measured,
+        diagnosis,
+        track=track,
+        current_setup=current_setup,
+    )
     supporting = supporting_solver.solve()
     log(f"  {supporting.summary()}")
 
@@ -678,6 +694,11 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             # Supporting params: solver computes from telemetry
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
+            _extra_kw["brake_bias_target"] = supporting.brake_bias_target
+            _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration
+            _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
+            _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
+            _extra_kw["pad_compound"] = supporting.pad_compound
             # Ferrari diff ramp uses labels ("More Locking"/"Less Locking")
             if supporting.diff_ramp_coast >= 45:
                 _extra_kw["diff_coast_drive_ramp"] = "Less Locking"
@@ -690,6 +711,11 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         else:
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
+            _extra_kw["brake_bias_target"] = supporting.brake_bias_target
+            _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration
+            _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
+            _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
+            _extra_kw["pad_compound"] = supporting.pad_compound
             _extra_kw["diff_coast_drive_ramp"] = f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}"
             _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
@@ -722,6 +748,9 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             "lap_number": measured.lap_number,
             "driver_style": driver.style,
             "assessment": diagnosis.assessment,
+            "candidate_family_selection": "single-session pipeline uses direct solver path; candidate-family selection lives in pipeline.reason",
+            "signal_quality_summary": summarize_signal_quality(measured),
+            "telemetry_bundle": measured.telemetry_bundle,
             "step1_rake": dataclasses.asdict(step1),
             "step2_heave": dataclasses.asdict(step2),
             "step3_corner": dataclasses.asdict(step3),
@@ -758,6 +787,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         sensitivity_result=sensitivity_result,
         stint_evolution=stint_evolution,
         stint_compromise_info=stint_compromise_info,
+        prediction_corrections={},
         compact=quiet,
     )
     print(report)
@@ -785,6 +815,13 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             from learner.ingest import ingest_ibt
             from learner.knowledge_store import KnowledgeStore
 
+            predicted_telemetry, _prediction_conf = predict_candidate_telemetry(
+                current_setup=current_setup,
+                baseline_measured=measured,
+                step2=step2,
+                step4=step4,
+                supporting=supporting,
+            )
             # Build solver predictions dict for the feedback loop.
             # These are what the solver PREDICTED for this session's telemetry.
             solver_predictions = {
@@ -793,6 +830,16 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
                 "lltd_predicted": getattr(step4, "lltd_achieved", 0.0),
                 "body_roll_predicted_deg_per_g": getattr(step4, "roll_gradient_deg_per_g", 0.0),
                 "front_bottoming_predicted": getattr(step2, "bottoming_events_front", 0),
+                "front_heave_travel_used_pct": predicted_telemetry.front_heave_travel_used_pct,
+                "front_excursion_mm": predicted_telemetry.front_excursion_mm,
+                "braking_pitch_deg": predicted_telemetry.braking_pitch_deg,
+                "front_lock_p95": predicted_telemetry.front_lock_p95,
+                "rear_power_slip_p95": predicted_telemetry.rear_power_slip_p95,
+                "body_slip_p95_deg": predicted_telemetry.body_slip_p95_deg,
+                "understeer_low_deg": predicted_telemetry.understeer_low_deg,
+                "understeer_high_deg": predicted_telemetry.understeer_high_deg,
+                "front_pressure_hot_kpa": predicted_telemetry.front_pressure_hot_kpa,
+                "rear_pressure_hot_kpa": predicted_telemetry.rear_pressure_hot_kpa,
             }
 
             store = KnowledgeStore()

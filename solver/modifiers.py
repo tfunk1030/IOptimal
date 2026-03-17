@@ -243,6 +243,39 @@ def compute_modifiers(
         mods.damping_ratio_scale *= 1.05
         mods.reasons.append("Aggressive-erratic → ζ × 1.05 (forgiveness)")
 
+    # ── From inferred state confidence ──
+    state_map = {issue.state_id: issue for issue in getattr(diagnosis, "state_issues", [])}
+
+    def _conf(*state_ids: str) -> float:
+        values = [state_map[s].confidence for s in state_ids if s in state_map]
+        return max(values) if values else 1.0
+
+    def _scale(value: float, confidence: float) -> float:
+        if confidence >= 0.75:
+            return value
+        if confidence <= 0.35:
+            return value * 0.25
+        return value * (0.25 + (confidence - 0.35) / 0.4 * 0.75)
+
+    lltd_conf = _conf("entry_front_limited", "exit_traction_limited", "balance_asymmetric")
+    df_conf = _conf("front_platform_near_limit_high_speed")
+    front_heave_conf = _conf("front_platform_collapse_braking", "front_platform_near_limit_high_speed")
+    rear_heave_conf = _conf("rear_platform_under_supported", "rear_platform_over_supported")
+    damper_conf = _conf("front_platform_collapse_braking", "brake_system_front_limited", "rear_platform_under_supported")
+
+    mods.lltd_offset = _scale(mods.lltd_offset, lltd_conf)
+    mods.df_balance_offset_pct = _scale(mods.df_balance_offset_pct, df_conf)
+    mods.front_heave_min_floor_nmm = _scale(mods.front_heave_min_floor_nmm, front_heave_conf)
+    mods.rear_third_min_floor_nmm = _scale(mods.rear_third_min_floor_nmm, rear_heave_conf)
+    mods.front_hs_comp_offset = int(round(_scale(mods.front_hs_comp_offset, damper_conf)))
+    mods.rear_hs_comp_offset = int(round(_scale(mods.rear_hs_comp_offset, damper_conf)))
+    mods.front_ls_rbd_offset = int(round(_scale(mods.front_ls_rbd_offset, damper_conf)))
+    mods.rear_ls_rbd_offset = int(round(_scale(mods.rear_ls_rbd_offset, damper_conf)))
+    mods.reasons.append(
+        f"State-confidence weighting applied: LLTD={lltd_conf:.2f}, DF={df_conf:.2f}, "
+        f"front_heave={front_heave_conf:.2f}, rear_heave={rear_heave_conf:.2f}, damper={damper_conf:.2f}"
+    )
+
     # Clamp cumulative offsets to reasonable ranges
     mods.lltd_offset = max(-0.05, min(0.05, mods.lltd_offset))
     mods.df_balance_offset_pct = max(-1.5, min(1.5, mods.df_balance_offset_pct))
