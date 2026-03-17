@@ -15,7 +15,12 @@ class OverhaulAssessment:
     reasons: list[str] = field(default_factory=list)
 
 
-def assess_overhaul(state_issues: list["CarStateIssue"]) -> OverhaulAssessment:
+def assess_overhaul(
+    state_issues: list["CarStateIssue"],
+    *,
+    telemetry_envelope_distance: float | None = None,
+    setup_cluster_distance: float | None = None,
+) -> OverhaulAssessment:
     if not state_issues:
         return OverhaulAssessment(
             classification="minor_tweak",
@@ -58,6 +63,10 @@ def assess_overhaul(state_issues: list["CarStateIssue"]) -> OverhaulAssessment:
         reasons.append(
             "Impacted solver steps: " + ", ".join(str(step) for step in implicated_steps)
         )
+    if telemetry_envelope_distance is not None:
+        reasons.append(f"Telemetry envelope distance: {telemetry_envelope_distance:.2f}")
+    if setup_cluster_distance is not None:
+        reasons.append(f"Setup cluster distance: {setup_cluster_distance:.2f}")
 
     if (
         core_weighted_score >= 2.3
@@ -70,6 +79,14 @@ def assess_overhaul(state_issues: list["CarStateIssue"]) -> OverhaulAssessment:
         classification = "moderate_rework"
     else:
         classification = "minor_tweak"
+
+    if classification != "baseline_reset":
+        if (telemetry_envelope_distance or 0.0) >= 2.4 or (setup_cluster_distance or 0.0) >= 2.4:
+            classification = "baseline_reset" if core_weighted_score >= 1.7 and len(major_platform_safety) >= 1 else "moderate_rework"
+        elif classification == "minor_tweak" and (
+            (telemetry_envelope_distance or 0.0) >= 1.5 or (setup_cluster_distance or 0.0) >= 1.5
+        ):
+            classification = "moderate_rework"
 
     if classification == "baseline_reset":
         confidence = min(0.95, 0.65 + len(major_core_states) * 0.08 + len(implicated_steps) * 0.04)

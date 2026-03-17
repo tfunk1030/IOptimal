@@ -57,8 +57,12 @@ class CornerAnalysis:
     kerb_severity_max: float = 0.0
 
     # Raw phase timing and bounded opportunity proxies
+    braking_phase_s: float = 0.0
+    release_phase_s: float = 0.0
+    turn_in_phase_s: float = 0.0
     entry_phase_s: float = 0.0
     apex_phase_s: float = 0.0
+    throttle_pickup_phase_s: float = 0.0
     exit_phase_s: float = 0.0
     throttle_delay_s: float = 0.0
     entry_loss_s: float = 0.0
@@ -67,6 +71,7 @@ class CornerAnalysis:
     platform_risk_flags: list[str] = field(default_factory=list)
     traction_risk_flags: list[str] = field(default_factory=list)
     delta_to_min_time_s: float = 0.0  # backward-compatible alias of bounded total
+    corner_confidence: float = 0.0
 
 
 def _classify_speed(apex_speed_kph: float) -> str:
@@ -353,12 +358,28 @@ def segment_lap(
         corner_length = float(seg_dist[-1] - seg_dist[0]) if len(seg_dist) > 1 else 0.0
         if corner_length < 0:
             corner_length = 0.0
+        braking_phase_s = 0.0
+        release_phase_s = 0.0
+        turn_in_phase_s = 0.0
         entry_phase_s = apex_local * dt
         apex_window = max(3, min(len(seg_speed) // 3, int(0.25 * tick_rate)))
         apex_start = max(0, apex_local - apex_window // 2)
         apex_end = min(len(seg_speed), apex_local + apex_window // 2)
         apex_phase_s = (apex_end - apex_start) * dt
+        throttle_pickup_phase_s = 0.0
         exit_phase_s = max(0.0, (len(seg_speed) - apex_end) * dt)
+
+        matched_braking = _match_braking_to_corner(braking_zones, cs, lap_dist)
+        if matched_braking is not None:
+            bz_start, bz_end = matched_braking
+            braking_phase_s = max(0.0, (min(bz_end, ce) - bz_start) * dt)
+            release_idx = min(max(bz_end - cs, 0), max(apex_local, 0))
+            release_phase_s = max(0.0, (apex_local - release_idx) * dt)
+            turn_in_phase_s = max(0.0, release_idx * dt)
+        else:
+            turn_in_phase_s = entry_phase_s
+        if len(post_apex_throttle) > 0 and np.any(post_apex_throttle > 0.20):
+            throttle_pickup_phase_s = throttle_delay_s
 
         # Check for kerb overlap: any kerb event within this corner's distance range
         corner_has_kerb = False
@@ -387,6 +408,19 @@ def segment_lap(
         if exit_speed < apex_speed + 12.0:
             traction_flags.append("weak_exit_speed_recovery")
 
+        confidence = 0.55
+        if duration > 0.8:
+            confidence += 0.1
+        if peak_lat > 1.0:
+            confidence += 0.1
+        if matched_braking is not None:
+            confidence += 0.1
+        if corner_has_kerb and corner_kerb_sev > 2.0:
+            confidence -= 0.1
+        if len(seg_speed) < 20:
+            confidence -= 0.1
+        confidence = max(0.2, min(0.95, confidence))
+
         results.append(CornerAnalysis(
             corner_id=cid,
             lap_dist_start_m=round(float(lap_dist[cs]), 1),
@@ -412,8 +446,12 @@ def segment_lap(
             throttle_onset_dist_m=round(throttle_onset, 1),
             has_kerb_overlap=corner_has_kerb,
             kerb_severity_max=round(corner_kerb_sev, 2),
+            braking_phase_s=round(braking_phase_s, 3),
+            release_phase_s=round(release_phase_s, 3),
+            turn_in_phase_s=round(turn_in_phase_s, 3),
             entry_phase_s=round(entry_phase_s, 3),
             apex_phase_s=round(apex_phase_s, 3),
+            throttle_pickup_phase_s=round(throttle_pickup_phase_s, 3),
             exit_phase_s=round(exit_phase_s, 3),
             throttle_delay_s=round(throttle_delay_s, 3),
             entry_loss_s=0.0,
@@ -422,6 +460,7 @@ def segment_lap(
             platform_risk_flags=platform_flags,
             traction_risk_flags=traction_flags,
             delta_to_min_time_s=0.0,
+            corner_confidence=round(confidence, 3),
         ))
 
     # Sort by lap distance
