@@ -626,7 +626,14 @@ def _analyze_session(
     refine_driver_with_measured(driver, measured)
 
     adaptive = compute_adaptive_thresholds(track, car, driver)
-    diag = diagnose(measured, setup, car, thresholds=adaptive)
+    diag = diagnose(
+        measured,
+        setup,
+        car,
+        thresholds=adaptive,
+        driver=driver,
+        corners=corners,
+    )
 
     obs = build_observation(
         session_id=label,

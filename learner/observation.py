@@ -319,6 +319,29 @@ def build_observation(
     diagnosis_dict = {
         "assessment": diag.assessment,
         "problem_count": len(diag.problems),
+        "evidence_strength": getattr(diag, "evidence_strength", 0.0),
+        "overhaul_assessment": (
+            {
+                "classification": diag.overhaul_assessment.classification,
+                "confidence": diag.overhaul_assessment.confidence,
+                "score": diag.overhaul_assessment.score,
+                "reasons": list(diag.overhaul_assessment.reasons),
+            }
+            if getattr(diag, "overhaul_assessment", None) is not None
+            else None
+        ),
+        "state_issues": [
+            {
+                "state_id": issue.state_id,
+                "severity": issue.severity,
+                "confidence": issue.confidence,
+                "estimated_loss_ms": issue.estimated_loss_ms,
+                "implicated_steps": list(issue.implicated_steps),
+                "likely_causes": list(issue.likely_causes),
+                "recommended_direction": issue.recommended_direction,
+            }
+            for issue in getattr(diag, "state_issues", [])
+        ],
         "problems": [
             {
                 "category": p.category,

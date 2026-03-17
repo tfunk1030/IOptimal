@@ -197,6 +197,25 @@ def generate_report(
         a(_row("Pad compound", current_setup.pad_compound or "unknown"))
         a("")
 
+    if getattr(diagnosis, "state_issues", None) or getattr(diagnosis, "overhaul_assessment", None) is not None:
+        a(_hdr("PRIMARY CAR STATES"))
+        if getattr(diagnosis, "overhaul_assessment", None) is not None:
+            oa = diagnosis.overhaul_assessment
+            a(
+                f"  Overhaul: {oa.classification}  "
+                f"(conf {oa.confidence:.0%}, score {oa.score:.2f})"
+            )
+            for reason in oa.reasons[:3]:
+                a(f"  {reason[:W - 2]}")
+        for issue in diagnosis.state_issues[:4]:
+            a(
+                f"  - {issue.state_id}  sev={issue.severity:.2f}  "
+                f"conf={issue.confidence:.2f}  loss~{issue.estimated_loss_ms:.0f}ms"
+            )
+            if issue.recommended_direction:
+                a(f"    {issue.recommended_direction[:W - 6]}")
+        a("")
+
     # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
     a(print_full_setup_report(
         car_name=car.name,

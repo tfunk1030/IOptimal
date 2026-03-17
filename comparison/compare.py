@@ -125,7 +125,14 @@ def analyze_session(
 
     # Adaptive thresholds + diagnosis
     adaptive = compute_adaptive_thresholds(track, car, driver)
-    diagnosis = diagnose(measured, setup, car, thresholds=adaptive)
+    diagnosis = diagnose(
+        measured,
+        setup,
+        car,
+        thresholds=adaptive,
+        driver=driver,
+        corners=corners,
+    )
 
     # Label
     if label is None:

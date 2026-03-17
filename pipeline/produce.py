@@ -224,7 +224,14 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         log("  Using baseline thresholds (no adaptations)")
 
     log("Diagnosing handling...")
-    diagnosis = diagnose(measured, current_setup, car, thresholds=adaptive_thresh)
+    diagnosis = diagnose(
+        measured,
+        current_setup,
+        car,
+        thresholds=adaptive_thresh,
+        driver=driver,
+        corners=corners,
+    )
     log(f"  Assessment: {diagnosis.assessment}")
     log(f"  Problems: {len(diagnosis.problems)}")
 
