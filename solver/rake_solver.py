@@ -579,14 +579,20 @@ def reconcile_ride_heights(
             round(step1.dynamic_rear_rh_mm + step1.aero_compression_rear_mm, 3),
         )
 
-        new_front_pushrod = garage_model.front_pushrod_for_static_rh(
-            target_front_rh,
-            front_heave_nmm=step2.front_heave_nmm,
-            front_heave_perch_mm=step2.perch_offset_front_mm,
-            front_torsion_od_mm=step3.front_torsion_od_mm,
-            front_camber_deg=front_camber,
-            fuel_l=fuel_load_l,
-        )
+        # Only invert via pushrod if the coefficient is large enough.
+        # For BMW, front pushrod barely affects front RH (coeff ~0.03),
+        # so inverting would produce extreme pushrod values.
+        if abs(garage_model.front_coeff_pushrod) >= 0.05:
+            new_front_pushrod = garage_model.front_pushrod_for_static_rh(
+                target_front_rh,
+                front_heave_nmm=step2.front_heave_nmm,
+                front_heave_perch_mm=step2.perch_offset_front_mm,
+                front_torsion_od_mm=step3.front_torsion_od_mm,
+                front_camber_deg=front_camber,
+                fuel_l=fuel_load_l,
+            )
+        else:
+            new_front_pushrod = step1.front_pushrod_offset_mm
         new_rear_pushrod = garage_model.rear_pushrod_for_static_rh(
             target_rear_rh,
             rear_third_nmm=step2.rear_third_nmm,

@@ -1,14 +1,14 @@
 {
   "car": "ferrari",
-  "total_sessions": 6,
+  "total_sessions": 7,
   "tracks_included": [
     "Sebring International Raceway"
   ],
-  "aero_compression_front_mm": 8.276029014587403,
-  "aero_compression_rear_mm": 18.288154792785644,
-  "roll_gradient_global_deg_per_g": 0.8527148556322767,
+  "aero_compression_front_mm": 8.267314638410296,
+  "aero_compression_rear_mm": 18.25414194379534,
+  "roll_gradient_global_deg_per_g": 0.8632568999691074,
   "m_eff_front_global_kg": null,
   "anomalies": [],
   "confidence": "medium",
-  "last_updated": "2026-03-13T17:20:40.388477+00:00"
+  "last_updated": "2026-03-17T01:22:04.888845+00:00"
 }

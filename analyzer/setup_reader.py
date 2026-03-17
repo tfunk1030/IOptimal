@@ -7,7 +7,7 @@ are stripped and converted to numeric types.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from track_model.ibt_parser import IBTFile
@@ -146,7 +146,8 @@ class CurrentSetup:
 
     # --- Brakes / Diff / TC ---
     brake_bias_pct: float = 0.0
-    diff_preload_nm: float = 0.0
+    front_diff_preload_nm: float = 0.0  # Ferrari only (has front diff)
+    diff_preload_nm: float = 0.0        # Rear diff preload
     diff_ramp_angles: str = ""
     diff_clutch_plates: int = 0
     tc_gain: int = 0
@@ -157,7 +158,9 @@ class CurrentSetup:
     # These are computed by iRacing from the settable parameters above.
     # Extracted from IBT session info for model calibration ground truth.
     torsion_bar_turns: float = 0.0
-    torsion_bar_defl_mm: float = 0.0
+    rear_torsion_bar_turns: float = 0.0
+    torsion_bar_defl_mm: float = 0.0      # front (LF)
+    rear_torsion_bar_defl_mm: float = 0.0  # rear (LR) — Ferrari has rear TB
     front_shock_defl_static_mm: float = 0.0
     front_shock_defl_max_mm: float = 0.0
     rear_shock_defl_static_mm: float = 0.0
@@ -176,6 +179,12 @@ class CurrentSetup:
     rf_corner_weight_n: float = 0.0
     lr_corner_weight_n: float = 0.0
     rr_corner_weight_n: float = 0.0
+    adapter_name: str = ""
+    extraction_attempts: list[dict[str, object]] = field(default_factory=list, repr=False)
+    unresolved_fields: list[str] = field(default_factory=list)
+    conflicted_fields: list[str] = field(default_factory=list)
+    decode_warnings: list[str] = field(default_factory=list)
+    raw_indexed_fields: dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def from_ibt(cls, ibt: IBTFile) -> CurrentSetup:
@@ -195,7 +204,6 @@ class CurrentSetup:
         cs = si.get("CarSetup", {})
         chassis = cs.get("Chassis", {})
         tires_aero = cs.get("TiresAero", {})
-        brakes = cs.get("BrakesDriveUnit", {})
 
         front = chassis.get("Front", {})
         rear = chassis.get("Rear", {})
@@ -206,10 +214,22 @@ class CurrentSetup:
 
         aero_settings = tires_aero.get("AeroSettings", {})
         aero_calc = tires_aero.get("AeroCalculator", {})
-        brake_spec = brakes.get("BrakeSpec", {})
-        diff_spec = brakes.get("RearDiffSpec", {})
-        tc = brakes.get("TractionControl", {})
-        fuel = brakes.get("Fuel", {})
+
+        # Ferrari uses "Systems" top-level key; BMW uses "BrakesDriveUnit"
+        systems = cs.get("Systems", {})
+        brakes = cs.get("BrakesDriveUnit", {})
+        brake_spec = systems.get("BrakeSpec", {}) or brakes.get("BrakeSpec", {})
+        diff_spec = systems.get("RearDiffSpec", {}) or brakes.get("RearDiffSpec", {})
+        front_diff_spec = systems.get("FrontDiffSpec", {}) or brakes.get("FrontDiffSpec", {})
+        tc = systems.get("TractionControl", {}) or brakes.get("TractionControl", {})
+        fuel = systems.get("Fuel", {}) or brakes.get("Fuel", {})
+
+        # Ferrari puts dampers under "Dampers.LeftFrontDamper"; BMW under "Chassis.LeftFront"
+        dampers = cs.get("Dampers", {})
+        lf_damp = dampers.get("LeftFrontDamper", lf)
+        rf_damp = dampers.get("RightFrontDamper", rf)
+        lr_damp = dampers.get("LeftRearDamper", lr)
+        rr_damp = dampers.get("RightRearDamper", rr)
 
         # Average left/right for symmetric parameters
         def avg_f(key: str) -> float:
@@ -218,7 +238,21 @@ class CurrentSetup:
         def avg_r(key: str) -> float:
             return (_parse_float(lr.get(key)) + _parse_float(rr.get(key))) / 2.0
 
-        return cls(
+        is_ferrari_layout = bool(systems) or bool(dampers)
+        attempts = [
+            {"path": "CarSetup.TiresAero", "status": "ok" if tires_aero else "missing"},
+            {"path": "CarSetup.Chassis", "status": "ok" if chassis else "missing"},
+            {
+                "path": "CarSetup.Systems",
+                "status": "ok" if systems else "missing",
+            },
+            {
+                "path": "CarSetup.BrakesDriveUnit",
+                "status": "ok" if brakes else "missing",
+            },
+        ]
+
+        setup = cls(
             source="ibt",
 
             # Aero
@@ -231,18 +265,20 @@ class CurrentSetup:
             # Ride heights (average left/right)
             static_front_rh_mm=avg_f("RideHeight"),
             static_rear_rh_mm=avg_r("RideHeight"),
-            front_pushrod_mm=_parse_float(front.get("PushrodLengthOffset")),
-            rear_pushrod_mm=_parse_float(rear.get("PushrodLengthOffset")),
+            # Ferrari uses "PushrodLengthDelta", BMW uses "PushrodLengthOffset"
+            front_pushrod_mm=_parse_float(front.get("PushrodLengthOffset") or front.get("PushrodLengthDelta")),
+            rear_pushrod_mm=_parse_float(rear.get("PushrodLengthOffset") or rear.get("PushrodLengthDelta")),
 
-            # Heave / Third
+            # Heave / Third — Ferrari rear uses HeaveSpring (no ThirdSpring)
             front_heave_nmm=_parse_float(front.get("HeaveSpring")),
             front_heave_perch_mm=_parse_float(front.get("HeavePerchOffset")),
-            rear_third_nmm=_parse_float(rear.get("ThirdSpring")),
-            rear_third_perch_mm=_parse_float(rear.get("ThirdPerchOffset")),
+            rear_third_nmm=_parse_float(rear.get("ThirdSpring") or rear.get("HeaveSpring")),
+            rear_third_perch_mm=_parse_float(rear.get("ThirdPerchOffset") or rear.get("HeavePerchOffset")),
 
             # Corner springs (use LF/LR as representative)
+            # Ferrari rear uses TorsionBarOD (indexed) instead of coil SpringRate
             front_torsion_od_mm=_parse_float(lf.get("TorsionBarOD")),
-            rear_spring_nmm=_parse_float(lr.get("SpringRate")),
+            rear_spring_nmm=_parse_float(lr.get("SpringRate") or lr.get("TorsionBarOD")),
             rear_spring_perch_mm=_parse_float(lr.get("SpringPerchOffset")),
 
             # ARBs
@@ -258,29 +294,33 @@ class CurrentSetup:
             rear_toe_mm=(_parse_float(lr.get("ToeIn")) + _parse_float(rr.get("ToeIn"))) / 2.0,
 
             # Dampers (use LF for front, LR for rear)
-            front_ls_comp=_parse_int(lf.get("LsCompDamping")),
-            front_ls_rbd=_parse_int(lf.get("LsRbdDamping")),
-            front_hs_comp=_parse_int(lf.get("HsCompDamping")),
-            front_hs_rbd=_parse_int(lf.get("HsRbdDamping")),
-            front_hs_slope=_parse_int(lf.get("HsCompDampSlope")),
-            rear_ls_comp=_parse_int(lr.get("LsCompDamping")),
-            rear_ls_rbd=_parse_int(lr.get("LsRbdDamping")),
-            rear_hs_comp=_parse_int(lr.get("HsCompDamping")),
-            rear_hs_rbd=_parse_int(lr.get("HsRbdDamping")),
-            rear_hs_slope=_parse_int(lr.get("HsCompDampSlope")),
+            # Ferrari: Dampers.LeftFrontDamper; BMW: Chassis.LeftFront
+            front_ls_comp=_parse_int(lf_damp.get("LsCompDamping")),
+            front_ls_rbd=_parse_int(lf_damp.get("LsRbdDamping")),
+            front_hs_comp=_parse_int(lf_damp.get("HsCompDamping")),
+            front_hs_rbd=_parse_int(lf_damp.get("HsRbdDamping")),
+            front_hs_slope=_parse_int(lf_damp.get("HsCompDampSlope")),
+            rear_ls_comp=_parse_int(lr_damp.get("LsCompDamping")),
+            rear_ls_rbd=_parse_int(lr_damp.get("LsRbdDamping")),
+            rear_hs_comp=_parse_int(lr_damp.get("HsCompDamping")),
+            rear_hs_rbd=_parse_int(lr_damp.get("HsRbdDamping")),
+            rear_hs_slope=_parse_int(lr_damp.get("HsCompDampSlope")),
 
             # Brakes / Diff / TC
             brake_bias_pct=_parse_float(brake_spec.get("BrakePressureBias")),
+            front_diff_preload_nm=_parse_float(front_diff_spec.get("Preload")),
             diff_preload_nm=_parse_float(diff_spec.get("Preload")),
-            diff_ramp_angles=str(diff_spec.get("CoastDriveRampAngles", "")),
+            diff_ramp_angles=str(diff_spec.get("CoastDriveRampAngles", "") or diff_spec.get("CoastDriveRampOptions", "")),
             diff_clutch_plates=_parse_int(diff_spec.get("ClutchFrictionPlates")),
             tc_gain=_parse_int(tc.get("TractionControlGain")),
             tc_slip=_parse_int(tc.get("TractionControlSlip")),
-            fuel_l=_parse_float(fuel.get("FuelLevel")),
+            fuel_l=_parse_float(fuel.get("FuelLevel")) or _parse_float(rear.get("FuelLevel")),
 
             # iRacing-computed display values (ground truth for calibration)
             torsion_bar_turns=_parse_float(lf.get("TorsionBarTurns")),
+            rear_torsion_bar_turns=_parse_float(lr.get("TorsionBarTurns")),
             torsion_bar_defl_mm=_parse_float(lf.get("TorsionBarDefl")),
+            rear_torsion_bar_defl_mm=_parse_float(lr.get("TorsionBarDefl")),
             front_shock_defl_static_mm=_parse_defl(lf.get("ShockDefl"))[0],
             front_shock_defl_max_mm=_parse_defl(lf.get("ShockDefl"))[1],
             rear_shock_defl_static_mm=_parse_defl(lr.get("ShockDefl"))[0],
@@ -291,15 +331,36 @@ class CurrentSetup:
             heave_slider_defl_max_mm=_parse_defl(front.get("HeaveSliderDefl"))[1],
             rear_spring_defl_static_mm=_parse_defl(lr.get("SpringDefl"))[0],
             rear_spring_defl_max_mm=_parse_defl(lr.get("SpringDefl"))[1],
-            third_spring_defl_static_mm=_parse_defl(rear.get("ThirdSpringDefl"))[0],
-            third_spring_defl_max_mm=_parse_defl(rear.get("ThirdSpringDefl"))[1],
-            third_slider_defl_static_mm=_parse_defl(rear.get("ThirdSliderDefl"))[0],
-            third_slider_defl_max_mm=_parse_defl(rear.get("ThirdSliderDefl"))[1],
+            third_spring_defl_static_mm=_parse_defl(rear.get("ThirdSpringDefl") or rear.get("HeaveSpringDefl"))[0],
+            third_spring_defl_max_mm=_parse_defl(rear.get("ThirdSpringDefl") or rear.get("HeaveSpringDefl"))[1],
+            third_slider_defl_static_mm=_parse_defl(rear.get("ThirdSliderDefl") or rear.get("HeaveSliderDefl"))[0],
+            third_slider_defl_max_mm=_parse_defl(rear.get("ThirdSliderDefl") or rear.get("HeaveSliderDefl"))[1],
             lf_corner_weight_n=_parse_float(lf.get("CornerWeight")),
             rf_corner_weight_n=_parse_float(rf.get("CornerWeight")),
             lr_corner_weight_n=_parse_float(lr.get("CornerWeight")),
             rr_corner_weight_n=_parse_float(rr.get("CornerWeight")),
+            adapter_name="ferrari" if is_ferrari_layout else "bmw",
+            extraction_attempts=attempts,
         )
+        if is_ferrari_layout:
+            setup.raw_indexed_fields = {
+                "front_heave_index": setup.front_heave_nmm,
+                "rear_heave_index": setup.rear_third_nmm,
+                "front_torsion_bar_index": setup.front_torsion_od_mm,
+                "rear_torsion_bar_index": setup.rear_spring_nmm,
+            }
+            setup.decode_warnings.extend(
+                [
+                    "Ferrari indexed springs/torsion bars are preserved as legal raw indices; engineering-unit decode remains partial.",
+                    "Ferrari supporting outputs must use Ferrari session values, not BMW defaults.",
+                ]
+            )
+            if setup.rear_spring_perch_mm not in (0.0,):
+                setup.conflicted_fields.append("rear_spring_perch_mm")
+        else:
+            if setup.fuel_l <= 0.0:
+                setup.unresolved_fields.append("fuel_l")
+        return setup
 
     def summary(self) -> str:
         """One-line summary of key setup parameters."""

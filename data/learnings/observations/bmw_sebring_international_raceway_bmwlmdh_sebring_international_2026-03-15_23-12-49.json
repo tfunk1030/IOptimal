@@ -1,10 +1,10 @@
 {
   "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_23-12-49",
-  "ibt_path": "ibtfiles\\bmwlmdh_sebring international 2026-03-15 23-12-49.ibt",
+  "ibt_path": "ibtfiles/bmwlmdh_sebring international 2026-03-15 23-12-49.ibt",
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-16T04:27:23.083115+00:00",
+  "timestamp": "2026-03-16T21:54:16.192228+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -279,7 +279,7 @@
   "solver_predictions": {
     "front_rh_std_mm": 0.0,
     "rear_rh_std_mm": 0.0,
-    "lltd_predicted": 0.5083,
+    "lltd_predicted": 0.5088,
     "body_roll_predicted_deg_per_g": 0.0,
     "front_bottoming_predicted": 0
   },
