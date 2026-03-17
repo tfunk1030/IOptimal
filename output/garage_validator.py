@@ -405,7 +405,7 @@ def _fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l,
                 continue
         else:
             # Fallback to continuous range
-            new_od = round(current_od + 0.5, 1)
+            new_od = round(current_od + 0.5, 2)
             if new_od <= gr.front_torsion_od_mm[1]:
                 step3.front_torsion_od_mm = new_od
                 msgs.append(

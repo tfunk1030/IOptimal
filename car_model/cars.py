@@ -725,6 +725,11 @@ class CarModel:
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
 
+    def __post_init__(self) -> None:
+        # Auto-populate garage_ranges discrete torsion OD options from corner spring model
+        if not self.garage_ranges.front_torsion_od_discrete and self.corner_spring.front_torsion_od_options:
+            self.garage_ranges.front_torsion_od_discrete = list(self.corner_spring.front_torsion_od_options)
+
     def total_mass(self, fuel_load_l: float) -> float:
         """Total car mass including driver and fuel (kg)."""
         return self.mass_car_kg + self.mass_driver_kg + fuel_load_l * self.fuel_density_kg_per_l
