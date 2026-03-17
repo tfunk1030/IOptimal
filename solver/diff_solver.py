@@ -187,6 +187,7 @@ class DiffSolver:
         driver: "DriverProfile",
         measured: "MeasuredState",
         track: "TrackProfile | None" = None,
+        current_clutch_plates: int | None = None,
     ) -> DiffSolution:
         """Compute differential setup recommendation.
 
@@ -201,7 +202,7 @@ class DiffSolver:
         preload_nm, preload_reasoning = self._compute_preload(driver, measured, track)
         coast_ramp, drive_ramp, ramp_reasoning = self._compute_ramps(driver)
 
-        clutch_plates = BMW_DEFAULT_CLUTCH_PLATES
+        clutch_plates = current_clutch_plates or BMW_DEFAULT_CLUTCH_PLATES
         torque_input = self.max_torque_nm * 0.7  # typical cornering torque
 
         lock_pct_coast = self._lock_pct(preload_nm, clutch_plates, coast_ramp, torque_input)
@@ -231,7 +232,11 @@ class DiffSolver:
             clutch_plates=clutch_plates,
             exit_understeer_index=round(exit_understeer_index, 3),
             entry_rotation_index=round(entry_rotation_index, 3),
-            preload_reasoning=preload_reasoning,
+            preload_reasoning=(
+                f"{preload_reasoning}; clutch plates={clutch_plates}"
+                if current_clutch_plates is not None
+                else preload_reasoning
+            ),
             ramp_reasoning=ramp_reasoning,
         )
 

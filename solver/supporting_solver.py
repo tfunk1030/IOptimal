@@ -128,6 +128,7 @@ class SupportingSolver:
                 driver=self.driver,
                 measured=self.measured,
                 track=self.track,
+                current_clutch_plates=getattr(self.current_setup, "diff_clutch_plates", 0) or None,
             )
             sol.diff_preload_nm = diff_sol.preload_nm
             sol.diff_ramp_coast = diff_sol.coast_ramp_deg
