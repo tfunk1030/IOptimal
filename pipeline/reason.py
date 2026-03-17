@@ -2680,6 +2680,7 @@ def reason_and_solve(
         best_driver.measured,
         best_driver.diagnosis,
         track=track,
+        current_setup=authority.setup,
     )
     supporting = supporting_solver.solve()
 
@@ -2747,6 +2748,7 @@ def reason_and_solve(
             "step6": step6,
             "supporting": supporting,
         },
+        prediction_corrections=dict(state.historical.prediction_corrections),
     )
     selected_candidate = next((candidate for candidate in state.generated_candidates if candidate.selected), None)
     if selected_candidate is not None:
@@ -2939,6 +2941,7 @@ def reason_and_solve(
                     "confidence": candidate.confidence,
                     "selected": candidate.selected,
                     "reasons": candidate.reasons,
+                    "predicted": candidate.predicted.to_dict() if getattr(candidate, "predicted", None) is not None else None,
                     "score": (
                         {
                             "total": candidate.score.total,
