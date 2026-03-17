@@ -37,6 +37,7 @@ from solver.damper_solver import DamperSolver
 from solver.heave_solver import HeaveSolver
 from solver.modifiers import SolverModifiers, compute_modifiers
 from solver.learned_corrections import apply_learned_corrections
+from solver.predictor import predict_candidate_telemetry
 from solver.rake_solver import RakeSolver, reconcile_ride_heights
 from solver.supporting_solver import SupportingSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
@@ -812,6 +813,13 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             from learner.ingest import ingest_ibt
             from learner.knowledge_store import KnowledgeStore
 
+            predicted_telemetry, _prediction_conf = predict_candidate_telemetry(
+                current_setup=current_setup,
+                baseline_measured=measured,
+                step2=step2,
+                step4=step4,
+                supporting=supporting,
+            )
             # Build solver predictions dict for the feedback loop.
             # These are what the solver PREDICTED for this session's telemetry.
             solver_predictions = {
@@ -820,6 +828,16 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
                 "lltd_predicted": getattr(step4, "lltd_achieved", 0.0),
                 "body_roll_predicted_deg_per_g": getattr(step4, "roll_gradient_deg_per_g", 0.0),
                 "front_bottoming_predicted": getattr(step2, "bottoming_events_front", 0),
+                "front_heave_travel_used_pct": predicted_telemetry.front_heave_travel_used_pct,
+                "front_excursion_mm": predicted_telemetry.front_excursion_mm,
+                "braking_pitch_deg": predicted_telemetry.braking_pitch_deg,
+                "front_lock_p95": predicted_telemetry.front_lock_p95,
+                "rear_power_slip_p95": predicted_telemetry.rear_power_slip_p95,
+                "body_slip_p95_deg": predicted_telemetry.body_slip_p95_deg,
+                "understeer_low_deg": predicted_telemetry.understeer_low_deg,
+                "understeer_high_deg": predicted_telemetry.understeer_high_deg,
+                "front_pressure_hot_kpa": predicted_telemetry.front_pressure_hot_kpa,
+                "rear_pressure_hot_kpa": predicted_telemetry.rear_pressure_hot_kpa,
             }
 
             store = KnowledgeStore()
