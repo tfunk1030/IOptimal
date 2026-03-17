@@ -208,24 +208,39 @@ class WheelGeometrySolver:
         crown_correction = -0.2
         optimal += crown_correction
 
-        # Thermal feedback loop (if telemetry is provided)
+        # Thermal and Wear feedback loop (if telemetry is provided)
         if measured is not None:
             if is_front:
+                lf_wear_spread = getattr(measured, "lf_wear_spread", 0.0)
+                rf_wear_spread = getattr(measured, "rf_wear_spread", 0.0)
+                wear_spread = max(lf_wear_spread, rf_wear_spread)
+                
                 lf_spread = getattr(measured, "front_temp_spread_lf_c", 0.0)
                 rf_spread = getattr(measured, "front_temp_spread_rf_c", 0.0)
                 spread = max(lf_spread, rf_spread)
             else:
+                lr_wear_spread = getattr(measured, "lr_wear_spread", 0.0)
+                rr_wear_spread = getattr(measured, "rr_wear_spread", 0.0)
+                wear_spread = max(lr_wear_spread, rr_wear_spread)
+                
                 lr_spread = getattr(measured, "rear_temp_spread_lr_c", 0.0)
                 rr_spread = getattr(measured, "rear_temp_spread_rr_c", 0.0)
                 spread = max(lr_spread, rr_spread)
 
-            # Target inner-outer spread is 5-8°C.
-            # If spread > 10°C, inner is overheating -> reduce negative camber
-            if spread > 10.0:
+            # Wear spread is the ultimate ground truth. If the inner tire is wearing significantly faster than outer
+            # (e.g. inner - outer > 1.5%), we override temperature heuristics.
+            if wear_spread > 1.5:
                 optimal += 0.2
-            # If spread < 3°C, outer is doing too much work -> increase negative camber
-            elif spread < 3.0 and spread > -5.0: # ignore wild negative values
+            elif wear_spread < -1.5:
                 optimal -= 0.2
+            else:
+                # Target inner-outer spread is 5-8°C.
+                # If spread > 10°C, inner is overheating -> reduce negative camber
+                if spread > 10.0:
+                    optimal += 0.2
+                # If spread < 3°C, outer is doing too much work -> increase negative camber
+                elif spread < 3.0 and spread > -5.0: # ignore wild negative values
+                    optimal -= 0.2
 
         if is_front:
             c_min, c_max = geo.front_camber_range_deg

@@ -114,6 +114,12 @@ class MeasuredState:
     body_slip_p95_deg: float = 0.0
     body_slip_at_peak_g_deg: float = 0.0
     
+    # --- Dynamic Steering / FFB variables ---
+    ffb_torque_p95_nm: float = 0.0          # Useful for measuring pneumatic trail / saturation
+    
+    # --- Dynamic Steering / FFB variables ---
+    ffb_torque_p95_nm: float = 0.0          # Useful for measuring pneumatic trail / saturation
+    
     # Advanced Tire Slip Dynamics
     front_slip_angle_p95_deg: float = 0.0
     rear_slip_angle_p95_deg: float = 0.0
@@ -139,6 +145,12 @@ class MeasuredState:
     rear_pressure_mean_kpa: float = 0.0
     front_wear_mean_pct: float = 0.0
     rear_wear_mean_pct: float = 0.0
+    
+    # Advanced Wear Spreads
+    lf_wear_spread: float = 0.0
+    rf_wear_spread: float = 0.0
+    lr_wear_spread: float = 0.0
+    rr_wear_spread: float = 0.0
 
     # --- Splitter ride height (CFSRrideHeight) ---
     splitter_rh_mean_at_speed_mm: float = 0.0   # Mean center-front splitter RH at >150kph
@@ -769,6 +781,12 @@ def _extract_handling(
         if np.sum(right_turn) > 30:
             state.understeer_right_turn_deg = float(np.mean(understeer_deg[right_turn]))
 
+    # --- FFB Pneumatic Trail Analysis ---
+    if ibt.has_channel("SteeringWheelTorque"):
+        ffb = np.abs(ibt.channel("SteeringWheelTorque")[start:end + 1])
+        if np.sum(cornering) > 10:
+            state.ffb_torque_p95_nm = float(np.percentile(ffb[cornering], 95))
+
     # --- Body slip angle ---
     body_slip_deg = np.degrees(np.arctan2(vy, np.maximum(np.abs(vx), 1.0)))
     abs_body_slip = np.abs(body_slip_deg)
@@ -1034,6 +1052,13 @@ def _extract_tyre_data(
             avg_wear = float(np.mean(wear_vals)) * 100
             per_corner_wear[prefix] = avg_wear
             setattr(state, f"{prefix.lower()}_wear_pct", round(avg_wear, 1))
+            
+            # Additional wear spread: Inner - Outer
+            is_left = prefix.startswith("L")
+            if len(wear_vals) == 3:
+                inner_wear = wear_vals[2] if is_left else wear_vals[0]
+                outer_wear = wear_vals[0] if is_left else wear_vals[2]
+                setattr(state, f"{prefix.lower()}_wear_spread", round((inner_wear - outer_wear) * 100, 2))
 
     if "LF" in per_corner_wear and "RF" in per_corner_wear:
         state.front_wear_mean_pct = round(

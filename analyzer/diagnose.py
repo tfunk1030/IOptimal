@@ -557,6 +557,13 @@ def _check_balance(
     # Excessive understeer (adaptive: car/driver-specific threshold)
     us_thresh = t.understeer_all_deg
     if m.understeer_mean_deg > us_thresh:
+        
+        # Cross reference with FFB Torque (Pneumatic Trail)
+        ffb_note = ""
+        if hasattr(m, 'ffb_torque_p95_nm') and m.ffb_torque_p95_nm > 0:
+            if m.ffb_torque_p95_nm < 8.0: # Arbitrary low threshold indicating saturation drop-off
+                ffb_note = f" FFB Torque p95 is unusually low ({m.ffb_torque_p95_nm:.1f} Nm), indicating the front tires have exceeded peak slip angle and lost pneumatic trail."
+
         problems.append(Problem(
             category="balance",
             severity="significant",
@@ -564,7 +571,7 @@ def _check_balance(
             cause=(
                 "Car understeering through corners. Front tyres saturated before "
                 "rears. Check LLTD (too high pushes front), front aero balance, "
-                "and front mechanical grip."
+                "and front mechanical grip." + ffb_note
             ),
             speed_context="all",
             measured=m.understeer_mean_deg,

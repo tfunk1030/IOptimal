@@ -249,13 +249,22 @@ class SupportingSolver:
                     f"recommended {bias:.1f}% (delta {measured_split - bias:+.1f}%)"
                 )
 
-        # ABS engagement feedback
-        if measured.abs_active_pct > 10.0:
-            if measured.abs_cut_mean_pct > 20.0:
-                bias -= 0.3
+        # ABS engagement feedback: Use BrakeABScutPct for exact bias dialing
+        if measured.abs_active_pct > 5.0:
+            if measured.abs_cut_mean_pct > 15.0:
+                # The ABS is cutting >15% of brake force on the front axle.
+                # We need to shift bias rearwards aggressively.
+                bias -= 0.5
                 reasons.append(
-                    f"-0.3% for ABS active {measured.abs_active_pct:.0f}% "
-                    f"with {measured.abs_cut_mean_pct:.0f}% force cut (front locking)"
+                    f"-0.5% for ABS active {measured.abs_active_pct:.0f}% "
+                    f"with aggressive {measured.abs_cut_mean_pct:.0f}% force cut (front locking)"
+                )
+            elif measured.abs_cut_mean_pct > 5.0:
+                # Minor intervention, shift back slightly
+                bias -= 0.2
+                reasons.append(
+                    f"-0.2% for ABS active {measured.abs_active_pct:.0f}% "
+                    f"with {measured.abs_cut_mean_pct:.0f}% force cut"
                 )
 
         sol.brake_bias_pct = round(bias, 1)
