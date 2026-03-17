@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
+from analyzer.signal_value import SignalValue
 from analyzer.telemetry_truth import (
     TelemetrySignal,
     build_signal_map,
@@ -294,6 +295,9 @@ class MeasuredState:
     signal_conflicts: list[str] = field(default_factory=list)
     telemetry_signals: dict[str, TelemetrySignal[float]] = field(default_factory=dict, repr=False)
     telemetry_bundle: dict[str, object] = field(default_factory=dict, repr=False)
+
+    # --- Signal confidence layer (PR1: telemetry trust) ---
+    signal_values: dict[str, SignalValue] = field(default_factory=dict, repr=False)
 
 
 def extract_measurements(
@@ -748,6 +752,9 @@ def extract_measurements(
         state.fallback_reasons.append(f"front_settle:{state.front_settle_invalid_reason}")
     if state.rear_settle_invalid_reason:
         state.fallback_reasons.append(f"rear_settle:{state.rear_settle_invalid_reason}")
+
+    # --- Signal confidence layer (SignalValue) ---
+    state.signal_values = _build_signal_values(state)
 
     return state
 
@@ -1810,3 +1817,178 @@ def _extract_wind(
         wind_dir = ibt.channel("WindDir")
         if wind_dir is not None and len(wind_dir) > 0:
             state.wind_dir_deg = round(float(np.mean(np.degrees(wind_dir))), 1)
+
+
+def _build_signal_values(state: MeasuredState) -> dict[str, SignalValue]:
+    """Build SignalValue instances for key metrics.
+
+    This provides a unified confidence/validity layer that downstream
+    modules (state_inference, overhaul, report) can use to decide
+    how much to trust each measurement.
+    """
+    sv: dict[str, SignalValue] = {}
+
+    # --- Ride height signals ---
+    sv["mean_front_rh_at_speed_mm"] = (
+        SignalValue.trusted(state.mean_front_rh_at_speed_mm, "ride_height_channels")
+        if state.mean_front_rh_at_speed_mm > 0
+        else SignalValue.missing("ride_height_channels", "no_at_speed_samples")
+    )
+    sv["mean_rear_rh_at_speed_mm"] = (
+        SignalValue.trusted(state.mean_rear_rh_at_speed_mm, "ride_height_channels")
+        if state.mean_rear_rh_at_speed_mm > 0
+        else SignalValue.missing("ride_height_channels", "no_at_speed_samples")
+    )
+    sv["front_rh_std_mm"] = (
+        SignalValue.trusted(state.front_rh_std_mm, "ride_height_channels")
+        if state.front_rh_std_mm > 0
+        else SignalValue.missing("ride_height_channels", "no_at_speed_samples")
+    )
+    sv["rear_rh_std_mm"] = (
+        SignalValue.trusted(state.rear_rh_std_mm, "ride_height_channels")
+        if state.rear_rh_std_mm > 0
+        else SignalValue.missing("ride_height_channels", "no_at_speed_samples")
+    )
+
+    # --- Heave travel signals ---
+    sv["front_heave_travel_used_pct"] = (
+        SignalValue.trusted(state.front_heave_travel_used_pct, "heave_deflection_channel", confidence=0.9)
+        if state.front_heave_travel_used_pct > 0
+        else SignalValue.missing("heave_deflection_channel", "channel_not_available")
+    )
+    sv["rear_heave_travel_used_pct"] = (
+        SignalValue.trusted(state.rear_heave_travel_used_pct, "heave_deflection_channel", confidence=0.9)
+        if state.rear_heave_travel_used_pct > 0
+        else SignalValue.missing("heave_deflection_channel", "channel_not_available")
+    )
+
+    # --- Settle time signals ---
+    front_settle_valid = state.front_settle_valid_clean_events >= 3
+    sv["front_rh_settle_time_ms"] = (
+        SignalValue.trusted(
+            state.front_rh_settle_time_ms,
+            "event_based_clean_disturbance_response",
+            confidence=min(0.95, 0.55 + state.front_settle_valid_clean_events * 0.08),
+        )
+        if front_settle_valid
+        else SignalValue.missing(
+            "event_based_clean_disturbance_response",
+            state.front_settle_invalid_reason or "insufficient_clean_events",
+        )
+    )
+    rear_settle_valid = state.rear_settle_valid_clean_events >= 3
+    sv["rear_rh_settle_time_ms"] = (
+        SignalValue.trusted(
+            state.rear_rh_settle_time_ms,
+            "event_based_clean_disturbance_response",
+            confidence=min(0.95, 0.55 + state.rear_settle_valid_clean_events * 0.08),
+        )
+        if rear_settle_valid
+        else SignalValue.missing(
+            "event_based_clean_disturbance_response",
+            state.rear_settle_invalid_reason or "insufficient_clean_events",
+        )
+    )
+
+    # --- Slip proxy signals ---
+    sv["front_braking_lock_ratio_p95"] = (
+        SignalValue.trusted(state.front_braking_lock_ratio_p95, "wheel_speed_delta", confidence=0.82)
+        if state.front_braking_lock_ratio_p95 > 0
+        else SignalValue.missing("wheel_speed_delta", "no_braking_data")
+    )
+    sv["rear_power_slip_ratio_p95"] = (
+        SignalValue.trusted(state.rear_power_slip_ratio_p95, "wheel_speed_delta", confidence=0.82)
+        if state.rear_power_slip_ratio_p95 > 0
+        else SignalValue.missing("wheel_speed_delta", "no_power_data")
+    )
+
+    # --- Thermal signals ---
+    sv["front_carcass_mean_c"] = (
+        SignalValue.trusted(state.front_carcass_mean_c, "tyre_temp_channel")
+        if state.front_carcass_mean_c > 0
+        else SignalValue.missing("tyre_temp_channel", "no_temp_data")
+    )
+    sv["rear_carcass_mean_c"] = (
+        SignalValue.trusted(state.rear_carcass_mean_c, "tyre_temp_channel")
+        if state.rear_carcass_mean_c > 0
+        else SignalValue.missing("tyre_temp_channel", "no_temp_data")
+    )
+
+    # --- Pressure signals ---
+    sv["front_pressure_mean_kpa"] = (
+        SignalValue.trusted(state.front_pressure_mean_kpa, "tyre_pressure_channel")
+        if state.front_pressure_mean_kpa > 0
+        else SignalValue.missing("tyre_pressure_channel", "no_pressure_data")
+    )
+    sv["rear_pressure_mean_kpa"] = (
+        SignalValue.trusted(state.rear_pressure_mean_kpa, "tyre_pressure_channel")
+        if state.rear_pressure_mean_kpa > 0
+        else SignalValue.missing("tyre_pressure_channel", "no_pressure_data")
+    )
+
+    # --- Handling proxy signals ---
+    sv["understeer_mean_deg"] = (
+        SignalValue.proxy(state.understeer_mean_deg, "steering_yaw_proxy")
+        if state.understeer_mean_deg != 0
+        else SignalValue.missing("steering_yaw_proxy", "no_cornering_data")
+    )
+    sv["understeer_low_speed_deg"] = (
+        SignalValue.proxy(state.understeer_low_speed_deg, "steering_yaw_proxy")
+        if state.understeer_low_speed_deg != 0
+        else SignalValue.missing("steering_yaw_proxy", "insufficient_low_speed_data")
+    )
+    sv["understeer_high_speed_deg"] = (
+        SignalValue.proxy(state.understeer_high_speed_deg, "steering_yaw_proxy")
+        if state.understeer_high_speed_deg != 0
+        else SignalValue.missing("steering_yaw_proxy", "insufficient_high_speed_data")
+    )
+    sv["body_slip_p95_deg"] = (
+        SignalValue.proxy(state.body_slip_p95_deg, "body_velocity_proxy")
+        if state.body_slip_p95_deg > 0
+        else SignalValue.missing("body_velocity_proxy", "no_body_slip_data")
+    )
+
+    # --- LLTD proxy ---
+    roll_proxy = state.roll_distribution_proxy or state.lltd_measured
+    sv["roll_distribution_proxy"] = (
+        SignalValue.proxy(roll_proxy, "ride_height_differential", confidence=0.65)
+        if roll_proxy > 0
+        else SignalValue.missing("ride_height_differential", "insufficient_cornering")
+    )
+
+    # --- Oscillation signals ---
+    sv["front_shock_oscillation_hz"] = (
+        SignalValue.trusted(state.front_shock_oscillation_hz, "shock_velocity_zero_crossing", confidence=0.8)
+        if state.front_shock_oscillation_hz > 0
+        else SignalValue.missing("shock_velocity_zero_crossing", "no_data")
+    )
+    sv["rear_shock_oscillation_hz"] = (
+        SignalValue.trusted(state.rear_shock_oscillation_hz, "shock_velocity_zero_crossing", confidence=0.8)
+        if state.rear_shock_oscillation_hz > 0
+        else SignalValue.missing("shock_velocity_zero_crossing", "no_data")
+    )
+
+    # --- Brake system ---
+    sv["hydraulic_brake_split_pct"] = (
+        SignalValue.trusted(
+            state.hydraulic_brake_split_pct,
+            "brake_pressure_channels",
+            confidence=0.75 if state.hydraulic_brake_split_confidence == "high" else 0.5,
+        )
+        if state.hydraulic_brake_split_pct > 0
+        else SignalValue.missing("brake_pressure_channels", "no_brake_pressure_data")
+    )
+
+    # --- Pitch signals ---
+    sv["pitch_range_braking_deg"] = (
+        SignalValue.trusted(state.pitch_range_braking_deg, "pitch_from_ride_height", confidence=0.8)
+        if state.pitch_range_braking_deg > 0
+        else SignalValue.missing("pitch_from_ride_height", "no_pitch_data")
+    )
+    sv["pitch_mean_braking_deg"] = (
+        SignalValue.trusted(state.pitch_mean_braking_deg, "pitch_from_ride_height", confidence=0.8)
+        if state.pitch_mean_braking_deg != 0
+        else SignalValue.missing("pitch_from_ride_height", "no_pitch_data")
+    )
+
+    return sv

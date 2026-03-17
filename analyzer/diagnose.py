@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from analyzer.adaptive_thresholds import AdaptiveThresholds
 from analyzer.extract import MeasuredState
 from analyzer.setup_reader import CurrentSetup
+from analyzer.state_inference import CarStateIssue, infer_car_states
+from analyzer.overhaul import OverhaulAssessment, assess_overhaul
 from analyzer.telemetry_truth import get_signal
 from car_model.cars import CarModel
 
@@ -51,6 +53,9 @@ class Diagnosis:
     weight_dist_front_pct: float = 0.0
     # Causal analysis (populated after problems are identified)
     causal_diagnosis: object = field(default=None, repr=False)  # CausalDiagnosis | None
+    # State inference (PR2: root-cause car states)
+    car_state_issues: list[CarStateIssue] = field(default_factory=list)
+    overhaul_assessment: OverhaulAssessment | None = None
 
 
 def diagnose(
@@ -131,6 +136,21 @@ def diagnose(
 
     # Overall assessment
     diag.assessment = _compute_assessment(problems)
+
+    # State inference: convert flat symptoms to root-cause car states
+    try:
+        diag.car_state_issues = infer_car_states(measured, setup)
+        # Compute mean signal confidence for overhaul assessment
+        signal_values = getattr(measured, "signal_values", {})
+        if signal_values:
+            confidences = [sv.confidence for sv in signal_values.values() if sv.valid]
+            mean_conf = sum(confidences) / len(confidences) if confidences else 0.5
+        else:
+            mean_conf = 0.5
+        diag.overhaul_assessment = assess_overhaul(diag.car_state_issues, mean_conf)
+    except Exception:
+        diag.car_state_issues = []
+        diag.overhaul_assessment = None
 
     return diag
 

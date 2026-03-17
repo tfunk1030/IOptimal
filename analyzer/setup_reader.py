@@ -146,6 +146,11 @@ class CurrentSetup:
 
     # --- Brakes / Diff / TC ---
     brake_bias_pct: float = 0.0
+    brake_bias_target: float = 0.0          # Target bias from setup file
+    brake_bias_migration: float = 0.0       # Bias migration setting
+    front_master_cyl_mm: float = 0.0        # Front master cylinder bore diameter
+    rear_master_cyl_mm: float = 0.0         # Rear master cylinder bore diameter
+    pad_compound: str = ""                  # Brake pad compound identifier
     front_diff_preload_nm: float = 0.0  # Ferrari only (has front diff)
     diff_preload_nm: float = 0.0        # Rear diff preload
     diff_ramp_angles: str = ""
@@ -308,6 +313,11 @@ class CurrentSetup:
 
             # Brakes / Diff / TC
             brake_bias_pct=_parse_float(brake_spec.get("BrakePressureBias")),
+            brake_bias_target=_parse_float(brake_spec.get("BrakeBiasTarget") or brake_spec.get("BrakePressureBias")),
+            brake_bias_migration=_parse_float(brake_spec.get("BrakeBiasMigration")),
+            front_master_cyl_mm=_parse_float(brake_spec.get("FrontMasterCyl") or brake_spec.get("FrontMasterCylinder")),
+            rear_master_cyl_mm=_parse_float(brake_spec.get("RearMasterCyl") or brake_spec.get("RearMasterCylinder")),
+            pad_compound=str(brake_spec.get("PadCompound", "") or brake_spec.get("BrakePadCompound", "")),
             front_diff_preload_nm=_parse_float(front_diff_spec.get("Preload")),
             diff_preload_nm=_parse_float(diff_spec.get("Preload")),
             diff_ramp_angles=str(diff_spec.get("CoastDriveRampAngles", "") or diff_spec.get("CoastDriveRampOptions", "")),

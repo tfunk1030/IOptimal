@@ -227,6 +227,15 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
     log(f"  Assessment: {diagnosis.assessment}")
     log(f"  Problems: {len(diagnosis.problems)}")
 
+    # State inference and overhaul classification (PR2)
+    if diagnosis.car_state_issues:
+        log(f"  Car states: {len(diagnosis.car_state_issues)} detected")
+        for issue in diagnosis.car_state_issues[:3]:
+            log(f"    {issue.state_id}: severity={issue.severity:.2f}, conf={issue.confidence:.2f}")
+    if diagnosis.overhaul_assessment:
+        oa = diagnosis.overhaul_assessment
+        log(f"  Setup classification: {oa.classification} (score={oa.score:.2f}, conf={oa.confidence:.2f})")
+
     # ── Phase F: Compute aero gradients ──
     log("Computing aero gradients...")
     # Use measured ride heights if available, otherwise solver defaults

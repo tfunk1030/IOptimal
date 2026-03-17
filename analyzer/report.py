@@ -18,6 +18,7 @@ from analyzer.diagnose import Diagnosis, Problem
 from analyzer.recommend import AnalysisResult, SetupChange
 from analyzer.setup_reader import CurrentSetup
 from analyzer.extract import MeasuredState
+from analyzer.signal_value import SignalValue
 
 
 def _safe_dict(obj: Any) -> Any:
@@ -154,6 +155,67 @@ def format_report(
             lines.append(f"          {line}")
 
     lines.append("")
+
+    # --- Signal Confidence ---
+    if measured is not None and getattr(measured, "signal_values", None):
+        lines.append(section("SIGNAL CONFIDENCE"))
+        lines.append("")
+        signal_values = measured.signal_values
+        trusted = [k for k, v in signal_values.items() if v.valid and not v.fallback_used]
+        proxy = [k for k, v in signal_values.items() if v.valid and v.fallback_used]
+        invalid = [k for k, v in signal_values.items() if not v.valid]
+        if trusted:
+            lines.append(f"  Trusted ({len(trusted)}):")
+            for name in trusted[:8]:
+                sv = signal_values[name]
+                lines.append(f"    {name}: conf={sv.confidence:.2f}")
+        if proxy:
+            lines.append(f"  Proxy ({len(proxy)}):")
+            for name in proxy[:6]:
+                sv = signal_values[name]
+                lines.append(f"    {name}: conf={sv.confidence:.2f}")
+        if invalid:
+            lines.append(f"  Unavailable ({len(invalid)}):")
+            for name in invalid[:6]:
+                sv = signal_values[name]
+                reason = sv.invalid_reason or "unknown"
+                lines.append(f"    {name}: {reason}")
+        lines.append("")
+
+    # --- Car State Issues ---
+    if diag.car_state_issues:
+        lines.append(section("CAR STATE ANALYSIS"))
+        lines.append("")
+        for issue in diag.car_state_issues:
+            sev_bar = "#" * int(issue.severity * 10)
+            lines.append(f"  {issue.state_id}")
+            lines.append(f"    Severity: {issue.severity:.2f} [{sev_bar:<10}]  "
+                         f"Confidence: {issue.confidence:.2f}")
+            if issue.estimated_loss_ms > 0:
+                lines.append(f"    Est. loss: ~{issue.estimated_loss_ms:.0f} ms/lap")
+            if issue.recommended_direction:
+                wrapped = _wrap_text(issue.recommended_direction, width - 6)
+                for line in wrapped:
+                    lines.append(f"    -> {line}")
+            for ev in issue.evidence[:3]:
+                lines.append(f"      {ev.note}")
+            lines.append("")
+
+    # --- Overhaul Assessment ---
+    if diag.overhaul_assessment is not None:
+        oa = diag.overhaul_assessment
+        class_label = {
+            "minor_tweak": "MINOR TWEAK",
+            "moderate_rework": "MODERATE REWORK",
+            "baseline_reset": "BASELINE RESET",
+        }.get(oa.classification, oa.classification.upper())
+        lines.append(section("SETUP CLASSIFICATION"))
+        lines.append("")
+        lines.append(f"  Classification: {class_label}")
+        lines.append(f"  Confidence: {oa.confidence:.2f}    Score: {oa.score:.2f}")
+        for reason in oa.reasons[:4]:
+            lines.append(f"    - {reason}")
+        lines.append("")
 
     # --- Recommended Changes ---
     if result.changes:
