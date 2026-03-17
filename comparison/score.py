@@ -20,7 +20,7 @@ from comparison.compare import (
 # ── Scoring categories and weights ──────────────────────────────
 
 CATEGORY_WEIGHTS: dict[str, float] = {
-    "lap_time": 0.20,
+    "lap_time": 0.15,
     "grip": 0.15,
     "balance": 0.15,
     "aero_efficiency": 0.10,
@@ -29,6 +29,7 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "corner_performance": 0.10,
     "damper_platform": 0.05,
     "thermal": 0.05,
+    "context_health": 0.05,
 }
 
 CATEGORY_LABELS: dict[str, str] = {
@@ -41,6 +42,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "corner_performance": "Corner Performance",
     "damper_platform": "Damper / Platform",
     "thermal": "Thermal",
+    "context_health": "Context / Health",
 }
 
 
@@ -106,9 +108,21 @@ def _safe_avg(values: list[float]) -> float:
 
 
 def _score_lap_time(sessions: list[SessionAnalysis]) -> list[float]:
-    """Lower lap time = better."""
-    times = [s.lap_time_s for s in sessions]
-    return _normalize_lower_better(times)
+    """Lower lap time = better, but with soft penalties for small gaps.
+
+    Using min/max normalization made any tiny lap-time delta dominate the score,
+    especially in 2-session comparisons. Instead, scale lap-time authority by
+    relative gap to the fastest lap over a 1.5% window.
+    """
+    if not sessions:
+        return []
+    fastest = min(s.lap_time_s for s in sessions)
+    window = max(fastest * 0.015, 0.001)
+    scores: list[float] = []
+    for sess in sessions:
+        delta = max(0.0, sess.lap_time_s - fastest)
+        scores.append(max(0.0, 1.0 - delta / window))
+    return scores
 
 
 def _score_grip(sessions: list[SessionAnalysis]) -> list[float]:
@@ -326,6 +340,21 @@ def _score_thermal(sessions: list[SessionAnalysis]) -> list[float]:
     return [_safe_avg(s) for s in scores_per_session]
 
 
+def _score_context_health(sessions: list[SessionAnalysis]) -> list[float]:
+    """Score session comparability and telemetry health."""
+    scores: list[float] = []
+    for sess in sessions:
+        ctx = getattr(sess, "session_context", None)
+        if ctx is None:
+            scores.append(0.5)
+            continue
+        score = ctx.overall_score
+        if not ctx.comparable_to_baseline:
+            score *= 0.8
+        scores.append(score)
+    return scores
+
+
 # ── Main scorer ─────────────────────────────────────────────────
 
 
@@ -350,6 +379,7 @@ def score_sessions(comparison: ComparisonResult) -> ScoringResult:
         "corner_performance": _score_corner_performance(sessions, corner_comps),
         "damper_platform": _score_damper_platform(sessions),
         "thermal": _score_thermal(sessions),
+        "context_health": _score_context_health(sessions),
     }
 
     # Per-corner speed class scores for each session

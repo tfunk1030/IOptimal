@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from analyzer.adaptive_thresholds import compute_adaptive_thresholds
+from analyzer.context import SessionContext, build_session_context
 from analyzer.diagnose import Diagnosis, diagnose
 from analyzer.driver_style import DriverProfile, analyze_driver, refine_driver_with_measured
 from analyzer.extract import MeasuredState, extract_measurements
@@ -40,6 +41,7 @@ class SessionAnalysis:
     track: TrackProfile
     lap_time_s: float
     lap_number: int
+    session_context: SessionContext | None = None
     track_name: str = ""
     wing_angle: float = 0.0
 
@@ -125,7 +127,15 @@ def analyze_session(
 
     # Adaptive thresholds + diagnosis
     adaptive = compute_adaptive_thresholds(track, car, driver)
-    diagnosis = diagnose(measured, setup, car, thresholds=adaptive)
+    diagnosis = diagnose(
+        measured,
+        setup,
+        car,
+        thresholds=adaptive,
+        driver=driver,
+        corners=corners,
+    )
+    session_context = build_session_context(measured, setup, diagnosis)
 
     # Label
     if label is None:
@@ -142,6 +152,7 @@ def analyze_session(
         track=track,
         lap_time_s=measured.lap_time_s,
         lap_number=measured.lap_number,
+        session_context=session_context,
         track_name=track_name,
         wing_angle=detected_wing,
     )
@@ -178,7 +189,13 @@ SETUP_PARAMS: list[tuple[str, str, str]] = [
     ("Rear HS Comp", "rear_hs_comp", "click"),
     ("Rear HS Rbd", "rear_hs_rbd", "click"),
     ("Brake Bias", "brake_bias_pct", "%"),
+    ("Brake Bias Target", "brake_bias_target", ""),
+    ("Brake Bias Migration", "brake_bias_migration", ""),
+    ("Front Master Cyl", "front_master_cyl_mm", "mm"),
+    ("Rear Master Cyl", "rear_master_cyl_mm", "mm"),
+    ("Pad Compound", "pad_compound", ""),
     ("Diff Preload", "diff_preload_nm", "Nm"),
+    ("Diff Clutch Plates", "diff_clutch_plates", ""),
     ("TC Gain", "tc_gain", ""),
     ("TC Slip", "tc_slip", ""),
 ]

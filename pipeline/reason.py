@@ -33,6 +33,7 @@ from pathlib import Path
 import numpy as np
 
 from analyzer.adaptive_thresholds import compute_adaptive_thresholds
+from analyzer.context import SessionContext, build_session_context
 from analyzer.diagnose import diagnose
 from analyzer.driver_style import DriverProfile, analyze_driver, refine_driver_with_measured
 from analyzer.extract import MeasuredState, extract_measurements
@@ -52,7 +53,9 @@ from learner.delta_detector import (
     KNOWN_CAUSALITY, EFFECT_METRICS,
     detect_delta, SessionDelta,
 )
+from learner.envelope import EnvelopeDistance, TelemetryEnvelope, build_telemetry_envelope, compute_envelope_distance
 from learner.observation import Observation, build_observation
+from learner.setup_clusters import SetupCluster, SetupDistance, build_setup_cluster, compute_setup_distance
 from solver.setup_fingerprint import (
     CandidateVeto,
     SetupFingerprint,
@@ -63,6 +66,7 @@ from solver.setup_fingerprint import (
 )
 from solver.decision_trace import build_parameter_decisions
 from solver.legality_engine import LegalValidation, validate_solution_legality
+from solver.candidate_search import SetupCandidate, generate_candidate_families
 from track_model.build_profile import build_profile
 from track_model.ibt_parser import IBTFile
 from track_model.profile import TrackProfile
@@ -80,6 +84,7 @@ class SessionSnapshot:
     measured: MeasuredState
     driver: DriverProfile
     diagnosis: object  # Diagnosis
+    session_context: SessionContext | None
     track: TrackProfile
     corners: list
     observation: Observation
@@ -361,6 +366,10 @@ class ReasoningState:
 
     # Phase 4: Speed-regime
     speed_regime: SpeedRegimeAnalysis = field(default_factory=SpeedRegimeAnalysis)
+    telemetry_envelope: TelemetryEnvelope | None = None
+    setup_cluster: SetupCluster | None = None
+    envelope_distances: dict[str, EnvelopeDistance] = field(default_factory=dict)
+    setup_distances: dict[str, SetupDistance] = field(default_factory=dict)
 
     # Phase 5: Target profile
     target_profile: TargetProfile = field(default_factory=TargetProfile)
@@ -382,7 +391,9 @@ class ReasoningState:
     setup_fingerprints: list[SetupFingerprint] = field(default_factory=list)
     validation_clusters: list[ValidationCluster] = field(default_factory=list)
     candidate_vetoes: list[CandidateVeto] = field(default_factory=list)
+    generated_candidates: list[SetupCandidate] = field(default_factory=list)
     solver_notes: list[str] = field(default_factory=list)
+    authority_scores: list[dict[str, object]] = field(default_factory=list)
     normalization_scores: list[dict[str, object]] = field(default_factory=list)
     decision_trace: list[ParameterDecision] = field(default_factory=list)
     legal_validation: LegalValidation | None = None
@@ -583,11 +594,185 @@ def _build_validation_clusters(state: ReasoningState) -> None:
     state.validation_clusters = clusters
 
 
+def _build_health_models(state: ReasoningState) -> None:
+    healthy_sessions = [
+        snap for snap in state.sessions
+        if snap.session_context is not None
+        and snap.session_context.comparable_to_baseline
+        and snap.diagnosis.assessment in {"fast", "competitive"}
+    ]
+    if len(healthy_sessions) < 3:
+        ranked = sorted(state.sessions, key=lambda snap: snap.lap_time_s)
+        healthy_sessions = ranked[: min(3, len(ranked))]
+
+    source_labels = [snap.label for snap in healthy_sessions]
+    state.telemetry_envelope = build_telemetry_envelope(
+        [snap.measured for snap in healthy_sessions],
+        source_sessions=source_labels,
+    )
+    state.setup_cluster = build_setup_cluster(
+        [snap.setup for snap in healthy_sessions],
+        member_sessions=source_labels,
+        label="healthy baseline cluster",
+    )
+    state.envelope_distances = {
+        snap.label: compute_envelope_distance(snap.measured, state.telemetry_envelope)
+        for snap in state.sessions
+    }
+    state.setup_distances = {
+        snap.label: compute_setup_distance(snap.setup, state.setup_cluster)
+        for snap in state.sessions
+    }
+    min_sample_gate = 3
+    if state.telemetry_envelope is not None and state.telemetry_envelope.sample_count < min_sample_gate:
+        state.reasoning_log.append("Telemetry envelope sample count below gate; distances are advisory only.")
+    if state.setup_cluster is not None and len(state.setup_cluster.member_sessions) < min_sample_gate:
+        state.reasoning_log.append("Setup cluster sample count below gate; distances are advisory only.")
+
+    from analyzer.overhaul import assess_overhaul
+
+    for snap in state.sessions:
+        env_distance = state.envelope_distances.get(snap.label)
+        setup_distance = state.setup_distances.get(snap.label)
+        gated_env = env_distance.total_score if env_distance is not None and state.telemetry_envelope.sample_count >= min_sample_gate else None
+        gated_setup = setup_distance.distance_score if setup_distance is not None and len(state.setup_cluster.member_sessions) >= min_sample_gate else None
+        snap.diagnosis.overhaul_assessment = assess_overhaul(
+            snap.diagnosis.state_issues,
+            telemetry_envelope_distance=gated_env,
+            setup_cluster_distance=gated_setup,
+        )
+
+
+def _apply_selected_candidate_outputs(
+    selected_candidate: SetupCandidate | None,
+    *,
+    step1: Any,
+    step2: Any,
+    step3: Any,
+    step4: Any,
+    step5: Any,
+    step6: Any,
+    supporting: Any,
+) -> tuple[Any, Any, Any, Any, Any, Any, Any, bool]:
+    if selected_candidate is None:
+        return step1, step2, step3, step4, step5, step6, supporting, False
+    selected_has_outputs = all(
+        getattr(selected_candidate, name, None) is not None
+        for name in ("step1", "step2", "step3", "step4", "step5", "step6", "supporting")
+    )
+    if not selected_has_outputs:
+        return step1, step2, step3, step4, step5, step6, supporting, False
+    return (
+        selected_candidate.step1,
+        selected_candidate.step2,
+        selected_candidate.step3,
+        selected_candidate.step4,
+        selected_candidate.step5,
+        selected_candidate.step6,
+        selected_candidate.supporting,
+        True,
+    )
+
+
+def _session_signal_quality_score(snapshot: SessionSnapshot) -> tuple[float, list[str]]:
+    signal_map = getattr(snapshot.measured, "telemetry_signals", {}) or {}
+    if not signal_map:
+        return 0.45, ["no telemetry signal map available"]
+
+    trusted = [sig.confidence for sig in signal_map.values() if sig.quality == "trusted" and sig.value is not None]
+    proxy = [sig.confidence for sig in signal_map.values() if sig.quality == "proxy" and sig.value is not None]
+    unresolved = [
+        name for name, sig in signal_map.items()
+        if sig.quality in {"unknown", "broken"} or sig.conflict_state != "clear"
+    ]
+    score = 0.0
+    if trusted:
+        score += min(0.75, sum(trusted) / len(trusted) * 0.75)
+    if proxy:
+        score += min(0.2, sum(proxy) / len(proxy) * 0.2)
+    score = max(0.0, score - min(0.2, len(unresolved) * 0.02))
+    notes = [
+        f"trusted={len(trusted)}",
+        f"proxy={len(proxy)}",
+        f"unresolved={len(unresolved)}",
+    ]
+    if getattr(snapshot.measured, "metric_fallbacks", None):
+        notes.append(f"fallbacks={len(snapshot.measured.metric_fallbacks)}")
+    return round(min(1.0, score), 3), notes
+
+
+def _compute_authority_scores(state: ReasoningState) -> None:
+    lap_times = [s.lap_time_s for s in state.sessions]
+    fastest = min(lap_times)
+    lap_window = max(fastest * 0.015, 0.001)
+    assessment_scores = {
+        "fast": 1.0,
+        "competitive": 0.8,
+        "compromised": 0.45,
+        "dangerous": 0.1,
+    }
+    authority_rows: list[dict[str, object]] = []
+    for idx, snap in enumerate(state.sessions):
+        lap_component = max(0.0, 1.0 - max(0.0, snap.lap_time_s - fastest) / lap_window)
+        diagnosis_component = assessment_scores.get(snap.diagnosis.assessment, 0.6)
+        context_component = snap.session_context.overall_score if snap.session_context is not None else 0.5
+        signal_component, signal_notes = _session_signal_quality_score(snap)
+        envelope_penalty = (
+            state.envelope_distances.get(snap.label).total_score
+            if snap.label in state.envelope_distances and state.telemetry_envelope is not None and state.telemetry_envelope.sample_count >= 3
+            else 0.0
+        )
+        setup_penalty = (
+            state.setup_distances.get(snap.label).distance_score
+            if snap.label in state.setup_distances and state.setup_cluster is not None and len(state.setup_cluster.member_sessions) >= 3
+            else 0.0
+        )
+        score = (
+            lap_component * 0.35
+            + diagnosis_component * 0.25
+            + context_component * 0.2
+            + signal_component * 0.2
+        )
+        score -= min(0.18, envelope_penalty * 0.035)
+        score -= min(0.12, setup_penalty * 0.025)
+        if snap.session_context is not None and not snap.session_context.comparable_to_baseline:
+            score *= 0.8
+        row = {
+            "session_idx": idx,
+            "session": snap.label,
+            "score": round(score, 3),
+            "lap_component": round(lap_component, 3),
+            "diagnosis_component": round(diagnosis_component, 3),
+            "context_component": round(context_component, 3),
+            "signal_component": round(signal_component, 3),
+            "envelope_distance": round(envelope_penalty, 3),
+            "setup_distance": round(setup_penalty, 3),
+            "notes": list((snap.session_context.notes if snap.session_context is not None else [])[:4]) + signal_notes,
+        }
+        authority_rows.append(row)
+
+    authority_rows.sort(key=lambda row: row["score"], reverse=True)
+    state.authority_scores = authority_rows
+
+
 def _resolve_authority_session(state: ReasoningState) -> None:
     state.latest_session_idx = max(len(state.sessions) - 1, 0)
-    state.authority_session_idx = state.best_session_idx
-    state.solve_basis = "best_session"
+    _compute_authority_scores(state)
+    if state.authority_scores:
+        top = state.authority_scores[0]
+        state.authority_session_idx = int(top["session_idx"])
+        state.solve_basis = "authority_score"
+    else:
+        state.authority_session_idx = state.best_session_idx
+        state.solve_basis = "best_session"
     state.solver_notes = []
+    if state.solve_basis == "authority_score" and state.authority_scores:
+        top = state.authority_scores[0]
+        state.solver_notes.append(
+            f"Authority score selected {top['session']} ({top['score']:.3f}) over raw best lap."
+        )
+        for note in top["notes"][:2]:
+            state.solver_notes.append(note)
 
     for cluster in state.validation_clusters:
         if cluster.latest_session_idx == state.latest_session_idx and cluster.validated_failed:
@@ -626,7 +811,15 @@ def _analyze_session(
     refine_driver_with_measured(driver, measured)
 
     adaptive = compute_adaptive_thresholds(track, car, driver)
-    diag = diagnose(measured, setup, car, thresholds=adaptive)
+    diag = diagnose(
+        measured,
+        setup,
+        car,
+        thresholds=adaptive,
+        driver=driver,
+        corners=corners,
+    )
+    session_context = build_session_context(measured, setup, diag)
 
     obs = build_observation(
         session_id=label,
@@ -647,6 +840,7 @@ def _analyze_session(
         measured=measured,
         driver=driver,
         diagnosis=diag,
+        session_context=session_context,
         track=track,
         corners=corners,
         observation=obs,
@@ -1925,6 +2119,62 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
     if state.solver_notes:
         for note in state.solver_notes[:3]:
             lines.append(f"  {note[:width-2]}")
+    for row in state.authority_scores[:3]:
+        lines.append(
+            f"  {row['session']}: score={row['score']:.3f} "
+            f"(lap={row['lap_component']:.2f}, health={row['diagnosis_component']:.2f}, "
+            f"context={row['context_component']:.2f}, signal={row['signal_component']:.2f}, "
+            f"env={row['envelope_distance']:.2f}, setup={row['setup_distance']:.2f})"
+        )
+    lines.append("")
+
+    if state.telemetry_envelope is not None or state.setup_cluster is not None:
+        lines.append("  HEALTHY ENVELOPE / CLUSTER")
+        lines.append("  " + "-" * (width - 4))
+        if state.telemetry_envelope is not None:
+            lines.append(
+                f"  Telemetry envelope from {state.telemetry_envelope.sample_count} "
+                f"session(s): {', '.join(state.telemetry_envelope.source_sessions[:3])}"
+            )
+        if state.setup_cluster is not None:
+            lines.append(
+                f"  Setup cluster members: {', '.join(state.setup_cluster.member_sessions[:3]) or 'n/a'}"
+            )
+        for snap in state.sessions[: min(4, len(state.sessions))]:
+            env = state.envelope_distances.get(snap.label)
+            setup = state.setup_distances.get(snap.label)
+            lines.append(
+                f"  {snap.label}: env={getattr(env, 'total_score', 0.0):.2f}  "
+                f"setup={getattr(setup, 'distance_score', 0.0):.2f}"
+            )
+        lines.append("")
+
+    if state.generated_candidates:
+        lines.append("  CANDIDATE FAMILIES")
+        lines.append("  " + "-" * (width - 4))
+        for candidate in state.generated_candidates:
+            selected = " <-- SELECTED" if candidate.selected else ""
+            score = candidate.score.total if candidate.score is not None else 0.0
+            lines.append(
+                f"  {candidate.family}: score={score:.3f} "
+                f"conf={candidate.confidence:.2f}{selected}"
+            )
+            if candidate.reasons:
+                lines.append(f"    {candidate.reasons[0][:width-6]}")
+        lines.append("")
+
+    lines.append("  SIGNAL CONFIDENCE")
+    lines.append("  " + "-" * (width - 4))
+    authority = state.sessions[state.authority_session_idx]
+    signal_lines = summarize_signal_quality(authority.measured)
+    if signal_lines:
+        lines.append(f"  Authority {authority.label}:")
+        for line in signal_lines[:4]:
+            lines.append(f"    {line[:width-6]}")
+        for fallback in authority.measured.metric_fallbacks[:4]:
+            lines.append(f"    Fallback: {fallback[:width-16]}")
+    else:
+        lines.append("  No telemetry signal summary available.")
     lines.append("")
 
     failed_clusters = [c for c in state.validation_clusters if c.validated_failed]
@@ -2192,6 +2442,7 @@ def reason_and_solve(
     state.best_session_idx = int(np.argmin(lap_times))
     state.worst_session_idx = int(np.argmax(lap_times))
     _build_validation_clusters(state)
+    _build_health_models(state)
     _resolve_authority_session(state)
 
     # ── Phase 2: All-pairs delta analysis ──
@@ -2486,6 +2737,7 @@ def reason_and_solve(
         best_driver.measured,
         best_driver.diagnosis,
         track=track,
+        current_setup=authority.setup,
     )
     supporting = supporting_solver.solve()
 
@@ -2509,6 +2761,97 @@ def reason_and_solve(
         step4.rear_arb_size = _cs.rear_arb_size
         # Geometry, dampers, brake/diff/TC — solver computes from telemetry
 
+    state.legal_validation = validate_solution_legality(
+        car=car,
+        track_name=track.track_name,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        fuel_l=detected_fuel,
+        step5=step5,
+    )
+    state.decision_trace = build_parameter_decisions(
+        car_name=car.canonical_name,
+        current_setup=authority.setup,
+        measured=authority.measured,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+        supporting=supporting,
+        legality=state.legal_validation,
+        fallback_reasons=list(getattr(authority.measured, "fallback_reasons", []) or []),
+    )
+    state.generated_candidates = generate_candidate_families(
+        authority_session=authority,
+        best_session=best,
+        overhaul_assessment=authority.diagnosis.overhaul_assessment,
+        legal_validation=state.legal_validation,
+        authority_score=next((row for row in state.authority_scores if row["session"] == authority.label), None),
+        envelope_distance=state.envelope_distances.get(authority.label).total_score
+        if authority.label in state.envelope_distances
+        else 0.0,
+        setup_distance=state.setup_distances.get(authority.label).distance_score
+        if authority.label in state.setup_distances
+        else 0.0,
+        produced_solution={
+            "step1": step1,
+            "step2": step2,
+            "step3": step3,
+            "step4": step4,
+            "step5": step5,
+            "step6": step6,
+            "supporting": supporting,
+        },
+        prediction_corrections=dict(state.historical.prediction_corrections),
+        setup_cluster=state.setup_cluster if state.setup_cluster is not None and len(state.setup_cluster.member_sessions) >= 3 else None,
+    )
+    selected_candidate = next((candidate for candidate in state.generated_candidates if candidate.selected), None)
+    if selected_candidate is not None:
+        state.solver_notes.append(
+            f"Candidate family selected: {selected_candidate.family} "
+            f"(score {selected_candidate.score.total if selected_candidate.score else 0.0:.3f})"
+        )
+        step1, step2, step3, step4, step5, step6, supporting, applied_candidate = _apply_selected_candidate_outputs(
+            selected_candidate,
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step4=step4,
+            step5=step5,
+            step6=step6,
+            supporting=supporting,
+        )
+        if applied_candidate:
+            state.solver_notes.append(
+                f"Applied {selected_candidate.family} candidate outputs to final report/JSON/export payloads."
+            )
+            state.legal_validation = validate_solution_legality(
+                car=car,
+                track_name=track.track_name,
+                step1=step1,
+                step2=step2,
+                step3=step3,
+                fuel_l=detected_fuel,
+                step5=step5,
+            )
+            state.decision_trace = build_parameter_decisions(
+                car_name=car.canonical_name,
+                current_setup=authority.setup,
+                measured=authority.measured,
+                step1=step1,
+                step2=step2,
+                step3=step3,
+                step4=step4,
+                step5=step5,
+                step6=step6,
+                supporting=supporting,
+                legality=state.legal_validation,
+                fallback_reasons=list(getattr(authority.measured, "fallback_reasons", []) or []),
+            )
+
     # ── Output ──
     if sto_path:
         from output.setup_writer import write_sto
@@ -2528,6 +2871,11 @@ def reason_and_solve(
             _extra_kw["rear_tb_turns"] = _cs.rear_torsion_bar_turns
         _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
         _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
+        _extra_kw["brake_bias_target"] = supporting.brake_bias_target
+        _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration
+        _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
+        _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
+        _extra_kw["pad_compound"] = supporting.pad_compound
         _extra_kw["diff_coast_drive_ramp"] = (
             ("More Locking" if supporting.diff_ramp_coast <= 45 else "Less Locking")
             if car.canonical_name == "ferrari"
@@ -2604,6 +2952,7 @@ def reason_and_solve(
             ],
             "category_scores": state.physics.category_scores,
             "weakest_category": state.physics.weakest_category,
+            "authority_scores": state.authority_scores,
             "tradeoffs": [
                 {
                     "parameter": t.parameter,
@@ -2620,6 +2969,41 @@ def reason_and_solve(
                 }
                 for md in state.modifier_details
             ],
+            "telemetry_envelope": (
+                {
+                    "sample_count": state.telemetry_envelope.sample_count,
+                    "source_sessions": state.telemetry_envelope.source_sessions,
+                    "metrics": state.telemetry_envelope.metrics,
+                }
+                if state.telemetry_envelope is not None
+                else None
+            ),
+            "setup_cluster": (
+                {
+                    "label": state.setup_cluster.label,
+                    "member_sessions": state.setup_cluster.member_sessions,
+                    "center": state.setup_cluster.center,
+                    "spreads": state.setup_cluster.spreads,
+                }
+                if state.setup_cluster is not None
+                else None
+            ),
+            "envelope_distances": {
+                label: {
+                    "total_score": distance.total_score,
+                    "per_metric": distance.per_metric,
+                    "notes": distance.notes,
+                }
+                for label, distance in state.envelope_distances.items()
+            },
+            "setup_distances": {
+                label: {
+                    "distance_score": distance.distance_score,
+                    "per_parameter_z": distance.per_parameter_z,
+                    "outlier_parameters": distance.outlier_parameters,
+                }
+                for label, distance in state.setup_distances.items()
+            },
             "parameter_insights": {
                 p: {
                     "direction": pl.direction,
@@ -2639,8 +3023,43 @@ def reason_and_solve(
                 }
                 for idx, fp in enumerate(state.setup_fingerprints)
             ],
+            "session_signal_quality": [
+                {
+                    "session": snap.label,
+                    "summary": summarize_signal_quality(snap.measured),
+                    "telemetry_bundle": snap.measured.telemetry_bundle,
+                    "telemetry_signals": signals_to_dict(snap.measured.telemetry_signals),
+                }
+                for snap in state.sessions
+            ],
             "validation_clusters": [cluster.to_dict() for cluster in state.validation_clusters],
             "candidate_vetoes": [veto.to_dict() for veto in state.candidate_vetoes],
+            "generated_candidates": [
+                {
+                    "family": candidate.family,
+                    "description": candidate.description,
+                    "confidence": candidate.confidence,
+                    "selected": candidate.selected,
+                    "reasons": candidate.reasons,
+                    "predicted": candidate.predicted.to_dict() if getattr(candidate, "predicted", None) is not None else None,
+                    "score": (
+                        {
+                            "total": candidate.score.total,
+                            "safety": candidate.score.safety,
+                            "performance": candidate.score.performance,
+                            "stability": candidate.score.stability,
+                            "confidence": candidate.score.confidence,
+                            "disruption_cost": candidate.score.disruption_cost,
+                            "notes": candidate.score.notes,
+                        }
+                        if candidate.score is not None
+                        else None
+                    ),
+                }
+                for candidate in state.generated_candidates
+            ],
+            "legal_validation": state.legal_validation.to_dict() if state.legal_validation is not None else None,
+            "decision_trace": [decision.to_dict() for decision in state.decision_trace],
             "solver_notes": state.solver_notes,
             "step1_rake": dataclasses.asdict(step1),
             "step2_heave": dataclasses.asdict(step2),
@@ -2672,6 +3091,7 @@ def reason_and_solve(
         current_setup=authority.setup,
         wing=detected_wing,
         target_balance=target_balance,
+        prediction_corrections=dict(state.historical.prediction_corrections),
         solve_context_lines=state.solver_notes + [
             f"Authority session: {authority.label}",
             f"Benchmark best session: {best.label}",

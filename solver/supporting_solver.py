@@ -28,6 +28,12 @@ class SupportingSolution:
     # Brakes
     brake_bias_pct: float = 56.0
     brake_bias_reasoning: str = ""
+    brake_bias_target: float = 0.0
+    brake_bias_migration: float = 0.0
+    front_master_cyl_mm: float = 0.0
+    rear_master_cyl_mm: float = 0.0
+    pad_compound: str = ""
+    brake_hardware_status: str = "pass-through only"
 
     # Differential
     diff_preload_nm: float = 10.0
@@ -52,6 +58,9 @@ class SupportingSolution:
         lines = [
             f"Brake bias: {self.brake_bias_pct:.1f}%",
             f"  {self.brake_bias_reasoning}",
+            f"Brake target/migration: {self.brake_bias_target:+.1f} / {self.brake_bias_migration:+.1f}",
+            f"  Master cylinders: F {self.front_master_cyl_mm:.1f} mm / R {self.rear_master_cyl_mm:.1f} mm | Pad: {self.pad_compound or 'unknown'}",
+            f"  Brake hardware status: {self.brake_hardware_status}",
             f"Diff: preload={self.diff_preload_nm:.0f} Nm, "
             f"coast={self.diff_ramp_coast}°, drive={self.diff_ramp_drive}°, "
             f"plates={self.diff_clutch_plates}",
@@ -67,78 +76,7 @@ class SupportingSolution:
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
-
-
-def compute_brake_bias(
-    car: "CarModel",
-    decel_g: float | None = None,
-    fuel_load_l: float | None = None,
-    ) -> tuple[float, str]:
-    """Compute iRacing-calibrated brake bias (BrakePressureBias parameter).
-
-    iRacing's BrakePressureBias is the hydraulic FRONT pressure split (%).
-    It is NOT the dynamic weight transfer ratio. The rear master cylinder
-    (20.6mm BMW) is already physically larger than the front (19.1mm),
-    which provides the braking system's dynamic weight transfer compensation.
-
-    Calibrated from 3 real BMW Sebring sessions:
-        IBT session:   46.0%   (BrakePressureBias from telemetry)
-        S1 (compliant): 46.5%  (from bmw_sebring_s1.ldx)
-        S2 (locked):    46.0%  (from bmw_sebring_s2.ldx)
-
-    Formula: bias ≈ static_front_weight_pct + forward_correction
-    Where forward_correction is a small positive offset that keeps the
-    front axle from locking under heavy braking. The mc size ratio
-    (rear/front = 20.6/19.1 = 1.079) handles the dynamic compensation;
-    this parameter stays close to static weight distribution.
-
-    Args:
-        car: Car physical model
-        decel_g: Unused (kept for API compatibility)
-        fuel_load_l: Fuel load for weight distribution shift (optional)
-
-    Returns:
-        (brake_bias_pct, reasoning_str)
-    """
-    # Use calibrated per-car value from car model.
-    # iRacing BrakePressureBias = hydraulic front pressure split (%).
-    # Calibrated from real IBT/LDX data — BMW: 46.0-46.5% at Sebring.
-    # Small fuel-load adjustment: the BMW tank sits slightly behind the dry
-    # car CG, so full fuel nudges the static balance rearward and burning fuel
-    # moves front weight back in. Hydraulic split follows that directionally,
-    # but with much smaller magnitude than the axle-load change itself.
-    bias = car.brake_bias_pct
-
-    if fuel_load_l is not None:
-        dry_mass_kg = car.mass_car_kg + car.mass_driver_kg
-        dry_cg_from_front_m = car.wheelbase_m * (1.0 - car.weight_dist_front)
-        fuel_mass_kg = fuel_load_l * 0.73
-        fuel_cg_from_front_m = car.wheelbase_m * 0.55
-        total_mass_kg = dry_mass_kg + fuel_mass_kg
-        combined_cg_from_front_m = (
-            dry_mass_kg * dry_cg_from_front_m + fuel_mass_kg * fuel_cg_from_front_m
-        ) / max(total_mass_kg, 1e-9)
-        front_weight_with_fuel = (
-            car.wheelbase_m - combined_cg_from_front_m
-        ) / max(car.wheelbase_m, 1e-9)
-        front_weight_shift_pct = (front_weight_with_fuel - car.weight_dist_front) * 100.0
-
-        # Keep the hydraulic correction small: brake pressure split should move
-        # with front axle load directionally, but far less than 1:1.
-        fuel_correction = front_weight_shift_pct * 0.4
-        bias = bias + fuel_correction
-    else:
-        fuel_correction = 0.0
-
-    reasoning = (
-        f"Calibrated base: {car.brake_bias_pct:.1f}% | "
-        f"Fuel correction: {fuel_correction:+.2f}% at {fuel_load_l or 0:.0f}L | "
-        f"Result: {bias:.1f}% | "
-        f"Source: car_model per-car calibration (BMW: IBT=46.0%, S1=46.5%, S2=46.0%)"
-    )
-
-    bias = round(bias, 1)
-    return bias, reasoning
+from solver.brake_solver import BrakeSolver, compute_brake_bias
 
 
 class SupportingSolver:
@@ -151,12 +89,14 @@ class SupportingSolver:
         measured: MeasuredState,
         diagnosis: Diagnosis,
         track: "TrackProfile | None" = None,
+        current_setup: object | None = None,
     ) -> None:
         self.car = car
         self.driver = driver
         self.measured = measured
         self.diagnosis = diagnosis
         self.track = track
+        self.current_setup = current_setup
         self._fuel_load_l = (
             measured.fuel_level_at_measurement_l
             if getattr(measured, "fuel_level_at_measurement_l", 0.0) > 0
@@ -172,94 +112,22 @@ class SupportingSolver:
         return sol
 
     def _solve_brake_bias(self, sol: SupportingSolution) -> None:
-        """Brake bias from hydraulic split calibration + braking-phase telemetry.
-
-        Seeds from compute_brake_bias(), then adjusts from braking lock evidence
-        and entry stability. This uses hydraulic-front-split logic, not true
-        brake-torque balance.
-        """
-        driver = self.driver
-        measured = self.measured
-
-        # Physics seed (fuel-adjusted weight transfer)
-        fuel_l = getattr(self, "_fuel_load_l", None)
-        bias, base_reason = compute_brake_bias(self.car, fuel_load_l=fuel_l)
-        reasons = [base_reason]
-
-        # Driver style adjustments — use quantitative trail brake depth when available,
-        # fall back to classification string
-        if driver.trail_brake_depth_p95 > 0:
-            # Continuous scaling: 0.3 = neutral, deeper = more forward bias
-            trail_adj = (driver.trail_brake_depth_p95 - 0.3) * 1.5
-            trail_adj = round(_clamp(trail_adj, -0.5, 0.75), 1)
-            if abs(trail_adj) >= 0.1:
-                bias += trail_adj
-                reasons.append(
-                    f"{trail_adj:+.1f}% from trail brake depth p95={driver.trail_brake_depth_p95:.2f}"
-                )
-        elif driver.trail_brake_classification == "deep":
-            bias += 0.5
-            reasons.append("+0.5% for deep trail braking")
-        elif driver.trail_brake_classification == "light":
-            bias -= 0.3
-            reasons.append("-0.3% for light trail braking")
-
-        # Braking deceleration validation
-        if measured.braking_decel_peak_g > 0:
-            # Forward weight transfer under braking: ΔW_f = m*a*h/L
-            # Higher decel → more forward weight → front needs more capacity
-            if measured.braking_decel_peak_g > 2.0:
-                bias += 0.2
-                reasons.append(
-                    f"+0.2% for high braking decel p95={measured.braking_decel_peak_g:.2f}g"
-                )
-            elif measured.braking_decel_peak_g < 1.2:
-                reasons.append(
-                    f"Note: low braking decel p95={measured.braking_decel_peak_g:.2f}g — "
-                    f"driver may not be braking hard enough to reveal bias issues"
-                )
-
-        front_lock = (
-            measured.front_braking_lock_ratio_p95
-            if measured.front_braking_lock_ratio_p95 > 0
-            else measured.front_slip_ratio_p95
-        )
-        if front_lock > 0.06:
-            bias -= 0.5
-            reasons.append(f"-0.5% for front braking lock proxy p95={front_lock:.3f}")
-
-        if measured.front_brake_wheel_decel_asymmetry_p95_ms2 > 3.0:
-            bias -= 0.2
-            reasons.append(
-                f"-0.2% for front brake wheel decel asymmetry "
-                f"p95={measured.front_brake_wheel_decel_asymmetry_p95_ms2:.1f} m/s^2"
-            )
-
-        # Rear instability under braking → shift forward
-        if measured.body_slip_p95_deg > 5.0:
-            bias += 0.3
-            reasons.append(f"+0.3% for high body slip p95={measured.body_slip_p95_deg:.1f}°")
-
-        # Measured brake pressure split validation (synchronous per-sample split)
-        measured_split = getattr(measured, "hydraulic_brake_split_pct", 0.0)
-        if measured_split > 0:
-            if abs(measured_split - bias) > 2.0:
-                reasons.append(
-                    f"Note: measured hydraulic split {measured_split:.1f}% vs "
-                    f"recommended {bias:.1f}% (delta {measured_split - bias:+.1f}%)"
-                )
-
-        # ABS engagement feedback
-        if measured.abs_active_pct > 10.0:
-            if measured.abs_cut_mean_pct > 20.0:
-                bias -= 0.3
-                reasons.append(
-                    f"-0.3% for ABS active {measured.abs_active_pct:.0f}% "
-                    f"with {measured.abs_cut_mean_pct:.0f}% force cut (front locking)"
-                )
-
-        sol.brake_bias_pct = round(bias, 1)
-        sol.brake_bias_reasoning = "; ".join(reasons)
+        brake_solution = BrakeSolver(
+            car=self.car,
+            driver=self.driver,
+            measured=self.measured,
+            diagnosis=self.diagnosis,
+            current_setup=self.current_setup,
+            fuel_load_l=getattr(self, "_fuel_load_l", None),
+        ).solve()
+        sol.brake_bias_pct = brake_solution.brake_bias_pct
+        sol.brake_bias_reasoning = brake_solution.reasoning
+        sol.brake_bias_target = getattr(self.current_setup, "brake_bias_target", 0.0) or 0.0
+        sol.brake_bias_migration = getattr(self.current_setup, "brake_bias_migration", 0.0) or 0.0
+        sol.front_master_cyl_mm = getattr(self.current_setup, "front_master_cyl_mm", 0.0) or 0.0
+        sol.rear_master_cyl_mm = getattr(self.current_setup, "rear_master_cyl_mm", 0.0) or 0.0
+        sol.pad_compound = getattr(self.current_setup, "pad_compound", "") or ""
+        sol.brake_hardware_status = "static bias solved; target/migration/master cylinders/pad are pass-through only"
 
     def _solve_diff(self, sol: SupportingSolution) -> None:
         """Differential from traction demand × driver style.
@@ -275,6 +143,7 @@ class SupportingSolver:
                 driver=self.driver,
                 measured=self.measured,
                 track=self.track,
+                current_clutch_plates=getattr(self.current_setup, "diff_clutch_plates", 0) or None,
             )
             sol.diff_preload_nm = diff_sol.preload_nm
             sol.diff_ramp_coast = diff_sol.coast_ramp_deg
@@ -285,7 +154,8 @@ class SupportingSolver:
             sol.diff_reasoning = (
                 f"{diff_sol.preload_reasoning} | {diff_sol.ramp_reasoning} | "
                 f"Lock: coast={diff_sol.lock_pct_coast:.1f}% "
-                f"drive={diff_sol.lock_pct_drive:.1f}%"
+                f"drive={diff_sol.lock_pct_drive:.1f}% "
+                f"(preload {diff_sol.preload_contribution_pct:.1f}% + plates {diff_sol.plate_contribution_pct:.1f}%)"
             )
         except Exception:
             # Fallback: simplified calculation (original implementation)

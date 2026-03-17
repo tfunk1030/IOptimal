@@ -36,6 +36,7 @@ class DriverProfile:
     # Throttle application (affects diff drive ramp + preload)
     throttle_progressiveness: float = 0.5  # 0-1: R² of linear fit during exit
     throttle_onset_rate_pct_per_s: float = 0.0
+    throttle_onset_aggression: float = 0.0
     throttle_classification: str = "moderate"  # "progressive" | "moderate" | "binary"
 
     # Steering (affects damper LS + ARB sensitivity)
@@ -45,7 +46,12 @@ class DriverProfile:
     # Consistency (optimize for peak vs average)
     apex_speed_cv: float = 0.0  # coefficient of variation across laps
     entry_speed_cv: float = 0.0
+    driver_noise_index: float = 0.0
     consistency: str = "consistent"  # "consistent" | "variable" | "erratic"
+
+    # Confidence / noise separation
+    classification_confidence: float = 0.0
+    brake_release_quality: float = 0.0
 
     # Cornering aggression (tyre thermal targets)
     avg_peak_lat_g_utilization: float = 0.0  # actual / theoretical limit
@@ -62,7 +68,8 @@ class DriverProfile:
             f"Throttle: {self.throttle_classification} (R²={self.throttle_progressiveness:.2f}) | "
             f"Steering: {self.steering_smoothness} (jerk p95={self.steering_jerk_p95_rad_per_s2:.0f}) | "
             f"Consistency: {self.consistency} (CV={self.apex_speed_cv:.3f}) | "
-            f"Aggression: {self.cornering_aggression} ({self.avg_peak_lat_g_utilization:.0%})"
+            f"Aggression: {self.cornering_aggression} ({self.avg_peak_lat_g_utilization:.0%}) | "
+            f"Confidence: {self.classification_confidence:.2f}"
         )
 
 
@@ -154,6 +161,11 @@ def analyze_driver(
         profile.trail_brake_classification = _classify_trail_brake(
             profile.trail_brake_depth_mean
         )
+        release_phases = [c.release_phase_s for c in corners if c.release_phase_s > 0]
+        if release_phases:
+            mean_release = float(np.mean(release_phases))
+            std_release = float(np.std(release_phases))
+            profile.brake_release_quality = max(0.0, min(1.0, 1.0 - std_release / max(mean_release, 0.1)))
 
     # ── Throttle Progressiveness ──
     # Fit linear ramp to throttle in exit phase (apex → full power) per corner
@@ -227,6 +239,7 @@ def analyze_driver(
 
     if onset_rates:
         profile.throttle_onset_rate_pct_per_s = float(np.mean(onset_rates))
+        profile.throttle_onset_aggression = max(0.0, min(1.0, profile.throttle_onset_rate_pct_per_s / 400.0))
     profile.throttle_classification = _classify_throttle(
         profile.throttle_progressiveness
     )
@@ -310,6 +323,14 @@ def analyze_driver(
             profile.entry_speed_cv = float(np.mean(entry_cvs))
 
     profile.consistency = _classify_consistency(profile.apex_speed_cv)
+    profile.driver_noise_index = max(
+        0.0,
+        min(
+            1.0,
+            profile.apex_speed_cv * 8.0
+            + max(0.0, profile.steering_jerk_p95_rad_per_s2 - 50.0) / 120.0,
+        ),
+    )
 
     # ── Cornering Aggression ──
     if corners:
@@ -335,6 +356,14 @@ def analyze_driver(
         profile.consistency,
         profile.cornering_aggression,
     )
+    trail_margin = abs(profile.trail_brake_depth_mean - 0.275)
+    throttle_margin = abs(profile.throttle_progressiveness - 0.625)
+    consistency_margin = abs(profile.apex_speed_cv - 0.055)
+    confidence = 1.0 - min(
+        0.65,
+        trail_margin * 0.8 + throttle_margin * 0.8 + consistency_margin * 4.0 + profile.driver_noise_index * 0.3,
+    )
+    profile.classification_confidence = round(max(0.25, min(0.95, confidence)), 3)
 
     return profile
 
@@ -365,3 +394,5 @@ def refine_driver_with_measured(
             profile.consistency,
             profile.cornering_aggression,
         )
+        profile.driver_noise_index = min(1.0, profile.driver_noise_index + 0.15)
+        profile.classification_confidence = max(0.25, profile.classification_confidence - 0.1)
