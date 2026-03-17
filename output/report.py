@@ -259,6 +259,10 @@ def print_full_setup_report(
             "Diff lock coast / drive",
             f"{diff_solution.lock_pct_coast:.1f}% / {diff_solution.lock_pct_drive:.1f}%",
         ))
+        a(_setting(
+            "Diff preload / plate %",
+            f"{diff_solution.preload_contribution_pct:.1f}% / {diff_solution.plate_contribution_pct:.1f}%",
+        ))
     a(_setting("TC gain / slip", f"{tc_gain_str} / {tc_slip_str}"))
     a(_setting("Tyre cold FL / FR", f"{tyre_fl:.0f} / {tyre_fr:.0f} kPa"))
     a(_setting("Tyre cold RL / RR", f"{tyre_rl:.0f} / {tyre_rr:.0f} kPa"))
@@ -397,6 +401,10 @@ def print_full_setup_report(
         a(_row(
             f"  Lock coast/drive: {diff_solution.lock_pct_coast:.1f}/{diff_solution.lock_pct_drive:.1f}%",
             f"  Pad: {pad_compound_str}",
+        ))
+        a(_row(
+            f"  Lock preload/plate: {diff_solution.preload_contribution_pct:.1f}/{diff_solution.plate_contribution_pct:.1f}%",
+            f"  Status: {brake_hardware_status[:18]}",
         ))
     a(_blank())
 
