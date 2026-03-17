@@ -748,6 +748,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             "lap_number": measured.lap_number,
             "driver_style": driver.style,
             "assessment": diagnosis.assessment,
+            "candidate_family_selection": "single-session pipeline uses direct solver path; candidate-family selection lives in pipeline.reason",
             "signal_quality_summary": summarize_signal_quality(measured),
             "telemetry_bundle": measured.telemetry_bundle,
             "step1_rake": dataclasses.asdict(step1),
@@ -786,6 +787,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         sensitivity_result=sensitivity_result,
         stint_evolution=stint_evolution,
         stint_compromise_info=stint_compromise_info,
+        prediction_corrections={},
         compact=quiet,
     )
     print(report)

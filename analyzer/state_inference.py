@@ -383,16 +383,28 @@ def infer_car_states(
         )
 
     # Thermal window invalid
+    temp_score = 0.0
+    pressure_score = 0.0
+    for temp in (front_temp, rear_temp):
+        if temp is not None and (temp < 80.0 or temp > 105.0):
+            temp_score = max(temp_score, abs(temp - 92.5) / 20.0)
+    for pressure in (front_pressure, rear_pressure):
+        if pressure is not None and (pressure < 155.0 or pressure > 175.0):
+            pressure_score = max(pressure_score, abs(pressure - 165.0) / 15.0)
+
     thermal_score = 0.0
-    if front_temp is not None and (front_temp < 80.0 or front_temp > 105.0):
-        thermal_score = max(thermal_score, abs(front_temp - 92.5) / 20.0)
-    if rear_temp is not None and (rear_temp < 80.0 or rear_temp > 105.0):
-        thermal_score = max(thermal_score, abs(rear_temp - 92.5) / 20.0)
-    if front_pressure is not None and (front_pressure < 155.0 or front_pressure > 175.0):
-        thermal_score = max(thermal_score, abs(front_pressure - 165.0) / 15.0)
-    if rear_pressure is not None and (rear_pressure < 155.0 or rear_pressure > 175.0):
-        thermal_score = max(thermal_score, abs(rear_pressure - 165.0) / 15.0)
-    if thermal_score > 0.0:
+    thermal_confidence = max(front_temp_conf, rear_temp_conf, front_pressure_conf, rear_pressure_conf)
+    # Pressure-only deviation is advisory in GTP because the sim minimum cold
+    # pressure often forces high hot pressures. Do not let it dominate reset logic.
+    if temp_score > 0.0:
+        thermal_score = max(temp_score, pressure_score * 0.2)
+        if temp_score < 0.35:
+            thermal_score *= 0.7
+    elif pressure_score > 0.0:
+        thermal_score = min(0.25, pressure_score * 0.2)
+        thermal_confidence = min(thermal_confidence, 0.45)
+
+    if thermal_score > 0.05:
         evidence = [
             StateEvidence("front_carcass_mean_c", front_temp, front_temp_conf, "Front tyre thermal window evidence."),
             StateEvidence("rear_carcass_mean_c", rear_temp, rear_temp_conf, "Rear tyre thermal window evidence."),
@@ -403,12 +415,16 @@ def infer_car_states(
             issues,
             state_id="thermal_window_invalid",
             severity=thermal_score,
-            confidence=max(front_temp_conf, rear_temp_conf, front_pressure_conf, rear_pressure_conf),
+            confidence=thermal_confidence,
             estimated_loss_ms=45.0 + thermal_score * 85.0,
             implicated_steps=[5],
             evidence=evidence,
             likely_causes=["tyres operating outside thermal/pressure target window", "contact patch efficiency reduced"],
-            recommended_direction="move thermal state back toward target window before fine-tuning balance",
+            recommended_direction=(
+                "move thermal state back toward target window before fine-tuning balance"
+                if temp_score > 0.0
+                else "pressure-only deviation is advisory; tune around the sim pressure floor before declaring a reset"
+            ),
         )
 
     # Brake system front limited

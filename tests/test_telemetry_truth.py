@@ -4,11 +4,12 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 
 from analyzer.diagnose import Diagnosis
-from analyzer.extract import MeasuredState
+from analyzer.extract import MeasuredState, extract_measurements
 from analyzer.report import format_report, save_analysis_json
 from analyzer.recommend import AnalysisResult
 from analyzer.setup_reader import CurrentSetup
 from analyzer.telemetry_truth import TelemetrySignal, build_signal_map, summarize_signal_quality
+from car_model import get_car
 
 
 class FakeIBT:
@@ -220,6 +221,18 @@ class TelemetryTruthSummaryTests(unittest.TestCase):
         self.assertEqual(signals["rear_power_slip_ratio_p95"].quality, "proxy")
         self.assertTrue(signals["rear_power_slip_ratio_p95"].fallback_used)
         self.assertEqual(signals["hydraulic_brake_split_pct"].quality, "proxy")
+
+    def test_bmw151_invalid_front_settle_time_is_not_trusted(self) -> None:
+        fixture = Path("/workspace/ibtfiles/bmw151.ibt")
+        if not fixture.exists():
+            self.skipTest("bmw151 fixture unavailable")
+
+        measured = extract_measurements(fixture, get_car("bmw"))
+        signals = build_signal_map(measured)
+
+        self.assertTrue(measured.front_settle_invalid_reason)
+        self.assertEqual(signals["front_rh_settle_time_ms"].quality, "unknown")
+        self.assertIsNone(signals["front_rh_settle_time_ms"].value)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from car_model.garage import GarageSetupState
 from analyzer.telemetry_truth import summarize_signal_quality
+from solver.predictor import predict_candidate_telemetry
 
 if TYPE_CHECKING:
     from aero_model.gradient import AeroGradients
@@ -86,6 +87,7 @@ def generate_report(
     stint_evolution: object = None,
     stint_compromise_info: list[str] | None = None,
     solve_context_lines: list[str] | None = None,
+    prediction_corrections: dict[str, float] | None = None,
     compact: bool = False,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
@@ -215,6 +217,38 @@ def generate_report(
             if issue.recommended_direction:
                 a(f"    {issue.recommended_direction[:W - 6]}")
         a("")
+
+    predicted_telemetry, prediction_confidence = predict_candidate_telemetry(
+        current_setup=current_setup,
+        baseline_measured=measured,
+        step2=step2,
+        step4=step4,
+        supporting=supporting,
+        corrections=prediction_corrections,
+    )
+    a(_hdr("PREDICTED IMPROVEMENTS"))
+    if prediction_confidence.overall < 0.45:
+        a(f"  Prediction confidence is low ({prediction_confidence.overall:.2f}); treat the deltas below as advisory.")
+    else:
+        a(f"  Prediction confidence: {prediction_confidence.overall:.2f}")
+
+    def _pred_line(label: str, before: float | None, after: float | None, unit: str = "", better: str = "lower") -> None:
+        if before is None or after is None:
+            return
+        delta = after - before
+        direction = "improves" if ((delta < 0 and better == "lower") or (delta > 0 and better == "higher")) else "worsens"
+        a(f"  {label}: {before:.3f} -> {after:.3f} {unit} ({delta:+.3f}, {direction})")
+
+    _pred_line("Front travel used", getattr(measured, "front_heave_travel_used_pct", None), predicted_telemetry.front_heave_travel_used_pct, "%", "lower")
+    _pred_line("Front excursion", getattr(measured, "front_rh_excursion_measured_mm", None), predicted_telemetry.front_excursion_mm, "mm", "lower")
+    _pred_line("Rear RH variance", getattr(measured, "rear_rh_std_mm", None), predicted_telemetry.rear_rh_std_mm, "mm", "lower")
+    _pred_line("Braking pitch", getattr(measured, "pitch_range_braking_deg", None), predicted_telemetry.braking_pitch_deg, "deg", "lower")
+    _pred_line("Front lock p95", getattr(measured, "front_braking_lock_ratio_p95", None), predicted_telemetry.front_lock_p95, "", "lower")
+    _pred_line("Rear power slip p95", getattr(measured, "rear_power_slip_ratio_p95", None), predicted_telemetry.rear_power_slip_p95, "", "lower")
+    _pred_line("Body slip p95", getattr(measured, "body_slip_p95_deg", None), predicted_telemetry.body_slip_p95_deg, "deg", "lower")
+    _pred_line("Understeer low", getattr(measured, "understeer_low_speed_deg", None), predicted_telemetry.understeer_low_deg, "deg", "lower")
+    _pred_line("Understeer high", getattr(measured, "understeer_high_speed_deg", None), predicted_telemetry.understeer_high_deg, "deg", "lower")
+    a("")
 
     # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
     a(print_full_setup_report(
