@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from analyzer.adaptive_thresholds import compute_adaptive_thresholds
+from analyzer.context import SessionContext, build_session_context
 from analyzer.diagnose import Diagnosis, diagnose
 from analyzer.driver_style import DriverProfile, analyze_driver, refine_driver_with_measured
 from analyzer.extract import MeasuredState, extract_measurements
@@ -40,6 +41,7 @@ class SessionAnalysis:
     track: TrackProfile
     lap_time_s: float
     lap_number: int
+    session_context: SessionContext | None = None
     track_name: str = ""
     wing_angle: float = 0.0
 
@@ -133,6 +135,7 @@ def analyze_session(
         driver=driver,
         corners=corners,
     )
+    session_context = build_session_context(measured, setup, diagnosis)
 
     # Label
     if label is None:
@@ -149,6 +152,7 @@ def analyze_session(
         track=track,
         lap_time_s=measured.lap_time_s,
         lap_number=measured.lap_number,
+        session_context=session_context,
         track_name=track_name,
         wing_angle=detected_wing,
     )
