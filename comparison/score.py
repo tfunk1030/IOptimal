@@ -13,6 +13,7 @@ from comparison.compare import (
     ComparisonResult,
     CornerComparison,
     SessionAnalysis,
+    SETUP_PARAMS,
     TELEMETRY_METRICS,
 )
 
@@ -20,9 +21,9 @@ from comparison.compare import (
 # ── Scoring categories and weights ──────────────────────────────
 
 CATEGORY_WEIGHTS: dict[str, float] = {
-    "lap_time": 0.12,
-    "grip": 0.15,
-    "balance": 0.15,
+    "lap_time": 0.10,
+    "grip": 0.14,
+    "balance": 0.14,
     "aero_efficiency": 0.10,
     "high_speed_corners": 0.10,
     "low_speed_corners": 0.10,
@@ -31,6 +32,7 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "thermal": 0.05,
     "telemetry_health": 0.05,
     "signal_quality": 0.03,
+    "setup_distance": 0.04,
 }
 
 CATEGORY_LABELS: dict[str, str] = {
@@ -45,6 +47,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "thermal": "Thermal",
     "telemetry_health": "Telemetry Health",
     "signal_quality": "Signal Quality",
+    "setup_distance": "Setup Distance",
 }
 
 
@@ -376,6 +379,61 @@ def _score_signal_quality(sessions: list[SessionAnalysis]) -> list[float]:
     return _normalize_higher_better(scores)
 
 
+def _score_setup_distance(sessions: list[SessionAnalysis]) -> list[float]:
+    """Score setups by proximity to known healthy clusters.
+
+    Sessions whose setup parameters are closer to the cluster center
+    (lower z-score distance) score higher. If no clusters are available,
+    scores are neutral (0.5).
+    """
+    try:
+        from learner.setup_clusters import compute_setup_distance
+    except ImportError:
+        return [0.5] * len(sessions)
+
+    # Build cluster from all sessions (use their setups as the reference population)
+    if len(sessions) < 2:
+        return [0.5] * len(sessions)
+
+    # Extract setup parameter dicts for clustering
+    param_dicts: list[dict[str, float]] = []
+    for s in sessions:
+        d: dict[str, float] = {}
+        for _name, attr, _units in SETUP_PARAMS:
+            val = getattr(s.setup, attr, None)
+            if isinstance(val, (int, float)) and val != 0:
+                d[attr] = float(val)
+        param_dicts.append(d)
+
+    # Compute center (mean of all sessions)
+    all_keys = set()
+    for d in param_dicts:
+        all_keys.update(d.keys())
+
+    center: dict[str, float] = {}
+    spreads: dict[str, float] = {}
+    for key in all_keys:
+        vals = [d[key] for d in param_dicts if key in d]
+        if len(vals) >= 2:
+            mean = sum(vals) / len(vals)
+            std = (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5
+            center[key] = mean
+            spreads[key] = max(std, 1e-9)
+
+    # Compute per-session distance from center
+    distances: list[float] = []
+    for d in param_dicts:
+        z_scores: list[float] = []
+        for key in center:
+            if key in d:
+                z = abs(d[key] - center[key]) / spreads[key]
+                z_scores.append(z)
+        distances.append(sum(z_scores) / max(len(z_scores), 1))
+
+    # Lower distance = better (closer to cluster center)
+    return _normalize_lower_better(distances)
+
+
 # ── Main scorer ─────────────────────────────────────────────────
 
 
@@ -402,6 +460,7 @@ def score_sessions(comparison: ComparisonResult) -> ScoringResult:
         "thermal": _score_thermal(sessions),
         "telemetry_health": _score_telemetry_health(sessions),
         "signal_quality": _score_signal_quality(sessions),
+        "setup_distance": _score_setup_distance(sessions),
     }
 
     # Per-corner speed class scores for each session

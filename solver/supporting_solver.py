@@ -267,17 +267,44 @@ class SupportingSolver:
         sol.brake_bias_pct = round(bias, 1)
         sol.brake_bias_reasoning = "; ".join(reasons)
 
+        # Use setup brake_bias_target and migration when parsed from IBT
+        if self.setup is not None:
+            target = getattr(self.setup, "brake_bias_target", 0.0) or 0.0
+            migration = getattr(self.setup, "brake_bias_migration", 0.0) or 0.0
+            if target > 0 and abs(target - bias) > 0.3:
+                reasons.append(
+                    f"Setup brake_bias_target={target:.1f}% vs computed {bias:.1f}%"
+                )
+            if migration > 0:
+                reasons.append(f"Brake migration={migration:.1f} (setup)")
+
+        # Use state inference: adjust bias based on car state issues
+        state_issues = getattr(self.diagnosis, "car_state_issues", [])
+        for issue in state_issues:
+            if issue.state_id == "brake_system_front_limited" and issue.confidence >= 0.4:
+                adj = -0.3 * issue.confidence
+                bias += adj
+                reasons.append(
+                    f"{adj:+.1f}% from state: {issue.state_id} "
+                    f"(conf={issue.confidence:.2f})"
+                )
+
         # Cross-validate with physics-based brake solver
         try:
             from solver.brake_solver import BrakeSolution, solve_brake_bias as solve_brake_physics
             from analyzer.setup_reader import CurrentSetup as _CS
-            # Build a minimal setup for brake solver
-            _setup = _CS(source="supporting_solver")
-            _setup.brake_bias_target = getattr(self.measured, "brake_bias_pct", 0.0)
-            _setup.front_master_cyl_mm = getattr(self.car, "front_master_cyl_mm", 19.1)
-            _setup.rear_master_cyl_mm = getattr(self.car, "rear_master_cyl_mm", 20.6)
-            _setup.pad_compound = ""
-            _setup.brake_bias_migration = 0.0
+            # Build a minimal setup for brake solver, using actual parsed values if available
+            _setup = self.setup if self.setup is not None else _CS(source="supporting_solver")
+            if not hasattr(_setup, "brake_bias_target") or not _setup.brake_bias_target:
+                _setup.brake_bias_target = getattr(self.measured, "brake_bias_pct", 0.0)
+            if not hasattr(_setup, "front_master_cyl_mm") or not _setup.front_master_cyl_mm:
+                _setup.front_master_cyl_mm = getattr(self.car, "front_master_cyl_mm", 19.1)
+            if not hasattr(_setup, "rear_master_cyl_mm") or not _setup.rear_master_cyl_mm:
+                _setup.rear_master_cyl_mm = getattr(self.car, "rear_master_cyl_mm", 20.6)
+            if not hasattr(_setup, "pad_compound"):
+                _setup.pad_compound = ""
+            if not hasattr(_setup, "brake_bias_migration"):
+                _setup.brake_bias_migration = 0.0
 
             brake_sol = solve_brake_physics(
                 self.car,
@@ -311,6 +338,7 @@ class SupportingSolver:
                 driver=self.driver,
                 measured=self.measured,
                 track=self.track,
+                setup=self.setup,
             )
             sol.diff_preload_nm = diff_sol.preload_nm
             sol.diff_ramp_coast = diff_sol.coast_ramp_deg

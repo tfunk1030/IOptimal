@@ -236,6 +236,7 @@ class DiffSolver:
         driver: "DriverProfile",
         measured: "MeasuredState",
         track: "TrackProfile | None" = None,
+        setup: object = None,
     ) -> DiffSolution:
         """Compute differential setup recommendation.
 
@@ -250,8 +251,12 @@ class DiffSolver:
         preload_nm, preload_reasoning = self._compute_preload(driver, measured, track)
         coast_ramp, drive_ramp, ramp_reasoning = self._compute_ramps(driver)
 
-        # Use actual clutch plate count from car model if available
-        clutch_plates = getattr(self.car, 'diff_clutch_plates', 0)
+        # Use actual clutch plate count: setup (IBT) > car model > garage > default
+        clutch_plates = 0
+        if setup is not None:
+            clutch_plates = getattr(setup, 'diff_clutch_plates', 0) or 0
+        if clutch_plates <= 0:
+            clutch_plates = getattr(self.car, 'diff_clutch_plates', 0)
         if clutch_plates <= 0:
             garage = getattr(self.car, 'garage_ranges', None)
             if garage is not None and hasattr(garage, 'diff_clutch_plates_options'):

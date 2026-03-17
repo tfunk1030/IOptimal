@@ -583,12 +583,82 @@ def _build_validation_clusters(state: ReasoningState) -> None:
     state.validation_clusters = clusters
 
 
+def _compute_session_health_score(snap: SessionSnapshot) -> float:
+    """Compute a health-adjusted authority score for a session.
+
+    Combines lap time performance with telemetry health indicators:
+    - Fewer diagnosed problems = healthier
+    - Higher state inference confidence = more trustworthy
+    - Fewer hard failures = safer baseline
+    - Better signal quality = more reliable data
+
+    Returns a score where higher = better authority candidate.
+    """
+    # Lap time component (normalize to 0-1 range relative to typical GTP lap)
+    lap_time_score = max(0.0, 1.0 - (snap.lap_time_s - 100.0) / 60.0)
+
+    # Problem count penalty (fewer = better)
+    n_problems = len(snap.diagnosis.problems) if hasattr(snap.diagnosis, 'problems') else 0
+    problem_score = max(0.0, 1.0 - n_problems * 0.1)
+
+    # Hard failure penalty (any hard failure significantly reduces authority)
+    hard_failures = sum(
+        1 for p in (snap.diagnosis.problems if hasattr(snap.diagnosis, 'problems') else [])
+        if getattr(p, 'is_hard_failure', False)
+    )
+    hard_failure_penalty = 0.3 * hard_failures
+
+    # State inference confidence bonus
+    state_issues = getattr(snap.diagnosis, 'car_state_issues', [])
+    if state_issues:
+        avg_conf = sum(i.confidence for i in state_issues) / len(state_issues)
+        state_score = avg_conf
+    else:
+        state_score = 0.5  # neutral if no state inference
+
+    # Signal quality bonus
+    signal_values = getattr(snap.measured, "signal_values", {})
+    if signal_values:
+        confidences = [sv.confidence for sv in signal_values.values() if hasattr(sv, 'confidence')]
+        signal_score = sum(confidences) / len(confidences) if confidences else 0.5
+    else:
+        signal_score = 0.5
+
+    # Weighted combination: lap time still matters most, but health gates authority
+    score = (
+        0.35 * lap_time_score
+        + 0.25 * problem_score
+        + 0.15 * state_score
+        + 0.15 * signal_score
+        - hard_failure_penalty
+    )
+    return max(0.0, min(1.0, score))
+
+
 def _resolve_authority_session(state: ReasoningState) -> None:
     state.latest_session_idx = max(len(state.sessions) - 1, 0)
-    state.authority_session_idx = state.best_session_idx
-    state.solve_basis = "best_session"
     state.solver_notes = []
 
+    # Health-adjusted authority scoring: don't just pick fastest lap,
+    # pick the session with the best combination of performance and health
+    health_scores = [_compute_session_health_score(s) for s in state.sessions]
+    best_health_idx = max(range(len(health_scores)), key=lambda i: health_scores[i])
+
+    # If health-adjusted winner differs from raw fastest, note it
+    if best_health_idx != state.best_session_idx:
+        state.authority_session_idx = best_health_idx
+        state.solve_basis = "health_adjusted"
+        state.solver_notes.append(
+            f"Authority: {state.sessions[best_health_idx].label} "
+            f"(health={health_scores[best_health_idx]:.2f}) over fastest "
+            f"{state.sessions[state.best_session_idx].label} "
+            f"(health={health_scores[state.best_session_idx]:.2f})"
+        )
+    else:
+        state.authority_session_idx = state.best_session_idx
+        state.solve_basis = "best_session"
+
+    # Validation veto still overrides health-adjusted authority
     for cluster in state.validation_clusters:
         if cluster.latest_session_idx == state.latest_session_idx and cluster.validated_failed:
             state.authority_session_idx = state.latest_session_idx

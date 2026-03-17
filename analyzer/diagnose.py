@@ -39,6 +39,12 @@ class Problem:
     threshold: float    # threshold that was exceeded
     units: str
     priority: int       # 0=safety ... 5=grip
+    is_hard_failure: bool = False  # True = must fix before driving; False = advisory clue
+
+    @property
+    def is_advisory(self) -> bool:
+        """True if this is an advisory clue rather than a hard failure."""
+        return not self.is_hard_failure
 
 
 @dataclass
@@ -122,6 +128,10 @@ def diagnose(
     # Sort by priority then severity
     severity_order = {"critical": 0, "significant": 1, "minor": 2}
     problems.sort(key=lambda p: (p.priority, severity_order.get(p.severity, 3)))
+
+    # Classify hard failures vs advisory clues
+    _classify_hard_failures(problems)
+
     diag.problems = problems
 
     # Causal analysis: trace problems back to root causes
@@ -1266,6 +1276,32 @@ def _check_speed_dependent_balance(
                     units="%",
                     priority=2,
                 ))
+
+
+def _classify_hard_failures(problems: list[Problem]) -> None:
+    """Tag each problem as hard_failure or advisory based on category + severity.
+
+    Hard failures are issues that must be fixed before driving safely or
+    that fundamentally compromise the setup (e.g. bottoming, vortex burst,
+    critical platform collapse). Advisory clues are observations that inform
+    tuning direction but don't block the setup from being usable.
+    """
+    for p in problems:
+        # Safety-critical problems are always hard failures
+        if p.category == "safety" and p.severity == "critical":
+            p.is_hard_failure = True
+        # Platform collapse with critical severity
+        elif p.category == "platform" and p.severity == "critical":
+            p.is_hard_failure = True
+        # Severe bottoming (safety category, any severity above minor)
+        elif p.category == "safety" and "bottoming" in p.symptom.lower() and p.severity != "minor":
+            p.is_hard_failure = True
+        # Vortex burst is always a hard failure
+        elif "vortex" in p.symptom.lower() and "burst" in p.symptom.lower():
+            p.is_hard_failure = True
+        # Everything else is advisory
+        else:
+            p.is_hard_failure = False
 
 
 def _compute_assessment(problems: list[Problem]) -> str:

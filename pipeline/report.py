@@ -407,6 +407,77 @@ def generate_report(
                 a(f"  {info}")
             a("")
 
+    # ── PREDICTED TELEMETRY IMPROVEMENTS ──────────────────────────────
+    try:
+        from solver.predictor import predict_telemetry_directional
+        predicted = predict_telemetry_directional(
+            modifiers=modifiers,
+            measured=measured,
+            car=car,
+        )
+        if predicted is not None:
+            a(_hdr("PREDICTED IMPROVEMENTS"))
+            pred_fields = [
+                ("front_heave_travel_used_pct", "Heave travel used", "%", True),
+                ("front_excursion_mm", "Front excursion", "mm", True),
+                ("rear_rh_std_mm", "Rear RH variance", "mm", True),
+                ("body_slip_p95_deg", "Body slip p95", "°", True),
+                ("understeer_low_deg", "Understeer (low)", "°", True),
+                ("understeer_high_deg", "Understeer (high)", "°", True),
+            ]
+            for attr, label, unit, lower_better in pred_fields:
+                pred_val = getattr(predicted, attr, None)
+                if pred_val is not None:
+                    meas_attr = attr
+                    # Map predictor fields to measured fields
+                    meas_map = {
+                        "front_heave_travel_used_pct": "front_heave_travel_used_pct",
+                        "front_excursion_mm": "front_rh_excursion_measured_mm",
+                        "rear_rh_std_mm": "rear_rh_std_mm",
+                        "body_slip_p95_deg": "body_slip_p95_deg",
+                        "understeer_low_deg": "understeer_low_speed_deg",
+                        "understeer_high_deg": "understeer_high_speed_deg",
+                    }
+                    meas_val = getattr(measured, meas_map.get(attr, attr), 0.0)
+                    if meas_val > 0:
+                        delta = pred_val - meas_val
+                        arrow = "↓" if (lower_better and delta < 0) or (not lower_better and delta > 0) else "↑"
+                        if (lower_better and delta < 0) or (not lower_better and delta > 0):
+                            arrow = "✓"
+                        else:
+                            arrow = "·"
+                        a(f"  {label:<24} {meas_val:>8.1f} → {pred_val:>8.1f} {unit}  {arrow}")
+            a("")
+    except Exception:
+        pass  # predictor is advisory — never block report
+
+    # ── TRADEOFF SUMMARY ──────────────────────────────────────────────
+    tradeoffs: list[str] = []
+    if modifiers.front_heave_min_floor_nmm > 0:
+        tradeoffs.append(
+            f"Heave floor raised to {modifiers.front_heave_min_floor_nmm:.0f} N/mm "
+            f"(safety vs compliance tradeoff)"
+        )
+    if modifiers.damping_ratio_scale != 1.0:
+        direction = "stiffer" if modifiers.damping_ratio_scale > 1.0 else "softer"
+        tradeoffs.append(
+            f"Damping ratio scaled ×{modifiers.damping_ratio_scale:.2f} "
+            f"({direction} for driver style)"
+        )
+    if abs(modifiers.lltd_offset) > 0.005:
+        direction = "less front LT" if modifiers.lltd_offset < 0 else "more front LT"
+        tradeoffs.append(f"LLTD offset {modifiers.lltd_offset:+.3f} ({direction})")
+    if abs(modifiers.df_balance_offset_pct) > 0.1:
+        tradeoffs.append(
+            f"DF balance shifted {modifiers.df_balance_offset_pct:+.1f}% "
+            f"(speed gradient correction)"
+        )
+    if tradeoffs:
+        a(_hdr("TRADEOFF SUMMARY"))
+        for t in tradeoffs:
+            a(f"  • {t}")
+        a("")
+
     # ── LEARNING SUMMARY ──────────────────────────────────────────────
     try:
         from learner.report_section import generate_learning_section

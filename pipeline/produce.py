@@ -253,7 +253,10 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
 
     # ── Phase G: Compute solver modifiers ──
     log("Computing solver modifiers...")
-    modifiers = compute_modifiers(diagnosis, driver, measured)
+    modifiers = compute_modifiers(
+        diagnosis, driver, measured,
+        state_issues=diagnosis.car_state_issues or None,
+    )
     if modifiers.reasons:
         for r in modifiers.reasons:
             log(f"  {r}")
@@ -592,7 +595,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
 
     # ── Phase I: Compute supporting params ──
     log("\nComputing supporting parameters...")
-    supporting_solver = SupportingSolver(car, driver, measured, diagnosis, track=track)
+    supporting_solver = SupportingSolver(car, driver, measured, diagnosis, track=track, setup=current_setup)
     supporting = supporting_solver.solve()
     log(f"  {supporting.summary()}")
 
@@ -767,6 +770,8 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         sensitivity_result=sensitivity_result,
         stint_evolution=stint_evolution,
         stint_compromise_info=stint_compromise_info,
+        car_state_issues=diagnosis.car_state_issues or None,
+        overhaul_assessment=diagnosis.overhaul_assessment,
         compact=quiet,
     )
     print(report)

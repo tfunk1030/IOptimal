@@ -348,6 +348,48 @@ def _effective_diff_lock(setup: "CurrentSetup") -> dict[str, float]:
     }
 
 
+def _check_setup_family_compatibility(sessions: list[SessionAnalysis]) -> list[str]:
+    """Check if sessions belong to different setup families.
+
+    Detects large differences in key structural parameters that indicate
+    sessions are from fundamentally different setup philosophies and
+    should not be directly synthesized.
+    """
+    notes: list[str] = []
+    if len(sessions) < 2:
+        return notes
+
+    # Key structural parameters that define a "setup family"
+    family_params = [
+        ("wing_angle_deg", "Wing angle", 2.0),
+        ("front_heave_nmm", "Heave spring", 10.0),
+        ("rear_third_nmm", "Third spring", 8.0),
+        ("front_arb_blade", "Front ARB", 3),
+    ]
+
+    for attr, label, threshold in family_params:
+        vals = [getattr(s.setup, attr, 0.0) or 0.0 for s in sessions]
+        vals = [v for v in vals if v > 0]
+        if len(vals) >= 2:
+            spread = max(vals) - min(vals)
+            if spread > threshold:
+                notes.append(
+                    f"Setup family spread: {label} varies by {spread:.1f} "
+                    f"(range {min(vals):.1f}–{max(vals):.1f})"
+                )
+
+    # Detect incompatible families: wing difference > 4° means fundamentally
+    # different aero configurations — synthesis would be misleading
+    wing_vals = [s.setup.wing_angle_deg for s in sessions if s.setup.wing_angle_deg > 0]
+    if len(wing_vals) >= 2 and (max(wing_vals) - min(wing_vals)) > 4.0:
+        notes.append(
+            f"INCOMPATIBLE: Wing angle spread {max(wing_vals) - min(wing_vals):.0f}° "
+            f"— sessions are from different aero families"
+        )
+
+    return notes
+
+
 def compare_sessions(sessions: list[SessionAnalysis]) -> ComparisonResult:
     """Build a full comparison across analyzed sessions.
 
@@ -409,6 +451,14 @@ def compare_sessions(sessions: list[SessionAnalysis]) -> ComparisonResult:
         "front_lock_p95": [s.measured.front_braking_lock_ratio_p95 for s in sessions],
         "abs_active_pct": [s.measured.abs_active_pct for s in sessions],
     }
+
+    # Cluster/family compatibility check: detect if sessions belong to
+    # fundamentally different setup families (e.g. high-DF vs low-DF)
+    family_notes = _check_setup_family_compatibility(sessions)
+    if family_notes:
+        context_notes.extend(family_notes)
+        if any("incompatible" in n.lower() for n in family_notes):
+            context_compatible = False
 
     return ComparisonResult(
         sessions=sessions,
