@@ -625,6 +625,37 @@ def _build_health_models(state: ReasoningState) -> None:
     }
 
 
+def _apply_selected_candidate_outputs(
+    selected_candidate: SetupCandidate | None,
+    *,
+    step1: Any,
+    step2: Any,
+    step3: Any,
+    step4: Any,
+    step5: Any,
+    step6: Any,
+    supporting: Any,
+) -> tuple[Any, Any, Any, Any, Any, Any, Any, bool]:
+    if selected_candidate is None:
+        return step1, step2, step3, step4, step5, step6, supporting, False
+    selected_has_outputs = all(
+        getattr(selected_candidate, name, None) is not None
+        for name in ("step1", "step2", "step3", "step4", "step5", "step6", "supporting")
+    )
+    if not selected_has_outputs:
+        return step1, step2, step3, step4, step5, step6, supporting, False
+    return (
+        selected_candidate.step1,
+        selected_candidate.step2,
+        selected_candidate.step3,
+        selected_candidate.step4,
+        selected_candidate.step5,
+        selected_candidate.step6,
+        selected_candidate.supporting,
+        True,
+    )
+
+
 def _session_signal_quality_score(snapshot: SessionSnapshot) -> tuple[float, list[str]]:
     signal_map = getattr(snapshot.measured, "telemetry_signals", {}) or {}
     if not signal_map:
@@ -2756,6 +2787,43 @@ def reason_and_solve(
             f"Candidate family selected: {selected_candidate.family} "
             f"(score {selected_candidate.score.total if selected_candidate.score else 0.0:.3f})"
         )
+        step1, step2, step3, step4, step5, step6, supporting, applied_candidate = _apply_selected_candidate_outputs(
+            selected_candidate,
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step4=step4,
+            step5=step5,
+            step6=step6,
+            supporting=supporting,
+        )
+        if applied_candidate:
+            state.solver_notes.append(
+                f"Applied {selected_candidate.family} candidate outputs to final report/JSON/export payloads."
+            )
+            state.legal_validation = validate_solution_legality(
+                car=car,
+                track_name=track.track_name,
+                step1=step1,
+                step2=step2,
+                step3=step3,
+                fuel_l=detected_fuel,
+                step5=step5,
+            )
+            state.decision_trace = build_parameter_decisions(
+                car_name=car.canonical_name,
+                current_setup=authority.setup,
+                measured=authority.measured,
+                step1=step1,
+                step2=step2,
+                step3=step3,
+                step4=step4,
+                step5=step5,
+                step6=step6,
+                supporting=supporting,
+                legality=state.legal_validation,
+                fallback_reasons=list(getattr(authority.measured, "fallback_reasons", []) or []),
+            )
 
     # ── Output ──
     if sto_path:
@@ -2996,6 +3064,7 @@ def reason_and_solve(
         current_setup=authority.setup,
         wing=detected_wing,
         target_balance=target_balance,
+        prediction_corrections=dict(state.historical.prediction_corrections),
         solve_context_lines=state.solver_notes + [
             f"Authority session: {authority.label}",
             f"Benchmark best session: {best.label}",

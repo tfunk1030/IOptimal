@@ -1,13 +1,18 @@
 import unittest
+from pathlib import Path
 
-from analyzer.adaptive_thresholds import AdaptiveThresholds
+from analyzer.adaptive_thresholds import AdaptiveThresholds, compute_adaptive_thresholds
 from analyzer.diagnose import diagnose
 from analyzer.driver_style import DriverProfile
-from analyzer.extract import MeasuredState
+from analyzer.extract import MeasuredState, extract_measurements
 from analyzer.setup_reader import CurrentSetup
 from analyzer.state_inference import infer_car_states
 from analyzer.telemetry_truth import TelemetrySignal
 from car_model import get_car
+from track_model.build_profile import build_profile
+from track_model.ibt_parser import IBTFile
+from analyzer.segment import segment_lap
+from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 
 
 class StateInferenceTests(unittest.TestCase):
@@ -90,6 +95,43 @@ class StateInferenceTests(unittest.TestCase):
 
         target = next(issue for issue in issues if issue.state_id == "front_platform_near_limit_high_speed")
         self.assertLessEqual(target.confidence, 0.25)
+
+    def test_bmw_fixture_overhaul_classifications_are_recalibrated(self) -> None:
+        expectations = {
+            "bmw151.ibt": {"minor_tweak", "moderate_rework"},
+            "bmwbad.ibt": {"baseline_reset", "moderate_rework"},
+            "bmw170.ibt": {"moderate_rework", "minor_tweak"},
+            "bmwtf.ibt": {"moderate_rework"},
+        }
+
+        for fixture_name, allowed in expectations.items():
+            fixture = Path("/workspace/ibtfiles") / fixture_name
+            if not fixture.exists():
+                self.skipTest(f"{fixture_name} fixture unavailable")
+
+            ibt = IBTFile(fixture)
+            setup = CurrentSetup.from_ibt(ibt)
+            measured = extract_measurements(fixture, self.car)
+            lap_idx = ibt.best_lap_indices(min_time=108.0, outlier_pct=0.115)
+            corners = []
+            if lap_idx is not None:
+                start, end = lap_idx
+                corners = segment_lap(ibt, start, end, car=self.car, tick_rate=ibt.tick_rate)
+            driver = analyze_driver(ibt, corners, self.car, tick_rate=ibt.tick_rate)
+            refine_driver_with_measured(driver, measured)
+            diag = diagnose(
+                measured,
+                setup,
+                self.car,
+                compute_adaptive_thresholds(build_profile(fixture), self.car, driver),
+                driver=driver,
+                corners=corners,
+            )
+            self.assertIn(
+                diag.overhaul_assessment.classification,
+                allowed,
+                msg=f"{fixture_name} classified as {diag.overhaul_assessment.classification}",
+            )
 
 
 if __name__ == "__main__":

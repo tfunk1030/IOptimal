@@ -190,8 +190,14 @@ def build_signal_map(measured: "MeasuredState") -> dict[str, TelemetrySignal[Any
 
     front_settle_reason = getattr(measured, "front_settle_invalid_reason", "") or ""
     rear_settle_reason = getattr(measured, "rear_settle_invalid_reason", "") or ""
-    front_settle_valid = getattr(measured, "front_settle_valid_clean_events", 0) >= 3
-    rear_settle_valid = getattr(measured, "rear_settle_valid_clean_events", 0) >= 3
+    front_settle_valid = (
+        getattr(measured, "front_settle_valid_clean_events", 0) >= 3
+        and front_settle_reason in {"", "trusted"}
+    )
+    rear_settle_valid = (
+        getattr(measured, "rear_settle_valid_clean_events", 0) >= 3
+        and rear_settle_reason in {"", "trusted"}
+    )
     metric_fallbacks = set(getattr(measured, "metric_fallbacks", []) or [])
     front_lock_fallback = any(
         item.startswith("front_braking_lock_ratio_p95=") for item in metric_fallbacks

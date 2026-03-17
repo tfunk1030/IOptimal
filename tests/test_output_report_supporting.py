@@ -1,7 +1,12 @@
 import unittest
 from types import SimpleNamespace
+from pathlib import Path
+import argparse
+import contextlib
+import io
 
 from output.report import print_full_setup_report
+from pipeline.produce import produce_result
 
 
 def _damper_corner() -> SimpleNamespace:
@@ -90,6 +95,36 @@ class OutputReportSupportingTests(unittest.TestCase):
         self.assertIn("Brake target/mig: +1.5 / -0.5", report)
         self.assertIn("Master cyl: 19.1/20.6 mm", report)
         self.assertIn("Diff lock coast/drive: 47.0% / 31.0%", report)
+
+    def test_pipeline_report_renders_predicted_improvements_on_bmw_fixture(self) -> None:
+        fixture = Path("/workspace/ibtfiles/bmw151.ibt")
+        if not fixture.exists():
+            self.skipTest("bmw151 fixture unavailable")
+        args = argparse.Namespace(
+            car="bmw",
+            ibt=str(fixture),
+            wing=17.0,
+            lap=None,
+            balance=50.14,
+            tolerance=0.1,
+            fuel=None,
+            free=False,
+            sto=None,
+            json=None,
+            report_only=False,
+            no_learn=True,
+            legacy_solver=False,
+            min_lap_time=108.0,
+            outlier_pct=0.115,
+            stint_laps=30,
+        )
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            result = produce_result(args)
+        report = result["report"]
+
+        self.assertIn("PREDICTED IMPROVEMENTS", report)
+        self.assertIn("Front travel used", report)
 
 
 if __name__ == "__main__":
