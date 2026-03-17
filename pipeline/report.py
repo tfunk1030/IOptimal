@@ -288,6 +288,12 @@ def generate_report(
       f"({driver.trail_brake_depth_mean:.0%})  ·  "
       f"Throttle: {driver.throttle_classification}  ·  "
       f"Consistency: {driver.consistency}")
+    if getattr(driver, "setup_noise_index", 0.0) > 0 or getattr(driver, "noise_reasoning", ""):
+        dni = getattr(driver, "driver_noise_index", 0.0)
+        sni = getattr(driver, "setup_noise_index", 0.0)
+        reason = getattr(driver, "noise_reasoning", "")
+        a(f"  Noise: driver={dni:.2f}, setup={sni:.2f}"
+          + (f"  ({reason})" if reason else ""))
     a("")
 
     # Handling diagnosis (top 3 problems)
@@ -410,6 +416,12 @@ def generate_report(
             a(_cmp("Brake bias target", current_setup.brake_bias_target, supporting.brake_bias_target, ""))
         if current_setup.brake_bias_migration != 0.0 or supporting.brake_bias_migration != 0.0:
             a(_cmp("Brake migration", current_setup.brake_bias_migration, supporting.brake_bias_migration, ""))
+        _brake_sol = getattr(supporting, "_brake_solution", None)
+        if _brake_sol is not None:
+            if _brake_sol.mc_ratio_note:
+                a(f"  MC: {_brake_sol.mc_ratio_note}")
+            if _brake_sol.pad_compound_note:
+                a(f"  Pad: {_brake_sol.pad_compound_note}")
         a(_cmp("Diff preload",       current_setup.diff_preload_nm,      supporting.diff_preload_nm,     "Nm",  ".0f"))
         a(_cmp("TC gain",            current_setup.tc_gain,              supporting.tc_gain,             "",    ".0f"))
         a(_cmp("F LS Comp",          current_setup.front_ls_comp,        step6.lf.ls_comp,               "cl",  ".0f"))

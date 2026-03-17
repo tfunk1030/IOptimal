@@ -51,6 +51,54 @@ from track_model.build_profile import build_profile
 from track_model.ibt_parser import IBTFile
 
 
+def _compute_single_session_authority(
+    diagnosis, session_context, measured, envelope_distance: float, setup_distance: float,
+) -> dict:
+    """Compute authority score for single-IBT path (no cross-session lap comparison)."""
+    assessment_scores = {"fast": 1.0, "competitive": 0.8, "compromised": 0.45, "dangerous": 0.1}
+    diag_score = assessment_scores.get(diagnosis.assessment, 0.6)
+    context_score = session_context.overall_score if session_context else 0.5
+
+    # Signal quality
+    signal_map = getattr(measured, "telemetry_signals", {}) or {}
+    signal_score = 0.45
+    if signal_map:
+        trusted = [s.confidence for s in signal_map.values()
+                   if s.quality == "trusted" and s.value is not None]
+        proxy = [s.confidence for s in signal_map.values()
+                 if s.quality == "proxy" and s.value is not None]
+        unresolved = [n for n, s in signal_map.items()
+                      if s.quality in {"unknown", "broken"} or s.conflict_state != "clear"]
+        signal_score = 0.0
+        if trusted:
+            signal_score += min(0.75, sum(trusted) / len(trusted) * 0.75)
+        if proxy:
+            signal_score += min(0.2, sum(proxy) / len(proxy) * 0.2)
+        signal_score = max(0.0, signal_score - min(0.2, len(unresolved) * 0.02))
+
+    # State risk
+    state_issues = getattr(diagnosis, "state_issues", [])
+    state_risk = sum(
+        getattr(i, "severity", 0.0) * getattr(i, "confidence", 0.0)
+        for i in state_issues[:6]
+    )
+    state_score = max(0.0, 1.0 - min(1.0, state_risk / 3.0))
+
+    # Combined (no lap component in single-IBT)
+    score = diag_score * 0.25 + context_score * 0.25 + signal_score * 0.25 + state_score * 0.25
+
+    # Penalties
+    critical = sum(1 for p in diagnosis.problems if getattr(p, "severity", "") == "critical")
+    significant = sum(1 for p in diagnosis.problems if getattr(p, "severity", "") == "significant")
+    score -= min(0.35, critical * 0.18 + significant * 0.05)
+    score -= min(0.18, envelope_distance * 0.035)
+    score -= min(0.12, setup_distance * 0.025)
+    if session_context and not session_context.comparable_to_baseline:
+        score *= 0.82
+
+    return {"session": "S1", "score": round(max(0.0, min(1.0, score)), 3)}
+
+
 def _find_lap_indices(ibt: IBTFile, lap_num: int) -> tuple[int, int] | None:
     """Find sample indices for a specific lap number."""
     for ln, s, e in ibt.lap_boundaries():
@@ -224,7 +272,12 @@ def produce(
     driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
     # Refine consistency using in-car adjustment counts from telemetry
     refine_driver_with_measured(driver, measured)
+    from analyzer.driver_style import separate_driver_noise
+    driver_comp, setup_comp, noise_reason = separate_driver_noise(driver, measured)
+    driver.setup_noise_index = setup_comp
+    driver.noise_reasoning = noise_reason
     log(f"  {driver.summary()}")
+    log(f"  Noise separation: driver={driver_comp:.2f}, setup={setup_comp:.2f} ({noise_reason})")
 
     # ── Phase E: Compute adaptive thresholds & diagnose handling ──
     log("Computing adaptive thresholds...")
@@ -246,6 +299,68 @@ def produce(
     )
     log(f"  Assessment: {diagnosis.assessment}")
     log(f"  Problems: {len(diagnosis.problems)}")
+
+    # ── Phase E.5: Build session context + query learner for envelope/cluster ──
+    from analyzer.context import build_session_context
+    session_context = build_session_context(measured, current_setup, diagnosis)
+    log(f"  Session context: thermal={session_context.thermal_validity:.2f}, "
+        f"pace={session_context.pace_validity:.2f}, overall={session_context.overall_score:.2f}")
+
+    envelope_distance = 0.0
+    setup_distance_val = 0.0
+    setup_cluster = None
+    try:
+        from learner.knowledge_store import KnowledgeStore
+        from learner.envelope import build_telemetry_envelope, compute_envelope_distance
+        from learner.setup_clusters import build_setup_cluster, compute_setup_distance
+
+        _store = KnowledgeStore()
+        _obs_list = _store.list_observations(car=car.canonical_name, track=track.track_name)
+
+        _healthy_obs = [
+            o for o in _obs_list
+            if o.get("diagnosis", {}).get("assessment") in {"fast", "competitive"}
+        ]
+        if len(_healthy_obs) < 3:
+            _healthy_obs = sorted(
+                _obs_list,
+                key=lambda o: o.get("performance", {}).get("best_lap_time_s", 999),
+            )[:min(3, len(_obs_list))]
+
+        if len(_healthy_obs) >= 2:
+            _telem_dicts = [o.get("telemetry", {}) for o in _healthy_obs]
+            _source_labels = [o.get("session_id", "") for o in _healthy_obs]
+            _envelope = build_telemetry_envelope(
+                _telem_dicts, source_sessions=_source_labels,
+            )
+            _env_dist = compute_envelope_distance(measured, _envelope)
+            envelope_distance = _env_dist.total_score
+
+            # Setup cluster: map observation keys to CurrentSetup attribute names
+            _SETUP_KEY_MAP = {
+                "front_pushrod": "front_pushrod_mm",
+                "rear_pushrod": "rear_pushrod_mm",
+                "torsion_bar_od_mm": "front_torsion_od_mm",
+            }
+            _setup_dicts = []
+            for o in _healthy_obs:
+                raw = o.get("setup", {})
+                mapped = {}
+                for k, v in raw.items():
+                    mapped[_SETUP_KEY_MAP.get(k, k)] = v
+                _setup_dicts.append(mapped)
+
+            setup_cluster = build_setup_cluster(
+                _setup_dicts, member_sessions=_source_labels,
+                label="historical healthy cluster",
+            )
+            _setup_dist = compute_setup_distance(current_setup, setup_cluster)
+            setup_distance_val = _setup_dist.distance_score
+
+            log(f"  Learner: {len(_healthy_obs)} historical sessions, "
+                f"envelope_dist={envelope_distance:.2f}, setup_dist={setup_distance_val:.2f}")
+    except Exception:
+        log("  Learner: no historical data available (using defaults)")
 
     # ── Phase F: Compute aero gradients ──
     log("Computing aero gradients...")
@@ -743,23 +858,27 @@ def produce(
     base_solve_result.legal_validation = legal_validation
     base_solve_result.decision_trace = decision_trace
 
+    authority_score = _compute_single_session_authority(
+        diagnosis, session_context, measured, envelope_distance, setup_distance_val,
+    )
     single_session = SimpleNamespace(
         label="S1",
         setup=current_setup,
         measured=measured,
         driver=driver,
         diagnosis=diagnosis,
+        session_context=session_context,
     )
     generated_candidates = generate_candidate_families(
         authority_session=single_session,
         best_session=single_session,
         overhaul_assessment=getattr(diagnosis, "overhaul_assessment", None),
-        authority_score={"session": "S1", "score": 0.75},
-        envelope_distance=0.0,
-        setup_distance=0.0,
+        authority_score=authority_score,
+        envelope_distance=envelope_distance,
+        setup_distance=setup_distance_val,
         base_result=base_solve_result,
         solve_inputs=solve_inputs,
-        setup_cluster=None,
+        setup_cluster=setup_cluster,
     )
     selected_candidate = next((candidate for candidate in generated_candidates if candidate.selected), None)
     selected_candidate_applied = False

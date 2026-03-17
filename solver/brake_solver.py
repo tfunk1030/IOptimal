@@ -19,6 +19,10 @@ def _clamp(value: float, lo: float, hi: float) -> float:
 class BrakeSolution:
     brake_bias_pct: float
     reasoning: str
+    mc_ratio: float = 0.0
+    mc_ratio_note: str = ""
+    pad_compound: str = ""
+    pad_compound_note: str = ""
 
 
 def compute_brake_bias(
@@ -135,6 +139,11 @@ class BrakeSolver:
                 f"with {measured.abs_cut_mean_pct:.0f}% force cut (front locking)"
             )
 
+        mc_ratio = 0.0
+        mc_note = ""
+        pad = ""
+        pad_note = ""
+
         if self.current_setup is not None:
             if getattr(self.current_setup, "brake_bias_migration", 0.0) != 0.0:
                 reasons.append(
@@ -147,9 +156,36 @@ class BrakeSolver:
             front_mc = getattr(self.current_setup, "front_master_cyl_mm", 0.0)
             rear_mc = getattr(self.current_setup, "rear_master_cyl_mm", 0.0)
             if front_mc > 0.0 and rear_mc > 0.0:
-                reasons.append(f"Master cylinders F/R = {front_mc:.1f}/{rear_mc:.1f} mm")
+                mc_ratio = front_mc / rear_mc
+                nominal_ratio = getattr(self.car, "nominal_mc_ratio", 1.0)
+                mc_note = f"F/R = {front_mc:.1f}/{rear_mc:.1f} mm (ratio {mc_ratio:.2f})"
+                if abs(mc_ratio - nominal_ratio) > 0.05:
+                    direction = "increase" if mc_ratio > nominal_ratio else "decrease"
+                    mc_note += (
+                        f"; differs from nominal {nominal_ratio:.2f} — "
+                        f"effective bias may need {direction}"
+                    )
+                reasons.append(f"MC: {mc_note}")
+            else:
+                mc_ratio = 0.0
+                mc_note = ""
             pad = getattr(self.current_setup, "pad_compound", "")
+            pad_note = ""
             if pad:
-                reasons.append(f"Pad compound: {pad}")
+                pad_note = pad
+                front_temp = getattr(measured, "front_carcass_mean_c", 0.0) or 0.0
+                if front_temp > 0:
+                    if front_temp < 60:
+                        pad_note += " — low brake temps, softer compound may improve initial bite"
+                    elif front_temp > 110:
+                        pad_note += " — high brake temps, compound fade risk"
+                reasons.append(f"Pad: {pad_note}")
 
-        return BrakeSolution(brake_bias_pct=round(bias, 1), reasoning="; ".join(reasons))
+        return BrakeSolution(
+            brake_bias_pct=round(bias, 1),
+            reasoning="; ".join(reasons),
+            mc_ratio=mc_ratio,
+            mc_ratio_note=mc_note,
+            pad_compound=pad,
+            pad_compound_note=pad_note,
+        )
