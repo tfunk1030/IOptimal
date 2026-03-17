@@ -53,7 +53,9 @@ from learner.delta_detector import (
     KNOWN_CAUSALITY, EFFECT_METRICS,
     detect_delta, SessionDelta,
 )
+from learner.envelope import EnvelopeDistance, TelemetryEnvelope, build_telemetry_envelope, compute_envelope_distance
 from learner.observation import Observation, build_observation
+from learner.setup_clusters import SetupCluster, SetupDistance, build_setup_cluster, compute_setup_distance
 from solver.setup_fingerprint import (
     CandidateVeto,
     SetupFingerprint,
@@ -363,6 +365,10 @@ class ReasoningState:
 
     # Phase 4: Speed-regime
     speed_regime: SpeedRegimeAnalysis = field(default_factory=SpeedRegimeAnalysis)
+    telemetry_envelope: TelemetryEnvelope | None = None
+    setup_cluster: SetupCluster | None = None
+    envelope_distances: dict[str, EnvelopeDistance] = field(default_factory=dict)
+    setup_distances: dict[str, SetupDistance] = field(default_factory=dict)
 
     # Phase 5: Target profile
     target_profile: TargetProfile = field(default_factory=TargetProfile)
@@ -586,6 +592,37 @@ def _build_validation_clusters(state: ReasoningState) -> None:
     state.validation_clusters = clusters
 
 
+def _build_health_models(state: ReasoningState) -> None:
+    healthy_sessions = [
+        snap for snap in state.sessions
+        if snap.session_context is not None
+        and snap.session_context.comparable_to_baseline
+        and snap.diagnosis.assessment in {"fast", "competitive"}
+    ]
+    if not healthy_sessions:
+        ranked = sorted(state.sessions, key=lambda snap: snap.lap_time_s)
+        healthy_sessions = ranked[: min(2, len(ranked))]
+
+    source_labels = [snap.label for snap in healthy_sessions]
+    state.telemetry_envelope = build_telemetry_envelope(
+        [snap.measured for snap in healthy_sessions],
+        source_sessions=source_labels,
+    )
+    state.setup_cluster = build_setup_cluster(
+        [snap.setup for snap in healthy_sessions],
+        member_sessions=source_labels,
+        label="healthy baseline cluster",
+    )
+    state.envelope_distances = {
+        snap.label: compute_envelope_distance(snap.measured, state.telemetry_envelope)
+        for snap in state.sessions
+    }
+    state.setup_distances = {
+        snap.label: compute_setup_distance(snap.setup, state.setup_cluster)
+        for snap in state.sessions
+    }
+
+
 def _session_signal_quality_score(snapshot: SessionSnapshot) -> tuple[float, list[str]]:
     signal_map = getattr(snapshot.measured, "telemetry_signals", {}) or {}
     if not signal_map:
@@ -629,12 +666,16 @@ def _compute_authority_scores(state: ReasoningState) -> None:
         diagnosis_component = assessment_scores.get(snap.diagnosis.assessment, 0.6)
         context_component = snap.session_context.overall_score if snap.session_context is not None else 0.5
         signal_component, signal_notes = _session_signal_quality_score(snap)
+        envelope_penalty = state.envelope_distances.get(snap.label).total_score if snap.label in state.envelope_distances else 0.0
+        setup_penalty = state.setup_distances.get(snap.label).distance_score if snap.label in state.setup_distances else 0.0
         score = (
             lap_component * 0.35
             + diagnosis_component * 0.25
             + context_component * 0.2
             + signal_component * 0.2
         )
+        score -= min(0.18, envelope_penalty * 0.035)
+        score -= min(0.12, setup_penalty * 0.025)
         if snap.session_context is not None and not snap.session_context.comparable_to_baseline:
             score *= 0.8
         row = {
@@ -645,6 +686,8 @@ def _compute_authority_scores(state: ReasoningState) -> None:
             "diagnosis_component": round(diagnosis_component, 3),
             "context_component": round(context_component, 3),
             "signal_component": round(signal_component, 3),
+            "envelope_distance": round(envelope_penalty, 3),
+            "setup_distance": round(setup_penalty, 3),
             "notes": list((snap.session_context.notes if snap.session_context is not None else [])[:4]) + signal_notes,
         }
         authority_rows.append(row)
@@ -2021,9 +2064,31 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
         lines.append(
             f"  {row['session']}: score={row['score']:.3f} "
             f"(lap={row['lap_component']:.2f}, health={row['diagnosis_component']:.2f}, "
-            f"context={row['context_component']:.2f}, signal={row['signal_component']:.2f})"
+            f"context={row['context_component']:.2f}, signal={row['signal_component']:.2f}, "
+            f"env={row['envelope_distance']:.2f}, setup={row['setup_distance']:.2f})"
         )
     lines.append("")
+
+    if state.telemetry_envelope is not None or state.setup_cluster is not None:
+        lines.append("  HEALTHY ENVELOPE / CLUSTER")
+        lines.append("  " + "-" * (width - 4))
+        if state.telemetry_envelope is not None:
+            lines.append(
+                f"  Telemetry envelope from {state.telemetry_envelope.sample_count} "
+                f"session(s): {', '.join(state.telemetry_envelope.source_sessions[:3])}"
+            )
+        if state.setup_cluster is not None:
+            lines.append(
+                f"  Setup cluster members: {', '.join(state.setup_cluster.member_sessions[:3]) or 'n/a'}"
+            )
+        for snap in state.sessions[: min(4, len(state.sessions))]:
+            env = state.envelope_distances.get(snap.label)
+            setup = state.setup_distances.get(snap.label)
+            lines.append(
+                f"  {snap.label}: env={getattr(env, 'total_score', 0.0):.2f}  "
+                f"setup={getattr(setup, 'distance_score', 0.0):.2f}"
+            )
+        lines.append("")
 
     lines.append("  SIGNAL CONFIDENCE")
     lines.append("  " + "-" * (width - 4))
@@ -2304,6 +2369,7 @@ def reason_and_solve(
     state.best_session_idx = int(np.argmin(lap_times))
     state.worst_session_idx = int(np.argmax(lap_times))
     _build_validation_clusters(state)
+    _build_health_models(state)
     _resolve_authority_session(state)
 
     # ── Phase 2: All-pairs delta analysis ──
@@ -2733,6 +2799,41 @@ def reason_and_solve(
                 }
                 for md in state.modifier_details
             ],
+            "telemetry_envelope": (
+                {
+                    "sample_count": state.telemetry_envelope.sample_count,
+                    "source_sessions": state.telemetry_envelope.source_sessions,
+                    "metrics": state.telemetry_envelope.metrics,
+                }
+                if state.telemetry_envelope is not None
+                else None
+            ),
+            "setup_cluster": (
+                {
+                    "label": state.setup_cluster.label,
+                    "member_sessions": state.setup_cluster.member_sessions,
+                    "center": state.setup_cluster.center,
+                    "spreads": state.setup_cluster.spreads,
+                }
+                if state.setup_cluster is not None
+                else None
+            ),
+            "envelope_distances": {
+                label: {
+                    "total_score": distance.total_score,
+                    "per_metric": distance.per_metric,
+                    "notes": distance.notes,
+                }
+                for label, distance in state.envelope_distances.items()
+            },
+            "setup_distances": {
+                label: {
+                    "distance_score": distance.distance_score,
+                    "per_parameter_z": distance.per_parameter_z,
+                    "outlier_parameters": distance.outlier_parameters,
+                }
+                for label, distance in state.setup_distances.items()
+            },
             "parameter_insights": {
                 p: {
                     "direction": pl.direction,
