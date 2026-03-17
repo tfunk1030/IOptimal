@@ -46,6 +46,7 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     from analyzer.extract import extract_measurements
     from analyzer.segment import segment_lap
     from analyzer.setup_reader import CurrentSetup
+    from analyzer.setup_schema import apply_live_control_overrides
     from car_model.cars import get_car
     from track_model.build_profile import build_profile
     from track_model.ibt_parser import IBTFile
@@ -65,6 +66,7 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     measured = extract_measurements(ibt_path, car, lap=lap_num)
 
     setup = CurrentSetup.from_ibt(ibt)
+    apply_live_control_overrides(setup, measured)
     corners = segment_lap(ibt, start, end, car=car, tick_rate=ibt.tick_rate)
     driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
     refine_driver_with_measured(driver, measured)

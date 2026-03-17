@@ -144,6 +144,27 @@ class SupportingSolver:
             "Static brake bias is solved from telemetry; brake target, migration, "
             "master cylinders, and pad compound are pass-through hardware context."
         )
+        if getattr(self.car, "canonical_name", "") == "ferrari":
+            live_bias = getattr(self.measured, "live_brake_bias_pct", None)
+            setup_bias = getattr(self.current_setup, "brake_bias_pct", 0.0) or 0.0
+            if live_bias is not None:
+                sol.brake_bias_pct = float(live_bias)
+                sol.brake_bias_status = "telemetry_passthrough"
+                sol.brake_bias_reasoning = (
+                    f"Ferrari brake bias taken from stable dcBrakeBias telemetry ({live_bias:.1f}%). "
+                    "Hydraulic split remains diagnostic only."
+                )
+            elif setup_bias > 0.0:
+                sol.brake_bias_pct = float(setup_bias)
+                sol.brake_bias_status = "setup_passthrough"
+                sol.brake_bias_reasoning = (
+                    f"Ferrari brake bias taken from setup session value ({setup_bias:.1f}%). "
+                    "Hydraulic split remains diagnostic only."
+                )
+            sol.brake_hardware_status = (
+                "Ferrari brake bias is sourced from stable live control or setup context; "
+                "hardware fields remain pass-through."
+            )
 
     def _solve_diff(self, sol: SupportingSolution) -> None:
         """Differential from traction demand × driver style.
@@ -302,6 +323,24 @@ class SupportingSolver:
         sol.tc_gain = int(_clamp(tc_gain, 1, 10))
         sol.tc_slip = int(_clamp(tc_slip, 1, 10))
         sol.tc_reasoning = "; ".join(reasons)
+        if getattr(self.car, "canonical_name", "") == "ferrari":
+            live_gain = getattr(measured, "live_tc_gain", None)
+            live_slip = getattr(measured, "live_tc_slip", None)
+            ferrari_reasons: list[str] = []
+            if live_gain is not None:
+                sol.tc_gain = int(live_gain)
+                ferrari_reasons.append(f"TC gain taken from stable dcTractionControl2={int(live_gain)}")
+            elif getattr(self.current_setup, "tc_gain", 0):
+                sol.tc_gain = int(getattr(self.current_setup, "tc_gain"))
+                ferrari_reasons.append(f"TC gain taken from Ferrari setup value {sol.tc_gain}")
+            if live_slip is not None:
+                sol.tc_slip = int(live_slip)
+                ferrari_reasons.append(f"TC slip taken from stable dcTractionControl={int(live_slip)}")
+            elif getattr(self.current_setup, "tc_slip", 0):
+                sol.tc_slip = int(getattr(self.current_setup, "tc_slip"))
+                ferrari_reasons.append(f"TC slip taken from Ferrari setup value {sol.tc_slip}")
+            if ferrari_reasons:
+                sol.tc_reasoning = "; ".join(ferrari_reasons)
 
     def _solve_pressures(self, sol: SupportingSolution) -> None:
         """Tyre pressures targeting 155-170 kPa hot window.

@@ -137,7 +137,10 @@ def build_observation(
     # ── Setup dict ──
     setup = {
         "wing": s.wing_angle_deg,
+        "adapter_name": getattr(s, "adapter_name", ""),
         "fuel_l": s.fuel_l,
+        "fuel_low_warning_l": getattr(s, "fuel_low_warning_l", 0.0),
+        "fuel_target_l": getattr(s, "fuel_target_l", 0.0),
         "front_rh_static": s.static_front_rh_mm,
         "rear_rh_static": s.static_rear_rh_mm,
         "front_pushrod": s.front_pushrod_mm,
@@ -146,6 +149,10 @@ def build_observation(
         "rear_third_nmm": s.rear_third_nmm,
         "torsion_bar_od_mm": s.front_torsion_od_mm,
         "rear_spring_nmm": s.rear_spring_nmm,
+        "front_heave_index": getattr(s, "raw_indexed_fields", {}).get("front_heave_index", s.front_heave_nmm),
+        "rear_heave_index": getattr(s, "raw_indexed_fields", {}).get("rear_heave_index", s.rear_third_nmm),
+        "front_torsion_bar_index": getattr(s, "raw_indexed_fields", {}).get("front_torsion_bar_index", s.front_torsion_od_mm),
+        "rear_torsion_bar_index": getattr(s, "raw_indexed_fields", {}).get("rear_torsion_bar_index", s.rear_spring_nmm),
         "front_arb_size": s.front_arb_size,
         "front_arb_blade": s.front_arb_blade,
         "rear_arb_size": s.rear_arb_size,
@@ -155,6 +162,29 @@ def build_observation(
         "front_toe_mm": s.front_toe_mm,
         "rear_toe_mm": s.rear_toe_mm,
         "brake_bias_pct": s.brake_bias_pct,
+        "brake_bias_target": getattr(s, "brake_bias_target", 0.0),
+        "brake_bias_migration": getattr(s, "brake_bias_migration", 0.0),
+        "brake_bias_migration_gain": getattr(s, "brake_bias_migration_gain", 0.0),
+        "front_master_cyl_mm": getattr(s, "front_master_cyl_mm", 0.0),
+        "rear_master_cyl_mm": getattr(s, "rear_master_cyl_mm", 0.0),
+        "pad_compound": getattr(s, "pad_compound", ""),
+        "front_diff_preload_nm": getattr(s, "front_diff_preload_nm", 0.0),
+        "diff_preload_nm": getattr(s, "diff_preload_nm", 0.0),
+        "diff_ramp_label": getattr(s, "diff_ramp_angles", ""),
+        "diff_clutch_plates": getattr(s, "diff_clutch_plates", 0),
+        "tc_gain": getattr(s, "tc_gain", 0),
+        "tc_slip": getattr(s, "tc_slip", 0),
+        "gear_stack": getattr(s, "gear_stack", ""),
+        "speed_in_first_kph": getattr(s, "speed_in_first_kph", 0.0),
+        "speed_in_second_kph": getattr(s, "speed_in_second_kph", 0.0),
+        "speed_in_third_kph": getattr(s, "speed_in_third_kph", 0.0),
+        "speed_in_fourth_kph": getattr(s, "speed_in_fourth_kph", 0.0),
+        "speed_in_fifth_kph": getattr(s, "speed_in_fifth_kph", 0.0),
+        "speed_in_sixth_kph": getattr(s, "speed_in_sixth_kph", 0.0),
+        "speed_in_seventh_kph": getattr(s, "speed_in_seventh_kph", 0.0),
+        "hybrid_rear_drive_enabled": getattr(s, "hybrid_rear_drive_enabled", ""),
+        "hybrid_rear_drive_corner_pct": getattr(s, "hybrid_rear_drive_corner_pct", 0.0),
+        "roof_light_color": getattr(s, "roof_light_color", ""),
     }
     # Dampers
     setup["dampers"] = {
@@ -296,6 +326,11 @@ def build_observation(
         "tc2_adjustments": getattr(m, "tc2_adjustments", 0),
         "abs_adjustments": getattr(m, "abs_adjustments", 0),
         "deploy_mode_adjustments": getattr(m, "deploy_mode_adjustments", 0),
+        "live_brake_bias_pct": getattr(m, "live_brake_bias_pct", None),
+        "live_tc_gain": getattr(m, "live_tc_gain", None),
+        "live_tc_slip": getattr(m, "live_tc_slip", None),
+        "live_front_arb_blade": getattr(m, "live_front_arb_blade", None),
+        "live_rear_arb_blade": getattr(m, "live_rear_arb_blade", None),
     }
 
     # ── Driver ──

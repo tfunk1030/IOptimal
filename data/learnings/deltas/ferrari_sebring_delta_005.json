@@ -3,7 +3,56 @@
   "session_after": "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-09_18-07-31",
   "car": "ferrari",
   "track": "Sebring International Raceway",
-  "setup_changes": [],
+  "setup_changes": [
+    {
+      "parameter": "damper_lf_ls_comp",
+      "before": 15,
+      "after": 13,
+      "delta": -2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_lf_ls_rbd",
+      "before": 18,
+      "after": 25,
+      "delta": 7,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rf_ls_comp",
+      "before": 15,
+      "after": 13,
+      "delta": -2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rf_ls_rbd",
+      "before": 18,
+      "after": 25,
+      "delta": 7,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_lr_ls_rbd",
+      "before": 10,
+      "after": 8,
+      "delta": -2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rr_ls_rbd",
+      "before": 10,
+      "after": 8,
+      "delta": -2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    }
+  ],
   "telemetry_effects": [
     {
       "metric": "rear_bottoming_events",
@@ -22,6 +71,15 @@
       "delta": -0.0016,
       "pct_change": -1.4,
       "significance": "small"
+    },
+    {
+      "metric": "heave_bottoming_events_rear",
+      "category": "platform",
+      "before": 14.0,
+      "after": 20.0,
+      "delta": 6.0,
+      "pct_change": 42.9,
+      "significance": "moderate"
     },
     {
       "metric": "understeer_high_speed_deg",
@@ -70,11 +128,13 @@
     }
   ],
   "hypotheses": [],
-  "num_setup_changes": 0,
+  "num_setup_changes": 6,
   "controlled_experiment": true,
-  "changed_steps": [],
+  "changed_steps": [
+    "step6_dampers"
+  ],
   "lap_time_delta_s": -0.6,
   "driver_style_changed": false,
-  "key_finding": "No setup changes detected between sessions.",
+  "key_finding": "Changed damper_lf_ls_comp: -2, damper_lf_ls_rbd: 7, damper_rf_ls_comp: -2 (0.600s faster); effects: understeer_high_speed_deg +0.06, body_slip_p95_deg +0.67 [high confidence]",
   "confidence_level": "high"
 }

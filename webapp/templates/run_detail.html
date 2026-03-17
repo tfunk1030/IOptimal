@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero hero-compact">
+  <div>
+    <p class="eyebrow">{{ summary.result_kind.replace('_', ' ')|title }}</p>
+    <h1>{{ summary.title }}</h1>
+    <p class="lede">{{ summary.subtitle }}</p>
+  </div>
+  <div class="hero-meta">
+    <span class="status-pill">{{ summary.assessment }}</span>
+    <span class="status-pill">{{ summary.confidence_label }} confidence</span>
+  </div>
+</section>
+
+<section class="badge-row">
+  {% for badge in summary.overview_badges %}
+    <span class="badge">{{ badge }}</span>
+  {% endfor %}
+  <span class="badge">{{ summary.lap_label }}</span>
+</section>
+
+<section class="panel" data-tab-root>
+  <div class="tab-bar">
+    <button class="tab-button is-active" data-tab-trigger="overview" type="button">Overview</button>
+    <button class="tab-button" data-tab-trigger="setup" type="button">Recommended Setup</button>
+    <button class="tab-button" data-tab-trigger="telemetry" type="button">Telemetry</button>
+    <button class="tab-button" data-tab-trigger="engineering" type="button">Engineering Detail</button>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="overview">
+    <div class="grid-two">
+      <div class="panel panel-soft">
+        <div class="panel-head">
+          <h2>Top Problems</h2>
+          <p>What the telemetry says is holding the lap together right now.</p>
+        </div>
+        {% if summary.problems %}
+          <div class="stack-md">
+            {% for problem in summary.problems %}
+              <article class="issue-card">
+                <span class="issue-severity severity-{{ problem.severity|lower }}">{{ problem.severity }}</span>
+                <h3>{{ problem.symptom }}</h3>
+                <p>{{ problem.cause }}</p>
+                <small>{{ problem.speed_context }}</small>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="empty-copy">No telemetry issues were raised for this result shape.</p>
+        {% endif %}
+      </div>
+      <div class="panel panel-soft">
+        <div class="panel-head">
+          <h2>Top Changes</h2>
+          <p>The first five setup moves worth acting on.</p>
+        </div>
+        <div class="stack-md">
+          {% for change in summary.top_changes %}
+            <article class="change-card">
+              <h3>{{ change.label }}</h3>
+              <p><strong>{{ change.current }}</strong> → <strong>{{ change.recommended }}</strong></p>
+              <small>{{ change.delta }}</small>
+            </article>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="setup" hidden>
+    <div class="stack-lg">
+      {% for group in summary.setup_groups %}
+        <section class="panel panel-soft">
+          <div class="panel-head">
+            <h2>{{ group.name }}</h2>
+            <p>{{ group.help_text }}</p>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Parameter</th>
+                  <th>Current</th>
+                  <th>Recommended</th>
+                  <th>Delta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in group.rows %}
+                  <tr>
+                    <td>{{ row.label }}</td>
+                    <td>{{ row.current }}</td>
+                    <td>{{ row.recommended }}</td>
+                    <td>{{ row.delta }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="telemetry" hidden>
+    <section class="panel panel-soft">
+      <div class="panel-head">
+        <h2>Driver-Facing Metrics</h2>
+        <p>Compact telemetry deltas that stay close to what the driver will feel.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Baseline</th>
+              <th>Predicted</th>
+              <th>Delta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in summary.telemetry %}
+              <tr>
+                <td>
+                  {{ row.label }}
+                  {% if row.note %}<small class="cell-note">{{ row.note }}</small>{% endif %}
+                </td>
+                <td>{{ row.baseline }}</td>
+                <td>{{ row.predicted }}</td>
+                <td>{{ row.delta }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="engineering" hidden>
+    <div class="grid-two">
+      <section class="panel panel-soft">
+        <div class="panel-head">
+          <h2>Solver Context</h2>
+          <p>Candidate-family selection, validation notes, and export artifacts.</p>
+        </div>
+        <div class="stack-md">
+          {% if summary.candidate_family %}
+            <p><strong>Candidate family:</strong> {{ summary.candidate_family }}</p>
+          {% endif %}
+          {% if summary.candidate_score is not none %}
+            <p><strong>Candidate score:</strong> {{ '%.3f'|format(summary.candidate_score) }}</p>
+          {% endif %}
+          {% for note in summary.engineering_notes %}
+            <p>{{ note }}</p>
+          {% endfor %}
+          <div class="download-row">
+            {% for artifact in summary.artifact_links %}
+              <a class="button button-secondary" href="/artifacts/{{ artifact.id }}/download">{{ artifact.label }}</a>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+      <section class="panel panel-soft">
+        <div class="panel-head">
+          <h2>Full Report</h2>
+          <p>The original engineering report is preserved verbatim.</p>
+        </div>
+        <pre class="report-block">{{ summary.report_text }}</pre>
+      </section>
+    </div>
+  </div>
+</section>
+{% endblock %}

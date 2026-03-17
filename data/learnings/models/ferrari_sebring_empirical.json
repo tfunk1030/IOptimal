@@ -2,53 +2,20 @@
   "car": "ferrari",
   "track": "Sebring International Raceway",
   "relationships": {
-    "roll_gradient": {
-      "name": "Roll gradient (measured)",
-      "x_param": "peak_lat_g",
-      "y_param": "roll_gradient_deg_per_g",
-      "fit_type": "linear",
-      "coefficients": [
-        0.0,
-        0.8632568999691074
-      ],
-      "r_squared": 0.9948217485615288,
-      "sample_count": 5,
-      "residual_std": 0.06212002553459037,
-      "x_values": [
-        2.546821355819702,
-        2.94332218170166,
-        3.140993356704712,
-        3.3005661964416504,
-        3.5619735717773438
-      ],
-      "y_values": [
-        0.9798537774167344,
-        0.8708920486048005,
-        0.8393011904275585,
-        0.8175805063509657,
-        0.8086569770454782
-      ],
-      "x_min": 2.546821355819702,
-      "x_max": 3.5619735717773438,
-      "physics_prediction_at_mean": 0.0,
-      "empirical_prediction_at_mean": 0.0,
-      "correction_factor": 1.0
-    },
     "lltd_vs_rear_arb": {
       "name": "LLTD vs rear ARB blade",
       "x_param": "rear_arb_blade",
       "y_param": "lltd_measured",
       "fit_type": "linear",
       "coefficients": [
-        0.0030991407444294285,
-        0.4835830456616949
+        0.00019046119176276962,
+        0.5093364320677163
       ],
-      "r_squared": 0.12304273246733999,
-      "sample_count": 7,
-      "residual_std": 0.00960232629776851,
+      "r_squared": 0.08836132453130885,
+      "sample_count": 6,
+      "residual_std": 0.0006839774221886076,
       "x_values": [
         4.0,
-        2.0,
         2.0,
         2.0,
         5.0,
@@ -57,11 +24,10 @@
       ],
       "y_values": [
         0.5099881136928921,
-        0.48702112882281734,
-        0.48906119882075927,
-        0.48681388614486865,
-        0.4861832140574102,
-        0.4874281256030098,
+        0.508733728185979,
+        0.5104823520756308,
+        0.5098514807447814,
+        0.5110967131220505,
         0.5098658896119836
       ],
       "x_min": 2.0,
@@ -76,14 +42,13 @@
       "y_param": "front_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        2.3887527329581126,
-        2.388752732958113
+        2.4570122559865313,
+        2.457012255986532
       ],
       "r_squared": 0.0,
-      "sample_count": 7,
+      "sample_count": 6,
       "residual_std": 0.0,
       "x_values": [
-        1.0,
         1.0,
         1.0,
         1.0,
@@ -93,8 +58,7 @@
       ],
       "y_values": [
         4.629246711730957,
-        4.171586036682129,
-        4.402283191680908,
+        4.615478038787842,
         5.256772041320801,
         4.9577155113220215,
         5.0001983642578125,
@@ -105,38 +69,63 @@
       "physics_prediction_at_mean": 0.0,
       "empirical_prediction_at_mean": 0.0,
       "correction_factor": 1.0
+    },
+    "rear_rh_var_vs_third": {
+      "name": "Rear RH variance vs third spring",
+      "x_param": "rear_third_nmm",
+      "y_param": "rear_rh_std_mm",
+      "fit_type": "linear",
+      "coefficients": [
+        1.4564536412556972,
+        2.9129072825113953
+      ],
+      "r_squared": 0.0,
+      "sample_count": 6,
+      "residual_std": 0.0,
+      "x_values": [
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0
+      ],
+      "y_values": [
+        5.726350784301758,
+        5.748506546020508,
+        5.984736919403076,
+        5.735327243804932,
+        5.838437557220459,
+        5.921528339385986
+      ],
+      "x_min": 2.0,
+      "x_max": 2.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-03-17T01:22:04.877332+00:00",
-  "observation_count": 7,
-  "most_sensitive_parameters": [
-    [
-      "rear_arb_blade",
-      -0.08533333333333333
-    ]
-  ],
+  "last_updated": "2026-03-17T16:35:20.650025+00:00",
+  "observation_count": 6,
+  "most_sensitive_parameters": [],
   "corrections": {
-    "aero_compression_front_mean_mm": 8.267314638410296,
-    "aero_compression_front_std_mm": 0.4028370114419967,
-    "aero_compression_rear_mean_mm": 18.25414194379534,
-    "aero_compression_rear_std_mm": 0.328781971379521,
+    "aero_compression_front_mean_mm": 8.033053398132326,
+    "aero_compression_front_std_mm": 0.13238581237114397,
+    "aero_compression_rear_mean_mm": 18.02538890838623,
+    "aero_compression_rear_std_mm": 0.14700714013730629,
     "lap_time_surrogate_regularized": 1.0,
-    "lap_time_surrogate_sample_weight": 2.0,
-    "roll_gradient_measured_mean": 0.8632568615895416,
-    "roll_gradient_measured_std": 0.06212002553459037,
-    "roll_gradient_sample_count": 5,
-    "lltd_measured_mean": 0.494582795216479,
-    "lltd_measured_std": 0.010253856703462181,
+    "lap_time_surrogate_sample_weight": 0.0,
+    "lltd_measured_mean": 0.5100030460516686,
+    "lltd_measured_std": 0.0007163584619611876,
     "m_eff_front_values": [
       2.4,
-      3.2,
-      3.3,
+      2.3,
       3.6,
       3.3,
       3.2,
       3.3
     ],
-    "m_eff_front_empirical_mean": 3.1857142857142855,
-    "m_eff_front_empirical_std": 0.34404555939406567
+    "m_eff_front_empirical_mean": 3.016666666666666,
+    "m_eff_front_empirical_std": 0.4879093722768149
   }
 }

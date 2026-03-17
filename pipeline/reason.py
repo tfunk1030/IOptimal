@@ -39,6 +39,7 @@ from analyzer.driver_style import DriverProfile, analyze_driver, refine_driver_w
 from analyzer.extract import MeasuredState, extract_measurements
 from analyzer.segment import CornerAnalysis, segment_lap
 from analyzer.setup_reader import CurrentSetup
+from analyzer.setup_schema import apply_live_control_overrides, build_setup_schema
 from analyzer.telemetry_truth import (
     ParameterDecision,
     SessionNormalization,
@@ -81,6 +82,7 @@ class SessionSnapshot:
     label: str
     ibt_path: str
     setup: CurrentSetup
+    setup_schema: object | None
     measured: MeasuredState
     driver: DriverProfile
     diagnosis: object  # Diagnosis
@@ -94,6 +96,7 @@ class SessionSnapshot:
     sort_timestamp: float = 0.0
     sort_source: str = "cli"
     fingerprint: SetupFingerprint | None = None
+    live_override_notes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -815,6 +818,13 @@ def _analyze_session(
     track = build_profile(ibt_path)
     setup = CurrentSetup.from_ibt(ibt)
     measured = extract_measurements(ibt_path, car)
+    live_override_notes = apply_live_control_overrides(setup, measured)
+    setup_schema = build_setup_schema(
+        car=car,
+        ibt_path=ibt_path,
+        current_setup=setup,
+        measured=measured,
+    )
 
     lap_indices = ibt.best_lap_indices()
     corners = []
@@ -852,6 +862,7 @@ def _analyze_session(
         label=label,
         ibt_path=ibt_path,
         setup=setup,
+        setup_schema=setup_schema,
         measured=measured,
         driver=driver,
         diagnosis=diag,
@@ -865,7 +876,40 @@ def _analyze_session(
         sort_timestamp=sort_timestamp,
         sort_source=sort_source,
         fingerprint=fingerprint_from_current_setup(setup),
+        live_override_notes=live_override_notes,
     )
+
+
+def _setup_schema_dump_payload(state: ReasoningState, car: CarModel) -> dict[str, object]:
+    authority_label = None
+    authority_schema = None
+    if state.sessions:
+        authority = state.sessions[state.authority_session_idx]
+        authority_label = authority.label
+        authority_schema = (
+            authority.setup_schema.to_dict()
+            if authority.setup_schema is not None
+            else None
+        )
+    return {
+        "car": car.name,
+        "car_canonical": car.canonical_name,
+        "authority_session": authority_label,
+        "authority_setup_schema": authority_schema,
+        "sessions": [
+            {
+                "label": snap.label,
+                "ibt_path": snap.ibt_path,
+                "live_override_notes": list(snap.live_override_notes),
+                "setup_schema": (
+                    snap.setup_schema.to_dict()
+                    if snap.setup_schema is not None
+                    else None
+                ),
+            }
+            for snap in state.sessions
+        ],
+    }
 
 
 # ── Phase 2: All-pairs delta analysis ──────────────────────────
@@ -2412,6 +2456,7 @@ def reason_and_solve(
     balance_target: float = 50.14,
     sto_path: str | None = None,
     json_path: str | None = None,
+    setup_json_path: str | None = None,
     verbose: bool = True,
     emit_report: bool = True,
 ) -> ReasoningState:
@@ -2450,6 +2495,8 @@ def reason_and_solve(
         log(f"  Lap {snap.lap_number}: {snap.lap_time_s:.3f}s | "
             f"{snap.driver.style} | {len(snap.diagnosis.problems)} problems | "
             f"{len(snap.corners)} corners")
+        for note in snap.live_override_notes:
+            log(f"    Live override: {note}")
 
     _sort_sessions_chronologically(state)
 
@@ -2460,6 +2507,17 @@ def reason_and_solve(
     _build_validation_clusters(state)
     _build_health_models(state)
     _resolve_authority_session(state)
+
+    if setup_json_path:
+        import json
+
+        setup_json_target = Path(setup_json_path)
+        setup_json_target.parent.mkdir(parents=True, exist_ok=True)
+        with open(setup_json_target, "w", encoding="utf-8") as f:
+            json.dump(_setup_schema_dump_payload(state, car), f, indent=2, default=str)
+        log(f"  Setup schema JSON: {setup_json_target}")
+        if not sto_path and not json_path:
+            return state
 
     # ── Phase 2: All-pairs delta analysis ──
     log(f"\n[Phase 2] All-pairs delta analysis...")
@@ -2853,7 +2911,12 @@ def reason_and_solve(
             )
 
     # ── Output ──
-    if sto_path:
+    if sto_path and car.canonical_name == "ferrari":
+        state.solver_notes.append(
+            "Ferrari native .sto export is disabled in read-first mode; no setup file was written."
+        )
+        log("\nFerrari native .sto export is disabled in read-first mode; use --setup-json for setup inspection.")
+    elif sto_path:
         from output.setup_writer import write_sto
         from output.garage_validator import validate_and_fix_garage_correlation
 
@@ -2908,6 +2971,7 @@ def reason_and_solve(
             "best_session": state.sessions[state.best_session_idx].label,
             "authority_session": state.sessions[state.authority_session_idx].label,
             "solve_basis": state.solve_basis,
+            "setup_schemas": _setup_schema_dump_payload(state, car),
             "reasoning_modifiers": {
                 "df_balance_offset": mods.df_balance_offset_pct,
                 "lltd_offset": mods.lltd_offset,
@@ -3113,6 +3177,82 @@ def reason_and_solve(
         compact=True,
     )
     state.final_report = report
+
+    # ── Concise summary (always printed, even when verbose=False) ──
+    if emit_report and not verbose:
+        summary_lines = []
+        summary_lines.append("")
+        summary_lines.append(f"  {len(state.sessions)} sessions analyzed")
+        # Session list
+        for snap in state.sessions:
+            markers = []
+            if snap is best:
+                markers.append("fastest")
+            if snap is authority:
+                markers.append("authority")
+            marker_str = f"  ({', '.join(markers)})" if markers else ""
+            summary_lines.append(
+                f"    {snap.label}: {snap.lap_time_s:.3f}s  "
+                f"{snap.diagnosis.assessment}{marker_str}"
+            )
+        # Why authority was chosen over best
+        if authority is not best:
+            auth_score = next(
+                (r["score"] for r in state.authority_scores if r["session"] == authority.label),
+                0.0,
+            )
+            best_score = next(
+                (r["score"] for r in state.authority_scores if r["session"] == best.label),
+                0.0,
+            )
+            summary_lines.append(
+                f"  Authority {authority.label} (score {auth_score:.2f}) chosen over "
+                f"fastest {best.label} (score {best_score:.2f})"
+            )
+        # Candidate family
+        if selected_candidate is not None:
+            cand_score = (
+                selected_candidate.score.total
+                if selected_candidate.score is not None
+                else 0.0
+            )
+            summary_lines.append(
+                f"  Strategy: {selected_candidate.family.replace('_', ' ')} "
+                f"(confidence {cand_score:.2f})"
+            )
+        # Top improvements / trade-offs from prediction
+        if selected_candidate is not None and selected_candidate.predicted is not None:
+            pred = selected_candidate.predicted
+            auth_m = authority_measured
+            changes = []
+            ft = getattr(pred, "front_heave_travel_used_pct", None)
+            ft_base = getattr(auth_m, "front_heave_travel_used_pct", None)
+            if ft is not None and ft_base is not None and abs(ft - ft_base) > 1:
+                changes.append(f"front travel {ft_base:.0f}→{ft:.0f}%")
+            fe = getattr(pred, "front_excursion_mm", None)
+            fe_base = getattr(auth_m, "front_heave_defl_p99_mm", None)
+            if fe is not None and fe_base is not None and abs(fe - fe_base) > 0.5:
+                changes.append(f"front excursion {fe_base:.1f}→{fe:.1f}mm")
+            us = getattr(pred, "understeer_high_deg", None)
+            us_base = getattr(auth_m, "understeer_high_speed_deg", None)
+            if us is not None and us_base is not None and abs(us - us_base) > 0.02:
+                changes.append(f"HS understeer {us_base:.2f}→{us:.2f}°")
+            if changes:
+                summary_lines.append(f"  Predicted: {', '.join(changes)}")
+        # Weakest area
+        if state.persistent_problems:
+            summary_lines.append(f"  Persistent: {state.persistent_problems[0]}")
+        elif state.top_weakness_corners:
+            wc = state.top_weakness_corners[0]
+            corner_name = f"T{wc.corner_id:02d} ({wc.speed_class})"
+            summary_lines.append(
+                f"  Weakest corner: {corner_name} [{wc.primary_issue}]"
+                if wc.primary_issue
+                else f"  Weakest corner: {corner_name}"
+            )
+        summary_lines.append("")
+        print("\n".join(summary_lines))
+
     if emit_report:
         print(report)
 
@@ -3138,8 +3278,16 @@ def main() -> None:
     parser.add_argument("--balance", type=float, default=50.14, help="Target DF balance %%")
     parser.add_argument("--sto", type=str, default=None, help="Output .sto file")
     parser.add_argument("--json", type=str, default=None, help="Output JSON file")
+    parser.add_argument(
+        "--setup-json",
+        type=str,
+        default=None,
+        help="Output canonical setup schema correlation JSON and exit if used alone",
+    )
     parser.add_argument("--learn", action="store_true",
                         help="Ingest sessions into learner knowledge base after solving")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Show full reasoning dump instead of concise summary")
 
     args = parser.parse_args()
 
@@ -3160,6 +3308,8 @@ def main() -> None:
         balance_target=args.balance,
         sto_path=args.sto,
         json_path=args.json,
+        setup_json_path=args.setup_json,
+        verbose=args.verbose,
     )
 
     if args.learn:

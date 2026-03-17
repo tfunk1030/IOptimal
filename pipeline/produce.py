@@ -28,6 +28,7 @@ from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 from analyzer.extract import extract_measurements
 from analyzer.segment import segment_lap
 from analyzer.setup_reader import CurrentSetup
+from analyzer.setup_schema import apply_live_control_overrides, build_setup_schema
 from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
 from output.setup_writer import write_sto
@@ -139,6 +140,8 @@ def produce(
                 balance_target=getattr(args, "balance", 50.14),
                 sto_path=args.sto,
                 json_path=args.json,
+                setup_json_path=getattr(args, "setup_json", None),
+                verbose=getattr(args, "verbose", False),
             )
             return None
         ibt_path = ibt_arg[0]
@@ -215,12 +218,32 @@ def produce(
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")
     measured = extract_measurements(
-        ibt_path, car,
+        ibt_path,
+        car,
         lap=args.lap,
         min_lap_time=getattr(args, "min_lap_time", 108.0),
         outlier_pct=getattr(args, "outlier_pct", 0.115),
     )
+    live_override_notes = apply_live_control_overrides(current_setup, measured)
     log(f"  Lap {measured.lap_number}: {measured.lap_time_s:.3f}s")
+    for note in live_override_notes:
+        log(f"  Live override: {note}")
+
+    setup_schema = build_setup_schema(
+        car=car,
+        ibt_path=ibt_path,
+        current_setup=current_setup,
+        measured=measured,
+    )
+    setup_json_path = getattr(args, "setup_json", None)
+    if setup_json_path:
+        setup_json_output = Path(setup_json_path)
+        setup_json_output.parent.mkdir(parents=True, exist_ok=True)
+        with open(setup_json_output, "w", encoding="utf-8") as f:
+            json.dump(setup_schema.to_dict(), f, indent=2, default=str)
+        log(f"  Setup schema JSON: {setup_json_output}")
+        if not args.sto and not args.json and not _return_result:
+            return None
 
     # ── Phase B.5: Stint evolution (if --stint) ──
     stint_evolution = None
@@ -902,7 +925,12 @@ def produce(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
 
-    if args.sto:
+    if args.sto and car.canonical_name == "ferrari":
+        solve_notes.append(
+            "Ferrari native .sto export is disabled in read-first mode; no setup file was written."
+        )
+        print("\nFerrari native .sto export is disabled in read-first mode; use --setup-json for setup inspection.")
+    elif args.sto:
         # Final garage correlation check before writing .sto
         from output.garage_validator import validate_and_fix_garage_correlation
         garage_warnings = validate_and_fix_garage_correlation(
@@ -976,6 +1004,7 @@ def produce(
             "assessment": diagnosis.assessment,
             "signal_quality_summary": summarize_signal_quality(measured),
             "telemetry_bundle": measured.telemetry_bundle,
+            "setup_schema": setup_schema.to_dict(),
             "generated_candidates": [candidate_to_dict(candidate) for candidate in generated_candidates],
             "selected_candidate_family": getattr(selected_candidate, "family", None),
             "selected_candidate_score": (
@@ -1053,6 +1082,7 @@ def produce(
             "corners": corners,
             "modifiers": modifiers,
             "current_setup": current_setup,
+            "setup_schema": setup_schema,
             "wing": wing,
             "fuel_l": fuel,
             "target_balance": target_balance,
@@ -1226,6 +1256,8 @@ def main():
                         help="Export iRacing .sto setup file")
     parser.add_argument("--json", type=str, default=None,
                         help="Save full JSON summary to file")
+    parser.add_argument("--setup-json", type=str, default=None,
+                        help="Save the canonical setup schema / Ferrari LDX correlation JSON and exit if used alone")
     parser.add_argument("--report-only", action="store_true",
                         help="Print only the final report (skip per-step details)")
     parser.add_argument("--no-learn", action="store_true",
@@ -1245,6 +1277,8 @@ def main():
                              "run solver at start/mid/end conditions, produce compromise setup")
     parser.add_argument("--stint-threshold", type=float, default=1.5, dest="stint_threshold",
                         help="Max %% slower than fastest lap to include (default: 1.5)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Show full reasoning dump (multi-IBT mode)")
     # Legacy flags (kept for backward-compat; no-op since auto is default)
     parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)

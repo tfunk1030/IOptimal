@@ -70,7 +70,8 @@
       "Bash(ls -lh /c/Users/VYRAL/IOptimal/ibtfiles/ferrari*)",
       "Bash(ls -la /c/Users/VYRAL/IOptimal/analyzer/*.py)",
       "Bash(ls -1 /c/Users/VYRAL/IOptimal/analyzer/*.py)",
-      "Bash(xargs -I {} basename {})"
+      "Bash(xargs -I {} basename {})",
+      "Bash(python3:*)"
     ]
   }
 }

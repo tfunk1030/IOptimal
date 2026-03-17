@@ -53,8 +53,8 @@ class BrakeSolverTests(unittest.TestCase):
         self.assertGreater(solution.brake_bias_pct, 0.0)
         self.assertIn("Current migration -0.5", solution.reasoning)
         self.assertIn("Current target +1.5", solution.reasoning)
-        self.assertIn("Master cylinders F/R = 19.1/20.6 mm", solution.reasoning)
-        self.assertIn("Pad compound: Medium", solution.reasoning)
+        self.assertIn("MC: F/R = 19.1/20.6 mm", solution.reasoning)
+        self.assertIn("Pad: Medium", solution.reasoning)
 
     def test_supporting_solver_propagates_brake_hardware_outputs(self) -> None:
         current_setup = SimpleNamespace(
@@ -191,6 +191,72 @@ class BrakeSolverTests(unittest.TestCase):
         self.assertEqual(statuses["front_master_cyl_mm"], "pass_through")
         self.assertEqual(statuses["rear_master_cyl_mm"], "pass_through")
         self.assertEqual(statuses["pad_compound"], "pass_through")
+
+    def test_ferrari_supporting_solver_prefers_live_brake_bias_over_hydraulic_split(self) -> None:
+        ferrari = get_car("ferrari")
+        current_setup = SimpleNamespace(
+            adapter_name="ferrari",
+            brake_bias_pct=54.0,
+            brake_bias_target=0.0,
+            brake_bias_migration=1.0,
+            front_master_cyl_mm=19.1,
+            rear_master_cyl_mm=20.6,
+            pad_compound="Medium",
+            diff_clutch_plates=4,
+            diff_preload_nm=20.0,
+            tc_gain=4,
+            tc_slip=3,
+        )
+        driver = SimpleNamespace(
+            trail_brake_depth_p95=0.45,
+            trail_brake_classification="deep",
+            throttle_classification="moderate",
+            throttle_progressiveness=0.6,
+            throttle_onset_rate_pct_per_s=220.0,
+            consistency="consistent",
+        )
+        measured = SimpleNamespace(
+            fuel_level_at_measurement_l=89.0,
+            braking_decel_peak_g=2.2,
+            front_braking_lock_ratio_p95=0.08,
+            front_slip_ratio_p95=0.08,
+            front_brake_wheel_decel_asymmetry_p95_ms2=4.2,
+            body_slip_p95_deg=3.0,
+            hydraulic_brake_split_pct=12.0,
+            live_brake_bias_pct=53.7,
+            abs_active_pct=18.0,
+            abs_cut_mean_pct=22.0,
+            rear_power_slip_ratio_p95=0.05,
+            rear_slip_ratio_p95=0.05,
+            tc_intervention_pct=0.0,
+            mguk_torque_peak_nm=0.0,
+            ers_battery_min_pct=0.0,
+            front_pressure_mean_kpa=165.0,
+            rear_pressure_mean_kpa=166.0,
+            front_carcass_mean_c=92.0,
+            rear_carcass_mean_c=93.0,
+            track_temp_c=30.0,
+            lf_pressure_kpa=165.0,
+            rf_pressure_kpa=165.0,
+            lr_pressure_kpa=166.0,
+            rr_pressure_kpa=166.0,
+            live_tc_gain=None,
+            live_tc_slip=None,
+        )
+        diagnosis = SimpleNamespace()
+
+        solution = SupportingSolver(
+            ferrari,
+            driver,
+            measured,
+            diagnosis,
+            current_setup=current_setup,
+        ).solve()
+
+        self.assertEqual(solution.brake_bias_pct, 53.7)
+        self.assertEqual(solution.brake_bias_status, "telemetry_passthrough")
+        self.assertIn("dcBrakeBias telemetry", solution.brake_bias_reasoning)
+        self.assertIn("Hydraulic split remains diagnostic only", solution.brake_bias_reasoning)
 
 
 if __name__ == "__main__":

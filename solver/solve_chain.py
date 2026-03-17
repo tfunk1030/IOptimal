@@ -192,10 +192,30 @@ def _build_supporting(inputs: SolveChainInputs) -> Any:
     return solver.solve()
 
 
+def _snap_supporting_value(field_name: str, value: Any) -> Any:
+    """Snap supporting parameter values to iRacing garage increments."""
+    if not isinstance(value, (int, float)):
+        return value
+    v = float(value)
+    if field_name == "diff_preload_nm":
+        return round(v / 5) * 5  # 5 Nm increments
+    if field_name in ("diff_ramp_coast", "diff_ramp_drive"):
+        valid_ramps = [40, 45, 50, 65, 70, 75]
+        return min(valid_ramps, key=lambda r: abs(r - v))
+    if field_name == "diff_clutch_plates":
+        valid_plates = [2, 4, 6]
+        return min(valid_plates, key=lambda p: abs(p - v))
+    if field_name in ("tc_gain", "tc_slip"):
+        return int(round(max(1, min(10, v))))
+    if field_name == "brake_bias_pct":
+        return round(v, 1)
+    return value
+
+
 def _apply_supporting_overrides(supporting: Any, overrides: dict[str, Any]) -> None:
     for field_name, value in overrides.items():
         if hasattr(supporting, field_name):
-            setattr(supporting, field_name, value)
+            setattr(supporting, field_name, _snap_supporting_value(field_name, value))
 
 
 def _apply_ferrari_passthrough(inputs: SolveChainInputs, *, step1: Any, step2: Any, step3: Any, step4: Any) -> None:

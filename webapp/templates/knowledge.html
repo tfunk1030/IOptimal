@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Knowledge store</p>
+    <h1>Learning summary without opening JSON files.</h1>
+    <p class="lede">This page surfaces the learner’s current footprint by car and track, along with a few recent insights and corrections.</p>
+  </div>
+</section>
+
+<section class="summary-grid">
+  <article class="summary-card">
+    <span>Total observations</span>
+    <strong>{{ summary.total_observations }}</strong>
+  </article>
+  <article class="summary-card">
+    <span>Total deltas</span>
+    <strong>{{ summary.total_deltas }}</strong>
+  </article>
+  <article class="summary-card">
+    <span>Cars seen</span>
+    <strong>{{ summary.cars_seen|length }}</strong>
+  </article>
+  <article class="summary-card">
+    <span>Tracks seen</span>
+    <strong>{{ summary.tracks_seen|length }}</strong>
+  </article>
+</section>
+
+<section class="grid-two">
+  <section class="panel panel-soft">
+    <div class="panel-head">
+      <h2>Recent Learnings</h2>
+      <p>Short-form insights pulled from the learner outputs.</p>
+    </div>
+    <div class="stack-md">
+      {% for learning in summary.recent_learnings %}
+        <article class="issue-card">
+          <p>{{ learning }}</p>
+        </article>
+      {% else %}
+        <p class="empty-copy">No distilled insights were found in the learner store.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel panel-soft">
+    <div class="panel-head">
+      <h2>Car / Track Buckets</h2>
+      <p>Observation counts, latest sessions, and the first few corrections per bucket.</p>
+    </div>
+    <div class="stack-md">
+      {% for bucket in summary.buckets %}
+        <article class="change-card">
+          <h3>{{ bucket.car }} · {{ bucket.track }}</h3>
+          <p><strong>{{ bucket.observation_count }}</strong> observations · last session {{ bucket.last_session_id }}</p>
+          {% if bucket.corrections %}<small>Corrections: {{ bucket.corrections|join(', ') }}</small>{% endif %}
+          {% if bucket.insights %}<small>Insights: {{ bucket.insights|join(' | ') }}</small>{% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+{% endblock %}
