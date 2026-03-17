@@ -2543,6 +2543,92 @@ def reason_and_solve(
     if solver_selection_note:
         state.solver_notes.append(solver_selection_note)
 
+    # ── Candidate family generation + ranking ──
+    candidate_ranking = None
+    try:
+        from solver.candidate_search import SetupCandidate
+        from solver.candidate_ranker import score_candidate, rank_candidates
+
+        # Primary candidate: whatever the optimizer/sequential solver produced
+        primary = SetupCandidate(
+            family="compromise",
+            description=f"Solver output ({state.solve_basis})",
+            step1=step1, step2=step2, step3=step3,
+            step4=step4, step5=step5, step6=step6,
+            confidence=mods.overall_confidence,
+            reasons=list(state.solver_notes),
+        )
+
+        candidates_list = [primary]
+        scores_list = []
+
+        # Score primary
+        auth_diag = authority.diagnosis
+        n_probs = len(auth_diag.problems) if hasattr(auth_diag, 'problems') else 0
+        hard_fails = sum(
+            1 for p in (auth_diag.problems if hasattr(auth_diag, 'problems') else [])
+            if getattr(p, 'is_hard_failure', False)
+        )
+        safety_sc = max(0.0, 1.0 - hard_fails * 0.3 - n_probs * 0.02)
+        perf_sc = 0.6
+        stab_sc = max(0.0, 1.0 - authority.measured.front_rh_std_mm * 0.1)
+        disrupt_sc = min(1.0, len(mods.reasons) * 0.1)
+
+        scores_list.append(score_candidate(
+            primary, safety_score=safety_sc, performance_score=perf_sc,
+            stability_score=stab_sc, disruption_score=disrupt_sc,
+        ))
+
+        # If we have a sequential fallback AND optimizer result, offer both as candidates
+        if optimized is not None and not optimized.all_candidates_vetoed:
+            try:
+                seq_steps = _run_sequential_solver()
+                seq_s1, seq_s2, seq_s3, seq_s4, seq_s5, seq_s6, _ = seq_steps
+                seq_veto = _candidate_veto_for_solution(seq_s1, seq_s2, seq_s3, seq_s4, seq_s5, seq_s6)
+                if seq_veto is None:
+                    sequential_cand = SetupCandidate(
+                        family="baseline_reset",
+                        description="Sequential solver (independent baseline)",
+                        step1=seq_s1, step2=seq_s2, step3=seq_s3,
+                        step4=seq_s4, step5=seq_s5, step6=seq_s6,
+                        confidence=mods.overall_confidence * 0.9,
+                        reasons=["Baseline: sequential solver without optimizer constraints"],
+                    )
+                    candidates_list.append(sequential_cand)
+                    scores_list.append(score_candidate(
+                        sequential_cand, safety_score=safety_sc,
+                        performance_score=perf_sc * 0.85,
+                        stability_score=stab_sc,
+                        disruption_score=disrupt_sc * 1.1,
+                    ))
+            except Exception:
+                pass  # sequential candidate is optional
+
+        # Rank and select winner
+        ranked = rank_candidates(candidates_list, scores_list)
+        winner_cand, winner_score = ranked[0]
+        candidate_ranking = ranked
+
+        if len(ranked) > 1:
+            log(f"\n  Candidate ranking ({len(ranked)} families):")
+            for cand, sc in ranked:
+                log(f"    {cand.family}: {sc.total:.3f} "
+                    f"(safety={sc.safety:.2f} perf={sc.performance:.2f})")
+            state.solver_notes.append(
+                f"Selected {winner_cand.family} candidate (score={winner_score.total:.3f})"
+            )
+
+        # Use winning candidate
+        step1 = winner_cand.step1
+        step2 = winner_cand.step2
+        step3 = winner_cand.step3
+        step4 = winner_cand.step4
+        step5 = winner_cand.step5
+        step6 = winner_cand.step6
+        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+    except Exception:
+        candidate_ranking = None  # candidate ranking is advisory
+
     # Supporting params: use most consistent driver profile
     drivers_by_consistency = sorted(
         state.sessions,
@@ -2742,6 +2828,9 @@ def reason_and_solve(
         current_setup=authority.setup,
         wing=detected_wing,
         target_balance=target_balance,
+        car_state_issues=getattr(authority.diagnosis, 'car_state_issues', None),
+        overhaul_assessment=getattr(authority.diagnosis, 'overhaul_assessment', None),
+        candidate_ranking=candidate_ranking,
         solve_context_lines=state.solver_notes + [
             f"Authority session: {authority.label}",
             f"Benchmark best session: {best.label}",

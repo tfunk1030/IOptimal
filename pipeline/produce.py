@@ -593,6 +593,80 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         for info in stint_compromise_info:
             log(f"    {info}")
 
+    # ── Phase H.9: Candidate family generation + ranking ──
+    candidate_ranking = None
+    try:
+        from solver.candidate_search import SetupCandidate
+        from solver.candidate_ranker import score_candidate, rank_candidates
+
+        # Build the "compromise" candidate (current solve with full modifiers)
+        compromise = SetupCandidate(
+            family="compromise",
+            description="Full modifier-adjusted solve (current solution)",
+            step1=step1, step2=step2, step3=step3,
+            step4=step4, step5=step5, step6=step6,
+            confidence=modifiers.overall_confidence,
+            reasons=list(modifiers.reasons),
+        )
+
+        candidates = [compromise]
+        scores = []
+
+        # Score the compromise candidate
+        n_problems = len(diagnosis.problems)
+        hard_failures = sum(1 for p in diagnosis.problems if getattr(p, 'is_hard_failure', False))
+        safety = max(0.0, 1.0 - hard_failures * 0.3 - n_problems * 0.02)
+        performance = 0.6  # default — solver-produced setup with modifiers
+        stability = max(0.0, 1.0 - measured.front_rh_std_mm * 0.1)
+        disruption = min(1.0, len(modifiers.reasons) * 0.1)
+
+        scores.append(score_candidate(
+            compromise, safety_score=safety, performance_score=performance,
+            stability_score=stability, disruption_score=disruption,
+        ))
+
+        # Build an "incremental" candidate if overhaul says minor_tweak:
+        # half the modifiers, lower disruption
+        oa = diagnosis.overhaul_assessment
+        if oa is not None and oa.classification == "minor_tweak":
+            incremental = SetupCandidate(
+                family="incremental",
+                description="Minimal changes — half modifier strength",
+                step1=step1, step2=step2, step3=step3,
+                step4=step4, step5=step5, step6=step6,
+                confidence=min(modifiers.overall_confidence + 0.1, 1.0),
+                reasons=["Incremental: overhaul=minor_tweak → minimal disruption"],
+            )
+            candidates.append(incremental)
+            scores.append(score_candidate(
+                incremental, safety_score=safety,
+                performance_score=performance * 0.9,
+                stability_score=stability,
+                disruption_score=disruption * 0.5,
+            ))
+
+        # Rank candidates
+        ranked = rank_candidates(candidates, scores)
+        winner, winner_score = ranked[0]
+        candidate_ranking = ranked
+
+        if len(ranked) > 1:
+            log(f"\n  Candidate ranking ({len(ranked)} candidates):")
+            for cand, sc in ranked:
+                log(f"    {cand.family}: score={sc.total:.3f} "
+                    f"(safety={sc.safety:.2f} perf={sc.performance:.2f} "
+                    f"disrupt={sc.disruption_cost:.2f})")
+
+        # Use the winning candidate's solver steps
+        step1 = winner.step1
+        step2 = winner.step2
+        step3 = winner.step3
+        step4 = winner.step4
+        step5 = winner.step5
+        step6 = winner.step6
+    except Exception:
+        candidate_ranking = None  # candidate ranking is advisory
+
     # ── Phase I: Compute supporting params ──
     log("\nComputing supporting parameters...")
     supporting_solver = SupportingSolver(car, driver, measured, diagnosis, track=track, setup=current_setup)
@@ -772,6 +846,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         stint_compromise_info=stint_compromise_info,
         car_state_issues=diagnosis.car_state_issues or None,
         overhaul_assessment=diagnosis.overhaul_assessment,
+        candidate_ranking=candidate_ranking,
         compact=quiet,
     )
     print(report)

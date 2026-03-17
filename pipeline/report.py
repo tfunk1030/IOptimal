@@ -89,6 +89,7 @@ def generate_report(
     solve_context_lines: list[str] | None = None,
     car_state_issues: list["CarStateIssue"] | None = None,
     overhaul_assessment: "OverhaulAssessment | None" = None,
+    candidate_ranking: list | None = None,
     compact: bool = False,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
@@ -450,6 +451,44 @@ def generate_report(
             a("")
     except Exception:
         pass  # predictor is advisory — never block report
+
+    # ── CANDIDATE SELECTION ─────────────────────────────────────────
+    if candidate_ranking is not None and len(candidate_ranking) > 1:
+        a(_hdr("WHY THIS CANDIDATE"))
+        winner, winner_score = candidate_ranking[0]
+        a(f"  Winner: {winner.family} — {winner.description}")
+        a(f"    Total: {winner_score.total:.3f}  "
+          f"Safety: {winner_score.safety:.2f}  "
+          f"Perf: {winner_score.performance:.2f}  "
+          f"Stability: {winner_score.stability:.2f}  "
+          f"Disruption: {winner_score.disruption_cost:.2f}")
+        a("")
+        a(f"  {'Family':<20} {'Total':>7} {'Safety':>7} {'Perf':>7} {'Disrupt':>8}")
+        a("  " + "─" * (W - 4))
+        for cand, sc in candidate_ranking:
+            marker = " ◄" if cand is winner else ""
+            a(f"  {cand.family:<20} {sc.total:>7.3f} {sc.safety:>7.2f} "
+              f"{sc.performance:>7.2f} {sc.disruption_cost:>8.2f}{marker}")
+        a("")
+        # Explain why the winner beat the runner-up
+        if len(candidate_ranking) >= 2:
+            runner, runner_score = candidate_ranking[1]
+            delta = winner_score.total - runner_score.total
+            advantages = []
+            if winner_score.safety > runner_score.safety + 0.01:
+                advantages.append("safer")
+            if winner_score.performance > runner_score.performance + 0.01:
+                advantages.append("faster")
+            if winner_score.disruption_cost < runner_score.disruption_cost - 0.01:
+                advantages.append("less disruptive")
+            if winner_score.stability > runner_score.stability + 0.01:
+                advantages.append("more stable")
+            if advantages:
+                a(f"  {winner.family} beats {runner.family} by {delta:+.3f}: "
+                  f"{', '.join(advantages)}")
+            else:
+                a(f"  {winner.family} beats {runner.family} by {delta:+.3f} overall")
+            a("")
 
     # ── TRADEOFF SUMMARY ──────────────────────────────────────────────
     tradeoffs: list[str] = []
