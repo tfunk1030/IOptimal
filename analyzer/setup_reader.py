@@ -146,7 +146,8 @@ class CurrentSetup:
 
     # --- Brakes / Diff / TC ---
     brake_bias_pct: float = 0.0
-    diff_preload_nm: float = 0.0
+    front_diff_preload_nm: float = 0.0  # Ferrari only (has front diff)
+    diff_preload_nm: float = 0.0        # Rear diff preload
     diff_ramp_angles: str = ""
     diff_clutch_plates: int = 0
     tc_gain: int = 0
@@ -157,6 +158,7 @@ class CurrentSetup:
     # These are computed by iRacing from the settable parameters above.
     # Extracted from IBT session info for model calibration ground truth.
     torsion_bar_turns: float = 0.0
+    rear_torsion_bar_turns: float = 0.0
     torsion_bar_defl_mm: float = 0.0
     front_shock_defl_static_mm: float = 0.0
     front_shock_defl_max_mm: float = 0.0
@@ -208,6 +210,7 @@ class CurrentSetup:
         aero_calc = tires_aero.get("AeroCalculator", {})
         brake_spec = brakes.get("BrakeSpec", {})
         diff_spec = brakes.get("RearDiffSpec", {})
+        front_diff_spec = brakes.get("FrontDiffSpec", {})  # Ferrari only
         tc = brakes.get("TractionControl", {})
         fuel = brakes.get("Fuel", {})
 
@@ -231,18 +234,20 @@ class CurrentSetup:
             # Ride heights (average left/right)
             static_front_rh_mm=avg_f("RideHeight"),
             static_rear_rh_mm=avg_r("RideHeight"),
-            front_pushrod_mm=_parse_float(front.get("PushrodLengthOffset")),
-            rear_pushrod_mm=_parse_float(rear.get("PushrodLengthOffset")),
+            # Ferrari uses "PushrodLengthDelta", BMW uses "PushrodLengthOffset"
+            front_pushrod_mm=_parse_float(front.get("PushrodLengthOffset") or front.get("PushrodLengthDelta")),
+            rear_pushrod_mm=_parse_float(rear.get("PushrodLengthOffset") or rear.get("PushrodLengthDelta")),
 
-            # Heave / Third
+            # Heave / Third — Ferrari rear uses HeaveSpring (no ThirdSpring)
             front_heave_nmm=_parse_float(front.get("HeaveSpring")),
             front_heave_perch_mm=_parse_float(front.get("HeavePerchOffset")),
-            rear_third_nmm=_parse_float(rear.get("ThirdSpring")),
-            rear_third_perch_mm=_parse_float(rear.get("ThirdPerchOffset")),
+            rear_third_nmm=_parse_float(rear.get("ThirdSpring") or rear.get("HeaveSpring")),
+            rear_third_perch_mm=_parse_float(rear.get("ThirdPerchOffset") or rear.get("HeavePerchOffset")),
 
             # Corner springs (use LF/LR as representative)
+            # Ferrari rear uses TorsionBarOD (indexed) instead of coil SpringRate
             front_torsion_od_mm=_parse_float(lf.get("TorsionBarOD")),
-            rear_spring_nmm=_parse_float(lr.get("SpringRate")),
+            rear_spring_nmm=_parse_float(lr.get("SpringRate") or lr.get("TorsionBarOD")),
             rear_spring_perch_mm=_parse_float(lr.get("SpringPerchOffset")),
 
             # ARBs
@@ -271,6 +276,7 @@ class CurrentSetup:
 
             # Brakes / Diff / TC
             brake_bias_pct=_parse_float(brake_spec.get("BrakePressureBias")),
+            front_diff_preload_nm=_parse_float(front_diff_spec.get("Preload")),
             diff_preload_nm=_parse_float(diff_spec.get("Preload")),
             diff_ramp_angles=str(diff_spec.get("CoastDriveRampAngles", "")),
             diff_clutch_plates=_parse_int(diff_spec.get("ClutchFrictionPlates")),
@@ -280,6 +286,7 @@ class CurrentSetup:
 
             # iRacing-computed display values (ground truth for calibration)
             torsion_bar_turns=_parse_float(lf.get("TorsionBarTurns")),
+            rear_torsion_bar_turns=_parse_float(lr.get("TorsionBarTurns")),
             torsion_bar_defl_mm=_parse_float(lf.get("TorsionBarDefl")),
             front_shock_defl_static_mm=_parse_defl(lf.get("ShockDefl"))[0],
             front_shock_defl_max_mm=_parse_defl(lf.get("ShockDefl"))[1],

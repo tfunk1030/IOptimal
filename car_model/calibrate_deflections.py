@@ -94,19 +94,31 @@ def fit_linear(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_nam
     rmse = np.sqrt(ss_res / len(y))
     max_err = np.max(np.abs(y - y_pred))
 
+    # Leave-one-out cross-validation
+    n = len(y)
+    loo_errors = np.zeros(n)
+    for i in range(n):
+        mask = np.ones(n, dtype=bool)
+        mask[i] = False
+        X_train, y_train = X_aug[mask], y[mask]
+        beta_loo, *_ = np.linalg.lstsq(X_train, y_train, rcond=None)
+        loo_errors[i] = y[i] - X_aug[i] @ beta_loo
+    loo_rmse = np.sqrt(np.mean(loo_errors ** 2))
+    loo_max = np.max(np.abs(loo_errors))
+
     print(f"\n{'=' * 60}")
     print(f"  {model_name}")
     print(f"  N={len(y)}  R²={r2:.4f}  RMSE={rmse:.3f}  MaxErr={max_err:.3f}")
+    print(f"  LOO-RMSE={loo_rmse:.3f}  LOO-MaxErr={loo_max:.3f}")
     print(f"  intercept = {beta[0]:.6f}")
     for i, name in enumerate(feature_names):
         print(f"  {name} = {beta[i + 1]:.6f}")
     print(f"{'=' * 60}")
 
-    # Print worst predictions
-    errors = y - y_pred
-    worst_idx = np.argsort(np.abs(errors))[-3:]
+    # Print worst predictions (LOO)
+    worst_idx = np.argsort(np.abs(loo_errors))[-3:]
     for idx in worst_idx:
-        print(f"  worst: pred={y_pred[idx]:.2f} actual={y[idx]:.2f} err={errors[idx]:.2f}")
+        print(f"  worst (LOO): pred={y[idx] - loo_errors[idx]:.2f} actual={y[idx]:.2f} err={loo_errors[idx]:.2f}")
 
     return beta
 

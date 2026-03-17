@@ -51,10 +51,13 @@
     "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_17-47-58",
     "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_22-07-57",
     "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_22-48-44",
-    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_23-12-49"
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_23-12-49",
+    "bmw_sebring_international_raceway_bmw170",
+    "ferrari_sebring_international_raceway_fefetf",
+    "bmw_sebring_international_raceway_bmw151"
   ],
-  "total_observations": 50,
-  "total_deltas": 64,
+  "total_observations": 53,
+  "total_deltas": 84,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -63,5 +66,5 @@
   "tracks_seen": [
     "Sebring International Raceway_International"
   ],
-  "last_updated": "2026-03-16T04:27:23.100139+00:00"
+  "last_updated": "2026-03-17T00:36:38.756681+00:00"
 }

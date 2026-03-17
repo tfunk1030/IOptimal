@@ -61,6 +61,27 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             batch/multi-IBT compare mode) instead of returning None.
     """
 
+    # ── Normalize IBT path(s) ──
+    ibt_arg = args.ibt
+    if isinstance(ibt_arg, list):
+        if len(ibt_arg) >= 2:
+            # Multiple IBTs → delegate to reasoning engine
+            from pipeline.reason import reason_and_solve
+
+            reason_and_solve(
+                car_name=args.car,
+                ibt_paths=ibt_arg,
+                wing=args.wing,
+                fuel=args.fuel,
+                balance_target=getattr(args, "balance", 50.14),
+                sto_path=args.sto,
+                json_path=args.json,
+            )
+            return None
+        ibt_path = ibt_arg[0]
+    else:
+        ibt_path = ibt_arg  # backward compat for programmatic callers
+
     quiet = bool(getattr(args, "report_only", False))
 
     def log(message: str = "") -> None:
@@ -72,8 +93,8 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
     log(f"Car: {car.name}")
 
     # ── Parse IBT ──
-    ibt = IBTFile(args.ibt)
-    log(f"IBT: {args.ibt}")
+    ibt = IBTFile(ibt_path)
+    log(f"IBT: {ibt_path}")
     log(f"  Samples: {ibt.record_count}, Tick rate: {ibt.tick_rate} Hz")
 
     # ── Auto-detect from session info ──
@@ -124,14 +145,14 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
 
     # ── Phase A: Build track profile from IBT ──
     log("\nBuilding track profile from IBT...")
-    track = build_profile(args.ibt)
+    track = build_profile(ibt_path)
     log(f"  Track: {track.track_name} — {track.track_config}")
     log(f"  Best lap: {track.best_lap_time_s:.3f}s")
 
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")
     measured = extract_measurements(
-        args.ibt, car,
+        ibt_path, car,
         lap=args.lap,
         min_lap_time=getattr(args, "min_lap_time", 108.0),
         outlier_pct=getattr(args, "outlier_pct", 0.115),
@@ -144,7 +165,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         from analyzer.stint_analysis import analyze_stint_evolution
         log("\nAnalyzing stint evolution (all qualifying laps)...")
         stint_evolution = analyze_stint_evolution(
-            ibt_path=args.ibt,
+            ibt_path=ibt_path,
             car=car,
             threshold_pct=getattr(args, "stint_threshold", 1.5),
             min_lap_time=getattr(args, "min_lap_time", 108.0),
@@ -243,6 +264,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         balance_tolerance=args.tolerance,
         fuel_load_l=fuel,
         pin_front_min=not args.free,
+        wing_angle=wing,
         legacy_solver=getattr(args, "legacy_solver", False),
         damping_ratio_scale=modifiers.damping_ratio_scale,
         lltd_offset=modifiers.lltd_offset,
@@ -611,6 +633,20 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
     except (TypeError, NameError) as e:
         raise  # re-raise programming errors — don't hide bugs
 
+    # ── Phase I.8: Ferrari indexed parameter passthrough ──
+    # Ferrari uses indexed values (0-8, 0-18) for heave springs and torsion bar OD,
+    # not physical N/mm or mm values. The solver computes physical values that are
+    # meaningless for Ferrari. Pass through the IBT's current indexed values instead.
+    if car.canonical_name == "ferrari":
+        _cs = current_setup
+        step2.front_heave_nmm = _cs.front_heave_nmm          # index 0-8
+        step2.perch_offset_front_mm = _cs.front_heave_perch_mm
+        step2.rear_third_nmm = _cs.rear_third_nmm            # index 0-9 (rear heave)
+        step2.perch_offset_rear_mm = _cs.rear_third_perch_mm
+        step3.front_torsion_od_mm = _cs.front_torsion_od_mm  # index 0-18
+        step3.rear_spring_rate_nmm = _cs.rear_spring_nmm     # rear torsion bar OD index
+        step3.rear_spring_perch_mm = 0.0                      # N/A for Ferrari
+
     # ── Phase J: Output ──
     if args.sto:
         # Final garage correlation check before writing .sto
@@ -621,6 +657,12 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
         )
         for w in garage_warnings:
             print(f"[garage] {w}")
+
+        # Pass IBT torsion bar turns for Ferrari (solver can't compute these)
+        _tb_kw = {}
+        if car.canonical_name == "ferrari":
+            _tb_kw["front_tb_turns"] = current_setup.torsion_bar_turns
+            _tb_kw["rear_tb_turns"] = current_setup.rear_torsion_bar_turns
 
         sto_path = write_sto(
             car_name=car.name,
@@ -633,11 +675,16 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             car_canonical=car.canonical_name,
             tyre_pressure_kpa=supporting.tyre_cold_fl_kpa,
             brake_bias_pct=supporting.brake_bias_pct,
-            diff_coast_drive_ramp=f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}",
+            diff_coast_drive_ramp=(
+                ("More Locking" if supporting.diff_ramp_coast <= 45 else "Less Locking")
+                if car.canonical_name == "ferrari"
+                else f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}"
+            ),
             diff_clutch_plates=supporting.diff_clutch_plates,
             diff_preload_nm=supporting.diff_preload_nm,
             tc_gain=supporting.tc_gain,
             tc_slip=supporting.tc_slip,
+            **_tb_kw,
         )
         print(f"\niRacing .sto setup saved to: {sto_path}")
 
@@ -730,7 +777,7 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
             store = KnowledgeStore()
             result = ingest_ibt(
                 car_name=args.car,
-                ibt_path=args.ibt,
+                ibt_path=ibt_path,
                 wing=wing,
                 lap=args.lap,
                 store=store,
@@ -806,7 +853,9 @@ def main():
         description="GTP Setup Producer — IBT->.sto physics pipeline"
     )
     parser.add_argument("--car", required=True, help="Car name (e.g., bmw)")
-    parser.add_argument("--ibt", required=True, help="Path to IBT telemetry file")
+    parser.add_argument("--ibt", required=True, nargs="+",
+                        help="Path(s) to IBT telemetry file(s). "
+                             "When 2+ files given, delegates to the reasoning engine.")
     parser.add_argument("--wing", type=float, default=None,
                         help="Wing angle (auto-detected from IBT if not specified)")
     parser.add_argument("--lap", type=int, default=None,

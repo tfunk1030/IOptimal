@@ -109,6 +109,7 @@ def print_full_setup_report(
     fuel_l: float = 0.0,
     garage_outputs: Any = None,
     compact: bool = False,
+    front_tb_turns_override: float | None = None,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
@@ -140,20 +141,28 @@ def print_full_setup_report(
     tc_gain_val = getattr(supporting, "tc_gain", None) if supporting is not None else None
     tc_slip_val = getattr(supporting, "tc_slip", None) if supporting is not None else None
 
+    _is_ferrari = car is not None and getattr(car, "canonical_name", "") == "ferrari"
+
     brake_bias_str = f"{brake_bias_val:.1f}%" if brake_bias_val is not None else "(pipeline)"
     diff_preload_str = f"{diff_preload_val:.0f} Nm" if diff_preload_val is not None else "(pipeline)"
-    diff_coast_str = f"{diff_coast_val} deg" if diff_coast_val is not None else "(pipeline)"
-    diff_drive_str = f"{diff_drive_val} deg" if diff_drive_val is not None else "(pipeline)"
+    if _is_ferrari and diff_coast_val is not None:
+        # Ferrari uses "More Locking" / "Less Locking" labels, not degree values
+        diff_coast_str = "More Locking" if diff_coast_val <= 45 else "Less Locking"
+        diff_drive_str = "More Locking" if diff_drive_val is not None and diff_drive_val <= 70 else "Less Locking"
+    else:
+        diff_coast_str = f"{diff_coast_val} deg" if diff_coast_val is not None else "(pipeline)"
+        diff_drive_str = f"{diff_drive_val} deg" if diff_drive_val is not None else "(pipeline)"
     diff_plates_str = f"{diff_plates_val}" if diff_plates_val is not None else "(pipeline)"
     tc_gain_str = f"{tc_gain_val}" if tc_gain_val is not None else "(pipeline)"
     tc_slip_str = f"{tc_slip_val}" if tc_slip_val is not None else "(pipeline)"
-    _tb_turns = (
-        round(float(garage_outputs.torsion_bar_turns), 3)
-        if garage_outputs is not None and getattr(garage_outputs, "torsion_bar_turns", 0) > 0
-        else round(
+    if front_tb_turns_override is not None:
+        _tb_turns = round(front_tb_turns_override, 3)
+    elif garage_outputs is not None and getattr(garage_outputs, "torsion_bar_turns", 0) > 0:
+        _tb_turns = round(float(garage_outputs.torsion_bar_turns), 3)
+    else:
+        _tb_turns = round(
             0.1089 - 0.1642 / max(step2.front_heave_nmm, 1) + 0.000368 * step2.perch_offset_front_mm, 3
         )
-    )
     df_ok = abs(step1.df_balance_pct - target_balance) < 0.2
     stall_ok = step1.vortex_burst_margin_mm > 0
     garage_ok = getattr(step2, "garage_constraints_ok", True)
@@ -175,14 +184,24 @@ def print_full_setup_report(
     a(_setting("Rear static RH target", f"{step1.static_rear_rh_mm:.1f} mm"))
     a(_setting("Front pushrod", f"{step1.front_pushrod_offset_mm:+.1f} mm"))
     a(_setting("Rear pushrod", f"{step1.rear_pushrod_offset_mm:+.1f} mm"))
-    a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} N/mm"))
-    a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
-    a(_setting("Rear third spring", f"{step2.rear_third_nmm:.0f} N/mm"))
-    a(_setting("Rear third perch", f"{step2.perch_offset_rear_mm:+.1f} mm"))
-    a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm"))
-    a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
-    a(_setting("Rear coil spring", f"{step3.rear_spring_rate_nmm:.0f} N/mm"))
-    a(_setting("Rear spring perch", f"{step3.rear_spring_perch_mm:.1f} mm"))
+    if _is_ferrari:
+        # Ferrari uses indexed dropdowns, not physical values
+        a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} (index)"))
+        a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
+        a(_setting("Rear heave spring", f"{step2.rear_third_nmm:.0f} (index)"))
+        a(_setting("Rear heave perch", f"{step2.perch_offset_rear_mm:+.1f} mm"))
+        a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.0f} (index)"))
+        a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
+        a(_setting("Rear torsion bar OD", f"{step3.rear_spring_rate_nmm:.0f} (index)"))
+    else:
+        a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} N/mm"))
+        a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
+        a(_setting("Rear third spring", f"{step2.rear_third_nmm:.0f} N/mm"))
+        a(_setting("Rear third perch", f"{step2.perch_offset_rear_mm:+.1f} mm"))
+        a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm"))
+        a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
+        a(_setting("Rear coil spring", f"{step3.rear_spring_rate_nmm:.0f} N/mm"))
+        a(_setting("Rear spring perch", f"{step3.rear_spring_perch_mm:.1f} mm"))
     if garage_outputs is not None:
         a(_setting(
             "Heave slider static",
@@ -206,8 +225,12 @@ def print_full_setup_report(
     a(_full("  BRAKES / DIFF / TC / TYRES"))
     a(_setting("Brake bias", brake_bias_str))
     a(_setting("Diff preload", diff_preload_str))
-    a(_setting("Diff coast ramp", diff_coast_str))
-    a(_setting("Diff drive ramp", diff_drive_str))
+    if _is_ferrari:
+        # Ferrari: single coast/drive ramp label
+        a(_setting("Diff coast/drive ramp", diff_coast_str))
+    else:
+        a(_setting("Diff coast ramp", diff_coast_str))
+        a(_setting("Diff drive ramp", diff_drive_str))
     a(_setting("Diff clutch plates", diff_plates_str))
     a(_setting("TC gain / slip", f"{tc_gain_str} / {tc_slip_str}"))
     a(_setting("Tyre cold FL / FR", f"{tyre_fl:.0f} / {tyre_fr:.0f} kPa"))
@@ -269,16 +292,28 @@ def print_full_setup_report(
     a(_box_top("GARAGE CARD"))
     a(_blank())
     a(_row("  RIDE HEIGHTS & PUSHRODS", "  SPRINGS"))
-    a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
-           f"  Heave F:    {step2.front_heave_nmm:5.0f} N/mm  perch {step2.perch_offset_front_mm:+.0f}mm"))
-    a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
-           f"  Third R:    {step2.rear_third_nmm:5.0f} N/mm  perch {step2.perch_offset_rear_mm:+.0f}mm"))
-    a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
-           f"  Torsion:   {step3.front_torsion_od_mm:6.2f} mm OD  {_tb_turns:.3f} Turns"))
-    a(_row(f"  Front pushrod: {step1.front_pushrod_offset_mm:5.1f} mm",
-           f"  Rear coil:  {step3.rear_spring_rate_nmm:5.0f} N/mm"))
-    a(_row(f"  Rear pushrod:  {step1.rear_pushrod_offset_mm:5.1f} mm",
-           f"  Rear perch:  {step3.rear_spring_perch_mm:5.1f} mm"))
+    if _is_ferrari:
+        a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
+               f"  Heave F:      {step2.front_heave_nmm:3.0f} idx  perch {step2.perch_offset_front_mm:+.0f}mm"))
+        a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
+               f"  Heave R:      {step2.rear_third_nmm:3.0f} idx  perch {step2.perch_offset_rear_mm:+.0f}mm"))
+        a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
+               f"  F TB OD: {step3.front_torsion_od_mm:4.0f} idx  {_tb_turns:.3f} Turns"))
+        a(_row(f"  Front pushrod: {step1.front_pushrod_offset_mm:5.1f} mm",
+               f"  R TB OD: {step3.rear_spring_rate_nmm:4.0f} idx"))
+        a(_row(f"  Rear pushrod:  {step1.rear_pushrod_offset_mm:5.1f} mm",
+               ""))
+    else:
+        a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
+               f"  Heave F:    {step2.front_heave_nmm:5.0f} N/mm  perch {step2.perch_offset_front_mm:+.0f}mm"))
+        a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
+               f"  Third R:    {step2.rear_third_nmm:5.0f} N/mm  perch {step2.perch_offset_rear_mm:+.0f}mm"))
+        a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
+               f"  Torsion:   {step3.front_torsion_od_mm:6.2f} mm OD  {_tb_turns:.3f} Turns"))
+        a(_row(f"  Front pushrod: {step1.front_pushrod_offset_mm:5.1f} mm",
+               f"  Rear coil:  {step3.rear_spring_rate_nmm:5.0f} N/mm"))
+        a(_row(f"  Rear pushrod:  {step1.rear_pushrod_offset_mm:5.1f} mm",
+               f"  Rear perch:  {step3.rear_spring_perch_mm:5.1f} mm"))
     a(_blank())
     a(_row("  ANTI-ROLL BARS", "  WHEEL GEOMETRY"))
     a(_row(f"  FARB: {step4.front_arb_size:<6s} Blade {step4.front_arb_blade_start}  (locked)",
@@ -296,9 +331,16 @@ def print_full_setup_report(
     bias_str = ""
     if supporting is not None:
         bias_str = f"  Brake bias: {supporting.brake_bias_pct:.1f}%"
-        diff_str = (f"  Diff: {supporting.diff_preload_nm:.0f} Nm  "
-                    f"{supporting.diff_ramp_coast}°/{supporting.diff_ramp_drive}°  "
-                    f"{supporting.diff_clutch_plates}pl")
+        if _is_ferrari:
+            _coast_lbl = "More" if supporting.diff_ramp_coast <= 45 else "Less"
+            _drive_lbl = "More" if supporting.diff_ramp_drive <= 70 else "Less"
+            diff_str = (f"  Diff: {supporting.diff_preload_nm:.0f} Nm  "
+                        f"{_coast_lbl}/{_drive_lbl} Lock  "
+                        f"{supporting.diff_clutch_plates}pl")
+        else:
+            diff_str = (f"  Diff: {supporting.diff_preload_nm:.0f} Nm  "
+                        f"{supporting.diff_ramp_coast}°/{supporting.diff_ramp_drive}°  "
+                        f"{supporting.diff_clutch_plates}pl")
     else:
         bias_str = f"  Brake bias: (see pipeline)"
         diff_str = ""
@@ -533,14 +575,23 @@ def print_full_setup_report(
     a(f"  LLTD achieved: {step4.lltd_achieved:.1%}  target: {step4.lltd_target:.1%}  "
       f"RARB sensitivity: {step4.rarb_sensitivity_per_blade:+.1%}/blade")
     a(f"  RARB 1→{step4.rarb_blade_fast_corner} range: {step4.lltd_at_rarb_min:.1%}→{step4.lltd_at_rarb_max:.1%}")
-    a(f"  Heave: {step2.front_heave_nmm:.0f} N/mm  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
+    if _is_ferrari:
+        a(f"  Heave: {step2.front_heave_nmm:.0f} idx  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
+    else:
+        a(f"  Heave: {step2.front_heave_nmm:.0f} N/mm  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
     if garage_outputs is not None:
         a(f"  Heave slider: {garage_outputs.heave_slider_defl_static_mm:.1f}/{garage_outputs.heave_slider_defl_max_mm:.1f} mm  "
           f"travel margin: {garage_outputs.travel_margin_front_mm:.1f} mm")
-    a(f"  Torsion: {step3.front_torsion_od_mm:.2f}mm OD  {step3.front_natural_freq_hz:.2f}Hz  "
-      f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
-    a(f"  Rear coil: {step3.rear_spring_rate_nmm:.0f} N/mm  {step3.rear_natural_freq_hz:.2f}Hz  "
-      f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
+    if _is_ferrari:
+        a(f"  F TB OD: {step3.front_torsion_od_mm:.0f} idx  {step3.front_natural_freq_hz:.2f}Hz  "
+          f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
+        a(f"  R TB OD: {step3.rear_spring_rate_nmm:.0f} idx  {step3.rear_natural_freq_hz:.2f}Hz  "
+          f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
+    else:
+        a(f"  Torsion: {step3.front_torsion_od_mm:.2f}mm OD  {step3.front_natural_freq_hz:.2f}Hz  "
+          f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
+        a(f"  Rear coil: {step3.rear_spring_rate_nmm:.0f} N/mm  {step3.rear_natural_freq_hz:.2f}Hz  "
+          f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
     a(f"  Roll at peak {step5.peak_lat_g:.2f}g: {step5.body_roll_at_peak_deg:.1f}°  "
       f"Fcamber dynamic: {step5.front_dynamic_camber_at_peak_deg:+.2f}°  [{step5.camber_confidence}]")
     a(f"  Tyres to op temp: fronts ~{step5.expected_conditioning_laps_front:.0f} laps  "
@@ -580,13 +631,20 @@ def print_comparison_table(
     a(_full(f"  {'Parameter':<24}  {'Current':>10}  {'Recommended':>12}  {'Change':>10}"))
     a(_full("  " + "─" * (W - 4)))
 
+    # Detect Ferrari for label/unit adjustments
+    _is_ferrari = hasattr(current_setup, "source") and getattr(current_setup, "_car_name", "") == "ferrari"
+    _heave_unit = "idx" if _is_ferrari else "N/mm"
+    _tb_unit = "idx" if _is_ferrari else "mm"
+    _rear_spring_label = "Rear torsion bar OD" if _is_ferrari else "Rear coil spring"
+    _rear_heave_label = "Rear heave spring" if _is_ferrari else "Rear third spring"
+
     param_map = {
         "front_rh_mm":          ("Front static RH",    current_setup.front_rh_static_mm,    "mm"),
         "rear_rh_mm":           ("Rear static RH",     current_setup.rear_rh_static_mm,     "mm"),
-        "front_heave_nmm":      ("Front heave spring", current_setup.front_heave_nmm,       "N/mm"),
-        "rear_third_nmm":       ("Rear third spring",  current_setup.rear_third_nmm,        "N/mm"),
-        "torsion_bar_od_mm":    ("Torsion bar OD",     current_setup.front_torsion_od_mm,   "mm"),
-        "rear_spring_nmm":      ("Rear coil spring",   current_setup.rear_spring_rate_nmm,  "N/mm"),
+        "front_heave_nmm":      ("Front heave spring", current_setup.front_heave_nmm,       _heave_unit),
+        "rear_third_nmm":       (_rear_heave_label,    current_setup.rear_third_nmm,        _heave_unit),
+        "torsion_bar_od_mm":    ("Front torsion bar OD", current_setup.front_torsion_od_mm, _tb_unit),
+        "rear_spring_nmm":      (_rear_spring_label,   current_setup.rear_spring_rate_nmm,  _heave_unit),
         "rear_arb_blade":       ("RARB blade",         current_setup.rear_arb_blade_start,  "blade"),
         "front_camber_deg":     ("Front camber",       current_setup.front_camber_deg,      "°"),
         "rear_camber_deg":      ("Rear camber",        current_setup.rear_camber_deg,       "°"),
