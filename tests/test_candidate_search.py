@@ -120,6 +120,40 @@ class CandidateSearchTests(unittest.TestCase):
         selected = next(candidate for candidate in candidates if candidate.selected)
         self.assertEqual(selected.family, "compromise")
 
+    def test_baseline_reset_family_can_seed_from_cluster_center(self) -> None:
+        authority = SimpleNamespace(
+            label="S4",
+            setup=SimpleNamespace(front_heave_nmm=40.0, rear_third_nmm=520.0, brake_bias_pct=46.0),
+            measured=SimpleNamespace(
+                front_heave_travel_used_pct=92.0,
+                front_rh_excursion_measured_mm=12.0,
+                rear_rh_std_mm=8.0,
+                pitch_range_braking_deg=1.2,
+                front_braking_lock_ratio_p95=0.08,
+                rear_power_slip_ratio_p95=0.10,
+                body_slip_p95_deg=4.2,
+                understeer_low_speed_deg=1.4,
+                understeer_high_speed_deg=1.8,
+                front_pressure_mean_kpa=171.0,
+                rear_pressure_mean_kpa=172.0,
+            ),
+        )
+        candidates = generate_candidate_families(
+            authority_session=authority,
+            best_session=SimpleNamespace(label="S2"),
+            overhaul_assessment=SimpleNamespace(classification="baseline_reset", confidence=0.82),
+            legal_validation=SimpleNamespace(valid=True),
+            authority_score={"score": 0.58},
+            envelope_distance=2.8,
+            setup_distance=2.1,
+            produced_solution={"step2": SimpleNamespace(front_heave_nmm=55.0, rear_third_nmm=650.0), "step4": None, "supporting": None},
+            setup_cluster=SimpleNamespace(center={"front_heave_nmm": 48.0, "rear_third_nmm": 560.0}, member_sessions=["S1", "S2", "S3"]),
+        )
+
+        reset = next(candidate for candidate in candidates if candidate.family == "baseline_reset")
+        self.assertEqual(reset.step2.front_heave_nmm, 48.0)
+        self.assertEqual(reset.step2.rear_third_nmm, 560.0)
+
 
 if __name__ == "__main__":
     unittest.main()
