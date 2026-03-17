@@ -189,7 +189,13 @@ SETUP_PARAMS: list[tuple[str, str, str]] = [
     ("Rear HS Comp", "rear_hs_comp", "click"),
     ("Rear HS Rbd", "rear_hs_rbd", "click"),
     ("Brake Bias", "brake_bias_pct", "%"),
+    ("Brake Bias Target", "brake_bias_target", ""),
+    ("Brake Bias Migration", "brake_bias_migration", ""),
+    ("Front Master Cyl", "front_master_cyl_mm", "mm"),
+    ("Rear Master Cyl", "rear_master_cyl_mm", "mm"),
+    ("Pad Compound", "pad_compound", ""),
     ("Diff Preload", "diff_preload_nm", "Nm"),
+    ("Diff Clutch Plates", "diff_clutch_plates", ""),
     ("TC Gain", "tc_gain", ""),
     ("TC Slip", "tc_slip", ""),
 ]
