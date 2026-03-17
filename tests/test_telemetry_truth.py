@@ -1,6 +1,12 @@
 import unittest
 from types import SimpleNamespace
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
+from analyzer.diagnose import Diagnosis
+from analyzer.extract import MeasuredState
+from analyzer.report import format_report, save_analysis_json
+from analyzer.recommend import AnalysisResult
 from analyzer.setup_reader import CurrentSetup
 from analyzer.telemetry_truth import TelemetrySignal, summarize_signal_quality
 
@@ -124,6 +130,76 @@ class TelemetryTruthSummaryTests(unittest.TestCase):
         self.assertIn("Trusted: front_rh_std_mm", joined)
         self.assertIn("Proxy: body_slip_p95_deg", joined)
         self.assertIn("front_rh_settle_time_ms (insufficient_clean_events)", joined)
+
+    def test_analyzer_report_surfaces_signal_quality_and_brake_hardware(self) -> None:
+        setup = CurrentSetup(
+            source="unit",
+            brake_bias_pct=46.0,
+            brake_bias_target=1.5,
+            brake_bias_migration=-0.5,
+            front_master_cyl_mm=19.1,
+            rear_master_cyl_mm=20.6,
+            pad_compound="Medium",
+        )
+        diagnosis = Diagnosis(assessment="competitive", lap_time_s=109.8, lap_number=4)
+        measured = MeasuredState(
+            telemetry_signals={
+                "front_rh_std_mm": TelemetrySignal(
+                    value=3.8,
+                    quality="trusted",
+                    confidence=0.92,
+                    source="ride_height_channels",
+                ),
+                "body_slip_p95_deg": TelemetrySignal(
+                    value=2.1,
+                    quality="proxy",
+                    confidence=0.61,
+                    source="body_velocity_proxy",
+                ),
+                "front_rh_settle_time_ms": TelemetrySignal(
+                    value=None,
+                    quality="unknown",
+                    confidence=0.0,
+                    source="event_based_clean_disturbance_response",
+                    invalid_reason="insufficient_clean_events",
+                ),
+            },
+            metric_fallbacks=["front_braking_lock_ratio_p95=fallback_brake_mask"],
+        )
+        result = AnalysisResult(diagnosis=diagnosis, current_setup=setup, improved_setup=setup)
+
+        report = format_report(result, "BMW", "Sebring", "session.ibt", measured=measured)
+
+        self.assertIn("SIGNAL CONFIDENCE", report)
+        self.assertIn("Trusted: front_rh_std_mm", report)
+        self.assertIn("Proxy: body_slip_p95_deg", report)
+        self.assertIn("Brake target: +1.5", report)
+        self.assertIn("Master cyl: F 19.1 / R 20.6 mm", report)
+
+    def test_analysis_json_includes_signal_quality_metadata(self) -> None:
+        setup = CurrentSetup(source="unit")
+        diagnosis = Diagnosis(assessment="fast", lap_time_s=109.8, lap_number=4)
+        measured = MeasuredState(
+            telemetry_signals={
+                "front_rh_std_mm": TelemetrySignal(
+                    value=3.8,
+                    quality="trusted",
+                    confidence=0.92,
+                    source="ride_height_channels",
+                ),
+            },
+            telemetry_bundle={"aero_platform": {"front_rh_std_mm": {"quality": "trusted"}}},
+        )
+        result = AnalysisResult(diagnosis=diagnosis, current_setup=setup, improved_setup=setup)
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "analysis.json"
+            save_analysis_json(result, "BMW", "Sebring", measured, path)
+            text = path.read_text()
+
+        self.assertIn("\"signal_quality_summary\"", text)
+        self.assertIn("\"telemetry_signals\"", text)
+        self.assertIn("\"telemetry_bundle\"", text)
 
 
 if __name__ == "__main__":
