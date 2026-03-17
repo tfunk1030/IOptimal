@@ -2809,6 +2809,7 @@ def reason_and_solve(
         setup_cluster=state.setup_cluster if state.setup_cluster is not None and len(state.setup_cluster.member_sessions) >= 3 else None,
     )
     selected_candidate = next((candidate for candidate in state.generated_candidates if candidate.selected), None)
+    selected_candidate_applied = False
     if selected_candidate is not None:
         state.solver_notes.append(
             f"Candidate family selected: {selected_candidate.family} "
@@ -2825,6 +2826,7 @@ def reason_and_solve(
             supporting=supporting,
         )
         if applied_candidate:
+            selected_candidate_applied = True
             state.solver_notes.append(
                 f"Applied {selected_candidate.family} candidate outputs to final report/JSON/export payloads."
             )
@@ -3042,6 +3044,47 @@ def reason_and_solve(
                     "selected": candidate.selected,
                     "reasons": candidate.reasons,
                     "predicted": candidate.predicted.to_dict() if getattr(candidate, "predicted", None) is not None else None,
+                    "outputs": {
+                        "step1": {
+                            "front_pushrod_offset_mm": getattr(candidate.step1, "front_pushrod_offset_mm", None),
+                            "rear_pushrod_offset_mm": getattr(candidate.step1, "rear_pushrod_offset_mm", None),
+                            "static_front_rh_mm": getattr(candidate.step1, "static_front_rh_mm", None),
+                            "static_rear_rh_mm": getattr(candidate.step1, "static_rear_rh_mm", None),
+                        },
+                        "step2": {
+                            "front_heave_nmm": getattr(candidate.step2, "front_heave_nmm", None),
+                            "rear_third_nmm": getattr(candidate.step2, "rear_third_nmm", None),
+                            "perch_offset_front_mm": getattr(candidate.step2, "perch_offset_front_mm", None),
+                            "perch_offset_rear_mm": getattr(candidate.step2, "perch_offset_rear_mm", None),
+                        },
+                        "step3": {
+                            "front_torsion_od_mm": getattr(candidate.step3, "front_torsion_od_mm", None),
+                            "rear_spring_rate_nmm": getattr(candidate.step3, "rear_spring_rate_nmm", None),
+                        },
+                        "step4": {
+                            "front_arb_blade_start": getattr(candidate.step4, "front_arb_blade_start", None),
+                            "rear_arb_blade_start": getattr(candidate.step4, "rear_arb_blade_start", None),
+                            "lltd_achieved": getattr(candidate.step4, "lltd_achieved", None),
+                        },
+                        "step5": {
+                            "front_camber_deg": getattr(candidate.step5, "front_camber_deg", None),
+                            "rear_camber_deg": getattr(candidate.step5, "rear_camber_deg", None),
+                            "front_toe_mm": getattr(candidate.step5, "front_toe_mm", None),
+                            "rear_toe_mm": getattr(candidate.step5, "rear_toe_mm", None),
+                        },
+                        "step6": {
+                            "front_ls_comp": getattr(getattr(candidate.step6, "lf", None), "ls_comp", None),
+                            "front_ls_rbd": getattr(getattr(candidate.step6, "lf", None), "ls_rbd", None),
+                            "rear_ls_comp": getattr(getattr(candidate.step6, "lr", None), "ls_comp", None),
+                            "rear_ls_rbd": getattr(getattr(candidate.step6, "lr", None), "ls_rbd", None),
+                        },
+                        "supporting": {
+                            "brake_bias_pct": getattr(candidate.supporting, "brake_bias_pct", None),
+                            "diff_preload_nm": getattr(candidate.supporting, "diff_preload_nm", None),
+                            "tc_gain": getattr(candidate.supporting, "tc_gain", None),
+                            "tc_slip": getattr(candidate.supporting, "tc_slip", None),
+                        },
+                    },
                     "score": (
                         {
                             "total": candidate.score.total,
@@ -3058,6 +3101,13 @@ def reason_and_solve(
                 }
                 for candidate in state.generated_candidates
             ],
+            "selected_candidate_family": getattr(selected_candidate, "family", None),
+            "selected_candidate_score": (
+                selected_candidate.score.total
+                if selected_candidate is not None and selected_candidate.score is not None
+                else None
+            ),
+            "selected_candidate_applied": selected_candidate_applied,
             "legal_validation": state.legal_validation.to_dict() if state.legal_validation is not None else None,
             "decision_trace": [decision.to_dict() for decision in state.decision_trace],
             "solver_notes": state.solver_notes,
@@ -3092,6 +3142,12 @@ def reason_and_solve(
         wing=detected_wing,
         target_balance=target_balance,
         prediction_corrections=dict(state.historical.prediction_corrections),
+        selected_candidate_family=getattr(selected_candidate, "family", None),
+        selected_candidate_score=(
+            selected_candidate.score.total
+            if selected_candidate is not None and selected_candidate.score is not None
+            else None
+        ),
         solve_context_lines=state.solver_notes + [
             f"Authority session: {authority.label}",
             f"Benchmark best session: {best.label}",
