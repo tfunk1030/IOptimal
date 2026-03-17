@@ -191,9 +191,14 @@ def _clamp_step3(step3, gr) -> list[str]:
     msgs: list[str] = []
 
     old = step3.front_torsion_od_mm
-    val = round(_clamp(old, *gr.front_torsion_od_mm), 1)
+    clamped = _clamp(old, *gr.front_torsion_od_mm)
+    # Snap to discrete options if available, otherwise round to 2 dp
+    if gr.front_torsion_od_discrete:
+        val = min(gr.front_torsion_od_discrete, key=lambda x: abs(x - clamped))
+    else:
+        val = round(clamped, 2)
     if abs(val - old) > 0.01:
-        msgs.append(f"front_torsion_od: {old:.2f} -> {val:.1f} mm (clamped)")
+        msgs.append(f"front_torsion_od: {old:.2f} -> {val:.2f} mm (clamped)")
         step3.front_torsion_od_mm = val
 
     old = step3.rear_spring_rate_nmm
