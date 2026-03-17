@@ -233,22 +233,23 @@ class SupportingSolver:
 
         sol.diff_preload_nm = round(_clamp(preload, 0.0, 150.0) / 5) * 5  # 5 Nm increments
 
-        # ── Coast ramp ── (lower angle = more locking on coast/decel)
-        coast = 45 - int(driver.trail_brake_depth_mean * 10)
-        coast = round(coast / 5) * 5
-        coast = int(_clamp(coast, 40, 50))
-        reasons.append(f"Coast ramp: {coast} deg (from trail brake depth {driver.trail_brake_depth_mean:.2f})")
+        # ── Ramp angles ── must be a valid garage pair: (40,65), (45,70), (50,75)
+        valid_pairs = getattr(self.car.garage_ranges, "diff_coast_drive_ramp_options",
+                              [(40, 65), (45, 70), (50, 75)])
 
-        # ── Drive ramp ── (higher angle = less locking on accel)
-        drive = 65 + int(driver.throttle_progressiveness * 10)
-        # Throttle onset rate: faster onset → more abrupt power → open diff more (higher ramp)
+        # Score each pair based on driver style
+        raw_coast = 45 - int(driver.trail_brake_depth_mean * 10)
+        raw_drive = 65 + int(driver.throttle_progressiveness * 10)
         onset_rate = driver.throttle_onset_rate_pct_per_s
         if onset_rate > 300:
-            drive += 5
+            raw_drive += 5
             reasons.append(f"Drive ramp +5° for fast throttle onset {onset_rate:.0f}%/s")
-        drive = round(drive / 5) * 5
-        drive = int(_clamp(drive, 65, 75))
-        reasons.append(f"Drive ramp: {drive} deg (from throttle R2={driver.throttle_progressiveness:.2f})")
+
+        # Pick the valid pair closest to the raw targets
+        best_pair = min(valid_pairs, key=lambda p: abs(p[0] - raw_coast) + abs(p[1] - raw_drive))
+        coast, drive = best_pair
+        reasons.append(f"Ramp pair: {coast}/{drive} deg (from trail brake depth "
+                       f"{driver.trail_brake_depth_mean:.2f}, throttle R2={driver.throttle_progressiveness:.2f})")
 
         sol.diff_ramp_coast = coast
         sol.diff_ramp_drive = drive

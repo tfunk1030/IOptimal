@@ -520,6 +520,9 @@ def produce(
             fuel_load_l=fuel,
             track_name=track.track_name,
             verbose=not args.report_only,
+            surface=surface,
+            track=track,
+            target_balance=target_balance,
         )
 
         # One fixed-point refinement pass: dampers depend on heave mode, and
@@ -580,6 +583,9 @@ def produce(
                 fuel_load_l=fuel,
                 track_name=track.track_name,
                 verbose=False,
+                surface=surface,
+                track=track,
+                target_balance=target_balance,
             )
 
         # Step 4: ARBs (with LLTD offset)
@@ -589,6 +595,7 @@ def produce(
             front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
             lltd_offset=modifiers.lltd_offset,
+            current_rear_arb_size=getattr(current_setup, "rear_arb_size", None),
         )
         if not args.report_only:
             print(step4.summary())
@@ -612,6 +619,9 @@ def produce(
             fuel_load_l=fuel,
             track_name=track.track_name,
             verbose=False,
+            surface=surface,
+            track=track,
+            target_balance=target_balance,
         )
 
         # Step 6: Dampers (with damping ratio scale and click offsets)
@@ -902,6 +912,8 @@ def produce(
         base_result=base_solve_result,
         solve_inputs=solve_inputs,
         setup_cluster=setup_cluster,
+        current_session=single_session,
+        aggregate_measured=None,  # single-IBT: falls back to authority_session.measured
     )
     selected_candidate = next((candidate for candidate in generated_candidates if candidate.selected), None)
     selected_candidate_applied = False

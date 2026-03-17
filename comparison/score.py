@@ -132,20 +132,24 @@ def _score_grip(sessions: list[SessionAnalysis]) -> list[float]:
     """Peak lateral g, low rear slip ratio, low front slip ratio."""
     scores_per_session: list[list[float]] = [[] for _ in sessions]
 
-    lat_g = [s.measured.peak_lat_g_measured for s in sessions]
-    rear_slip = [s.measured.rear_slip_ratio_p95 for s in sessions]
-    front_slip = [s.measured.front_slip_ratio_p95 for s in sessions]
+    lat_g_raw = [usable_signal_value(s.measured, "peak_lat_g_measured", allow_proxy=True) for s in sessions]
+    rear_slip_raw = [usable_signal_value(s.measured, "rear_power_slip_ratio_p95", allow_proxy=True) for s in sessions]
+    front_slip_raw = [usable_signal_value(s.measured, "front_braking_lock_ratio_p95", allow_proxy=True) for s in sessions]
 
-    lat_g_norm = _normalize_higher_better(lat_g)
-    rear_slip_norm = _normalize_lower_better(rear_slip)
-    front_slip_norm = _normalize_lower_better(front_slip)
+    if all(v is not None for v in lat_g_raw):
+        lat_g_norm = _normalize_higher_better(lat_g_raw)  # type: ignore[arg-type]
+        for i in range(len(sessions)):
+            scores_per_session[i].append(lat_g_norm[i])
 
-    for i in range(len(sessions)):
-        scores_per_session[i].extend([
-            lat_g_norm[i],
-            rear_slip_norm[i],
-            front_slip_norm[i],
-        ])
+    if all(v is not None for v in rear_slip_raw):
+        rear_slip_norm = _normalize_lower_better(rear_slip_raw)  # type: ignore[arg-type]
+        for i in range(len(sessions)):
+            scores_per_session[i].append(rear_slip_norm[i])
+
+    if all(v is not None for v in front_slip_raw):
+        front_slip_norm = _normalize_lower_better(front_slip_raw)  # type: ignore[arg-type]
+        for i in range(len(sessions)):
+            scores_per_session[i].append(front_slip_norm[i])
 
     # Driver g-utilization from driver profile
     g_util = [s.driver.avg_peak_lat_g_utilization for s in sessions]
@@ -185,20 +189,24 @@ def _score_aero_efficiency(sessions: list[SessionAnalysis]) -> list[float]:
     """Top speed (proxy for drag), aero compression, RH stability at speed."""
     scores_per_session: list[list[float]] = [[] for _ in sessions]
 
-    top_speed = [s.measured.speed_max_kph for s in sessions]
-    aero_comp = [s.measured.aero_compression_front_mm for s in sessions]
-    rh_std = [s.measured.front_rh_std_mm for s in sessions]
+    top_speed_raw = [usable_signal_value(s.measured, "speed_max_kph", allow_proxy=True) for s in sessions]
+    aero_comp_raw = [usable_signal_value(s.measured, "aero_compression_front_mm", allow_proxy=True) for s in sessions]
+    rh_std_raw = [usable_signal_value(s.measured, "front_rh_std_mm", allow_proxy=True) for s in sessions]
 
-    top_speed_norm = _normalize_higher_better(top_speed)
-    aero_comp_norm = _normalize_higher_better(aero_comp)  # more compression = more DF
-    rh_std_norm = _normalize_lower_better(rh_std)
+    if all(v is not None for v in top_speed_raw):
+        top_speed_norm = _normalize_higher_better(top_speed_raw)  # type: ignore[arg-type]
+        for i in range(len(sessions)):
+            scores_per_session[i].append(top_speed_norm[i])
 
-    for i in range(len(sessions)):
-        scores_per_session[i].extend([
-            top_speed_norm[i],
-            aero_comp_norm[i],
-            rh_std_norm[i],
-        ])
+    if all(v is not None for v in aero_comp_raw):
+        aero_comp_norm = _normalize_higher_better(aero_comp_raw)  # type: ignore[arg-type]  # more compression = more DF
+        for i in range(len(sessions)):
+            scores_per_session[i].append(aero_comp_norm[i])
+
+    if all(v is not None for v in rh_std_raw):
+        rh_std_norm = _normalize_lower_better(rh_std_raw)  # type: ignore[arg-type]
+        for i in range(len(sessions)):
+            scores_per_session[i].append(rh_std_norm[i])
 
     return [_safe_avg(s) for s in scores_per_session]
 
@@ -289,27 +297,33 @@ def _score_damper_platform(sessions: list[SessionAnalysis]) -> list[float]:
         settle_r_known.append(rear_val is not None)
         settle_f.append(front_val if front_val is not None else 125.0)
         settle_r.append(rear_val if rear_val is not None else 125.0)
-    yaw_corr = [s.measured.yaw_rate_correlation for s in sessions]
-    rh_var_f = [s.measured.front_rh_std_mm for s in sessions]
-    shock_f = [s.measured.front_shock_vel_p99_mps for s in sessions]
+    yaw_corr_raw = [usable_signal_value(s.measured, "yaw_rate_correlation", allow_proxy=True) for s in sessions]
+    rh_var_f_raw = [usable_signal_value(s.measured, "front_rh_std_mm", allow_proxy=True) for s in sessions]
+    shock_f_raw = [usable_signal_value(s.measured, "front_shock_vel_p99_mps", allow_proxy=True) for s in sessions]
 
     # Settle time: target is 50-200ms. Closer to 125ms center = better
     settle_f_norm = _normalize_closer_to_target(settle_f, 125.0)
     settle_r_norm = _normalize_closer_to_target(settle_r, 125.0)
     settle_f_norm = [settle_f_norm[i] if settle_f_known[i] else 0.5 for i in range(len(sessions))]
     settle_r_norm = [settle_r_norm[i] if settle_r_known[i] else 0.5 for i in range(len(sessions))]
-    yaw_norm = _normalize_higher_better(yaw_corr)
-    rh_var_norm = _normalize_lower_better(rh_var_f)
-    shock_norm = _normalize_lower_better(shock_f)
 
     for i in range(len(sessions)):
-        scores_per_session[i].extend([
-            settle_f_norm[i],
-            settle_r_norm[i],
-            yaw_norm[i],
-            rh_var_norm[i],
-            shock_norm[i],
-        ])
+        scores_per_session[i].extend([settle_f_norm[i], settle_r_norm[i]])
+
+    if all(v is not None for v in yaw_corr_raw):
+        yaw_norm = _normalize_higher_better(yaw_corr_raw)  # type: ignore[arg-type]
+        for i in range(len(sessions)):
+            scores_per_session[i].append(yaw_norm[i])
+
+    if all(v is not None for v in rh_var_f_raw):
+        rh_var_norm = _normalize_lower_better(rh_var_f_raw)  # type: ignore[arg-type]
+        for i in range(len(sessions)):
+            scores_per_session[i].append(rh_var_norm[i])
+
+    if all(v is not None for v in shock_f_raw):
+        shock_norm = _normalize_lower_better(shock_f_raw)  # type: ignore[arg-type]
+        for i in range(len(sessions)):
+            scores_per_session[i].append(shock_norm[i])
 
     return [_safe_avg(s) for s in scores_per_session]
 
@@ -319,16 +333,24 @@ def _score_thermal(sessions: list[SessionAnalysis]) -> list[float]:
     scores_per_session: list[list[float]] = [[] for _ in sessions]
 
     # Temp spreads — lower is better
-    spreads = []
+    spread_fields = [
+        "front_temp_spread_lf_c",
+        "front_temp_spread_rf_c",
+        "rear_temp_spread_lr_c",
+        "rear_temp_spread_rr_c",
+    ]
+    spreads: list[float] = []
+    spreads_valid = True
     for s in sessions:
-        avg_spread = (
-            abs(s.measured.front_temp_spread_lf_c)
-            + abs(s.measured.front_temp_spread_rf_c)
-            + abs(s.measured.rear_temp_spread_lr_c)
-            + abs(s.measured.rear_temp_spread_rr_c)
-        ) / 4.0
-        spreads.append(avg_spread)
-    spread_norm = _normalize_lower_better(spreads)
+        vals = [usable_signal_value(s.measured, f, allow_proxy=True) for f in spread_fields]
+        if any(v is None for v in vals):
+            spreads_valid = False
+            break
+        spreads.append(sum(abs(v) for v in vals) / 4.0)  # type: ignore[arg-type]
+    if spreads_valid and spreads:
+        spread_norm = _normalize_lower_better(spreads)
+    else:
+        spread_norm = [0.5] * len(sessions)
 
     # Carcass temp — target 80-105°C, closer to 92.5 center = better
     carcass_f = [s.measured.front_carcass_mean_c for s in sessions]

@@ -414,6 +414,21 @@ def segment_lap(
         aero_collapse_severity = max(0.0, ((f_rh_mean - f_rh_min) - 5.0) / 8.0)
         exit_slip_severity = max(0.0, (bs_peak - 2.5) / 3.0)
 
+        # Phase-loss proxies: estimated time recoverable if each diagnosed problem is fixed.
+        # Scaled conservatively from physics: ~0.3-0.8% per corner for moderate issues.
+        entry_loss_s = round(
+            braking_phase_s * min(0.25, entry_pitch_severity * 0.12 + aero_collapse_severity * 0.10),
+            4,
+        )
+        apex_loss_s = round(
+            apex_phase_s * min(0.20, max(0.0, us_mean) / 10.0 + (f_sv_p99 * 0.05 if f_sv_p99 > 0.30 else 0.0)),
+            4,
+        )
+        exit_loss_s = round(
+            throttle_delay_s * 0.6 + exit_phase_s * min(0.20, exit_slip_severity * 0.12),
+            4,
+        )
+
         confidence = 0.55
         if duration > 0.8:
             confidence += 0.1
@@ -460,9 +475,9 @@ def segment_lap(
             throttle_pickup_phase_s=round(throttle_pickup_phase_s, 3),
             exit_phase_s=round(exit_phase_s, 3),
             throttle_delay_s=round(throttle_delay_s, 3),
-            entry_loss_s=0.0,
-            apex_loss_s=0.0,
-            exit_loss_s=0.0,
+            entry_loss_s=entry_loss_s,
+            apex_loss_s=apex_loss_s,
+            exit_loss_s=exit_loss_s,
             entry_pitch_severity=round(entry_pitch_severity, 3),
             aero_collapse_severity=round(aero_collapse_severity, 3),
             exit_slip_severity=round(exit_slip_severity, 3),

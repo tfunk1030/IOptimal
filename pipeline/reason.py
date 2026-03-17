@@ -387,8 +387,11 @@ class ReasoningState:
     best_session_idx: int = 0
     worst_session_idx: int = 0
     authority_session_idx: int = 0
+    reference_session_idx: int = 0   # best telemetry/diagnosis quality (for physics validation)
+    current_session_idx: int = 0     # most recent session (what user is running now)
     latest_session_idx: int = 0
     solve_basis: str = "best_session"
+    aggregate_measured: dict[str, float] = field(default_factory=dict)
     persistent_problems: list[str] = field(default_factory=list)
     resolved_problems: list[str] = field(default_factory=list)
     setup_fingerprints: list[SetupFingerprint] = field(default_factory=list)
@@ -585,9 +588,17 @@ def _build_validation_clusters(state: ReasoningState) -> None:
         cluster.session_indices.append(idx)
         cluster.session_labels.append(state.sessions[idx].label)
 
+    # Quality key: diagnosis assessment dominates, lap time breaks ties.
+    _diag_rank = {"fast": 0, "competitive": 1, "compromised": 2, "dangerous": 3}
+
+    def _session_quality_key(i: int) -> tuple:
+        snap = state.sessions[i]
+        diag = getattr(getattr(snap, "diagnosis", None), "assessment", "competitive")
+        return (_diag_rank.get(diag, 1), snap.lap_time_s if snap.lap_time_s is not None else 999.0)
+
     for cluster in clusters:
         latest_idx = max(cluster.session_indices)
-        best_cluster_idx = min(cluster.session_indices, key=lambda i: state.sessions[i].lap_time_s)
+        best_cluster_idx = min(cluster.session_indices, key=_session_quality_key)
         cluster.latest_session_idx = latest_idx
         cluster.latest_session_label = state.sessions[latest_idx].label
         cluster.best_cluster_session_idx = best_cluster_idx
@@ -595,7 +606,7 @@ def _build_validation_clusters(state: ReasoningState) -> None:
 
         other_indices = [i for i in range(len(state.sessions)) if i not in cluster.session_indices]
         if other_indices:
-            ref_idx = min(other_indices, key=lambda i: state.sessions[i].lap_time_s)
+            ref_idx = min(other_indices, key=_session_quality_key)
             latest = state.sessions[latest_idx]
             reference = state.sessions[ref_idx]
             cluster.comparison_session_idx = ref_idx
@@ -774,13 +785,18 @@ def _compute_authority_scores(state: ReasoningState) -> None:
 
 def _resolve_authority_session(state: ReasoningState) -> None:
     state.latest_session_idx = max(len(state.sessions) - 1, 0)
+    # Current session = always the most recent (what user has in the car)
+    state.current_session_idx = state.latest_session_idx
     _compute_authority_scores(state)
     if state.authority_scores:
         top = state.authority_scores[0]
         state.authority_session_idx = int(top["session_idx"])
+        # Reference = highest authority score winner (best telemetry quality)
+        state.reference_session_idx = state.authority_session_idx
         state.solve_basis = "authority_score"
     else:
         state.authority_session_idx = state.best_session_idx
+        state.reference_session_idx = state.best_session_idx
         state.solve_basis = "best_session"
     state.solver_notes = []
     if state.solve_basis == "authority_score" and state.authority_scores:
@@ -793,15 +809,61 @@ def _resolve_authority_session(state: ReasoningState) -> None:
 
     for cluster in state.validation_clusters:
         if cluster.latest_session_idx == state.latest_session_idx and cluster.validated_failed:
-            state.authority_session_idx = state.latest_session_idx
+            # Veto: don't force authority = latest. Instead, flag the veto so solver
+            # avoids reissuing that setup, but keep reference as the best quality session.
             state.solve_basis = "latest_validation_veto"
             mode = "soft" if cluster.penalty_mode == "soft" else "hard"
             state.solver_notes = []
             state.solver_notes.append(
-                f"Using {cluster.latest_session_label} as solve authority: {mode} veto against reissuing this setup."
+                f"Validation {mode} veto on {cluster.latest_session_label}'s setup — "
+                f"solver will avoid reissuing it."
             )
             state.solver_notes.append(cluster.reason)
             break
+
+
+def _build_aggregate_measured(state: ReasoningState) -> dict[str, float]:
+    """Combine ALL sessions' telemetry into safety-binding and reliability-weighted metrics.
+
+    Safety metrics (bottoming, travel, slip): worst-case across sessions (must solve for all).
+    Balance metrics (understeer, oversteer): authority-score-weighted mean (most reliable).
+    """
+    if not state.sessions:
+        return {}
+
+    # Build authority weights for reliability-weighted averaging
+    score_map: dict[int, float] = {}
+    for row in state.authority_scores:
+        idx = int(row.get("session_idx", -1))
+        score_map[idx] = float(row.get("score", 0.5) or 0.5)
+    weights = [score_map.get(i, 0.5) for i in range(len(state.sessions))]
+    total_weight = sum(weights) or 1.0
+
+    def _worst_case(attr: str) -> float:
+        vals = [float(getattr(s.measured, attr, 0) or 0) for s in state.sessions]
+        return max(vals) if vals else 0.0
+
+    def _weighted_mean(attr: str) -> float:
+        total = 0.0
+        for i, s in enumerate(state.sessions):
+            val = float(getattr(s.measured, attr, 0) or 0)
+            total += val * weights[i]
+        return total / total_weight
+
+    return {
+        # Safety (worst-case across all sessions)
+        "front_heave_travel_used_pct": _worst_case("front_heave_travel_used_pct"),
+        "pitch_range_braking_deg": _worst_case("pitch_range_braking_deg"),
+        "bottoming_event_count_front_clean": _worst_case("bottoming_event_count_front_clean"),
+        "rear_rh_std_mm": _worst_case("rear_rh_std_mm"),
+        "bottoming_event_count_rear_clean": _worst_case("bottoming_event_count_rear_clean"),
+        "rear_power_slip_ratio_p95": _worst_case("rear_power_slip_ratio_p95"),
+        "body_slip_p95_deg": _worst_case("body_slip_p95_deg"),
+        "front_braking_lock_ratio_p95": _worst_case("front_braking_lock_ratio_p95"),
+        # Balance (authority-weighted mean — most reliable measurement)
+        "understeer_low_speed_deg": _weighted_mean("understeer_low_speed_deg"),
+        "understeer_high_speed_deg": _weighted_mean("understeer_high_speed_deg"),
+    }
 
 
 # ── Phase 1: Session analysis ──────────────────────────────────
@@ -1244,7 +1306,7 @@ def _build_corner_profiles(state: ReasoningState) -> None:
     """Build corner profiles and identify top weakness corners."""
     state.corner_profiles = _match_corners_across_sessions(
         state.sessions,
-        reference_idx=state.best_session_idx,
+        reference_idx=state.reference_session_idx,
     )
 
     # Top 5 weakness corners by bounded opportunity
@@ -1388,8 +1450,9 @@ def _integrate_historical(state: ReasoningState, car: CarModel) -> None:
     store = KnowledgeStore()
     recall = KnowledgeRecall(store)
 
-    # Determine car/track from best session
-    best = state.sessions[state.best_session_idx]
+    # Use reference session (authority-selected) for track identification; fall back to best.
+    ref_idx = state.reference_session_idx if state.reference_session_idx is not None else state.best_session_idx
+    best = state.sessions[ref_idx]
     car_name = car.canonical_name
     track_name = best.track.track_name
 
@@ -1432,7 +1495,7 @@ def _integrate_historical(state: ReasoningState, car: CarModel) -> None:
 def _run_physics_validations(state: ReasoningState) -> None:
     """Cross-validate findings using physics chains."""
     pr = state.physics
-    best = state.sessions[state.best_session_idx]
+    best = state.sessions[state.reference_session_idx]
     m = best.measured
 
     # 7a. Cross-validation chains
@@ -1542,7 +1605,7 @@ def _score_categories(state: ReasoningState) -> None:
     """Score best session across performance categories (adapted from score.py)."""
     pr = state.physics
     sessions = state.sessions
-    selected_idx = state.authority_session_idx if state.solve_basis == "latest_validation_veto" else state.best_session_idx
+    selected_idx = state.best_session_idx if state.solve_basis == "best_session" else state.authority_session_idx
 
     # Score each category using the best session's measured state relative to all
     def _norm_lower(vals: list[float]) -> list[float]:
@@ -1762,14 +1825,15 @@ def _reason_to_modifiers(
 
     best = state.sessions[state.best_session_idx]
     authority = state.sessions[state.authority_session_idx]
-    analysis_sessions = [authority] if state.solve_basis == "latest_validation_veto" else state.sessions
+    current = state.sessions[state.current_session_idx]
+    analysis_sessions = state.sessions  # always use ALL sessions for modifier computation
     sra = state.speed_regime
     pr = state.physics
     hc = state.historical
 
     if state.solve_basis == "latest_validation_veto":
         reasons.append(
-            f"Authority session {authority.label} overrides best lap {best.label} after failed setup validation."
+            f"Validation veto on {current.label}'s setup — solver will avoid reissuing it."
         )
 
     # Determine if weakest category should widen clamp ranges
@@ -1786,16 +1850,16 @@ def _reason_to_modifiers(
         from aero_model import load_car_surfaces
         from aero_model.gradient import compute_gradients
         surfaces = load_car_surfaces(car.canonical_name)
-        wing = authority.setup.wing_angle_deg
+        wing = current.setup.wing_angle_deg
         if wing and wing in surfaces:
             surface = surfaces[wing]
-            f_rh = authority.measured.mean_front_rh_at_speed_mm
-            r_rh = authority.measured.mean_rear_rh_at_speed_mm
+            f_rh = current.measured.mean_front_rh_at_speed_mm
+            r_rh = current.measured.mean_rear_rh_at_speed_mm
             if f_rh and r_rh:
                 grads = compute_gradients(
                     surface, car, f_rh, r_rh,
-                    front_rh_sigma_mm=authority.measured.front_rh_std_mm,
-                    rear_rh_sigma_mm=authority.measured.rear_rh_std_mm,
+                    front_rh_sigma_mm=current.measured.front_rh_std_mm,
+                    rear_rh_sigma_mm=current.measured.rear_rh_std_mm,
                 )
                 # Scale based on gradient steepness
                 max_grad = max(abs(grads.dBalance_dFrontRH), abs(grads.dBalance_dRearRH))
@@ -2160,8 +2224,10 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
     for i, snap in enumerate(state.sessions):
         marker = " <-- BEST" if i == state.best_session_idx else ""
         marker = " <-- WORST" if i == state.worst_session_idx and not marker else marker
-        if i == state.authority_session_idx and state.solve_basis != "best_session":
-            marker = f"{marker} <-- AUTHORITY".rstrip()
+        if i == state.reference_session_idx:
+            marker = f"{marker} <-- REF".rstrip()
+        if i == state.current_session_idx:
+            marker = f"{marker} <-- CURRENT".rstrip()
         lines.append(
             f"  S{i+1}: {snap.lap_time_s:.3f}s  "
             f"{snap.driver.style}  "
@@ -2171,9 +2237,16 @@ def _print_reasoning_report(state: ReasoningState, width: int = 63) -> str:
 
     lines.append("  SOLVE AUTHORITY")
     lines.append("  " + "-" * (width - 4))
+    ref_label = state.sessions[state.reference_session_idx].label if state.sessions else "?"
+    cur_label = state.sessions[state.current_session_idx].label if state.sessions else "?"
     lines.append(
-        f"  Basis: {state.solve_basis}  "
-        f"(best=S{state.best_session_idx+1}, authority=S{state.authority_session_idx+1})"
+        f"  Basis: physics_optimal (all {len(state.sessions)} sessions)"
+    )
+    lines.append(
+        f"  Reference (telemetry): S{state.reference_session_idx+1} ({ref_label})"
+    )
+    lines.append(
+        f"  Current (in car):      S{state.current_session_idx+1} ({cur_label})"
     )
     if state.solver_notes:
         for note in state.solver_notes[:3]:
@@ -2594,13 +2667,19 @@ def reason_and_solve(
 
     best = state.sessions[state.best_session_idx]
     authority = state.sessions[state.authority_session_idx]
-    track = authority.track
-    detected_wing = wing or authority.setup.wing_angle_deg
-    detected_fuel = fuel or authority.setup.fuel_l or 89.0
+    reference = state.sessions[state.reference_session_idx]  # best telemetry quality
+    current = state.sessions[state.current_session_idx]      # most recent = what user has
+    track = reference.track    # best track profile data
+    detected_wing = wing or current.setup.wing_angle_deg     # what user has NOW
+    detected_fuel = fuel or current.setup.fuel_l or 89.0     # current fuel
+
+    # Build aggregate measured from ALL sessions for candidate state adjustments
+    state.aggregate_measured = _build_aggregate_measured(state)
 
     log(
         f"\n[Phase 9] Running 6-step solver (basis={state.solve_basis}, "
-        f"track from {authority.label}, wing {detected_wing}, fuel {detected_fuel:.0f}L)..."
+        f"track from {reference.label}, current={current.label}, "
+        f"wing {detected_wing}, fuel {detected_fuel:.0f}L)..."
     )
     for note in state.solver_notes:
         log(f"  {note}")
@@ -2625,8 +2704,8 @@ def reason_and_solve(
 
     target_balance = balance_target + mods.df_balance_offset_pct
 
-    # Use the authority session's measured state for damper telemetry validation
-    authority_measured = authority.measured
+    # Use the reference session's measured state for damper telemetry validation
+    authority_measured = reference.measured
 
     def _candidate_veto_for_solution(step1, step2, step3, step4, step5, step6) -> CandidateVeto | None:
         fingerprint = fingerprint_from_solver_steps(
@@ -2698,6 +2777,9 @@ def reason_and_solve(
             fuel_load_l=detected_fuel,
             track_name=track.track_name,
             verbose=False,
+            surface=surface,
+            track=track,
+            target_balance=target_balance,
         )
 
         arb_solver = ARBSolver(car, track)
@@ -2705,6 +2787,7 @@ def reason_and_solve(
             front_wheel_rate_nmm=_step3.front_wheel_rate_nmm,
             rear_wheel_rate_nmm=_rear_wheel_rate_nmm,
             lltd_offset=mods.lltd_offset,
+            current_rear_arb_size=getattr(current.setup, "rear_arb_size", None),
         )
 
         geom_solver = WheelGeometrySolver(car, track)
@@ -2724,6 +2807,9 @@ def reason_and_solve(
             fuel_load_l=detected_fuel,
             track_name=track.track_name,
             verbose=False,
+            surface=surface,
+            track=track,
+            target_balance=target_balance,
         )
 
         damper_solver = DamperSolver(car, track)
@@ -2812,14 +2898,14 @@ def reason_and_solve(
         best_driver.measured,
         best_driver.diagnosis,
         track=track,
-        current_setup=authority.setup,
+        current_setup=current.setup,
     )
     supporting = supporting_solver.solve()
 
     # Ferrari passthrough: only for indexed params where we can't map index → physical
     # stiffness. Solver computes dampers, geometry, brake/diff/TC from telemetry.
     if car.canonical_name == "ferrari":
-        _cs = authority.setup
+        _cs = current.setup
         # Pushrod — keep IBT values (calibrated model but limited data points)
         step1.front_pushrod_offset_mm = _cs.front_pushrod_mm
         step1.rear_pushrod_offset_mm = _cs.rear_pushrod_mm
@@ -2841,9 +2927,9 @@ def reason_and_solve(
         surface=surface,
         track=track,
         measured=authority_measured,
-        driver=authority.driver,
-        diagnosis=authority.diagnosis,
-        current_setup=authority.setup,
+        driver=reference.driver,
+        diagnosis=current.diagnosis,
+        current_setup=current.setup,
         target_balance=target_balance,
         fuel_load_l=detected_fuel,
         wing_angle=detected_wing,
@@ -2886,6 +2972,8 @@ def reason_and_solve(
         base_result=solve_result,
         solve_inputs=solve_inputs,
         setup_cluster=state.setup_cluster if state.setup_cluster is not None and len(state.setup_cluster.member_sessions) >= 3 else None,
+        current_session=current,
+        aggregate_measured=state.aggregate_measured,
     )
     selected_candidate = next((candidate for candidate in state.generated_candidates if candidate.selected), None)
     selected_candidate_applied = False
@@ -2970,6 +3058,8 @@ def reason_and_solve(
             "sessions_analyzed": len(state.sessions),
             "best_session": state.sessions[state.best_session_idx].label,
             "authority_session": state.sessions[state.authority_session_idx].label,
+            "reference_session": state.sessions[state.reference_session_idx].label,
+            "current_session": state.sessions[state.current_session_idx].label,
             "solve_basis": state.solve_basis,
             "setup_schemas": _setup_schema_dump_payload(state, car),
             "reasoning_modifiers": {

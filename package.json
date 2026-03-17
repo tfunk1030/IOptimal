@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "claude": "^0.1.1",
     "pytest": "^1.0.0",
     "scipy": "^0.1.4"
   }

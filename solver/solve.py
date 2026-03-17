@@ -282,6 +282,9 @@ def run_solver(args: "argparse.Namespace") -> None:
             fuel_load_l=args.fuel,
             track_name=track.track_name,
             verbose=not args.json and not args.report_only,
+            surface=surface,
+            track=track,
+            target_balance=args.balance,
         )
         if not args.json and not args.report_only:
             log()
@@ -339,6 +342,9 @@ def run_solver(args: "argparse.Namespace") -> None:
                 fuel_load_l=args.fuel,
                 track_name=track.track_name,
                 verbose=False,
+                surface=surface,
+                track=track,
+                target_balance=args.balance,
             )
 
         # ─── Step 4: Anti-Roll Bars ────────────────────────────────────────
@@ -378,6 +384,9 @@ def run_solver(args: "argparse.Namespace") -> None:
             fuel_load_l=args.fuel,
             track_name=track.track_name,
             verbose=False,
+            surface=surface,
+            track=track,
+            target_balance=args.balance,
         )
 
         # ─── Step 6: Dampers ──────────────────────────────────────────────

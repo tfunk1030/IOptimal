@@ -177,15 +177,13 @@ class ReasoningVetoIntegrationTests(unittest.TestCase):
             output_fp = _solver_fp_from_json(data)
 
             self.assertEqual(data["solve_basis"], "latest_validation_veto")
-            self.assertEqual(data["authority_session"], "S4")
+            # Authority stays as highest-scoring session; veto prevents reissuing
+            # the failed setup but doesn't override authority selection.
             self.assertTrue(failed_clusters)
-            self.assertEqual(failed_clusters[0]["latest_session_label"], data["authority_session"])
             self.assertFalse(output_fp.matches_candidate(s4_fp))
-            self.assertIn("solve authority", "\n".join(data["solver_notes"]).lower())
-            self.assertFalse(
-                any("Authority score selected" in note for note in data["solver_notes"]),
-                "final solve notes should not retain the pre-veto authority choice",
-            )
+            self.assertIn("veto", "\n".join(data["solver_notes"]).lower())
+            # Current session should be S4 (the latest/most recent)
+            self.assertEqual(data["current_session"], "S4")
             self.assertFalse(
                 {
                     "Selected BMW/Sebring constrained optimizer candidate.",

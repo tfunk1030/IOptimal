@@ -199,9 +199,12 @@ def _snap_supporting_value(field_name: str, value: Any) -> Any:
     v = float(value)
     if field_name == "diff_preload_nm":
         return round(v / 5) * 5  # 5 Nm increments
-    if field_name in ("diff_ramp_coast", "diff_ramp_drive"):
-        valid_ramps = [40, 45, 50, 65, 70, 75]
-        return min(valid_ramps, key=lambda r: abs(r - v))
+    if field_name == "diff_ramp_coast":
+        valid_coast = [40, 45, 50]
+        return min(valid_coast, key=lambda r: abs(r - v))
+    if field_name == "diff_ramp_drive":
+        valid_drive = [65, 70, 75]
+        return min(valid_drive, key=lambda r: abs(r - v))
     if field_name == "diff_clutch_plates":
         valid_plates = [2, 4, 6]
         return min(valid_plates, key=lambda p: abs(p - v))
@@ -210,6 +213,21 @@ def _snap_supporting_value(field_name: str, value: Any) -> Any:
     if field_name == "brake_bias_pct":
         return round(v, 1)
     return value
+
+
+def _enforce_ramp_pair(supporting: Any, car: Any = None) -> None:
+    """Ensure diff_ramp_coast and diff_ramp_drive form a valid garage pair."""
+    coast = getattr(supporting, "diff_ramp_coast", None)
+    drive = getattr(supporting, "diff_ramp_drive", None)
+    if coast is None or drive is None:
+        return
+    valid_pairs = getattr(
+        getattr(car, "garage_ranges", None), "diff_coast_drive_ramp_options",
+        [(40, 65), (45, 70), (50, 75)],
+    )
+    best = min(valid_pairs, key=lambda p: abs(p[0] - coast) + abs(p[1] - drive))
+    supporting.diff_ramp_coast = best[0]
+    supporting.diff_ramp_drive = best[1]
 
 
 def _apply_supporting_overrides(supporting: Any, overrides: dict[str, Any]) -> None:
@@ -355,6 +373,9 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         fuel_load_l=fuel,
         track_name=track.track_name,
         verbose=False,
+        surface=inputs.surface,
+        track=track,
+        target_balance=inputs.target_balance,
     )
 
     damper_solver = DamperSolver(car, track)
@@ -409,13 +430,18 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         fuel_load_l=fuel,
         track_name=track.track_name,
         verbose=False,
+        surface=inputs.surface,
+        track=track,
+        target_balance=inputs.target_balance,
     )
 
     arb_solver = ARBSolver(car, track)
+    _current_rear_arb = getattr(inputs.current_setup, "rear_arb_size", None) if inputs.current_setup else None
     step4 = arb_solver.solve(
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
         rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         lltd_offset=mods.lltd_offset,
+        current_rear_arb_size=_current_rear_arb,
     )
 
     geom_solver = WheelGeometrySolver(car, track)
@@ -435,6 +461,9 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         fuel_load_l=fuel,
         track_name=track.track_name,
         verbose=False,
+        surface=inputs.surface,
+        track=track,
+        target_balance=inputs.target_balance,
     )
 
     step6 = damper_solver.solve(
@@ -517,6 +546,7 @@ def run_base_solve(inputs: SolveChainInputs) -> SolveChainResult:
             )
 
     supporting = _build_supporting(inputs)
+    _enforce_ramp_pair(supporting, inputs.car)
     return _finalize_result(
         inputs,
         step1=step1,
@@ -657,6 +687,9 @@ def materialize_overrides(
             fuel_load_l=inputs.fuel_load_l,
             track_name=track.track_name,
             verbose=False,
+            surface=inputs.surface,
+            track=track,
+            target_balance=inputs.target_balance,
         )
 
         damper_solver = DamperSolver(car, track)
@@ -742,6 +775,9 @@ def materialize_overrides(
             fuel_load_l=inputs.fuel_load_l,
             track_name=track.track_name,
             verbose=False,
+            surface=inputs.surface,
+            track=track,
+            target_balance=inputs.target_balance,
         )
     else:
         rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
@@ -763,10 +799,12 @@ def materialize_overrides(
                 farb_blade_locked=overrides.step4.get("farb_blade_locked", step4.farb_blade_locked),
             )
         else:
+            _current_rear_arb = getattr(inputs.current_setup, "rear_arb_size", None) if inputs.current_setup else None
             step4 = arb_solver.solve(
                 front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
                 rear_wheel_rate_nmm=rear_wheel_rate_nmm,
                 lltd_offset=mods.lltd_offset,
+                current_rear_arb_size=_current_rear_arb,
             )
 
     rebuild_step5 = earliest <= 5 or rebuild_step4
@@ -801,6 +839,9 @@ def materialize_overrides(
             fuel_load_l=inputs.fuel_load_l,
             track_name=track.track_name,
             verbose=False,
+            surface=inputs.surface,
+            track=track,
+            target_balance=inputs.target_balance,
         )
 
     rebuild_step6 = earliest <= 6 or rebuild_step5
@@ -839,6 +880,7 @@ def materialize_overrides(
 
     supporting = _build_supporting(inputs)
     _apply_supporting_overrides(supporting, overrides.supporting)
+    _enforce_ramp_pair(supporting, inputs.car)
     notes = ["Materialized candidate through shared solve chain."]
     if overrides.supporting:
         notes.append("Applied family-specific supporting overrides on top of fresh supporting solve.")

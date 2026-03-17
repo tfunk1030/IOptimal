@@ -59,11 +59,11 @@ def combine_candidate_score(
     confidence = max(0.0, min(1.0, confidence))
     disruption_cost = max(0.0, min(1.0, disruption_cost))
     total = (
-        safety * 0.30
-        + performance * 0.30
-        + stability * 0.20
+        safety * 0.25
+        + performance * 0.25
+        + stability * 0.15
         + confidence * 0.10
-        + (1.0 - disruption_cost) * 0.10
+        + (1.0 - disruption_cost) * 0.25
     )
     return CandidateScore(
         total=round(total, 3),
@@ -87,6 +87,7 @@ def score_from_prediction(
     legal_ok: bool = True,
     authority_score: float | None = None,
     state_risk: float = 0.0,
+    baseline_loss_ms: float = 0.0,
     notes: list[str] | None = None,
 ) -> CandidateScore:
     """Score a candidate from predicted telemetry changes."""
@@ -125,6 +126,11 @@ def score_from_prediction(
         )
         + _improvement(_safe(getattr(baseline_measured, "rear_power_slip_ratio_p95", None)), _safe(getattr(predicted, "rear_power_slip_p95", None)), lower_better=True, scale=0.05)
     ) / 3.0
+    # Scale performance by how much time is at stake: higher loss = more weight on fixing it.
+    # 500ms estimated loss → 30% boost, capped there. No effect below ~50ms.
+    if baseline_loss_ms > 0.0:
+        loss_urgency = min(0.30, baseline_loss_ms / 500.0)
+        performance = min(1.0, performance * (1.0 + loss_urgency))
     confidence_score = max(0.0, min(1.0, prediction_confidence))
     if authority_score is not None:
         confidence_score = max(0.0, min(1.0, confidence_score * 0.8 + authority_score * 0.2))
@@ -137,11 +143,12 @@ def score_from_prediction(
     if state_risk > 0.0:
         confidence_score *= max(0.7, 1.0 - min(0.2, state_risk * 0.15))
 
+    loss_note = f" (urgency boost from {baseline_loss_ms:.0f}ms est. loss)" if baseline_loss_ms > 50.0 else ""
     notes.extend(
         [
             f"Predicted safety score from travel/pitch/lock = {safety:.2f}",
             f"Predicted stability score from RH variance/body slip = {stability:.2f}",
-            f"Predicted performance score from understeer/slip = {performance:.2f}",
+            f"Predicted performance score from understeer/slip = {performance:.2f}{loss_note}",
             f"Prediction confidence after context penalties = {confidence_score:.2f}",
         ]
     )
