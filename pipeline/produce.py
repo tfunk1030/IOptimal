@@ -591,7 +591,14 @@ def produce(args: argparse.Namespace, _return_result: bool = False) -> None | di
 
     # ── Phase I: Compute supporting params ──
     log("\nComputing supporting parameters...")
-    supporting_solver = SupportingSolver(car, driver, measured, diagnosis, track=track)
+    supporting_solver = SupportingSolver(
+        car,
+        driver,
+        measured,
+        diagnosis,
+        track=track,
+        current_setup=current_setup,
+    )
     supporting = supporting_solver.solve()
     log(f"  {supporting.summary()}")
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from solver.candidate_ranker import CandidateScore, combine_candidate_score
+from solver.predictor import PredictedTelemetry, PredictionConfidence, predict_candidate_telemetry
 
 
 @dataclass
@@ -34,6 +35,7 @@ def generate_candidate_families(
     envelope_distance: float = 0.0,
     setup_distance: float = 0.0,
     produced_solution: dict[str, Any] | None = None,
+    prediction_corrections: dict[str, float] | None = None,
 ) -> list[SetupCandidate]:
     """Generate minimal PR4a candidate families.
 
@@ -60,6 +62,19 @@ def generate_candidate_families(
         description="Refine current authority setup concept",
         confidence=round(min(1.0, authority_conf * 0.75 + overhaul_conf * 0.15 + 0.1), 3),
         reasons=incremental_notes,
+        predicted=PredictedTelemetry(
+            front_heave_travel_used_pct=_safe_attr(authority_session, "measured", "front_heave_travel_used_pct"),
+            front_excursion_mm=_safe_attr(authority_session, "measured", "front_rh_excursion_measured_mm"),
+            rear_rh_std_mm=_safe_attr(authority_session, "measured", "rear_rh_std_mm"),
+            braking_pitch_deg=_safe_attr(authority_session, "measured", "pitch_range_braking_deg"),
+            front_lock_p95=_safe_attr(authority_session, "measured", "front_braking_lock_ratio_p95"),
+            rear_power_slip_p95=_safe_attr(authority_session, "measured", "rear_power_slip_ratio_p95"),
+            body_slip_p95_deg=_safe_attr(authority_session, "measured", "body_slip_p95_deg"),
+            understeer_low_deg=_safe_attr(authority_session, "measured", "understeer_low_speed_deg"),
+            understeer_high_deg=_safe_attr(authority_session, "measured", "understeer_high_speed_deg"),
+            front_pressure_hot_kpa=_safe_attr(authority_session, "measured", "front_pressure_mean_kpa"),
+            rear_pressure_hot_kpa=_safe_attr(authority_session, "measured", "rear_pressure_mean_kpa"),
+        ),
     )
     incremental.score = combine_candidate_score(
         safety=max(0.2, 0.85 - envelope_distance * 0.08),
@@ -88,6 +103,16 @@ def generate_candidate_families(
         confidence=round(min(1.0, overhaul_conf * 0.6 + legality_ok * 0.25 + 0.15), 3),
         reasons=reset_notes,
     )
+    if produced_solution and hasattr(authority_session, "setup") and hasattr(authority_session, "measured"):
+        reset.predicted, reset_prediction_conf = predict_candidate_telemetry(
+            current_setup=authority_session.setup,
+            baseline_measured=authority_session.measured,
+            step2=produced_solution.get("step2"),
+            step4=produced_solution.get("step4"),
+            supporting=produced_solution.get("supporting"),
+            corrections=prediction_corrections,
+        )
+        reset.confidence = round(min(1.0, (reset.confidence + reset_prediction_conf.overall) / 2.0), 3)
     reset.score = combine_candidate_score(
         safety=max(0.25, legality_ok * 0.9 + min(0.25, envelope_distance * 0.04)),
         performance=max(0.2, 0.7 + min(0.15, envelope_distance * 0.03)),
@@ -112,3 +137,14 @@ def generate_candidate_families(
     winner = max(candidates, key=lambda candidate: candidate.score.total if candidate.score is not None else -1.0)
     winner.selected = True
     return candidates
+
+
+def _safe_attr(obj: Any, parent: str, field: str) -> float | None:
+    parent_obj = getattr(obj, parent, None)
+    if parent_obj is None:
+        return None
+    try:
+        value = getattr(parent_obj, field, None)
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
