@@ -22,15 +22,17 @@ import json
 import dataclasses
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from car_model.garage import GarageSetupState
-from solver.rake_solver import RakeSolution
-from solver.heave_solver import HeaveSolution
-from solver.corner_spring_solver import CornerSpringSolution
-from solver.arb_solver import ARBSolution
-from solver.wheel_geometry_solver import WheelGeometrySolution
-from solver.damper_solver import DamperSolution
+
+if TYPE_CHECKING:
+    from solver.rake_solver import RakeSolution
+    from solver.heave_solver import HeaveSolution
+    from solver.corner_spring_solver import CornerSpringSolution
+    from solver.arb_solver import ARBSolution
+    from solver.wheel_geometry_solver import WheelGeometrySolution
+    from solver.damper_solver import DamperSolution
 
 W = 70  # report width
 
@@ -140,6 +142,12 @@ def print_full_setup_report(
     diff_plates_val = getattr(supporting, "diff_clutch_plates", None) if supporting is not None else None
     tc_gain_val = getattr(supporting, "tc_gain", None) if supporting is not None else None
     tc_slip_val = getattr(supporting, "tc_slip", None) if supporting is not None else None
+    brake_target_val = getattr(supporting, "brake_bias_target", None) if supporting is not None else None
+    brake_migration_val = getattr(supporting, "brake_bias_migration", None) if supporting is not None else None
+    front_master_cyl_val = getattr(supporting, "front_master_cyl_mm", None) if supporting is not None else None
+    rear_master_cyl_val = getattr(supporting, "rear_master_cyl_mm", None) if supporting is not None else None
+    pad_compound_val = getattr(supporting, "pad_compound", "") if supporting is not None else ""
+    diff_solution = getattr(supporting, "_diff_solution", None) if supporting is not None else None
 
     _is_ferrari = car is not None and getattr(car, "canonical_name", "") == "ferrari"
 
@@ -155,6 +163,14 @@ def print_full_setup_report(
     diff_plates_str = f"{diff_plates_val}" if diff_plates_val is not None else "(pipeline)"
     tc_gain_str = f"{tc_gain_val}" if tc_gain_val is not None else "(pipeline)"
     tc_slip_str = f"{tc_slip_val}" if tc_slip_val is not None else "(pipeline)"
+    brake_target_str = f"{brake_target_val:+.1f}" if brake_target_val is not None else "(pipeline)"
+    brake_migration_str = f"{brake_migration_val:+.1f}" if brake_migration_val is not None else "(pipeline)"
+    master_cyl_str = (
+        f"{front_master_cyl_val:.1f}/{rear_master_cyl_val:.1f} mm"
+        if front_master_cyl_val is not None and rear_master_cyl_val is not None
+        else "(pipeline)"
+    )
+    pad_compound_str = pad_compound_val or "(pipeline)"
     if front_tb_turns_override is not None:
         _tb_turns = round(front_tb_turns_override, 3)
     elif garage_outputs is not None and getattr(garage_outputs, "torsion_bar_turns", 0) > 0:
@@ -224,6 +240,9 @@ def print_full_setup_report(
     a(_blank())
     a(_full("  BRAKES / DIFF / TC / TYRES"))
     a(_setting("Brake bias", brake_bias_str))
+    a(_setting("Brake target / migration", f"{brake_target_str} / {brake_migration_str}"))
+    a(_setting("Master cyl F / R", master_cyl_str))
+    a(_setting("Pad compound", pad_compound_str))
     a(_setting("Diff preload", diff_preload_str))
     if _is_ferrari:
         # Ferrari: single coast/drive ramp label
@@ -232,6 +251,11 @@ def print_full_setup_report(
         a(_setting("Diff coast ramp", diff_coast_str))
         a(_setting("Diff drive ramp", diff_drive_str))
     a(_setting("Diff clutch plates", diff_plates_str))
+    if diff_solution is not None:
+        a(_setting(
+            "Diff lock coast / drive",
+            f"{diff_solution.lock_pct_coast:.1f}% / {diff_solution.lock_pct_drive:.1f}%",
+        ))
     a(_setting("TC gain / slip", f"{tc_gain_str} / {tc_slip_str}"))
     a(_setting("Tyre cold FL / FR", f"{tyre_fl:.0f} / {tyre_fr:.0f} kPa"))
     a(_setting("Tyre cold RL / RR", f"{tyre_rl:.0f} / {tyre_rr:.0f} kPa"))
@@ -280,6 +304,13 @@ def print_full_setup_report(
                 f"    Travel margin: {step2.travel_margin_front_mm:.1f} mm"
             ))
         a(_full(f"  Stall margin: {step1.vortex_burst_margin_mm:+.1f} mm  {_ok(stall_ok)}    LLTD: {step4.lltd_achieved:.1%}"))
+        a(_full(
+            f"  Brake target/mig: {brake_target_str} / {brake_migration_str}    Master cyl: {master_cyl_str}"
+        ))
+        if diff_solution is not None:
+            a(_full(
+                f"  Diff lock coast/drive: {diff_solution.lock_pct_coast:.1f}% / {diff_solution.lock_pct_drive:.1f}%"
+            ))
         a(_full(
             f"  RARB live: blade {step4.rarb_blade_slow_corner} slow  ->  blade {step4.rarb_blade_fast_corner} fast"
         ))
@@ -352,6 +383,16 @@ def print_full_setup_report(
         a(_row(diff_str, f"  Cold RL/RR: {tyre_rl:.0f}/{tyre_rr:.0f} kPa"))
     else:
         a(_row("", f"  Cold RL/RR: {tyre_rl:.0f}/{tyre_rr:.0f} kPa"))
+    if brake_target_val is not None or brake_migration_val is not None:
+        a(_row(
+            f"  Target/Mig: {brake_target_str}/{brake_migration_str}",
+            f"  Master cyl: {master_cyl_str}",
+        ))
+    if diff_solution is not None:
+        a(_row(
+            f"  Lock coast/drive: {diff_solution.lock_pct_coast:.1f}/{diff_solution.lock_pct_drive:.1f}%",
+            f"  Pad: {pad_compound_str}",
+        ))
     a(_blank())
 
     # Dampers
