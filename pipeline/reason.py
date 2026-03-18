@@ -2591,7 +2591,10 @@ def reason_and_solve(
         _auto_min = max(60.0, _fastest_any * 0.95)
     else:
         _auto_min = 60.0
-    log(f"  Lap time floor: {_auto_min:.1f}s (fastest observed: {_fastest_any:.3f}s × 0.95)")
+    if _fastest_any is not None:
+        log(f"  Lap time floor: {_auto_min:.1f}s (fastest observed: {_fastest_any:.3f}s × 0.95)")
+    else:
+        log(f"  Lap time floor: {_auto_min:.1f}s (no valid laps found)")
 
     for i, ibt_path in enumerate(ibt_paths):
         label = f"S{i+1}"
