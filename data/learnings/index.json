@@ -61,7 +61,7 @@
     "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_23-38-07"
   ],
   "total_observations": 57,
-  "total_deltas": 61,
+  "total_deltas": 66,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -72,5 +72,5 @@
     "Sebring International Raceway_International",
     "Silverstone Circuit_Arena Grand Prix"
   ],
-  "last_updated": "2026-03-18T05:06:30.496580+00:00"
+  "last_updated": "2026-03-18T23:37:27.251206+00:00"
 }
