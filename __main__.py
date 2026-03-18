@@ -17,6 +17,10 @@ Usage:
     # Standalone physics (no IBT — new track, no data yet)
     python3 -m ioptimal --car bmw --track sebring --wing 17
 
+    # Grid search — explore full legal setup space (quick/standard/exhaustive/maximum)
+    python3 -m ioptimal --car bmw --track sebring --wing 17 --search-mode quick
+    python3 -m ioptimal --car bmw --ibt session.ibt --wing 17 --search-mode exhaustive --top-n 10
+
     # Setup space exploration
     python3 -m ioptimal --car bmw --ibt session.ibt --wing 17 --space
 
@@ -214,6 +218,142 @@ def run_multi_ibt(args: argparse.Namespace) -> None:
     print(f"\n{'═'*W}")
 
 
+def run_grid_search(args: argparse.Namespace) -> None:
+    """Run hierarchical grid search over the full legal setup space and print ranked setup cards."""
+    import time
+    import pathlib
+    from car_model.cars import get_car
+    from solver.legal_space import LegalSpace
+    from solver.objective import ObjectiveFunction
+
+    car = get_car(args.car)
+
+    # Load track — prefer IBT-derived track, fall back to --track arg
+    track = None
+    if args.track:
+        from track_model.profile import TrackProfile
+        track_path = pathlib.Path(args.track)
+        if not track_path.exists():
+            # Try data/tracks/ prefix
+            track_path = pathlib.Path("data/tracks") / args.track
+            if not track_path.exists():
+                track_path = pathlib.Path("data/tracks") / f"{args.track}.json"
+        if track_path.exists():
+            track = TrackProfile.load(track_path)
+
+    space = LegalSpace.from_car(car)
+    obj = ObjectiveFunction(car, track)
+
+    try:
+        from solver.grid_search import GridSearchEngine
+    except ImportError as e:
+        print(f"[ERROR] GridSearchEngine not available: {e}")
+        print("Make sure you're on the claw-research branch with solver/grid_search.py present.")
+        sys.exit(1)
+
+    wing = args.wing or 17.0
+    budget = args.search_mode
+    top_n = args.top_n
+
+    track_label = pathlib.Path(args.track).stem if args.track else "no-track"
+    car_label = args.car.upper()
+
+    print("═" * 72)
+    print(f"  {car_label}  ·  {track_label}  ·  Wing {wing}°  ·  Grid Search [{budget.upper()}]")
+    print("═" * 72)
+    print(f"  Legal space: {len(space.dimensions)} dims  |  {space.total_cardinality:.2e} total combos")
+    print(f"  Running {budget} search...\n")
+    sys.stdout.flush()
+
+    t0 = time.time()
+    engine = GridSearchEngine(space, obj, car, track)
+    result = engine.run(budget=budget)
+    elapsed = time.time() - t0
+
+    print(result.summary())
+    print(f"\n  ⏱ {elapsed:.1f}s  |  {result.total_evaluated:,} candidates evaluated")
+
+    candidates = result.top_candidates[:top_n]
+    if not candidates:
+        print("\n[No valid candidates found — all vetoed]")
+        return
+
+    print(f"\n{'═' * 72}")
+    print(f"  TOP {len(candidates)} SETUPS")
+    print(f"{'═' * 72}")
+
+    for rank, cand in enumerate(candidates, 1):
+        p = cand.params
+        ev = obj.evaluate(p, family=cand.family)
+
+        # Score breakdown
+        bd = ev.breakdown if hasattr(ev, "breakdown") and ev.breakdown else None
+        lap_gain = f"{bd.lap_gain_ms:+.1f}ms" if bd else "n/a"
+        plat_risk = f"{bd.platform_risk.total_ms:.1f}ms" if bd else "n/a"
+        lltd = f"{ev.lltd_pct:.1f}%" if hasattr(ev, "lltd_pct") else "n/a"
+        stall = f"{ev.stall_margin_mm:+.1f}mm" if hasattr(ev, "stall_margin_mm") else "n/a"
+        zeta = f"{ev.zeta_ls_front:.2f}" if hasattr(ev, "zeta_ls_front") else "n/a"
+
+        print(f"\n┌─── #{rank}  score={cand.score:.1f}ms  [{cand.family}] {'─' * (40 - len(cand.family))}┐")
+        print(f"│  Score breakdown:  lap_gain={lap_gain}  platform_risk={plat_risk}")
+        print(f"│  LLTD={lltd}  stall_margin={stall}  ζLS_front={zeta}")
+        print(f"├{'─' * 70}┤")
+        print(f"│  PLATFORM / SPRINGS")
+        print(f"│  Wing                    {wing:.1f} deg")
+        print(f"│  Front pushrod           {p.get('front_pushrod_offset_mm', '—'):>8} mm")
+        print(f"│  Rear pushrod            {p.get('rear_pushrod_offset_mm', '—'):>8} mm")
+        print(f"│  Front heave spring      {p.get('front_heave_spring_nmm', '—'):>8} N/mm")
+        print(f"│  Rear third spring       {p.get('rear_third_spring_nmm', '—'):>8} N/mm")
+        print(f"│  Rear coil spring        {p.get('rear_spring_rate_nmm', '—'):>8} N/mm")
+        print(f"│  Front torsion OD        {p.get('front_torsion_od_mm', '—'):>8} mm")
+        print(f"├{'─' * 70}┤")
+        print(f"│  ARBs / GEOMETRY")
+        print(f"│  Front ARB blade         {p.get('front_arb_blade', '—'):>8}")
+        print(f"│  Rear ARB blade          {p.get('rear_arb_blade', '—'):>8}")
+        print(f"│  Front camber            {p.get('front_camber_deg', '—'):>8} deg")
+        print(f"│  Rear camber             {p.get('rear_camber_deg', '—'):>8} deg")
+        print(f"├{'─' * 70}┤")
+        print(f"│  BALANCE")
+        print(f"│  Brake bias              {p.get('brake_bias_pct', '—'):>8} %")
+        print(f"│  Diff preload            {p.get('diff_preload_nm', '—'):>8} Nm")
+        print(f"├{'─' * 70}┤")
+        print(f"│  DAMPERS")
+        print(f"│  Front LS comp/rbd       {p.get('front_ls_comp','—'):.0f} / {p.get('front_ls_rbd','—'):.0f} clicks")
+        print(f"│  Front HS comp/rbd/slope {p.get('front_hs_comp','—'):.0f} / {p.get('front_hs_rbd','—'):.0f} / {p.get('front_hs_slope','—'):.0f}")
+        print(f"│  Rear LS comp/rbd        {p.get('rear_ls_comp','—'):.0f} / {p.get('rear_ls_rbd','—'):.0f} clicks")
+        print(f"│  Rear HS comp/rbd/slope  {p.get('rear_hs_comp','—'):.0f} / {p.get('rear_hs_rbd','—'):.0f} / {p.get('rear_hs_slope','—'):.0f}")
+        print(f"└{'─' * 70}┘")
+
+    # Optionally export best to JSON
+    if args.json and candidates:
+        import json
+        best = candidates[0]
+        out = {
+            "search_mode": budget,
+            "car": args.car,
+            "wing": wing,
+            "total_evaluated": result.total_evaluated,
+            "elapsed_s": round(elapsed, 2),
+            "top_candidates": [
+                {"rank": i + 1, "score": c.score, "family": c.family, "params": c.params}
+                for i, c in enumerate(candidates)
+            ],
+        }
+        pathlib.Path(args.json).write_text(json.dumps(out, indent=2))
+        print(f"\n  Saved to {args.json}")
+
+    # Export best .sto
+    if args.sto and candidates:
+        try:
+            from output.sto_writer import write_sto
+            write_sto(candidates[0].params, car, pathlib.Path(args.sto))
+            print(f"  Exported .sto → {args.sto}")
+        except Exception as e:
+            print(f"  [sto export failed: {e}]")
+
+    print(f"\n{'═' * 72}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ioptimal",
@@ -259,6 +399,26 @@ def main() -> None:
     parser.add_argument("--space", action="store_true",
                         help="Run setup space exploration (feasible ranges + flat bottom)")
 
+    # ── Grid search ──
+    parser.add_argument(
+        "--search-mode",
+        choices=["quick", "standard", "exhaustive", "maximum"],
+        default=None,
+        dest="search_mode",
+        help=(
+            "Run hierarchical legal-space grid search instead of the sequential solver. "
+            "quick=~8s/7.7k evals | standard=~4min/500k+ | exhaustive=~80min | maximum=unlimited. "
+            "Example: --search-mode quick --top-n 5"
+        ),
+    )
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=5,
+        dest="top_n",
+        help="Number of top candidates to display when using --search-mode (default: 5)",
+    )
+
     # ── Lap filtering ──
     parser.add_argument("--min-lap-time", type=float, default=108.0, dest="min_lap_time",
                         help="Absolute floor for valid laps in seconds (default: 108.0). "
@@ -286,6 +446,11 @@ def main() -> None:
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+    # ── Grid search mode (overrides all other routing) ───────────────
+    if args.search_mode:
+        run_grid_search(args)
+        return
 
     if args.ibt:
         if len(args.ibt) > 1:
