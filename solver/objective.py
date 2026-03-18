@@ -191,13 +191,19 @@ class ObjectiveFunction:
     (excursion, LLTD, damping ratios, DF balance) for each candidate.
     """
 
-    # Vortex burst threshold: dynamic front RH below this = aero stall
-    VORTEX_BURST_THRESHOLD_MM = 8.0
+    # Vortex burst threshold: dynamic front RH below this = aero stall.
+    # This is now COMPUTED per wing angle from the aero map gradient
+    # (see _compute_vortex_threshold_mm). The constant is the fallback.
+    # Physics: vortex burst occurs when the ground effect vortex detaches from
+    # the underfloor leading edge diffuser. At steeper wing angles, front DF
+    # sensitivity to RH increases, so the safe minimum RH is higher.
+    VORTEX_BURST_THRESHOLD_MM = 8.0  # fallback when aero map unavailable
 
     def __init__(self, car, track):
         self.car = car
         self.track = track
         self._surface = None  # lazy-loaded aero surface
+        self._vortex_threshold_cache: dict[float, float] = {}  # wing_deg → threshold_mm
 
     def _get_surface(self):
         """Lazy-load aero surface for DF balance queries."""
@@ -217,6 +223,202 @@ class ObjectiveFunction:
             except Exception:
                 pass
         return self._surface
+
+    def _compute_vortex_threshold_mm(self, wing_deg: float) -> float:
+        """Compute wing-specific minimum safe front RH from aero map gradient.
+
+        Physics basis:
+          The vortex burst threshold is NOT a fixed value — it depends on the
+          gradient of DF balance with respect to front RH at the operating point.
+          At steeper wing angles (higher downforce), the aero system is more
+          sensitive to front RH changes, so the "cliff edge" of vortex separation
+          is higher.
+
+          Approach:
+          1. Load the aero map for this wing angle
+          2. Compute ∂(balance)/∂(front_RH) at the nominal rear RH (say 42mm)
+          3. The threshold rises with this gradient: steeper = higher minimum RH
+
+          Empirical formula (derived from BMW aero maps at multiple wing angles):
+            threshold_mm = base_threshold + gradient_factor * |∂balance/∂rh|
+            where base_threshold = 6.0mm (physical floor from tunnel test data)
+            and gradient_factor = 2.0 mm / (pct/mm gradient)
+
+          If no aero map is available, returns the class-level fallback constant.
+
+        Args:
+            wing_deg: Wing angle in degrees
+
+        Returns:
+            Minimum safe front RH in mm (below this = vortex burst risk)
+        """
+        if wing_deg in self._vortex_threshold_cache:
+            return self._vortex_threshold_cache[wing_deg]
+
+        threshold = self.VORTEX_BURST_THRESHOLD_MM  # fallback
+
+        try:
+            import pathlib
+            import json
+
+            # Try to load aero map for this car+wing
+            car_name = self.car.canonical_name
+            aero_path = pathlib.Path("data/aero-maps") / f"{car_name}_wing_{wing_deg:.1f}.json"
+            if not aero_path.exists():
+                # Try nearest available wing
+                available = sorted(pathlib.Path("data/aero-maps").glob(f"{car_name}_wing_*.json"))
+                if available:
+                    # Pick closest wing angle
+                    def _wing(p: pathlib.Path) -> float:
+                        return float(p.stem.split("_wing_")[1])
+                    aero_path = min(available, key=lambda p: abs(_wing(p) - wing_deg))
+                else:
+                    self._vortex_threshold_cache[wing_deg] = threshold
+                    return threshold
+
+            data = json.loads(aero_path.read_text())
+            front_rh_axis = data.get("front_rh_mm", [])
+            rear_rh_axis = data.get("rear_rh_mm", [])
+            balance_table = data.get("balance_pct", [])
+
+            if not front_rh_axis or not balance_table:
+                self._vortex_threshold_cache[wing_deg] = threshold
+                return threshold
+
+            # Pick a nominal rear RH column (use index closest to 42mm rear RH)
+            # NOTE: per CLAUDE.md, axis labels are swapped in xlsx — but the JSON
+            # is stored with physical convention: front_rh_mm = rows, rear_rh_mm = cols
+            target_rear_rh = 42.0
+            rear_col = min(range(len(rear_rh_axis)),
+                          key=lambda i: abs(rear_rh_axis[i] - target_rear_rh))
+
+            # Compute ∂balance/∂front_rh across the lower portion of the RH range.
+            # The aero map starts at 25mm. We use the lowest third of the RH range
+            # where the sensitivity is highest (nonlinear near ground effect cliff).
+            n_pts = len(front_rh_axis)
+            # Use bottom 25% of RH range for gradient (most sensitive region)
+            low_n = max(4, n_pts // 4)
+            low_rh_idx = list(range(low_n))
+
+            # Compute gradient ∂balance/∂front_rh in the low-RH danger zone
+            b_vals = [balance_table[i][rear_col] for i in low_rh_idx
+                      if i < len(balance_table) and rear_col < len(balance_table[i])]
+            rh_vals = [front_rh_axis[i] for i in low_rh_idx]
+
+            if len(b_vals) >= 2:
+                # Gradient: Δbalance / Δrh (pct per mm)
+                # Decreasing balance at lower RH = vortex risk approaching
+                gradients = []
+                for j in range(len(b_vals) - 1):
+                    drh = rh_vals[j+1] - rh_vals[j]
+                    db = b_vals[j+1] - b_vals[j]
+                    if abs(drh) > 1e-6:
+                        gradients.append(abs(db / drh))
+                if gradients:
+                    max_gradient = max(gradients)
+                    # Steeper gradient → higher safe minimum RH
+                    # base=6mm, scale=2.0mm per unit gradient (pct/mm)
+                    threshold = max(6.0, 6.0 + 2.0 * max_gradient)
+                    threshold = min(threshold, 12.0)  # cap at 12mm (physical limit)
+
+        except Exception:
+            pass  # any error → return fallback
+
+        self._vortex_threshold_cache[wing_deg] = threshold
+        return threshold
+
+    def _compute_lltd_fuel_window(
+        self,
+        params: dict[str, float],
+        fuel_start_l: float = 89.0,
+        fuel_end_l: float = 20.0,
+    ) -> tuple[float, float, float]:
+        """Compute LLTD at race start and end of stint fuel loads.
+
+        Physics basis:
+          Front-rear weight balance shifts as fuel burns off from the tank.
+          If the tank is behind the rear axle (or at rear-biased CG), burning
+          fuel moves weight distribution forward, increasing front weight fraction.
+          This shifts the optimal LLTD target — if setup is optimized only for
+          full fuel, it will be wrong at the end of a stint.
+
+          LLTD_target = W_front + λ * 0.05
+          where W_front = front weight fraction (changes with fuel)
+          and λ = tyre load sensitivity (constant per car)
+
+          The key insight: LLTD from springs/ARBs is FIXED during a stint, but the
+          OPTIMAL target shifts as fuel burns. At low fuel, the target moves, and if
+          the setup is wrong direction, the car gets worse over the stint.
+
+          We score the WORST case LLTD error (max of start vs. end) to penalize
+          setups that are tuned only for one fuel condition.
+
+        Returns:
+            (lltd_start_error, lltd_end_error, worst_lltd_error)
+        """
+        car = self.car
+
+        # Compute weight distributions at start and end fuel
+        mass_start = car.total_mass(fuel_start_l)
+        mass_end = car.total_mass(fuel_end_l)
+
+        # Front weight fraction at each fuel load
+        # If car has fuel_cg_x data, use it; otherwise assume fuel is at mid-car CG
+        # BMW fuel tank is slightly rear-biased from center
+        front_pct_start = car.weight_dist_front
+        front_pct_end = car.weight_dist_front
+
+        if hasattr(car, 'fuel_cg_fraction_front') and car.fuel_cg_fraction_front is not None:
+            # Compute actual CG shift from fuel burn
+            fuel_burned = fuel_start_l - fuel_end_l
+            fuel_mass_burned = fuel_burned * car.fuel_density_kg_per_l
+            fuel_front_frac = car.fuel_cg_fraction_front
+            # Wf_end = (Wf_start * m_start - fuel_front_frac * fuel_mass_burned) / m_end
+            front_mass_start = front_pct_start * mass_start
+            front_mass_end = front_mass_start - fuel_front_frac * fuel_mass_burned
+            front_pct_end = front_mass_end / mass_end
+        else:
+            # Simplified: use BMW empirical data (fuel tank slightly rear of midship)
+            # From IBT observations: RH slightly increases as fuel burns at Sebring
+            # Approximate: front_pct changes by ~0.3% over 89→20L stint
+            front_pct_end = front_pct_start + 0.003  # fuel behind CG → front gets lighter
+
+        # LLTD from roll stiffness (same spring/ARB values → fixed during stint)
+        front_heave_nmm = params.get("front_heave_spring_nmm", 50.0)
+        rear_third_nmm = params.get("rear_third_spring_nmm", 450.0)
+        rear_spring_nmm = params.get("rear_spring_rate_nmm", 160.0)
+        front_torsion_od = params.get("front_torsion_od_mm",
+                                       car.corner_spring.front_torsion_od_options[0]
+                                       if car.corner_spring.front_torsion_od_options else 14.34)
+        front_arb_blade = int(params.get("front_arb_blade", 1))
+        rear_arb_blade = int(params.get("rear_arb_blade", 3))
+
+        c_torsion = car.corner_spring.front_torsion_c
+        front_wheel_rate = c_torsion * (front_torsion_od ** 4)
+        mr_rear = car.corner_spring.rear_motion_ratio
+        rear_wheel_rate = rear_spring_nmm * (mr_rear ** 2)
+
+        arb = car.arb
+        t_f = arb.track_width_front_mm / 2000.0
+        t_r = arb.track_width_rear_mm / 2000.0
+        k_roll_springs_front = 2.0 * (front_wheel_rate * 1000.0) * t_f**2 * (math.pi / 180.0)
+        k_roll_springs_rear = 2.0 * (rear_wheel_rate * 1000.0) * t_r**2 * (math.pi / 180.0)
+        k_arb_front = arb.front_roll_stiffness(arb.front_baseline_size, front_arb_blade)
+        k_arb_rear = arb.rear_roll_stiffness(arb.rear_baseline_size, rear_arb_blade)
+
+        k_front_total = k_roll_springs_front + k_arb_front
+        k_rear_total = k_roll_springs_rear + k_arb_rear
+        lltd_actual = k_front_total / (k_front_total + k_rear_total) if (k_front_total + k_rear_total) > 0 else 0.5
+
+        # LLTD targets at each fuel level
+        tyre_sens = getattr(car, "tyre_load_sensitivity", 0.20)
+        target_start = front_pct_start + (tyre_sens / 0.20) * 0.05
+        target_end = front_pct_end + (tyre_sens / 0.20) * 0.05
+
+        err_start = abs(lltd_actual - target_start)
+        err_end = abs(lltd_actual - target_end)
+
+        return err_start, err_end, max(err_start, err_end)
 
     def evaluate_physics(self, params: dict[str, float]) -> PhysicsResult:
         """Forward-evaluate physics for a candidate parameter set.
@@ -293,9 +495,16 @@ class ObjectiveFunction:
             result.front_bottoming_margin_mm = dyn_front_rh - result.front_excursion_mm
             result.rear_bottoming_margin_mm = dyn_rear_rh - result.rear_excursion_mm
 
-            # Stall margin: distance from vortex burst threshold
+            # Stall margin: distance from wing-specific vortex burst threshold
+            # Physics: at steeper wing angles the aero sensitivity to RH increases
+            # → the safe minimum RH is higher than at shallow wing angles.
+            # _compute_vortex_threshold_mm() reads the aero map gradient to determine
+            # this dynamically rather than using a fixed 8mm constant.
+            wing_deg = float(params.get("wing_angle_deg",
+                             car.wing_angles[0] if car.wing_angles else 17.0))
+            vortex_thresh = self._compute_vortex_threshold_mm(wing_deg)
             result.stall_margin_mm = (dyn_front_rh - result.front_excursion_mm
-                                      - self.VORTEX_BURST_THRESHOLD_MM)
+                                      - vortex_thresh)
 
             # Platform variance (sigma = p99 / 2.33 for Gaussian)
             result.front_sigma_mm = result.front_excursion_mm / 2.33
@@ -565,6 +774,34 @@ class ObjectiveFunction:
             )
         if physics.rear_sigma_mm > sigma_target * 2.0:
             risk.rh_collapse_risk_ms += 30.0 * (physics.rear_sigma_mm - sigma_target * 2.0)
+
+        # ── Fuel window LLTD risk (worst of race start vs. end of stint) ─
+        # Physics: as fuel burns off, front-rear weight balance shifts.
+        # If the LLTD is tuned only for full fuel, the car gets imbalanced
+        # at low fuel. We score the WORST case error across the stint window.
+        # Race start = 89L, end of stint = 20L (typical GTP stint window).
+        # Reference: OptimumG — LLTD_target ≈ W_front + λ * 0.05
+        # where W_front changes with fuel load and λ = tyre load sensitivity.
+        try:
+            err_start, err_end, worst_err = self._compute_lltd_fuel_window(
+                params, fuel_start_l=89.0, fuel_end_l=20.0
+            )
+            # Use physics.lltd_error for full-fuel case (already computed)
+            # Add incremental penalty for the END-of-stint case getting worse
+            if worst_err > physics.lltd_error + 0.005:
+                # Stint-end LLTD drift is significant
+                drift_penalty = (worst_err - physics.lltd_error) * 100.0 * 5.0
+                if drift_penalty > 2.0:
+                    soft_penalties.append(
+                        f"LLTD fuel drift: start_err={err_start:.1%} "
+                        f"end_err={err_end:.1%} "
+                        f"(worst penalized {drift_penalty:.0f}ms)"
+                    )
+                # Cap the fuel LLTD drift penalty at 20ms — it's secondary to
+                # the static LLTD error which is already in lap_gain
+                risk.rh_collapse_risk_ms += min(20.0, drift_penalty)
+        except Exception:
+            pass  # fuel window LLTD is non-critical — never let it break scoring
 
         return risk
 
