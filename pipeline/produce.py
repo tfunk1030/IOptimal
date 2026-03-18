@@ -1005,11 +1005,11 @@ def produce(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
 
-    # ── Legal-manifold search (--explore-legal-space) ──────────────────
-    if getattr(args, "explore_legal_space", False):
+    # ── Legal-manifold search (--explore-legal-space / --search-mode) ─────
+    search_mode = getattr(args, "search_mode", None)
+    do_legal_search = getattr(args, "explore_legal_space", False) or search_mode is not None
+    if do_legal_search:
         try:
-            from solver.legal_search import run_legal_search
-
             baseline_params = {
                 "front_heave_spring_nmm": step2.front_heave_nmm,
                 "rear_third_spring_nmm": step2.rear_third_nmm,
@@ -1029,21 +1029,44 @@ def produce(
                 "rear_hs_comp": step6.lr.hs_comp,
                 "rear_hs_rbd": step6.lr.hs_rbd,
             }
-            search_budget = getattr(args, "search_budget", 1000)
-            keep_weird = getattr(args, "keep_weird", True)
 
-            ls_result = run_legal_search(
-                car=car,
-                track=track,
-                baseline_params=baseline_params,
-                budget=search_budget,
-                measured=measured,
-                driver_profile=driver,
-                session_count=1,
-                keep_weird=keep_weird,
-            )
-            log()
-            log(ls_result.summary())
+            if search_mode is not None:
+                # ── GridSearchEngine: hierarchical structured search ────────
+                from solver.grid_search import GridSearchEngine
+                from solver.legal_space import LegalSpace
+                from solver.objective import ObjectiveFunction
+
+                space = LegalSpace.from_car(car, track_name=getattr(track, "name", ""))
+                objective = ObjectiveFunction(car, track if hasattr(track, "name") else None)
+
+                engine = GridSearchEngine(
+                    space=space,
+                    objective=objective,
+                    car=car,
+                    track=track if hasattr(track, "name") else None,
+                    progress_cb=log,
+                )
+                gs_result = engine.run(budget=search_mode, progress=True)
+                log()
+                log(gs_result.summary())
+            else:
+                # ── Original random family search ───────────────────────────
+                from solver.legal_search import run_legal_search
+                search_budget = getattr(args, "search_budget", 1000)
+                keep_weird = getattr(args, "keep_weird", True)
+
+                ls_result = run_legal_search(
+                    car=car,
+                    track=track,
+                    baseline_params=baseline_params,
+                    budget=search_budget,
+                    measured=measured,
+                    driver_profile=driver,
+                    session_count=1,
+                    keep_weird=keep_weird,
+                )
+                log()
+                log(ls_result.summary())
         except Exception as e:
             log(f"[legal-search] Skipped: {e}")
 
@@ -1413,6 +1436,15 @@ def main():
                         help="Number of candidates to evaluate in legal-space search (default: 1000)")
     parser.add_argument("--keep-weird", action="store_true",
                         help="Retain unconventional but legal candidates in results")
+    parser.add_argument("--search-mode", type=str, default=None,
+                        choices=["quick", "standard", "exhaustive"],
+                        dest="search_mode",
+                        help=(
+                            "Hierarchical grid search mode (uses GridSearchEngine). "
+                            "quick=~5s, standard=~4min, exhaustive=~80min. "
+                            "When set, uses structured Sobol+grid search instead of "
+                            "random family sampling. Implies --explore-legal-space."
+                        ))
     parser.add_argument("--objective-profile", type=str, default="balanced",
                         choices=["robust", "aggressive", "balanced"],
                         help="Objective function weighting profile (default: balanced)")
