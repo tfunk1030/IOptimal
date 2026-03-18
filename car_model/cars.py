@@ -1138,6 +1138,11 @@ BMW_M_HYBRID_V8 = CarModel(
         deflection=DeflectionModel(),
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+    garage_ranges=GarageRanges(
+        # BMW iRacing legal limits (verified 2026-03-18 by Taylor Funk)
+        camber_front_deg=(-2.9, 0.0),   # max negative: -2.9°
+        camber_rear_deg=(-1.9, 0.0),    # max negative: -1.9°
+    ),
 )
 
 

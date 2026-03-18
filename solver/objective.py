@@ -217,6 +217,7 @@ class ObjectiveFunction:
         # Empirical heave spring calibration — loads from real IBT telemetry data.
         # Falls back to physics model if no calibration file exists yet.
         from solver.heave_calibration import HeaveCalibration
+        from solver.session_database import SessionDatabase
 
         # Resolve car slug: "bmw m hybrid v8" → "bmw", "cadillac v-series.r" → "cadillac"
         _car_raw = getattr(car, "name", "") or getattr(car, "adapter_name", "") or str(car)
@@ -230,6 +231,123 @@ class ObjectiveFunction:
         _track_slug = str(_track_raw).lower().split()[0].replace("-", "").replace("_", "")
 
         self._heave_cal = HeaveCalibration.load(_car_slug, _track_slug)
+
+        # Full multi-dimensional session database — empirical lap time primary signal.
+        # Loads from all observations in data/learnings/observations/.
+        # Pre-bakes heave sensitivity table at init to avoid per-eval k-NN overhead.
+        try:
+            _track_full = str(_track_raw).lower()
+            self._session_db = SessionDatabase.load(_car_slug, _track_full)
+            self._empirical_cache: dict[str, dict] = {}  # heave_str → {lap_ms, sigma, travel, bottom}
+            self._db_mean_lap: float | None = self._session_db._mean_lap_time()
+            self._prebake_empirical_table()
+        except Exception:
+            self._session_db = None
+            self._empirical_cache = {}
+            self._db_mean_lap = None
+
+    def _prebake_empirical_table(self) -> None:
+        """
+        Build per-heave empirical table directly from observed session groups.
+
+        Groups sessions by heave value and computes:
+          - mean lap time delta vs fleet mean (confidence-weighted by √n/√max_n)
+          - mean σ_front
+          - mean heave travel %
+          - mean bottoming events
+
+        This is more reliable than k-NN for the heave sensitivity because it
+        directly measures the per-group outcome without cross-heave blending.
+        Confidence = √n / √max_n so n=1 sessions contribute less than n=12.
+        """
+        if not self._session_db or len(self._session_db) < 3:
+            return
+        db = self._session_db
+        mean_lap = self._db_mean_lap
+        if not mean_lap:
+            return
+
+        # Group sessions by heave value
+        from collections import defaultdict
+        groups: dict[float, list] = defaultdict(list)
+        for s in db.sessions:
+            h = s.setup_vector.get("front_heave_nmm")
+            if h is not None:
+                groups[h].append(s)
+
+        # Find max n for confidence normalisation
+        max_n = max(len(v) for v in groups.values()) if groups else 1
+
+        for h, sessions in groups.items():
+            # Skip extreme outlier heave values (900 N/mm = max stiffness,
+            # not a realistic setup) — these corrupt interpolation for
+            # intermediate values like 100-200 N/mm.
+            if h > 500.0:
+                continue
+
+            # Mean lap delta
+            laps = [s.best_lap_s for s in sessions if s.best_lap_s]
+            mean_group_lap = sum(laps) / len(laps) if laps else mean_lap
+            lap_delta = (mean_lap - mean_group_lap) * 1000.0  # ms faster than fleet mean
+
+            # Mean telemetry metrics
+            def _mean_tel(key: str, default: float) -> float:
+                vals = [s.telemetry_vector.get(key) for s in sessions if s.telemetry_vector.get(key) is not None]
+                return sum(vals) / len(vals) if vals else default
+
+            n = len(sessions)
+            import math
+            n_conf = math.sqrt(n) / math.sqrt(max_n)  # 0–1, higher = more sessions
+
+            self._empirical_cache[str(h)] = {
+                "lap_delta_ms": lap_delta,
+                "sigma_front": _mean_tel("front_rh_std_mm", 5.5),
+                "heave_travel_pct": _mean_tel("front_heave_travel_used_pct", 88.0),
+                "bottoming": _mean_tel("heave_bottoming_events_front", 0.0),
+                "dist_conf": n_conf,
+                "n": n,
+            }
+
+    def _lookup_empirical(self, heave: float) -> dict | None:
+        """
+        O(1) lookup in pre-baked table with linear interpolation between
+        adjacent heave calibration points.
+        """
+        if not self._empirical_cache:
+            return None
+        keys_f = sorted(float(k) for k in self._empirical_cache)
+        if not keys_f:
+            return None
+
+        # Exact match
+        key_str = str(float(heave))
+        if key_str in self._empirical_cache:
+            return self._empirical_cache[key_str]
+
+        # Linear interpolation between nearest bracketing points
+        lo = max((k for k in keys_f if k <= heave), default=None)
+        hi = min((k for k in keys_f if k >= heave), default=None)
+
+        if lo is None and hi is None:
+            return None
+        if lo is None:
+            # Extrapolating below tested range — return lowest with conf penalty
+            result = dict(self._empirical_cache[str(hi)])
+            result["dist_conf"] *= 0.3  # penalise extrapolation
+            return result
+        if hi is None:
+            # Extrapolating above tested range — clamp to max tested + uncertainty penalty
+            result = dict(self._empirical_cache[str(lo)])
+            overshoot = heave - lo
+            result["dist_conf"] *= max(0.1, 1.0 - overshoot / 50.0)  # drops to 0.1 at 45N/mm past max
+            return result
+        if hi == lo:
+            return self._empirical_cache[str(lo)]
+
+        t = (heave - lo) / (hi - lo)
+        a = self._empirical_cache[str(lo)]
+        b = self._empirical_cache[str(hi)]
+        return {k: a[k] * (1.0 - t) + b[k] * t for k in a}
 
     def _get_surface(self):
         """Lazy-load aero surface for DF balance queries."""
@@ -740,48 +858,79 @@ class ObjectiveFunction:
         gain = 0.0
 
         # ═══════════════════════════════════════════════════════════════
-        # TIER 1: HEAVE / THIRD SPRING PLATFORM STABILITY
-        # Dominant lap time driver for ground-effect cars.
-        # σ_front is computed in evaluate_physics() from heave spring rate
-        # + track p99 shock velocity via damped_excursion_mm().
+        # TIER 1: EMPIRICAL LAP TIME (PRIMARY — 60% of total score)
+        #
+        # Decision rationale (2026-03-18):
+        # Real IBT data (76 sessions) shows the σ → lap_time relationship is
+        # NEGATIVE at Sebring: going 50→80 N/mm improves σ by 0.64mm but
+        # costs 511ms in lap time. The car is more compliant at 50 N/mm,
+        # absorbing kerbs better and maintaining traction. Chasing σ minimum
+        # (80-90 N/mm) was the wrong objective.
+        #
+        # Primary signal: SessionDatabase k-NN predicted lap time.
+        # Confidence-weighted by √n to discount single-session data points.
+        # σ retained as a SAFETY FLOOR: only penalised when > 6.0mm (2× the
+        # 50 N/mm observed value), indicating actual platform instability.
         # ═══════════════════════════════════════════════════════════════
 
-        sigma_f = physics.front_sigma_mm  # [mm]
-        # Threshold: stable platform = σ < 3mm at speed
-        # Below threshold: no aero platform penalty
-        # Above threshold: each extra mm costs ~80ms (GTP literature estimate,
-        #   calibrated from F1 2022 porpoising data ~100ms/mm, discounted 20%
-        #   for GTP lower-sensitivity underbody)
-        # Source: ground effect aerodynamics research (Katz & Plotkin;
-        #   iRacing GTP setup analysis from Taylor Funk's 46 session dataset)
-        SIGMA_F_STABLE_MM = 3.0
-        SIGMA_F_MS_PER_MM = 80.0  # ms per mm above stable threshold [ms/mm]
-        if sigma_f > SIGMA_F_STABLE_MM:
-            platform_loss = (sigma_f - SIGMA_F_STABLE_MM) * SIGMA_F_MS_PER_MM
-            gain -= min(800.0, platform_loss)
+        front_heave = params.get("front_heave_spring_nmm", 50.0)
 
-        # Rear platform (third spring): less sensitive than front — rear
-        # diffuser is less ground-coupled than front underfloor in GTP
-        sigma_r = physics.rear_sigma_mm  # [mm]
-        SIGMA_R_STABLE_MM = 5.0
-        SIGMA_R_MS_PER_MM = 40.0  # half the front sensitivity [ms/mm]
-        if sigma_r > SIGMA_R_STABLE_MM:
-            gain -= min(300.0, (sigma_r - SIGMA_R_STABLE_MM) * SIGMA_R_MS_PER_MM)
+        emp = self._lookup_empirical(front_heave)
+        if emp is not None:
+            # Empirical primary signal: lap time delta from fleet mean (confidence-weighted)
+            # 60% weight on lap time — data beats theory
+            # SCORING CONVENTION: higher gain = better score (grid search picks max).
+            # Positive lap_delta = faster than fleet mean = good → ADD to gain.
+            # Weight: 3.0× (empirical lap time must dominate synthetic physics).
+            # The synthetic physics terms contribute ~580-640ms total; empirical
+            # deltas range ±112ms. At 3.0×, a 112ms empirical advantage at full
+            # confidence contributes 112 * 3.0 * 0.816 = 274ms — enough to override
+            # synthetic physics preferences when real data contradicts them.
+            gain += emp["lap_delta_ms"] * 3.0 * emp["dist_conf"]
+
+            # Safety floor: σ only penalised above 6.0mm (2026-03-18 recalibration:
+            # best lap at 50 N/mm has σ=5.54mm → 5.5mm is normal/acceptable,
+            # 6.0mm is the 1-sigma upper bound of acceptable platform stability)
+            if emp["sigma_front"] > 6.0:
+                gain -= (emp["sigma_front"] - 6.0) * 60.0  # penalty: subtract
+
+            # Heave travel veto: >90% is certain bottoming → hard penalty
+            if emp["heave_travel_pct"] > 90.0:
+                gain -= (emp["heave_travel_pct"] - 90.0) * 25.0  # penalty
+
+            # Bottoming events: zero tolerance (each event = 50ms time loss)
+            if emp["bottoming"] > 0.5:
+                gain -= emp["bottoming"] * 50.0  # penalty
+
+            # Out-of-range penalty: beyond max tested heave, growing quadratic.
+            # At 10 N/mm over: 0.05 * 100 = 5ms penalty
+            # At 50 N/mm over: 0.05 * 2500 = 125ms penalty
+            # At 100 N/mm over: 0.05 * 10000 = 500ms penalty (hard kill)
+            max_tested = max(float(k) for k in self._empirical_cache) if self._empirical_cache else 90.0
+            min_tested = min(float(k) for k in self._empirical_cache) if self._empirical_cache else 30.0
+            if front_heave > max_tested:
+                overshoot = front_heave - max_tested
+                gain -= 0.05 * overshoot ** 2  # quadratic penalty
+            elif front_heave < min_tested:
+                undershoot = min_tested - front_heave
+                gain -= 0.05 * undershoot ** 2
+        else:
+            # No empirical data — physics σ model with recalibrated thresholds
+            sigma_f = physics.front_sigma_mm
+            SIGMA_F_STABLE_MM = 6.0   # recalibrated from data; 5.54mm is OK
+            SIGMA_F_MS_PER_MM = 60.0
+            if sigma_f > SIGMA_F_STABLE_MM:
+                gain -= min(400.0, (sigma_f - SIGMA_F_STABLE_MM) * SIGMA_F_MS_PER_MM)
+            sigma_r = physics.rear_sigma_mm
+            if sigma_r > 7.0:
+                gain -= min(200.0, (sigma_r - 7.0) * 30.0)
 
         # ── HEAVE CALIBRATION UNCERTAINTY PENALTY ───────────────────────
-        # The empirical sigma is now wired into physics.front_sigma_mm and
-        # flows into _compute_platform_risk (rh_collapse_risk_ms).
-        # Here we add an ADDITIONAL uncertainty penalty for exploring beyond
-        # the calibrated range — the solver is free to go there, but pays an
-        # increasing cost reflecting reduced confidence in the prediction.
-        # When you actually run 380 N/mm and drop the IBT, uncertainty drops
-        # to ~0.15mm and the true sigma (whatever it is) is used instead.
-        front_heave = params.get("front_heave_spring_nmm", 50.0)
+        # Still penalise exploring far outside calibrated range, but reduced
+        # weight now that lap time is the primary signal.
         cal_uncertainty = self._heave_cal.uncertainty(front_heave)
-        # Uncertainty penalty: 0 for well-calibrated, grows for extrapolated
-        # At uncertainty=0.15mm (near data) → 0ms; at 3.4mm (380 N/mm) → ~27ms
-        if cal_uncertainty > 0.2:
-            gain -= (cal_uncertainty - 0.2) ** 1.5 * 8.0
+        if cal_uncertainty > 0.5:
+            gain -= (cal_uncertainty - 0.5) ** 1.5 * 5.0
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 2: LLTD BALANCE (flows through ARB blades and diameter)
@@ -957,15 +1106,23 @@ class ObjectiveFunction:
             risk.vortex_risk_ms = 100.0 * (2.0 - stall)
 
         # ── Ride height variance (platform collapse risk) ──────────────
-        sigma_target = 3.0  # mm — typical GTP target
-        if physics.front_sigma_mm > sigma_target * 1.5:
-            risk.rh_collapse_risk_ms = 50.0 * (physics.front_sigma_mm - sigma_target)
+        # Threshold recalibrated 2026-03-18 from 76 real BMW Sebring sessions:
+        # Best mean lap time at heave=40 N/mm had σ_front=5.9mm → 5.9mm is
+        # NORMAL and fast. 3.0mm was theoretical (GTP literature), not empirical.
+        # Real safety floor: σ > 6.5mm indicates genuine platform instability
+        # (σ=6.46mm at heave=30 N/mm was clearly slow; σ=5.5mm is optimal range).
+        # Penalty rate reduced to 20ms/mm (was 50ms/mm) — empirical lap time
+        # now carries the primary signal; platform_risk is a secondary guard.
+        sigma_target = 6.0   # mm — recalibrated from 76 BMW Sebring sessions
+        sigma_floor  = 6.5   # mm — above this, real platform instability
+        if physics.front_sigma_mm > sigma_floor:
+            risk.rh_collapse_risk_ms = 20.0 * (physics.front_sigma_mm - sigma_target)
             soft_penalties.append(
                 f"Front RH variance high: σ={physics.front_sigma_mm:.1f}mm "
-                f"(target <{sigma_target:.0f}mm)"
+                f"(empirical floor {sigma_floor:.1f}mm)"
             )
-        if physics.rear_sigma_mm > sigma_target * 2.0:
-            risk.rh_collapse_risk_ms += 30.0 * (physics.rear_sigma_mm - sigma_target * 2.0)
+        if physics.rear_sigma_mm > 8.0:
+            risk.rh_collapse_risk_ms += 15.0 * (physics.rear_sigma_mm - 8.0)
 
         # ── Fuel window LLTD risk (worst of race start vs. end of stint) ─
         # Physics: as fuel burns off, front-rear weight balance shifts.
