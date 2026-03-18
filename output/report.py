@@ -557,7 +557,7 @@ def print_full_setup_report(
             a(_box_top("LAP TIME SENSITIVITY"))
             a(_full(f"  {'#':<3}  {'Parameter':<24}  {'Current':>8}  {'Impact':>12}  {'Conf'}"))
             a(_full("  " + "─" * (W - 4)))
-            for i, s in enumerate(sensitivity_result.sensitivities[:7], 1):
+            for i, s in enumerate(sensitivity_result.sensitivities, 1):  # ALL parameters
                 sign = "+" if s.delta_per_unit_ms > 0 else ""
                 impact = f"{sign}{s.delta_per_unit_ms:.0f}ms/unit"
                 a(_full(f"  {i:<3}  {s.parameter:<24}  {s.current_value:>8.2g}  {impact:>12}  {s.confidence}"))

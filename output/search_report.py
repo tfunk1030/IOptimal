@@ -205,7 +205,7 @@ def format_sensitivity(matrices: list[SensitivityMatrix]) -> str:
         ))
         lines.append(_full("  " + "─" * 62))
 
-        for row in matrix.ranked_rows[:15]:  # top 15 most sensitive
+        for row in matrix.ranked_rows:  # ALL parameters, ranked by sensitivity
             delta = row.score_at_best_neighbor - row.score_at_current
             delta_str = f"{delta:+.1f}" if abs(delta) > 0.05 else "  ≈0"
 
@@ -246,7 +246,7 @@ def format_sensitivity(matrices: list[SensitivityMatrix]) -> str:
         ranked = sorted(avg_sens.items(), key=lambda x: x[1], reverse=True)
 
         lines.append(_full("  ── Global sensitivity ranking (avg across candidates) ──"))
-        for i, (name, avg) in enumerate(ranked[:10], 1):
+        for i, (name, avg) in enumerate(ranked, 1):  # ALL parameters
             bar_len = min(20, max(0, int(avg / 1.5)))
             bar = "█" * bar_len
             lines.append(_full(f"  {i:2d}. {name:<28} {avg:>5.1f}ms  {bar}"))

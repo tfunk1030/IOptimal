@@ -550,6 +550,12 @@ def generate_report(
                 a(f"  {info}")
             a("")
 
+    # ── PARAMETER JUSTIFICATION (comprehensive engineering brief) ──────────
+    if sensitivity_result is not None and hasattr(sensitivity_result, "justification_report"):
+        a("")
+        a(sensitivity_result.justification_report(width=W))
+        a("")
+
     # ── LEARNING SUMMARY ──────────────────────────────────────────────
     try:
         from learner.report_section import generate_learning_section

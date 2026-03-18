@@ -896,6 +896,10 @@ def produce(
             step1=step1, step2=step2, step3=step3,
             step4=step4, step5=step5,
             brake_bias_pct=supporting.brake_bias_pct,
+            step6=step6,
+            supporting=supporting,
+            measured=measured,
+            wing=wing,
         )
     except (KeyError, AttributeError) as e:
         sensitivity_result = None
