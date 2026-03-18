@@ -1,0 +1,133 @@
+STDOUT:
+
+
+STDERR:
+18:42:01.534662 exec-cmd.c:266          trace: resolved executable dir: C:/Program Files/Git/mingw64/bin
+18:42:01.543169 git.c:502               trace: built-in: git push origin codextwo --verbose
+18:42:01.545169 run-command.c:674       trace: run_command: GIT_DIR=.git git remote-https origin https://github.com/tfunk1030/IOptimal.git
+18:42:01.545169 run-command.c:935       trace: start_command: git remote-https origin https://github.com/tfunk1030/IOptimal.git
+18:42:01.551676 exec-cmd.c:266          trace: resolved executable dir: C:/Program Files/Git/mingw64/libexec/git-core
+18:42:01.554678 git.c:809               trace: exec: git-remote-https origin https://github.com/tfunk1030/IOptimal.git
+18:42:01.554678 run-command.c:674       trace: run_command: git-remote-https origin https://github.com/tfunk1030/IOptimal.git
+18:42:01.554678 run-command.c:935       trace: start_command: git-remote-https origin https://github.com/tfunk1030/IOptimal.git
+18:42:01.560678 exec-cmd.c:266          trace: resolved executable dir: C:/Program Files/Git/mingw64/libexec/git-core
+Pushing to https://github.com/tfunk1030/IOptimal.git
+18:42:01.566678 http.c:930              == Info: Could not find host github.com in the .netrc file; using defaults
+18:42:01.573183 http.c:930              == Info: Host github.com:443 was resolved.
+18:42:01.573183 http.c:930              == Info: IPv6: (none)
+18:42:01.573183 http.c:930              == Info: IPv4: 140.82.113.4
+18:42:01.573183 http.c:930              == Info:   Trying 140.82.113.4:443...
+18:42:01.606196 http.c:930              == Info: schannel: disabled automatic use of client certificate
+18:42:01.607197 http.c:930              == Info: ALPN: curl offers http/1.1
+18:42:01.643206 http.c:930              == Info: ALPN: server accepted http/1.1
+18:42:01.643206 http.c:930              == Info: Established connection to github.com (140.82.113.4 port 443) from 192.168.1.161 port 62507 
+18:42:01.643206 http.c:930              == Info: using HTTP/1.x
+18:42:01.643206 http.c:877              => Send header, 0000000200 bytes (0x000000c8)
+18:42:01.643206 http.c:889              => Send header: GET /tfunk1030/IOptimal.git/info/refs?service=git-receive-pack HTTP/1.1
+18:42:01.643206 http.c:889              => Send header: Host: github.com
+18:42:01.643206 http.c:889              => Send header: User-Agent: git/2.53.0.windows.2
+18:42:01.643206 http.c:889              => Send header: Accept: */*
+18:42:01.643206 http.c:889              => Send header: Accept-Encoding: deflate, gzip, br, zstd
+18:42:01.643206 http.c:889              => Send header: Pragma: no-cache
+18:42:01.643206 http.c:889              => Send header:
+18:42:01.643206 http.c:930              == Info: Request completely sent off
+18:42:01.676217 http.c:930              == Info: schannel: remote party requests renegotiation
+18:42:01.676217 http.c:930              == Info: schannel: renegotiating SSL/TLS connection
+18:42:01.676217 http.c:930              == Info: schannel: SSL/TLS connection renegotiated
+18:42:01.676217 http.c:930              == Info: schannel: remote party requests renegotiation
+18:42:01.676217 http.c:930              == Info: schannel: renegotiating SSL/TLS connection
+18:42:01.676217 http.c:930              == Info: schannel: SSL/TLS connection renegotiated
+18:42:01.685723 http.c:877              <= Recv header, 0000000027 bytes (0x0000001b)
+18:42:01.685723 http.c:889              <= Recv header: HTTP/1.1 401 Unauthorized
+18:42:01.685723 http.c:877              <= Recv header, 0000000026 bytes (0x0000001a)
+18:42:01.685723 http.c:889              <= Recv header: Server: GitHub-Babel/3.0
+18:42:01.685723 http.c:877              <= Recv header, 0000000054 bytes (0x00000036)
+18:42:01.685723 http.c:889              <= Recv header: Content-Security-Policy: default-src 'none'; sandbox
+18:42:01.685723 http.c:877              <= Recv header, 0000000041 bytes (0x00000029)
+18:42:01.685723 http.c:889              <= Recv header: Content-Type: text/plain; charset=UTF-8
+18:42:01.685723 http.c:877              <= Recv header, 0000000040 bytes (0x00000028)
+18:42:01.685723 http.c:889              <= Recv header: www-authenticate: Basic realm="GitHub"
+18:42:01.685723 http.c:877              <= Recv header, 0000000020 bytes (0x00000014)
+18:42:01.685723 http.c:889              <= Recv header: Content-Length: 26
+18:42:01.685723 http.c:877              <= Recv header, 0000000037 bytes (0x00000025)
+18:42:01.685723 http.c:889              <= Recv header: Date: Wed, 18 Mar 2026 23:42:01 GMT
+18:42:01.685723 http.c:877              <= Recv header, 0000000058 bytes (0x0000003a)
+18:42:01.685723 http.c:889              <= Recv header: X-GitHub-Request-Id: F42B:126EF9:CEEAEE:11416AA:69BB3849
+18:42:01.685723 http.c:877              <= Recv header, 0000000023 bytes (0x00000017)
+18:42:01.685723 http.c:889              <= Recv header: X-Frame-Options: DENY
+18:42:01.685723 http.c:877              <= Recv header, 0000000073 bytes (0x00000049)
+18:42:01.685723 http.c:889              <= Recv header: Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+18:42:01.685723 http.c:877              <= Recv header, 0000000002 bytes (0x00000002)
+18:42:01.685723 http.c:889              <= Recv header:
+18:42:01.685723 http.c:930              == Info: Connection #0 to host github.com:443 left intact
+18:42:01.685723 run-command.c:674       trace: run_command: 'git credential-manager get'
+18:42:01.685723 run-command.c:935       trace: start_command: 'C:/Program Files/Git/usr/bin/sh.exe' -c 'git credential-manager get' 'git credential-manager get'
+18:42:01.710733 exec-cmd.c:266          trace: resolved executable dir: C:/Program Files/Git/mingw64/libexec/git-core
+18:42:01.713739 git.c:809               trace: exec: git-credential-manager get
+18:42:01.713739 run-command.c:674       trace: run_command: git-credential-manager get
+18:42:01.713739 run-command.c:935       trace: start_command: git-credential-manager get
+18:42:01.755515 exec-cmd.c:266          trace: resolved executable dir: C:/Program Files/Git/mingw64/libexec/git-core
+18:42:01.758517 git.c:502               trace: built-in: git config --null --list
+18:42:01.851516 http.c:930              == Info: Reusing existing https: connection with host github.com
+18:42:01.851516 http.c:930              == Info: Server auth using Basic with user 'tfunk1030'
+18:42:01.851516 http.c:877              => Send header, 0000000291 bytes (0x00000123)
+18:42:01.851516 http.c:889              => Send header: GET /tfunk1030/IOptimal.git/info/refs?service=git-receive-pack HTTP/1.1
+18:42:01.851516 http.c:889              => Send header: Host: github.com
+18:42:01.851516 http.c:889              => Send header: Authorization: Basic <redacted>
+18:42:01.851516 http.c:889              => Send header: User-Agent: git/2.53.0.windows.2
+18:42:01.851516 http.c:889              => Send header: Accept: */*
+18:42:01.851516 http.c:889              => Send header: Accept-Encoding: deflate, gzip, br, zstd
+18:42:01.851516 http.c:889              => Send header: Pragma: no-cache
+18:42:01.851516 http.c:889              => Send header:
+18:42:01.851516 http.c:930              == Info: Request completely sent off
+18:42:01.936767 http.c:877              <= Recv header, 0000000017 bytes (0x00000011)
+18:42:01.936767 http.c:889              <= Recv header: HTTP/1.1 200 OK
+18:42:01.936767 http.c:877              <= Recv header, 0000000026 bytes (0x0000001a)
+18:42:01.936767 http.c:889              <= Recv header: Server: GitHub-Babel/3.0
+18:42:01.936767 http.c:877              <= Recv header, 0000000060 bytes (0x0000003c)
+18:42:01.936767 http.c:889              <= Recv header: Content-Type: application/x-git-receive-pack-advertisement
+18:42:01.936767 http.c:877              <= Recv header, 0000000054 bytes (0x00000036)
+18:42:01.936767 http.c:889              <= Recv header: Content-Security-Policy: default-src 'none'; sandbox
+18:42:01.936767 http.c:877              <= Recv header, 0000000040 bytes (0x00000028)
+18:42:01.936767 http.c:889              <= Recv header: expires: Fri, 01 Jan 1980 00:00:00 GMT
+18:42:01.936767 http.c:877              <= Recv header, 0000000018 bytes (0x00000012)
+18:42:01.936767 http.c:889              <= Recv header: pragma: no-cache
+18:42:01.936767 http.c:877              <= Recv header, 0000000053 bytes (0x00000035)
+18:42:01.936767 http.c:889              <= Recv header: Cache-Control: no-cache, max-age=0, must-revalidate
+18:42:01.936767 http.c:877              <= Recv header, 0000000023 bytes (0x00000017)
+18:42:01.936767 http.c:889              <= Recv header: Vary: Accept-Encoding
+18:42:01.936767 http.c:877              <= Recv header, 0000000028 bytes (0x0000001c)
+18:42:01.936767 http.c:889              <= Recv header: Transfer-Encoding: chunked
+18:42:01.936767 http.c:877              <= Recv header, 0000000037 bytes (0x00000025)
+18:42:01.936767 http.c:889              <= Recv header: Date: Wed, 18 Mar 2026 23:42:02 GMT
+18:42:01.936767 http.c:877              <= Recv header, 0000000058 bytes (0x0000003a)
+18:42:01.936767 http.c:889              <= Recv header: X-GitHub-Request-Id: F42B:126EF9:CEEC4D:11418A7:69BB3849
+18:42:01.936767 http.c:877              <= Recv header, 0000000023 bytes (0x00000017)
+18:42:01.936767 http.c:889              <= Recv header: X-Frame-Options: DENY
+18:42:01.936767 http.c:877              <= Recv header, 0000000073 bytes (0x00000049)
+18:42:01.936767 http.c:889              <= Recv header: Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+18:42:01.936767 http.c:877              <= Recv header, 0000000002 bytes (0x00000002)
+18:42:01.936767 http.c:889              <= Recv header:
+18:42:01.937766 http.c:930              == Info: Connection #0 to host github.com:443 left intact
+18:42:01.937766 run-command.c:674       trace: run_command: 'git credential-manager store'
+18:42:01.937766 run-command.c:935       trace: start_command: 'C:/Program Files/Git/usr/bin/sh.exe' -c 'git credential-manager store' 'git credential-manager store'
+18:42:01.971569 exec-cmd.c:266          trace: resolved executable dir: C:/Program Files/Git/mingw64/libexec/git-core
+18:42:01.976573 git.c:809               trace: exec: git-credential-manager store
+18:42:01.976573 run-command.c:674       trace: run_command: git-credential-manager store
+18:42:01.976573 run-command.c:935       trace: start_command: git-credential-manager store
+18:42:02.017092 exec-cmd.c:266          trace: resolved executable dir: C:/Program Files/Git/mingw64/libexec/git-core
+18:42:02.020091 git.c:502               trace: built-in: git config --null --list
+18:42:02.103897 run-command.c:674       trace: run_command: .git/hooks/pre-push origin https://github.com/tfunk1030/IOptimal.git
+18:42:02.103897 run-command.c:935       trace: start_command: .git/hooks/pre-push origin https://github.com/tfunk1030/IOptimal.git
+18:42:02.138908 exec-cmd.c:266          trace: resolved executable dir: C:/Program Files/Git/mingw64/libexec/git-core
+18:42:02.141908 git.c:809               trace: exec: git-lfs pre-push origin https://github.com/tfunk1030/IOptimal.git
+18:42:02.141908 run-command.c:674       trace: run_command: git-lfs pre-push origin https://github.com/tfunk1030/IOptimal.git
+18:42:02.141908 run-command.c:935       trace: start_command: git-lfs pre-push origin https://github.com/tfunk1030/IOptimal.git
+18:42:02.156095 trace git-lfs: Error getting git version: executable file not found in %PATH%
+18:42:02.156095 trace git-lfs: Error getting git version: executable file not found in %PATH%
+18:42:02.168060 trace git-lfs: Error getting git version: executable file not found in %PATH%
+Error getting Git version: executable file not found in %PATH%
+error: failed to push some refs to 'https://github.com/tfunk1030/IOptimal.git'
+
+
+Exit: 1

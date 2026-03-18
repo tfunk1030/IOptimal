@@ -1,0 +1,16 @@
+=== UPSTREAM ===
+origin/codextwo
+Exit: 0
+
+=== AHEAD ===
+2
+Exit: 0
+
+=== BEHIND ===
+0
+Exit: 0
+
+=== FORCE PUSH ===
+STDERR: Error getting Git version: executable file not found in %PATH%
+error: failed to push some refs to 'https://github.com/tfunk1030/IOptimal.git'
+Exit: 1

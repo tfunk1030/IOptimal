@@ -1,0 +1,234 @@
+Car: BMW M Hybrid V8
+Using car-specific DF balance target: 50.14%
+Learned Corrections (46 sessions, high confidence):
+  • Front m_eff: 218.2 kg (empirical, std=610.3)
+  • Roll gradient: 0.806 deg/g (measured across 24 sessions)
+  • LLTD baseline: 0.498 (measured, std=0.012)
+  • Aero compression front: 10.3 mm (measured)
+  • Aero compression rear: 21.1 mm (measured)
+
+Aero surface: AeroSurface(bmw, wing=17.0°, front_rh=[25-75], rear_rh=[5-50])
+Track: Sebring International Raceway - International
+Best lap: 109.222s
+
+============================================================
+Running BMW/Sebring constrained optimizer...
+  Target DF balance: 50.14% ± 0.10%
+  Fuel load: 89 L
+
+
+[constraints] Near-binding constraints:
+  !! Front bottoming margin: 17.6 / 19.4 mm (slack +9.3%)
+     → Binding constraint is modifier_floor. Stiffen front heave or raise front dynamic RH.
+  !! Front RH sigma: 7.5 / 8.0 mm (slack +6.2%)
+
+===============================================================
+  DIFFERENTIAL EMPIRICAL MODEL
+===============================================================
+
+  Preload:       25 Nm
+  Coast ramp:    45 deg  (lower = more coast locking)
+  Drive ramp:    70 deg  (lower = more drive locking)
+  Clutch plates: 6
+
+  Lock % coast/entry: 60.2%
+  Lock % drive/exit:  25.2%
+  Lock contributions: preload=5.1%  plates=55.1%
+
+  Exit understeer index:  +0.091
+  Entry rotation index:   -0.102
+
+  PRELOAD:
+    Base: 27.2 Nm (lat transfer=13581N at peak lat_g=3.98g)
+
+  RAMPS:
+    Coast 45 deg (from trail brake depth=0.30)
+    Drive 70 deg (from throttle R^2=0.60)
+
+  INTERPRETATION:
+    -> Exit: near-neutral. Diff well-matched to driving style.
+    -> Entry: low rotation. Car may push on entry.
+
+===============================================================
+
+
+══════════════════════════════════════════════════════════════════════
+  BMW M Hybrid V8  ·  Sebring International Raceway — International  ·  Wing 17.0°
+  Physics-based setup  ·  2026-03-18 21:05 UTC
+══════════════════════════════════════════════════════════════════════
+
+┌────────────────────────── SETUP TO ENTER ──────────────────────────┐
+│  PLATFORM / SPRINGS                                                │
+│  Wing                     17.0 deg                                 │
+│  Fuel load                89 L                                     │
+│  Front static RH target   30.0 mm                                  │
+│  Rear static RH target    49.1 mm                                  │
+│  Front pushrod            -25.5 mm                                 │
+│  Rear pushrod             -23.5 mm                                 │
+│  Front heave spring       30 N/mm                                  │
+│  Front heave perch        -14.5 mm                                 │
+│  Rear third spring        450 N/mm                                 │
+│  Rear third perch         +42.0 mm                                 │
+│  Front torsion bar OD     13.90 mm                                 │
+│  Front torsion bar turns  0.102 turns                              │
+│  Rear coil spring         150 N/mm                                 │
+│  Rear spring perch        30.0 mm                                  │
+│  Heave slider static      43.7 / 45.0 mm                           │
+│  Heave spring deflection  10.5 / 93.5 mm                           │
+│                                                                    │
+│  ARBS / GEOMETRY                                                   │
+│  Front ARB size / blade   Soft / 1                                 │
+│  Rear ARB size / blade    Medium / 1                               │
+│  Rear ARB live slow       blade 1                                  │
+│  Rear ARB live fast       blade 4                                  │
+│  Front camber             -2.2 deg                                 │
+│  Rear camber              -1.8 deg                                 │
+│  Front toe                -0.4 mm                                  │
+│  Rear toe                 +0.0 mm                                  │
+│                                                                    │
+│  BRAKES / DIFF / TC / TYRES                                        │
+│  Brake bias               46.0%                                    │
+│  Brake bias status        solved                                   │
+│  Brake target / migration (pipeline) / (pipeline)  [pass-through...│
+│  Master cyl F / R         (pipeline)  [pass-through]               │
+│  Pad compound             (pipeline)  [pass-through]               │
+│  Diff preload             25 Nm                                    │
+│  Diff coast ramp          45 deg                                   │
+│  Diff drive ramp          70 deg                                   │
+│  Diff clutch plates       6                                        │
+│  TC gain / slip           (pipeline) / (pipeline)                  │
+│  Tyre cold FL / FR        152 / 152 kPa                            │
+│  Tyre cold RL / RR        152 / 152 kPa                            │
+│                                                                    │
+│  DAMPERS                                                           │
+│  LF LS comp / rbd         8 / 7 clicks                             │
+│  LF HS comp / rbd / slope 5 / 8 / 11                               │
+│  RF LS comp / rbd         8 / 7 clicks                             │
+│  RF HS comp / rbd / slope 5 / 8 / 11                               │
+│  LR LS comp / rbd         6 / 7 clicks                             │
+│  LR HS comp / rbd / slope 4 / 11 / 11                              │
+│  RR LS comp / rbd         6 / 7 clicks                             │
+│  RR HS comp / rbd / slope 4 / 11 / 11                              │
+│                                                                    │
+│  TARGETS / LIMITS                                                  │
+│  DF balance               50.12% (target 50.14%)  ✓                │
+│  LLTD                     52.7% (target 52.8%)                     │
+│  Dynamic RH front / rear  19.4 / 42.3 mm                           │
+│  Heave travel margin      65.5 mm                                  │
+│  Front bottoming margin   1.8 mm                                   │
+│  Stall margin             +1.6 mm  ✓                               │
+│  Garage constraints       OK                                       │
+└────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────── GARAGE CARD ────────────────────────────┐
+│                                                                    │
+│  RIDE HEIGHTS & PUSHRODS           SPRINGS                         │
+│  Front static:   30.0 mm           Heave F:       30 N/mm  perch -14mm│
+│  Rear static:    49.1 mm           Third R:      450 N/mm  perch +42mm│
+│  Rake:           19.1 mm           Torsion:    13.90 mm OD  0.102 Turns│
+│  Front pushrod: -25.5 mm           Rear coil:    150 N/mm          │
+│  Rear pushrod:  -23.5 mm           Rear perch:   30.0 mm           │
+│                                                                    │
+│  ANTI-ROLL BARS                    WHEEL GEOMETRY                  │
+│  FARB: Soft   Blade 1  (locked)    Front camber: -2.2°             │
+│  RARB: Medium Blade 1  [1→4]       Rear camber:  -1.8°             │
+│                                    Front toe:  -0.4 mm             │
+│                                    Rear toe:   +0.0 mm             │
+│                                                                    │
+│  BRAKES & DIFF                     TYRES                           │
+│  Brake bias: 46.0%                 Cold FL/FR: 152/152 kPa         │
+│  Diff: 25 Nm  45°/70°  6pl         Cold RL/RR: 152/152 kPa         │
+│                                                                    │
+│  DAMPERS (clicks)                     AERO STATUS                  │
+│            LF   RF   LR   RR       DF bal: 50.12%  ✓               │
+│  LS Comp:   8    8    6    6       L/D:    3.812                   │
+│  LS Rbd:    7    7    7    7       Stall:  +1.6mm  ✓               │
+│  HS Comp:   5    5    4    4       LLTD:   52.7%  (target 52.8%)   │
+│  HS Rbd:    8    8   11   11       Dyn RH: F 19.4  R 42.3 mm       │
+│  HS Slope: 11   11   11   11       Camber: F-2.2°  R-1.8°  [estimated]│
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────── TOP ACTIONS ────────────────────────────┐
+│  1. Brake bias: 46 %  (1% bias deviation -> braking effi…  [48ms/unit]│
+│  2. RARB blade: 1 blade  (1 RARB blade -> 3% LLTD -> 0.9…  [43ms/unit]│
+│  3. Torsion bar OD: 13.9 mm  (1mm OD -> 8.6 N/mm wheel r…  [37ms/unit]│
+│  4. Stint (LOOSE_START): start RARB -1 blade  → +1.6° US…  [endurance]│
+│  5. Sector: 56% fast-corner → aero platform priorit…  [track-specific]│
+└────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────── STINT CARD ────────────────────────────┐
+│  Balance evolution:                                                │
+│    Lap    US drift    RARB rec  Note                               │
+│  ──────────────────────────────────────────────────────────────────│
+│      0      +0.0°   blade 3                                        │
+│      6      +0.3°   blade 2                                        │
+│     12      +0.6°   blade 2                                        │
+│     18      +1.0°   blade 1     ← go softer                        │
+│     24      +1.3°   blade 1     ← go softer                        │
+│     30      +1.6°   blade 1     ← go softer                        │
+│                                                                    │
+│  Pushrod correction: +0.5mm over stint                             │
+│  Lap ~15: +0.3mm   Lap ~30: +0.5mm                                 │
+│  Tyre pressure rise: +3 kPa/10 laps                                │
+└────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────── LAP TIME SENSITIVITY ───────────────────────┐
+│  #    Parameter                  Current        Impact  Conf       │
+│  ──────────────────────────────────────────────────────────────────│
+│  1    brake_bias_pct                  46    -48ms/unit  medium     │
+│  2    rear_arb_blade                   1    -43ms/unit  high       │
+│  3    torsion_bar_od_mm               14    +37ms/unit  medium     │
+│  4    rear_camber_deg               -1.8    +29ms/unit  low        │
+│  5    front_rh_mm                     19     -2ms/unit  medium     │
+│  6    rear_rh_mm                      42     -1ms/unit  medium     │
+│  7    front_heave_nmm                 30     +0ms/unit  low        │
+│                                                                    │
+│  Biggest lever: brake_bias_pct (48ms/unit)                         │
+└────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────── SECTOR COMPROMISE ─────────────────────────┐
+│  Track split:  slow 12%  ·  medium 31%  ·  fast 56%                │
+│                                                                    │
+│  Parameter            Slow best   Fast best    Compromise  Cost    │
+│  ──────────────────────────────────────────────────────────────────│
+│  RARB blade           blade 1-2     blade 2       blade 1  25ms    │
+│    ↳ Slow corners need softer RARB (rotation, mechanical grip).    │
+│    ↳ Fast corners need stiffer RARB (stability, aero platform).    │
+│  Front heave            40 N/mm     20 N/mm       30 N/mm  22ms    │
+│    ↳ Mild conflict: stiffer heave = better platform; softer = kerb │
+│    ↳ absorption.                                                   │
+│  Brake bias               45.5%       46.5%         46.0%  7ms     │
+│    ↳ Mild: rear bias helps slow rotation, forward bias helps       │
+│    ↳ stability at speed.                                           │
+│  Front camber          -3.1 deg    -2.7 deg      -2.9 deg  4ms     │
+│    ↳ Mild: more camber = max cornering; less camber = less drag on │
+│    ↳ straights.                                                    │
+│                                                                    │
+│  Total compromise cost: ~58ms  ·  use live RARB to recover         │
+│  → Fast-sector circuit (56% fast corners): prioritize aero platform│
+│  → Consider RARB blade 2 as baseline (stiffer than nominal for aero│
+│  → Moderate compromise cost ~58 ms/lap. RARB live adjustment recomm│
+└────────────────────────────────────────────────────────────────────┘
+
+───────────────────────── BALANCE & PLATFORM ─────────────────────────
+  LLTD achieved: 52.7%  target: 52.8%  RARB sensitivity: -2.7%/blade
+  RARB 1→4 range: 52.7%→39.3%
+  Heave: 30 N/mm  (bottom margin: 1.8mm)
+  Heave slider: 43.7/45.0 mm  travel margin: 65.5 mm
+  Torsion: 13.90mm OD  1.64Hz  heave/corner: 1.0x
+  Rear coil: 150 N/mm  3.48Hz  third/corner: 3.0x
+  Roll at peak 3.98g: 3.5°  Fcamber dynamic: -0.01°  [estimated]
+  Tyres to op temp: fronts ~19 laps  rears ~14 laps
+
+──────────────────────── VALIDATION CHECKLIST ────────────────────────
+  [ ] 5 laps minimum before judging — tyres need conditioning
+  [ ] Check IBT ride heights vs Step 1 targets (dyn vs static)
+  [ ] Stall margin 1.6mm — watch if RH drops on bumps
+  [ ] Shock vel p99 >800mm/s → stiffen HS comp +1 click
+  [ ] Tyre temp spread (inner-outer) → flag for camber calibration
+  [ ] RARB live: blade 1 (slow) ↔ blade 4 (fast)
+  [ ] Do NOT touch dampers until Steps 1-5 validated
+
+  Starting points only. Validate every step on track.
+══════════════════════════════════════════════════════════════════════
