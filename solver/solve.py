@@ -71,12 +71,14 @@ def main():
     parser.add_argument("--car", required=True, help="Car name (e.g., bmw)")
     parser.add_argument("--track", required=True, help="Track name (e.g., sebring)")
     parser.add_argument("--wing", required=True, type=float, help="Wing angle (degrees)")
-    parser.add_argument("--balance", type=float, default=50.14,
-                        help="Target DF balance %% (default: 50.14)")
+    parser.add_argument("--balance", type=float, default=None,
+                        help="Target DF balance %% (default: car-specific)")
     parser.add_argument("--tolerance", type=float, default=0.1,
                         help="Balance tolerance %% (default: 0.1)")
     parser.add_argument("--fuel", type=float, default=89.0,
                         help="Fuel load in liters (default: 89)")
+    parser.add_argument("--mid-stint", action="store_true",
+                        help="Optimize for mid-stint conditions (half fuel, hot tires)")
     parser.add_argument("--free", action="store_true",
                         help="Free optimization (don't pin front RH at sim floor)")
     parser.add_argument("--json", action="store_true",
@@ -95,6 +97,10 @@ def main():
                         help="Stint length for stint analysis (default: 30)")
     parser.add_argument("--legacy-solver", action="store_true",
                         help="Force the legacy sequential solver path for BMW/Sebring validation")
+    parser.add_argument("--explore", action="store_true",
+                        help="Run unconstrained parameter space exploration (ignores best-practice constraints)")
+    parser.add_argument("--bayesian", action="store_true",
+                        help="Run Bayesian optimization over full legal parameter space")
 
     args = parser.parse_args()
     run_solver(args)
@@ -109,8 +115,8 @@ def run_solver(args: "argparse.Namespace") -> None:
     # Fill in defaults for args that differ between unified and standalone CLI
     if not hasattr(args, "fuel") or args.fuel is None:
         args.fuel = 89.0
-    if not hasattr(args, "balance"):
-        args.balance = 50.14
+    if not hasattr(args, "balance") or args.balance is None:
+        args.balance = None  # Will be resolved from car model below
     if not hasattr(args, "tolerance"):
         args.tolerance = 0.1
     if not hasattr(args, "free"):
@@ -139,6 +145,17 @@ def run_solver(args: "argparse.Namespace") -> None:
     # Load car model
     car = get_car(args.car)
     log(f"Car: {car.name}")
+
+    # Resolve DF balance target from car model if not explicitly set
+    if args.balance is None:
+        args.balance = car.default_df_balance_pct
+        log(f"Using car-specific DF balance target: {args.balance:.2f}%")
+
+    # Mid-stint optimization: use half fuel load
+    if getattr(args, "mid_stint", False):
+        original_fuel = args.fuel
+        args.fuel = args.fuel * 0.5
+        log(f"[mid-stint] Optimizing for half fuel: {args.fuel:.0f} L (was {original_fuel:.0f} L)")
 
     # Apply learned corrections if requested
     learned = None
@@ -177,9 +194,21 @@ def run_solver(args: "argparse.Namespace") -> None:
     surface = surfaces[args.wing]
     log(f"Aero surface: {surface}")
 
-    # Load track profile
-    track = find_track_profile(args.track)
-    log(f"Track: {track.track_name} - {track.track_config}")
+    # Load track profile (try IBT-derived first, fall back to generic)
+    try:
+        track = find_track_profile(args.track)
+        log(f"Track: {track.track_name} - {track.track_config}")
+    except FileNotFoundError:
+        from track_model.generic_profiles import generate_generic_profile
+        track = generate_generic_profile(
+            name=args.track,
+            length_km=getattr(args, "track_length_km", 5.0),
+            n_corners=getattr(args, "track_corners", 15),
+            roughness=getattr(args, "track_roughness", "medium"),
+            car=args.car,
+        )
+        log(f"Track: {track.track_name} (generic profile — no IBT data)")
+        log(f"  Note: Run with IBT telemetry for accurate results")
     log(f"Best lap: {track.best_lap_time_s:.3f}s")
     log()
 
@@ -485,6 +514,57 @@ def run_solver(args: "argparse.Namespace") -> None:
                 log(space_result.summary())
         except Exception as e:
             log(f"[space] Skipped: {e}")
+
+    # ─── Multi-Speed Compromise Analysis ──────────────────────────────
+    try:
+        from solver.multi_speed_solver import MultiSpeedSolver
+        ms_solver = MultiSpeedSolver(car, track)
+        ms_result = ms_solver.analyze(
+            front_heave_nmm=step2.front_heave_nmm,
+            rear_third_nmm=step2.rear_third_nmm,
+            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+        )
+        if not args.report_only and not args.json:
+            log()
+            log(ms_result.summary())
+    except Exception as e:
+        log(f"[multi-speed] Skipped: {e}")
+
+    # ─── Unconstrained Explorer ────────────────────────────────────────
+    if getattr(args, "explore", False):
+        try:
+            from solver.explorer import SetupExplorer
+            explorer = SetupExplorer(car, surface, track)
+            explore_result = explorer.explore(
+                target_balance=args.balance,
+                fuel_load_l=args.fuel,
+            )
+            log()
+            log(explore_result.summary())
+        except Exception as e:
+            log(f"[explore] Skipped: {e}")
+
+    # ─── Bayesian Optimization ──────────────────────────────────────────
+    if getattr(args, "bayesian", False):
+        try:
+            from solver.bayesian_optimizer import BayesianOptimizer
+            physics_baseline = {
+                "front_heave_nmm": step2.front_heave_nmm,
+                "rear_third_nmm": step2.rear_third_nmm,
+                "rear_spring_nmm": step3.rear_spring_rate_nmm,
+                "front_camber_deg": step5.front_camber_deg,
+                "rear_camber_deg": step5.rear_camber_deg,
+                "front_arb_blade": step4.front_arb_blade_start,
+                "rear_arb_blade": step4.rear_arb_blade_start,
+            }
+            bo = BayesianOptimizer(car, track)
+            bo_result = bo.optimize(physics_baseline=physics_baseline)
+            log()
+            log(bo_result.summary())
+        except Exception as e:
+            log(f"[bayesian] Skipped: {e}")
 
     # ─── Step 6b: Differential (standalone defaults) ──────────────────
     diff_result = None

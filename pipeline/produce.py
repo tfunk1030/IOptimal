@@ -137,7 +137,7 @@ def produce(
                 ibt_paths=ibt_arg,
                 wing=args.wing,
                 fuel=args.fuel,
-                balance_target=getattr(args, "balance", 50.14),
+                balance_target=getattr(args, "balance", None) or get_car(args.car).default_df_balance_pct,
                 sto_path=args.sto,
                 json_path=args.json,
                 setup_json_path=getattr(args, "setup_json", None),
@@ -157,6 +157,11 @@ def produce(
     # ── Load car model ──
     car = get_car(args.car)
     log(f"Car: {car.name}")
+
+    # Resolve DF balance target from car model if not explicitly set
+    if getattr(args, "balance", None) is None:
+        args.balance = car.default_df_balance_pct
+        log(f"Using car-specific DF balance target: {args.balance:.2f}%")
 
     # ── Parse IBT ──
     ibt = IBTFile(ibt_path)
@@ -457,6 +462,27 @@ def produce(
             fuel_load_l=fuel,
             pin_front_min=not args.free,
         )
+
+        # Run free optimization comparison if we're in pinned mode
+        if not args.free:
+            try:
+                free_step1 = rake_solver.solve(
+                    target_balance=target_balance,
+                    balance_tolerance=args.tolerance,
+                    fuel_load_l=fuel,
+                    pin_front_min=False,
+                )
+                ld_delta = free_step1.ld_ratio - step1.ld_ratio
+                if ld_delta > 0.005:
+                    log(f"\n  [free-opt] Free optimization L/D: {free_step1.ld_ratio:.3f} "
+                        f"vs pinned: {step1.ld_ratio:.3f} ({ld_delta:+.3f})")
+                    log(f"  [free-opt] Free front RH: {free_step1.dynamic_front_rh_mm:.1f}mm "
+                        f"rear: {free_step1.dynamic_rear_rh_mm:.1f}mm")
+                    if ld_delta > 0.02:
+                        log("  [free-opt] ** Significant L/D gain — consider --free mode **")
+            except Exception:
+                pass  # Free opt comparison is advisory
+
         if not args.report_only:
             print(step1.summary())
 
@@ -1256,8 +1282,8 @@ def main():
                         help="Wing angle (auto-detected from IBT if not specified)")
     parser.add_argument("--lap", type=int, default=None,
                         help="Lap number to analyze (default: best lap)")
-    parser.add_argument("--balance", type=float, default=50.14,
-                        help="Target DF balance %% (default: 50.14)")
+    parser.add_argument("--balance", type=float, default=None,
+                        help="Target DF balance %% (default: car-specific)")
     parser.add_argument("--tolerance", type=float, default=0.1,
                         help="Balance tolerance %% (default: 0.1)")
     parser.add_argument("--fuel", type=float, default=None,

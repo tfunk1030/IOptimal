@@ -119,6 +119,15 @@ class TrackProfile:
     shock_vel_p95_rear_clean_mps: float = 0.0
     shock_vel_p99_rear_clean_mps: float = 0.0
 
+    # High-speed only shock velocity (>200 kph, for aero platform sizing)
+    # These separate aero-compression from bump excitation — critical for
+    # correct heave spring sizing. Without this, lap-wide p99 includes
+    # low-speed bumps that don't matter for aero platform stability.
+    shock_vel_p95_front_hs_mps: float = 0.0  # >200 kph only
+    shock_vel_p99_front_hs_mps: float = 0.0
+    shock_vel_p95_rear_hs_mps: float = 0.0
+    shock_vel_p99_rear_hs_mps: float = 0.0
+
     # Kerb-only shock velocity (for HS damper tuning)
     shock_vel_p95_front_kerb_mps: float = 0.0
     shock_vel_p99_front_kerb_mps: float = 0.0
@@ -167,6 +176,32 @@ class TrackProfile:
 
     # Telemetry source description
     telemetry_source: str = ""
+
+    def pct_time_above_kph(self, threshold_kph: float) -> float:
+        """Fraction of lap time spent above *threshold_kph*.
+
+        Derived from the ``speed_bands_kph`` histogram (20-kph bins, values
+        in percent).  Returns 0.0 when no speed band data is available.
+        """
+        if not self.speed_bands_kph:
+            return 0.0
+        total = 0.0
+        for label, pct in self.speed_bands_kph.items():
+            lo = float(label.split("-")[0])
+            if lo >= threshold_kph:
+                total += pct
+        return total / 100.0  # convert percent → fraction
+
+    def pct_time_below_kph(self, threshold_kph: float) -> float:
+        """Fraction of lap time spent below *threshold_kph*."""
+        if not self.speed_bands_kph:
+            return 0.0
+        total = 0.0
+        for label, pct in self.speed_bands_kph.items():
+            hi = float(label.split("-")[1])
+            if hi <= threshold_kph:
+                total += pct
+        return total / 100.0
 
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""

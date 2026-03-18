@@ -238,8 +238,8 @@ def main() -> None:
                         help="Lap number to analyze (default: best lap)")
     parser.add_argument("--fuel", type=float, default=None,
                         help="Fuel load in liters (auto-detected from IBT if not set)")
-    parser.add_argument("--balance", type=float, default=50.14,
-                        help="Target DF balance %% (default: 50.14)")
+    parser.add_argument("--balance", type=float, default=None,
+                        help="Target DF balance %% (default: car-specific)")
     parser.add_argument("--tolerance", type=float, default=0.1,
                         help="Balance tolerance %% (default: 0.1)")
     parser.add_argument("--free", action="store_true",
