@@ -820,6 +820,58 @@ class ObjectiveFunction:
         zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.14)
         gain -= min(5.0, zeta_hs_rear_err * 7.0)
 
+        # ── REBOUND : COMPRESSION RATIO (previously invisible — pinning bug) ──
+        # Rebound clicks had ZERO gradient in the objective because ζ was computed
+        # from compression only. This caused the coord descent to leave rbd pinned
+        # at whatever Sobol init selected (typically 5).
+        #
+        # Physics basis for ratio targets:
+        #   LS rbd/comp ≈ 0.9–1.1 (near 1:1) — symmetric low-speed response
+        #     avoids roll jacking on chicanes; slightly < 1 prevents bump-stop hunting
+        #   HS rbd/comp ≈ 0.5–0.7 (more comp than rbd) — GTP aero platform rule:
+        #     comp absorbs the kerb hit, rbd controls the return; if rbd > comp
+        #     at high speed, car jacks up off kerbs and loses underfloor seal
+        #   Rear HS rbd target is softer than front (rear must "follow through"
+        #     on kerb exit without unloading rear axle)
+        #
+        # Source: rbd_comp_ratio_target=1.6 in DamperModel (clicks ratio, not force)
+        #   That value means rbd_clicks = 1.6 × comp_clicks (typical for passenger car)
+        #   For GTP/prototype: tighter control needed; ~0.9 LS, ~0.6 HS
+        #   Penalty: 3ms per 0.1 ratio error (mild — 4ms total range per axis)
+        #   This gives the coord descent a gradient without overpowering compression ζ
+        f_ls_comp = params.get("front_ls_comp", 7)
+        f_ls_rbd  = params.get("front_ls_rbd", 6)
+        f_hs_comp = params.get("front_hs_comp", 5)
+        f_hs_rbd  = params.get("front_hs_rbd", 5)
+        r_ls_comp = params.get("rear_ls_comp", 5)
+        r_ls_rbd  = params.get("rear_ls_rbd", 5)
+        r_hs_comp = params.get("rear_hs_comp", 3)
+        r_hs_rbd  = params.get("rear_hs_rbd", 3)
+
+        # Ratio target: rbd = target_ratio * comp
+        # Penalty is deliberately WEAK (max 5ms) so ζ (comp) stays dominant.
+        # The gradient here only moves RBD — it must never pull COMP down.
+        # Implementation: rbd_target = comp * ratio_target (comp-anchored, not rbd-anchored)
+        # So if comp=11 → rbd_target_LS = 11*0.95 = 10.5 → solver pushes rbd toward 10-11.
+        # If rbd=5 and comp=11 → ratio=0.45 → error=0.50 → penalty=0.50*8=4ms (small).
+        # This gives the coord descent a gradient on rbd without destabilizing comp.
+        LS_RBD_COMP_TARGET = 0.95   # [ratio] LS rebound / LS comp target
+        HS_RBD_COMP_TARGET = 0.60   # [ratio] HS rebound / HS comp target (GTP kerb rule)
+        RBD_PENALTY_MS_PER_UNIT = 8.0   # weak — max 5ms, never overpowers ζ
+
+        def _rbd_penalty(rbd: float, comp: float, target: float) -> float:
+            if comp < 1.0:
+                # Zero comp is penalized by ζ already; don't double-penalize here
+                return 0.0
+            rbd_target = comp * target
+            err = abs(rbd - rbd_target)  # in click units (not ratio — click-anchored)
+            return min(5.0, err * RBD_PENALTY_MS_PER_UNIT / max(1.0, comp))
+
+        gain -= _rbd_penalty(f_ls_rbd, f_ls_comp, LS_RBD_COMP_TARGET)
+        gain -= _rbd_penalty(f_hs_rbd, f_hs_comp, HS_RBD_COMP_TARGET)
+        gain -= _rbd_penalty(r_ls_rbd, r_ls_comp, LS_RBD_COMP_TARGET)
+        gain -= _rbd_penalty(r_hs_rbd, r_hs_comp, HS_RBD_COMP_TARGET)
+
         # ═══════════════════════════════════════════════════════════════
         # TIER 4: DF BALANCE (aero map quality, secondary to rake)
         # ═══════════════════════════════════════════════════════════════
