@@ -1,0 +1,14 @@
+{
+  "car": "cadillac",
+  "total_sessions": 2,
+  "tracks_included": [
+    "Silverstone Circuit"
+  ],
+  "aero_compression_front_mm": 11.984911918640137,
+  "aero_compression_rear_mm": 18.532218742370603,
+  "roll_gradient_global_deg_per_g": null,
+  "m_eff_front_global_kg": 266.38874248222993,
+  "anomalies": [],
+  "confidence": "low",
+  "last_updated": "2026-03-18T00:43:45.951781+00:00"
+}

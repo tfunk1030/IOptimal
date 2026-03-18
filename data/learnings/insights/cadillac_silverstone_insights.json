@@ -1,10 +1,25 @@
 {
   "car": "cadillac",
   "track": "Silverstone Circuit",
-  "session_count": 1,
+  "session_count": 2,
   "key_insights": [
-    "Only 1 session(s) \u2014 need more data for insights."
+    "Lap time range: 108.667s \u2013 109.139s (0.472s window across 2 sessions)"
   ],
   "setup_trends": [],
-  "unresolved_questions": []
+  "unresolved_questions": [
+    "platform:Front excursion p99 13.3mm = 267% of dynamic RH (5mm) appears in 1/2 sessions \u2014 may need attention",
+    "platform:Braking pitch range 2.26 deg (mean +0.35 deg) appears in 1/2 sessions \u2014 may need attention",
+    "balance:Roll distribution proxy 50.7% vs target 54% (delta -2.8%) appears in 1/2 sessions \u2014 may need attention",
+    "thermal:LF spread +0.6C vs target +10C (too flat / outer loaded) appears in 1/2 sessions \u2014 may need attention",
+    "thermal:Front carcass temp 34C (target >80C) appears in 1/2 sessions \u2014 may need attention",
+    "thermal:Rear carcass temp 34C (target >80C) appears in 1/2 sessions \u2014 may need attention",
+    "grip:Rear traction slip p95 = 0.086 (target <0.08) appears in 1/2 sessions \u2014 may need attention",
+    "grip:Hydraulic brake split 78.7% differs from setup 47.5% (delta 31.2%) appears in 1/2 sessions \u2014 may need attention",
+    "platform:Front excursion p99 13.1mm = 262% of dynamic RH (5mm) appears in 1/2 sessions \u2014 may need attention",
+    "platform:Braking pitch range 2.16 deg (mean +0.36 deg) appears in 1/2 sessions \u2014 may need attention",
+    "balance:Directional balance asymmetry 0.43\u00b0 (left=+0.17\u00b0, right=-0.26\u00b0) appears in 1/2 sessions \u2014 may need attention",
+    "balance:Roll distribution proxy 50.5% vs target 54% (delta -3.0%) appears in 1/2 sessions \u2014 may need attention",
+    "thermal:LF spread +1.7C vs target +10C (too flat / outer loaded) appears in 1/2 sessions \u2014 may need attention",
+    "grip:Hydraulic brake split 76.5% differs from setup 47.5% (delta 29.0%) appears in 1/2 sessions \u2014 may need attention"
+  ]
 }

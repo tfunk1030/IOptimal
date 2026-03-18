@@ -137,7 +137,7 @@ def produce(
                 ibt_paths=ibt_arg,
                 wing=args.wing,
                 fuel=args.fuel,
-                balance_target=getattr(args, "balance", 50.14),
+                balance_target=getattr(args, "balance", None) or get_car(args.car).default_df_balance_pct,
                 sto_path=args.sto,
                 json_path=args.json,
                 setup_json_path=getattr(args, "setup_json", None),
@@ -158,10 +158,21 @@ def produce(
     car = get_car(args.car)
     log(f"Car: {car.name}")
 
+    # Resolve DF balance target from car model if not explicitly set
+    if getattr(args, "balance", None) is None:
+        args.balance = car.default_df_balance_pct
+        log(f"Using car-specific DF balance target: {args.balance:.2f}%")
+
     # ── Parse IBT ──
     ibt = IBTFile(ibt_path)
     log(f"IBT: {ibt_path}")
     log(f"  Samples: {ibt.record_count}, Tick rate: {ibt.tick_rate} Hz")
+
+    # Auto-detect min_lap_time if not explicitly set
+    if getattr(args, "min_lap_time", None) is None:
+        _all_lts = [t for _, t, _, _ in ibt.lap_times(min_time=30.0) if t < 300]
+        _fastest = min(_all_lts) if _all_lts else None
+        args.min_lap_time = max(60.0, _fastest * 0.95) if _fastest else 60.0
 
     # ── Auto-detect from session info ──
     current_setup = CurrentSetup.from_ibt(ibt)
@@ -209,11 +220,24 @@ def produce(
         sys.exit(1)
     surface = surfaces[wing]
 
-    # ── Phase A: Build track profile from IBT ──
-    log("\nBuilding track profile from IBT...")
-    track = build_profile(ibt_path)
-    log(f"  Track: {track.track_name} — {track.track_config}")
-    log(f"  Best lap: {track.best_lap_time_s:.3f}s")
+    # ── Phase A: Build track profile from IBT (or load saved profile) ──
+    track_hint = getattr(args, "track", None)
+    saved_profile_path = None
+    if track_hint:
+        from track_model.profile import TrackProfile
+        _candidate = Path("data/tracks") / f"{track_hint.lower().replace(' ', '_')}.json"
+        if _candidate.exists():
+            saved_profile_path = _candidate
+    if saved_profile_path:
+        log(f"\nLoading saved track profile: {saved_profile_path}")
+        track = TrackProfile.load(saved_profile_path)
+        log(f"  Track: {track.track_name} — {track.track_config}")
+        log(f"  Best lap: {track.best_lap_time_s:.3f}s")
+    else:
+        log("\nBuilding track profile from IBT...")
+        track = build_profile(ibt_path)
+        log(f"  Track: {track.track_name} — {track.track_config}")
+        log(f"  Best lap: {track.best_lap_time_s:.3f}s")
 
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")
@@ -459,6 +483,26 @@ def produce(
         )
         if not args.report_only:
             print(step1.summary())
+
+        # Advisory: compare free-mode L/D when running in pinned mode
+        if not args.free:
+            try:
+                free_step1 = rake_solver.solve(
+                    target_balance=target_balance,
+                    balance_tolerance=args.tolerance,
+                    fuel_load_l=fuel,
+                    pin_front_min=False,
+                )
+                ld_delta = free_step1.ld_ratio - step1.ld_ratio
+                if ld_delta > 0.005:
+                    log(f"\n  [free-opt] Free optimization L/D: {free_step1.ld_ratio:.3f} "
+                        f"vs pinned: {step1.ld_ratio:.3f} ({ld_delta:+.3f})")
+                    log(f"  [free-opt] Free front RH: {free_step1.dynamic_front_rh_mm:.1f}mm "
+                        f"rear: {free_step1.dynamic_rear_rh_mm:.1f}mm")
+                    if ld_delta > 0.02:
+                        log("  [free-opt] ** Significant L/D gain — consider --free mode **")
+            except Exception:
+                pass  # Free opt comparison is advisory only
 
         # Step 2: Heave
         log("\nRunning Step 2: Heave / Third Springs...")
@@ -1249,6 +1293,10 @@ def main():
         description="GTP Setup Producer — IBT->.sto physics pipeline"
     )
     parser.add_argument("--car", required=True, help="Car name (e.g., bmw)")
+    parser.add_argument("--track", type=str, default=None,
+                        help="Track name hint (e.g., silverstone). If a saved profile exists at "
+                             "data/tracks/{name}.json it will be loaded; otherwise the track "
+                             "profile is derived from the IBT as usual.")
     parser.add_argument("--ibt", required=True, nargs="+",
                         help="Path(s) to IBT telemetry file(s). "
                              "When 2+ files given, delegates to the reasoning engine.")
@@ -1277,9 +1325,10 @@ def main():
     parser.add_argument("--legacy-solver", action="store_true",
                         help="Force the legacy sequential solver path for BMW/Sebring validation")
     # Lap selection / filtering
-    parser.add_argument("--min-lap-time", type=float, default=108.0, dest="min_lap_time",
-                        help="Minimum valid lap time in seconds (default: 108.0). "
-                             "Laps shorter than this are always excluded as partial/out-laps.")
+    parser.add_argument("--min-lap-time", type=float, default=None, dest="min_lap_time",
+                        help="Minimum valid lap time in seconds (default: auto-detected as "
+                             "fastest observed lap × 0.95, floored at 60s). Set explicitly to "
+                             "override — e.g. 108.0 for BMW/Sebring.")
     parser.add_argument("--outlier-pct", type=float, default=0.115, dest="outlier_pct",
                         help="Max fractional deviation above median to accept (default: 0.115 = 11.5%%). "
                              "Drops anomalously slow laps. Pass 0 to disable.")

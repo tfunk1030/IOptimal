@@ -48,45 +48,58 @@ class AeroCompression:
 class PushrodGeometry:
     """Pushrod offset to ride height relationship.
 
-    For GTP cars, the front static ride height is pinned at the sim-enforced
-    minimum (30mm for all GTP cars). The front pushrod offset does NOT change
-    the static ride height — it only affects dynamic preload and damper travel.
-    This is confirmed across 6 sessions: pushrod offsets -23.0, -25.0, -25.5
-    all produce exactly 30.0mm front static RH.
+    For BMW GTP, the front static ride height is pinned at the sim-enforced
+    minimum (30mm). The front pushrod offset does NOT change the static RH —
+    confirmed across 6 sessions where pushrod offsets -23 to -25.5mm all
+    produce exactly 30.0mm front static RH.  front_pushrod_to_rh = 0.0.
 
-    The rear relationship is:
+    For Cadillac (and potentially other LMDh cars), the front pushrod IS a
+    true ride height adjuster. Calibrated from IBT:
+      pushrod=-33.5mm → RH=30.0mm
+      pushrod=-25.0mm → RH=41.8mm
+    → front_pushrod_to_rh = 1.388 mm per mm (positive: less negative pushrod = higher RH)
+    → front_base_rh_mm  = 41.8mm (RH at front_pushrod_default_mm = -25.0mm)
+
+    Rear relationship (all cars):
         static_rh = rear_base_rh + pushrod_offset * rear_pushrod_to_rh
-
-    However, the rear pushrod-to-RH ratio is very weak (~0.05-0.1 mm/mm),
-    much less than the naively-expected 1:1. The dominant rear RH control
-    is through the spring perch, not the pushrod. The pushrod primarily
-    sets the damper/third-element preload.
-
-    Calibrated from 6 BMW Sebring sessions:
-    - Front: pinned at 30.0mm regardless of pushrod offset
-    - Rear: base ~46.7mm, ratio ~-0.09 (weak, noisy)
-      pushrod -29 → 49.1-49.5mm, pushrod -16.5 → 48.1mm
+    The rear ratio is weak (~-0.096 mm/mm); primary rear RH control is the
+    spring perch.
     """
-    front_pinned_rh_mm: float        # Sim-enforced front static RH
-    front_pushrod_default_mm: float  # Recommended front pushrod offset
+    front_pinned_rh_mm: float        # Target front static RH (iRacing min = 30mm for all GTP)
+    front_pushrod_default_mm: float  # Default/reference pushrod offset
     rear_base_rh_mm: float           # Rear RH with pushrod at 0 offset
-    rear_pushrod_to_rh: float        # mm RH change per mm pushrod offset (very weak ~-0.096)
+    rear_pushrod_to_rh: float        # mm RH change per mm pushrod (weak, ~-0.096)
+
+    # Front pushrod-to-RH sensitivity.
+    # 0.0 = BMW behaviour (front pinned; pushrod doesn't change RH).
+    # Cadillac = 1.388 mm/mm (calibrated from two garage data points).
+    front_pushrod_to_rh: float = 0.0
+    # Front static RH at front_pushrod_default_mm (only used when front_pushrod_to_rh != 0).
+    front_base_rh_mm: float = 30.0
 
     def front_offset_for_rh(self, target_rh: float) -> float:
-        """Front pushrod offset — returns default since front RH is pinned."""
-        # Front RH is sim-floor pinned; pushrod doesn't change it.
-        # Return the default pushrod offset.
-        return self.front_pushrod_default_mm
+        """Front pushrod offset to achieve target static RH.
+
+        For BMW (front_pushrod_to_rh=0): returns default (front is floor-pinned).
+        For Cadillac (front_pushrod_to_rh=1.388): solves linearly.
+        """
+        if abs(self.front_pushrod_to_rh) < 1e-6:
+            return self.front_pushrod_default_mm
+        # target = base + (pushrod - default) * slope
+        # → pushrod = (target - base) / slope + default
+        return (target_rh - self.front_base_rh_mm) / self.front_pushrod_to_rh + self.front_pushrod_default_mm
 
     def rear_offset_for_rh(self, target_rh: float) -> float:
         """Pushrod offset needed to achieve target rear static RH."""
         if abs(self.rear_pushrod_to_rh) < 1e-6:
-            return -29.0  # Default if ratio is effectively zero
+            return -29.0
         return (target_rh - self.rear_base_rh_mm) / self.rear_pushrod_to_rh
 
     def front_rh_for_offset(self, offset: float) -> float:
-        """Front static RH — always returns pinned value."""
-        return self.front_pinned_rh_mm
+        """Front static RH resulting from a given pushrod offset."""
+        if abs(self.front_pushrod_to_rh) < 1e-6:
+            return self.front_pinned_rh_mm  # BMW: always pinned at floor
+        return self.front_base_rh_mm + (offset - self.front_pushrod_default_mm) * self.front_pushrod_to_rh
 
     def rear_rh_for_offset(self, offset: float) -> float:
         """Rear static RH resulting from a given pushrod offset."""
@@ -527,6 +540,11 @@ class DamperModel:
     rear_hs_coefficient_nsm: float = 2034.0    # Rear HS damping coefficient (N·s/m)
     knee_velocity_mps: float = 0.050           # LS/HS transition velocity (50 mm/s)
 
+    # Digressive exponent: F = c * v^n. n=1.0 is linear, n<1.0 is digressive.
+    # iRacing's damper model is suspected to be digressive (n ≈ 0.7-0.9).
+    # Default 1.0 means no change to existing behaviour until calibrated per car.
+    digressive_exponent: float = 1.0
+
     def snap_click(self, value: float, param: str) -> int:
         lo, hi = getattr(self, f"{param}_range")
         return max(lo, min(hi, round(value)))
@@ -722,6 +740,16 @@ class CarModel:
     # Unified garage-output model (track-specific authoritative garage truth)
     garage_output_model: GarageOutputModel | None = None
 
+    # Default DF balance target (%) — car-specific, used when --balance not set.
+    # Derived from weight distribution + aero characteristics.
+    default_df_balance_pct: float = 50.14
+
+    # Tyre load sensitivity — grip coefficient degradation per unit vertical load.
+    # 0.0 = linear (no sensitivity). Typical racing tyres: 0.15–0.30.
+    # Used by ARB solver: LLTD_target = Wf + (λ / λ_ref) * 0.05
+    # where λ_ref = 0.20 is the calibration point (recovers OptimumG +5% rule).
+    tyre_load_sensitivity: float = 0.20
+
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
 
@@ -844,6 +872,8 @@ BMW_M_HYBRID_V8 = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.4727,  # Calibrated from 41 sessions (corner weights)
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
+    default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
+    tyre_load_sensitivity=0.22,    # BMW Michelin GTP compound — moderate sensitivity
     aero_axes_swapped=True,
     min_front_rh_static=30.0,  # sim-enforced floor for all GTP
     max_front_rh_static=80.0,
@@ -1095,6 +1125,8 @@ CADILLAC_VSERIES_R = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.485,      # CALIBRATED: IBT corner weights 5500/(5500+5840 N)
     brake_bias_pct=47.5,          # CALIBRATED: IBT BrakePressureBias = 47.5%
+    default_df_balance_pct=50.14, # ESTIMATE — using BMW baseline; calibrate after more sessions
+    tyre_load_sensitivity=0.20,   # ESTIMATE — Michelin GTP compound (Dallara platform)
     aero_axes_swapped=True,       # Dallara aero map convention — confirmed same as BMW
     min_front_rh_static=30.0,     # iRacing floor for all GTP cars — confirmed
     max_front_rh_static=80.0,
@@ -1109,13 +1141,17 @@ CADILLAC_VSERIES_R = CarModel(
     rear_third_spring_nmm=600.0,  # UPDATED: 680 N/mm observed at Silverstone; anchor raised from 530
     aero_compression=AeroCompression(
         ref_speed_kph=230.0,
-        front_compression_mm=15.0,  # Dallara platform — same as BMW verified
-        rear_compression_mm=8.0,    # ESTIMATE — Cadillac aero package differs
+        front_compression_mm=12.0,  # CALIBRATED: learner mean 11.98mm across 2 sessions
+        rear_compression_mm=18.5,   # CALIBRATED: learner mean 18.53mm; was 8mm ESTIMATE (2.3× underestimate)
     ),
     pushrod=PushrodGeometry(
-        front_pinned_rh_mm=30.0,        # iRacing GTP floor — confirmed all cars
-        front_pushrod_default_mm=-25.5, # Dallara LMDh geometry — same as BMW
-        rear_base_rh_mm=46.85,          # CALIBRATED: 46.8mm static at +0.5mm pushrod → intercept ~46.85
+        front_pinned_rh_mm=30.0,        # Target front static RH (iRacing minimum)
+        front_pushrod_default_mm=-25.0, # Reference pushrod (at which front_base_rh_mm is measured)
+        front_pushrod_to_rh=1.388,      # CALIBRATED: (41.8-30.0)/(8.5mm) from two garage data points
+                                        # More positive pushrod (less negative) → higher front RH
+                                        # -33.5mm → 30.0mm; -25.0mm → 41.8mm
+        front_base_rh_mm=41.8,          # CALIBRATED: front static RH at pushrod=-25.0mm
+        rear_base_rh_mm=46.85,          # CALIBRATED: 46.8mm static at +0.5mm pushrod → intercept
         rear_pushrod_to_rh=-0.096,      # Dallara geometry — same as BMW verified
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
@@ -1184,6 +1220,8 @@ FERRARI_499P = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
     brake_bias_pct=54.0,          # CALIBRATED from IBT: BrakePressureBias = 54.0%
+    default_df_balance_pct=49.5,  # Ferrari 200kW front hybrid shifts aero need rearward
+    tyre_load_sensitivity=0.25,   # Ferrari bespoke LMH compound — estimated higher sensitivity
     aero_axes_swapped=True,       # Ferrari aero map uses same axis convention as Dallara
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
@@ -1321,6 +1359,8 @@ PORSCHE_963 = CarModel(
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
     weight_dist_front=0.47,  # ESTIMATE
+    default_df_balance_pct=50.5,  # Traction-limited — benefits from more rear DF
+    tyre_load_sensitivity=0.18,   # DSSV dampers give better contact — lower effective sensitivity
     aero_axes_swapped=True,
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
@@ -1401,6 +1441,8 @@ ACURA_ARX06 = CarModel(
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
     weight_dist_front=0.47,  # ESTIMATE — Dallara LMDh
+    default_df_balance_pct=49.0,  # Sharp front end — risk of snap oversteer with too much front DF
+    tyre_load_sensitivity=0.20,   # ESTIMATE — Michelin GTP compound (Dallara platform)
     aero_axes_swapped=True,
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,

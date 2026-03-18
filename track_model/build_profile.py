@@ -122,6 +122,23 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         front_sv_kerb = np.array([0.0])
         rear_sv_kerb = np.array([0.0])
 
+    # === High-speed-only shock velocity (>200 kph) — aero platform sizing ===
+    hs_mask = speed_kph > 200.0
+    if np.sum(hs_mask) > 50:
+        front_sv_hs = np.concatenate([np.abs(lf_sv[hs_mask]), np.abs(rf_sv[hs_mask])])
+        rear_sv_hs = np.concatenate([np.abs(lr_sv[hs_mask]), np.abs(rr_sv[hs_mask])])
+        sv_p99_front_hs = round(float(np.percentile(front_sv_hs, 99)), 4)
+        sv_p99_rear_hs = round(float(np.percentile(rear_sv_hs, 99)), 4)
+    else:
+        # Track doesn't spend enough time above 200 kph — fall back to lap-wide
+        sv_p99_front_hs = 0.0
+        sv_p99_rear_hs = 0.0
+
+    # === Speed band fractions (for multi-speed solver) ===
+    n_total = max(len(speed_kph), 1)
+    pct_above_200kph = round(float(np.sum(speed_kph > 200.0) / n_total), 4)
+    pct_below_120kph = round(float(np.sum(speed_kph < 120.0) / n_total), 4)
+
     # === Elevation ===
     elev_profile = []
     elev_change = 0.0
@@ -286,6 +303,8 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         median_speed_kph=round(float(np.median(speed_kph)), 1),
         max_speed_kph=round(session_max_speed, 1),
         min_speed_kph=round(float(np.min(speed_kph[speed_kph > 10])), 1),
+        pct_above_200kph=pct_above_200kph,
+        pct_below_120kph=pct_below_120kph,
         peak_lat_g=round(peak_lat_g, 2),
         peak_braking_g=round(peak_braking_g, 2),
         peak_accel_g=round(peak_accel_g, 2),
@@ -301,6 +320,9 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         shock_vel_p50_rear_mps=round(float(np.percentile(rear_sv, 50)), 4),
         shock_vel_p95_rear_mps=round(float(np.percentile(rear_sv, 95)), 4),
         shock_vel_p99_rear_mps=round(float(np.percentile(rear_sv, 99)), 4),
+        # High-speed-only (>200 kph) — aero platform sizing, no low-speed contamination
+        shock_vel_p99_front_hs_mps=sv_p99_front_hs,
+        shock_vel_p99_rear_hs_mps=sv_p99_rear_hs,
         # Clean-track shock velocity (kerb strikes excluded)
         shock_vel_p50_front_clean_mps=round(float(np.percentile(front_sv_clean, 50)), 4),
         shock_vel_p95_front_clean_mps=round(float(np.percentile(front_sv_clean, 95)), 4),

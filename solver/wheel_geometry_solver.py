@@ -217,15 +217,12 @@ class WheelGeometrySolver:
 
         # At representative cornering (p95 lat_g):
         #   camber_change = representative_roll * roll_gain
-        #   Want dynamic camber ≈ 0° at this load:
-        #   optimal = -(representative_roll * roll_gain)
-        optimal = -(representative_roll_deg * roll_gain)
-
-        # Crown profile correction: the tyre's crown radius means the
-        # contact patch shifts inward under negative camber. This is
-        # beneficial for cornering grip. Add 0.2° more negative.
-        crown_correction = -0.2
-        optimal += crown_correction
+        #   Want dynamic camber ≈ -0.5° at this load (not 0°).
+        #   Michelin GTP compound is optimised for slight negative dynamic camber
+        #   at representative load. 0° dynamic camber leaves grip on the table.
+        #   optimal = -(representative_roll * roll_gain) - 0.5
+        TARGET_DYNAMIC_DEG = -0.5  # target dynamic camber at representative load
+        optimal = TARGET_DYNAMIC_DEG - (representative_roll_deg * roll_gain)
 
         # Clamp to valid range and snap to garage step (axle-specific)
         if is_front:

@@ -706,6 +706,13 @@ class HeaveSolver:
         v_front = (self.track.shock_vel_p99_front_clean_mps
                    if self.track.shock_vel_p99_front_clean_mps > 0
                    else self.track.shock_vel_p99_front_mps)
+        # Platform sizing uses high-speed-only p99 when available.
+        # At >200 kph, aero compression dominates; lap-wide p99 over-sizes springs
+        # because it includes low-speed bumps that don't affect aero stability.
+        # Bottoming constraint keeps the lap-wide value (safety — must not bottom anywhere).
+        v_front_platform = v_front
+        if getattr(self.track, "shock_vel_p99_front_hs_mps", 0.0) > 0:
+            v_front_platform = self.track.shock_vel_p99_front_hs_mps
         m_front = hsm.front_m_eff_kg
 
         k_front_bottoming = self.min_rate_for_no_bottoming(
@@ -716,7 +723,7 @@ class HeaveSolver:
             damper_coeff_nsm=front_damper_coeff,
         )
         k_front_sigma = self.min_rate_for_sigma(
-            v_front,
+            v_front_platform,
             m_front,
             hsm.sigma_target_mm,
             axle="front",
@@ -756,6 +763,10 @@ class HeaveSolver:
         v_rear = (self.track.shock_vel_p99_rear_clean_mps
                   if self.track.shock_vel_p99_rear_clean_mps > 0
                   else self.track.shock_vel_p99_rear_mps)
+        # High-speed filtered for platform sizing (same logic as front)
+        v_rear_platform = v_rear
+        if getattr(self.track, "shock_vel_p99_rear_hs_mps", 0.0) > 0:
+            v_rear_platform = self.track.shock_vel_p99_rear_hs_mps
         m_rear = hsm.rear_m_eff_kg
         rear_corner_wheel_rate_nmm = self._rear_corner_wheel_rate_nmm(rear_spring_nmm)
 
@@ -768,7 +779,7 @@ class HeaveSolver:
             parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
         )
         k_rear_sigma = self.min_rate_for_sigma(
-            v_rear,
+            v_rear_platform,
             m_rear,
             hsm.sigma_target_mm,
             axle="rear",

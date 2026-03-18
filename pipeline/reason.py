@@ -873,13 +873,14 @@ def _analyze_session(
     ibt_path: str,
     car: CarModel,
     label: str,
+    min_lap_time: float = 60.0,
 ) -> SessionSnapshot:
     """Run full analysis on one IBT file."""
     ibt = IBTFile(ibt_path)
     sort_timestamp, sort_source = _resolve_sort_metadata(ibt_path)
     track = build_profile(ibt_path)
     setup = CurrentSetup.from_ibt(ibt)
-    measured = extract_measurements(ibt_path, car)
+    measured = extract_measurements(ibt_path, car, min_lap_time=min_lap_time)
     live_override_notes = apply_live_control_overrides(setup, measured)
     setup_schema = build_setup_schema(
         car=car,
@@ -888,7 +889,7 @@ def _analyze_session(
         measured=measured,
     )
 
-    lap_indices = ibt.best_lap_indices()
+    lap_indices = ibt.best_lap_indices(min_time=min_lap_time)
     corners = []
     if lap_indices:
         start, end = lap_indices
@@ -1939,7 +1940,18 @@ def _reason_to_modifiers(
                        f"Regime: {sra.dominant_regime}"],
         ))
 
-    # ── 8c. Heave floors (bottoming-source validated) ──
+    # ── 8c. Heave floors (bottoming-source validated + pitch-based) ──
+
+    # Pitch-based floor: same threshold as single-session modifier (1.5°).
+    # Uses the authority session's pitch range because that's the car state we're solving for.
+    auth_pitch_range = state.sessions[state.authority_session_idx].measured.pitch_range_deg
+    if auth_pitch_range > 1.5:
+        new_floor = max(mods.front_heave_min_floor_nmm, 38.0)
+        if new_floor > mods.front_heave_min_floor_nmm:
+            mods.front_heave_min_floor_nmm = new_floor
+            reasons.append(
+                f"Pitch range {auth_pitch_range:.2f}° > 1.5° → heave floor 38 N/mm"
+            )
 
     # Check physics validation for bottoming source
     kerb_dominant_bottoming = False
@@ -2558,11 +2570,31 @@ def reason_and_solve(
     log(f"  {len(ibt_paths)} sessions to analyze")
     log(f"{'='*60}\n")
 
+    # Auto-detect minimum lap time floor from the fastest lap observed across all sessions.
+    # Default (108.0s) was calibrated for BMW at Sebring — wrong for faster tracks/cars.
+    # Use fastest_lap * 0.95, floored at 60s, so partial/installation laps are excluded
+    # but all legitimate racing laps are accepted regardless of track or car.
+    _fastest_any = None
+    for _p in ibt_paths:
+        try:
+            _ibt_tmp = IBTFile(_p)
+            _lts = _ibt_tmp.lap_times(min_time=30.0)  # 30s = absolute floor (no full lap shorter)
+            for _, _t, _, _ in _lts:
+                if _t < 300 and (_fastest_any is None or _t < _fastest_any):
+                    _fastest_any = _t
+        except Exception:
+            pass
+    if _fastest_any is not None:
+        _auto_min = max(60.0, _fastest_any * 0.95)
+    else:
+        _auto_min = 60.0
+    log(f"  Lap time floor: {_auto_min:.1f}s (fastest observed: {_fastest_any:.3f}s × 0.95)")
+
     for i, ibt_path in enumerate(ibt_paths):
         label = f"S{i+1}"
         log(f"[Phase 1] Reading {label}: {Path(ibt_path).name}...")
 
-        snap = _analyze_session(ibt_path, car, label)
+        snap = _analyze_session(ibt_path, car, label, min_lap_time=_auto_min)
         state.sessions.append(snap)
 
         log(f"  Lap {snap.lap_number}: {snap.lap_time_s:.3f}s | "

@@ -1,0 +1,109 @@
+{
+  "session_before": "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_19-58-55",
+  "session_after": "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_18-05-21",
+  "car": "cadillac",
+  "track": "Silverstone Circuit",
+  "setup_changes": [
+    {
+      "parameter": "fuel_l",
+      "before": 57.8,
+      "after": 58.0,
+      "delta": 0.20000000000000284,
+      "step_group": "other",
+      "significance": "minor"
+    }
+  ],
+  "telemetry_effects": [
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.09111709892749786,
+      "after": 0.08065517246723175,
+      "delta": -0.0105,
+      "pct_change": -11.5,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.11634551733732224,
+      "after": 0.10100451111793518,
+      "delta": -0.0153,
+      "pct_change": -13.2,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_heave_defl_p99_mm",
+      "category": "platform",
+      "before": 70.96,
+      "after": 73.94,
+      "delta": 2.98,
+      "pct_change": 4.2,
+      "significance": "moderate"
+    },
+    {
+      "metric": "understeer_high_speed_deg",
+      "category": "balance",
+      "before": -0.08646190911531448,
+      "after": -0.09109117835760117,
+      "delta": -0.0046,
+      "pct_change": -5.4,
+      "significance": "moderate"
+    },
+    {
+      "metric": "understeer_low_speed_deg",
+      "category": "balance",
+      "before": -0.1208893433213234,
+      "after": -0.14523673057556152,
+      "delta": -0.0243,
+      "pct_change": -20.1,
+      "significance": "large"
+    },
+    {
+      "metric": "body_slip_p95_deg",
+      "category": "balance",
+      "before": 1.6596146821975708,
+      "after": 3.5684549808502197,
+      "delta": 1.9088,
+      "pct_change": 115.0,
+      "significance": "large"
+    },
+    {
+      "metric": "dynamic_front_rh_mm",
+      "category": "aero",
+      "before": 17.759033203125,
+      "after": 18.271142959594727,
+      "delta": 0.5121,
+      "pct_change": 2.9,
+      "significance": "small"
+    },
+    {
+      "metric": "front_dominant_freq_hz",
+      "category": "damper",
+      "before": 4.15,
+      "after": 4.2,
+      "delta": 0.05,
+      "pct_change": 1.2,
+      "significance": "small"
+    },
+    {
+      "metric": "rear_dominant_freq_hz",
+      "category": "damper",
+      "before": 4.15,
+      "after": 4.2,
+      "delta": 0.05,
+      "pct_change": 1.2,
+      "significance": "small"
+    }
+  ],
+  "hypotheses": [],
+  "num_setup_changes": 1,
+  "controlled_experiment": true,
+  "changed_steps": [
+    "other"
+  ],
+  "lap_time_delta_s": 0.472,
+  "driver_style_changed": true,
+  "key_finding": "Changed fuel_l: 0.20000000000000284 (0.472s slower); effects: understeer_low_speed_deg -0.02, body_slip_p95_deg +1.91 [low confidence]",
+  "confidence_level": "low"
+}

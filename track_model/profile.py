@@ -87,6 +87,9 @@ class TrackProfile:
     median_speed_kph: float = 0.0
     max_speed_kph: float = 0.0
     min_speed_kph: float = 0.0
+    # Speed band fractions — used by multi-speed solver and explorer scoring
+    pct_above_200kph: float = 0.0   # fraction of lap time above 200 kph
+    pct_below_120kph: float = 0.0   # fraction of lap time below 120 kph
 
     # G-force envelope
     peak_lat_g: float = 0.0
@@ -118,6 +121,12 @@ class TrackProfile:
     shock_vel_p50_rear_clean_mps: float = 0.0
     shock_vel_p95_rear_clean_mps: float = 0.0
     shock_vel_p99_rear_clean_mps: float = 0.0
+
+    # High-speed-only shock velocity (>200 kph) — for aero platform sizing.
+    # At high speed, aero compression dominates and these values characterize
+    # platform instability without low-speed bump contamination.
+    shock_vel_p99_front_hs_mps: float = 0.0
+    shock_vel_p99_rear_hs_mps: float = 0.0
 
     # Kerb-only shock velocity (for HS damper tuning)
     shock_vel_p95_front_kerb_mps: float = 0.0
