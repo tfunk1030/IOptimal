@@ -142,6 +142,9 @@ def produce(
                 json_path=args.json,
                 setup_json_path=getattr(args, "setup_json", None),
                 verbose=getattr(args, "verbose", False),
+                explore_legal_space=getattr(args, "explore_legal_space", False),
+                search_budget=getattr(args, "search_budget", 1000),
+                keep_weird=getattr(args, "keep_weird", False),
             )
             return None
         ibt_path = ibt_arg[0]
@@ -1002,6 +1005,48 @@ def produce(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
 
+    # ── Legal-manifold search (--explore-legal-space) ──────────────────
+    if getattr(args, "explore_legal_space", False):
+        try:
+            from solver.legal_search import run_legal_search
+
+            baseline_params = {
+                "front_heave_spring_nmm": step2.front_heave_nmm,
+                "rear_third_spring_nmm": step2.rear_third_nmm,
+                "rear_spring_rate_nmm": step3.rear_spring_rate_nmm,
+                "front_camber_deg": step5.front_camber_deg,
+                "rear_camber_deg": step5.rear_camber_deg,
+                "front_arb_blade": step4.front_arb_blade_start,
+                "rear_arb_blade": step4.rear_arb_blade_start,
+                "brake_bias_pct": getattr(supporting, "brake_bias_pct", 56.0),
+                "diff_preload_nm": getattr(supporting, "diff_preload_nm", 20.0),
+                "front_ls_comp": step6.lf.ls_comp,
+                "front_ls_rbd": step6.lf.ls_rbd,
+                "front_hs_comp": step6.lf.hs_comp,
+                "front_hs_rbd": step6.lf.hs_rbd,
+                "rear_ls_comp": step6.lr.ls_comp,
+                "rear_ls_rbd": step6.lr.ls_rbd,
+                "rear_hs_comp": step6.lr.hs_comp,
+                "rear_hs_rbd": step6.lr.hs_rbd,
+            }
+            search_budget = getattr(args, "search_budget", 1000)
+            keep_weird = getattr(args, "keep_weird", True)
+
+            ls_result = run_legal_search(
+                car=car,
+                track=track,
+                baseline_params=baseline_params,
+                budget=search_budget,
+                measured=measured,
+                driver_profile=driver,
+                session_count=1,
+                keep_weird=keep_weird,
+            )
+            log()
+            log(ls_result.summary())
+        except Exception as e:
+            log(f"[legal-search] Skipped: {e}")
+
     if args.sto and car.canonical_name == "ferrari":
         solve_notes.append(
             "Ferrari native .sto export is disabled in read-first mode; no setup file was written."
@@ -1361,6 +1406,16 @@ def main():
                         help="Max %% slower than fastest lap to include (default: 1.5)")
     parser.add_argument("--verbose", action="store_true",
                         help="Show full reasoning dump (multi-IBT mode)")
+    # Legal-space search mode
+    parser.add_argument("--explore-legal-space", action="store_true",
+                        help="Run legal-manifold search after physics solver")
+    parser.add_argument("--search-budget", type=int, default=1000,
+                        help="Number of candidates to evaluate in legal-space search (default: 1000)")
+    parser.add_argument("--keep-weird", action="store_true",
+                        help="Retain unconventional but legal candidates in results")
+    parser.add_argument("--objective-profile", type=str, default="balanced",
+                        choices=["robust", "aggressive", "balanced"],
+                        help="Objective function weighting profile (default: balanced)")
     # Legacy flags (kept for backward-compat; no-op since auto is default)
     parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)

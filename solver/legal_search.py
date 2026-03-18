@@ -1,0 +1,382 @@
+"""Two-stage legal-manifold search engine.
+
+Stage 1 — Family generation:
+  Physics baseline + edge-anchor families seeded into the legal space.
+  Each family samples candidates around its theme.
+
+Stage 2 — Local expansion + scoring:
+  Evaluate all candidates with ObjectiveFunction + legality checks.
+  Retain top-K, including unconventional-but-legal setups.
+
+Usage:
+    from solver.legal_search import run_legal_search, LegalSearchResult
+    result = run_legal_search(car, track, baseline_params, budget=1000)
+    print(result.summary())
+"""
+
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass, field
+
+from car_model.cars import CarModel
+from solver.legal_space import LegalSpace, LegalCandidate
+from solver.legality_engine import validate_candidate_legality
+from solver.objective import ObjectiveFunction, CandidateEvaluation
+from track_model.profile import TrackProfile
+
+
+# ── Edge-anchor family definitions ─────────────────────────────────────────
+# Each family pushes parameters toward a specific extreme to explore
+# unconventional but legal parts of the manifold.
+
+EDGE_FAMILIES: dict[str, dict[str, str]] = {
+    "min_drag": {
+        "description": "Minimize drag — low wing, stiff heave, moderate rake",
+        "front_heave_spring_nmm": "high",
+        "rear_third_spring_nmm": "high",
+        "front_camber_deg": "mid",
+        "rear_camber_deg": "mid",
+    },
+    "max_platform": {
+        "description": "Maximum aero platform stability",
+        "front_heave_spring_nmm": "high",
+        "rear_third_spring_nmm": "high",
+        "front_ls_comp": "high",
+        "rear_ls_comp": "high",
+        "front_hs_comp": "high",
+        "rear_hs_comp": "high",
+    },
+    "max_rotation": {
+        "description": "Maximum yaw rotation — loose rear",
+        "rear_arb_blade": "low",
+        "front_arb_blade": "high",
+        "diff_preload_nm": "low",
+        "rear_camber_deg": "high",
+    },
+    "max_stability": {
+        "description": "Maximum straight-line and braking stability",
+        "rear_arb_blade": "high",
+        "front_arb_blade": "low",
+        "diff_preload_nm": "high",
+        "front_ls_comp": "high",
+    },
+    "extreme_soft_mech": {
+        "description": "Ultra-soft mechanical setup for grip",
+        "front_heave_spring_nmm": "low",
+        "rear_third_spring_nmm": "low",
+        "rear_spring_rate_nmm": "low",
+        "front_ls_comp": "low",
+        "rear_ls_comp": "low",
+    },
+    "extreme_stiff_aero": {
+        "description": "Ultra-stiff aero platform, sacrifice mech grip",
+        "front_heave_spring_nmm": "high",
+        "rear_third_spring_nmm": "high",
+        "rear_spring_rate_nmm": "high",
+        "front_hs_comp": "high",
+        "rear_hs_comp": "high",
+    },
+}
+
+
+def _resolve_edge_value(
+    dim_name: str,
+    direction: str,
+    space: LegalSpace,
+) -> float:
+    """Resolve 'low'/'mid'/'high' to actual values from the legal space."""
+    dim = space[dim_name]
+    if direction == "low":
+        return dim.lo
+    elif direction == "high":
+        return dim.hi
+    else:  # mid
+        return dim.snap((dim.lo + dim.hi) / 2)
+
+
+def _generate_family_seeds(
+    space: LegalSpace,
+    baseline_params: dict[str, float],
+    budget_per_family: int,
+    rng: random.Random,
+) -> list[LegalCandidate]:
+    """Stage 1: Generate seeded candidates from baseline + edge families."""
+    all_candidates: list[LegalCandidate] = []
+
+    # Family 0: Physics baseline neighborhood
+    baseline_cands = space.sample_seeded(
+        baseline_params,
+        n=budget_per_family,
+        perturbation=0.12,
+        seed=rng.randint(0, 2**31),
+    )
+    for c in baseline_cands:
+        c.family = "physics_baseline"
+    all_candidates.extend(baseline_cands)
+
+    # Family 1-N: Edge anchor families
+    for family_name, overrides in EDGE_FAMILIES.items():
+        # Build seed params: start from baseline, push specified dims to edge
+        seed = dict(baseline_params)
+        for dim_name, direction in overrides.items():
+            if dim_name == "description":
+                continue
+            if dim_name in space._dim_map:
+                seed[dim_name] = _resolve_edge_value(dim_name, direction, space)
+
+        # Sample around the edge seed with wider perturbation
+        cands = space.sample_seeded(
+            seed,
+            n=budget_per_family,
+            perturbation=0.20,
+            seed=rng.randint(0, 2**31),
+        )
+        for c in cands:
+            c.family = family_name
+            c.is_extreme = True
+        all_candidates.extend(cands)
+
+    # Uniform scatter: catch regions missed by families
+    uniform = space.sample_uniform(
+        n=budget_per_family,
+        seed=rng.randint(0, 2**31),
+    )
+    for c in uniform:
+        c.family = "uniform_scatter"
+    all_candidates.extend(uniform)
+
+    return all_candidates
+
+
+def _evaluate_candidates(
+    candidates: list[LegalCandidate],
+    car: CarModel,
+    track_name: str,
+    objective: ObjectiveFunction,
+    solver_result: dict | None = None,
+    measured=None,
+    driver_profile=None,
+    session_count: int = 0,
+) -> list[CandidateEvaluation]:
+    """Stage 2: Score and filter all candidates."""
+    evaluations: list[CandidateEvaluation] = []
+
+    for cand in candidates:
+        # Fast legality check
+        legality = validate_candidate_legality(cand.params, car)
+
+        # Score via objective function
+        ev = objective.evaluate(
+            params=cand.params,
+            family=cand.family,
+            solver_result=solver_result,
+            measured=measured,
+            driver_profile=driver_profile,
+            session_count=session_count,
+        )
+
+        # Merge legality info
+        if legality.hard_veto:
+            ev.hard_vetoed = True
+            ev.veto_reasons.extend(legality.hard_veto_reasons)
+        ev.soft_penalties.extend(legality.soft_penalties)
+
+        evaluations.append(ev)
+
+    return evaluations
+
+
+@dataclass
+class LegalSearchResult:
+    """Complete result of a legal-manifold search."""
+    all_evaluations: list[CandidateEvaluation]
+    best_robust: CandidateEvaluation | None = None
+    best_aggressive: CandidateEvaluation | None = None
+    best_weird: CandidateEvaluation | None = None
+    vetoed_count: int = 0
+    total_evaluated: int = 0
+    families_searched: list[str] = field(default_factory=list)
+
+    def summary(self) -> str:
+        lines = [
+            "=" * 63,
+            "  LEGAL-MANIFOLD SEARCH RESULTS",
+            "=" * 63,
+            f"  Total evaluated:  {self.total_evaluated}",
+            f"  Vetoed (hard):    {self.vetoed_count}",
+            f"  Families:         {', '.join(self.families_searched)}",
+            "",
+        ]
+
+        def _fmt(label: str, ev: CandidateEvaluation | None) -> list[str]:
+            if ev is None:
+                return [f"  {label}: (none)"]
+            out = [
+                f"  {label} — family={ev.family}, score={ev.score:+.1f}ms",
+                ev.breakdown.summary(),
+            ]
+            # Show physics
+            if ev.physics is not None:
+                p = ev.physics
+                out.append(
+                    f"    Physics: excursion F={p.front_excursion_mm:.1f}mm "
+                    f"R={p.rear_excursion_mm:.1f}mm | "
+                    f"bottom margin={p.front_bottoming_margin_mm:+.1f}mm | "
+                    f"stall={p.stall_margin_mm:+.1f}mm"
+                )
+                out.append(
+                    f"    LLTD={p.lltd:.1%} (err={p.lltd_error:.3f}) | "
+                    f"ζ_LS F={p.zeta_ls_front:.2f}/R={p.zeta_ls_rear:.2f} | "
+                    f"ζ_HS F={p.zeta_hs_front:.2f}/R={p.zeta_hs_rear:.2f}"
+                )
+            # Show key params
+            pk = ev.params
+            param_keys = [
+                ("heave", "front_heave_spring_nmm", "N/mm"),
+                ("third", "rear_third_spring_nmm", "N/mm"),
+                ("rear_spr", "rear_spring_rate_nmm", "N/mm"),
+                ("camber_F", "front_camber_deg", "°"),
+                ("camber_R", "rear_camber_deg", "°"),
+                ("ARB_F", "front_arb_blade", ""),
+                ("ARB_R", "rear_arb_blade", ""),
+                ("LS_F", "front_ls_comp", ""),
+                ("LS_R", "rear_ls_comp", ""),
+                ("HS_F", "front_hs_comp", ""),
+                ("HS_R", "rear_hs_comp", ""),
+                ("bias", "brake_bias_pct", "%"),
+                ("diff", "diff_preload_nm", "Nm"),
+            ]
+            parts = []
+            for short, key, unit in param_keys:
+                if key in pk:
+                    v = pk[key]
+                    if isinstance(v, float) and v == int(v):
+                        parts.append(f"{short}={int(v)}{unit}")
+                    elif isinstance(v, float):
+                        parts.append(f"{short}={v:.1f}{unit}")
+                    else:
+                        parts.append(f"{short}={v}{unit}")
+            # Split across two lines
+            mid = len(parts) // 2
+            out.append(f"    Params: {', '.join(parts[:mid])}")
+            out.append(f"            {', '.join(parts[mid:])}")
+            if ev.soft_penalties:
+                out.append(f"    Penalties: {'; '.join(ev.soft_penalties[:3])}")
+            return out
+
+        lines.extend(_fmt("Best Robust", self.best_robust))
+        lines.append("")
+        lines.extend(_fmt("Best Aggressive", self.best_aggressive))
+        lines.append("")
+        lines.extend(_fmt("Best Weird-but-Legal", self.best_weird))
+        lines.append("")
+
+        # Top 10
+        selectable = [e for e in self.all_evaluations if not e.hard_vetoed]
+        selectable.sort(key=lambda e: e.score, reverse=True)
+        if selectable:
+            lines.append("  --- Top 10 candidates ---")
+            for i, ev in enumerate(selectable[:10], 1):
+                sp = f" | penalties: {len(ev.soft_penalties)}" if ev.soft_penalties else ""
+                phys = ""
+                if ev.physics:
+                    phys = (f" | LLTD={ev.physics.lltd:.1%}"
+                            f" exc={ev.physics.front_excursion_mm:.1f}mm"
+                            f" ζLS={ev.physics.zeta_ls_front:.2f}")
+                lines.append(
+                    f"  {i:2d}. [{ev.family:<20s}] {ev.score:+7.1f}ms{phys}{sp}"
+                )
+            lines.append("")
+
+        # Vetoed examples
+        vetoed = [e for e in self.all_evaluations if e.hard_vetoed]
+        if vetoed:
+            lines.append(f"  --- Vetoed candidates ({len(vetoed)}) ---")
+            for ev in vetoed[:5]:
+                lines.append(f"    [{ev.family}] {', '.join(ev.veto_reasons[:2])}")
+            lines.append("")
+
+        lines.append("=" * 63)
+        return "\n".join(lines)
+
+
+def run_legal_search(
+    car: CarModel,
+    track: TrackProfile | str,
+    baseline_params: dict[str, float],
+    budget: int = 1000,
+    solver_result: dict | None = None,
+    measured=None,
+    driver_profile=None,
+    session_count: int = 0,
+    keep_weird: bool = True,
+    seed: int = 42,
+) -> LegalSearchResult:
+    """Run the two-stage legal-manifold search.
+
+    Args:
+        car: Car model
+        track: TrackProfile or track name string
+        baseline_params: Physics solver baseline (seed point)
+        budget: Total candidate budget
+        solver_result: Solver step outputs (optional, improves scoring)
+        measured: MeasuredState from telemetry (optional)
+        driver_profile: DriverProfile (optional)
+        session_count: Number of telemetry sessions available
+        keep_weird: If True, preserve unconventional candidates in results
+        seed: Random seed
+    """
+    track_name = track if isinstance(track, str) else getattr(track, "name", "")
+    track_obj = track if isinstance(track, TrackProfile) else None
+    rng = random.Random(seed)
+
+    # Build legal space
+    space = LegalSpace.from_car(car, track_name=track_name)
+
+    # Build objective — pass actual TrackProfile for physics evaluation
+    objective = ObjectiveFunction(car, track_obj if track_obj is not None else track_name)
+
+    # Budget allocation: baseline gets 30%, each edge family ~10%, uniform scatter 10%
+    n_families = len(EDGE_FAMILIES) + 2  # +1 baseline, +1 uniform
+    budget_per_family = max(10, budget // n_families)
+
+    # Stage 1: Generate candidates
+    candidates = _generate_family_seeds(space, baseline_params, budget_per_family, rng)
+
+    # Stage 2: Evaluate all
+    evaluations = _evaluate_candidates(
+        candidates, car, track_name, objective,
+        solver_result=solver_result,
+        measured=measured,
+        driver_profile=driver_profile,
+        session_count=session_count,
+    )
+
+    # Classify results
+    vetoed = [e for e in evaluations if e.hard_vetoed]
+    selectable = [e for e in evaluations if not e.hard_vetoed]
+    selectable.sort(key=lambda e: e.score, reverse=True)
+
+    # Best robust: highest score with no soft penalties
+    clean = [e for e in selectable if len(e.soft_penalties) == 0]
+    best_robust = clean[0] if clean else (selectable[0] if selectable else None)
+
+    # Best aggressive: highest raw score regardless of penalties
+    best_aggressive = selectable[0] if selectable else None
+
+    # Best weird: highest score among candidates from edge families
+    weird = [e for e in selectable if e.family not in ("physics_baseline", "seeded")]
+    best_weird = weird[0] if weird else None
+
+    families_seen = sorted(set(e.family for e in evaluations))
+
+    return LegalSearchResult(
+        all_evaluations=evaluations,
+        best_robust=best_robust,
+        best_aggressive=best_aggressive,
+        best_weird=best_weird,
+        vetoed_count=len(vetoed),
+        total_evaluated=len(evaluations),
+        families_searched=families_seen,
+    )

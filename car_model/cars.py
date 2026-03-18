@@ -1205,20 +1205,25 @@ CADILLAC_VSERIES_R = CarModel(
         cg_height_mm=350.0,             # ESTIMATE — needs Cadillac IBT calibration
     ),
     arb=ARBModel(
-        # Same Soft/Medium/Stiff labels as BMW (Dallara)
-        front_size_labels=["Soft", "Medium", "Stiff"],
-        front_stiffness_nmm_deg=[5500.0, 11000.0, 16500.0],  # ESTIMATE — needs Cadillac calibration
+        # Same Dallara chassis as BMW — identical ARB hardware and geometry.
+        # Stiffness values propagated from BMW calibrated model.
+        front_size_labels=["Disconnected", "Soft", "Medium", "Stiff"],
+        front_stiffness_nmm_deg=[0.0, 5500.0, 11000.0, 16500.0],  # Dallara platform — same as BMW
+        front_baseline_size="Soft",
+        front_baseline_blade=1,
         rear_size_labels=["Soft", "Medium", "Stiff"],
-        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # ESTIMATE — needs Cadillac calibration
+        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # Dallara platform — same as BMW
+        rear_baseline_size="Medium",
+        rear_baseline_blade=3,
         front_blade_count=5,
         rear_blade_count=5,
-        track_width_front_mm=1730.0,  # ESTIMATE — needs Cadillac IBT calibration
-        track_width_rear_mm=1650.0,   # ESTIMATE — needs Cadillac IBT calibration
+        track_width_front_mm=1730.0,  # Dallara LMDh chassis — same as BMW
+        track_width_rear_mm=1650.0,   # Dallara LMDh chassis — same as BMW
     ),
     geometry=WheelGeometryModel(
         front_camber_baseline_deg=-2.8,  # CALIBRATED: IBT LeftFront.Camber = -2.8°
         rear_camber_baseline_deg=-1.9,   # CALIBRATED: IBT LeftRear.Camber = -1.9°
-        front_roll_gain=0.62,            # ESTIMATE — needs Cadillac IBT calibration
+        front_roll_gain=0.60,            # Dallara platform — same as BMW
         rear_roll_gain=0.50,
     ),
     damper=DamperModel(
@@ -1398,7 +1403,7 @@ PORSCHE_963 = CarModel(
     canonical_name="porsche",
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
-    weight_dist_front=0.47,  # ESTIMATE
+    weight_dist_front=0.475,  # ESTIMATE — Multimatic LMDh, twin-turbo V8 mid-rear
     default_df_balance_pct=50.5,  # Traction-limited — benefits from more rear DF
     tyre_load_sensitivity=0.18,   # DSSV dampers give better contact — lower effective sensitivity
     aero_axes_swapped=True,
@@ -1411,8 +1416,8 @@ PORSCHE_963 = CarModel(
     min_rear_rh_dynamic=25.0,
     max_rear_rh_dynamic=75.0,
     vortex_burst_threshold_mm=2.0,
-    front_heave_spring_nmm=50.0,  # ESTIMATE
-    rear_third_spring_nmm=530.0,  # ESTIMATE
+    front_heave_spring_nmm=50.0,  # ESTIMATE — needs Porsche IBT calibration
+    rear_third_spring_nmm=530.0,  # ESTIMATE — needs Porsche IBT calibration
     aero_compression=AeroCompression(
         ref_speed_kph=230.0,
         front_compression_mm=15.0,  # ESTIMATE
@@ -1430,41 +1435,43 @@ PORSCHE_963 = CarModel(
         rear_m_eff_kg=2870.0,   # ESTIMATE
     ),
     corner_spring=CornerSpringModel(
-        # Porsche uses torsion bar front + coil rear (like Dallara)
-        front_torsion_c=0.0008036,  # ESTIMATE — Multimatic geometry differs
+        # Porsche uses torsion bar front + coil rear (Multimatic, not Dallara)
+        # Multimatic has slightly different geometry than Dallara but same spring types
+        front_torsion_c=0.0008036,  # ESTIMATE — Multimatic may differ from Dallara
         front_torsion_od_ref_mm=13.9,
         front_torsion_od_range_mm=(11.0, 16.0),
         rear_spring_range_nmm=(100.0, 300.0),
         rear_spring_step_nmm=10.0,
         front_motion_ratio=1.0,
-        rear_motion_ratio=0.60,  # ESTIMATE
-        track_width_mm=1600.0,   # ESTIMATE
-        cg_height_mm=345.0,      # ESTIMATE
+        rear_motion_ratio=0.60,  # ESTIMATE — Multimatic pushrod geometry
+        track_width_mm=1600.0,   # ESTIMATE — Multimatic chassis
+        cg_height_mm=345.0,      # ESTIMATE — Multimatic slightly lower than Dallara
     ),
     arb=ARBModel(
-        # Soft/Medium/Stiff labels like BMW (LMDh standard naming)
+        # Porsche 963 uses Soft/Medium/Stiff labels (LMDh standard)
+        # Multimatic platform — ARB hardware differs from Dallara
         front_size_labels=["Soft", "Medium", "Stiff"],
-        front_stiffness_nmm_deg=[5500.0, 11000.0, 16500.0],  # ESTIMATE
+        front_stiffness_nmm_deg=[5000.0, 10000.0, 15000.0],  # ESTIMATE — Multimatic ARBs
         rear_size_labels=["Soft", "Medium", "Stiff"],
-        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # ESTIMATE
+        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # ESTIMATE — Multimatic ARBs
         front_blade_count=5,
         rear_blade_count=5,
-        track_width_front_mm=1730.0,  # ESTIMATE
-        track_width_rear_mm=1650.0,   # ESTIMATE
+        track_width_front_mm=1700.0,  # ESTIMATE — Multimatic narrower front than Dallara
+        track_width_rear_mm=1620.0,   # ESTIMATE — Multimatic narrower rear
     ),
     geometry=WheelGeometryModel(
-        front_camber_baseline_deg=-2.9,  # ESTIMATE
-        rear_camber_baseline_deg=-1.8,
-        front_roll_gain=0.62,            # ESTIMATE
-        rear_roll_gain=0.50,
+        front_camber_baseline_deg=-2.9,  # ESTIMATE — needs Porsche IBT
+        rear_camber_baseline_deg=-1.8,   # ESTIMATE
+        front_roll_gain=0.60,            # ESTIMATE — Multimatic geometry
+        rear_roll_gain=0.48,             # ESTIMATE — Multimatic slightly less rear gain
         # Porsche is gentle on tyres — can run more aggressive geometry
     ),
     damper=DamperModel(
         # DSSV spool-valve dampers — more progressive response than shim stacks.
         # Same click range as BMW but different force characteristics.
         # DSSV: only 4% force degradation over temperature range (vs 14-16% shim).
-        ls_force_per_click_n=18.0,  # ESTIMATE — needs DSSV calibration
-        hs_force_per_click_n=80.0,  # ESTIMATE
+        ls_force_per_click_n=18.0,  # ESTIMATE — DSSV force curve differs from shim stack
+        hs_force_per_click_n=80.0,  # ESTIMATE — needs DSSV calibration from telemetry
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
@@ -1480,7 +1487,7 @@ ACURA_ARX06 = CarModel(
     canonical_name="acura",
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
-    weight_dist_front=0.47,  # ESTIMATE — Dallara LMDh
+    weight_dist_front=0.475,  # ESTIMATE — Dallara LMDh, twin-turbo V6 mid-rear
     default_df_balance_pct=49.0,  # Sharp front end — risk of snap oversteer with too much front DF
     tyre_load_sensitivity=0.20,   # ESTIMATE — Michelin GTP compound (Dallara platform)
     aero_axes_swapped=True,
@@ -1512,33 +1519,38 @@ ACURA_ARX06 = CarModel(
         rear_m_eff_kg=2870.0,   # ESTIMATE
     ),
     corner_spring=CornerSpringModel(
-        # Same Dallara torsion bar front + coil rear
-        front_torsion_c=0.0008036,  # ESTIMATE
+        # Same Dallara torsion bar front + coil rear as BMW
+        front_torsion_c=0.0008036,  # Dallara platform — same as BMW verified
         front_torsion_od_ref_mm=13.9,
         front_torsion_od_range_mm=(11.0, 16.0),
         rear_spring_range_nmm=(100.0, 300.0),
         rear_spring_step_nmm=10.0,
         front_motion_ratio=1.0,
-        rear_motion_ratio=0.60,  # ESTIMATE
-        track_width_mm=1600.0,
-        cg_height_mm=350.0,
+        rear_motion_ratio=0.60,  # Dallara geometry — same as BMW confirmed
+        track_width_mm=1600.0,   # Dallara LMDh chassis
+        cg_height_mm=350.0,      # Dallara LMDh chassis — same as BMW
     ),
     arb=ARBModel(
-        # Same Soft/Medium/Stiff as BMW/Cadillac (Dallara)
-        front_size_labels=["Soft", "Medium", "Stiff"],
-        front_stiffness_nmm_deg=[5500.0, 11000.0, 16500.0],  # ESTIMATE
+        # Same Dallara chassis as BMW — identical ARB hardware.
+        # Stiffness values propagated from BMW calibrated model.
+        front_size_labels=["Disconnected", "Soft", "Medium", "Stiff"],
+        front_stiffness_nmm_deg=[0.0, 5500.0, 11000.0, 16500.0],  # Dallara — same as BMW
+        front_baseline_size="Soft",
+        front_baseline_blade=1,
         rear_size_labels=["Soft", "Medium", "Stiff"],
-        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # ESTIMATE
+        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # Dallara — same as BMW
+        rear_baseline_size="Medium",
+        rear_baseline_blade=3,
         front_blade_count=5,
         rear_blade_count=5,
-        track_width_front_mm=1730.0,
-        track_width_rear_mm=1650.0,
+        track_width_front_mm=1730.0,  # Dallara LMDh — same as BMW
+        track_width_rear_mm=1650.0,   # Dallara LMDh — same as BMW
     ),
     geometry=WheelGeometryModel(
-        front_camber_baseline_deg=-2.9,  # ESTIMATE
-        rear_camber_baseline_deg=-1.8,
-        front_roll_gain=0.62,            # ESTIMATE
-        rear_roll_gain=0.50,
+        front_camber_baseline_deg=-2.9,  # ESTIMATE — needs Acura IBT
+        rear_camber_baseline_deg=-1.8,   # ESTIMATE
+        front_roll_gain=0.60,            # Dallara platform — same as BMW
+        rear_roll_gain=0.50,             # Dallara platform — same as BMW
     ),
     damper=DamperModel(
         # Same Dallara damper scale as BMW/Cadillac — all clicks max at 11

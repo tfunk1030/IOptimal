@@ -103,10 +103,10 @@ def main():
                         help="Stint length for stint analysis (default: 30)")
     parser.add_argument("--legacy-solver", action="store_true",
                         help="Force the legacy sequential solver path for BMW/Sebring validation")
-    parser.add_argument("--explore", action="store_true",
-                        help="Run unconstrained parameter space exploration (ignores best-practice constraints)")
-    parser.add_argument("--bayesian", action="store_true",
-                        help="Run Bayesian optimization over full legal parameter space")
+    parser.add_argument("--legal-search", action="store_true",
+                        help="Run legal-manifold search after physics solver")
+    parser.add_argument("--search-budget", type=int, default=1000,
+                        help="Number of candidates for legal-space search (default: 1000)")
 
     args = parser.parse_args()
     run_solver(args)
@@ -578,6 +578,43 @@ def run_solver(args: "argparse.Namespace") -> None:
                 log(bo_result.summary())
         except Exception as e:
             log(f"[bayesian] Skipped: {e}")
+
+    # ─── Legal-Manifold Search (--legal-search) ───────────────────────
+    if getattr(args, "legal_search", False):
+        try:
+            from solver.legal_search import run_legal_search
+
+            baseline_params = {
+                "front_heave_spring_nmm": step2.front_heave_nmm,
+                "rear_third_spring_nmm": step2.rear_third_nmm,
+                "rear_spring_rate_nmm": step3.rear_spring_rate_nmm,
+                "front_camber_deg": step5.front_camber_deg,
+                "rear_camber_deg": step5.rear_camber_deg,
+                "front_arb_blade": step4.front_arb_blade_start,
+                "rear_arb_blade": step4.rear_arb_blade_start,
+                "brake_bias_pct": 56.0,
+                "diff_preload_nm": 20.0,
+                "front_ls_comp": step6.lf.ls_comp,
+                "front_ls_rbd": step6.lf.ls_rbd,
+                "front_hs_comp": step6.lf.hs_comp,
+                "front_hs_rbd": step6.lf.hs_rbd,
+                "rear_ls_comp": step6.lr.ls_comp,
+                "rear_ls_rbd": step6.lr.ls_rbd,
+                "rear_hs_comp": step6.lr.hs_comp,
+                "rear_hs_rbd": step6.lr.hs_rbd,
+            }
+            search_budget = getattr(args, "search_budget", 1000)
+            ls_result = run_legal_search(
+                car=car,
+                track=track,
+                baseline_params=baseline_params,
+                budget=search_budget,
+            )
+            if not args.report_only and not args.json:
+                log()
+                log(ls_result.summary())
+        except Exception as e:
+            log(f"[legal-search] Skipped: {e}")
 
     # ─── Step 6b: Differential (standalone defaults) ──────────────────
     diff_result = None

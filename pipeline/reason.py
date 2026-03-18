@@ -2544,6 +2544,9 @@ def reason_and_solve(
     setup_json_path: str | None = None,
     verbose: bool = True,
     emit_report: bool = True,
+    explore_legal_space: bool = False,
+    search_budget: int = 1000,
+    keep_weird: bool = False,
 ) -> ReasoningState:
     """Run the full 9-phase reasoning pipeline.
 
@@ -3051,6 +3054,45 @@ def reason_and_solve(
                     fuel_load_l=detected_fuel,
                     front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
                 )
+
+    # ── Legal-manifold search (--explore-legal-space) ──
+    if explore_legal_space:
+        try:
+            from solver.legal_search import run_legal_search
+
+            baseline_params = {
+                "front_heave_spring_nmm": step2.front_heave_nmm,
+                "rear_third_spring_nmm": step2.rear_third_nmm,
+                "rear_spring_rate_nmm": step3.rear_spring_rate_nmm,
+                "front_camber_deg": step5.front_camber_deg,
+                "rear_camber_deg": step5.rear_camber_deg,
+                "front_arb_blade": step4.front_arb_blade_start,
+                "rear_arb_blade": step4.rear_arb_blade_start,
+                "brake_bias_pct": getattr(supporting, "brake_bias_pct", 56.0),
+                "diff_preload_nm": getattr(supporting, "diff_preload_nm", 20.0),
+                "front_ls_comp": step6.lf.ls_comp,
+                "front_ls_rbd": step6.lf.ls_rbd,
+                "front_hs_comp": step6.lf.hs_comp,
+                "front_hs_rbd": step6.lf.hs_rbd,
+                "rear_ls_comp": step6.lr.ls_comp,
+                "rear_ls_rbd": step6.lr.ls_rbd,
+                "rear_hs_comp": step6.lr.hs_comp,
+                "rear_hs_rbd": step6.lr.hs_rbd,
+            }
+            ls_result = run_legal_search(
+                car=car,
+                track=track,
+                baseline_params=baseline_params,
+                budget=search_budget,
+                measured=authority.measured,
+                driver_profile=authority.driver,
+                session_count=len(state.sessions),
+                keep_weird=keep_weird,
+            )
+            print()
+            print(ls_result.summary())
+        except Exception as e:
+            print(f"[legal-search] Skipped: {e}")
 
     # ── Output ──
     if sto_path and car.canonical_name == "ferrari":
