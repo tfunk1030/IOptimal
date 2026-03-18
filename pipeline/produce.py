@@ -1011,9 +1011,17 @@ def produce(
             from solver.legal_search import run_legal_search
 
             baseline_params = {
+                "wing_angle_deg": float(getattr(args, "wing", 17) or 17),
+                "front_pushrod_offset_mm": getattr(step1, "front_pushrod_offset_mm",
+                    car.garage_ranges.front_pushrod_mm[0]),
+                "rear_pushrod_offset_mm": getattr(step1, "rear_pushrod_offset_mm",
+                    car.garage_ranges.rear_pushrod_mm[0]),
                 "front_heave_spring_nmm": step2.front_heave_nmm,
                 "rear_third_spring_nmm": step2.rear_third_nmm,
                 "rear_spring_rate_nmm": step3.rear_spring_rate_nmm,
+                "front_torsion_od_mm": getattr(step3, "front_torsion_od_mm",
+                    car.corner_spring.front_torsion_od_options[0]
+                    if car.corner_spring.front_torsion_od_options else 14.34),
                 "front_camber_deg": step5.front_camber_deg,
                 "rear_camber_deg": step5.rear_camber_deg,
                 "front_arb_blade": step4.front_arb_blade_start,
@@ -1031,6 +1039,7 @@ def produce(
             }
             search_budget = getattr(args, "search_budget", 1000)
             keep_weird = getattr(args, "keep_weird", True)
+            search_mode = getattr(args, "search_mode", None)
 
             ls_result = run_legal_search(
                 car=car,
@@ -1041,9 +1050,36 @@ def produce(
                 driver_profile=driver,
                 session_count=1,
                 keep_weird=keep_weird,
+                mode=search_mode,
             )
             log()
             log(ls_result.summary())
+
+            # Sprint 4: Generate comprehensive analysis report
+            try:
+                from output.search_report import generate_search_report
+                from solver.legal_space import LegalSpace
+                from solver.objective import ObjectiveFunction
+
+                track_name = track if isinstance(track, str) else getattr(track, "name", "")
+                space = LegalSpace.from_car(car, track_name=track_name)
+                obj = ObjectiveFunction(car, track)
+
+                analysis_report = generate_search_report(
+                    ls_result=ls_result,
+                    baseline_params=baseline_params,
+                    space=space,
+                    objective=obj,
+                    car=car,
+                    sensitivity_top_n=3,
+                    diff_top_n=5,
+                    cluster_count=4,
+                )
+                log()
+                log(analysis_report)
+            except Exception as e:
+                log(f"[search-analysis] Report generation skipped: {e}")
+
         except Exception as e:
             log(f"[legal-search] Skipped: {e}")
 
@@ -1411,6 +1447,11 @@ def main():
                         help="Run legal-manifold search after physics solver")
     parser.add_argument("--search-budget", type=int, default=1000,
                         help="Number of candidates to evaluate in legal-space search (default: 1000)")
+    parser.add_argument("--search-mode", type=str, default=None,
+                        choices=["quick", "standard", "exhaustive", "maximum"],
+                        help="Search mode: quick/standard use Sobol sampling, "
+                             "exhaustive/maximum use hierarchical grid engine. "
+                             "If not specified, inferred from --search-budget.")
     parser.add_argument("--keep-weird", action="store_true",
                         help="Retain unconventional but legal candidates in results")
     parser.add_argument("--objective-profile", type=str, default="balanced",

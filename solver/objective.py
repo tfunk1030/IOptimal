@@ -446,6 +446,244 @@ class ObjectiveFunction:
             soft_penalties=soft_penalties,
         )
 
+    # ── Per-layer objective profiles ─────────────────────────────
+    # Each layer evaluates only the terms that matter at that stage,
+    # avoiding unnecessary computation in early filtering layers.
+    #
+    # Layer 1 (platform skeletons): platform_risk + lap_gain only
+    # Layer 2 (balance tuning):     + LLTD + balance scoring
+    # Layer 3 (damper optimization): + damping ratio scoring
+    # Layer 4 (fine tuning):        full objective (all terms)
+
+    LAYER_PROFILES: dict[int, set[str]] = {
+        1: {"lap_gain", "platform_risk"},
+        2: {"lap_gain", "platform_risk", "lltd", "balance"},
+        3: {"lap_gain", "platform_risk", "lltd", "balance", "damping"},
+        4: {"lap_gain", "platform_risk", "lltd", "balance", "damping",
+            "driver_mismatch", "telemetry_uncertainty", "envelope_penalty"},
+    }
+
+    def evaluate_batch(
+        self,
+        param_batch: list[dict[str, float]],
+        layer: int = 4,
+        family: str = "batch",
+        solver_result: dict | None = None,
+        measured=None,
+        driver_profile=None,
+        session_count: int = 0,
+    ) -> list[CandidateEvaluation]:
+        """Batch evaluation with shared precomputation.
+
+        Pre-computes aero surface lookups and track profile constants
+        once, then reuses them across the batch. Supports per-layer
+        objective profiles for hierarchical search:
+
+        - Layer 1: platform_risk + lap_gain only (fastest)
+        - Layer 2: add LLTD + balance scoring
+        - Layer 3: add damping ratio scoring
+        - Layer 4: full objective (default)
+
+        Args:
+            param_batch: List of candidate parameter dicts.
+            layer: Objective layer (1-4). Lower = faster but coarser.
+            family: Family label for all candidates.
+            solver_result: Solver step outputs (optional).
+            measured: MeasuredState (optional, only used in layer 4).
+            driver_profile: DriverProfile (optional, only used in layer 3+).
+            session_count: Number of telemetry sessions.
+
+        Returns:
+            List of CandidateEvaluation, one per candidate.
+        """
+        active = self.LAYER_PROFILES.get(layer, self.LAYER_PROFILES[4])
+
+        # ── Shared precomputation ─────────────────────────────────
+        # Cache the aero surface once (expensive to load)
+        surface = self._get_surface() if "lap_gain" in active else None
+
+        # Pre-extract track constants used by physics
+        track = self.track
+        is_track_profile = isinstance(track, TrackProfile)
+
+        if is_track_profile:
+            v_p99_front = (track.shock_vel_p99_front_clean_mps
+                          if getattr(track, "shock_vel_p99_front_clean_mps", 0) > 0
+                          else track.shock_vel_p99_front_mps)
+            v_p99_rear = (track.shock_vel_p99_rear_clean_mps
+                         if getattr(track, "shock_vel_p99_rear_clean_mps", 0) > 0
+                         else track.shock_vel_p99_rear_mps)
+            v_hs_front = max(getattr(track, "shock_vel_p95_front_mps", 0.120), 0.050)
+            v_hs_rear = max(getattr(track, "shock_vel_p95_rear_mps", 0.150), 0.050)
+        else:
+            v_p99_front = v_p99_rear = 0.0
+            v_hs_front = 0.120
+            v_hs_rear = 0.150
+
+        # Pre-extract car constants
+        car = self.car
+        c_torsion = car.corner_spring.front_torsion_c
+        mr_rear = car.corner_spring.rear_motion_ratio
+        m_eff_front = car.heave_spring.front_m_eff_kg
+        m_eff_rear = car.heave_spring.rear_m_eff_kg
+        tyre_vr = getattr(car, "tyre_vertical_rate_nmm", None)
+        arb = car.arb
+        t_f = arb.track_width_front_mm / 2000.0
+        t_r = arb.track_width_rear_mm / 2000.0
+        damper = car.damper
+        tyre_sens = getattr(car, "tyre_load_sensitivity", 0.20)
+        target_lltd = car.weight_dist_front + (tyre_sens / 0.20) * 0.05
+        total_mass = car.total_mass(89.0)
+        front_mass = total_mass * car.weight_dist_front / 2.0
+        rear_mass = total_mass * (1.0 - car.weight_dist_front) / 2.0
+        v_ls_ref = 0.025
+
+        # ── Evaluate each candidate ──────────────────────────────
+        results: list[CandidateEvaluation] = []
+
+        for params in param_batch:
+            physics = PhysicsResult()
+            breakdown = ObjectiveBreakdown()
+            veto_reasons: list[str] = []
+            soft_penalties: list[str] = []
+
+            # Extract common params
+            front_heave_nmm = params.get("front_heave_spring_nmm", 50.0)
+            rear_third_nmm = params.get("rear_third_spring_nmm", 450.0)
+            rear_spring_nmm = params.get("rear_spring_rate_nmm", 160.0)
+            front_torsion_od = params.get("front_torsion_od_mm",
+                car.corner_spring.front_torsion_od_options[0]
+                if car.corner_spring.front_torsion_od_options else 14.34)
+
+            # Wheel rates
+            front_wheel_rate = c_torsion * (front_torsion_od ** 4)
+            rear_wheel_rate = rear_spring_nmm * (mr_rear ** 2)
+            physics.front_wheel_rate_nmm = front_wheel_rate
+            physics.rear_wheel_rate_nmm = rear_wheel_rate
+
+            # ── Layer 1: Platform + lap gain ──────────────────────
+            if is_track_profile and "platform_risk" in active:
+                physics.front_excursion_mm = damped_excursion_mm(
+                    v_p99_front, m_eff_front, front_heave_nmm,
+                    tyre_vertical_rate_nmm=tyre_vr,
+                    parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
+                )
+                physics.rear_excursion_mm = damped_excursion_mm(
+                    v_p99_rear, m_eff_rear, rear_third_nmm,
+                    tyre_vertical_rate_nmm=tyre_vr,
+                    parallel_wheel_rate_nmm=rear_wheel_rate * 0.5,
+                )
+                dyn_front_rh = 19.0
+                dyn_rear_rh = 42.0
+                physics.front_bottoming_margin_mm = dyn_front_rh - physics.front_excursion_mm
+                physics.rear_bottoming_margin_mm = dyn_rear_rh - physics.rear_excursion_mm
+                physics.stall_margin_mm = (
+                    physics.front_bottoming_margin_mm - self.VORTEX_BURST_THRESHOLD_MM
+                )
+                physics.front_sigma_mm = physics.front_excursion_mm / 2.33
+                physics.rear_sigma_mm = physics.rear_excursion_mm / 2.33
+
+            if "platform_risk" in active:
+                breakdown.platform_risk = self._compute_platform_risk(
+                    params, physics, veto_reasons, soft_penalties)
+
+            if "lap_gain" in active:
+                breakdown.lap_gain_ms = self._estimate_lap_gain(params, physics)
+
+            # Early exit for layer 1 — skip expensive LLTD/damping
+            if layer <= 1:
+                results.append(CandidateEvaluation(
+                    params=params, family=family, breakdown=breakdown,
+                    physics=physics, hard_vetoed=len(veto_reasons) > 0,
+                    veto_reasons=veto_reasons, soft_penalties=soft_penalties))
+                continue
+
+            # ── Layer 2: LLTD + balance ───────────────────────────
+            if "lltd" in active or "balance" in active:
+                front_arb_blade = int(params.get("front_arb_blade", 1))
+                rear_arb_blade = int(params.get("rear_arb_blade", 3))
+
+                k_roll_springs_front = 2.0 * (front_wheel_rate * 1000.0) * t_f**2 * (math.pi / 180.0)
+                k_roll_springs_rear = 2.0 * (rear_wheel_rate * 1000.0) * t_r**2 * (math.pi / 180.0)
+
+                k_arb_front = arb.front_roll_stiffness(arb.front_baseline_size, front_arb_blade)
+                k_arb_rear = arb.rear_roll_stiffness(arb.rear_baseline_size, rear_arb_blade)
+
+                k_front_total = k_roll_springs_front + k_arb_front
+                k_rear_total = k_roll_springs_rear + k_arb_rear
+                physics.k_roll_front = k_front_total
+                physics.k_roll_rear = k_rear_total
+
+                if k_front_total + k_rear_total > 0:
+                    physics.lltd = k_front_total / (k_front_total + k_rear_total)
+                else:
+                    physics.lltd = 0.5
+                physics.lltd_error = abs(physics.lltd - target_lltd)
+
+                # Re-score lap gain with LLTD now computed
+                breakdown.lap_gain_ms = self._estimate_lap_gain(params, physics)
+
+            if layer <= 2:
+                results.append(CandidateEvaluation(
+                    params=params, family=family, breakdown=breakdown,
+                    physics=physics, hard_vetoed=len(veto_reasons) > 0,
+                    veto_reasons=veto_reasons, soft_penalties=soft_penalties))
+                continue
+
+            # ── Layer 3: Damping ratios ───────────────────────────
+            if "damping" in active:
+                f_ls_comp = int(params.get("front_ls_comp", 7))
+                r_ls_comp = int(params.get("rear_ls_comp", 6))
+                f_hs_comp = int(params.get("front_hs_comp", 5))
+                r_hs_comp = int(params.get("rear_hs_comp", 3))
+
+                k_modal_front = front_wheel_rate + front_heave_nmm * 0.5
+                k_modal_rear = rear_wheel_rate + rear_third_nmm * 0.5
+
+                c_crit_front = 2.0 * math.sqrt(k_modal_front * 1000.0 * front_mass)
+                c_crit_rear = 2.0 * math.sqrt(k_modal_rear * 1000.0 * rear_mass)
+
+                c_ls_front = (f_ls_comp * damper.ls_force_per_click_n) / v_ls_ref
+                c_ls_rear = (r_ls_comp * damper.ls_force_per_click_n) / v_ls_ref
+
+                physics.zeta_ls_front = c_ls_front / c_crit_front if c_crit_front > 0 else 0
+                physics.zeta_ls_rear = c_ls_rear / c_crit_rear if c_crit_rear > 0 else 0
+
+                c_hs_front = (f_hs_comp * damper.hs_force_per_click_n) / v_hs_front
+                c_hs_rear = (r_hs_comp * damper.hs_force_per_click_n) / v_hs_rear
+
+                physics.zeta_hs_front = c_hs_front / c_crit_front if c_crit_front > 0 else 0
+                physics.zeta_hs_rear = c_hs_rear / c_crit_rear if c_crit_rear > 0 else 0
+
+                # Re-score with damping
+                breakdown.lap_gain_ms = self._estimate_lap_gain(params, physics)
+
+            if layer <= 3:
+                # Add driver mismatch if we have a profile
+                if driver_profile is not None and "damping" in active:
+                    breakdown.driver_mismatch = self._compute_driver_mismatch(
+                        params, physics, driver_profile, soft_penalties)
+                results.append(CandidateEvaluation(
+                    params=params, family=family, breakdown=breakdown,
+                    physics=physics, hard_vetoed=len(veto_reasons) > 0,
+                    veto_reasons=veto_reasons, soft_penalties=soft_penalties))
+                continue
+
+            # ── Layer 4: Full objective ───────────────────────────
+            breakdown.driver_mismatch = self._compute_driver_mismatch(
+                params, physics, driver_profile, soft_penalties)
+            breakdown.telemetry_uncertainty = self._compute_telemetry_uncertainty(
+                measured, session_count, soft_penalties)
+            breakdown.envelope_penalty = self._compute_envelope_penalty(
+                params, physics, soft_penalties)
+
+            results.append(CandidateEvaluation(
+                params=params, family=family, breakdown=breakdown,
+                physics=physics, hard_vetoed=len(veto_reasons) > 0,
+                veto_reasons=veto_reasons, soft_penalties=soft_penalties))
+
+        return results
+
     def _estimate_lap_gain(
         self, params: dict[str, float], physics: PhysicsResult,
     ) -> float:
