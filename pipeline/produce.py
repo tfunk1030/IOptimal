@@ -1306,6 +1306,40 @@ def produce(
                     obs_data["solver_predictions"] = solver_predictions
                     store.save_observation(session_id, obs_data)
 
+            # ── Auto-update heave calibration from this IBT run ──────────
+            # Every new IBT teaches the system the actual (heave → σ) relationship.
+            # When you run 380 N/mm, drop in the IBT, and σ comes back elevated,
+            # the solver automatically down-scores that heave range going forward.
+            try:
+                from solver.heave_calibration import HeaveCalibration
+                _setup = result.get("setup", {})
+                _tel = result.get("telemetry", {})
+                _perf = result.get("performance", {})
+                _heave = _setup.get("front_heave_nmm") or _setup.get("front_heave_spring_nmm")
+                _sigma = _tel.get("front_rh_std_mm")
+                if _heave and _sigma:
+                    _track_raw = result.get("track", "unknown")
+                    _track_slug = str(_track_raw).lower().split()[0]
+                    _car_raw = result.get("car", "unknown")
+                    _car_slug = str(_car_raw).lower()
+                    _cal = HeaveCalibration.load(_car_slug, _track_slug)
+                    _cal.add_run(
+                        heave_nmm=float(_heave),
+                        sigma_mm=float(_sigma),
+                        rear_sigma_mm=_tel.get("rear_rh_std_mm"),
+                        shock_vel_p99=_tel.get("front_shock_vel_p99_mps"),
+                        dominant_freq_hz=_tel.get("front_dominant_freq_hz"),
+                        heave_travel_pct=_tel.get("front_heave_travel_used_pct"),
+                        best_lap_s=_perf.get("best_lap_time_s"),
+                        session_ts=result.get("timestamp", ""),
+                    )
+                    _cal.save()
+                    log(f"[heave_cal] Updated {_car_slug}/{_track_slug}: "
+                        f"heave={_heave:.0f} N/mm → σ={_sigma:.2f}mm "
+                        f"(n={sum(s.n for s in _cal.summary)} total runs)")
+            except Exception as _e:
+                log(f"[heave_cal] Calibration update skipped: {_e}")
+
             if result.get("new_learnings"):
                 for ln in result["new_learnings"]:
                     log(f"[learn] {ln}")

@@ -7,14 +7,20 @@ where it did.
 Score formula:
     total_score = (
         + lap_gain_ms
-        - 0.9 * platform_risk_ms
-        - 0.6 * driver_mismatch_ms
-        - 0.7 * telemetry_uncertainty_ms
-        - 0.8 * envelope_penalty_ms
-        - 0.4 * staleness_penalty_ms
+        - 1.0 * platform_risk_ms        [primary — platform collapse is catastrophic]
+        - 0.5 * driver_mismatch_ms
+        - 0.6 * telemetry_uncertainty_ms
+        - 0.7 * envelope_penalty_ms
+        - 0.3 * staleness_penalty_ms
     )
 
 All terms are in milliseconds for human-interpretable comparison.
+
+Platform sigma is computed from empirical IBT calibration when available
+(data/learnings/heave_calibration_<car>_<track>.json), falling back to
+a physics model. When you drop in an IBT from a 380 N/mm run, the system
+automatically learns the actual sigma at that heave rate and updates the
+scoring model.
 
 Usage:
     from solver.objective import ObjectiveFunction
@@ -208,6 +214,22 @@ class ObjectiveFunction:
         self.track = track
         self._surface = None  # lazy-loaded aero surface
         self._vortex_threshold_cache: dict[float, float] = {}  # wing_deg → threshold_mm
+        # Empirical heave spring calibration — loads from real IBT telemetry data.
+        # Falls back to physics model if no calibration file exists yet.
+        from solver.heave_calibration import HeaveCalibration
+
+        # Resolve car slug: "bmw m hybrid v8" → "bmw", "cadillac v-series.r" → "cadillac"
+        _car_raw = getattr(car, "name", "") or getattr(car, "adapter_name", "") or str(car)
+        _car_slug = _car_raw.lower().split()[0].replace("-", "").replace(".", "")
+
+        # Resolve track slug: handles dict (track json), object with .name, or string
+        if isinstance(track, dict):
+            _track_raw = track.get("track_name") or track.get("name") or str(track)
+        else:
+            _track_raw = getattr(track, "name", None) or getattr(track, "track_name", None) or str(track)
+        _track_slug = str(_track_raw).lower().split()[0].replace("-", "").replace("_", "")
+
+        self._heave_cal = HeaveCalibration.load(_car_slug, _track_slug)
 
     def _get_surface(self):
         """Lazy-load aero surface for DF balance queries."""
@@ -519,8 +541,20 @@ class ObjectiveFunction:
                                       - vortex_thresh)
 
             # Platform variance (sigma = p99 / 2.33 for Gaussian)
-            result.front_sigma_mm = result.front_excursion_mm / 2.33
-            result.rear_sigma_mm = result.rear_excursion_mm / 2.33
+            # Override with empirical calibration when available — the real IBT-measured
+            # sigma is more accurate than the synthetic excursion model.
+            # The U-shape (30→90 improving, 900 worsening) is from 46 real sessions.
+            synthetic_sigma_f = result.front_excursion_mm / 2.33
+            synthetic_sigma_r = result.rear_excursion_mm / 2.33
+            cal_sigma_f = self._heave_cal.predict_sigma(
+                params.get("front_heave_spring_nmm", 50.0)
+            )
+            # Use empirical if calibration has data, else fall back to synthetic
+            if self._heave_cal.summary:
+                result.front_sigma_mm = cal_sigma_f
+            else:
+                result.front_sigma_mm = synthetic_sigma_f
+            result.rear_sigma_mm = synthetic_sigma_r
 
         # ── LLTD (real roll stiffness calculation) ──────────────────────
         arb = car.arb
@@ -734,48 +768,20 @@ class ObjectiveFunction:
         if sigma_r > SIGMA_R_STABLE_MM:
             gain -= min(300.0, (sigma_r - SIGMA_R_STABLE_MM) * SIGMA_R_MS_PER_MM)
 
-        # ── TYRE CONTACT COMPLIANCE (natural physics, no caps) ──────────
-        # As suspension stiffness increases, the wheel can no longer track
-        # the road surface. Contact loss → traction loss → lap time penalty.
-        # This emerges naturally from wheel natural frequency vs track roughness.
-        #
-        # Physics: unsprung natural frequency fn = sqrt(k_total / m_unsprung) / (2π)
-        # As fn rises above the "road frequency" (track roughness spectrum peak),
-        # contact ratio drops exponentially. Contact loss at Sebring (rough):
-        #   fn < 8 Hz: good contact (typical road car range)
-        #   fn = 12 Hz: slight contact loss (~5ms)
-        #   fn = 18 Hz: moderate (~25ms)
-        #   fn = 25 Hz: severe (~80ms) — suspension too rigid for Sebring
-        # Source: vehicle dynamics literature (Dixon, Tyre & Vehicle Dynamics)
-        #   Sebring roughness PSD peak ≈ 6-10 Hz based on IBT shock velocity data
-        #
-        # Combined spring: heave in series with corner spring (parallel with tyre)
-        # Equivalent: k_eff = front_heave_nmm (heave dominates platform mode)
+        # ── HEAVE CALIBRATION UNCERTAINTY PENALTY ───────────────────────
+        # The empirical sigma is now wired into physics.front_sigma_mm and
+        # flows into _compute_platform_risk (rh_collapse_risk_ms).
+        # Here we add an ADDITIONAL uncertainty penalty for exploring beyond
+        # the calibrated range — the solver is free to go there, but pays an
+        # increasing cost reflecting reduced confidence in the prediction.
+        # When you actually run 380 N/mm and drop the IBT, uncertainty drops
+        # to ~0.15mm and the true sigma (whatever it is) is used instead.
         front_heave = params.get("front_heave_spring_nmm", 50.0)
-        m_unsprung_front = getattr(self.car, "unsprung_mass_front_kg", 35.0)  # [kg]
-        if front_heave > 0 and m_unsprung_front > 0:
-            # fn [Hz] = sqrt(k [N/m] / m [kg]) / (2π)
-            k_n_per_m = max(front_heave, 1.0) * 1000.0  # convert N/mm → N/m
-            fn_hz = math.sqrt(k_n_per_m / m_unsprung_front) / (2.0 * math.pi)
-            # Contact compliance penalty: zero below 12 Hz, grows above
-            # Sebring-specific: rough track = lower tolerance for high fn
-            FN_COMPLIANCE_THRESHOLD_HZ = 12.0
-            if fn_hz > FN_COMPLIANCE_THRESHOLD_HZ:
-                # Exponential growth above threshold reflects tyre contact physics
-                excess = fn_hz - FN_COMPLIANCE_THRESHOLD_HZ
-                contact_loss_ms = excess ** 2.2 * 1.4  # tuned to 80ms at fn=25 Hz
-                gain -= min(200.0, contact_loss_ms)
-
-        # Same compliance model for rear (third spring controls rear platform mode)
-        rear_third = params.get("rear_third_spring_nmm", 450.0)
-        m_unsprung_rear = getattr(self.car, "unsprung_mass_rear_kg", 40.0)  # [kg]
-        if rear_third > 0 and m_unsprung_rear > 0:
-            k_n_per_m_r = max(rear_third, 1.0) * 1000.0
-            fn_hz_r = math.sqrt(k_n_per_m_r / m_unsprung_rear) / (2.0 * math.pi)
-            FN_REAR_THRESHOLD_HZ = 15.0  # rear more tolerant — less rough ground contact
-            if fn_hz_r > FN_REAR_THRESHOLD_HZ:
-                excess_r = fn_hz_r - FN_REAR_THRESHOLD_HZ
-                gain -= min(100.0, excess_r ** 2.2 * 0.8)
+        cal_uncertainty = self._heave_cal.uncertainty(front_heave)
+        # Uncertainty penalty: 0 for well-calibrated, grows for extrapolated
+        # At uncertainty=0.15mm (near data) → 0ms; at 3.4mm (380 N/mm) → ~27ms
+        if cal_uncertainty > 0.2:
+            gain -= (cal_uncertainty - 0.2) ** 1.5 * 8.0
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 2: LLTD BALANCE (flows through ARB blades and diameter)
