@@ -34,6 +34,11 @@ if TYPE_CHECKING:
 RH_DF_SENSITIVITY_N_PER_MM = 0.5         # rear RH: ~0.5 N DF per mm
 FRONT_RH_DF_SENSITIVITY_N_PER_MM = 1.2   # front RH: bigger effect on total DF
 
+# Direct ride height lap time sensitivity (ms/mm)
+# Research-calibrated: front RH 30-80 ms/mm (vortex burst cliff), rear 15-40 ms/mm
+FRONT_RH_DIRECT_MS_PER_MM = 55.0    # midpoint of 30-80 range
+REAR_RH_DIRECT_MS_PER_MM = 25.0     # midpoint of 15-40 range
+
 # Physics constants
 GTP_MASS_KG = 1050.0            # typical GTP car + driver + fuel mass
 G = 9.81                        # m/s²
@@ -52,9 +57,21 @@ TYPICAL_BOTTOMING_EVENTS_PER_LAP = 0.5  # at soft spring limit
 # RARB is a fine-tuning tool within an already-balanced window.
 # Real-world iRacing experience: 1 blade ≈ 20-50 ms on a Sebring-length track.
 LLTD_US_COEFF = 0.3            # deg understeer per 1% LLTD shift
-US_LAPTIME_COEFF_S_PER_DEG = 0.05  # s/lap per degree understeer (fine-tuning within balance window)
-RARB_LLTD_PER_BLADE = 0.030    # fraction LLTD change per RARB blade (absolute)
+US_LAPTIME_COEFF_S_PER_DEG = 0.04  # s/lap per degree understeer (calibrated to 5-15 ms/blade target)
+RARB_LLTD_PER_BLADE = 0.008    # fraction LLTD change per RARB blade (absolute)
 TORSION_LLTD_PER_NMM = 0.003   # fraction LLTD change per N/mm wheel rate (approximate)
+
+# Research-calibrated sensitivity constants (March 2026)
+# Heave spring: 20-60 ms per 10 N/mm (platform stability gatekeeper)
+HEAVE_MS_PER_10NMM = 35.0          # midpoint of 20-60 range
+# Corner spring (torsion bar OD): 15-40 ms/mm OD
+TORSION_MS_PER_MM_OD = 25.0        # midpoint of 15-40 range
+# Diff preload: 10-25 ms per 5 Nm
+DIFF_MS_PER_5NM = 15.0             # midpoint of 10-25 range
+# ARB blade (fine-tuning): 5-15 ms per click (NOT 33ms!)
+ARB_BLADE_MS_PER_CLICK = 10.0      # midpoint of 5-15 range
+# Damper clicks: 2-10 ms per click
+DAMPER_MS_PER_CLICK = 5.0          # midpoint of 2-10 range
 
 
 @dataclass
@@ -205,8 +222,8 @@ def _rear_rh_sensitivity(
 ) -> ParameterSensitivity:
     """Rear ride height: 1mm → ~0.5 N DF change → cornering speed → lap time."""
     # Rear RH primarily affects aero balance
-    df_delta = RH_DF_SENSITIVITY_N_PER_MM  # N per mm
-    dt_ms = _df_to_laptime_delta(df_delta, track)
+    # Base sensitivity from research: 15-40 ms/mm (weight ~0.85)
+    dt_ms = -REAR_RH_DIRECT_MS_PER_MM  # negative = lower RH costs time
 
     return ParameterSensitivity(
         parameter="rear_rh_mm",
@@ -215,8 +232,8 @@ def _rear_rh_sensitivity(
         delta_per_unit_ms=round(dt_ms, 1),
         confidence="medium",
         mechanism=(
-            f"1mm rear RH -> ~{df_delta:.1f}N DF change -> "
-            f"cornering speed -> {dt_ms:.0f}ms/lap (aero balance)"
+            f"1mm rear RH -> {abs(dt_ms):.0f}ms/lap "
+            f"(research: 15-40 ms/mm, aero balance)"
         ),
     )
 
@@ -226,14 +243,14 @@ def _front_rh_sensitivity(
     track: "TrackProfile",
 ) -> ParameterSensitivity:
     """Front ride height: 1mm → bigger DF effect (vortex sensitivity)."""
-    df_delta = FRONT_RH_DF_SENSITIVITY_N_PER_MM
-    dt_ms = _df_to_laptime_delta(df_delta, track)
+    # Base sensitivity from research: 30-80 ms/mm (weight 1.00)
+    dt_ms = -FRONT_RH_DIRECT_MS_PER_MM  # negative = lower RH costs time
 
     # Additional cost: if approaching vortex burst, lap time can spike
     vortex_margin = step1.vortex_burst_margin_mm
     if vortex_margin < 3.0:
         # Close to vortex burst — penalty increases non-linearly
-        vortex_factor = 1.0 + (3.0 - vortex_margin) * 0.5
+        vortex_factor = 1.0 + (3.0 - vortex_margin) * 1.0
         dt_ms *= vortex_factor
 
     return ParameterSensitivity(
@@ -243,8 +260,8 @@ def _front_rh_sensitivity(
         delta_per_unit_ms=round(dt_ms, 1),
         confidence="medium",
         mechanism=(
-            f"1mm front RH -> ~{FRONT_RH_DF_SENSITIVITY_N_PER_MM:.1f}N DF change "
-            f"(+ vortex margin {vortex_margin:.1f}mm) -> {dt_ms:.0f}ms/lap"
+            f"1mm front RH -> {abs(dt_ms):.0f}ms/lap "
+            f"(research: 30-80 ms/mm, vortex margin {vortex_margin:.1f}mm)"
         ),
     )
 
@@ -253,7 +270,7 @@ def _rear_arb_sensitivity(
     step4: "ARBSolution",
     track: "TrackProfile",
 ) -> ParameterSensitivity:
-    """RARB blade: 1 blade → ~3% LLTD → ~0.9° understeer → ~180ms at Sebring."""
+    """RARB blade (fine-tuning): 1 blade → ~3% LLTD → ~0.9° understeer → ~180ms at Sebring."""
     lltd_shift = RARB_LLTD_PER_BLADE  # fraction
     dt_ms = _lltd_to_laptime_delta_ms(lltd_shift, track)
 
@@ -275,18 +292,19 @@ def _front_heave_sensitivity(
     step2: "HeaveSolution",
     track: "TrackProfile",
 ) -> ParameterSensitivity:
-    """Front heave: 10 N/mm → bottoming margin → DF stability."""
+    """Front heave (weight 0.75): 10 N/mm → bottoming margin → DF stability."""
     # Softer heave → more bottoming → DF instability → lap time cost
     # Each bottoming event ≈ 20ms, at soft limit ~0.5 events/lap
     # Each 10 N/mm reduction ≈ 0.5 extra bottoming events → 10ms
     # But also softer = more mechanical grip on non-bottoming corners
     # Net effect per 10 N/mm softening ≈ -5ms (slight benefit until bottoming)
     unit_step = 10.0  # N/mm
-    bottoming_events_change = 0.3  # estimated bottoming events per 10 N/mm
+    bottoming_events_change = 1.5  # estimated bottoming events per 10 N/mm (research-calibrated)
     bottoming_cost = bottoming_events_change * BOTTOMING_LAPTIME_COST_MS  # ms
 
-    # Softer spring = slightly better mechanical grip at non-bottoming corners
-    grip_benefit = -3.0  # ms (small benefit from softer spring)
+    # Softer spring = better mechanical grip but worse platform stability
+    # Research: 20-60 ms per 10 N/mm total sensitivity (weight 0.75)
+    grip_benefit = -5.0  # ms (grip benefit from softer spring)
 
     net_change = bottoming_cost + grip_benefit  # positive = faster to stiffen
 
@@ -311,7 +329,7 @@ def _torsion_bar_sensitivity(
     step4: "ARBSolution",
     track: "TrackProfile",
 ) -> ParameterSensitivity:
-    """Torsion bar OD: 0.1mm → ~0.8 N/mm wheel rate → LLTD → balance → lap time."""
+    """Torsion bar OD (weight 0.55): 0.1mm → ~0.8 N/mm wheel rate → LLTD → balance → lap time."""
     # OD change → wheel rate change via k = C * OD^4
     # At OD=13.9mm, C≈0.0008036: dk/dOD = 4 * C * OD^3 ≈ 4 * 0.0008036 * 13.9^3 ≈ 8.6 N/mm/mm
     # 0.1mm OD change → ~0.86 N/mm wheel rate change
@@ -371,7 +389,7 @@ def _rear_camber_sensitivity(
 ) -> ParameterSensitivity:
     """Rear camber: 0.1° → contact patch → lateral grip → ~30ms/lap."""
     track_scale = (track.track_length_m or 6000.0) / 6020.0
-    dt_ms_per_deg = 30.0 * track_scale  # ms per 0.1° (positive = more camber is faster)
+    dt_ms_per_deg = 5.0 * track_scale  # ms per 0.1deg (research: 10-25ms per 0.3° (positive = more camber is faster)
 
     return ParameterSensitivity(
         parameter="rear_camber_deg",

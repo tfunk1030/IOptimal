@@ -699,58 +699,58 @@ class ObjectiveFunction:
         gain = 0.0
 
         # ── Mechanical grip (softer = more grip, up to a point) ─────────
-        # Front heave: softer gains grip. Each N/mm below 80 gains ~0.3ms.
-        # Below 30 = too soft, diminishing returns.
+        # Front heave: softer gains grip. Each N/mm below 80 gains ~2.5ms.
+        # Research: 20-60 ms per 10 N/mm. Platform stability gatekeeper.
         front_heave = params.get("front_heave_spring_nmm", 50.0)
-        heave_grip = max(0.0, min(15.0, (80.0 - front_heave) * 0.3))
+        heave_grip = max(0.0, min(75.0, (80.0 - front_heave) * 2.5))
         gain += heave_grip
 
         # Rear wheel rate: softer rear = more rear mechanical grip for traction.
         rear_wr = physics.rear_wheel_rate_nmm
-        rear_grip = max(0.0, min(10.0, (120.0 - rear_wr) * 0.15))
+        rear_grip = max(0.0, min(45.0, (120.0 - rear_wr) * 1.5))
         gain += rear_grip
 
         # ── LLTD balance proximity ──────────────────────────────────────
         # Each 1% LLTD error costs ~8ms (balance is important but not everything)
         lltd_penalty = physics.lltd_error * 100.0 * 8.0
-        gain -= min(30.0, lltd_penalty)
+        gain -= min(40.0, lltd_penalty)
 
         # ── Damper quality ──────────────────────────────────────────────
         # Damper ζ errors are secondary compared to springs and balance.
-        # Each axis contributes up to ~5ms penalty for being far off target.
+        # Each axis contributes up to ~3ms penalty (2-10 ms/click total).
 
         # Front LS near 0.88 = optimal entry stability
         zeta_ls_front_error = abs(physics.zeta_ls_front - 0.88)
-        gain -= min(5.0, zeta_ls_front_error * 8.0)
+        gain -= min(3.0, zeta_ls_front_error * 5.0)
 
         # Rear LS near 0.30 = optimal traction
         zeta_ls_rear_error = abs(physics.zeta_ls_rear - 0.30)
-        gain -= min(5.0, zeta_ls_rear_error * 8.0)
+        gain -= min(3.0, zeta_ls_rear_error * 5.0)
 
         # HS front near 0.45 = platform control
         zeta_hs_front_error = abs(physics.zeta_hs_front - 0.45)
-        gain -= min(4.0, zeta_hs_front_error * 6.0)
+        gain -= min(2.5, zeta_hs_front_error * 4.0)
 
         # HS rear near 0.14 = maximum compliance for traction
         zeta_hs_rear_error = abs(physics.zeta_hs_rear - 0.14)
-        gain -= min(4.0, zeta_hs_rear_error * 6.0)
+        gain -= min(2.5, zeta_hs_rear_error * 4.0)
 
         # ── DF balance ──────────────────────────────────────────────────
-        # Each 0.1% DF balance error costs ~5ms at high-speed tracks
+        # Each 0.1% DF balance error costs ~4.5ms at high-speed tracks
         # (currently constant across candidates since we don't vary ride heights)
-        gain -= physics.df_balance_error_pct * 30.0
+        gain -= physics.df_balance_error_pct * 45.0
 
         # ── Camber optimization ─────────────────────────────────────────
         # Front camber: ~-3.0 to -3.5 compensates for body roll → -0.5 dynamic
         front_camber = params.get("front_camber_deg", -3.5)
         front_camber_target = -3.0
         camber_error = abs(front_camber - front_camber_target)
-        gain -= min(8.0, camber_error * 5.0)
+        gain -= min(25.0, camber_error * 20.0)
 
         rear_camber = params.get("rear_camber_deg", -2.5)
         rear_camber_target = -2.0
         rear_camber_error = abs(rear_camber - rear_camber_target)
-        gain -= min(6.0, rear_camber_error * 4.0)
+        gain -= min(20.0, rear_camber_error * 15.0)
 
         return gain
 
