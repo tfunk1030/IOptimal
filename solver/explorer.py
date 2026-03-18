@@ -131,23 +131,37 @@ class SetupExplorer:
         Stiffer heave/third = more stable aero platform = more consistent downforce.
         But diminishing returns beyond what's needed for bottoming prevention.
         """
-        # Excursion at this heave rate
-        v_p99 = (self.track.shock_vel_p99_front_clean_mps
-                 if self.track.shock_vel_p99_front_clean_mps > 0
-                 else self.track.shock_vel_p99_front_mps)
-        if v_p99 <= 0 or front_heave_nmm <= 0:
-            return 0.0
+        # Front excursion at this heave rate
+        v_p99_f = (self.track.shock_vel_p99_front_clean_mps
+                   if self.track.shock_vel_p99_front_clean_mps > 0
+                   else self.track.shock_vel_p99_front_mps)
+        if v_p99_f <= 0 or front_heave_nmm <= 0:
+            front_score = 0.0
+        else:
+            m_eff = self.car.heave_spring.front_m_eff_kg
+            excursion_f = v_p99_f * math.sqrt(m_eff / (front_heave_nmm * 1000))
+            margin_f = 15.0 - excursion_f * 1000  # 15mm typical front dynamic RH
+            if margin_f < 0:
+                front_score = max(0.0, 0.5 + margin_f / 20.0)
+            else:
+                front_score = min(1.0, 0.5 + margin_f / 20.0)
 
-        m_eff = self.car.heave_spring.front_m_eff_kg
-        # Simple excursion model (no damper for speed)
-        excursion = v_p99 * math.sqrt(m_eff / (front_heave_nmm * 1000))
-        dynamic_rh = 15.0  # typical front dynamic RH
+        # Rear excursion at this third spring rate
+        v_p99_r = (self.track.shock_vel_p99_rear_clean_mps
+                   if self.track.shock_vel_p99_rear_clean_mps > 0
+                   else self.track.shock_vel_p99_rear_mps)
+        if v_p99_r <= 0 or rear_third_nmm <= 0:
+            rear_score = 0.0
+        else:
+            m_eff_r = self.car.heave_spring.rear_m_eff_kg
+            excursion_r = v_p99_r * math.sqrt(m_eff_r / (rear_third_nmm * 1000))
+            margin_r = 20.0 - excursion_r * 1000  # 20mm typical rear dynamic RH
+            if margin_r < 0:
+                rear_score = max(0.0, 0.5 + margin_r / 20.0)
+            else:
+                rear_score = min(1.0, 0.5 + margin_r / 20.0)
 
-        # Score: 1.0 if well within margin, 0.0 if bottoming
-        margin = dynamic_rh - excursion * 1000
-        if margin < 0:
-            return max(0.0, 0.5 + margin / 20.0)  # Penalize bottoming
-        return min(1.0, 0.5 + margin / 20.0)
+        return front_score * 0.6 + rear_score * 0.4
 
     def _score_grip(
         self,
@@ -155,11 +169,14 @@ class SetupExplorer:
         rear_spring_nmm: float,
         front_camber_deg: float,
         rear_camber_deg: float,
+        front_toe_mm: float = 0.0,
+        rear_toe_mm: float = 0.0,
     ) -> float:
         """Score mechanical grip.
 
         Softer corner springs = more mechanical grip (better bump compliance).
         More camber = better contact patch at lean (up to a point).
+        Toe-out adds drag; score penalizes excessive toe.
         """
         # Corner spring softness reward (softer = better grip, normalized)
         c_torsion = self.car.corner_spring.front_torsion_c
@@ -176,8 +193,16 @@ class SetupExplorer:
         front_camber_score = max(0.0, min(1.0, front_camber_score))
         rear_camber_score = max(0.0, min(1.0, rear_camber_score))
 
-        return (front_grip * 0.3 + rear_grip * 0.3 +
-                front_camber_score * 0.2 + rear_camber_score * 0.2)
+        # Toe penalty: more toe (absolute) = more drag.
+        # Front: slight toe-out aids turn-in (~-0.5mm optimal), penalize excess
+        # Rear: slight toe-in aids stability (~0.5mm optimal), penalize excess
+        front_toe_penalty = max(0.0, abs(front_toe_mm) - 0.5) / 3.0
+        rear_toe_penalty = max(0.0, abs(rear_toe_mm) - 0.5) / 3.0
+        toe_score = max(0.0, 1.0 - front_toe_penalty - rear_toe_penalty)
+
+        return (front_grip * 0.25 + rear_grip * 0.25 +
+                front_camber_score * 0.15 + rear_camber_score * 0.15 +
+                toe_score * 0.20)
 
     def _score_balance(
         self,
@@ -334,13 +359,14 @@ class SetupExplorer:
             grip = self._score_grip(
                 torsion_od, row["rear_spring_nmm"],
                 row["front_camber_deg"], row["rear_camber_deg"],
+                row["front_toe_mm"], row["rear_toe_mm"],
             )
             balance = self._score_balance(front_wr, rear_wr, f_arb, r_arb)
             platform = aero  # Platform score is primarily aero stability
 
             # Weighted total — grip matters most, then balance, then aero platform
             # Track-dependent weighting: high-speed tracks weight aero more
-            hs_pct = getattr(self.track, "pct_above_200kph", 0.3)
+            hs_pct = self.track.pct_time_above_kph(200) or 0.3
             aero_weight = 0.20 + 0.15 * hs_pct
             grip_weight = 0.40 - 0.10 * hs_pct
             balance_weight = 0.25

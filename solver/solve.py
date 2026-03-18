@@ -205,6 +205,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             length_km=getattr(args, "track_length_km", 5.0),
             n_corners=getattr(args, "track_corners", 15),
             roughness=getattr(args, "track_roughness", "medium"),
+            car=args.car,
         )
         log(f"Track: {track.track_name} (generic profile — no IBT data)")
         log(f"  Note: Run with IBT telemetry for accurate results")
