@@ -504,8 +504,8 @@ class ARBModel:
 @dataclass
 class WheelGeometryModel:
     """Wheel alignment model (camber and toe)."""
-    front_camber_range_deg: tuple[float, float] = (-5.0, 0.0)
-    rear_camber_range_deg: tuple[float, float] = (-4.0, 0.0)
+    front_camber_range_deg: tuple[float, float] = (-2.9, 0.0)   # iRacing GTP legal max
+    rear_camber_range_deg: tuple[float, float] = (-1.9, 0.0)    # iRacing GTP legal max
     front_camber_step_deg: float = 0.1
     rear_camber_step_deg: float = 0.1
     front_camber_baseline_deg: float = -2.9
@@ -602,8 +602,8 @@ class GarageRanges:
     static_rh_mm: tuple[float, float] = (10.0, 80.0)
     arb_blade: tuple[int, int] = (1, 5)
     damper_click: tuple[int, int] = (0, 11)  # BMW verified; Ferrari overrides
-    camber_front_deg: tuple[float, float] = (-5.0, 0.0)
-    camber_rear_deg: tuple[float, float] = (-4.0, 0.0)
+    camber_front_deg: tuple[float, float] = (-2.9, 0.0)   # iRacing GTP legal max
+    camber_rear_deg: tuple[float, float] = (-1.9, 0.0)    # iRacing GTP legal max
     toe_front_mm: tuple[float, float] = (-3.0, 3.0)
     toe_rear_mm: tuple[float, float] = (-2.0, 3.0)
     # Resolution (quantisation step sizes)
@@ -1333,7 +1333,7 @@ FERRARI_499P = CarModel(
     geometry=WheelGeometryModel(
         # iRacing legality limits for Ferrari 499P
         front_camber_range_deg=(-2.9, 0.0),   # hard garage limit
-        rear_camber_range_deg=(-2.5, 0.0),     # hard garage limit
+        rear_camber_range_deg=(-1.9, 0.0),     # hard garage limit (iRacing GTP legal max)
         front_toe_range_mm=(-3.0, 3.0),
         rear_toe_range_mm=(-2.0, 3.0),
         # From verified S1: front camber -2.9°, rear -1.8°
@@ -1382,7 +1382,7 @@ FERRARI_499P = CarModel(
         arb_blade=(1, 5),
         # iRacing legality limits for Ferrari 499P
         camber_front_deg=(-2.9, 0.0),           # hard garage limit
-        camber_rear_deg=(-2.5, 0.0),            # hard garage limit
+        camber_rear_deg=(-1.9, 0.0),            # hard garage limit (iRacing GTP legal max)
         toe_front_mm=(-3.0, 3.0),
         toe_rear_mm=(-2.0, 3.0),
         diff_clutch_plates_options=[2, 4, 6],
