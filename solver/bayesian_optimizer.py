@@ -197,13 +197,26 @@ class BayesianOptimizer:
         v_p99 = max(self.track.shock_vel_p99_front_mps, 0.01)
         m_eff = self.car.heave_spring.front_m_eff_kg
         if heave > 0:
-            excursion = v_p99 * math.sqrt(m_eff / (heave * 1000))
-            aero_score = max(0, 1.0 - excursion * 1000 / 20.0)
+            excursion_f = v_p99 * math.sqrt(m_eff / (heave * 1000))
+            front_aero = max(0, 1.0 - excursion_f * 1000 / 20.0)
         else:
-            aero_score = 0.0
+            front_aero = 0.0
+
+        # Rear platform: third spring controls rear ride height variance
+        v_p99_r = max(self.track.shock_vel_p99_rear_mps, 0.01)
+        m_eff_r = self.car.heave_spring.rear_m_eff_kg
+        if third > 0:
+            excursion_r = v_p99_r * math.sqrt(m_eff_r / (third * 1000))
+            rear_aero = max(0, 1.0 - excursion_r * 1000 / 25.0)
+        else:
+            rear_aero = 0.0
+
+        aero_score = front_aero * 0.6 + rear_aero * 0.4
 
         # Mechanical grip: softer springs = more grip
-        grip_score = max(0, (300 - rear_sp) / 200) * 0.5 + max(0, (200 - heave) / 200) * 0.5
+        grip_score = (max(0, (300 - rear_sp) / 200) * 0.35 +
+                      max(0, (200 - heave) / 200) * 0.35 +
+                      max(0, (800 - third) / 500) * 0.30)
 
         # Balance: LLTD near optimal
         tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.20)

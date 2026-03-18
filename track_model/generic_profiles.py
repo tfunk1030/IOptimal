@@ -134,6 +134,7 @@ def generate_generic_profile(
     n_corners: int = 15,
     roughness: str = "medium",
     avg_speed_kph: float | None = None,
+    car: str = "generic",
 ) -> TrackProfile:
     """Generate a TrackProfile from basic track characteristics.
 
@@ -144,6 +145,7 @@ def generate_generic_profile(
         n_corners: Number of corners
         roughness: Surface roughness ("smooth", "medium", "rough")
         avg_speed_kph: Optional average speed override
+        car: Car identifier (e.g., "bmw", "ferrari")
     """
     # Look up known track data
     name_lower = name.lower()
@@ -171,6 +173,7 @@ def generate_generic_profile(
         track_name=name,
         track_config=config or "Generic",
         track_length_m=length_km * 1000,
+        car=car,
         best_lap_time_s=lap_time,
         median_speed_kph=median_speed,
         max_speed_kph=median_speed * 1.4,

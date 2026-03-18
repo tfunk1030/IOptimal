@@ -107,9 +107,9 @@ class MultiSpeedSolver:
             ("high", (200, 350)),
         ]
 
-        # Estimate time fractions from track profile
-        pct_below_120 = getattr(self.track, "pct_below_120kph", 0.15)
-        pct_above_200 = getattr(self.track, "pct_above_200kph", 0.25)
+        # Estimate time fractions from track profile speed bands
+        pct_below_120 = self.track.pct_time_below_kph(120) or 0.15
+        pct_above_200 = self.track.pct_time_above_kph(200) or 0.25
         pct_mid = 1.0 - pct_below_120 - pct_above_200
 
         time_fractions = {
