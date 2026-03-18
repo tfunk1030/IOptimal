@@ -83,7 +83,6 @@ _KNOWN_TRACKS: dict[str, tuple[str, str]] = {
     "sonoma":       ("medium",  "technical"),
     "mid ohio":     ("medium",  "technical"),
     "virginia":     ("smooth",  "high_speed"),
-    "daytona":      ("smooth",  "high_speed"),
 }
 
 

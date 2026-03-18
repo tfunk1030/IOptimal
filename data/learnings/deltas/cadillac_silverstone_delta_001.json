@@ -1,14 +1,14 @@
 {
-  "session_before": "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_19-58-55",
-  "session_after": "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_18-05-21",
+  "session_before": "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_18-05-21",
+  "session_after": "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_19-58-55",
   "car": "cadillac",
   "track": "Silverstone Circuit",
   "setup_changes": [
     {
       "parameter": "fuel_l",
-      "before": 57.8,
-      "after": 58.0,
-      "delta": 0.20000000000000284,
+      "before": 58.0,
+      "after": 57.8,
+      "delta": -0.20000000000000284,
       "step_group": "other",
       "significance": "minor"
     }
@@ -17,82 +17,82 @@
     {
       "metric": "front_shock_vel_p95_mps",
       "category": "platform",
-      "before": 0.09111709892749786,
-      "after": 0.08065517246723175,
-      "delta": -0.0105,
-      "pct_change": -11.5,
+      "before": 0.08065517246723175,
+      "after": 0.09111709892749786,
+      "delta": 0.0105,
+      "pct_change": 13.0,
       "significance": "moderate"
     },
     {
       "metric": "rear_shock_vel_p95_mps",
       "category": "platform",
-      "before": 0.11634551733732224,
-      "after": 0.10100451111793518,
-      "delta": -0.0153,
-      "pct_change": -13.2,
-      "significance": "moderate"
+      "before": 0.10100451111793518,
+      "after": 0.11634551733732224,
+      "delta": 0.0153,
+      "pct_change": 15.2,
+      "significance": "large"
     },
     {
       "metric": "front_heave_defl_p99_mm",
       "category": "platform",
-      "before": 70.96,
-      "after": 73.94,
-      "delta": 2.98,
-      "pct_change": 4.2,
+      "before": 73.94,
+      "after": 70.96,
+      "delta": -2.98,
+      "pct_change": -4.0,
       "significance": "moderate"
     },
     {
       "metric": "understeer_high_speed_deg",
       "category": "balance",
-      "before": -0.08646190911531448,
-      "after": -0.09109117835760117,
-      "delta": -0.0046,
-      "pct_change": -5.4,
+      "before": -0.09109117835760117,
+      "after": -0.08646190911531448,
+      "delta": 0.0046,
+      "pct_change": 5.1,
       "significance": "moderate"
     },
     {
       "metric": "understeer_low_speed_deg",
       "category": "balance",
-      "before": -0.1208893433213234,
-      "after": -0.14523673057556152,
-      "delta": -0.0243,
-      "pct_change": -20.1,
+      "before": -0.14523673057556152,
+      "after": -0.1208893433213234,
+      "delta": 0.0243,
+      "pct_change": 16.8,
       "significance": "large"
     },
     {
       "metric": "body_slip_p95_deg",
       "category": "balance",
-      "before": 1.6596146821975708,
-      "after": 3.5684549808502197,
-      "delta": 1.9088,
-      "pct_change": 115.0,
+      "before": 3.5684549808502197,
+      "after": 1.6596146821975708,
+      "delta": -1.9088,
+      "pct_change": -53.5,
       "significance": "large"
     },
     {
       "metric": "dynamic_front_rh_mm",
       "category": "aero",
-      "before": 17.759033203125,
-      "after": 18.271142959594727,
-      "delta": 0.5121,
-      "pct_change": 2.9,
+      "before": 18.271142959594727,
+      "after": 17.759033203125,
+      "delta": -0.5121,
+      "pct_change": -2.8,
       "significance": "small"
     },
     {
       "metric": "front_dominant_freq_hz",
       "category": "damper",
-      "before": 4.15,
-      "after": 4.2,
-      "delta": 0.05,
-      "pct_change": 1.2,
+      "before": 4.2,
+      "after": 4.15,
+      "delta": -0.05,
+      "pct_change": -1.2,
       "significance": "small"
     },
     {
       "metric": "rear_dominant_freq_hz",
       "category": "damper",
-      "before": 4.15,
-      "after": 4.2,
-      "delta": 0.05,
-      "pct_change": 1.2,
+      "before": 4.2,
+      "after": 4.15,
+      "delta": -0.05,
+      "pct_change": -1.2,
       "significance": "small"
     }
   ],
@@ -102,8 +102,8 @@
   "changed_steps": [
     "other"
   ],
-  "lap_time_delta_s": 0.472,
+  "lap_time_delta_s": -0.472,
   "driver_style_changed": true,
-  "key_finding": "Changed fuel_l: 0.20000000000000284 (0.472s slower); effects: understeer_low_speed_deg -0.02, body_slip_p95_deg +1.91 [low confidence]",
+  "key_finding": "Changed fuel_l: -0.20000000000000284 (0.472s faster); effects: rear_shock_vel_p95_mps +0.02, understeer_low_speed_deg +0.02, body_slip_p95_deg -1.91 [low confidence]",
   "confidence_level": "low"
 }

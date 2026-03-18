@@ -48,17 +48,20 @@ class AeroCompression:
 class PushrodGeometry:
     """Pushrod offset to ride height relationship.
 
-    For BMW GTP, the front static ride height is pinned at the sim-enforced
-    minimum (30mm). The front pushrod offset does NOT change the static RH —
-    confirmed across 6 sessions where pushrod offsets -23 to -25.5mm all
-    produce exactly 30.0mm front static RH.  front_pushrod_to_rh = 0.0.
+    The front pushrod affects static ride height — the relationship is
+    car-specific and must be calibrated from garage data.
 
-    For Cadillac (and potentially other LMDh cars), the front pushrod IS a
-    true ride height adjuster. Calibrated from IBT:
-      pushrod=-33.5mm → RH=30.0mm
-      pushrod=-25.0mm → RH=41.8mm
-    → front_pushrod_to_rh = 1.388 mm per mm (positive: less negative pushrod = higher RH)
-    → front_base_rh_mm  = 41.8mm (RH at front_pushrod_default_mm = -25.0mm)
+    BMW (62 sessions, pushrod range -28 to -22.5mm):
+      Front RH = 30.0 ± 0.4mm across the entire measured range.
+      In this range, the car sits at iRacing's 30mm GTP floor regardless
+      of pushrod. front_pushrod_to_rh = 0.0 (no measurable sensitivity
+      in the tested range; slope may exist beyond it — not yet characterized).
+
+    Cadillac (2 garage data points, ESTIMATE — needs more calibration):
+      pushrod=-25.0mm → RH=41.8mm (default reference)
+      pushrod=-33.5mm → RH=30.0mm (in-session target)
+      front_pushrod_to_rh = 1.388 mm/mm (positive: less negative → higher RH)
+      front_base_rh_mm  = 41.8mm (RH at front_pushrod_default_mm = -25.0mm)
 
     Rear relationship (all cars):
         static_rh = rear_base_rh + pushrod_offset * rear_pushrod_to_rh
@@ -71,23 +74,34 @@ class PushrodGeometry:
     rear_pushrod_to_rh: float        # mm RH change per mm pushrod (weak, ~-0.096)
 
     # Front pushrod-to-RH sensitivity.
-    # 0.0 = BMW behaviour (front pinned; pushrod doesn't change RH).
-    # Cadillac = 1.388 mm/mm (calibrated from two garage data points).
+    # 0.0 = no measured sensitivity (BMW in tested range; may change beyond -28mm).
+    # Cadillac = 1.388 mm/mm (3 garage data points — ESTIMATE).
     front_pushrod_to_rh: float = 0.0
-    # Front static RH at front_pushrod_default_mm (only used when front_pushrod_to_rh != 0).
+    # Front static RH at (front_pushrod_default_mm, front_heave_perch_ref_mm).
     front_base_rh_mm: float = 30.0
 
-    def front_offset_for_rh(self, target_rh: float) -> float:
-        """Front pushrod offset to achieve target static RH.
+    # Front heave-perch-to-RH sensitivity.
+    # 0.0 = no term (BMW; not yet measured).
+    # Cadillac = -1.51 mm/mm (more positive perch = lower front RH; 3 points — ESTIMATE).
+    front_heave_perch_to_rh: float = 0.0
+    # Heave perch reference at which front_base_rh_mm was measured.
+    front_heave_perch_ref_mm: float = 0.0
 
-        For BMW (front_pushrod_to_rh=0): returns default (front is floor-pinned).
-        For Cadillac (front_pushrod_to_rh=1.388): solves linearly.
+    def front_offset_for_rh(self, target_rh: float,
+                             heave_perch_mm: float | None = None) -> float:
+        """Front pushrod offset to achieve target static RH at the given heave perch.
+
+        For BMW (front_pushrod_to_rh=0): returns default (no measured sensitivity).
+        For Cadillac: solves for pushrod accounting for both pushrod and perch terms.
         """
         if abs(self.front_pushrod_to_rh) < 1e-6:
             return self.front_pushrod_default_mm
-        # target = base + (pushrod - default) * slope
-        # → pushrod = (target - base) / slope + default
-        return (target_rh - self.front_base_rh_mm) / self.front_pushrod_to_rh + self.front_pushrod_default_mm
+        # Model: rh = base + pushrod_coeff*(pushrod - pushrod_ref) + perch_coeff*(perch - perch_ref)
+        # → pushrod = (target - base - perch_coeff*(perch - perch_ref)) / pushrod_coeff + pushrod_ref
+        perch = heave_perch_mm if heave_perch_mm is not None else self.front_heave_perch_ref_mm
+        perch_adjustment = self.front_heave_perch_to_rh * (perch - self.front_heave_perch_ref_mm)
+        return ((target_rh - self.front_base_rh_mm - perch_adjustment)
+                / self.front_pushrod_to_rh + self.front_pushrod_default_mm)
 
     def rear_offset_for_rh(self, target_rh: float) -> float:
         """Pushrod offset needed to achieve target rear static RH."""
@@ -95,11 +109,16 @@ class PushrodGeometry:
             return -29.0
         return (target_rh - self.rear_base_rh_mm) / self.rear_pushrod_to_rh
 
-    def front_rh_for_offset(self, offset: float) -> float:
-        """Front static RH resulting from a given pushrod offset."""
+    def front_rh_for_offset(self, offset: float,
+                             heave_perch_mm: float | None = None) -> float:
+        """Front static RH resulting from a given pushrod offset (and optional heave perch)."""
         if abs(self.front_pushrod_to_rh) < 1e-6:
-            return self.front_pinned_rh_mm  # BMW: always pinned at floor
-        return self.front_base_rh_mm + (offset - self.front_pushrod_default_mm) * self.front_pushrod_to_rh
+            return self.front_pinned_rh_mm  # No measured sensitivity: return target RH
+        perch = heave_perch_mm if heave_perch_mm is not None else self.front_heave_perch_ref_mm
+        perch_term = self.front_heave_perch_to_rh * (perch - self.front_heave_perch_ref_mm)
+        return (self.front_base_rh_mm
+                + (offset - self.front_pushrod_default_mm) * self.front_pushrod_to_rh
+                + perch_term)
 
     def rear_rh_for_offset(self, offset: float) -> float:
         """Rear static RH resulting from a given pushrod offset."""
@@ -728,6 +747,16 @@ class CarModel:
     tyre_vertical_rate_front_nmm: float = 300.0
     tyre_vertical_rate_rear_nmm: float = 320.0
 
+    # Default DF balance target (%) — car-specific, derived from weight
+    # distribution + aero characteristics. Used when no --balance override.
+    default_df_balance_pct: float = 50.0
+
+    # Tyre load sensitivity — grip coefficient degrades as vertical load increases.
+    # load_sensitivity = 0.0 means linear (no sensitivity).
+    # Typical racing tyres: 0.15-0.30. Higher = more grip loss under heavy load.
+    # Used by ARB solver to compute optimal LLTD from physics instead of +5% rule.
+    tyre_load_sensitivity: float = 0.20
+
     # Multi-variable ride height prediction model
     ride_height_model: RideHeightModel = field(default_factory=lambda: RideHeightModel())
 
@@ -1145,14 +1174,14 @@ CADILLAC_VSERIES_R = CarModel(
         rear_compression_mm=18.5,   # CALIBRATED: learner mean 18.53mm; was 8mm ESTIMATE (2.3× underestimate)
     ),
     pushrod=PushrodGeometry(
-        front_pinned_rh_mm=30.0,        # Target front static RH (iRacing minimum)
-        front_pushrod_default_mm=-25.0, # Reference pushrod (at which front_base_rh_mm is measured)
-        front_pushrod_to_rh=1.388,      # CALIBRATED: (41.8-30.0)/(8.5mm) from two garage data points
-                                        # More positive pushrod (less negative) → higher front RH
-                                        # -33.5mm → 30.0mm; -25.0mm → 41.8mm
-        front_base_rh_mm=41.8,          # CALIBRATED: front static RH at pushrod=-25.0mm
-        rear_base_rh_mm=46.85,          # CALIBRATED: 46.8mm static at +0.5mm pushrod → intercept
-        rear_pushrod_to_rh=-0.096,      # Dallara geometry — same as BMW verified
+        front_pinned_rh_mm=30.0,            # Target front static RH
+        front_pushrod_default_mm=-25.0,     # Reference pushrod for front_base_rh_mm
+        front_pushrod_to_rh=1.28,           # CALIBRATED: LS fit over 4 garage data points
+        front_base_rh_mm=41.34,            # CALIBRATED: model prediction at (pushrod=-25, perch=-20.5)
+        front_heave_perch_to_rh=-1.955,    # CALIBRATED: LS fit over 4 garage data points
+        front_heave_perch_ref_mm=-20.5,    # Reference heave perch for front_base_rh_mm
+        rear_base_rh_mm=46.85,              # CALIBRATED: intercept from IBT data
+        rear_pushrod_to_rh=-0.096,          # Dallara geometry — same as BMW verified
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
@@ -1166,8 +1195,8 @@ CADILLAC_VSERIES_R = CarModel(
         front_torsion_c=0.0008036,      # Dallara platform — same as BMW verified
         front_torsion_od_ref_mm=13.9,
         front_torsion_od_range_mm=(11.0, 16.0),
-        rear_spring_range_nmm=(100.0, 300.0),
-        rear_spring_step_nmm=10.0,
+        rear_spring_range_nmm=(105.0, 300.0),  # CALIBRATED: 105 N/mm is the Cadillac minimum
+        rear_spring_step_nmm=5.0,              # CALIBRATED: 5 N/mm steps (not 10)
         front_motion_ratio=1.0,
         rear_motion_ratio=0.60,         # Dallara geometry — same as BMW confirmed
         track_width_mm=1600.0,          # ESTIMATE — needs Cadillac IBT calibration
@@ -1201,6 +1230,15 @@ CADILLAC_VSERIES_R = CarModel(
         hs_force_per_click_n=80.0,
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+    # NOTE: Cadillac ride height model is NOT YET CALIBRATED.
+    # Front RH depends on: pushrod (payload length), heave perch, torsion bar OD,
+    # torsion bar turns, camber, and fuel weight. The PushrodGeometry above provides
+    # a 2-variable approximation (pushrod + heave_perch) calibrated from 4 data points.
+    # ACCURACY: ±1.5mm. Run calibrate_deflections.py --car cadillac with varied setups
+    # (different OD, turns, camber, perch) to build a proper 6-variable model.
+    # Rear RH depends on: pushrod, third spring rate/perch, rear spring rate/perch,
+    # heave perch, fuel. BMW coefficients are completely wrong for Cadillac.
+    # Both models will be populated automatically once calibration data is accumulated.
 )
 
 

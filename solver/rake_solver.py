@@ -861,5 +861,23 @@ def reconcile_ride_heights(
                   f"vs target {step1.static_rear_rh_mm:.1f} mm "
                   f"(error {rh_error:+.2f} mm — OK)")
 
+    # Front pushrod reconcile — for cars with a heave-perch-dependent front RH model
+    # (e.g. Cadillac). After step2 we know the actual heave perch, so re-solve pushrod.
+    if abs(car.pushrod.front_heave_perch_to_rh) > 1e-6 and hasattr(step2, "perch_offset_front_mm"):
+        target_front = max(car.min_front_rh_static, step1.static_front_rh_mm)
+        actual_perch = float(step2.perch_offset_front_mm)
+        new_front_pushrod = round(
+            car.pushrod.front_offset_for_rh(target_front, heave_perch_mm=actual_perch) * 2
+        ) / 2
+        new_front_rh = car.pushrod.front_rh_for_offset(new_front_pushrod, heave_perch_mm=actual_perch)
+        if abs(new_front_pushrod - step1.front_pushrod_offset_mm) > 0.4:
+            if verbose:
+                print(f"  Front pushrod reconciled for perch {actual_perch:.1f}mm: "
+                      f"{step1.front_pushrod_offset_mm:.1f} -> {new_front_pushrod:.1f} mm "
+                      f"(RH {step1.static_front_rh_mm:.1f} -> {new_front_rh:.1f} mm)")
+            step1.front_pushrod_offset_mm = new_front_pushrod
+            step1.static_front_rh_mm = round(new_front_rh, 1)
+            step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
+
     # Update static rake from (possibly refined) front + rear
     step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)

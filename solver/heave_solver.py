@@ -715,6 +715,7 @@ class HeaveSolver:
             v_front_platform = self.track.shock_vel_p99_front_hs_mps
         m_front = hsm.front_m_eff_kg
 
+        # Bottoming constraint uses lap-wide p99 (safety — must not bottom anywhere)
         k_front_bottoming = self.min_rate_for_no_bottoming(
             v_front,
             m_front,
@@ -722,6 +723,7 @@ class HeaveSolver:
             axle="front",
             damper_coeff_nsm=front_damper_coeff,
         )
+        # Platform stability uses high-speed-only p99 (accuracy — only high-speed matters for aero)
         k_front_sigma = self.min_rate_for_sigma(
             v_front_platform,
             m_front,
@@ -770,6 +772,7 @@ class HeaveSolver:
         m_rear = hsm.rear_m_eff_kg
         rear_corner_wheel_rate_nmm = self._rear_corner_wheel_rate_nmm(rear_spring_nmm)
 
+        # Bottoming: lap-wide (safety)
         k_rear_bottoming = self.min_rate_for_no_bottoming(
             v_rear,
             m_rear,
@@ -778,6 +781,7 @@ class HeaveSolver:
             damper_coeff_nsm=rear_damper_coeff,
             parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
         )
+        # Platform stability: high-speed-only (accuracy)
         k_rear_sigma = self.min_rate_for_sigma(
             v_rear_platform,
             m_rear,

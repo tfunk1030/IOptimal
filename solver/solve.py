@@ -103,6 +103,10 @@ def main():
                         help="Stint length for stint analysis (default: 30)")
     parser.add_argument("--legacy-solver", action="store_true",
                         help="Force the legacy sequential solver path for BMW/Sebring validation")
+    parser.add_argument("--explore", action="store_true",
+                        help="Run unconstrained parameter space exploration (ignores best-practice constraints)")
+    parser.add_argument("--bayesian", action="store_true",
+                        help="Run Bayesian optimization over full legal parameter space")
 
     args = parser.parse_args()
     run_solver(args)
