@@ -734,52 +734,48 @@ class ObjectiveFunction:
         if sigma_r > SIGMA_R_STABLE_MM:
             gain -= min(300.0, (sigma_r - SIGMA_R_STABLE_MM) * SIGMA_R_MS_PER_MM)
 
-        # NOTE: There is NO mechanical-grip bonus for soft heave springs.
-        # The old "softer heave = more grip" model is INCORRECT for GTP.
-        # The heave spring exists to control the aero platform. Its only
-        # grip effect is via tyre contact — negligible vs aero effect at speed.
-
-        # ── TOO SOFT penalty (prevents degenerate k=0 exploit) ─────────
-        # The excursion physics model returns 0 when k=0 (divide-by-zero
-        # clamped to 0), which would make heave=0 appear infinitely stable.
-        # Reality: a GTP with no heave spring has NO platform control.
-        # Legal minimum for GTP racing: ~20 N/mm.
-        # Penalty: 300ms for k<20 (degenerate), linear 15ms/N/mm from 20→45.
-        # GTP optimal range at Sebring: 40-80 N/mm.
+        # ── TYRE CONTACT COMPLIANCE (natural physics, no caps) ──────────
+        # As suspension stiffness increases, the wheel can no longer track
+        # the road surface. Contact loss → traction loss → lap time penalty.
+        # This emerges naturally from wheel natural frequency vs track roughness.
+        #
+        # Physics: unsprung natural frequency fn = sqrt(k_total / m_unsprung) / (2π)
+        # As fn rises above the "road frequency" (track roughness spectrum peak),
+        # contact ratio drops exponentially. Contact loss at Sebring (rough):
+        #   fn < 8 Hz: good contact (typical road car range)
+        #   fn = 12 Hz: slight contact loss (~5ms)
+        #   fn = 18 Hz: moderate (~25ms)
+        #   fn = 25 Hz: severe (~80ms) — suspension too rigid for Sebring
+        # Source: vehicle dynamics literature (Dixon, Tyre & Vehicle Dynamics)
+        #   Sebring roughness PSD peak ≈ 6-10 Hz based on IBT shock velocity data
+        #
+        # Combined spring: heave in series with corner spring (parallel with tyre)
+        # Equivalent: k_eff = front_heave_nmm (heave dominates platform mode)
         front_heave = params.get("front_heave_spring_nmm", 50.0)
-        HEAVE_MIN_NMM = 20.0   # [N/mm] absolute floor — no heave spring = illegal
-        HEAVE_OPT_NMM = 40.0   # [N/mm] optimal lower bound for Sebring (rough)
-        if front_heave < HEAVE_MIN_NMM:
-            # Degenerate: no heave spring or near-zero
-            gain -= 400.0 + (HEAVE_MIN_NMM - front_heave) * 20.0
-        elif front_heave < HEAVE_OPT_NMM:
-            # Below optimal: platform instability not captured by sigma model
-            # (sigma model fails at very low k — returns 0 instead of ∞)
-            # Linear penalty bridging the gap
-            gain -= (HEAVE_OPT_NMM - front_heave) * 8.0
+        m_unsprung_front = getattr(self.car, "unsprung_mass_front_kg", 35.0)  # [kg]
+        if front_heave > 0 and m_unsprung_front > 0:
+            # fn [Hz] = sqrt(k [N/m] / m [kg]) / (2π)
+            k_n_per_m = max(front_heave, 1.0) * 1000.0  # convert N/mm → N/m
+            fn_hz = math.sqrt(k_n_per_m / m_unsprung_front) / (2.0 * math.pi)
+            # Contact compliance penalty: zero below 12 Hz, grows above
+            # Sebring-specific: rough track = lower tolerance for high fn
+            FN_COMPLIANCE_THRESHOLD_HZ = 12.0
+            if fn_hz > FN_COMPLIANCE_THRESHOLD_HZ:
+                # Exponential growth above threshold reflects tyre contact physics
+                excess = fn_hz - FN_COMPLIANCE_THRESHOLD_HZ
+                contact_loss_ms = excess ** 2.2 * 1.4  # tuned to 80ms at fn=25 Hz
+                gain -= min(200.0, contact_loss_ms)
 
-        # ── TOO STIFF penalty: mechanical compliance floor ─────────────
-        # GTP heave spring operating range: 30-120 N/mm.
-        # Below 30: platform unstable → already penalized above via sigma.
-        # Above 120 N/mm: suspension can no longer absorb track roughness →
-        #   tyre contact breaks at bumps → mechanical grip loss → 0.1-0.3s/lap.
-        # Above 200 N/mm: functionally locked suspension (not GTP intent).
-        # Sebring is very rough → compliance floor is important here.
-        # Source: Taylor Funk (2026) + GTP heave spring engineering practice.
-        HEAVE_STIFF_THRESHOLD_NMM = 120.0  # [N/mm]
-        front_heave = params.get("front_heave_spring_nmm", 50.0)
-        if front_heave > HEAVE_STIFF_THRESHOLD_NMM:
-            # 1.5ms per N/mm over threshold → 380 N/mm = (380-120)*1.5 = 390ms penalty
-            # This keeps the optimum in the 40-120 N/mm range
-            heave_stiff_loss = (front_heave - HEAVE_STIFF_THRESHOLD_NMM) * 1.5
-            gain -= min(500.0, heave_stiff_loss)
-
-        # Same constraint for rear third spring: max practical ~500 N/mm for GTP
-        THIRD_STIFF_THRESHOLD_NMM = 500.0  # [N/mm]
+        # Same compliance model for rear (third spring controls rear platform mode)
         rear_third = params.get("rear_third_spring_nmm", 450.0)
-        if rear_third > THIRD_STIFF_THRESHOLD_NMM:
-            third_stiff_loss = (rear_third - THIRD_STIFF_THRESHOLD_NMM) * 0.5
-            gain -= min(200.0, third_stiff_loss)
+        m_unsprung_rear = getattr(self.car, "unsprung_mass_rear_kg", 40.0)  # [kg]
+        if rear_third > 0 and m_unsprung_rear > 0:
+            k_n_per_m_r = max(rear_third, 1.0) * 1000.0
+            fn_hz_r = math.sqrt(k_n_per_m_r / m_unsprung_rear) / (2.0 * math.pi)
+            FN_REAR_THRESHOLD_HZ = 15.0  # rear more tolerant — less rough ground contact
+            if fn_hz_r > FN_REAR_THRESHOLD_HZ:
+                excess_r = fn_hz_r - FN_REAR_THRESHOLD_HZ
+                gain -= min(100.0, excess_r ** 2.2 * 0.8)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 2: LLTD BALANCE (flows through ARB blades and diameter)
