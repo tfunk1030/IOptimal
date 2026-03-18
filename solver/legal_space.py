@@ -33,6 +33,110 @@ from car_model.setup_registry import (
 )
 
 
+# ─── Perch offset computation ────────────────────────────────────────────────
+#
+# Perch offsets (front_heave_perch_mm, rear_third_perch_mm, rear_spring_perch_mm)
+# are DEPENDENT variables — they are derived from the chosen spring rates and the
+# target ride heights set by the rake solver. They are NOT independent search dims.
+#
+# Front static RH empirical model (BMW, 62 sessions, LOO RMSE = 0.066mm):
+#   front_static_rh = 30.1458 + 0.001614 * heave_nmm + 0.074486 * camber_deg
+#   Units: RH in mm, heave in N/mm, camber in degrees (negative = more negative)
+#   R² = 0.71 on held-out data.
+#
+# Back-derivation of front heave perch:
+#   The perch offset controls where the spring sits on the slider. Higher spring
+#   rate → spring pushes harder → needs less perch to achieve same RH.
+#   Empirically: Δperch ≈ -k_rh_per_nmm * Δheave_nmm
+#   where k_rh_per_nmm = 0.001614 mm_RH / (N/mm)  (from the model coefficient)
+#   Perch reference measured at heave = 50 N/mm, perch ≈ 0 mm (arbitrary zero).
+#   front_heave_perch_mm ≈ perch_ref + (heave_ref - heave_nmm) * k_heave_to_perch
+#
+# Rear static RH empirical model (4-feature regression, R²=0.97, LOO RMSE=0.845mm):
+#   rear_static_rh = f(pushrod, third_nmm, rear_spring, heave_perch)
+#   The main lever is the spring perch — stiffer spring → more perch offset needed.
+#
+# For the search engine, we only need approximate perch values to:
+#   1. Keep the setup physically consistent for scoring
+#   2. Avoid perch being at an extreme that causes slider exhaustion
+# Exact perch values are refined by the full solver after a candidate is selected.
+
+FRONT_HEAVE_PERCH_K = 0.001614   # mm_RH / (N/mm)  — from front RH empirical model
+REAR_SPRING_PERCH_K = 0.8        # mm_perch / (N/mm) — rough empirical, rear spring dominant
+REAR_THIRD_PERCH_K = 0.3         # mm_perch / (N/mm) — rear third spring contribution
+
+# Reference values (perch = 0 at these spring rates)
+FRONT_HEAVE_SPRING_REF = 50.0    # N/mm
+REAR_THIRD_SPRING_REF = 450.0    # N/mm
+REAR_SPRING_REF = 160.0          # N/mm
+
+
+def compute_perch_offsets(params: dict, car: CarModel) -> dict:
+    """Compute dependent perch offsets from spring rates.
+
+    Perch offsets are NOT independent search dimensions — they're derived from
+    the spring rate + target ride height relationship. This function computes
+    them from the chosen spring rates so every evaluated candidate has physically
+    consistent perch values.
+
+    Physics basis:
+      Front: front_static_rh = 30.1458 + 0.001614*heave_nmm + 0.074486*camber_deg
+             Δheave → ΔRHS → ΔPerch needed to maintain target RH.
+             k_heave_to_rh = 0.001614 mm_RH per N/mm heave.
+             Inverse: Δperch ≈ -Δheave_nmm / k_heave_to_rh * perch_sensitivity
+      Rear:  Dominated by spring perch; third spring has secondary effect.
+             Empirical: stiffer spring needs less negative perch to hold RH.
+
+    Args:
+        params: Dict with (at minimum) front_heave_spring_nmm, rear_third_spring_nmm,
+                rear_spring_rate_nmm, front_camber_deg
+        car:    CarModel for range clamping
+
+    Returns:
+        Dict with front_heave_perch_mm, rear_third_perch_mm, rear_spring_perch_mm
+    """
+    gr = car.garage_ranges
+
+    heave_nmm = float(params.get("front_heave_spring_nmm", FRONT_HEAVE_SPRING_REF))
+    third_nmm = float(params.get("rear_third_spring_nmm", REAR_THIRD_SPRING_REF))
+    rear_nmm = float(params.get("rear_spring_rate_nmm", REAR_SPRING_REF))
+
+    # Front heave perch:
+    # Stiffer heave spring raises front RH (model coeff +0.001614).
+    # To compensate and keep the same RH, perch must be reduced (more negative).
+    # Δperch_front ≈ -(heave - ref) * k  where k≈0.08 mm_perch / (N/mm)
+    # (the 0.08 factor maps spring-rate-induced RH change back to perch units)
+    front_perch_ref = float(getattr(gr, "front_heave_perch_ref_mm", 0.0))
+    delta_heave = heave_nmm - FRONT_HEAVE_SPRING_REF
+    front_heave_perch = front_perch_ref - delta_heave * 0.08
+    # Clamp to legal range
+    if hasattr(gr, "front_heave_perch_mm"):
+        lo, hi = gr.front_heave_perch_mm
+        front_heave_perch = max(lo, min(hi, front_heave_perch))
+
+    # Rear third perch: third spring rate drives third perch offset
+    rear_third_perch_ref = float(getattr(gr, "rear_third_perch_ref_mm", 0.0))
+    delta_third = third_nmm - REAR_THIRD_SPRING_REF
+    rear_third_perch = rear_third_perch_ref - delta_third * REAR_THIRD_PERCH_K * 0.01
+    if hasattr(gr, "rear_third_perch_mm"):
+        lo, hi = gr.rear_third_perch_mm
+        rear_third_perch = max(lo, min(hi, rear_third_perch))
+
+    # Rear spring perch: stiffer rear spring → less perch offset needed
+    rear_spring_perch_ref = float(getattr(gr, "rear_spring_perch_ref_mm", 0.0))
+    delta_rear = rear_nmm - REAR_SPRING_REF
+    rear_spring_perch = rear_spring_perch_ref - delta_rear * REAR_SPRING_PERCH_K * 0.01
+    if hasattr(gr, "rear_spring_perch_mm"):
+        lo, hi = gr.rear_spring_perch_mm
+        rear_spring_perch = max(lo, min(hi, rear_spring_perch))
+
+    return {
+        "front_heave_perch_mm": round(front_heave_perch, 2),
+        "rear_third_perch_mm": round(rear_third_perch, 2),
+        "rear_spring_perch_mm": round(rear_spring_perch, 2),
+    }
+
+
 # ─── Tier classification ────────────────────────────────────────────────────
 # Tier A: high-leverage searchable parameters (main optimizer)
 # Tier B: contextual / less urgent (add in phase 2)
@@ -44,13 +148,16 @@ TIER_A_KEYS: list[str] = [
     "rear_pushrod_offset_mm",
     # Step 2
     "front_heave_spring_nmm",
-    "front_heave_perch_mm",
+    # NOTE: front_heave_perch_mm REMOVED — it's a dependent variable computed
+    # from spring rate + target RH via compute_perch_offsets(). Keeping it here
+    # inflated the search space by ~600,000×. See compute_perch_offsets() below.
     "rear_third_spring_nmm",
-    "rear_third_perch_mm",
+    # NOTE: rear_third_perch_mm REMOVED — same reason as front_heave_perch_mm.
     # Step 3
     "front_torsion_od_mm",
     "rear_spring_rate_nmm",
-    "rear_spring_perch_mm",
+    # NOTE: rear_spring_perch_mm REMOVED — same reason. Dependent on rear spring
+    # rate and target rear RH via the rear static RH model.
     # Step 4
     "front_arb_blade",
     "rear_arb_blade",
@@ -71,6 +178,13 @@ TIER_A_KEYS: list[str] = [
     # Supporting
     "brake_bias_pct",
     "diff_preload_nm",
+]
+
+# Keys that ARE searchable but are perch offsets — kept for reference / Tier B use
+PERCH_KEYS: list[str] = [
+    "front_heave_perch_mm",
+    "rear_third_perch_mm",
+    "rear_spring_perch_mm",
 ]
 
 TIER_B_KEYS: list[str] = [
@@ -339,6 +453,161 @@ class LegalSpace:
             ))
 
         return candidates
+
+    def sobol_sample(
+        self,
+        keys: list[str],
+        n: int,
+        seed: int = 0,
+    ) -> list[dict[str, float]]:
+        """Quasi-random Sobol sequence over specified dimensions.
+
+        Sobol sequences have much better space coverage than random sampling —
+        they're designed to cover the unit hypercube evenly, unlike uniform random
+        which tends to cluster. For N samples in D dimensions, Sobol achieves
+        O(log(N)^D / N) discrepancy vs O(N^{-1/D}) for random.
+
+        Args:
+            keys: Canonical parameter keys to sample
+            n:    Number of samples (internally rounded up to next power of 2)
+            seed: Random seed for scrambling
+
+        Returns:
+            List of dicts, each containing the requested keys snapped to legal values.
+            Falls back to uniform random sampling if scipy is unavailable.
+        """
+        try:
+            from scipy.stats.qmc import Sobol
+            dims = [self._dim_map[k] for k in keys if k in self._dim_map]
+            if not dims:
+                return []
+            n_pow2 = 2 ** math.ceil(math.log2(max(n, 2)))
+            sampler = Sobol(d=len(dims), scramble=True, seed=seed)
+            raw = sampler.random(n_pow2)[:n]
+            result: list[dict[str, float]] = []
+            for row in raw:
+                params: dict[str, float] = {}
+                for dim, u in zip(dims, row):
+                    # Map [0, 1] → [lo, hi] → snap to legal value
+                    raw_val = dim.lo + float(u) * (dim.hi - dim.lo)
+                    params[dim.name] = dim.snap(raw_val)
+                result.append(params)
+            return result
+        except ImportError:
+            # Fallback: uniform random (no scipy)
+            rng = random.Random(seed)
+            dims = [self._dim_map[k] for k in keys if k in self._dim_map]
+            return [
+                {dim.name: dim.sample(1, rng)[0] for dim in dims}
+                for _ in range(n)
+            ]
+
+    def neighborhood(
+        self,
+        params: dict[str, float],
+        steps: int = 1,
+        keys: list[str] | None = None,
+    ) -> list[dict[str, float]]:
+        """All ±steps neighbors in every dimension (or specified keys).
+
+        For 23 Tier A dims at ±1: 46 neighbors per candidate.
+        Used in Layer 4 neighborhood polish for guaranteed local optimality.
+
+        Args:
+            params: Base parameter set
+            steps:  Number of steps to take in each direction
+            keys:   Dimensions to vary (default: all Tier A)
+
+        Returns:
+            List of neighbor dicts (each differs in exactly one dimension)
+        """
+        if keys is None:
+            dims = self.tier_a()
+        else:
+            dims = [self._dim_map[k] for k in keys if k in self._dim_map]
+
+        neighbors: list[dict[str, float]] = []
+        for dim in dims:
+            current = params.get(dim.name, (dim.lo + dim.hi) / 2)
+            # Up direction
+            vals = dim.legal_values()
+            if vals:
+                try:
+                    idx = min(range(len(vals)), key=lambda i: abs(vals[i] - current))
+                    # step up
+                    up_idx = min(idx + steps, len(vals) - 1)
+                    if up_idx != idx:
+                        nb = dict(params)
+                        nb[dim.name] = vals[up_idx]
+                        neighbors.append(nb)
+                    # step down
+                    dn_idx = max(idx - steps, 0)
+                    if dn_idx != idx:
+                        nb = dict(params)
+                        nb[dim.name] = vals[dn_idx]
+                        neighbors.append(nb)
+                except Exception:
+                    pass
+            else:
+                # Continuous: step by resolution
+                res = dim.resolution if dim.resolution > 0 else (dim.hi - dim.lo) * 0.05
+                for direction in (+1, -1):
+                    nb = dict(params)
+                    nb[dim.name] = dim.snap(current + direction * steps * res)
+                    if abs(nb[dim.name] - current) > 1e-9:
+                        neighbors.append(nb)
+
+        return neighbors
+
+    def exhaustive_grid(
+        self,
+        keys: list[str],
+        coarse_keys: dict[str, int] | None = None,
+    ) -> list[dict[str, float]]:
+        """Full Cartesian product of specified dimensions.
+
+        Args:
+            keys:        Dimension keys to enumerate fully
+            coarse_keys: {dim_name: n_levels} for dimensions to coarsen to N levels
+                         instead of full enumeration (e.g., camber at 3 levels).
+
+        Returns:
+            List of dicts — one per combination. Empty if cardinality > 1M.
+        """
+        from itertools import product as cart_product
+
+        if coarse_keys is None:
+            coarse_keys = {}
+
+        dims = [self._dim_map[k] for k in keys if k in self._dim_map]
+        if not dims:
+            return []
+
+        value_lists: list[list[float]] = []
+        for dim in dims:
+            if dim.name in coarse_keys:
+                n_levels = coarse_keys[dim.name]
+                if n_levels <= 1:
+                    value_lists.append([(dim.lo + dim.hi) / 2])
+                else:
+                    step = (dim.hi - dim.lo) / (n_levels - 1)
+                    value_lists.append([
+                        dim.snap(dim.lo + i * step) for i in range(n_levels)
+                    ])
+            else:
+                value_lists.append(dim.legal_values() or [dim.snap((dim.lo + dim.hi) / 2)])
+
+        # Guard against explosion
+        card = 1
+        for vl in value_lists:
+            card *= len(vl)
+        if card > 1_000_000:
+            return []  # caller must coarsen
+
+        result: list[dict[str, float]] = []
+        for combo in cart_product(*value_lists):
+            result.append({dim.name: val for dim, val in zip(dims, combo)})
+        return result
 
     def mutate_candidate(
         self,
