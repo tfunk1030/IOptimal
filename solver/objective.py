@@ -711,9 +711,9 @@ class ObjectiveFunction:
         gain += rear_grip
 
         # ── LLTD balance proximity ──────────────────────────────────────
-        # Each 1% LLTD error costs ~8ms (balance is important but not everything)
-        lltd_penalty = physics.lltd_error * 100.0 * 8.0
-        gain -= min(40.0, lltd_penalty)
+        # Each 1% LLTD error costs ~2.5ms (tuned: old 8.0 amplified ARB blades via LLTD)
+        lltd_penalty = physics.lltd_error * 100.0 * 2.5
+        gain -= min(25.0, lltd_penalty)
 
         # ── Damper quality ──────────────────────────────────────────────
         # Damper ζ errors are secondary compared to springs and balance.
@@ -736,9 +736,9 @@ class ObjectiveFunction:
         gain -= min(2.5, zeta_hs_rear_error * 4.0)
 
         # ── DF balance ──────────────────────────────────────────────────
-        # Each 0.1% DF balance error costs ~4.5ms at high-speed tracks
+        # Each 0.1% DF balance error costs ~2ms (tuned from 45 to 20)
         # (currently constant across candidates since we don't vary ride heights)
-        gain -= physics.df_balance_error_pct * 45.0
+        gain -= physics.df_balance_error_pct * 20.0
 
         # ── Camber optimization ─────────────────────────────────────────
         # Front camber: ~-3.0 to -3.5 compensates for body roll → -0.5 dynamic
