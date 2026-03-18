@@ -200,6 +200,20 @@ def compute_modifiers(
             f"Pitch range {measured.pitch_range_deg:.2f}° > 1.5° → heave floor 38 N/mm"
         )
 
+    # ── From Heave Travel Utilization ──
+    # If p99 heave spring travel > 80%, the spring is too soft — bottoming risk at peak events
+    # even if the p99 bottoming model passes (it uses shock velocity p99 which misses extreme events).
+    travel_pct = measured.front_heave_travel_used_pct or 0.0
+    if travel_pct >= 90.0:
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 60.0)
+        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 90% → heave floor 60 N/mm (bottoming risk)")
+    elif travel_pct >= 80.0:
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 50.0)
+        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 80% → heave floor 50 N/mm")
+    elif travel_pct >= 70.0:
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 40.0)
+        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 70% → heave floor 40 N/mm")
+
     # ── From Directional Understeer (balance weighting) ──
     us_left = measured.understeer_left_turn_deg
     us_right = measured.understeer_right_turn_deg

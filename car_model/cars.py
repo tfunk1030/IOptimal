@@ -1181,11 +1181,13 @@ CADILLAC_VSERIES_R = CarModel(
         front_heave_perch_to_rh=-1.955,    # CALIBRATED: LS fit over 4 garage data points
         front_heave_perch_ref_mm=-20.5,    # Reference heave perch for front_base_rh_mm
         rear_base_rh_mm=46.85,              # CALIBRATED: intercept from IBT data
-        rear_pushrod_to_rh=-0.096,          # Dallara geometry — same as BMW verified
+        rear_pushrod_to_rh=0.042,           # CALIBRATED: 2 data points (+0.5→46.8, -6.0→46.6)
+                                            # Positive and very weak — DIFFERENT from BMW (-0.096)
+                                            # -0.096 gives +2.5mm pushrod; 0.042 gives -6.0mm (correct)
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
-        front_m_eff_kg=176.0,   # ESTIMATE — needs Cadillac IBT calibration
+        front_m_eff_kg=266.0,   # CALIBRATED: learner mean 266kg; BMW 176kg caused bottoming at 40 N/mm
         rear_m_eff_kg=2870.0,   # ESTIMATE — needs Cadillac IBT calibration
         front_spring_range_nmm=(20.0, 200.0),
         rear_spring_range_nmm=(100.0, 1000.0),
