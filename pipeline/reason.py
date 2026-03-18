@@ -3030,6 +3030,28 @@ def reason_and_solve(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
 
+            # Enforce modifier safety floors on candidate result.
+            # Candidates may set spring rates from observed session medians, which
+            # can violate physics-derived minimums (heave floor, pitch floor, etc.).
+            heave_floor = mods.front_heave_min_floor_nmm
+            if heave_floor > 0 and step2.front_heave_nmm < heave_floor:
+                state.solver_notes.append(
+                    f"Candidate heave {step2.front_heave_nmm:.0f} N/mm < floor {heave_floor:.0f} N/mm "
+                    f"(from {selected_candidate.family} selection) — re-solving with floor constraint."
+                )
+                heave_solver = HeaveSolver(car, track)
+                step2 = heave_solver.solve(
+                    dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+                    dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+                    front_heave_floor_nmm=heave_floor,
+                    rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+                    front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
+                    front_pushrod_mm=step1.front_pushrod_offset_mm,
+                    rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+                    fuel_load_l=detected_fuel,
+                    front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+                )
+
     # ── Output ──
     if sto_path and car.canonical_name == "ferrari":
         state.solver_notes.append(

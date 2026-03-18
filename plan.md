@@ -1,818 +1,706 @@
-Here’s the concrete implementation plan I’d use for this repo.
+Build this in 4 phases, not all at once.
 
-I’ll organize it as:
-
-target architecture
-new modules / dataclasses
-file-by-file changes
-algorithm choices
-PR plan
-validation plan
-what I’d build first if we want the biggest improvement fastest
-1. Target architecture
-
-Current shape
-
-Today the repo is roughly:
-
-IBT -> extract -> diagnose -> modifiers -> solver -> report
-
-That’s good, but too flat.
-
-New shape
-
-I would change it to:
-
-IBT -> telemetry extraction + confidence -> session context normalization -> corner phase analysis -> car-state inference -> healthy-cluster / envelope comparison -> tweak vs overhaul decision -> candidate setup generation -> predicted telemetry scoring -> final setup choice -> validation + learning -> report
-
-That preserves the current solver while making the reasoning smarter.
-
-2. New modules and dataclasses
-
-A. analyzer/signal_value.py
-
-Purpose
-
-Represent telemetry values with confidence and validity.
-
-Dataclasses
-
-
-from dataclasses import dataclass
- 
-@dataclass
-class SignalValue:
-    value: float | None
-    valid: bool
-    confidence: float
-    source: str
-    invalid_reason: str = ""
-    fallback_used: bool = False
-Use for
-
-settle time
-hydraulic brake split
-slip proxies
-thermal means
-LLTD proxy
-body slip
-pressure means
-carcass means
-oscillation measures
-B. analyzer/context.py
-
-Purpose
-
-Describe session context so comparisons are fair.
-
-Dataclasses
-
-
-@dataclass
-class SessionContext:
-    fuel_l: float | None
-    tyre_state: str               # cold | warming | in_window | overheated | unknown
-    thermal_validity: float       # 0-1
-    pace_validity: float          # 0-1
-    traffic_confidence: float     # 0-1
-    weather_confidence: float     # 0-1
-    comparable_to_baseline: bool
-    notes: list[str]
-Main output
-
-A normalized interpretation of:
-
-fuel
-thermal state
-whether lap is fair for comparison
-whether pace should be trusted as representative
-C. analyzer/state_inference.py
-
-Purpose
-
-Convert many symptoms into a few root-cause car states.
-
-Dataclasses
-
-
-@dataclass
-class StateEvidence:
-    metric: str
-    value: float | None
-    confidence: float
-    note: str
- 
-@dataclass
-class CarStateIssue:
-    state_id: str
-    severity: float              # 0-1
-    confidence: float            # 0-1
-    estimated_loss_ms: float
-    implicated_steps: list[int]
-    evidence: list[StateEvidence]
-    likely_causes: list[str]
-    recommended_direction: str
-Example state_ids
-
-front_platform_collapse_braking
-front_platform_near_limit_high_speed
-rear_platform_under_supported
-rear_platform_over-supported
-entry_front_limited
-exit_traction_limited
-balance_asymmetric
-front_contact_patch_undercambered
-thermal_window_invalid
-brake_system_front_limited
-D. analyzer/overhaul.py
-
-Purpose
-
-Decide whether the setup needs:
-
-tweak
-moderate rework
-full reset
-Dataclasses
-
-
-@dataclass
-class OverhaulAssessment:
-    classification: str          # minor_tweak | moderate_rework | baseline_reset
-    confidence: float
-    score: float
-    reasons: list[str]
-E. learner/envelope.py
-
-Purpose
-
-Healthy telemetry envelope by:
-
-car
-track
-maybe stint state / thermal state
-Dataclasses
-
-
-@dataclass
-class TelemetryEnvelope:
-    metrics: dict[str, dict[str, float]]   # mean/std/p10/p90 etc.
-    sample_count: int
-    source_sessions: list[str]
- 
-@dataclass
-class EnvelopeDistance:
-    total_score: float
-    per_metric: dict[str, float]
-    notes: list[str]
-F. learner/setup_clusters.py
-
-Purpose
-
-Learn healthy setup regions from repeatedly good sessions.
-
-Dataclasses
-
-
-@dataclass
-class SetupCluster:
-    center: dict[str, float]
-    spreads: dict[str, float]
-    member_sessions: list[str]
-    label: str                   # e.g. "safe-fast sebring bmw baseline"
- 
-@dataclass
-class SetupDistance:
-    distance_score: float
-    per_parameter_z: dict[str, float]
-    outlier_parameters: list[str]
-G. solver/predictor.py
-
-Purpose
-
-Predict telemetry outcomes from a candidate setup.
-
-Dataclasses
-
-
-@dataclass
-class PredictedTelemetry:
-    front_heave_travel_used_pct: float | None
-    front_excursion_mm: float | None
-    rear_rh_std_mm: float | None
-    braking_pitch_deg: float | None
-    front_lock_p95: float | None
-    rear_power_slip_p95: float | None
-    body_slip_p95_deg: float | None
-    understeer_low_deg: float | None
-    understeer_high_deg: float | None
-    front_pressure_hot_kpa: float | None
-    rear_pressure_hot_kpa: float | None
- 
-@dataclass
-class PredictionConfidence:
-    overall: float
-    per_metric: dict[str, float]
-H. solver/candidate_search.py
-
-Purpose
-
-Generate multiple setup families.
-
-Dataclasses
-
-
-@dataclass
-class SetupCandidate:
-    family: str                  # incremental | compromise | baseline_reset
-    description: str
-    step1: object
-    step2: object
-    step3: object
-    step4: object
-    step5: object
-    step6: object
-    supporting: object
-    predicted: PredictedTelemetry | None
-    confidence: float
-    reasons: list[str]
-I. solver/candidate_ranker.py
-
-Purpose
-
-Score candidate setups.
-
-Dataclasses
-
-
-@dataclass
-class CandidateScore:
-    total: float
-    safety: float
-    performance: float
-    stability: float
-    confidence: float
-    disruption_cost: float
-    notes: list[str]
-J. solver/brake_solver.py
-
-Purpose
-
-Handle brake-specific deeper logic:
-
-static bias
-target/migration if modeled
-master-cylinder/pad influence
-braking phase behavior
-3. File-by-file change plan
-
-analyzer/extract.py
-
-Changes
-
-add signal confidence/validity support
-stop using 0.0 for unavailable metrics when semantically wrong
-attach extraction-quality metadata per metric
-improve brake-phase segmentation
-improve thermal state tagging
-expose brake hardware fields if present in session info or channels
-expose more structured “why this metric is trustworthy / not trustworthy”
-Add
-
-helper functions returning SignalValue
-phase-aware braking metrics
-explicit fallback metadata
-Why
-
-This is the root of almost every downstream improvement.
-
-analyzer/setup_reader.py
-
-Changes
-
-Parse and expose:
-
-brake_bias_target
-brake_bias_migration
-front_master_cyl
-rear_master_cyl
-pad_compound
-Add to CurrentSetup
-
-
-brake_bias_target: float = 0.0
-brake_bias_migration: float = 0.0
-front_master_cyl_mm: float = 0.0
-rear_master_cyl_mm: float = 0.0
-pad_compound: str = ""
-Why
-
-These fields already exist in the writer; the parser should expose them.
-
-analyzer/segment.py
-
-Changes
-
-Add richer phase decomposition per corner:
-
-braking
-turn-in
-apex
-throttle pickup
-exit
-straight carry
-Add to CornerAnalysis
-
-braking phase metrics
-release timing
-exit slip severity
-entry pitch severity
-aero collapse severity
-corner confidence
-Why
-
-This lets setup logic act on where the issue happens, not just what.
-
-analyzer/driver_style.py
-
-Changes
-
-separate “driver noise” from “setup symptom”
-produce confidence on style classifications
-incorporate more direct brake-release and throttle-onset metrics
-Why
-
-So we don’t blame setup for driver inconsistency too quickly.
-
-analyzer/diagnose.py
-
-Changes
-
-keep existing Problem layer for backward compatibility
-add CarStateIssue generation
-explicitly carry measurement confidence
-split “hard failure” vs “advisory clue”
-Why
-
-This is where threshold checks become state inference.
-
-analyzer/recommend.py
-
-Changes
-
-stop being the main decision-maker in complex cases
-use it only for:
-small tweak recommendations
-clear isolated cases
-defer overhaul / family selection to new decision layer
-Why
-
-It currently overreacts locally in cases like bmwtf.
-
-analyzer/report.py
-
-Changes
-
-Add sections:
-
-signal confidence
-primary car states
-overhaul classification
-evidence strength
-“high-confidence fixes first”
-“defer these until after re-test”
-comparison/score.py
-
-Changes
-
-reduce hard lap-time dominance
-add telemetry-health scoring
-add signal-quality penalty
-add setup-distance penalty
-separate “fast unsafe” from “healthy fast”
-Why
-
-This is one of the main current distortions.
-
-comparison/compare.py
-
-Changes
-
-compare sessions by effective diff lock, not just raw ramps
-compare brake-system state if parsed
-compare session context compatibility
-add cluster/family compatibility check before synthesis
-pipeline/reason.py
-
-Changes
-
-replace best-lap-first authority logic
-add authority score
-use state issues, not just problem lists
-use setup-family and telemetry-envelope logic
-generate multiple candidate families instead of one merged solve
-Why
-
-This becomes the main orchestration brain.
-
-pipeline/produce.py
-
-Changes
-
-after extraction, run:
-session context
-state inference
-overhaul assessment
-choose candidate family:
-incremental
-compromise
-reset
-run solver accordingly
-optionally score multiple candidates using predictor
-solver/modifiers.py
-
-Changes
-
-use inferred state issues, not just raw symptoms
-reduce simplistic one-problem -> one-offset mapping
-incorporate confidence
-Why
-
-Current modifier logic is useful but too literal.
-
-solver/diff_solver.py
-
-Changes
-
-use actual current clutch plate count if available
-expose lock % and “diff family” comparison tools
-better connect entry rotation / exit push to measured corner-phase behavior
-solver/supporting_solver.py
-
-Changes
-
-move brake-specific logic into solver/brake_solver.py
-improve clutch-plate / ramp use
-use context and state inference, not just generic slip thresholds
-treat brake bias target/migration separately once parsed
-output/report.py and pipeline/report.py
-
-Changes
-
-show:
-primary inferred states
-confidence levels
-tweak vs overhaul classification
-predicted telemetry improvements
-tradeoff summary
-“why this candidate beat the others”
-4. Algorithm choices
-
-A. Confidence / validity propagation
-
-Use:
-
-explicit boolean validity
-confidence 0-1
-source tagging
-fallback tagging
-No fancy ML needed.
-
-B. State inference
-
-Start with:
-
-weighted rule graph
-evidence accumulation
-severity from normalized exceedance
-confidence from signal trust + evidence convergence
-Later:
-
-optionally move to probabilistic graphical model / Bayesian scoring
-C. Overhaul classifier
-
-Start rule-based
-
-Use:
-
-setup-distance score
-telemetry-envelope distance
-number of major states
-number of affected steps
-severity and confidence
-Later:
-
-learn the classifier from session outcomes
-D. Healthy envelope
-
-Use:
-
-robust means
-median / MAD
-p10/p90 windows
-Mahalanobis distance if enough data
-For early data-sparse versions:
-
-robust z-scores are enough
-E. Setup clusters
-
-Use:
-
-simple standardized feature vectors
-DBSCAN or HDBSCAN if you want robust grouping
-or even KMeans if the data stays limited
-I’d start with:
-
-z-scored parameters
-DBSCAN / agglomerative clustering
-cluster labeling by outcome quality
-F. Candidate prediction
-
-Start with hybrid model
-
-Use:
-
-existing physics outputs directly where possible
-learned residual correction on top
-simple regression for things like:
-front lock tendency vs platform + brake state
-body slip vs balance + diff + rear support
-rear RH variance vs support state
-Do not wait for a perfect model before adding prediction.
-
-G. Candidate ranking
-
-Score each candidate by:
-
-safety margin
-predicted telemetry improvement
-expected pace gain
-confidence
-disruption cost
-Example:
-
-
-total =
-    0.30 * safety +
-    0.30 * predicted_performance +
-    0.20 * stability +
-    0.10 * confidence +
-    0.10 * low_disruption
-Use different weights for:
-
-qualy
-sprint race
-endurance/stint
-5. PR plan
-
-I would split this into 3 major PRs and 2 follow-up PRs.
-
-PR 1 — Telemetry trust + parser upgrades
-
+Phase 1 — Create a true legal search space
 Goal
+Replace ad hoc parameter tweaking with a reusable object that can answer:
 
-Make the data more trustworthy before changing higher-level logic.
+what parameters are searchable?
 
-Include
+which are discrete vs continuous?
 
-SignalValue
-extraction validity/confidence
-setup parser adds:
-brake bias target
-brake bias migration
-front/rear master cylinders
-pad compound
-report invalid/weak metrics explicitly
-update reports to show confidence
-Files
+what are the legal values?
 
-analyzer/extract.py
-analyzer/setup_reader.py
-analyzer/report.py
-analyzer/telemetry_truth.py
+how do we enumerate or sample them?
+
+how do we snap candidates to legal garage values?
+
 Why first
+Right now the code has this logic spread across:
 
-This is foundational and low-risk.
+car_model/setup_registry.py for canonical field definitions and some per-car bounds. 
 
-PR 2 — State inference + overhaul assessment
+solver/candidate_search.py for snapping. 
 
+output/garage_validator.py for clamp/fix behavior. 
+
+That’s enough to prototype, but not enough for an optimizer that searches “the entire legal manifold.”
+
+What to implement
+Add a new module, something like:
+
+solver/legal_space.py
+
+With dataclasses like:
+
+SearchDimension
+
+LegalSpace
+
+LegalCandidate
+
+SearchBounds
+
+Responsibilities
+LegalSpace.from_car(car, track_name)
+Build all searchable dimensions from:
+
+FIELD_REGISTRY
+
+per-car specs
+
+garage ranges
+
+active garage model availability. 
+
+Each dimension should expose
+name
+
+solver_step
+
+kind: discrete / ordinal / continuous
+
+legal_values() for discrete fields
+
+sample(n) for continuous fields
+
+snap(value)
+
+clamp(value)
+
+Important design choice
+Do not search every field at maximum cardinality from day one.
+
+Instead split the manifold into:
+
+Tier A: high-leverage searchable parameters
+wing
+
+front/rear pushrod
+
+heave spring / perch
+
+third spring / perch
+
+corner spring / torsion OD / rear spring perch
+
+front/rear ARB blade
+
+camber / toe
+
+dampers
+
+brake bias
+
+diff preload
+
+TC gain/slip
+
+Tier B: mostly contextual / less urgent
+master cylinders
+
+pad compounds
+
+gear stack
+
+fuel warnings
+
+lighting / metadata
+
+That lets you get the main optimizer working before you broaden the state space.
+
+Phase 2 — Define the scoring function you described
 Goal
+Turn your objective into code as an explicit multi-term score.
 
-Replace flat symptom lists with root-cause states and classification.
+You already described the right form:
 
-Include
+score =
+  expected_lap_gain
+  - platform_risk
+  - driver_mismatch_penalty
+  - telemetry_uncertainty
+  - out_of_envelope_penalty
+  - sim_build_staleness_penalty
+That should become a single canonical score object, not scattered heuristics.
 
-analyzer/state_inference.py
-analyzer/overhaul.py
-hook into diagnose.py
-add “primary issue / secondary issue”
-add minor_tweak / moderate_rework / baseline_reset
-Files
+What to add
+Create:
 
-new modules above
-analyzer/diagnose.py
-pipeline/produce.py
-analyzer/report.py
-Why second
+solver/objective.py
 
-Big UX and decision-quality gain quickly.
+With dataclasses like:
 
-PR 3 — Authority score + comparison scoring refactor
+ObjectiveBreakdown
 
+RiskBreakdown
+
+CandidateEvaluation
+
+Suggested formula
+Use something like:
+
+total_score =
+    + lap_gain_ms
+    - 0.9 * platform_risk_ms
+    - 0.6 * driver_mismatch_ms
+    - 0.7 * telemetry_uncertainty_ms
+    - 0.8 * envelope_penalty_ms
+    - 0.4 * staleness_penalty_ms
+Not because those weights are perfect, but because they are explicit and tunable.
+
+How to compute each term
+1. expected_lap_gain
+Use the existing predictor/candidate ranker stack as the starting point. solver/candidate_search.py already stores predicted outputs and scores, so extend that instead of replacing it. 
+
+2. platform_risk
+Use:
+
+front/rear excursion margin,
+
+bottoming margin,
+
+vortex-burst margin,
+
+garage slider/travel margin,
+
+legality correction count.
+These concepts already exist in legality and garage validation. 
+
+3. driver_mismatch_penalty
+Use driver-style outputs from the analyzer:
+
+trail-brake depth,
+
+smoothness,
+
+aggression,
+
+throttle style.
+The pipeline already computes driver style before solving. 
+
+4. telemetry_uncertainty
+Use TelemetrySignal quality/confidence, not raw “metric present?” checks. The repo already has the right abstraction for this. 
+
+5. out_of_envelope_penalty
+Use the multi-session reasoning path’s envelope / setup-distance concepts. That’s already where the repo quantifies “this candidate is unlike what has behaved well before.” 
+
+6. sim_build_staleness_penalty
+Add sim-version metadata to calibration assets and observations. Right now that concept is missing. This should be new work.
+
+Phase 3 — Build a two-stage search engine
 Goal
+Search broadly, then refine aggressively.
 
-Fix multi-session reasoning and ranking.
+Do not start with full Cartesian enumeration of all legal combinations. It will explode.
 
-Include
+Best search strategy
+Use a hybrid:
 
-health-adjusted authority score
-setup-distance and telemetry-envelope aware comparison
-reduce over-weighting of raw lap time
-family compatibility check before synthesis
-Files
+Stage 1: legal-family generation
+Start from:
 
-pipeline/reason.py
-comparison/score.py
-comparison/compare.py
-comparison/report.py
-Why third
+current setup,
 
-This is where the current multi-session logic most needs help.
+base solver result,
 
-PR 4 — Candidate setup families + telemetry predictor
+candidate families,
 
+weird edge anchors.
+This fits naturally into the existing generate_candidate_families() path. 
+
+Add new anchor families like:
+
+min_drag_edge
+
+max_platform_edge
+
+max_rotation_edge
+
+max_stability_edge
+
+extreme_soft_mech
+
+extreme_stiff_aero
+
+legal_boundary_scan
+
+These are not final answers — they are starting islands in the legal manifold.
+
+Stage 2: local manifold exploration
+For each family:
+
+enumerate all discrete neighbors,
+
+sample continuous parameters around it,
+
+snap to legal increments,
+
+reject only on hard legality,
+
+keep weird-but-legal candidates.
+
+This is where solver/explorer.py becomes useful. Its philosophy already aligns with your goal: explore “crazy” but legal setups. 
+
+Stage 3: surrogate refinement
+Use solver/bayesian_optimizer.py as a refinement layer after you have a better objective function. Right now its scorer is too heuristic and too small-dimensional, but the scaffold is there. 
+
+Search algorithm recommendation
+Initial implementation
+Latin hypercube or Sobol over the legal space
+
+family-based seeded sampling
+
+top-K retention
+
+Second implementation
+NSGA-II style Pareto frontier for:
+
+lap gain
+
+legality margin
+
+robustness
+
+confidence
+
+Third implementation
+Bayesian optimization over the retained legal manifold
+
+Phase 4 — Change veto behavior
 Goal
+Veto only on:
 
-Move from one answer to multiple scored candidate families.
+hard legality,
 
-Include
+hard garage-correlation invalidity,
 
-solver/predictor.py
-solver/candidate_search.py
-solver/candidate_ranker.py
-add incremental / compromise / baseline-reset candidates
-choose winner by predicted outcome
-Files
+strong measured contradiction.
 
-new modules
-pipeline/produce.py
-pipeline/reason.py
-PR 5 — Brake and diff deep modeling
+That matches what you asked for.
 
-Goal
+Current good foundation
+The repo already has:
 
-Cover the support parameters properly.
+candidate fingerprints,
 
-Include
+validation clusters,
 
-solver/brake_solver.py
-deeper diff lock analysis
-clutch plate effects
-migration/target support if semantics are verified
-improved supporting report section
-Files
+failed-session veto concepts in reasoning. 
 
-solver/supporting_solver.py
-solver/diff_solver.py
-new solver/brake_solver.py
-6. Validation plan
+What to change
+Right now the system is still conceptually too conservative in places. You want:
 
-Every PR should come with validation, not just code.
+Hard veto
+illegal discrete value
 
-PR 1 validation
+illegal continuous value after snap/clamp
 
-unit tests:
-missing metrics don’t become fake-good zeros
-parsed brake/diff hardware fields match IBT session info
-snapshot tests on current 4 BMW IBTs
-ensure reports expose weak signals
-PR 2 validation
+garage-model invalid
 
-create expected state labels for:
-bmw170
-bmw151
-bmwtf
-bmwbad
-For example:
+direct predicted bottoming / vortex collapse beyond threshold
 
-bmw151 -> front_platform_near_limit_high_confidence, tweak
-bmwbad -> rear_platform_under_supported + front_contact_patch_undercambered, reset
-PR 3 validation
+explicit conflict with trusted telemetry truth
 
-authority selection regression tests
-ensure “fast unsafe” doesn’t always beat “healthy almost-as-fast”
-compare rankings before/after
-PR 4 validation
+Soft penalty only
+unusual setup distance
 
-candidate outputs on known sessions
-predictor directionality:
-increase front heave -> predicted front travel use falls
-increase rear third -> predicted rear RH variance falls
-compare candidate family choices on the 4 BMW sessions
-PR 5 validation
+unconventional parameter ratio
 
-diff lock calculations from known setups
-compare 6-plate 45/70 vs 4-plate 40/65 behavior
-brake solver sanity under synthetic braking cases
-7. If we want the biggest gain fastest
+weak prediction confidence
 
-If you asked me what to build this week first for the largest improvement:
+out-of-envelope but not contradictory
 
-Priority 1
+stale build calibration
 
-Telemetry trust / confidence layer
+That distinction is critical. Otherwise the optimizer will keep collapsing back to “safe and conventional.”
 
-Priority 2
+Concrete implementation plan by file
+1. car_model/setup_registry.py
+Change
+Promote this from “registry” to “authoritative search metadata source.” Add helpers:
 
-State inference
+iter_searchable_fields(car)
 
-Priority 3
+field_legal_values(car, key)
 
-Overhaul classifier
+field_snap(car, key, value)
 
-That trio would already make the system much smarter and more honest, even before adding prediction.
+field_resolution(car, key)
 
-8. My recommended first PR scope, exactly
+Why
+This file already defines field kinds, units, and per-car bounds/options. It should become the base contract for legal search. 
 
-If I were opening the first PR myself, I would scope it like this:
+2. solver/legal_space.py (new)
+Add
+LegalSpace
 
-PR title
+SearchDimension
 
-Add telemetry confidence model and parse BMW brake/diff hardware fields
+sample_seeded()
 
-PR contents
+enumerate_discrete_subspace()
 
-New
+snap_candidate()
 
-analyzer/signal_value.py
-Modified
+mutate_candidate()
 
-analyzer/extract.py
-analyzer/setup_reader.py
-analyzer/report.py
-Features
+Why
+This centralizes legal-manifold mechanics instead of scattering them across search modules.
 
-confidence + invalid reason on key signals
-parse:
-brake_bias_target
-brake_bias_migration
-front_master_cyl_mm
-rear_master_cyl_mm
-pad_compound
-report weak/invalid telemetry explicitly
-keep backward compatibility with current solver paths
-Why this PR first
+3. solver/candidate_search.py
+Change
+Turn it into the family generator + legal seed creator, not the full optimizer.
 
-Because it improves the truthfulness of every later decision while being relatively low-risk to integrate.
+Add
+new candidate families for edge cases,
 
-9. My recommended second PR scope
+metadata for:
 
-PR title
+is_extreme
 
-Infer root car states and classify tweak vs reset setups
+is_boundary
 
-New
+soft_penalties
 
-analyzer/state_inference.py
-analyzer/overhaul.py
-Modified
+hard_veto_reasons
 
-analyzer/diagnose.py
-pipeline/produce.py
-analyzer/report.py
-Features
+This module already has snapping and the SetupCandidate container, so it should remain the candidate-entry point. 
 
-root-cause states
-confidence-weighted evidence
-tweak vs moderate rework vs baseline reset
-This would immediately improve how the program handles cases like:
+4. solver/objective.py (new)
+Add
+Canonical multi-objective evaluation.
 
-bmw151 vs bmw170
-bmwtf
-bmwbad
-10. Final recommendation
+Methods:
 
-If I were guiding this repo, I would not try to rewrite everything at once.
+evaluate_candidate(...) -> CandidateEvaluation
 
-I would do:
+compute_platform_risk(...)
 
-First
+compute_driver_mismatch(...)
 
-Make the telemetry trustworthy and honest
+compute_telemetry_uncertainty(...)
 
-Second
+compute_staleness_penalty(...)
 
-Make the diagnosis state-based instead of symptom-based
+5. solver/explorer.py
+Change
+Keep the philosophy, replace the scoring guts.
 
-Third
+Right now it uses a mostly heuristic score. You want it to call solver/objective.py and return:
 
-Make the program explicitly decide:
+frontier candidates,
 
-refine this or
-reset this
-Fourth
+top robust candidate,
 
-Only then teach it to generate and rank multiple candidate setup families
+top aggressive candidate,
 
-That is the cleanest path to turning this into a genuinely strong engineering tool.
+top weird-but-legal candidate. 
+
+6. solver/bayesian_optimizer.py
+Change
+Keep as optional phase-2 refinement only.
+
+Required upgrades
+expand parameter set,
+
+use LegalSpace,
+
+use ObjectiveBreakdown,
+
+model uncertainty from telemetry confidence too, not just GP variance.
+
+The current version is a decent prototype but too heuristic to be your final authority. 
+
+7. solver/legality_engine.py
+Change
+Return more than valid: bool.
+
+Extend LegalValidation with:
+
+hard_veto: bool
+
+legality_margin
+
+garage_corrections_count
+
+corrected_fields
+
+constraint_violations
+
+This file should become search-time infrastructure, not just final serialization-time validation. 
+
+8. output/garage_validator.py
+Change
+Split current behavior into:
+
+check_garage_correlation() pure validation
+
+fix_garage_correlation() — corrective rewrite
+
+measure_legality_margin() — scoreable distance from hard edges
+
+Why
+Search should usually score proximity to dangerous edges, not auto-correct candidates invisibly. Auto-correction is fine at final output time, but during search it can hide real candidate intent. 
+
+9. pipeline/produce.py
+Change
+Add a new solve mode, something like:
+
+--explore-legal-space
+
+--search-budget
+
+--keep-weird
+
+--objective-profile robust|aggressive|balanced
+
+This file is already the orchestration hub, so it should dispatch to the new legal-manifold optimizer after telemetry extraction and modifier generation. 
+
+10. pipeline/reason.py
+Change
+Use multi-session reasoning to set:
+
+envelope penalty,
+
+confidence weighting,
+
+validation vetoes,
+
+target telemetry aspirations.
+
+This module is where “measured evidence veto” should live. It already has the right concepts. 
+
+Suggested execution order
+Milestone 1 — legal manifold MVP
+Implement:
+
+solver/legal_space.py
+
+registry helpers
+
+hard-veto legality checks
+
+search over high-leverage fields only
+
+Deliverable:
+
+can generate 500–5,000 legal candidates,
+
+can retain weird but legal ones,
+
+can score them by objective breakdown.
+
+Milestone 2 — objective score
+Implement:
+
+solver/objective.py
+
+confidence/risk terms
+
+report score breakdown
+
+Deliverable:
+
+every candidate shows exactly why it ranked where it did.
+
+Milestone 3 — search refinement
+Implement:
+
+edge-anchor families
+
+local neighborhood expansion
+
+optional Bayesian refinement
+
+Deliverable:
+
+can find non-obvious setups that the sequential solver misses.
+
+Milestone 4 — report + UX
+Add output sections:
+
+best robust setup
+
+best aggressive setup
+
+best weird-but-legal setup
+
+vetoed candidates and why
+
+legality margin / confidence bars
+
+Practical scoring template
+If you want a starting point, I’d use this:
+
+lap_gain_ms = predicted_lap_gain_ms
+
+platform_risk_ms = (
+    bottoming_risk_ms
+    + vortex_risk_ms
+    + slider_exhaustion_risk_ms
+    + ride_height_collapse_risk_ms
+)
+
+driver_mismatch_ms = (
+    trail_brake_mismatch_ms
+    + throttle_style_mismatch_ms
+    + smoothness_mismatch_ms
+)
+
+telemetry_uncertainty_ms = (
+    missing_signal_penalty_ms
+    + proxy_signal_penalty_ms
+    + conflict_signal_penalty_ms
+)
+
+out_of_envelope_penalty_ms = (
+    telemetry_envelope_distance_ms
+    + setup_cluster_distance_ms
+)
+
+staleness_penalty_ms = (
+    sim_build_age_ms
+    + calibration_age_ms
+)
+
+total_score_ms = (
+    lap_gain_ms
+    - platform_risk_ms
+    - driver_mismatch_ms
+    - telemetry_uncertainty_ms
+    - out_of_envelope_penalty_ms
+    - staleness_penalty_ms
+)
+Important
+Keep both:
+
+total_score
+
+and the full breakdown.
+
+Never rank on a black box.
+
+What not to do
+Don’t brute-force the full Cartesian space first
+Even legal-only search will blow up if you fully enumerate:
+
+dampers,
+
+ARBs,
+
+springs,
+
+toe/camber,
+
+brake/diff/TC,
+
+ride heights,
+
+wing.
+
+Use staged search.
+
+Don’t auto-correct candidates during scoring
+That hides whether the optimizer actually found a good idea or found an invalid idea that got repaired.
+
+Don’t hard-reject unconventional setups just because they are far from historical norms
+That defeats the whole point.
+
+Don’t use lap-time prediction alone
+You’ll end up selecting fragile monsters.
+
+Best MVP scope
+If I were implementing this in the repo, I would target this first:
+
+Search dimensions
+wing
+
+front pushrod
+
+rear pushrod
+
+front heave
+
+rear third
+
+front torsion OD
+
+rear spring
+
+front ARB blade
+
+rear ARB blade
+
+front camber
+
+rear camber
+
+brake bias
+
+diff preload
+
+Fixed initially
+dampers
+
+toe
+
+TC
+
+migration/master cylinders
+
+Then add the rest in phase 2.
+
+That gives you a strong optimizer without immediately exploding dimensionality.
+
+Recommended next step
+If you want, I can turn this plan into a concrete implementation checklist by module and function, e.g.:
+
+exact new dataclasses,
+
+exact function signatures,
+
+exact CLI flags,
+
+and a step-by-step patch plan for solver/legal_space.py, solver/objective.py, solver/candidate_search.py, and pipeline/produce.py.
+
+That would be the fastest path from strategy to code.
+
+Commands I used
+nl -ba solver/candidate_search.py | sed -n '1,260p'
+
+nl -ba solver/bayesian_optimizer.py | sed -n '1,260p'
+
+nl -ba solver/explorer.py | sed -n '1,260p'
+
+nl -ba pipeline/produce.py | sed -n '1,260p'
+
+nl -ba pipeline/reason.py | sed -n '1,260p'
+
+nl -ba solver/legality_engine.py | sed -n '1,220p'
+
+nl -ba car_model/setup_registry.py | sed -n '1,260p'
+
+nl -ba output/garage_validator.py | sed -n '1,220p'
+
+nl -ba analyzer/telemetry_truth.py | sed -n '1,220p'
+
+Testing
+
+✅ nl -ba solver/candidate_search.py | sed -n '1,260p'
+
+✅ nl -ba solver/bayesian_optimizer.py | sed -n '1,260p'
+
+✅ nl -ba solver/explorer.py | sed -n '1,260p'
+
+✅ nl -ba pipeline/produce.py | sed -n '1,260p'
+
+✅ nl -ba pipeline/reason.py | sed -n '1,260p'
+
+✅ nl -ba solver/legality_engine.py | sed -n '1,220p'
+
+✅ nl -ba car_model/setup_registry.py | sed -n '1,260p'
+
+✅ nl -ba output/garage_validator.py | sed -n '1,220p'
+
+✅ nl -ba analyzer/telemetry_truth.py | sed -n '1,220p'
 

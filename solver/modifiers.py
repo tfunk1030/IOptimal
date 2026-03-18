@@ -290,6 +290,19 @@ def compute_modifiers(
         f"front_heave={front_heave_conf:.2f}, rear_heave={rear_heave_conf:.2f}, damper={damper_conf:.2f}"
     )
 
+    # Re-apply safety floors AFTER confidence scaling.
+    # These are based on directly measured physical facts (not inferred diagnoses),
+    # so they must not be eroded by confidence weighting.
+    travel_pct = measured.front_heave_travel_used_pct or 0.0
+    if travel_pct >= 90.0:
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 60.0)
+    elif travel_pct >= 80.0:
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 50.0)
+    elif travel_pct >= 70.0:
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 40.0)
+    if measured.pitch_range_deg > 1.5:
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 38.0)
+
     # Clamp cumulative offsets to reasonable ranges
     mods.lltd_offset = max(-0.05, min(0.05, mods.lltd_offset))
     mods.df_balance_offset_pct = max(-1.5, min(1.5, mods.df_balance_offset_pct))

@@ -11137,33 +11137,12 @@
     }
   },
   "parameter_insights": {
-    "front_heave_index": {
-      "direction": "increase",
-      "confidence": 0.8478760017714503,
-      "reasoning": "Increasing helped 0.1w, hurt 0.0w across 10 pairs",
-      "best_value": 60.0,
-      "sensitivity_ms": -71.89116219074636
-    },
-    "rear_rh_static": {
-      "direction": "decrease",
-      "confidence": 0.8545617401618427,
-      "reasoning": "Decreasing helped 0.1w, hurt 0.0w across 10 pairs",
-      "best_value": 46.6,
-      "sensitivity_ms": 223.7322449456784
-    },
     "rear_pushrod": {
       "direction": "decrease",
       "confidence": 0.8545617401618427,
       "reasoning": "Decreasing helped 0.1w, hurt 0.0w across 10 pairs",
       "best_value": -6.0,
       "sensitivity_ms": 102.51275554372005
-    },
-    "front_pushrod": {
-      "direction": "decrease",
-      "confidence": 0.6916091646826978,
-      "reasoning": "Decreasing helped 0.1w, hurt 0.0w across 10 pairs",
-      "best_value": -27.5,
-      "sensitivity_ms": 199.95448428426425
     },
     "rear_heave_index": {
       "direction": "increase",
@@ -11178,6 +11157,27 @@
       "reasoning": "Increasing helped 0.1w, hurt 0.0w across 10 pairs",
       "best_value": 60.0,
       "sensitivity_ms": -71.89116219074636
+    },
+    "rear_rh_static": {
+      "direction": "decrease",
+      "confidence": 0.8545617401618427,
+      "reasoning": "Decreasing helped 0.1w, hurt 0.0w across 10 pairs",
+      "best_value": 46.6,
+      "sensitivity_ms": 223.7322449456784
+    },
+    "front_heave_index": {
+      "direction": "increase",
+      "confidence": 0.8478760017714503,
+      "reasoning": "Increasing helped 0.1w, hurt 0.0w across 10 pairs",
+      "best_value": 60.0,
+      "sensitivity_ms": -71.89116219074636
+    },
+    "front_pushrod": {
+      "direction": "decrease",
+      "confidence": 0.6916091646826978,
+      "reasoning": "Decreasing helped 0.1w, hurt 0.0w across 10 pairs",
+      "best_value": -27.5,
+      "sensitivity_ms": 199.95448428426425
     },
     "damper_lr_ls_rbd": {
       "direction": "increase",
