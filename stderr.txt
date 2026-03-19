@@ -1,0 +1,23 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\VYRAL\IOptimal\pipeline\__main__.py", line 6, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\VYRAL\IOptimal\pipeline\produce.py", line 1465, in main
+    produce(args)
+    ~~~~~~~^^^^^^
+  File "C:\Users\VYRAL\IOptimal\pipeline\produce.py", line 135, in produce
+    reason_and_solve(
+    ~~~~~~~~~~~~~~~~^
+        car_name=args.car,
+        ^^^^^^^^^^^^^^^^^^
+    ...<10 lines>...
+        keep_weird=getattr(args, "keep_weird", False),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\VYRAL\IOptimal\pipeline\reason.py", line 2594, in reason_and_solve
+    log(f"  Lap time floor: {_auto_min:.1f}s (fastest observed: {_fastest_any:.3f}s × 0.95)")
+                                                                ^^^^^^^^^^^^^^^^^^
+TypeError: unsupported format string passed to NoneType.__format__

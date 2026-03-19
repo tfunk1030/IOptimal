@@ -1,0 +1,105 @@
+=== STASH ===
+STDERR: warning: in the working copy of '_commit_msg.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '_fix_objective.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '_git_ops.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '_git_push.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '_git_push2.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '_syntax_check.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '_syntax_check2.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '_test_imports.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'check_ibt.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'check_syntax.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'commit_msg.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'find_args.py', LF will be replaced by CRLF the next time Git touches it
+Error: failed to find `git rev-parse --git-dir --show-toplevel`: executable file not found in %PATH%
+fatal: protocol error: bad line length character: Not 
+Cannot save the untracked files
+Exit: 1
+
+=== PULL REBASE ===
+STDERR: error: cannot pull with rebase: You have unstaged changes.
+error: Please commit or stash them.
+Exit: 128
+
+=== STASH POP ===
+On branch codextwo
+Your branch is ahead of 'origin/codextwo' by 1 commit.
+  (use "git push" to publish your local commits)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   data/learnings/deltas/bmw_sebring_delta_045.json
+	modified:   data/learnings/index.json
+	modified:   data/learnings/models/bmw_global_empirical.json
+	modified:   data/learnings/models/bmw_sebring_empirical.json
+	modified:   data/learnings/observations/bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-11_17-38-43.json
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	_commit_msg.txt
+	_fix_objective.py
+	_git_ops.py
+	_git_push.py
+	_git_push2.py
+	_git_push_result.txt
+	_git_result.txt
+	_syntax_check.py
+	_syntax_check2.py
+	_syntax_result.txt
+	_syntax_result2.txt
+	_test_err2.txt
+	_test_err3.txt
+	_test_imports.py
+	_test_out2.txt
+	_test_out3.txt
+	_test_output.txt
+	check_ibt.py
+	check_syntax.py
+	commit_msg.txt
+	commit_msg2.txt
+	data/learnings/deltas/cadillac_silverstone_delta_003.json
+	data/learnings/observations/cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_23-22-09.json
+	exhaustive_output.txt
+	find_args.py
+	full_output.txt
+	full_pipeline_output.txt
+	full_pipeline_output_v2.txt
+	ibtfiles/bmw_seb_latest.ibt
+	ibtfiles/bmw_seb_small.ibt
+	pytest.txt
+	read_output.py
+	remove_large_file.sh
+	run_capture.py
+	run_exhaustive.py
+	run_filter.sh
+	run_full_pipeline.py
+	run_full_v2.py
+	run_output.txt
+	run_tests.py
+	run_tuned_search.py
+	stderr.txt
+	stdout.txt
+	tuned_output.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+The stash entry is kept in case you need it again.
+STDERR: error: Your local changes to the following files would be overwritten by merge:
+	data/learnings/index.json
+Please commit your changes or stash them before you merge.
+Aborting
+data/learnings/deltas/cadillac_silverstone_delta_002.json already exists, no checkout
+data/learnings/observations/cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_23-38-07.json already exists, no checkout
+error: could not restore untracked files from stash
+Exit: 1
+
+=== PUSH ===
+STDERR: Error getting Git version: executable file not found in %PATH%
+error: failed to push some refs to 'https://github.com/tfunk1030/IOptimal.git'
+Exit: 1
+
+=== LOG ===
+b238ec0 Expand sensitivity analysis to ALL 45 parameters with full justifications
+375ba99 Tune objective LLTD/DF balance weights to match physics solver sensitivity
+f2580bb Fix None-guard bugs in report.py, reason.py, and decision_trace.py
+Exit: 0

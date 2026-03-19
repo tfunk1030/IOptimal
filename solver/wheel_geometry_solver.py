@@ -359,7 +359,9 @@ class WheelGeometrySolver:
             representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg,
             is_front=False,
         )
-        # Rear range already applied in _optimal_camber via is_front=False
+        # Clamp both axles to iRacing legal garage limits
+        f_min, f_max = geo.front_camber_range_deg
+        front_camber = max(f_min, min(f_max, front_camber))
         r_min, r_max = geo.rear_camber_range_deg
         rear_camber = max(r_min, min(r_max, rear_camber))
 
@@ -497,8 +499,11 @@ class WheelGeometrySolver:
         representative_lat_g = p95_lat_g + kerb_weight * (peak_lat_g - p95_lat_g)
         roll_deg = self._body_roll_at_g(peak_lat_g, k_roll_total_nm_deg, fuel_load_l)
         representative_roll_deg = self._body_roll_at_g(representative_lat_g, k_roll_total_nm_deg, fuel_load_l)
-        front_camber = float(front_camber_deg)
-        rear_camber = float(rear_camber_deg)
+        # Clamp to iRacing legal garage limits
+        f_min, f_max = geo.front_camber_range_deg
+        r_min, r_max = geo.rear_camber_range_deg
+        front_camber = max(f_min, min(f_max, float(front_camber_deg)))
+        rear_camber = max(r_min, min(r_max, float(rear_camber_deg)))
         front_toe = float(front_toe_mm)
         rear_toe = float(rear_toe_mm)
         front_camber_change = roll_deg * geo.front_roll_gain

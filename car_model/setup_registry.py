@@ -241,8 +241,8 @@ _BMW_SPECS: dict[str, CarFieldSpec] = {
     "rear_arb_size":            _S("Chassis.Rear.ArbSize",                           "CarSetup_Chassis_Rear_ArbSize",                     parse_fn="string"),
     "rear_arb_blade":           _S("Chassis.Rear.ArbBlades",                         "CarSetup_Chassis_Rear_ArbBlades",                   range_min=1, range_max=5, parse_fn="int"),
     # Step 5: Geometry
-    "front_camber_deg":         _S("Chassis.LeftFront.Camber",                       "CarSetup_Chassis_LeftFront_Camber",                 range_min=-5.0, range_max=0.0, resolution=0.1),
-    "rear_camber_deg":          _S("Chassis.LeftRear.Camber",                        "CarSetup_Chassis_LeftRear_Camber",                  range_min=-4.0, range_max=0.0, resolution=0.1),
+    "front_camber_deg":         _S("Chassis.LeftFront.Camber",                       "CarSetup_Chassis_LeftFront_Camber",                 range_min=-2.9, range_max=0.0, resolution=0.1),
+    "rear_camber_deg":          _S("Chassis.LeftRear.Camber",                        "CarSetup_Chassis_LeftRear_Camber",                  range_min=-1.9, range_max=0.0, resolution=0.1),
     "front_toe_mm":             _S("Chassis.Front.ToeIn",                            "CarSetup_Chassis_Front_ToeIn",                      range_min=-3.0, range_max=3.0, resolution=0.1),
     "rear_toe_mm":              _S("Chassis.LeftRear.ToeIn",                         "CarSetup_Chassis_LeftRear_ToeIn",                   range_min=-2.0, range_max=3.0, resolution=0.1),
     # Step 6: Dampers

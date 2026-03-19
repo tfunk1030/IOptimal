@@ -505,6 +505,10 @@ def run_solver(args: "argparse.Namespace") -> None:
             step1=step1, step2=step2, step3=step3,
             step4=step4, step5=step5,
             brake_bias_pct=_bias,
+            step6=step6 if 'step6' in dir() else None,
+            supporting=supporting if 'supporting' in dir() else None,
+            measured=None,
+            wing=getattr(args, 'wing', 17.0),
         )
     except Exception as e:
         log(f"[sensitivity] Skipped: {e}")
