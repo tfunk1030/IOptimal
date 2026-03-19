@@ -247,24 +247,30 @@ class ObjectiveFunction:
         except Exception:
             self._session_db = None
 
-    def _get_surface(self):
-        """Lazy-load aero surface for DF balance queries."""
-        if self._surface is None:
-            try:
-                from aero_model import load_car_surfaces
-                surfaces = load_car_surfaces(self.car.canonical_name)
-                # Use default wing angle
-                wing = self.car.wing_angles[0] if self.car.wing_angles else 17.0
-                if isinstance(self.track, TrackProfile):
-                    # Try to get wing from context
-                    pass
-                if wing in surfaces:
-                    self._surface = surfaces[wing]
-                elif surfaces:
-                    self._surface = next(iter(surfaces.values()))
-            except Exception:
-                pass
-        return self._surface
+    def _get_surface(self, wing_deg: float | None = None):
+        """Lazy-load aero surface for DF balance queries.
+
+        Args:
+            wing_deg: Wing angle to look up. If None, uses first available surface.
+                      Pass params.get('wing_angle_deg') per candidate for accuracy.
+        """
+        try:
+            from aero_model import load_car_surfaces
+            surfaces = load_car_surfaces(self.car.canonical_name)
+            if not surfaces:
+                return None
+            if wing_deg is not None:
+                # Find closest available wing map to requested angle
+                best = min(surfaces.keys(), key=lambda w: abs(w - wing_deg))
+                return surfaces[best]
+            # Fallback: cache a default surface for callers that don't pass wing_deg
+            if self._surface is None:
+                default_wing = self.car.wing_angles[0] if self.car.wing_angles else 17.0
+                best = min(surfaces.keys(), key=lambda w: abs(w - default_wing))
+                self._surface = surfaces[best]
+            return self._surface
+        except Exception:
+            return None
 
     def _compute_vortex_threshold_mm(self, wing_deg: float) -> float:
         """Compute wing-specific minimum safe front RH from aero map gradient.
@@ -671,13 +677,37 @@ class ObjectiveFunction:
         result.zeta_hs_rear = c_hs_rear / c_crit_rear if c_crit_rear > 0 else 0
 
         # ── DF balance (aero map lookup if available) ───────────────────
-        surface = self._get_surface()
+        # Use per-candidate wing angle for correct surface selection.
+        # Clamp dynamic RH to the aero map's available range to avoid
+        # extrapolation errors (map floor is 25mm front; our operating
+        # range 19-30mm often sits below this → clamp to map minimum).
+        wing_deg_candidate = float(params.get(
+            "wing_angle_deg", car.wing_angles[0] if car.wing_angles else 17.0
+        ))
+        surface = self._get_surface(wing_deg=wing_deg_candidate)
         if surface is not None:
             try:
-                dyn_f = 19.0  # typical operating point
-                dyn_r = 42.0
-                result.df_balance_pct = surface.df_balance(dyn_f, dyn_r)
-                result.ld_ratio = surface.lift_drag(dyn_f, dyn_r)
+                # Derive dynamic RH from static pushrod offsets + car geometry.
+                # Fallback to typical values if pushrod params not present.
+                _fp = float(params.get("front_pushrod_offset_mm", -26.0))
+                _rp = float(params.get("rear_pushrod_offset_mm", -18.0))
+                # Approximate static RH from pushrod offset (0.096 mm/mm sensitivity)
+                _rh_model = car.rh_model if hasattr(car, "rh_model") else None
+                if _rh_model is not None:
+                    _static_f = _rh_model.front_base_rh_mm + _rh_model.front_pushrod_to_rh * _fp
+                    _static_r = _rh_model.rear_base_rh_mm + _rh_model.rear_pushrod_to_rh * _rp
+                    # Dynamic is typically 3-4mm lower than static (aero compression at speed)
+                    dyn_f = max(_static_f - 4.0, float(surface.front_rh[0]))
+                    dyn_r = max(_static_r - 4.0, float(surface.rear_rh[0]))
+                else:
+                    # Clamp to map floor to avoid extrapolation errors
+                    dyn_f = max(23.0, float(surface.front_rh[0]))
+                    dyn_r = max(42.0, float(surface.rear_rh[0]))
+                # BMW has aero_axes_swapped=True — convert to aero map coordinates
+                # before querying (map x-axis = actual rear RH, y-axis = actual front RH).
+                af, ar = car.to_aero_coords(dyn_f, dyn_r)
+                result.df_balance_pct = surface.df_balance(af, ar)
+                result.ld_ratio = surface.lift_drag(af, ar)
                 result.df_balance_error_pct = abs(
                     result.df_balance_pct - car.default_df_balance_pct
                 )
