@@ -143,6 +143,8 @@ class ObjectiveBreakdown:
     w_uncertainty: float = 0.6  # lowered from 0.7 — less aggressive no-data penalty
     w_envelope: float = 0.7   # lowered from 0.8 — envelope is soft guidance, not hard
     w_staleness: float = 0.3  # lowered from 0.4 — staleness is least important
+    empirical_penalty_ms: float = 0.0  # k-NN empirical score from SessionDatabase (76+ sessions)
+    w_empirical: float = 0.40  # blend weight — empirical augments physics, never overrides it
 
     @property
     def total_score_ms(self) -> float:
@@ -153,6 +155,7 @@ class ObjectiveBreakdown:
             - self.w_uncertainty * self.telemetry_uncertainty.total_ms
             - self.w_envelope * self.envelope_penalty.total_ms
             - self.w_staleness * self.staleness_penalty_ms
+            - self.w_empirical * self.empirical_penalty_ms
         )
 
     def summary(self) -> str:
@@ -168,6 +171,7 @@ class ObjectiveBreakdown:
             f"    Telemetry uncert:    {-self.w_uncertainty * self.telemetry_uncertainty.total_ms:+.1f} ms",
             f"    Envelope penalty:    {-self.w_envelope * self.envelope_penalty.total_ms:+.1f} ms",
             f"    Staleness:           {-self.w_staleness * self.staleness_penalty_ms:+.1f} ms",
+            f"    Empirical (k-NN):    {-self.w_empirical * self.empirical_penalty_ms:+.1f} ms",
             f"  [hierarchy: rake/RH > heave_platform > LLTD(ARB) > dampers > camber]",
         ]
         return "\n".join(lines)
@@ -230,6 +234,18 @@ class ObjectiveFunction:
         _track_slug = str(_track_raw).lower().split()[0].replace("-", "").replace("_", "")
 
         self._heave_cal = HeaveCalibration.load(_car_slug, _track_slug)
+
+        # Load SessionDatabase for empirical k-NN cross-check.
+        # When ≥3 sessions are available, the empirical prediction of telemetry
+        # outcomes (front_rh_std_mm, understeer, LLTD from real sessions) augments
+        # the physics model, catching systematic gaps that pure physics can't see.
+        try:
+            from solver.session_database import SessionDatabase
+            self._session_db: "SessionDatabase | None" = SessionDatabase.load(
+                _car_slug, _track_slug
+            )
+        except Exception:
+            self._session_db = None
 
     def _get_surface(self):
         """Lazy-load aero surface for DF balance queries."""
@@ -601,10 +617,33 @@ class ObjectiveFunction:
         c_crit_front = 2.0 * math.sqrt(k_modal_front * 1000.0 * front_mass)
         c_crit_rear = 2.0 * math.sqrt(k_modal_rear * 1000.0 * rear_mass)
 
-        # LS damping from clicks: F = clicks * force_per_click, c = F / v_ref
-        v_ls_ref = 0.025  # 25 mm/s
-        c_ls_front = (f_ls_comp * damper.ls_force_per_click_n) / v_ls_ref
-        c_ls_rear = (r_ls_comp * damper.ls_force_per_click_n) / v_ls_ref
+        # LS/HS damping: harmonic mean of comp + rebound per-cycle energy dissipation.
+        # Rationale: one full oscillation cycle has both a compression and rebound stroke.
+        # Effective damping coefficient per cycle = harmonic mean of c_comp and c_rbd:
+        #   c_eff = 2 * c_comp * c_rbd / (c_comp + c_rbd)
+        # Previous model used c_comp only → ζ overestimated by ~30-40% when rbd < comp.
+        # Harmonic mean naturally captures asymmetric damping (GTP always comp > rbd).
+        # Source: Dixon "The Shock Absorber Handbook" §7.4 (per-cycle energy method).
+
+        def _c_eff_harmonic(comp_clicks: float, rbd_clicks: float,
+                             force_per_click: float, v_ref: float) -> float:
+            """Effective damping coefficient via harmonic mean (symmetric energy dissipation)."""
+            c_c = (max(0.5, comp_clicks) * force_per_click) / v_ref
+            c_r = (max(0.5, rbd_clicks) * force_per_click) / v_ref
+            return 2.0 * c_c * c_r / (c_c + c_r)
+
+        v_ls_ref = 0.025  # 25 mm/s — LS reference velocity
+
+        c_ls_front = _c_eff_harmonic(
+            params.get("front_ls_comp", f_ls_comp),
+            params.get("front_ls_rbd", f_ls_rbd),
+            damper.ls_force_per_click_n, v_ls_ref,
+        )
+        c_ls_rear = _c_eff_harmonic(
+            params.get("rear_ls_comp", r_ls_comp),
+            params.get("rear_ls_rbd", r_ls_rbd),
+            damper.ls_force_per_click_n, v_ls_ref,
+        )
 
         result.zeta_ls_front = c_ls_front / c_crit_front if c_crit_front > 0 else 0
         result.zeta_ls_rear = c_ls_rear / c_crit_rear if c_crit_rear > 0 else 0
@@ -617,8 +656,16 @@ class ObjectiveFunction:
             v_hs_front = 0.120
             v_hs_rear = 0.150
 
-        c_hs_front = (f_hs_comp * damper.hs_force_per_click_n) / v_hs_front
-        c_hs_rear = (r_hs_comp * damper.hs_force_per_click_n) / v_hs_rear
+        c_hs_front = _c_eff_harmonic(
+            params.get("front_hs_comp", f_hs_comp),
+            params.get("front_hs_rbd", f_hs_rbd),
+            damper.hs_force_per_click_n, v_hs_front,
+        )
+        c_hs_rear = _c_eff_harmonic(
+            params.get("rear_hs_comp", r_hs_comp),
+            params.get("rear_hs_rbd", r_hs_rbd),
+            damper.hs_force_per_click_n, v_hs_rear,
+        )
 
         result.zeta_hs_front = c_hs_front / c_crit_front if c_crit_front > 0 else 0
         result.zeta_hs_rear = c_hs_rear / c_crit_rear if c_crit_rear > 0 else 0
@@ -690,6 +737,30 @@ class ObjectiveFunction:
 
         # ── 6. Staleness ────────────────────────────────────────────────
         breakdown.staleness_penalty_ms = 0.0
+
+        # ── 7. Empirical cross-check from SessionDatabase ────────────────
+        # k-NN prediction from real BMW Sebring sessions (76+) — scores each
+        # candidate by how well its predicted telemetry matches target ranges.
+        # Weight 0.40: empirical augments physics scoring without overriding it.
+        # When physics and empirical agree → lower uncertainty; when they
+        # disagree → the soft_penalties list captures the discrepancy for review.
+        if self._session_db is not None and len(self._session_db) >= 3:
+            try:
+                k_nn = min(7, len(self._session_db))
+                emp_pred = self._session_db.predict(params, k=k_nn)
+                emp_result = self._session_db.score(emp_pred)
+                breakdown.empirical_penalty_ms = emp_result.total_penalty_ms
+                if emp_result.total_penalty_ms > 25.0:
+                    top_bad = [m for m in emp_result.metrics if m.status != "ok"][:3]
+                    issues = ", ".join(
+                        f"{m.metric.split('_')[0]}={m.predicted:.2f}" for m in top_bad
+                    )
+                    soft_penalties.append(
+                        f"Empirical k-NN ({emp_pred.k_used} sessions): "
+                        f"penalty={emp_result.total_penalty_ms:.0f}ms — {issues}"
+                    )
+            except Exception:
+                pass  # empirical scoring is non-critical — never break the pipeline
 
         return CandidateEvaluation(
             params=params,
@@ -937,14 +1008,21 @@ class ObjectiveFunction:
         _hsm = self.car.heave_spring
         _gr = self.car.garage_ranges
         _k_front = params.get("front_heave_spring_nmm", 50.0)
+        _od_mm = params.get("front_torsion_od_mm", 14.34)
         # Use baseline perch for veto check — compute_perch_offsets uses a zero-referenced
         # offset (0 at heave=50), but the slider formula is calibrated from the absolute
         # perch position. Use the car's absolute baseline perch when evaluating legality.
         _perch_front = _hsm.perch_offset_front_baseline_mm
-        _spring_defl = max(0.0, _hsm.defl_static_intercept + _hsm.defl_static_heave_coeff * _k_front)
-        _slider_static = (_hsm.slider_intercept
-                          + _hsm.slider_heave_coeff * _k_front
-                          + _hsm.slider_perch_coeff * _perch_front)
+        # Use DeflectionModel (multi-variable: heave + perch + OD^4, R²=0.953, 31 sessions)
+        # instead of the HeaveSpringModel simplified single-variable formula.
+        # Bug: old formula gives 24.0mm at k=30 N/mm but actual is 6.4mm (3.7× error).
+        # The DeflectionModel gives ~7.1mm at k=30 N/mm — 10× more accurate.
+        # Impact: old formula caused WRONG near-vetoes for soft heave springs (k≤35 N/mm)
+        # by predicting deflection near the 25.0mm legal max when actual is far below it.
+        # Source: car_model/calibrate_deflections.py, BMW Sebring 31 setups, March 2026.
+        _dm = self.car.deflection
+        _spring_defl = _dm.heave_spring_defl_static(_k_front, _perch_front, _od_mm)
+        _slider_static = _dm.heave_slider_defl_static(_k_front, _perch_front, _od_mm)
 
         _defl_min, _defl_max = _gr.heave_spring_defl_mm   # (0.6, 25.0)
         _slider_min, _slider_max = _gr.heave_slider_defl_mm  # (25.0, 45.0)
