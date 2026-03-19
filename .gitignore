@@ -3,3 +3,8 @@ ibtfiles/cadillac/cadillacvseriesrgtp_silverstone 2019 gp 2026-03-17 19-58-55.ib
 # Large telemetry (MoTeC .ld); use Git LFS if you need to track these
 data/Ferraridata/
 *.ld
+
+# IBT telemetry files (binary, too large for GitHub)
+ibtfiles/*.ibt
+ibtfiles/*.zip
+ibtfiles/

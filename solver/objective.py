@@ -213,6 +213,29 @@ class ObjectiveFunction:
     # sensitivity to RH increases, so the safe minimum RH is higher.
     VORTEX_BURST_THRESHOLD_MM = 8.0  # fallback when aero map unavailable
 
+    # Torsion bar → ARB compliance coupling coefficient.
+    #
+    # Physics: In the BMW LMDh front suspension, the torsion bar serves as the
+    # primary corner spring AND is the structural element the ARB blade lever
+    # connects to. Changing torsion bar OD alters both:
+    #   1. Corner wheel rate: k_wheel = C_torsion * OD^4            (direct)
+    #   2. ARB effective rate: the blade attachment point displaces  (indirect)
+    #      differently under the same roll moment when the torsion bar
+    #      stiffness changes — effectively scaling ARB contribution.
+    #
+    # Coupling model:
+    #   k_arb_effective = k_arb_base * coupling_factor
+    #   coupling_factor = 1 + TORSION_ARB_COUPLING * ((OD/OD_ref)^4 - 1)
+    #
+    # At OD=OD_ref: factor=1.0 (no change, calibrated baseline)
+    # At OD=16mm vs ref=13.9mm: factor ≈ 1.19 (+19% ARB stiffness)
+    # At OD=13.34mm: factor ≈ 0.96 (-4% ARB stiffness)
+    #
+    # Coefficient 0.25 = 25% of the torsional stiffness change propagates to ARB.
+    # This is empirically conservative — the blade spring itself is the dominant
+    # compliance element; the torsion bar couples through mounting geometry only.
+    TORSION_ARB_COUPLING = 0.25
+
     def __init__(self, car, track):
         self.car = car
         self.track = track
@@ -271,6 +294,26 @@ class ObjectiveFunction:
             return self._surface
         except Exception:
             return None
+
+    def _torsion_arb_coupling_factor(self, front_torsion_od: float) -> float:
+        """Compute the coupling multiplier applied to k_arb_front.
+
+        The front torsion bar OD changes wheel rate as OD^4. Because the ARB
+        blade lever arm is physically attached to the torsion bar housing, a
+        stiffer torsion bar partially stiffens the effective ARB path.
+
+        Args:
+            front_torsion_od: Current torsion bar OD in mm.
+
+        Returns:
+            Dimensionless coupling factor (1.0 at reference OD).
+        """
+        od_ref = self.car.corner_spring.front_torsion_od_ref_mm
+        if od_ref <= 0:
+            return 1.0
+        # Relative stiffness ratio: (OD/OD_ref)^4
+        stiffness_ratio = (front_torsion_od / od_ref) ** 4
+        return 1.0 + self.TORSION_ARB_COUPLING * (stiffness_ratio - 1.0)
 
     def _compute_vortex_threshold_mm(self, wing_deg: float) -> float:
         """Compute wing-specific minimum safe front RH from aero map gradient.
@@ -451,8 +494,12 @@ class ObjectiveFunction:
         t_r = arb.track_width_rear_mm / 2000.0
         k_roll_springs_front = 2.0 * (front_wheel_rate * 1000.0) * t_f**2 * (math.pi / 180.0)
         k_roll_springs_rear = 2.0 * (rear_wheel_rate * 1000.0) * t_r**2 * (math.pi / 180.0)
-        k_arb_front = arb.front_roll_stiffness(arb.front_baseline_size, front_arb_blade)
+        k_arb_front_base = arb.front_roll_stiffness(arb.front_baseline_size, front_arb_blade)
         k_arb_rear = arb.rear_roll_stiffness(arb.rear_baseline_size, rear_arb_blade)
+        # Torsion bar compliance coupling: changing OD scales ARB effective stiffness.
+        # Larger OD → stiffer torsion bar → blade lever transmits more roll moment
+        # → k_arb_front increases proportionally (see TORSION_ARB_COUPLING constant).
+        k_arb_front = k_arb_front_base * self._torsion_arb_coupling_factor(front_torsion_od)
 
         k_front_total = k_roll_springs_front + k_arb_front
         k_rear_total = k_roll_springs_rear + k_arb_rear
@@ -587,11 +634,17 @@ class ObjectiveFunction:
         k_roll_springs_front = 2.0 * (front_wheel_rate * 1000.0) * t_f**2 * (math.pi / 180.0)
         k_roll_springs_rear = 2.0 * (rear_wheel_rate * 1000.0) * t_r**2 * (math.pi / 180.0)
 
-        # ARB contribution
+        # ARB contribution — with torsion bar compliance coupling.
+        # The front torsion OD affects ARB effective stiffness because the ARB
+        # blade lever arm connects to the torsion bar housing. A stiffer torsion
+        # bar (larger OD) increases the coupling stiffness path from chassis roll
+        # motion through to the blade, raising effective k_arb_front by up to 25%
+        # of the relative torsional stiffness change (see TORSION_ARB_COUPLING).
         front_arb_size = arb.front_baseline_size
         rear_arb_size = arb.rear_baseline_size
-        k_arb_front = arb.front_roll_stiffness(front_arb_size, front_arb_blade)
+        k_arb_front_base = arb.front_roll_stiffness(front_arb_size, front_arb_blade)
         k_arb_rear = arb.rear_roll_stiffness(rear_arb_size, rear_arb_blade)
+        k_arb_front = k_arb_front_base * self._torsion_arb_coupling_factor(front_torsion_od)
 
         k_front_total = k_roll_springs_front + k_arb_front
         k_rear_total = k_roll_springs_rear + k_arb_rear
