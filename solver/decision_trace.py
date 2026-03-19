@@ -33,26 +33,30 @@ def _telemetry_lines(measured: Any, signal_names: list[str], *, allow_proxy: boo
 
 def _estimate_gain_ms(parameter: str, measured: Any) -> float:
     if parameter == "front_heave_nmm":
+        _ht = getattr(measured, "front_heave_travel_used_pct", 0.0) or 0.0
+        _bc = getattr(measured, "bottoming_event_count_front_clean", 0) or 0
         return round(
-            max(0.0, (getattr(measured, "front_heave_travel_used_pct", 0.0) - 85.0) * 1.5)
-            + max(0.0, getattr(measured, "bottoming_event_count_front_clean", 0)) * 8.0,
+            max(0.0, (_ht - 85.0) * 1.5)
+            + max(0.0, _bc) * 8.0,
             1,
         )
     if parameter == "rear_third_nmm":
+        _brc = getattr(measured, "bottoming_event_count_rear_clean", 0) or 0
+        _rps = getattr(measured, "rear_power_slip_ratio_p95", 0.0) or 0.0
         return round(
-            max(0.0, getattr(measured, "bottoming_event_count_rear_clean", 0)) * 6.0
-            + max(0.0, (getattr(measured, "rear_power_slip_ratio_p95", 0.0) - 0.08) * 4000.0),
+            max(0.0, _brc) * 6.0
+            + max(0.0, (_rps - 0.08) * 4000.0),
             1,
         )
     if parameter in {"front_camber_deg", "rear_camber_deg", "front_toe_mm", "rear_toe_mm"}:
-        return round(abs(getattr(measured, "understeer_mean_deg", 0.0)) * 35.0, 1)
+        return round(abs(getattr(measured, "understeer_mean_deg", 0.0) or 0.0) * 35.0, 1)
     if parameter.startswith("damper_"):
         settle = getattr(measured, "front_rh_settle_time_ms", 125.0) or 125.0
         return round(abs(settle - 125.0) * 0.4, 1)
     if parameter == "brake_bias_pct":
-        return round(max(0.0, getattr(measured, "front_braking_lock_ratio_p95", 0.0) - 0.06) * 2000.0, 1)
+        return round(max(0.0, (getattr(measured, "front_braking_lock_ratio_p95", 0.0) or 0.0) - 0.06) * 2000.0, 1)
     if parameter in {"diff_preload_nm", "tc_gain", "tc_slip"}:
-        return round(max(0.0, getattr(measured, "rear_power_slip_ratio_p95", 0.0) - 0.08) * 1800.0, 1)
+        return round(max(0.0, (getattr(measured, "rear_power_slip_ratio_p95", 0.0) or 0.0) - 0.08) * 1800.0, 1)
     return 0.0
 
 

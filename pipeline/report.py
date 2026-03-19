@@ -474,9 +474,9 @@ def generate_report(
             a(f"    Damper:  {step2.damper_force_braking_n:.0f} N  (c_ls × v_braking)")
             a(f"    Total:   {step2.total_force_at_limit_n:.0f} N")
         # Travel usage from telemetry (if measured)
-        if measured.front_heave_travel_used_pct > 0:
+        if (measured.front_heave_travel_used_pct or 0) > 0:
             a(f"  Measured travel use: {measured.front_heave_travel_used_pct:.0f}%")
-        if measured.front_heave_travel_used_braking_pct > 0:
+        if (measured.front_heave_travel_used_braking_pct or 0) > 0:
             pct = measured.front_heave_travel_used_braking_pct
             flag = " *** WARNING ***" if pct > 85 else ""
             a(f"  Under braking:      {pct:.0f}%{flag}")
@@ -549,6 +549,12 @@ def generate_report(
             for info in stint_compromise_info:
                 a(f"  {info}")
             a("")
+
+    # ── PARAMETER JUSTIFICATION (comprehensive engineering brief) ──────────
+    if sensitivity_result is not None and hasattr(sensitivity_result, "justification_report"):
+        a("")
+        a(sensitivity_result.justification_report(width=W))
+        a("")
 
     # ── LEARNING SUMMARY ──────────────────────────────────────────────
     try:

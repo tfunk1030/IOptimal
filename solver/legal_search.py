@@ -20,7 +20,7 @@ import random
 from dataclasses import dataclass, field
 
 from car_model.cars import CarModel
-from solver.legal_space import LegalSpace, LegalCandidate
+from solver.legal_space import LegalSpace, LegalCandidate, compute_perch_offsets
 from solver.legality_engine import validate_candidate_legality
 from solver.objective import ObjectiveFunction, CandidateEvaluation
 from track_model.profile import TrackProfile
@@ -100,8 +100,14 @@ def _generate_family_seeds(
     baseline_params: dict[str, float],
     budget_per_family: int,
     rng: random.Random,
+    car: CarModel | None = None,
 ) -> list[LegalCandidate]:
-    """Stage 1: Generate seeded candidates from baseline + edge families."""
+    """Stage 1: Generate seeded candidates from baseline + edge families.
+
+    Uses Sobol quasi-random sampling for uniform scatter (much better
+    space coverage than pseudorandom). Auto-computes dependent perch
+    offsets for all candidates when a car model is available.
+    """
     all_candidates: list[LegalCandidate] = []
 
     # Family 0: Physics baseline neighborhood
@@ -137,14 +143,32 @@ def _generate_family_seeds(
             c.is_extreme = True
         all_candidates.extend(cands)
 
-    # Uniform scatter: catch regions missed by families
+    # Sobol scatter: quasi-random for much better coverage than uniform
+    # Sobol fills the space more evenly, avoiding clumps and gaps
+    tier_a_keys = [d.name for d in space.tier_a()]
+    sobol_budget = budget_per_family * 2  # give Sobol extra budget
+    sobol_samples = space.sobol_sample(
+        tier_a_keys, sobol_budget, seed=rng.randint(0, 2**31)
+    )
+    for s in sobol_samples:
+        all_candidates.append(LegalCandidate(
+            params=s, family="sobol_scatter"
+        ))
+
+    # Also keep some uniform random for diversity
     uniform = space.sample_uniform(
-        n=budget_per_family,
+        n=budget_per_family // 2,
         seed=rng.randint(0, 2**31),
     )
     for c in uniform:
         c.family = "uniform_scatter"
     all_candidates.extend(uniform)
+
+    # Auto-compute dependent perch offsets for all candidates
+    if car is not None:
+        for cand in all_candidates:
+            perches = compute_perch_offsets(cand.params, car)
+            cand.params.update(perches)
 
     return all_candidates
 
@@ -197,6 +221,10 @@ class LegalSearchResult:
     vetoed_count: int = 0
     total_evaluated: int = 0
     families_searched: list[str] = field(default_factory=list)
+    # Grid search metadata (populated when using exhaustive/maximum mode)
+    layer_times: dict[str, float] = field(default_factory=dict)
+    layer_best_scores: dict[str, float] = field(default_factory=dict)
+    locally_optimal: bool = False  # True if Layer 4 polish was applied
 
     def summary(self) -> str:
         lines = [
@@ -206,8 +234,18 @@ class LegalSearchResult:
             f"  Total evaluated:  {self.total_evaluated}",
             f"  Vetoed (hard):    {self.vetoed_count}",
             f"  Families:         {', '.join(self.families_searched)}",
-            "",
         ]
+        if self.locally_optimal:
+            lines.append("  Local optimality: GUARANTEED (Layer 4 polish applied)")
+        if self.layer_times:
+            lines.append("  Time per layer:")
+            for layer_name, secs in sorted(self.layer_times.items()):
+                lines.append(f"    {layer_name}: {secs:.1f}s")
+        if self.layer_best_scores:
+            lines.append("  Best score per layer:")
+            for layer_name, score in sorted(self.layer_best_scores.items()):
+                lines.append(f"    {layer_name}: {score:+.1f}ms")
+        lines.append("")
 
         def _fmt(label: str, ev: CandidateEvaluation | None) -> list[str]:
             if ev is None:
@@ -301,6 +339,26 @@ class LegalSearchResult:
         return "\n".join(lines)
 
 
+def _budget_to_mode(budget: int) -> str:
+    """Map numeric budget to a search mode string.
+
+    The --search-budget CLI flag passes an integer. We use threshold
+    ranges to pick the appropriate search mode:
+        ≤50,000   → "quick"    (Sobol sampling, no grid)
+        ≤500,000  → "standard" (Sobol sampling, no grid)
+        ≤10M      → "exhaustive" (Grid engine Layer 1-2)
+        >10M      → "maximum"   (Grid engine Layer 1-2, finer coarse levels)
+    """
+    if budget <= 50_000:
+        return "quick"
+    elif budget <= 500_000:
+        return "standard"
+    elif budget <= 10_000_000:
+        return "exhaustive"
+    else:
+        return "maximum"
+
+
 def run_legal_search(
     car: CarModel,
     track: TrackProfile | str,
@@ -312,8 +370,17 @@ def run_legal_search(
     session_count: int = 0,
     keep_weird: bool = True,
     seed: int = 42,
+    mode: str | None = None,
 ) -> LegalSearchResult:
-    """Run the two-stage legal-manifold search.
+    """Run the legal-manifold search.
+
+    Dispatches to the appropriate search engine based on mode:
+    - "quick" / "standard": Two-stage Sobol + edge-family sampling
+      (original fast path).
+    - "exhaustive" / "maximum": Hierarchical grid search via
+      GridSearchEngine (Layer 1-2 exhaustive enumeration).
+
+    If mode is not specified, it is inferred from budget.
 
     Args:
         car: Car model
@@ -326,7 +393,97 @@ def run_legal_search(
         session_count: Number of telemetry sessions available
         keep_weird: If True, preserve unconventional candidates in results
         seed: Random seed
+        mode: Search mode override — "quick", "standard", "exhaustive",
+              or "maximum". If None, inferred from budget.
     """
+    # Determine search mode
+    search_mode = mode if mode is not None else _budget_to_mode(budget)
+
+    # ── Grid engine path (exhaustive / maximum) ────────────────────
+    if search_mode in ("exhaustive", "maximum"):
+        return _run_grid_search(
+            car=car,
+            track=track,
+            baseline_params=baseline_params,
+            mode=search_mode,
+            measured=measured,
+            driver_profile=driver_profile,
+            session_count=session_count,
+        )
+
+    # ── Sobol sampling path (quick / standard) ─────────────────────
+    return _run_sampling_search(
+        car=car,
+        track=track,
+        baseline_params=baseline_params,
+        budget=budget,
+        solver_result=solver_result,
+        measured=measured,
+        driver_profile=driver_profile,
+        session_count=session_count,
+        keep_weird=keep_weird,
+        seed=seed,
+    )
+
+
+def _run_grid_search(
+    car: CarModel,
+    track: TrackProfile | str,
+    baseline_params: dict[str, float],
+    mode: str,
+    measured=None,
+    driver_profile=None,
+    session_count: int = 0,
+) -> LegalSearchResult:
+    """Dispatch to the GridSearchEngine for exhaustive/maximum modes."""
+    from solver.grid_search import GridSearchEngine, GridSearchResult
+
+    track_name = track if isinstance(track, str) else getattr(track, "name", "")
+    track_obj = track if isinstance(track, TrackProfile) else None
+
+    space = LegalSpace.from_car(car, track_name=track_name)
+    objective = ObjectiveFunction(car, track_obj if track_obj is not None else track_name)
+
+    engine = GridSearchEngine(
+        space=space,
+        objective=objective,
+        car=car,
+        track=track_obj if track_obj is not None else track_name,
+        baseline_params=baseline_params,
+    )
+
+    grid_result = engine.run(budget=mode)
+
+    # Convert GridSearchResult → LegalSearchResult for compatibility
+    families_seen = sorted(set(e.family for e in grid_result.all_evaluations))
+
+    return LegalSearchResult(
+        all_evaluations=grid_result.all_evaluations,
+        best_robust=grid_result.best_robust,
+        best_aggressive=grid_result.best_aggressive,
+        best_weird=grid_result.best_weird,
+        vetoed_count=grid_result.vetoed_count,
+        total_evaluated=grid_result.total_evaluated,
+        families_searched=families_seen,
+        layer_times=grid_result.layer_times,
+        layer_best_scores=grid_result.layer_best_scores,
+        locally_optimal=grid_result.layer4_candidates > 0,
+    )
+
+
+def _run_sampling_search(
+    car: CarModel,
+    track: TrackProfile | str,
+    baseline_params: dict[str, float],
+    budget: int = 1000,
+    solver_result: dict | None = None,
+    measured=None,
+    driver_profile=None,
+    session_count: int = 0,
+    keep_weird: bool = True,
+    seed: int = 42,
+) -> LegalSearchResult:
+    """Original two-stage Sobol + edge-family sampling search."""
     track_name = track if isinstance(track, str) else getattr(track, "name", "")
     track_obj = track if isinstance(track, TrackProfile) else None
     rng = random.Random(seed)
@@ -341,8 +498,8 @@ def run_legal_search(
     n_families = len(EDGE_FAMILIES) + 2  # +1 baseline, +1 uniform
     budget_per_family = max(10, budget // n_families)
 
-    # Stage 1: Generate candidates
-    candidates = _generate_family_seeds(space, baseline_params, budget_per_family, rng)
+    # Stage 1: Generate candidates (with auto-computed perch offsets)
+    candidates = _generate_family_seeds(space, baseline_params, budget_per_family, rng, car=car)
 
     # Stage 2: Evaluate all
     evaluations = _evaluate_candidates(

@@ -1,0 +1,29 @@
+=== BRANCH ===
+codex                                          6ece875 [ahead 58, behind 58] Review BMW Sebring setup model
+* codextwo                                       b238ec0 [ahead 1] Expand sensitivity analysis to ALL 45 parameters with full justifications
+  cursor/cloud-agent-1773532074284-7l92z         833135a [ahead 57, behind 57] Cursor: Apply local changes for cloud agent
+  cursor/cloud-agent-1773707887122-8omyy         40ac3cf [ahead 71, behind 71] Cursor: Apply local changes for cloud agent
+  cursor/telemetry-setup-output-enhancement-f339 7c56dbf [ahead 77, behind 77] a
+  main                                           4ebc96b [ahead 60, behind 59] asf
+Exit: 0
+
+=== LOG ===
+b238ec0 Expand sensitivity analysis to ALL 45 parameters with full justifications
+375ba99 Tune objective LLTD/DF balance weights to match physics solver sensitivity
+f2580bb Fix None-guard bugs in report.py, reason.py, and decision_trace.py
+Exit: 0
+
+=== REMOTE ===
+origin	https://github.com/tfunk1030/IOptimal.git (fetch)
+origin	https://github.com/tfunk1030/IOptimal.git (push)
+Exit: 0
+
+=== PULL REBASE ===
+STDERR: error: cannot pull with rebase: You have unstaged changes.
+error: Please commit or stash them.
+Exit: 128
+
+=== PUSH ===
+STDERR: Error getting Git version: executable file not found in %PATH%
+error: failed to push some refs to 'https://github.com/tfunk1030/IOptimal.git'
+Exit: 1

@@ -143,6 +143,8 @@ class ObjectiveBreakdown:
     w_uncertainty: float = 0.6  # lowered from 0.7 — less aggressive no-data penalty
     w_envelope: float = 0.7   # lowered from 0.8 — envelope is soft guidance, not hard
     w_staleness: float = 0.3  # lowered from 0.4 — staleness is least important
+    empirical_penalty_ms: float = 0.0  # k-NN empirical score from SessionDatabase (76+ sessions)
+    w_empirical: float = 0.40  # blend weight — empirical augments physics, never overrides it
 
     @property
     def total_score_ms(self) -> float:
@@ -153,6 +155,7 @@ class ObjectiveBreakdown:
             - self.w_uncertainty * self.telemetry_uncertainty.total_ms
             - self.w_envelope * self.envelope_penalty.total_ms
             - self.w_staleness * self.staleness_penalty_ms
+            - self.w_empirical * self.empirical_penalty_ms
         )
 
     def summary(self) -> str:
@@ -168,6 +171,7 @@ class ObjectiveBreakdown:
             f"    Telemetry uncert:    {-self.w_uncertainty * self.telemetry_uncertainty.total_ms:+.1f} ms",
             f"    Envelope penalty:    {-self.w_envelope * self.envelope_penalty.total_ms:+.1f} ms",
             f"    Staleness:           {-self.w_staleness * self.staleness_penalty_ms:+.1f} ms",
+            f"    Empirical (k-NN):    {-self.w_empirical * self.empirical_penalty_ms:+.1f} ms",
             f"  [hierarchy: rake/RH > heave_platform > LLTD(ARB) > dampers > camber]",
         ]
         return "\n".join(lines)
@@ -209,6 +213,29 @@ class ObjectiveFunction:
     # sensitivity to RH increases, so the safe minimum RH is higher.
     VORTEX_BURST_THRESHOLD_MM = 8.0  # fallback when aero map unavailable
 
+    # Torsion bar → ARB compliance coupling coefficient.
+    #
+    # Physics: In the BMW LMDh front suspension, the torsion bar serves as the
+    # primary corner spring AND is the structural element the ARB blade lever
+    # connects to. Changing torsion bar OD alters both:
+    #   1. Corner wheel rate: k_wheel = C_torsion * OD^4            (direct)
+    #   2. ARB effective rate: the blade attachment point displaces  (indirect)
+    #      differently under the same roll moment when the torsion bar
+    #      stiffness changes — effectively scaling ARB contribution.
+    #
+    # Coupling model:
+    #   k_arb_effective = k_arb_base * coupling_factor
+    #   coupling_factor = 1 + TORSION_ARB_COUPLING * ((OD/OD_ref)^4 - 1)
+    #
+    # At OD=OD_ref: factor=1.0 (no change, calibrated baseline)
+    # At OD=16mm vs ref=13.9mm: factor ≈ 1.19 (+19% ARB stiffness)
+    # At OD=13.34mm: factor ≈ 0.96 (-4% ARB stiffness)
+    #
+    # Coefficient 0.25 = 25% of the torsional stiffness change propagates to ARB.
+    # This is empirically conservative — the blade spring itself is the dominant
+    # compliance element; the torsion bar couples through mounting geometry only.
+    TORSION_ARB_COUPLING = 0.25
+
     def __init__(self, car, track):
         self.car = car
         self.track = track
@@ -231,24 +258,62 @@ class ObjectiveFunction:
 
         self._heave_cal = HeaveCalibration.load(_car_slug, _track_slug)
 
-    def _get_surface(self):
-        """Lazy-load aero surface for DF balance queries."""
-        if self._surface is None:
-            try:
-                from aero_model import load_car_surfaces
-                surfaces = load_car_surfaces(self.car.canonical_name)
-                # Use default wing angle
-                wing = self.car.wing_angles[0] if self.car.wing_angles else 17.0
-                if isinstance(self.track, TrackProfile):
-                    # Try to get wing from context
-                    pass
-                if wing in surfaces:
-                    self._surface = surfaces[wing]
-                elif surfaces:
-                    self._surface = next(iter(surfaces.values()))
-            except Exception:
-                pass
-        return self._surface
+        # Load SessionDatabase for empirical k-NN cross-check.
+        # When ≥3 sessions are available, the empirical prediction of telemetry
+        # outcomes (front_rh_std_mm, understeer, LLTD from real sessions) augments
+        # the physics model, catching systematic gaps that pure physics can't see.
+        try:
+            from solver.session_database import SessionDatabase
+            self._session_db: "SessionDatabase | None" = SessionDatabase.load(
+                _car_slug, _track_slug
+            )
+        except Exception:
+            self._session_db = None
+
+    def _get_surface(self, wing_deg: float | None = None):
+        """Lazy-load aero surface for DF balance queries.
+
+        Args:
+            wing_deg: Wing angle to look up. If None, uses first available surface.
+                      Pass params.get('wing_angle_deg') per candidate for accuracy.
+        """
+        try:
+            from aero_model import load_car_surfaces
+            surfaces = load_car_surfaces(self.car.canonical_name)
+            if not surfaces:
+                return None
+            if wing_deg is not None:
+                # Find closest available wing map to requested angle
+                best = min(surfaces.keys(), key=lambda w: abs(w - wing_deg))
+                return surfaces[best]
+            # Fallback: cache a default surface for callers that don't pass wing_deg
+            if self._surface is None:
+                default_wing = self.car.wing_angles[0] if self.car.wing_angles else 17.0
+                best = min(surfaces.keys(), key=lambda w: abs(w - default_wing))
+                self._surface = surfaces[best]
+            return self._surface
+        except Exception:
+            return None
+
+    def _torsion_arb_coupling_factor(self, front_torsion_od: float) -> float:
+        """Compute the coupling multiplier applied to k_arb_front.
+
+        The front torsion bar OD changes wheel rate as OD^4. Because the ARB
+        blade lever arm is physically attached to the torsion bar housing, a
+        stiffer torsion bar partially stiffens the effective ARB path.
+
+        Args:
+            front_torsion_od: Current torsion bar OD in mm.
+
+        Returns:
+            Dimensionless coupling factor (1.0 at reference OD).
+        """
+        od_ref = self.car.corner_spring.front_torsion_od_ref_mm
+        if od_ref <= 0:
+            return 1.0
+        # Relative stiffness ratio: (OD/OD_ref)^4
+        stiffness_ratio = (front_torsion_od / od_ref) ** 4
+        return 1.0 + self.TORSION_ARB_COUPLING * (stiffness_ratio - 1.0)
 
     def _compute_vortex_threshold_mm(self, wing_deg: float) -> float:
         """Compute wing-specific minimum safe front RH from aero map gradient.
@@ -429,8 +494,12 @@ class ObjectiveFunction:
         t_r = arb.track_width_rear_mm / 2000.0
         k_roll_springs_front = 2.0 * (front_wheel_rate * 1000.0) * t_f**2 * (math.pi / 180.0)
         k_roll_springs_rear = 2.0 * (rear_wheel_rate * 1000.0) * t_r**2 * (math.pi / 180.0)
-        k_arb_front = arb.front_roll_stiffness(arb.front_baseline_size, front_arb_blade)
+        k_arb_front_base = arb.front_roll_stiffness(arb.front_baseline_size, front_arb_blade)
         k_arb_rear = arb.rear_roll_stiffness(arb.rear_baseline_size, rear_arb_blade)
+        # Torsion bar compliance coupling: changing OD scales ARB effective stiffness.
+        # Larger OD → stiffer torsion bar → blade lever transmits more roll moment
+        # → k_arb_front increases proportionally (see TORSION_ARB_COUPLING constant).
+        k_arb_front = k_arb_front_base * self._torsion_arb_coupling_factor(front_torsion_od)
 
         k_front_total = k_roll_springs_front + k_arb_front
         k_rear_total = k_roll_springs_rear + k_arb_rear
@@ -565,11 +634,17 @@ class ObjectiveFunction:
         k_roll_springs_front = 2.0 * (front_wheel_rate * 1000.0) * t_f**2 * (math.pi / 180.0)
         k_roll_springs_rear = 2.0 * (rear_wheel_rate * 1000.0) * t_r**2 * (math.pi / 180.0)
 
-        # ARB contribution
+        # ARB contribution — with torsion bar compliance coupling.
+        # The front torsion OD affects ARB effective stiffness because the ARB
+        # blade lever arm connects to the torsion bar housing. A stiffer torsion
+        # bar (larger OD) increases the coupling stiffness path from chassis roll
+        # motion through to the blade, raising effective k_arb_front by up to 25%
+        # of the relative torsional stiffness change (see TORSION_ARB_COUPLING).
         front_arb_size = arb.front_baseline_size
         rear_arb_size = arb.rear_baseline_size
-        k_arb_front = arb.front_roll_stiffness(front_arb_size, front_arb_blade)
+        k_arb_front_base = arb.front_roll_stiffness(front_arb_size, front_arb_blade)
         k_arb_rear = arb.rear_roll_stiffness(rear_arb_size, rear_arb_blade)
+        k_arb_front = k_arb_front_base * self._torsion_arb_coupling_factor(front_torsion_od)
 
         k_front_total = k_roll_springs_front + k_arb_front
         k_rear_total = k_roll_springs_rear + k_arb_rear
@@ -601,10 +676,33 @@ class ObjectiveFunction:
         c_crit_front = 2.0 * math.sqrt(k_modal_front * 1000.0 * front_mass)
         c_crit_rear = 2.0 * math.sqrt(k_modal_rear * 1000.0 * rear_mass)
 
-        # LS damping from clicks: F = clicks * force_per_click, c = F / v_ref
-        v_ls_ref = 0.025  # 25 mm/s
-        c_ls_front = (f_ls_comp * damper.ls_force_per_click_n) / v_ls_ref
-        c_ls_rear = (r_ls_comp * damper.ls_force_per_click_n) / v_ls_ref
+        # LS/HS damping: harmonic mean of comp + rebound per-cycle energy dissipation.
+        # Rationale: one full oscillation cycle has both a compression and rebound stroke.
+        # Effective damping coefficient per cycle = harmonic mean of c_comp and c_rbd:
+        #   c_eff = 2 * c_comp * c_rbd / (c_comp + c_rbd)
+        # Previous model used c_comp only → ζ overestimated by ~30-40% when rbd < comp.
+        # Harmonic mean naturally captures asymmetric damping (GTP always comp > rbd).
+        # Source: Dixon "The Shock Absorber Handbook" §7.4 (per-cycle energy method).
+
+        def _c_eff_harmonic(comp_clicks: float, rbd_clicks: float,
+                             force_per_click: float, v_ref: float) -> float:
+            """Effective damping coefficient via harmonic mean (symmetric energy dissipation)."""
+            c_c = (max(0.5, comp_clicks) * force_per_click) / v_ref
+            c_r = (max(0.5, rbd_clicks) * force_per_click) / v_ref
+            return 2.0 * c_c * c_r / (c_c + c_r)
+
+        v_ls_ref = 0.025  # 25 mm/s — LS reference velocity
+
+        c_ls_front = _c_eff_harmonic(
+            params.get("front_ls_comp", f_ls_comp),
+            params.get("front_ls_rbd", f_ls_rbd),
+            damper.ls_force_per_click_n, v_ls_ref,
+        )
+        c_ls_rear = _c_eff_harmonic(
+            params.get("rear_ls_comp", r_ls_comp),
+            params.get("rear_ls_rbd", r_ls_rbd),
+            damper.ls_force_per_click_n, v_ls_ref,
+        )
 
         result.zeta_ls_front = c_ls_front / c_crit_front if c_crit_front > 0 else 0
         result.zeta_ls_rear = c_ls_rear / c_crit_rear if c_crit_rear > 0 else 0
@@ -617,20 +715,52 @@ class ObjectiveFunction:
             v_hs_front = 0.120
             v_hs_rear = 0.150
 
-        c_hs_front = (f_hs_comp * damper.hs_force_per_click_n) / v_hs_front
-        c_hs_rear = (r_hs_comp * damper.hs_force_per_click_n) / v_hs_rear
+        c_hs_front = _c_eff_harmonic(
+            params.get("front_hs_comp", f_hs_comp),
+            params.get("front_hs_rbd", f_hs_rbd),
+            damper.hs_force_per_click_n, v_hs_front,
+        )
+        c_hs_rear = _c_eff_harmonic(
+            params.get("rear_hs_comp", r_hs_comp),
+            params.get("rear_hs_rbd", r_hs_rbd),
+            damper.hs_force_per_click_n, v_hs_rear,
+        )
 
         result.zeta_hs_front = c_hs_front / c_crit_front if c_crit_front > 0 else 0
         result.zeta_hs_rear = c_hs_rear / c_crit_rear if c_crit_rear > 0 else 0
 
         # ── DF balance (aero map lookup if available) ───────────────────
-        surface = self._get_surface()
+        # Use per-candidate wing angle for correct surface selection.
+        # Clamp dynamic RH to the aero map's available range to avoid
+        # extrapolation errors (map floor is 25mm front; our operating
+        # range 19-30mm often sits below this → clamp to map minimum).
+        wing_deg_candidate = float(params.get(
+            "wing_angle_deg", car.wing_angles[0] if car.wing_angles else 17.0
+        ))
+        surface = self._get_surface(wing_deg=wing_deg_candidate)
         if surface is not None:
             try:
-                dyn_f = 19.0  # typical operating point
-                dyn_r = 42.0
-                result.df_balance_pct = surface.df_balance(dyn_f, dyn_r)
-                result.ld_ratio = surface.lift_drag(dyn_f, dyn_r)
+                # Derive dynamic RH from static pushrod offsets + car geometry.
+                # Fallback to typical values if pushrod params not present.
+                _fp = float(params.get("front_pushrod_offset_mm", -26.0))
+                _rp = float(params.get("rear_pushrod_offset_mm", -18.0))
+                # Approximate static RH from pushrod offset (0.096 mm/mm sensitivity)
+                _rh_model = car.rh_model if hasattr(car, "rh_model") else None
+                if _rh_model is not None:
+                    _static_f = _rh_model.front_base_rh_mm + _rh_model.front_pushrod_to_rh * _fp
+                    _static_r = _rh_model.rear_base_rh_mm + _rh_model.rear_pushrod_to_rh * _rp
+                    # Dynamic is typically 3-4mm lower than static (aero compression at speed)
+                    dyn_f = max(_static_f - 4.0, float(surface.front_rh[0]))
+                    dyn_r = max(_static_r - 4.0, float(surface.rear_rh[0]))
+                else:
+                    # Clamp to map floor to avoid extrapolation errors
+                    dyn_f = max(23.0, float(surface.front_rh[0]))
+                    dyn_r = max(42.0, float(surface.rear_rh[0]))
+                # BMW has aero_axes_swapped=True — convert to aero map coordinates
+                # before querying (map x-axis = actual rear RH, y-axis = actual front RH).
+                af, ar = car.to_aero_coords(dyn_f, dyn_r)
+                result.df_balance_pct = surface.df_balance(af, ar)
+                result.ld_ratio = surface.lift_drag(af, ar)
                 result.df_balance_error_pct = abs(
                     result.df_balance_pct - car.default_df_balance_pct
                 )
@@ -690,6 +820,30 @@ class ObjectiveFunction:
 
         # ── 6. Staleness ────────────────────────────────────────────────
         breakdown.staleness_penalty_ms = 0.0
+
+        # ── 7. Empirical cross-check from SessionDatabase ────────────────
+        # k-NN prediction from real BMW Sebring sessions (76+) — scores each
+        # candidate by how well its predicted telemetry matches target ranges.
+        # Weight 0.40: empirical augments physics scoring without overriding it.
+        # When physics and empirical agree → lower uncertainty; when they
+        # disagree → the soft_penalties list captures the discrepancy for review.
+        if self._session_db is not None and len(self._session_db) >= 3:
+            try:
+                k_nn = min(7, len(self._session_db))
+                emp_pred = self._session_db.predict(params, k=k_nn)
+                emp_result = self._session_db.score(emp_pred)
+                breakdown.empirical_penalty_ms = emp_result.total_penalty_ms
+                if emp_result.total_penalty_ms > 25.0:
+                    top_bad = [m for m in emp_result.metrics if m.status != "ok"][:3]
+                    issues = ", ".join(
+                        f"{m.metric.split('_')[0]}={m.predicted:.2f}" for m in top_bad
+                    )
+                    soft_penalties.append(
+                        f"Empirical k-NN ({emp_pred.k_used} sessions): "
+                        f"penalty={emp_result.total_penalty_ms:.0f}ms — {issues}"
+                    )
+            except Exception:
+                pass  # empirical scoring is non-critical — never break the pipeline
 
         return CandidateEvaluation(
             params=params,
@@ -793,9 +947,9 @@ class ObjectiveFunction:
         # 12ms per 1% LLTD error at Sebring (high mechanical grip demand)
         # Raised from 8ms — Sebring's slow-speed sections are more balance-sensitive
         # than pure high-speed aero tracks where DF overwhelms traction balance.
-        LLTD_MS_PER_PCT = 12.0  # [ms / %LLTD_error]
+        LLTD_MS_PER_PCT = 2.5  # [ms / %LLTD_error] — tuned: old 8-12 amplified ARB blades via LLTD
         lltd_penalty = physics.lltd_error * 100.0 * LLTD_MS_PER_PCT
-        gain -= min(50.0, lltd_penalty)  # cap: balance is real but not catastrophic
+        gain -= min(25.0, lltd_penalty)  # cap tuned from 40-50 → 25
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 3: DAMPING RATIOS (secondary, 3-8ms per axis max)
@@ -878,7 +1032,7 @@ class ObjectiveFunction:
 
         # Each 0.1% DF balance error: ~5ms at speed tracks
         # Raised from 30ms/pct to 50ms/pct — more aggressive aero sensitivity
-        gain -= physics.df_balance_error_pct * 50.0
+        gain -= physics.df_balance_error_pct * 20.0  # tuned from 45-50 → 20
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: CAMBER (contact patch optimization, tertiary)
@@ -937,14 +1091,21 @@ class ObjectiveFunction:
         _hsm = self.car.heave_spring
         _gr = self.car.garage_ranges
         _k_front = params.get("front_heave_spring_nmm", 50.0)
+        _od_mm = params.get("front_torsion_od_mm", 14.34)
         # Use baseline perch for veto check — compute_perch_offsets uses a zero-referenced
         # offset (0 at heave=50), but the slider formula is calibrated from the absolute
         # perch position. Use the car's absolute baseline perch when evaluating legality.
         _perch_front = _hsm.perch_offset_front_baseline_mm
-        _spring_defl = max(0.0, _hsm.defl_static_intercept + _hsm.defl_static_heave_coeff * _k_front)
-        _slider_static = (_hsm.slider_intercept
-                          + _hsm.slider_heave_coeff * _k_front
-                          + _hsm.slider_perch_coeff * _perch_front)
+        # Use DeflectionModel (multi-variable: heave + perch + OD^4, R²=0.953, 31 sessions)
+        # instead of the HeaveSpringModel simplified single-variable formula.
+        # Bug: old formula gives 24.0mm at k=30 N/mm but actual is 6.4mm (3.7× error).
+        # The DeflectionModel gives ~7.1mm at k=30 N/mm — 10× more accurate.
+        # Impact: old formula caused WRONG near-vetoes for soft heave springs (k≤35 N/mm)
+        # by predicting deflection near the 25.0mm legal max when actual is far below it.
+        # Source: car_model/calibrate_deflections.py, BMW Sebring 31 setups, March 2026.
+        _dm = self.car.deflection
+        _spring_defl = _dm.heave_spring_defl_static(_k_front, _perch_front, _od_mm)
+        _slider_static = _dm.heave_slider_defl_static(_k_front, _perch_front, _od_mm)
 
         _defl_min, _defl_max = _gr.heave_spring_defl_mm   # (0.6, 25.0)
         _slider_min, _slider_max = _gr.heave_slider_defl_mm  # (25.0, 45.0)

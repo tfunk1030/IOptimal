@@ -1,0 +1,499 @@
+{
+  "session_before": "bmw_sebring_international_raceway_bmwunder",
+  "session_after": "bmw_sebring_international_raceway_bmw2",
+  "car": "bmw",
+  "track": "Sebring International Raceway",
+  "setup_changes": [
+    {
+      "parameter": "rear_spring_nmm",
+      "before": 160.0,
+      "after": 165.0,
+      "delta": 5.0,
+      "step_group": "step3_springs",
+      "significance": "trivial"
+    },
+    {
+      "parameter": "front_camber_deg",
+      "before": -2.0,
+      "after": -2.5,
+      "delta": -0.5,
+      "step_group": "step5_geometry",
+      "significance": "major"
+    },
+    {
+      "parameter": "rear_arb_blade",
+      "before": 3,
+      "after": 1,
+      "delta": -2.0,
+      "step_group": "step4_arb",
+      "significance": "major"
+    },
+    {
+      "parameter": "rear_torsion_bar_index",
+      "before": 160.0,
+      "after": 165.0,
+      "delta": 5.0,
+      "step_group": "other",
+      "significance": "minor"
+    },
+    {
+      "parameter": "diff_preload_nm",
+      "before": 35.0,
+      "after": 20.0,
+      "delta": -15.0,
+      "step_group": "other",
+      "significance": "minor"
+    },
+    {
+      "parameter": "brake_bias_pct",
+      "before": 46.0,
+      "after": 46.25,
+      "delta": 0.25,
+      "step_group": "other",
+      "significance": "trivial"
+    },
+    {
+      "parameter": "tc_gain",
+      "before": 6,
+      "after": 4,
+      "delta": -2.0,
+      "step_group": "other",
+      "significance": "minor"
+    },
+    {
+      "parameter": "rear_pushrod",
+      "before": -23.0,
+      "after": -11.0,
+      "delta": 12.0,
+      "step_group": "step1_rake",
+      "significance": "minor"
+    },
+    {
+      "parameter": "front_pushrod",
+      "before": -26.0,
+      "after": -25.5,
+      "delta": 0.5,
+      "step_group": "step1_rake",
+      "significance": "minor"
+    },
+    {
+      "parameter": "tc_slip",
+      "before": 5,
+      "after": 3,
+      "delta": -2.0,
+      "step_group": "other",
+      "significance": "minor"
+    },
+    {
+      "parameter": "front_toe_mm",
+      "before": -0.4,
+      "after": -0.5,
+      "delta": -0.09999999999999998,
+      "step_group": "step5_geometry",
+      "significance": "trivial"
+    },
+    {
+      "parameter": "rear_rh_static",
+      "before": 49.0,
+      "after": 49.9,
+      "delta": 0.8999999999999986,
+      "step_group": "step1_rake",
+      "significance": "minor"
+    },
+    {
+      "parameter": "rear_third_nmm",
+      "before": 460.0,
+      "after": 420.0,
+      "delta": -40.0,
+      "step_group": "step2_heave",
+      "significance": "minor"
+    },
+    {
+      "parameter": "rear_camber_deg",
+      "before": -1.7,
+      "after": -1.8,
+      "delta": -0.10000000000000009,
+      "step_group": "step5_geometry",
+      "significance": "trivial"
+    },
+    {
+      "parameter": "rear_heave_index",
+      "before": 460.0,
+      "after": 420.0,
+      "delta": -40.0,
+      "step_group": "other",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_lf_ls_comp",
+      "before": 8,
+      "after": 9,
+      "delta": 1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_lf_ls_rbd",
+      "before": 8,
+      "after": 7,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_lf_hs_comp",
+      "before": 5,
+      "after": 8,
+      "delta": 3,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_lf_hs_rbd",
+      "before": 8,
+      "after": 6,
+      "delta": -2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_lf_hs_slope",
+      "before": 11,
+      "after": 8,
+      "delta": -3,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rf_ls_comp",
+      "before": 8,
+      "after": 9,
+      "delta": 1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_rf_ls_rbd",
+      "before": 8,
+      "after": 7,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_rf_hs_comp",
+      "before": 5,
+      "after": 8,
+      "delta": 3,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rf_hs_rbd",
+      "before": 8,
+      "after": 6,
+      "delta": -2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rf_hs_slope",
+      "before": 11,
+      "after": 8,
+      "delta": -3,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_lr_ls_comp",
+      "before": 7,
+      "after": 6,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_lr_ls_rbd",
+      "before": 8,
+      "after": 6,
+      "delta": -2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_lr_hs_comp",
+      "before": 5,
+      "after": 8,
+      "delta": 3,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_lr_hs_rbd",
+      "before": 11,
+      "after": 8,
+      "delta": -3,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rr_ls_comp",
+      "before": 7,
+      "after": 6,
+      "delta": -1,
+      "step_group": "step6_dampers",
+      "significance": "minor"
+    },
+    {
+      "parameter": "damper_rr_ls_rbd",
+      "before": 8,
+      "after": 6,
+      "delta": -2,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rr_hs_comp",
+      "before": 5,
+      "after": 8,
+      "delta": 3,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    },
+    {
+      "parameter": "damper_rr_hs_rbd",
+      "before": 11,
+      "after": 8,
+      "delta": -3,
+      "step_group": "step6_dampers",
+      "significance": "major"
+    }
+  ],
+  "telemetry_effects": [
+    {
+      "metric": "rear_bottoming_events",
+      "category": "platform",
+      "before": 2.0,
+      "after": 4.0,
+      "delta": 2.0,
+      "pct_change": 100.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.12182162702083588,
+      "after": 0.13280858844518653,
+      "delta": 0.011,
+      "pct_change": 9.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.15901274979114532,
+      "after": 0.16705468893051142,
+      "delta": 0.008,
+      "pct_change": 5.1,
+      "significance": "moderate"
+    },
+    {
+      "metric": "heave_bottoming_events_front",
+      "category": "platform",
+      "before": 0.0,
+      "after": 5.0,
+      "delta": 5.0,
+      "pct_change": 0.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "understeer_high_speed_deg",
+      "category": "balance",
+      "before": 0.1560865044593811,
+      "after": 0.13533228635787964,
+      "delta": -0.0208,
+      "pct_change": -13.3,
+      "significance": "moderate"
+    },
+    {
+      "metric": "understeer_low_speed_deg",
+      "category": "balance",
+      "before": -0.02234613336622715,
+      "after": -0.14635568857192993,
+      "delta": -0.124,
+      "pct_change": -554.9,
+      "significance": "large"
+    },
+    {
+      "metric": "body_slip_p95_deg",
+      "category": "balance",
+      "before": 3.009516954421997,
+      "after": 3.529489231109618,
+      "delta": 0.52,
+      "pct_change": 17.3,
+      "significance": "large"
+    },
+    {
+      "metric": "dynamic_rear_rh_mm",
+      "category": "aero",
+      "before": 28.205398559570312,
+      "after": 28.520843505859375,
+      "delta": 0.3154,
+      "pct_change": 1.1,
+      "significance": "small"
+    },
+    {
+      "metric": "roll_gradient_deg_per_g",
+      "category": "aero",
+      "before": -0.201,
+      "after": -0.099,
+      "delta": 0.102,
+      "pct_change": 50.7,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_dominant_freq_hz",
+      "category": "damper",
+      "before": 2.91,
+      "after": 2.83,
+      "delta": -0.08,
+      "pct_change": -2.7,
+      "significance": "small"
+    },
+    {
+      "metric": "rear_dominant_freq_hz",
+      "category": "damper",
+      "before": 4.86,
+      "after": 4.96,
+      "delta": 0.1,
+      "pct_change": 2.1,
+      "significance": "small"
+    }
+  ],
+  "hypotheses": [
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": -2.0,
+      "effect_metric": "body_slip_p95_deg",
+      "effect_delta": 0.52,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "rear_arb_blade - -> expected body_slip_p95_deg +, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_arb_blade",
+      "cause_delta": -2.0,
+      "effect_metric": "roll_gradient_deg_per_g",
+      "effect_delta": 0.102,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "rear_arb_blade - -> expected roll_gradient_deg_per_g +, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_pushrod",
+      "cause_delta": 12.0,
+      "effect_metric": "dynamic_rear_rh_mm",
+      "effect_delta": 0.3154,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "rear_pushrod + -> expected dynamic_rear_rh_mm +, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": -40.0,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 2.0,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "rear_third_nmm - -> expected rear_bottoming_events +, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": -40.0,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": 0.008,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "rear_third_nmm - -> expected rear_shock_vel_p95_mps +, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "rear_third_nmm",
+      "cause_delta": -40.0,
+      "effect_metric": "rear_dominant_freq_hz",
+      "effect_delta": 0.1,
+      "direction_match": false,
+      "confidence": 0.3,
+      "mechanism": "rear_third_nmm - -> expected rear_dominant_freq_hz -, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_comp",
+      "cause_delta": 3,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": 0.011,
+      "direction_match": false,
+      "confidence": 0.3,
+      "mechanism": "damper_lf_hs_comp + -> expected front_shock_vel_p95_mps -, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lf_hs_rbd",
+      "cause_delta": -2,
+      "effect_metric": "front_shock_vel_p95_mps",
+      "effect_delta": 0.011,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "damper_lf_hs_rbd - -> expected front_shock_vel_p95_mps +, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 3,
+      "effect_metric": "rear_bottoming_events",
+      "effect_delta": 2.0,
+      "direction_match": false,
+      "confidence": 0.3,
+      "mechanism": "damper_lr_hs_comp + -> expected rear_bottoming_events -, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_comp",
+      "cause_delta": 3,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": 0.008,
+      "direction_match": false,
+      "confidence": 0.3,
+      "mechanism": "damper_lr_hs_comp + -> expected rear_shock_vel_p95_mps -, observed +",
+      "corroborated_by": 0
+    },
+    {
+      "cause_param": "damper_lr_hs_rbd",
+      "cause_delta": -3,
+      "effect_metric": "rear_shock_vel_p95_mps",
+      "effect_delta": 0.008,
+      "direction_match": true,
+      "confidence": 0.8,
+      "mechanism": "damper_lr_hs_rbd - -> expected rear_shock_vel_p95_mps +, observed +",
+      "corroborated_by": 0
+    }
+  ],
+  "num_setup_changes": 29,
+  "controlled_experiment": false,
+  "changed_steps": [
+    "other",
+    "step1_rake",
+    "step2_heave",
+    "step4_arb",
+    "step5_geometry",
+    "step6_dampers"
+  ],
+  "lap_time_delta_s": -0.06,
+  "driver_style_changed": false,
+  "key_finding": "Changed front_camber_deg: -0.5, rear_arb_blade: -2.0, damper_lf_hs_comp: 3 (0.060s faster); effects: understeer_low_speed_deg -0.12, body_slip_p95_deg +0.52 [low confidence]",
+  "confidence_level": "low"
+}
