@@ -1,0 +1,10 @@
+{
+  "best_weights": {
+    "platform": 0.0,
+    "driver": 0.0,
+    "telemetry": 0.0,
+    "envelope": 0.2
+  },
+  "best_spearman_r": -0.06278801843317973,
+  "n_observations": 63
+}
