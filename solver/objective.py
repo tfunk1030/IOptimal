@@ -937,7 +937,10 @@ class ObjectiveFunction:
         _hsm = self.car.heave_spring
         _gr = self.car.garage_ranges
         _k_front = params.get("front_heave_spring_nmm", 50.0)
-        _perch_front = params.get("front_heave_perch_mm", _hsm.perch_offset_front_baseline_mm)
+        # Use baseline perch for veto check — compute_perch_offsets uses a zero-referenced
+        # offset (0 at heave=50), but the slider formula is calibrated from the absolute
+        # perch position. Use the car's absolute baseline perch when evaluating legality.
+        _perch_front = _hsm.perch_offset_front_baseline_mm
         _spring_defl = max(0.0, _hsm.defl_static_intercept + _hsm.defl_static_heave_coeff * _k_front)
         _slider_static = (_hsm.slider_intercept
                           + _hsm.slider_heave_coeff * _k_front
