@@ -793,9 +793,9 @@ class ObjectiveFunction:
         # 12ms per 1% LLTD error at Sebring (high mechanical grip demand)
         # Raised from 8ms — Sebring's slow-speed sections are more balance-sensitive
         # than pure high-speed aero tracks where DF overwhelms traction balance.
-        LLTD_MS_PER_PCT = 12.0  # [ms / %LLTD_error]
+        LLTD_MS_PER_PCT = 2.5  # [ms / %LLTD_error] — tuned: old 8-12 amplified ARB blades via LLTD
         lltd_penalty = physics.lltd_error * 100.0 * LLTD_MS_PER_PCT
-        gain -= min(50.0, lltd_penalty)  # cap: balance is real but not catastrophic
+        gain -= min(25.0, lltd_penalty)  # cap tuned from 40-50 → 25
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 3: DAMPING RATIOS (secondary, 3-8ms per axis max)
@@ -878,7 +878,7 @@ class ObjectiveFunction:
 
         # Each 0.1% DF balance error: ~5ms at speed tracks
         # Raised from 30ms/pct to 50ms/pct — more aggressive aero sensitivity
-        gain -= physics.df_balance_error_pct * 50.0
+        gain -= physics.df_balance_error_pct * 20.0  # tuned from 45-50 → 20
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: CAMBER (contact patch optimization, tertiary)

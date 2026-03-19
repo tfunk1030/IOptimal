@@ -59,11 +59,24 @@
     "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_19-58-55",
     "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_18-05-21",
     "cadillac_silverstone_circuit_cadillacvseriesrgtp_silverstone_2019_gp_2026-03-17_23-38-07",
-    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-18_19-48-02",
-    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-18_20-15-08"
+    "bmw_sebring_international_raceway_bmw22",
+    "bmw_sebring_international_raceway_bmw20",
+    "bmw_sebring_international_raceway_bmw23",
+    "bmw_sebring_international_raceway_bmw2bad",
+    "bmw_sebring_international_raceway_bmwaiedit",
+    "bmw_sebring_international_raceway_bmwbad",
+    "bmw_sebring_international_raceway_bmwbad2",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-15_18-19-57",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-16_15-25-15",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-16_20-41-18",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-18_00-24-18",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-18_00-42-54",
+    "bmw_sebring_international_raceway_bmwnotbad",
+    "bmw_sebring_international_raceway_bmwtf",
+    "bmw_sebring_international_raceway_bmwtry"
   ],
-  "total_observations": 59,
-  "total_deltas": 68,
+  "total_observations": 72,
+  "total_deltas": 92,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -74,5 +87,5 @@
     "Sebring International Raceway_International",
     "Silverstone Circuit_Arena Grand Prix"
   ],
-  "last_updated": "2026-03-19T02:10:45.574318+00:00"
+  "last_updated": "2026-03-18T23:56:15.071275+00:00"
 }

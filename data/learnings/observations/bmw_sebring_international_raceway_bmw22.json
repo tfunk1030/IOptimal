@@ -4,7 +4,7 @@
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-18T23:00:57.949484+00:00",
+  "timestamp": "2026-03-18T23:56:15.052386+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -432,11 +432,11 @@
     "braking_pitch_deg": 1.16,
     "front_lock_p95": 0.0671,
     "rear_power_slip_p95": 0.089,
-    "body_slip_p95_deg": 2.882,
+    "body_slip_p95_deg": 2.912,
     "understeer_low_deg": 0.161,
     "understeer_high_deg": 0.345,
     "front_pressure_hot_kpa": 184.0,
-    "rear_pressure_hot_kpa": 180.25
+    "rear_pressure_hot_kpa": 180.1
   },
   "solver_comparison": {},
   "corner_performance": [
