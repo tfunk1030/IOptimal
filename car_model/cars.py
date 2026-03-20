@@ -865,6 +865,27 @@ class CarModel:
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
 
+    # Measured LLTD target from IBT data (optional per-car calibration).
+    # When set, this OVERRIDES the theoretical formula (W_front + λ*0.05).
+    # Set when IBT data shows the car consistently runs a different LLTD balance
+    # than the theoretical target predicts.
+    #
+    # BMW Sebring calibration (46 sessions, 2026):
+    #   Theoretical: 0.4727 + (0.22/0.20)*0.05 = 0.528
+    #   Measured IBT: 0.38-0.43 (rear-biased balance, rotation-optimised)
+    #   Override: 0.41 (midpoint of observed range)
+    #   Source: objective_validation.md Section 6
+    measured_lltd_target: float | None = None
+
+    # Shock velocity percentile used for vortex stall margin calculation.
+    # P99 is appropriate for bottoming (we must survive worst-case bumps).
+    # P95 is more appropriate for vortex burst (sustained floor dynamics,
+    # not extreme isolated hits). Using p99 causes false vetoes on real setups.
+    # Validation: BMW Sebring, 46 sessions — 43% false veto rate at p99.
+    #             Switching to p95 reduces false veto rate to ~5%.
+    # Source: objective_validation.md Section 2 + sprint analysis 2026-03-20
+    vortex_excursion_pctile: str = "p95"  # "p95" | "p99"
+
     def __post_init__(self) -> None:
         # Auto-populate garage_ranges discrete torsion OD options from corner spring model
         if not self.garage_ranges.front_torsion_od_discrete and self.corner_spring.front_torsion_od_options:
@@ -986,6 +1007,12 @@ BMW_M_HYBRID_V8 = CarModel(
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
     default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
     tyre_load_sensitivity=0.22,    # BMW Michelin GTP compound — moderate sensitivity
+    # IBT-calibrated LLTD target: 46 BMW Sebring sessions show 38-43% actual balance.
+    # Theoretical W_front + λ*0.05 = 0.4727 + 0.055 = 0.528 is ~10-14% too high.
+    # This override cuts false LLTD penalty by ~10x for real BMW setups.
+    # Source: validation/objective_validation.md Section 6, March 2026.
+    measured_lltd_target=0.41,    # Calibrated: midpoint of 38-43% IBT-observed range
+    vortex_excursion_pctile="p95", # p99 caused 43% false veto rate on real BMW setups
     aero_axes_swapped=True,
     min_front_rh_static=30.0,  # sim-enforced floor for all GTP
     max_front_rh_static=80.0,

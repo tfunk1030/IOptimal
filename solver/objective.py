@@ -505,10 +505,20 @@ class ObjectiveFunction:
         k_rear_total = k_roll_springs_rear + k_arb_rear
         lltd_actual = k_front_total / (k_front_total + k_rear_total) if (k_front_total + k_rear_total) > 0 else 0.5
 
-        # LLTD targets at each fuel level
+        # LLTD targets at each fuel level.
+        # Use car.measured_lltd_target when available (IBT-calibrated override).
+        # For fuel window analysis, we still model the shift with fuel load,
+        # but anchor to the measured target instead of the theoretical formula.
         tyre_sens = getattr(car, "tyre_load_sensitivity", 0.20)
-        target_start = front_pct_start + (tyre_sens / 0.20) * 0.05
-        target_end = front_pct_end + (tyre_sens / 0.20) * 0.05
+        _measured_lltd_target = getattr(car, "measured_lltd_target", None)
+        if _measured_lltd_target is not None:
+            # Anchor to measured target; apply fuel-load shift on top
+            _shift = front_pct_end - front_pct_start  # how much W_front changes
+            target_start = _measured_lltd_target
+            target_end = _measured_lltd_target + _shift
+        else:
+            target_start = front_pct_start + (tyre_sens / 0.20) * 0.05
+            target_end = front_pct_end + (tyre_sens / 0.20) * 0.05
 
         err_start = abs(lltd_actual - target_start)
         err_end = abs(lltd_actual - target_end)
@@ -560,6 +570,13 @@ class ObjectiveFunction:
 
         # ── Excursion & bottoming (real physics) ────────────────────────
         if isinstance(track, TrackProfile):
+            # ── Shock velocity percentile selection ──────────────────────
+            # P99 is used for bottoming risk (survive worst-case isolated bumps).
+            # P95 is used for vortex stall margin (sustained floor dynamics;
+            # p99 caused 43% false veto rate on real BMW Sebring setups because
+            # an isolated p99 spike does not cause sustained vortex burst).
+            # The percentile for vortex is configurable per car via
+            # car.vortex_excursion_pctile ("p95" default, "p99" for legacy behaviour).
             v_p99_front = (track.shock_vel_p99_front_clean_mps
                           if getattr(track, "shock_vel_p99_front_clean_mps", 0) > 0
                           else track.shock_vel_p99_front_mps)
@@ -567,11 +584,21 @@ class ObjectiveFunction:
                          if getattr(track, "shock_vel_p99_rear_clean_mps", 0) > 0
                          else track.shock_vel_p99_rear_mps)
 
+            # Vortex excursion uses car-specific percentile (p95 by default)
+            _vortex_pctile = getattr(car, "vortex_excursion_pctile", "p95")
+            if _vortex_pctile == "p95":
+                v_vortex_front = (track.shock_vel_p95_front_clean_mps
+                                  if getattr(track, "shock_vel_p95_front_clean_mps", 0) > 0
+                                  else track.shock_vel_p95_front_mps)
+            else:
+                v_vortex_front = v_p99_front  # legacy behaviour
+
             m_eff_front = car.heave_spring.front_m_eff_kg
             m_eff_rear = car.heave_spring.rear_m_eff_kg
             tyre_vr = getattr(car, "tyre_vertical_rate_nmm", None)
 
-            # Front excursion — guard against k=0 which returns 0 (wrong: should be ∞)
+            # Front excursion at p99 — for bottoming margin (worst-case bump)
+            # Guard against k=0 which returns 0 (wrong: should be ∞)
             # GTP heave spring ≥ 20 N/mm in practice. k=0 is physically degenerate.
             front_heave_clamped = max(5.0, front_heave_nmm)  # prevent div/zero physics
             result.front_excursion_mm = damped_excursion_mm(
@@ -584,7 +611,14 @@ class ObjectiveFunction:
             if front_heave_nmm < 20.0:
                 result.front_excursion_mm = max(result.front_excursion_mm, 30.0)
 
-            # Rear excursion
+            # Front excursion at vortex percentile (p95) — for stall margin
+            _front_vortex_excursion_mm = damped_excursion_mm(
+                v_vortex_front, m_eff_front, front_heave_clamped,
+                tyre_vertical_rate_nmm=tyre_vr,
+                parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
+            )
+
+            # Rear excursion at p99 — for bottoming margin
             rear_third_clamped = max(5.0, rear_third_nmm)
             result.rear_excursion_mm = damped_excursion_mm(
                 v_p99_rear, m_eff_rear, rear_third_clamped,
@@ -592,13 +626,21 @@ class ObjectiveFunction:
                 parallel_wheel_rate_nmm=rear_wheel_rate * 0.5,
             )
 
-            # Dynamic ride heights (use typical values — actual depends on rake solver)
-            dyn_front_rh = 19.0  # typical for GTP at speed
-            dyn_rear_rh = 42.0
+            # Dynamic ride heights (use car compression model when available)
+            # static_front_rh - aero_compression → mean floor height at speed.
+            # Fallback to 19.0mm if model not available.
+            _static_f = car.pushrod.front_pinned_rh_mm
+            _comp_f = car.aero_compression.front_compression_mm
+            dyn_front_rh = max(5.0, _static_f - _comp_f)
+            dyn_rear_rh = 42.0  # rear not used for vortex; fallback is fine
             result.front_bottoming_margin_mm = dyn_front_rh - result.front_excursion_mm
             result.rear_bottoming_margin_mm = dyn_rear_rh - result.rear_excursion_mm
 
-            # Stall margin: distance from wing-specific vortex burst threshold
+            # Stall margin: distance from wing-specific vortex burst threshold.
+            # Uses p95 excursion (car.vortex_excursion_pctile) NOT p99.
+            # Physics: vortex burst is a sustained floor proximity effect — sustained
+            # mean floor position matters more than a single extreme bump event.
+            # Using p99 over-penalises setups that survive isolated bumps fine.
             # Physics: at steeper wing angles the aero sensitivity to RH increases
             # → the safe minimum RH is higher than at shallow wing angles.
             # _compute_vortex_threshold_mm() reads the aero map gradient to determine
@@ -606,7 +648,7 @@ class ObjectiveFunction:
             wing_deg = float(params.get("wing_angle_deg",
                              car.wing_angles[0] if car.wing_angles else 17.0))
             vortex_thresh = self._compute_vortex_threshold_mm(wing_deg)
-            result.stall_margin_mm = (dyn_front_rh - result.front_excursion_mm
+            result.stall_margin_mm = (dyn_front_rh - _front_vortex_excursion_mm
                                       - vortex_thresh)
 
             # Platform variance (sigma = p99 / 2.33 for Gaussian)
@@ -656,9 +698,18 @@ class ObjectiveFunction:
         else:
             result.lltd = 0.5
 
-        # LLTD target
+        # LLTD target — use IBT-calibrated measured target when available.
+        # Theory: LLTD_target = W_front + (λ/λ_ref)*0.05  (OptimumG formula)
+        # In practice, some cars run intentionally rear-biased LLTD for rotation.
+        # car.measured_lltd_target overrides the theoretical formula when set.
+        # BMW calibration: theory=0.528, measured=0.38-0.43 → use 0.41.
+        # Source: validation/objective_validation.md Section 6.
         tyre_sens = getattr(car, "tyre_load_sensitivity", 0.20)
-        target_lltd = car.weight_dist_front + (tyre_sens / 0.20) * 0.05
+        _measured_lltd_target = getattr(car, "measured_lltd_target", None)
+        if _measured_lltd_target is not None:
+            target_lltd = _measured_lltd_target
+        else:
+            target_lltd = car.weight_dist_front + (tyre_sens / 0.20) * 0.05
         result.lltd_error = abs(result.lltd - target_lltd)
 
         # ── Damping ratios (real physics) ───────────────────────────────
@@ -1076,8 +1127,17 @@ class ObjectiveFunction:
         # Below 25mm: hard veto (cannot race, unsafe aero stall).
         # Source: Taylor Funk (professional GTP driver, 2026 calibration);
         #   all 46 BMW Sebring observations show front static RH 28-35mm.
-        dyn_front_rh = 19.0  # typical GTP dynamic RH at speed (Sebring)
-        dyn_rear_rh = 42.0
+        # Dynamic ride heights — use aero compression model when available.
+        # dyn_front_rh = static_front_rh - aero_compression_front
+        # For BMW Sebring: 30mm static - 15mm compression = 15mm dynamic mean.
+        # This is the mean floor height at speed; the car oscillates around it.
+        # Bottoming occurs when excursion (from p99 bump) exceeds dyn_front_rh.
+        # Vortex burst uses p95 excursion (see evaluate_physics notes).
+        _car = self.car
+        _static_f = _car.pushrod.front_pinned_rh_mm
+        _comp_f = _car.aero_compression.front_compression_mm
+        dyn_front_rh = max(5.0, _static_f - _comp_f)  # floor at 5mm (physical limit)
+        dyn_rear_rh = 42.0  # rear: not used for vortex; kept as reference
         FRONT_RH_FLOOR_MM = 30.0  # [mm] static — every competitive GTP setup
         FRONT_RH_FLOOR_PENALTY_MS_PER_MM = 25.0  # [ms/mm] below floor
 
