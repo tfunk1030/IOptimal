@@ -1479,6 +1479,12 @@ def main():
                             "When set, uses structured Sobol+grid search instead of "
                             "random family sampling. Implies --explore-legal-space."
                         ))
+    parser.add_argument("--top-n", type=int, default=1, dest="top_n",
+                        help=(
+                            "Number of top candidates to output as full setup sheets "
+                            "after --search-mode. Default=1 (only best). "
+                            "Use --top-n 5 to see top 5 full setups ranked by score."
+                        ))
     parser.add_argument("--objective-profile", type=str, default="balanced",
                         choices=["robust", "aggressive", "balanced"],
                         help="Objective function weighting profile (default: balanced)")

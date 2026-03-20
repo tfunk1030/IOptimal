@@ -207,10 +207,18 @@ def print_full_setup_report(
     a(_setting("Front pushrod", f"{step1.front_pushrod_offset_mm:+.1f} mm"))
     a(_setting("Rear pushrod", f"{step1.rear_pushrod_offset_mm:+.1f} mm"))
     if _is_ferrari:
-        # Ferrari uses indexed dropdowns, not physical values
-        a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} (index)"))
+        # Ferrari uses indexed dropdowns (not physical N/mm values).
+        # Heave spring: front 0-8, rear 0-9. Torsion OD: front 0-18, rear 0-18.
+        # The solver computes in N/mm space and reports raw values; clamp to valid range here.
+        # Conversion factors (estimated): front heave ~50 N/mm/index, rear ~50-100 N/mm/index.
+        # These will be updated once full index→N/mm calibration is complete.
+        _FERRARI_HEAVE_F_NMM_PER_IDX = 50.0   # ESTIMATE: index 1 ≈ 50 N/mm (from cars.py)
+        _FERRARI_HEAVE_R_NMM_PER_IDX = 75.0   # ESTIMATE
+        _f_heave_idx = max(0, min(8,  round(step2.front_heave_nmm / _FERRARI_HEAVE_F_NMM_PER_IDX)))
+        _r_heave_idx = max(0, min(9,  round(step2.rear_third_nmm  / _FERRARI_HEAVE_R_NMM_PER_IDX)))
+        a(_setting("Front heave spring", f"{_f_heave_idx} (index)  [~{step2.front_heave_nmm:.0f} N/mm est]"))
         a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
-        a(_setting("Rear heave spring", f"{step2.rear_third_nmm:.0f} (index)"))
+        a(_setting("Rear heave spring", f"{_r_heave_idx} (index)  [~{step2.rear_third_nmm:.0f} N/mm est]"))
         a(_setting("Rear heave perch", f"{step2.perch_offset_rear_mm:+.1f} mm"))
         a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.0f} (index)"))
         a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))

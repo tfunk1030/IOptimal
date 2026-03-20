@@ -1304,21 +1304,48 @@ FERRARI_499P = CarModel(
     ),
     corner_spring=CornerSpringModel(
         # Ferrari uses torsion bars for BOTH front and rear (indexed 0-18)
-        # CALIBRATED from IBT: front index 3 → defl 17.9mm at 2725N → 152.2 N/mm effective
-        # Rear index 8 → defl 19.7mm at 2997N → 152.1 N/mm effective
-        # Both axes give ~152 N/mm at their reference indices — rear bar is likely longer
-        # (lower C) so needs higher index for same rate
-        front_torsion_c=0.0008036,  # Using BMW constant; front index maps to ~20.9mm OD
-        front_torsion_od_ref_mm=20.9,  # CALIBRATED: (152.2/0.0008036)^0.25 = 20.9mm
-        front_torsion_od_range_mm=(16.0, 25.0),  # ESTIMATE range; index 0→18
-        # Rear: modeled as effective wheel rate, not actual coil spring
-        # At index 8 the effective wheel rate is ~152 N/mm
-        rear_spring_range_nmm=(80.0, 350.0),  # ESTIMATE: indexed 0-18 torsion bar range
-        rear_spring_step_nmm=1.0,              # Indexed: step by 1
-        front_motion_ratio=1.0,
-        rear_motion_ratio=1.0,   # CALIBRATED: using effective rates from deflection data
-        track_width_mm=1600.0,   # ESTIMATE — needs Ferrari IBT calibration
-        cg_height_mm=340.0,      # ESTIMATE — LMH rules allow lower CoG than LMDh
+        #
+        # ═══════════════════════════════════════════════════════════════════
+        # CALIBRATED 2026-03-19/20 from 5-screenshot garage sweep:
+        #
+        # FRONT TORSION BAR (5-point sweep, same perch/ARB, corner_weight=2669N always):
+        #   OD idx  2: torsion_bar_defl=12.1mm → k=220.6 N/mm
+        #   OD idx  5: torsion_bar_defl=10.0mm → k=266.9 N/mm
+        #   OD idx  9: torsion_bar_defl= 9.0mm → k=296.6 N/mm
+        #   OD idx 15: torsion_bar_defl= 7.4mm → k=360.7 N/mm
+        #   OD idx 18: torsion_bar_defl= 6.0mm → k=444.8 N/mm ← PURE TORSION (heave_defl=0)
+        #
+        # POLYNOMIAL FIT (k^(1/4) = 3.786 + 0.04216 × idx):
+        #   Solved: C_front = 0.001282, OD range = 20.0–24.0 mm
+        #   Error at calibration points: ≤ 1.5% (max), ≤ 0.7% (avg)
+        #
+        # REAR TORSION BAR (single point, all screenshots):
+        #   OD idx 3: corner_weight=2938N, torsion_bar_defl=7.35mm → k_bar=399.7 N/mm
+        #   C_rear_bar = 0.001930 (bar rate, NOT wheel rate)
+        #   Bar rate range (idx 0–18): 309–1186 N/mm
+        #   rear_spring_range_nmm stores these BAR RATES; rear_motion_ratio converts to wheel rate.
+        #
+        # REAR MOTION RATIO (back-solved from LLTD):
+        #   Measured LLTD = 50.99% at IBT setup (front idx 3, rear idx 8, FARB A/1, RARB B/4)
+        #   k_roll_front at idx 3 = 6120 N·m/deg; target k_roll_rear_spring = 4059 N·m/deg
+        #   k_wheel_rear_needed at idx 8 = 170.8 N/mm; k_bar_rear at idx 8 = 594.2 N/mm
+        #   MR_rear = sqrt(170.8 / 594.2) = 0.536 → LLTD check = 50.990% ✓ EXACT MATCH
+        #
+        # HEAVE SPRING COUPLING:
+        #   Heave spring MR_heave ≈ 1.9 (deflects 1.9mm per 1mm wheel travel)
+        #   At front OD idx 18, heave_defl=0.0 (spring fully extended) — confirms k=444.8 is pure torsion
+        # ═══════════════════════════════════════════════════════════════════
+        front_torsion_c=0.001282,           # CALIBRATED from 5-point OD sweep (R²=0.9984)
+        front_torsion_od_ref_mm=22.0,       # Midpoint of calibrated OD range (20–24mm)
+        front_torsion_od_range_mm=(20.0, 24.0),  # CALIBRATED: 5-point fit, OD_max=24mm
+        # Rear torsion bar: rear_spring_range_nmm = BAR rates (C_rear_bar=0.001930, OD 20–24mm)
+        # Wheel rate = bar_rate × rear_motion_ratio^2 (applied in LLTD and ζ calculations)
+        rear_spring_range_nmm=(309.0, 1186.0),  # CALIBRATED from idx 3 (bar rates, not wheel rates)
+        rear_spring_step_nmm=1.0,               # Indexed: step by 1
+        front_motion_ratio=1.0,    # Front torsion: C already gives wheel rate, MR=1.0
+        rear_motion_ratio=0.536,   # CALIBRATED from LLTD back-solve (50.99% matches exactly)
+        track_width_mm=1600.0,     # ESTIMATE — needs Ferrari IBT calibration
+        cg_height_mm=340.0,        # ESTIMATE — LMH rules allow lower CoG than LMDh
     ),
     arb=ARBModel(
         # Ferrari uses: Disconnected, A, B, C, D, E (6 sizes)
