@@ -1306,44 +1306,49 @@ FERRARI_499P = CarModel(
         # Ferrari uses torsion bars for BOTH front and rear (indexed 0-18)
         #
         # ═══════════════════════════════════════════════════════════════════
-        # CALIBRATED 2026-03-19/20 from 5-screenshot garage sweep:
+        # CALIBRATED 2026-03-19/20 from 9 garage screenshots (OD sweep):
         #
-        # FRONT TORSION BAR (5-point sweep, same perch/ARB, corner_weight=2669N always):
-        #   OD idx  2: torsion_bar_defl=12.1mm → k=220.6 N/mm
-        #   OD idx  5: torsion_bar_defl=10.0mm → k=266.9 N/mm
-        #   OD idx  9: torsion_bar_defl= 9.0mm → k=296.6 N/mm
-        #   OD idx 15: torsion_bar_defl= 7.4mm → k=360.7 N/mm
-        #   OD idx 18: torsion_bar_defl= 6.0mm → k=444.8 N/mm ← PURE TORSION (heave_defl=0)
+        # FRONT TORSION BAR (6-point sweep, corner_weight=2669N always):
+        #   OD idx  2: torsion_defl=12.1mm → k=220.6 N/mm
+        #   OD idx  5: torsion_defl=10.0mm → k=266.9 N/mm
+        #   OD idx  9: torsion_defl= 9.0mm → k=296.6 N/mm
+        #   OD idx 11: torsion_defl= 8.4mm → k=317.7 N/mm
+        #   OD idx 15: torsion_defl= 7.4mm → k=360.7 N/mm
+        #   OD idx 18: torsion_defl= 6.0mm → k=444.8 N/mm ← PURE TORSION (heave_defl=0)
+        #   Fit: k^(1/4) = 3.7829 + 0.04201×idx  (max err 5.2% at idx 15)
+        #   Implies: C = 0.001282, OD range = 20.0–24.0 mm
         #
-        # POLYNOMIAL FIT (k^(1/4) = 3.786 + 0.04216 × idx):
-        #   Solved: C_front = 0.001282, OD range = 20.0–24.0 mm
-        #   Error at calibration points: ≤ 1.5% (max), ≤ 0.7% (avg)
+        # REAR TORSION BAR (4-point sweep, corner_weight=2938N always):
+        #   OD idx  3: torsion_defl=7.35mm → k_bar=399.7 N/mm
+        #   OD idx  7: torsion_defl=6.6mm  → k_bar=445.2 N/mm
+        #   OD idx 12: torsion_defl=6.0mm  → k_bar=489.7 N/mm
+        #   OD idx 18: torsion_defl=4.9mm  → k_bar=599.6 N/mm
+        #   Fit: k^(1/4) = 4.3685 + 0.03108×idx  (max err 3.2% at idx 12)
+        #   Implies: C = 0.001282 (SAME as front!), OD range = 23.1–26.0 mm
+        #   Physical insight: front/rear share identical C constant (same material,
+        #   same bar geometry); rear runs thicker OD (23.1 vs 20.0mm at index 0)
+        #   → rear is stiffer not because of different geometry but bigger bars.
         #
-        # REAR TORSION BAR (single point, all screenshots):
-        #   OD idx 3: corner_weight=2938N, torsion_bar_defl=7.35mm → k_bar=399.7 N/mm
-        #   C_rear_bar = 0.001930 (bar rate, NOT wheel rate)
-        #   Bar rate range (idx 0–18): 309–1186 N/mm
-        #   rear_spring_range_nmm stores these BAR RATES; rear_motion_ratio converts to wheel rate.
+        # REAR MOTION RATIO (back-solved from IBT LLTD):
+        #   Measured LLTD = 50.99% at (front idx 3, rear idx 8, FARB A/1, RARB B/4)
+        #   k_bar_rear(8) from 4-pt fit = 454.5 N/mm (was 594.2 with single-point — 31% off)
+        #   MR_rear = sqrt(169.9 / 454.5) = 0.612 → LLTD check = 50.9900% ✓ EXACT MATCH
+        #   rear_spring_range_nmm stores BAR RATES; rear_motion_ratio converts to wheel rate.
         #
-        # REAR MOTION RATIO (back-solved from LLTD):
-        #   Measured LLTD = 50.99% at IBT setup (front idx 3, rear idx 8, FARB A/1, RARB B/4)
-        #   k_roll_front at idx 3 = 6120 N·m/deg; target k_roll_rear_spring = 4059 N·m/deg
-        #   k_wheel_rear_needed at idx 8 = 170.8 N/mm; k_bar_rear at idx 8 = 594.2 N/mm
-        #   MR_rear = sqrt(170.8 / 594.2) = 0.536 → LLTD check = 50.990% ✓ EXACT MATCH
-        #
-        # HEAVE SPRING COUPLING:
-        #   Heave spring MR_heave ≈ 1.9 (deflects 1.9mm per 1mm wheel travel)
-        #   At front OD idx 18, heave_defl=0.0 (spring fully extended) — confirms k=444.8 is pure torsion
+        # HEAVE SPRING NOTES:
+        #   Front MR_heave ≈ 1.9 (heave deflects 1.9mm per 1mm of wheel travel)
+        #   Front idx 18: heave_defl=0.0mm → confirmed pure-torsion anchor for calibration
+        #   Rear heave remains loaded across full OD range (large -112.5mm perch preload)
         # ═══════════════════════════════════════════════════════════════════
-        front_torsion_c=0.001282,           # CALIBRATED from 5-point OD sweep (R²=0.9984)
-        front_torsion_od_ref_mm=22.0,       # Midpoint of calibrated OD range (20–24mm)
-        front_torsion_od_range_mm=(20.0, 24.0),  # CALIBRATED: 5-point fit, OD_max=24mm
-        # Rear torsion bar: rear_spring_range_nmm = BAR rates (C_rear_bar=0.001930, OD 20–24mm)
-        # Wheel rate = bar_rate × rear_motion_ratio^2 (applied in LLTD and ζ calculations)
-        rear_spring_range_nmm=(309.0, 1186.0),  # CALIBRATED from idx 3 (bar rates, not wheel rates)
+        front_torsion_c=0.001282,           # CALIBRATED: 6-pt front + 4-pt rear share same C
+        front_torsion_od_ref_mm=22.0,       # Midpoint of calibrated front OD range
+        front_torsion_od_range_mm=(20.0, 24.0),  # CALIBRATED: 6-pt fit (max err 5.2%)
+        # Rear torsion bar: k_bar(idx) from 4-pt fit, same C=0.001282, OD range 23.1–26.0mm
+        # Wheel rate = k_bar × rear_motion_ratio^2 (applied in LLTD and ζ calculations)
+        rear_spring_range_nmm=(364.0, 590.0),   # CALIBRATED: bar rates idx 0→18 (4-pt fit)
         rear_spring_step_nmm=1.0,               # Indexed: step by 1
         front_motion_ratio=1.0,    # Front torsion: C already gives wheel rate, MR=1.0
-        rear_motion_ratio=0.536,   # CALIBRATED from LLTD back-solve (50.99% matches exactly)
+        rear_motion_ratio=0.612,   # CALIBRATED: LLTD back-solve → 50.990% ✓ (was 0.536, corrected by 4-pt rear fit)
         track_width_mm=1600.0,     # ESTIMATE — needs Ferrari IBT calibration
         cg_height_mm=340.0,        # ESTIMATE — LMH rules allow lower CoG than LMDh
     ),
