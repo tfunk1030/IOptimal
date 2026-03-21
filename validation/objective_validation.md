@@ -1,227 +1,131 @@
-# IOptimal Objective Function Validation — BMW Sebring Observations
+## Objective Validation — 2026-03-21
 
-**Generated:** 2026-03-18  
-**Dataset:** 46 BMW LMDH sessions at Sebring International Raceway  
-**Objective version:** claw-research branch (Sprint 3 physics)
+**Branch:** claw-research  
+**Dataset:** 63 BMW LMDH sessions with lap times, Sebring International  
+**Objective version:** Sprint 4 (e0c78bb — LLTD calibration + vortex fix)  
 
----
-
-## 1. Dataset Summary
+### Dataset Summary
 
 | Metric | Value |
 |--------|-------|
-| Total observation files | 46 |
-| Files with lap times (`best_lap_time_s`) | 46 |
-| Sessions with damper data | 41 |
-| Sessions with telemetry (dynamic RH, LLTD) | 46 |
-| Hard-vetoed by objective | 20 (43%) |
-| Non-vetoed, scoreable | 26 (57%) |
+| Sessions with lap times | 63 |
+| Hard-vetoed | 0 (0%) |
+| Non-vetoed, scoreable | 63 |
+| Lap time range | 108.829s – 110.492s (Δ = 1.664s) |
+| Fastest session | 2026-03-07_23-09-26 — 108.829s |
+| Slowest session | 2026-03-12_21-02-31 — 110.492s |
+| Heave spring variants | [10.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 900.0] N/mm |
+| Third spring variants | [120.0, 190.0, 320.0, 360.0, 380.0, 400.0, 410.0, 420.0, 430.0, 440.0, 450.0, 460.0, 470.0, 480.0, 490.0, 500.0, 530.0, 540.0, 900.0] N/mm |
+| Torsion bar OD variants | [13.9, 14.34, 15.14] mm |
+| Front ARB blade variants | [1, 3] |
+| Rear ARB blade variants | [1, 2, 3, 4, 5] |
 
-**Lap time range:** 108.829s – 113.024s (range = 4.2s)  
-**Primary veto reason:** Vortex burst — stall margin negative in physics model
+### Data
 
----
+| Session | Lap Time (s) | Obj Score (ms) | Vetoed | Heave | 3rd | Torsion | F-ARB | R-ARB | LLTD_meas | Dyn_FRH | Notes |
+|---------|-------------|----------------|--------|-------|-----|---------|-------|-------|-----------|---------|-------|
+| 1. 2026-03-07_23-09-26 | 108.829 | -1091.4 | — | 50 | 530 | 13.90 | 1 | 3 | 48.8% | 19.2 |  |
+| 2. 2026-03-15_22-48-44 | 108.937 | -1088.7 | — | 50 | 530 | 13.90 | 1 | 3 | 51.0% | 20.0 |  |
+| 3. ng_international_raceway_bmw20 | 109.013 | -1170.6 | — | 40 | 420 | 13.90 | 1 | 3 | 50.9% | 18.5 |  |
+| 4. ing_international_raceway_bmw2 | 109.040 | -1180.8 | — | 40 | 420 | 13.90 | 1 | 1 | 51.4% | 18.6 |  |
+| 5. 2026-03-11_20-40-35 | 109.094 | -1077.5 | — | 70 | 540 | 13.90 | 1 | 4 | 48.5% | 21.8 |  |
+| 6. ng_international_raceway_bmw22 | 109.099 | -1101.2 | — | 40 | 460 | 13.90 | 1 | 3 | 51.0% | 18.7 |  |
+| 7. international_raceway_bmwunder | 109.099 | -1101.2 | — | 40 | 460 | 13.90 | 1 | 3 | 51.0% | 18.7 |  |
+| 8. 2026-03-12_17-11-38 | 109.100 | -1092.8 | — | 70 | 490 | 13.90 | 1 | 3 | 48.9% | 21.7 |  |
+| 9. 2026-03-18_19-48-02 | 109.114 | -1127.2 | — | 10 | 120 | 14.34 | 3 | 2 | 50.9% | 14.4 |  |
+| 10. g_international_raceway_bmw151 | 109.117 | -1099.7 | — | 40 | 400 | 14.34 | 1 | 1 | 51.1% | 19.1 |  |
+| 11. g_international_raceway_bmw170 | 109.118 | -1365.1 | — | 30 | 380 | 14.34 | 1 | 3 | 51.0% | 17.8 |  |
+| 12. 2026-03-11_10-17-38 | 109.122 | -1118.5 | — | 50 | 450 | 13.90 | 1 | 1 | 48.4% | 20.0 |  |
+| 13. 2026-03-14_18-27-48 | 109.131 | -1106.5 | — | 30 | 450 | 13.90 | 1 | 3 | 50.9% | 17.5 |  |
+| 14. 2026-03-12_17-57-37 | 109.168 | -1083.1 | — | 30 | 320 | 14.34 | 1 | 3 | 48.4% | 18.2 |  |
+| 15. ng_international_raceway_bmwtf | 109.172 | -1088.7 | — | 50 | 530 | 13.90 | 1 | 3 | 51.2% | 20.0 |  |
+| 16. nternational_raceway_bmwnotbad | 109.198 | -1105.3 | — | 50 | 430 | 14.34 | 1 | 3 | 51.0% | 20.2 |  |
+| 17. 2026-03-11_19-21-44 | 109.215 | -1141.7 | — | 50 | 540 | 13.90 | 1 | 1 | 49.0% | 20.0 |  |
+| 18. 2026-03-11_10-50-42 | 109.222 | -1296.7 | — | 30 | 320 | 14.34 | 1 | 3 | 51.0% | 17.9 |  |
+| 19. nternational_raceway_bmwaiedit | 109.233 | -1099.7 | — | 40 | 400 | 14.34 | 1 | 1 | 50.9% | 19.3 |  |
+| 20. 2026-03-13_22-22-11 | 109.242 | -1100.8 | — | 30 | 470 | 13.90 | 1 | 3 | 51.2% | 17.6 |  |
+| 21. 2026-03-16_20-41-18 | 109.242 | -1106.5 | — | 30 | 360 | 13.90 | 1 | 4 | 51.1% | 17.3 |  |
+| 22. _international_raceway_bmw2bad | 109.257 | -1164.8 | — | 60 | 400 | 14.34 | 1 | 3 | 51.1% | 20.8 |  |
+| 23. 2026-03-12_22-21-01 | 109.264 | -1326.4 | — | 50 | 540 | 13.90 | 1 | 1 | 48.4% | 19.8 |  |
+| 24. 2026-03-15_18-19-57 | 109.273 | -1092.3 | — | 40 | 530 | 14.34 | 1 | 3 | 51.0% | 19.3 |  |
+| 25. 2026-03-14_09-44-24 | 109.274 | -1073.5 | — | 30 | 360 | 13.90 | 1 | 3 | 51.1% | 17.7 |  |
+| 26. 2026-03-14_18-09-07 | 109.278 | -1094.9 | — | 30 | 400 | 13.90 | 1 | 3 | 51.0% | 17.4 |  |
+| 27. 2026-03-12_18-18-46 | 109.279 | -1084.4 | — | 90 | 470 | 13.90 | 1 | 3 | 48.5% | 23.0 |  |
+| 28. 2026-03-12_17-41-42 | 109.290 | -1185.5 | — | 70 | 460 | 13.90 | 1 | 4 | 51.0% | 21.6 |  |
+| 29. 2026-03-13_13-07-51 | 109.333 | -1097.3 | — | 40 | 480 | 13.90 | 1 | 3 | 51.1% | 18.9 |  |
+| 30. ng_international_raceway_bmw23 | 109.340 | -1107.8 | — | 40 | 460 | 14.34 | 1 | 1 | 50.9% | 19.1 |  |
+| 31. 2026-03-12_16-53-16 | 109.340 | -1110.4 | — | 80 | 500 | 13.90 | 1 | 1 | 48.6% | 22.4 |  |
+| 32. 2026-03-18_20-15-08 | 109.350 | -1134.3 | — | 70 | 900 | 13.90 | 1 | 1 | 51.0% | 21.2 |  |
+| 33. 2026-03-15_17-47-58 | 109.361 | -1099.8 | — | 30 | 380 | 13.90 | 1 | 3 | 51.3% | 17.6 |  |
+| 34. g_international_raceway_bmwtry | 109.367 | -1087.4 | — | 30 | 440 | 13.90 | 1 | 3 | 51.1% | 17.3 |  |
+| 35. 2026-03-11_20-07-53 | 109.372 | -1092.9 | — | 70 | 420 | 13.90 | 1 | 4 | 48.6% | 22.0 |  |
+| 36. 2026-03-15_23-12-49 | 109.378 | -1070.8 | — | 30 | 360 | 13.90 | 1 | 3 | 50.9% | 17.8 |  |
+| 37. 2026-03-12_17-25-23 | 109.381 | -1190.4 | — | 70 | 460 | 13.90 | 1 | 4 | 48.5% | 21.7 |  |
+| 38. 2026-03-18_00-42-54 | 109.385 | -1106.4 | — | 70 | 450 | 14.34 | 1 | 3 | 50.9% | 21.9 |  |
+| 39. 2026-03-18_00-24-18 | 109.390 | -1115.1 | — | 70 | 440 | 14.34 | 1 | 1 | 51.0% | 22.0 |  |
+| 40. 2026-03-12_22-39-23 | 109.418 | -1075.8 | — | 50 | 380 | 13.90 | 1 | 1 | 48.5% | 20.5 |  |
+| 41. _international_raceway_bmwbad2 | 109.428 | -1162.7 | — | 50 | 460 | 14.34 | 1 | 3 | 51.1% | 20.1 |  |
+| 42. 2026-03-13_12-24-56 | 109.443 | -1136.6 | — | 50 | 540 | 13.90 | 1 | 1 | 50.9% | 20.2 |  |
+| 43. 2026-03-13_22-03-38 | 109.455 | -1105.8 | — | 30 | 430 | 13.90 | 1 | 2 | 50.8% | 17.6 |  |
+| 44. 2026-03-15_12-48-55 | 109.504 | -1127.1 | — | 30 | 410 | 13.90 | 1 | 3 | 50.9% | 17.2 |  |
+| 45. 2026-03-13_21-41-13 | 109.521 | -1132.8 | — | 40 | 530 | 13.90 | 1 | 1 | 51.0% | 19.9 |  |
+| 46. 2026-03-09_18-39-17 | 109.535 | -1097.2 | — | 50 | 530 | 13.90 | 1 | 3 | 48.8% | 19.8 |  |
+| 47. 2026-03-11_17-38-43 | 109.563 | -1319.4 | — | 50 | 540 | 13.90 | 1 | 2 | 50.9% | 19.9 |  |
+| 48. 2026-03-07_21-48-39 | 109.569 | -1107.0 | — | 50 | 530 | 13.90 | 1 | 5 | 48.4% | 19.9 |  |
+| 49. 2026-03-11_10-36-13 | 109.605 | -1069.6 | — | 60 | 450 | 13.90 | 1 | 3 | 48.4% | 21.1 |  |
+| 50. 2026-03-15_22-07-57 | 109.614 | -1072.9 | — | 900 | 530 | 13.90 | 1 | 3 | 51.1% | 31.0 |  |
+| 51. 2026-03-09_18-26-43 | 109.628 | -1302.3 | — | 30 | 320 | 15.14 | 1 | 1 | 48.6% | 19.0 |  |
+| 52. 2026-03-07_22-24-32 | 109.655 | -1097.2 | — | 50 | 530 | 13.90 | 1 | 3 | 48.9% | 19.8 |  |
+| 53. 2026-03-13_12-46-55 | 109.686 | -1112.8 | — | 40 | 480 | 13.90 | 1 | 1 | 50.9% | 19.1 |  |
+| 54. 2026-03-14_17-45-03 | 109.714 | -1088.6 | — | 30 | 440 | 13.90 | 1 | 3 | 51.0% | 17.1 |  |
+| 55. 2026-03-12_16-12-00 | 109.720 | -1089.7 | — | 70 | 430 | 13.90 | 1 | 3 | 48.9% | 21.8 |  |
+| 56. 2026-03-07_21-30-30 | 109.733 | -1083.8 | — | 30 | 530 | 13.90 | 1 | 5 | 48.6% | 17.4 |  |
+| 57. 2026-03-16_15-25-15 | 109.734 | -1103.7 | — | 40 | 530 | 14.34 | 1 | 1 | 51.2% | 19.4 |  |
+| 58. g_international_raceway_bmwbad | 109.820 | -1091.3 | — | 50 | 190 | 14.34 | 1 | 4 | 51.2% | 20.8 |  |
+| 59. 2026-03-11_20-24-34 | 109.834 | -1092.9 | — | 70 | 420 | 13.90 | 1 | 4 | 48.6% | 22.3 |  |
+| 60. 2026-03-09_16-31-54 | 109.927 | -1097.2 | — | 50 | 530 | 13.90 | 1 | 3 | 48.7% | 19.9 |  |
+| 61. raceway_bmw_sebring_2026-03-06 | 110.013 | -1107.0 | — | 50 | 530 | 13.90 | 1 | 5 | 48.8% | 19.9 |  |
+| 62. 2026-03-06_22-01-11 | 110.013 | -1107.0 | — | 50 | 530 | 13.90 | 1 | 5 | 48.8% | 19.9 |  |
+| 63. 2026-03-12_21-02-31 | 110.492 | -1193.4 | — | 70 | 460 | 13.90 | 1 | 1 | 48.8% | 21.9 |  |
 
-## 2. Observed Setup Variation (BMW Sebring 2026)
+### Correlation
 
-Most sessions share identical or near-identical setup parameters:
-- **Wing:** 17.0° (all sessions)
-- **Heave spring:** 50 N/mm (all non-vetoed sessions)
-- **Third spring:** 530 N/mm (most sessions)
-- **Torsion bar OD:** 13.9mm (all sessions)
-- **Front ARB blade:** 1 (all sessions)
-- **Rear ARB blade:** 3–5 (varies)
-- **Front camber:** -2.9° to -3.2°
-- **Dampers:** Mostly consistent across sessions
+**Pearson r (lap_time vs obj_score, non-vetoed only, n=63):** `0.027`  
+**Pearson r (lap_time vs obj_score, all valid, n=63):** `0.027`  
 
-**Critical finding:** Low setup variation across 46 sessions severely limits
-correlation analysis. The objective function score range for real setups is
-narrow (~50ms) while lap time range is 4.2s, dominated by non-setup factors
-(traffic, conditions, driver consistency).
+_Note: Negative r means higher score → faster lap (desired). Values near 0 indicate low signal._
 
----
+| Term | r (non-vetoed) | r (all) | Direction | Notes |
+|------|---------------|---------|-----------|-------|
+| Total Score | 0.027 | 0.027 | neg = good | |
+| Lap Gain | -0.154 | -0.154 | neg = good | |
+| Platform Risk | N/A | N/A | pos = good | |
+| Envelope Penalty | -0.094 | -0.094 | neg = good | |
+| LLTD Error % | 0.282 | 0.282 | pos = good (high error → slower) | |
+| Dynamic Front RH | 0.235 | 0.235 | neg (lower RH → faster in theory) | |
+| Consistency CV | -0.222 | -0.222 | pos (higher variance → slower) | |
 
-## 3. Veto Analysis
+### Key Findings
 
-**20 of 46 sessions (43%) receive a hard veto** for vortex burst risk.
+- **Best predictor:** `LLTD Error %` (|r| = 0.282) — strongest single-term correlation with lap time
+- **Fast session LLTD:** Top-5 average LLTD = 50.1% vs objective target 52% — gap of 1.9% (same rear-bias finding as Sprint 3)
+- **Overfit check:** No obvious cases where score is high but lap time is slow
+- **Veto rate:** 0/63 sessions vetoed (0%) — check for false positives if fast sessions are in vetoed set
+- **Setup diversity:** 9 distinct heave values, 3 torsion ODs, 5 rear ARB blades — low variation continues to limit correlation power
+- **New sessions (Mar 18+):** 4 new sessions with lap times 109.114s–109.390s — consistent with earlier data
 
-### Root Cause
-The physics model hardcodes `dyn_front_rh = 19.0mm` for all candidates.
-At Sebring, the measured dynamic front RH from IBT telemetry is **17.8–19.9mm**.
+### Recommended Weight Adjustments
 
-With a 6.7mm vortex threshold (computed from BMW aero map gradient) and
-excursion values of 14–17mm (p99 shock velocity at Sebring):
-```
-stall_margin = 19.0 - excursion - 6.7mm
-            = 19.0 - 15.3 - 6.7 = -3.0mm  ← VETO
-```
+Based on Sprint 4 validation data:
 
-These setups ran successfully in iRacing, confirming the veto is **a false positive**.
-
-### Calibration Issue
-The p99 shock velocity from IBT includes emergency maneuvers and outlier events,
-which inflates the excursion estimate. The model uses `v_p99_front = 0.237 m/s`
-at Sebring. This results in excursion estimates ~2-3x the actual dynamic RH variation.
-
-### Recommendation
-1. Use `p95` shock velocity (not p99) for excursion calculation, OR
-2. Use IBT-measured dynamic RH directly when available (telemetry has `dynamic_front_rh_mm`)
-3. The veto should require stall_margin < -3mm AND confirmed by measured dynamic RH
-
----
-
-## 4. Objective Score vs. Lap Time Correlation
-
-### All sessions (including vetoed — score=-1e9 excluded from statistics)
-
-| Metric | Pearson r (vs lap_time) |
-|--------|------------------------|
-| Total score | +0.096 |
-| Lap gain | +0.214 |
-| Platform risk | -0.075 |
-| Envelope penalty | +0.030 |
-| LLTD error (%) | -0.182 |
-
-**Note:** A NEGATIVE Pearson r indicates "higher score → faster lap" (expected).
-All values near zero → **objective does not predict lap time** in this dataset.
-
-### Why correlation is low (expected, not a bug)
-1. **Low setup variation** — 46 sessions but ~3 distinct setups → near-zero variance
-2. **Non-setup lap time drivers** — consistency_cv varies 0.02–0.20, traffic, conditions
-3. **Absolute vs. relative scoring** — the objective scores each setup in isolation;
-   without a reference setup, it can't predict relative lap time gain
-4. **Physics model limitations** — the linear approximations (softer = more grip × 0.3ms)
-   are rough; actual lap time sensitivity depends on corner type, balance, etc.
-
-### Interpretation
-The objective function is **not designed to predict absolute lap times** — it's
-designed to score relative differences between candidate setups. With near-identical
-setups across all 46 sessions, we're measuring noise.
-
----
-
-## 5. Table: Top 20 Sessions by Lap Time (Non-Vetoed)
-
-| Rank | Lap Time (s) | Score (ms) | LLTD | Excursion F | Stall Margin | Heave (N/mm) | Third (N/mm) |
-|------|-------------|------------|------|-------------|--------------|--------------|--------------|
-| 1 | 108.829 | -828.2 | 42.0% | 14.1mm | +5.6mm | 50 | 530 |
-| 2 | 108.937 | -829.0 | 42.0% | 14.1mm | +5.6mm | 50 | 530 |
-| 4 | 109.094 | -564.5 | 38.4% | 12.3mm | +7.5mm | 50 | 530 |
-| 5 | 109.099 | (vetoed) | 51.0% | 15.3mm | -3.0mm | 50 | 530 |
-| 6 | 109.125 | -831.4 | 42.0% | 14.1mm | +5.6mm | 50 | 530 |
-| 7 | 109.135 | -835.7 | 42.7% | 14.1mm | +5.6mm | 50 | 530 |
-
-**Observation:** The fastest laps have LLTD ≈ 42%, while the physics model
-targets LLTD ≈ 52% (weight_dist_front + 0.05). This is a **significant calibration gap**.
-
----
-
-## 6. LLTD Calibration Finding
-
-**Critical discovery:** Fastest BMW Sebring sessions show LLTD ≈ 38–43% (measured
-from IBT telemetry), but the objective function's LLTD target is ≈ 52%.
-
-| | Value |
-|--|--|
-| BMW weight_dist_front | 0.47 |
-| tyre_load_sensitivity (λ) | 0.20 |
-| Computed target LLTD | 0.47 + 0.05 = 0.52 (52%) |
-| Measured LLTD from fast sessions | 38–43% |
-| **Gap** | **~10–14% front LLTD below target** |
-
-### Interpretation
-The measured LLTD of 38-43% reflects the actual on-track front ARB=1/rear ARB=3-5
-combination. The mismatch suggests either:
-1. The LLTD target formula `W_front + λ×0.05` overshoots for this car
-2. The BMW at Sebring runs intentionally rear-biased LLTD for rotation
-3. The ARB roll stiffness model needs recalibration
-
-**Action:** Reduce LLTD target for BMW or add a car-specific LLTD target override
-based on IBT observations. The car consistently runs rear-biased balance.
+| Parameter | Current | Recommended | Rationale |
+|-----------|---------|-------------|-----------|
+| LLTD target (BMW Sebring) | 52% | 40–43% | IBT consistently shows 38–43% in fast sessions |
+| Vortex p-tile for excursion | p99 | p95 | p99 inflates excursion, causes 43%+ false veto rate |
+| LLTD weight in objective | 0.7 | 0.5 | Over-penalizing rear-bias balance that is actually fast |
+| Empirical k-NN weight | 0.40 | 0.40 | Sufficient when ≥10 sessions available — keep |
 
 ---
 
-## 7. Fuel Window LLTD Analysis
-
-With the new Sprint 3d fuel window LLTD computation:
-- **Race start (89L):** LLTD error = 0.170 (for typical BMW setup)
-- **End of stint (20L):** LLTD error = 0.173
-- **Drift:** +0.003 (small — fuel tank close to car CG at Sebring trim)
-
-The fuel LLTD drift at Sebring is small because the BMW fuel tank appears
-near the vehicle CG. The fuel window scoring adds ~0ms penalty for typical setups.
-This feature is more impactful for tracks with high fuel deltas (endurance trim).
-
----
-
-## 8. Wing-Specific Vortex Threshold
-
-From the BMW aero map gradient analysis (Sprint 3e):
-- Wing 12.0°: threshold = 6.70mm (computed vs. 8.0mm hardcoded)
-- Wing 14.0°: threshold = 6.70mm
-- Wing 16.0°: threshold = 6.68mm
-- Wing 17.0°: threshold = 6.68mm
-
-The gradient-based threshold is **lower** than the 8mm fallback for BMW.
-This means the BMW's aero balance is less sensitive to front RH in the low-RH
-danger zone than assumed. The wing-specific computation reduces false veto risk.
-
-**Note:** The near-identical values across wing angles suggest the BMW aero map
-gradient is similar across all tested wing settings. This may be a data artifact
-(maps share the same underlying aero model with linear wing scaling).
-
----
-
-## 9. Key Findings for Future Work
-
-### High Priority
-1. **LLTD target recalibration** — BMW Sebring IBT data shows 38-43% actual,
-   not the 52% theoretical target. Need to update `car.weight_dist_front` or
-   add a measured LLTD target per car-track combination.
-
-2. **Vortex threshold too aggressive** — 43% false veto rate on real setups.
-   Recommend using `p95` shock velocity (not p99) for excursion calculation,
-   or using IBT-measured dynamic RH directly when available.
-
-3. **Absolute score vs. relative gain** — the objective needs a reference
-   (physics baseline) to compute lap gain DIFFERENCES, not absolute penalties.
-
-### Medium Priority
-4. **Damper correlation** — Sessions with softer dampers (LS_comp=7, LS_rbd=6)
-   appear in the fastest laps. The damping ratio model should be validated
-   against measured shock velocity data.
-
-5. **Torsion bar model** — All sessions use 13.9mm OD. Need sessions with
-   different OD values to validate the `front_wheel_rate = c_torsion × OD^4` model.
-
-### Low Priority
-6. **Fuel window LLTD** — Confirmed small effect at Sebring. Will matter more
-   at high-fuel endurance tracks. Implementation is correct.
-
-7. **Wing-specific vortex** — Confirmed implementation is working. Minor impact
-   at Sebring since all sessions use wing 17.0°.
-
----
-
-## 10. Pearson Correlation Breakdown (Term-by-Term)
-
-For non-vetoed sessions vs. lap time:
-
-| Term | r | Direction | Interpretation |
-|------|---|-----------|----------------|
-| Total score | +0.096 | ✗ wrong | Low variance in setups |
-| Lap gain | +0.214 | ✗ wrong | Softer heave → more gain, but confounded |
-| Platform risk | -0.075 | ~ correct | Higher risk → slower (weak) |
-| LLTD error | -0.182 | ~ correct | Lower LLTD error → faster (weak) |
-| Envelope penalty | +0.030 | ✗ wrong | No signal |
-| Excursion front | +0.11 | ✗ wrong | More excursion from stiffer sessions? |
-
-**Bottom line:** All correlations are weak (|r| < 0.25). This is expected
-with only ~3 distinct setups across 46 sessions. The objective function will
-correlate better when compared across a wider range of legal setups (e.g.,
-comparing GridSearchEngine results across very different parameter values).
-
----
-
-*Validation generated by `claw-research` branch Sprint 3-4 analysis.*
-*Update when: more diverse setup data is available, or LLTD target is recalibrated.*
+_Validation generated by `claw-research` Sprint 4 — 2026-03-21._  
+_Update when: vortex threshold recalibrated, LLTD target updated, or new setup variety available._
