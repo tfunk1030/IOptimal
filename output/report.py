@@ -112,6 +112,13 @@ def print_full_setup_report(
     garage_outputs: Any = None,
     compact: bool = False,
     front_tb_turns_override: float | None = None,
+    rear_tb_turns_override: float | None = None,
+    front_camber_override: float | None = None,
+    rear_camber_override: float | None = None,
+    hybrid_enabled: bool | None = None,
+    hybrid_corner_pct: float | None = None,
+    front_diff_preload_nm: float | None = None,
+    bias_migration_gain: float | None = None,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
@@ -185,6 +192,11 @@ def print_full_setup_report(
         _tb_turns = round(
             0.1089 - 0.1642 / max(step2.front_heave_nmm, 1) + 0.000368 * step2.perch_offset_front_mm, 3
         )
+    # Rear torsion bar turns (Ferrari only — passed through from IBT)
+    if rear_tb_turns_override is not None:
+        _rear_tb_turns = round(rear_tb_turns_override, 3)
+    else:
+        _rear_tb_turns = None
     df_ok = abs(step1.df_balance_pct - target_balance) < 0.2
     stall_ok = step1.vortex_burst_margin_mm > 0
     garage_ok = getattr(step2, "garage_constraints_ok", True)
@@ -223,6 +235,8 @@ def print_full_setup_report(
         a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.0f} (index)"))
         a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
         a(_setting("Rear torsion bar OD", f"{step3.rear_spring_rate_nmm:.0f} (index)"))
+        if _rear_tb_turns is not None:
+            a(_setting("Rear torsion bar turns", f"{_rear_tb_turns:.3f} turns"))
     else:
         a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} N/mm"))
         a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
@@ -247,15 +261,23 @@ def print_full_setup_report(
     a(_setting("Rear ARB size / blade", f"{step4.rear_arb_size} / {step4.rear_arb_blade_start}"))
     a(_setting("Rear ARB live slow", f"blade {step4.rarb_blade_slow_corner}"))
     a(_setting("Rear ARB live fast", f"blade {step4.rarb_blade_fast_corner}"))
-    a(_setting("Front camber", f"{step5.front_camber_deg:+.1f} deg"))
-    a(_setting("Rear camber", f"{step5.rear_camber_deg:+.1f} deg"))
+    _eff_front_camber = front_camber_override if front_camber_override is not None else step5.front_camber_deg
+    _eff_rear_camber = rear_camber_override if rear_camber_override is not None else step5.rear_camber_deg
+    a(_setting("Front camber", f"{_eff_front_camber:+.1f} deg"))
+    a(_setting("Rear camber", f"{_eff_rear_camber:+.1f} deg"))
     a(_setting("Front toe", f"{step5.front_toe_mm:+.1f} mm"))
     a(_setting("Rear toe", f"{step5.rear_toe_mm:+.1f} mm"))
     a(_blank())
     a(_full("  BRAKES / DIFF / TC / TYRES"))
+    if _is_ferrari and hybrid_enabled is not None:
+        _hybrid_status = "enabled" if hybrid_enabled else "DISABLED ← recommended"
+        _hybrid_pct_str = f"  corner pct: {hybrid_corner_pct:.0f}%" if hybrid_corner_pct is not None else ""
+        a(_setting("Hybrid rear drive", f"{_hybrid_status}{_hybrid_pct_str}"))
     a(_setting("Brake bias", brake_bias_str))
     a(_setting("Brake bias status", brake_bias_status))
     a(_setting("Brake target / migration", f"{brake_target_str} / {brake_migration_str}", f"[{brake_target_status}/{brake_migration_status}]"))
+    if _is_ferrari and bias_migration_gain is not None:
+        a(_setting("Bias migration gain", f"{bias_migration_gain} (pass-through)"))
     a(_setting("Master cyl F / R", master_cyl_str, f"[{master_cyl_status}]"))
     a(_setting("Pad compound", pad_compound_str, f"[{pad_compound_status}]"))
     if brake_hardware_status:
@@ -264,6 +286,9 @@ def print_full_setup_report(
     if _is_ferrari:
         # Ferrari: single coast/drive ramp label
         a(_setting("Diff coast/drive ramp", diff_coast_str))
+        # Ferrari front diff preload (pass-through)
+        if front_diff_preload_nm is not None:
+            a(_setting("Front diff preload", f"{front_diff_preload_nm:.0f} Nm (pass-through)"))
     else:
         a(_setting("Diff coast ramp", diff_coast_str))
         a(_setting("Diff drive ramp", diff_drive_str))
@@ -374,10 +399,10 @@ def print_full_setup_report(
     a(_blank())
     a(_row("  ANTI-ROLL BARS", "  WHEEL GEOMETRY"))
     a(_row(f"  FARB: {step4.front_arb_size:<6s} Blade {step4.front_arb_blade_start}  (locked)",
-           f"  Front camber: {step5.front_camber_deg:+.1f}°"))
+           f"  Front camber: {_eff_front_camber:+.1f}°"))
     live = f"[{step4.rarb_blade_slow_corner}→{step4.rarb_blade_fast_corner}]"
     a(_row(f"  RARB: {step4.rear_arb_size:<6s} Blade {step4.rear_arb_blade_start}  {live}",
-           f"  Rear camber:  {step5.rear_camber_deg:+.1f}°"))
+           f"  Rear camber:  {_eff_rear_camber:+.1f}°"))
     a(_row("",
            f"  Front toe:  {step5.front_toe_mm:+.1f} mm"))
     a(_row("",
@@ -438,7 +463,7 @@ def print_full_setup_report(
     a(_row(f"  HS Rbd:  {step6.lf.hs_rbd:3d}  {step6.rf.hs_rbd:3d}  {step6.lr.hs_rbd:3d}  {step6.rr.hs_rbd:3d}",
            f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
     a(_row(f"  HS Slope:{step6.lf.hs_slope:3d}  {step6.rf.hs_slope:3d}  {step6.lr.hs_slope:3d}  {step6.rr.hs_slope:3d}",
-           f"  Camber: F{step5.front_camber_deg:+.1f}°  R{step5.rear_camber_deg:+.1f}°  [{step5.camber_confidence}]"))
+           f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{step5.camber_confidence}]"))
     a(_blank())
     a(_box_bot())
     a("")

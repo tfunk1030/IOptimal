@@ -132,6 +132,58 @@ BUDGET_TIERS: dict[str, dict] = {
 }
 
 
+# ─── Family seed biases ──────────────────────────────────────────────────────
+# Controls how Sobol samples are biased in Layer 1.
+# Each family maps layer-1 dimension names to (center, window) tuples where:
+#   center : fraction [0,1] of the legal range to center sampling around
+#   window : fraction [0,1] of the legal range to sample within (1.0 = full range)
+#
+# Sobol unit samples u ∈ [0,1] are remapped as:
+#   u_biased = clamp(center + (u - 0.5) * window, 0, 1)
+#
+# Semantic intent:
+#   robust     — low-medium wing, soft springs, wider mechanical margins
+#                (aero-safe, less vortex risk, smoother handling envelope)
+#   aggressive — high wing, stiff springs, big pushrod offsets
+#                (maximum DF extraction, tight mechanical tolerances)
+#   balanced   — uniform coverage (same as no family; midpoint-centred)
+FAMILY_BIASES: dict[str, dict[str, tuple[float, float]]] = {
+    "robust": {
+        # Wing: prefer lower (12-14 deg out of 12-17) → center at 30% of range
+        "wing_angle_deg":          (0.30, 0.60),
+        # Pushrods: modest offset, stay away from extremes
+        "front_pushrod_offset_mm": (0.50, 0.60),
+        "rear_pushrod_offset_mm":  (0.50, 0.60),
+        # Springs: soft-to-medium (reduces bottoming risk, wider aero window)
+        "front_heave_spring_nmm":  (0.30, 0.60),
+        "rear_third_spring_nmm":   (0.30, 0.60),
+        "rear_spring_rate_nmm":    (0.30, 0.60),
+    },
+    "aggressive": {
+        # Wing: high angle (15-17 deg) → center at 75%
+        "wing_angle_deg":          (0.75, 0.55),
+        # Pushrods: large offsets both ends (rake extremes)
+        "front_pushrod_offset_mm": (0.50, 1.00),
+        "rear_pushrod_offset_mm":  (0.50, 1.00),
+        # Springs: stiff platform (stiffer = less droop = faster aero response)
+        "front_heave_spring_nmm":  (0.70, 0.60),
+        "rear_third_spring_nmm":   (0.70, 0.60),
+        "rear_spring_rate_nmm":    (0.70, 0.55),
+    },
+    "balanced": {
+        # Uniform full-range coverage — equivalent to no family bias
+        "wing_angle_deg":          (0.50, 1.00),
+        "front_pushrod_offset_mm": (0.50, 1.00),
+        "rear_pushrod_offset_mm":  (0.50, 1.00),
+        "front_heave_spring_nmm":  (0.50, 1.00),
+        "rear_third_spring_nmm":   (0.50, 1.00),
+        "rear_spring_rate_nmm":    (0.50, 1.00),
+    },
+}
+
+VALID_FAMILIES: frozenset[str] = frozenset(FAMILY_BIASES)
+
+
 @dataclass
 class LayerStats:
     """Statistics for a single search layer."""
@@ -297,6 +349,7 @@ class GridSearchEngine:
         self,
         n_sobol: int = 10_000,
         keep: int = 500,
+        family: str | None = None,
     ) -> tuple[list[CandidateEvaluation], LayerStats]:
         """Layer 1: Sobol sample platform skeleton params, physics-filter to top N.
 
@@ -313,17 +366,41 @@ class GridSearchEngine:
         Args:
             n_sobol: Number of Sobol samples to generate
             keep:    How many to keep for Layer 2
+            family:  Optional family bias ('robust', 'aggressive', 'balanced').
+                     Shifts Sobol sampling toward the family's typical parameter region.
 
         Returns:
             (top_evals, stats)
         """
         stat = LayerStats(name="Layer 1 (platform skeleton)")
         t0 = time.time()
-        self._log(f"Layer 1: generating {n_sobol:,} Sobol samples over platform dims...")
+        family_tag = f" [family={family}]" if family else ""
+        self._log(f"Layer 1: generating {n_sobol:,} Sobol samples{family_tag}...")
 
         # Sobol sample over layer 1 keys that exist in this space
         l1_keys = [k for k in LAYER1_KEYS if k in self.space._dim_map]
         samples = self.space.sobol_sample(l1_keys, n=n_sobol)
+
+        # Apply family bias: remap unit samples toward family's preferred region.
+        # Each dimension's Sobol u ∈ [0,1] is shifted to:
+        #   u_biased = clamp(center + (u - 0.5) * window, 0.0, 1.0)
+        # then re-mapped back to the physical range for snapping.
+        if family and family in FAMILY_BIASES:
+            biases = FAMILY_BIASES[family]
+            for sample in samples:
+                for key, raw_val in list(sample.items()):
+                    if key not in biases or key not in self.space._dim_map:
+                        continue
+                    center, window = biases[key]
+                    dim = self.space._dim_map[key]
+                    # Recover Sobol unit value from raw_val
+                    drange = dim.hi - dim.lo
+                    if drange <= 0:
+                        continue
+                    u = (raw_val - dim.lo) / drange
+                    # Remap
+                    u_biased = max(0.0, min(1.0, center + (u - 0.5) * window))
+                    sample[key] = dim.snap(dim.lo + u_biased * drange)
 
         # Fill in mid-range defaults for non-sampled dims, add perch offsets
         param_list = [self._fill_defaults(s) for s in samples]
@@ -625,18 +702,27 @@ class GridSearchEngine:
         self,
         budget: str = "standard",
         progress: bool = True,
+        family: str | None = None,
     ) -> GridSearchResult:
         """Execute the full 4-layer hierarchical search.
 
         Args:
             budget:   One of 'quick', 'standard', 'exhaustive'
             progress: Whether to print progress messages
+            family:   Optional setup family to bias search toward.
+                      One of 'robust', 'aggressive', 'balanced'.
+                      Each seeds Layer 1 with different Sobol center points:
+                        robust     — low wing, soft springs, conservative margins
+                        aggressive — high wing, stiff springs, tight tolerances
+                        balanced   — full-range uniform coverage (default)
 
         Returns:
             GridSearchResult with all layers populated
         """
         if budget not in BUDGET_TIERS:
             raise ValueError(f"budget must be one of {list(BUDGET_TIERS.keys())}, got {budget!r}")
+        if family is not None and family not in VALID_FAMILIES:
+            raise ValueError(f"family must be one of {sorted(VALID_FAMILIES)} or None, got {family!r}")
 
         cfg = BUDGET_TIERS[budget]
         if progress:
@@ -647,9 +733,10 @@ class GridSearchEngine:
         total_evals = 0
 
         l2_from_l1 = cfg.get("l2_from_l1", cfg["l1_keep"])
+        family_tag = f" | family={family}" if family else ""
 
         self._log(f"\n{'='*63}")
-        self._log(f"  GRID SEARCH — budget={budget.upper()}")
+        self._log(f"  GRID SEARCH — budget={budget.upper()}{family_tag}")
         self._log(f"  L1={cfg['l1_n_sobol']:,} Sobol | keep={cfg['l1_keep']} "
                   f"| L2 from={l2_from_l1} skel "
                   f"| L3 top={cfg['l3_top_n']} | L4 top={cfg['l4_top_n']}")
@@ -659,6 +746,7 @@ class GridSearchEngine:
         l1_top, l1_stat = self.layer1_platform_skeletons(
             n_sobol=cfg["l1_n_sobol"],
             keep=cfg["l1_keep"],
+            family=family,
         )
         all_stats.append(l1_stat)
         total_evals += l1_stat.evaluated

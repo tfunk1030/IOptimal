@@ -226,6 +226,18 @@ def generate_report(
         if current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
         else None
     )
+    _ferrari_rear_tb = (
+        current_setup.rear_torsion_bar_turns
+        if current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
+        else None
+    )
+    _is_ferrari_pipeline = current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
+    _front_camber_override = -2.9 if _is_ferrari_pipeline else None
+    _rear_camber_override = -1.9 if _is_ferrari_pipeline else None
+    _hybrid_enabled = getattr(current_setup, "hybrid_rear_drive_enabled", None) if _is_ferrari_pipeline else None
+    _hybrid_corner_pct = getattr(current_setup, "hybrid_rear_drive_corner_pct", None) if _is_ferrari_pipeline else None
+    _front_diff_preload_nm = getattr(current_setup, "front_diff_preload_nm", None) if _is_ferrari_pipeline else None
+    _bias_migration_gain = getattr(current_setup, "brake_bias_migration_gain", None) if _is_ferrari_pipeline else None
     prediction_lines, predicted_telemetry, prediction_confidence = _build_prediction_lines(
         current_setup=current_setup,
         measured=measured,
@@ -261,6 +273,13 @@ def generate_report(
             garage_outputs=garage_outputs,
             compact=True,
             front_tb_turns_override=_ferrari_tb,
+            rear_tb_turns_override=_ferrari_rear_tb,
+            front_camber_override=_front_camber_override,
+            rear_camber_override=_rear_camber_override,
+            hybrid_enabled=_hybrid_enabled,
+            hybrid_corner_pct=_hybrid_corner_pct,
+            front_diff_preload_nm=_front_diff_preload_nm,
+            bias_migration_gain=_bias_migration_gain,
         )
         if selected_candidate_family is not None:
             report += "\n" + _hdr("CANDIDATE SELECTION") + "\n"
@@ -388,6 +407,13 @@ def generate_report(
         fuel_l=getattr(current_setup, "fuel_l", 0.0),
         garage_outputs=garage_outputs,
         front_tb_turns_override=_ferrari_tb,
+        rear_tb_turns_override=_ferrari_rear_tb,
+        front_camber_override=_front_camber_override,
+        rear_camber_override=_rear_camber_override,
+        hybrid_enabled=_hybrid_enabled,
+        hybrid_corner_pct=_hybrid_corner_pct,
+        front_diff_preload_nm=_front_diff_preload_nm,
+        bias_migration_gain=_bias_migration_gain,
     ))
 
     # ── CURRENT vs RECOMMENDED ────────────────────────────────────────

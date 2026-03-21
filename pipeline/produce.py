@@ -1046,7 +1046,8 @@ def produce(
                     track=track if hasattr(track, "name") else None,
                     progress_cb=log,
                 )
-                gs_result = engine.run(budget=search_mode, progress=True)
+                search_family = getattr(args, "search_family", None)
+                gs_result = engine.run(budget=search_mode, progress=True, family=search_family)
                 log()
                 log(gs_result.summary())
             else:
@@ -1107,6 +1108,12 @@ def produce(
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
             _extra_kw["tc_gain"] = supporting.tc_gain
             _extra_kw["tc_slip"] = supporting.tc_slip
+            _extra_kw["front_camber_override"] = -2.9  # empirical from 7 IBT sessions
+            _extra_kw["rear_camber_override"] = -1.9   # empirical from 7 IBT sessions
+            _extra_kw["hybrid_enabled"] = current_setup.hybrid_rear_drive_enabled
+            _extra_kw["hybrid_corner_pct"] = current_setup.hybrid_rear_drive_corner_pct
+            _extra_kw["front_diff_preload_nm"] = current_setup.front_diff_preload_nm
+            _extra_kw["bias_migration_gain"] = current_setup.brake_bias_migration_gain
         else:
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
@@ -1484,6 +1491,16 @@ def main():
                             "Number of top candidates to output as full setup sheets "
                             "after --search-mode. Default=1 (only best). "
                             "Use --top-n 5 to see top 5 full setups ranked by score."
+                        ))
+    parser.add_argument("--family", type=str, default=None,
+                        choices=["robust", "aggressive", "balanced"],
+                        dest="search_family",
+                        help=(
+                            "Setup family to bias the Layer 1 Sobol search toward. "
+                            "robust=low wing + soft springs (mechanical safety margin), "
+                            "aggressive=high wing + stiff springs (max DF extraction), "
+                            "balanced=full-range uniform coverage (default). "
+                            "Only applies with --search-mode."
                         ))
     parser.add_argument("--objective-profile", type=str, default="balanced",
                         choices=["robust", "aggressive", "balanced"],

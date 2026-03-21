@@ -607,20 +607,43 @@ class WheelGeometryModel:
 
 @dataclass
 class DamperModel:
-    """Damper model parameterized in garage clicks."""
+    """Damper model parameterized in garage clicks.
+
+    iRacing BMW M Hybrid V8 damper physics (from official user manual V2, 2025):
+    ────────────────────────────────────────────────────────────────────────
+    • Click system: 0 = fully closed (max damping), higher clicks = softer.
+      iRacing DOES NOT publish N/click or force-velocity curves.
+    • LS Comp: Controls load transfer rate under driver inputs (steering,
+      braking, throttle). Higher = faster weight transfer → more understeer.
+    • HS Comp: Controls bump absorption for curb strikes and track bumps.
+      Higher = stiffer platform but worse bump absorption.
+    • HS Slope: Shape of high-speed compression curve.
+      Lower slope = more digressive (flatter at high velocities, better bump absorption).
+      Higher slope = more linear (aggressive, higher HS force at high velocities).
+      "Higher slope values producing a higher overall force for high-speed compression."
+      → Slope controls the degree of digression in the force-velocity curve.
+    • LS Rebound: Controls shock extension rate. Higher = resists extension more.
+      Front: higher → more on-throttle understeer but less splitter lift.
+      Rear: higher → more off-throttle understeer but less rear-end lift.
+    • HS Rebound: Extension over bumps/curbs. Less handling effect than LS.
+
+    Force-per-click values below are ESTIMATED from reverse-engineering,
+    NOT from official data. iRacing does not publish force curves.
+    """
     ls_comp_range: tuple[int, int] = (0, 11)   # BMW/Dallara default; Ferrari overrides
     ls_rbd_range: tuple[int, int] = (0, 11)
     hs_comp_range: tuple[int, int] = (0, 11)
     hs_rbd_range: tuple[int, int] = (0, 11)
     hs_slope_range: tuple[int, int] = (0, 11)
-    # Force-per-click calibrated by reverse-engineering from physics:
+    # Force-per-click ESTIMATED by reverse-engineering from physics:
     # c_damping * v_ref / clicks = fpc
     # Front LS: 5060 * 0.025 / 7 = 18.1 N/click
     # Rear LS: 4358 * 0.025 / 6 = 18.2 N/click ← remarkably consistent!
     # Front HS: 2586 * 0.15 / 5 = 77.6 N/click
     # Rear HS: 2034 * 0.15 / 3 = 101.7 N/click
-    ls_force_per_click_n: float = 18.0     # N per click at 25 mm/s
-    hs_force_per_click_n: float = 80.0     # N per click at 150 mm/s
+    # WARNING: These are estimates. iRacing does not publish force curves.
+    ls_force_per_click_n: float = 18.0     # N per click at 25 mm/s (estimated)
+    hs_force_per_click_n: float = 80.0     # N per click at 150 mm/s (estimated)
     # Calibrated from BMW Sebring Setup 2 ("locked platform")
     front_ls_comp_baseline: int = 7
     front_ls_rbd_baseline: int = 6
@@ -1411,6 +1434,10 @@ FERRARI_499P = CarModel(
     heave_spring=HeaveSpringModel(
         front_m_eff_kg=176.0,   # ESTIMATE — needs telemetry calibration
         rear_m_eff_kg=2870.0,   # ESTIMATE
+        # CALIBRATED from 5 IBT sessions (Mar19-Mar20): rear heave perch is
+        # always negative (-101 to -112.5mm). Default of +43mm (BMW) is wrong.
+        # Using -103.5mm from the fastest recent session (Mar20-C, heave idx 7).
+        perch_offset_rear_baseline_mm=-103.5,
     ),
     corner_spring=CornerSpringModel(
         # Ferrari uses torsion bars for BOTH front and rear (indexed 0-18)
@@ -1483,9 +1510,9 @@ FERRARI_499P = CarModel(
         rear_camber_range_deg=(-1.9, 0.0),     # hard garage limit (iRacing GTP legal max)
         front_toe_range_mm=(-3.0, 3.0),
         rear_toe_range_mm=(-2.0, 3.0),
-        # From verified S1: front camber -2.9°, rear -1.8°
+        # From verified S1: front camber -2.9°, rear -1.9° CALIBRATED from IBT sessions Mar20A/B/C
         front_camber_baseline_deg=-2.9,
-        rear_camber_baseline_deg=-1.8,
+        rear_camber_baseline_deg=-1.9,  # CALIBRATED from IBT sessions Mar20A/B/C
         front_toe_baseline_mm=-2.0,   # Ferrari S1: -2.0mm (aggressive toe-out)
         rear_toe_baseline_mm=0.0,
         front_roll_gain=0.60,         # ESTIMATE

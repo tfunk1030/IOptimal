@@ -2577,19 +2577,26 @@ def reason_and_solve(
     # Default (108.0s) was calibrated for BMW at Sebring — wrong for faster tracks/cars.
     # Use fastest_lap * 0.95, floored at 60s, so partial/installation laps are excluded
     # but all legitimate racing laps are accepted regardless of track or car.
-    _fastest_any = None
+    _all_plausible: list[float] = []
     for _p in ibt_paths:
         try:
             _ibt_tmp = IBTFile(_p)
-            _lts = _ibt_tmp.lap_times(min_time=30.0)  # 30s = absolute floor (no full lap shorter)
+            _lts = _ibt_tmp.lap_times(min_time=30.0)  # 30s = absolute floor
             for _, _t, _, _ in _lts:
-                if _t < 300 and (_fastest_any is None or _t < _fastest_any):
-                    _fastest_any = _t
+                if 30.0 < _t < 300.0:
+                    _all_plausible.append(_t)
         except Exception:
             pass
-    if _fastest_any is not None:
+    if _all_plausible:
+        import statistics as _stat
+        _median_lap = _stat.median(_all_plausible)
+        # Only consider laps within 50% of the median to avoid pit/partial laps
+        # distorting the floor calculation
+        _racing_laps = [t for t in _all_plausible if t >= _median_lap * 0.85]
+        _fastest_any = min(_racing_laps) if _racing_laps else min(_all_plausible)
         _auto_min = max(60.0, _fastest_any * 0.95)
     else:
+        _fastest_any = None
         _auto_min = 60.0
     if _fastest_any is not None:
         log(f"  Lap time floor: {_auto_min:.1f}s (fastest observed: {_fastest_any:.3f}s × 0.95)")

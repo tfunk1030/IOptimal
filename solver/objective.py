@@ -248,6 +248,7 @@ class ObjectiveFunction:
         # Resolve car slug: "bmw m hybrid v8" → "bmw", "cadillac v-series.r" → "cadillac"
         _car_raw = getattr(car, "name", "") or getattr(car, "adapter_name", "") or str(car)
         _car_slug = _car_raw.lower().split()[0].replace("-", "").replace(".", "")
+        self._car_slug = _car_slug
 
         # Resolve track slug: handles dict (track json), object with .name, or string
         if isinstance(track, dict):
@@ -1102,11 +1103,12 @@ class ObjectiveFunction:
         # TIER 5: DIFF PRELOAD (exit traction, small effect)
         # ═══════════════════════════════════════════════════════════════
 
-        # Optimal for Sebring: 50-80 Nm (moderate-high mechanical grip,
-        # slow hairpins need more preload than pure aero tracks)
-        # Too low: exit wheelspin. Too high: entry understeer + mid-corner push.
+        # Ferrari 499P at Sebring: fastest session (108.1s) used 0 Nm + Less Locking.
+        # E-diff + hybrid manage traction electronically; mechanical preload adds
+        # corner-entry understeer at slow hairpins (T1, T17) without traction benefit.
+        # BMW/Porsche/Cadillac may still prefer higher preload — keep 65 Nm default.
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = 65.0  # Nm, Sebring-specific
+        diff_target = 10.0 if self._car_slug == "ferrari" else 65.0  # Nm, calibrated Mar21 (fastest=0Nm+LessLocking)
         gain -= min(8.0, abs(diff - diff_target) * 0.12)
 
         return gain
