@@ -856,6 +856,9 @@ class ObjectiveFunction:
         self._measured = measured
         self._driver = driver_profile
 
+        # In explore mode: zero empirical weight so k-NN doesn't anchor to past setups
+        _w_empirical = 0.0 if self.explore else 0.40
+
         # Run forward physics evaluation
         physics = self.evaluate_physics(params)
 

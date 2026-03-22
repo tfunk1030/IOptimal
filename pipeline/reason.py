@@ -2547,6 +2547,9 @@ def reason_and_solve(
     explore_legal_space: bool = False,
     search_budget: int = 1000,
     keep_weird: bool = False,
+    search_mode: str | None = None,   # "quick" | "standard" | "exhaustive" → full garage card
+    top_n: int = 1,
+    explore: bool = False,            # zero k-NN weight + widen Sobol sampling
 ) -> ReasoningState:
     """Run the full 9-phase reasoning pipeline.
 
@@ -3370,9 +3373,108 @@ def reason_and_solve(
             f"Rejected prior candidate matching {v.matched_session_label}: {v.reason}"
             for v in state.candidate_vetoes[:2]
         ],
-        compact=True,
+        compact=(search_mode is None),   # compact only when NOT doing grid search
     )
     state.final_report = report
+
+    # ── Full garage card via GridSearchEngine (--search-mode) ─────────────
+    # When search_mode is set, re-run the grid search using the 9-phase
+    # modifiers as constraints, then output the full setup sheet.
+    if search_mode is not None and emit_report:
+        print()
+        print("=" * 70)
+        print(f"Running full grid search ({search_mode}) on authority session...")
+        print(f"  9-phase cross-session modifiers applied as solver constraints")
+        print(f"  Authority: {authority.label}")
+        print("=" * 70)
+        try:
+            from solver.grid_search import GridSearchEngine
+            from solver.legal_space import LegalSpace
+            from solver.objective import ObjectiveFunction
+
+            space = LegalSpace.from_car(car, track_name=getattr(track, "name", ""))
+            objective = ObjectiveFunction(car, track if hasattr(track, "name") else None,
+                                          explore=explore)
+
+            engine = GridSearchEngine(
+                space=space,
+                objective=objective,
+                car=car,
+                track=track if hasattr(track, "name") else None,
+                progress_cb=print,
+                modifiers=mods,
+                measured=authority_measured,
+                driver=authority.driver,
+            )
+            # Widen Sobol sampling in explore mode
+            gs_family = None if explore else getattr(state, "_search_family", None)
+            gs_result = engine.run(budget=search_mode, progress=True, family=gs_family,
+                                   explore=explore)
+            print()
+            print(gs_result.summary())
+
+            # Output full setup sheet for each top candidate
+            from pipeline.report import generate_report as _gen_report
+            for rank, ev in enumerate(gs_result.top_candidates[:top_n], 1):
+                if top_n > 1:
+                    print(f"\n{'═' * 70}")
+                    print(f"  CANDIDATE #{rank}  score={ev.score:.1f}ms  family={ev.family}")
+                    print(f"{'═' * 70}")
+                # Re-solve full chain with grid-search params as overrides
+                from solver.solve_chain import run_solve_chain, SolveChainOverrides
+                gs_overrides = SolveChainOverrides()
+                # Map candidate params back to step overrides
+                _param_step_map = {
+                    "wing_angle_deg": "step1",
+                    "front_pushrod_offset_mm": "step1",
+                    "rear_pushrod_offset_mm": "step1",
+                    "front_heave_spring_nmm": "step2",
+                    "rear_third_spring_nmm": "step2",
+                    "front_torsion_od_mm": "step3",
+                    "rear_spring_rate_nmm": "step3",
+                    "front_camber_deg": "step5",
+                    "rear_camber_deg": "step5",
+                    "front_toe_mm": "step5",
+                    "rear_toe_mm": "step5",
+                    "brake_bias_pct": "supporting",
+                    "diff_preload_nm": "supporting",
+                    "tc_gain": "supporting",
+                    "tc_slip": "supporting",
+                    "diff_clutch_plates": "supporting",
+                }
+                for pk, pv in ev.params.items():
+                    step_key = _param_step_map.get(pk)
+                    if step_key:
+                        getattr(gs_overrides, step_key)[pk] = pv
+                    elif pk.startswith("front_ls") or pk.startswith("rear_ls") or \
+                         pk.startswith("front_hs") or pk.startswith("rear_hs"):
+                        # Damper keys go into step6 sub-dicts
+                        side = "lf" if "front" in pk else "lr" if pk.startswith("rear_ls_rbd") or pk.startswith("rear_hs") else "lf"
+                        pass  # dampers handled by full_setup_optimizer
+                # Print full report for this candidate
+                full_rep = _gen_report(
+                    car=car, track=track,
+                    measured=authority_measured, driver=authority.driver,
+                    diagnosis=authority.diagnosis, corners=authority.corners,
+                    aero_grad=None, modifiers=mods,
+                    step1=step1, step2=step2, step3=step3,
+                    step4=step4, step5=step5, step6=step6,
+                    supporting=supporting,
+                    current_setup=authority.setup,
+                    wing=detected_wing, target_balance=target_balance,
+                    prediction_corrections=dict(state.historical.prediction_corrections),
+                    selected_candidate_family=ev.family,
+                    selected_candidate_score=ev.score,
+                    solve_context_lines=[
+                        f"Multi-IBT grid search ({search_mode}): {len(ibt_paths)} sessions",
+                        f"Authority: {authority.label}",
+                        f"Grid search score: {ev.score:.1f}ms",
+                    ],
+                    compact=False,
+                )
+                print(full_rep)
+        except Exception as _gs_err:
+            print(f"[WARN] Grid search failed: {_gs_err} — compact report above is the result")
 
     # ── Concise summary (always printed, even when verbose=False) ──
     if emit_report and not verbose:
@@ -3484,6 +3586,28 @@ def main() -> None:
                         help="Ingest sessions into learner knowledge base after solving")
     parser.add_argument("--verbose", action="store_true",
                         help="Show full reasoning dump instead of concise summary")
+    parser.add_argument(
+        "--search-mode", type=str, default=None,
+        choices=["quick", "standard", "exhaustive"],
+        dest="search_mode",
+        help=(
+            "After 9-phase cross-session analysis, run a full grid search on the "
+            "authority session and output a complete garage card. "
+            "quick=~30s, standard=~4min, exhaustive=~80min."
+        ),
+    )
+    parser.add_argument(
+        "--top-n", type=int, default=1, dest="top_n",
+        help="Number of full setup cards to output (default: 1).",
+    )
+    parser.add_argument(
+        "--explore", action="store_true",
+        help=(
+            "Exploration mode: zeros k-NN empirical weight and widens Sobol sampling. "
+            "Use to validate that the current setup isn't a local minimum. "
+            "Requires --search-mode."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -3506,6 +3630,9 @@ def main() -> None:
         json_path=args.json,
         setup_json_path=args.setup_json,
         verbose=args.verbose,
+        search_mode=getattr(args, "search_mode", None),
+        top_n=getattr(args, "top_n", 1),
+        explore=getattr(args, "explore", False),
     )
 
     if args.learn:

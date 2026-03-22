@@ -1038,7 +1038,8 @@ def produce(
                 from solver.objective import ObjectiveFunction
 
                 space = LegalSpace.from_car(car, track_name=getattr(track, "name", ""))
-                objective = ObjectiveFunction(car, track if hasattr(track, "name") else None)
+                objective = ObjectiveFunction(car, track if hasattr(track, "name") else None,
+                                              explore=getattr(args, "explore", False))
 
                 engine = GridSearchEngine(
                     space=space,
