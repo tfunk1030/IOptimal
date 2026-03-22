@@ -337,6 +337,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     )
 
     heave_solver = HeaveSolver(car, track)
+    _k_current = getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None
     step2 = heave_solver.solve(
         dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
         dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
@@ -347,6 +348,8 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         rear_pushrod_mm=step1.rear_pushrod_offset_mm,
         fuel_load_l=fuel,
         front_camber_deg=_front_camber(inputs),
+        measured=inputs.measured,
+        front_heave_current_nmm=_k_current,
     )
 
     corner_solver = CornerSpringSolver(car, track)
@@ -406,6 +409,8 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         front_camber_deg=_front_camber(inputs),
         front_hs_damper_nsm=provisional_step6.c_hs_front,
         rear_hs_damper_nsm=provisional_step6.c_hs_rear,
+        measured=inputs.measured,
+        front_heave_current_nmm=_k_current,
     )
     step3 = corner_solver.solve(
         front_heave_nmm=step2.front_heave_nmm,

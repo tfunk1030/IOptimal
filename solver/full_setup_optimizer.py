@@ -349,6 +349,7 @@ class BMWSebringOptimizer:
             rear_third_perch_mm=seed.rear_third_perch_mm,
             fuel_load_l=fuel_load_l,
             front_camber_deg=state.front_camber_deg,
+            measured=measured,
         )
         if not step2.garage_constraints_ok:
             return None
@@ -411,6 +412,7 @@ class BMWSebringOptimizer:
             front_camber_deg=state.front_camber_deg,
             front_hs_damper_nsm=provisional_step6.c_hs_front,
             rear_hs_damper_nsm=provisional_step6.c_hs_rear,
+            measured=measured,
         )
         if (
             abs(refined_step2.front_heave_nmm - step2.front_heave_nmm) > 0.05

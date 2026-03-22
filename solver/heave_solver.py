@@ -292,7 +292,10 @@ class HeaveSolver:
             else self.car.heave_spring.rear_spring_range_nmm
         )
         best = float("inf")
-        for rate in range(int(math.ceil(lo / 10.0) * 10), int(hi) + 10, 10):
+        # Start search at 10 N/mm minimum — k=0 returns excursion=0.0 (degenerate,
+        # no restoring force) which would falsely satisfy the constraint.
+        lo_search = max(10.0, math.ceil(lo / 10.0) * 10)
+        for rate in range(int(lo_search), int(hi) + 10, 10):
             excursion_mm = self.excursion(
                 v_p99_mps,
                 m_eff_kg,
@@ -304,6 +307,10 @@ class HeaveSolver:
             if excursion_mm <= dynamic_rh_mm + 1e-6:
                 best = float(rate)
                 break
+        # If no spring rate in the legal range prevents bottoming, return the
+        # maximum legal rate (stiffer is always better than softer when bottoming).
+        if best == float("inf"):
+            best = hi
         return best
 
     def min_rate_for_sigma(
@@ -672,6 +679,8 @@ class HeaveSolver:
         front_camber_deg: float | None = None,
         front_hs_damper_nsm: float | None = None,
         rear_hs_damper_nsm: float | None = None,
+        measured: object | None = None,
+        front_heave_current_nmm: float | None = None,
     ) -> HeaveSolution:
         """Find minimum safe heave/third spring rates.
 
@@ -714,6 +723,44 @@ class HeaveSolver:
         if getattr(self.track, "shock_vel_p99_front_hs_mps", 0.0) > 0:
             v_front_platform = self.track.shock_vel_p99_front_hs_mps
         m_front = hsm.front_m_eff_kg
+
+        # ── Effective velocity calibration from measured travel ──────────────
+        # The iRacing ShockVel channel systematically underreports at rough tracks
+        # (e.g., Sebring). When measured travel percentage is available from a real
+        # IBT session, back-calculate the effective velocity that would produce the
+        # observed spring deflection — this is the true input the car is seeing.
+        #
+        # Method: binary search for v_eff such that
+        #   excursion(v_eff, m, k_current) ≈ measured_defl_p99 - static_defl
+        # then use v_eff for bottoming constraint (conservative) and v_front_platform
+        # for sigma/platform sizing.
+        v_front_effective = v_front  # fallback = channel value
+        _travel_pct = getattr(measured, "front_heave_travel_used_pct", None) if measured else None
+        _defl_p99 = getattr(measured, "front_heave_defl_p99_mm", None) if measured else None
+        # k_current: prefer field on measured, fall back to car baseline
+        _k_current = (getattr(measured, "front_heave_spring_rate_nmm", None) if measured else None)
+        if _k_current is None:
+            _k_current = front_heave_current_nmm  # passed explicitly from solve chain
+        if _defl_p99 is not None and _k_current is not None and _k_current > 0:
+            # Static deflection: F/k where k is in N/mm
+            # F = m_eff × g (N), k in N/mm → delta in mm
+            g = 9.81
+            static_defl_mm = (m_front * g) / _k_current  # N / (N/mm) = mm
+            dynamic_exc_observed = max(0.0, _defl_p99 - static_defl_mm)
+            if dynamic_exc_observed > 0.5:  # meaningful signal
+                # Binary search v_eff
+                lo_v, hi_v = 0.05, 3.0  # m/s
+                for _ in range(30):
+                    mid_v = (lo_v + hi_v) / 2.0
+                    exc_mid = self.excursion(mid_v, m_front, _k_current, axle="front")
+                    if exc_mid < dynamic_exc_observed:
+                        lo_v = mid_v
+                    else:
+                        hi_v = mid_v
+                v_front_effective = (lo_v + hi_v) / 2.0
+                # Use effective velocity for bottoming constraint only.
+                # Platform sizing still uses channel p99 (less conservative for ride quality).
+                v_front = v_front_effective  # bottoming guard uses calibrated velocity
 
         # Bottoming constraint uses lap-wide p99 (safety — must not bottom anywhere)
         k_front_bottoming = self.min_rate_for_no_bottoming(
