@@ -236,9 +236,10 @@ class ObjectiveFunction:
     # compliance element; the torsion bar couples through mounting geometry only.
     TORSION_ARB_COUPLING = 0.25
 
-    def __init__(self, car, track):
+    def __init__(self, car, track, explore: bool = False):
         self.car = car
         self.track = track
+        self.explore = explore  # when True: zero k-NN weight, no empirical anchoring
         self._surface = None  # lazy-loaded aero surface
         self._vortex_threshold_cache: dict[float, float] = {}  # wing_deg → threshold_mm
         # Empirical heave spring calibration — loads from real IBT telemetry data.
@@ -859,6 +860,8 @@ class ObjectiveFunction:
         physics = self.evaluate_physics(params)
 
         breakdown = ObjectiveBreakdown()
+        if self.explore:
+            breakdown.w_empirical = 0.0  # explore mode: pure physics, no k-NN anchoring
         veto_reasons: list[str] = []
         soft_penalties: list[str] = []
 
@@ -894,7 +897,7 @@ class ObjectiveFunction:
         # Weight 0.40: empirical augments physics scoring without overriding it.
         # When physics and empirical agree → lower uncertainty; when they
         # disagree → the soft_penalties list captures the discrepancy for review.
-        if self._session_db is not None and len(self._session_db) >= 3:
+        if not self.explore and self._session_db is not None and len(self._session_db) >= 3:
             try:
                 k_nn = min(7, len(self._session_db))
                 emp_pred = self._session_db.predict(params, k=k_nn)

@@ -703,6 +703,7 @@ class GridSearchEngine:
         budget: str = "standard",
         progress: bool = True,
         family: str | None = None,
+        explore: bool = False,
     ) -> GridSearchResult:
         """Execute the full 4-layer hierarchical search.
 
@@ -728,15 +729,26 @@ class GridSearchEngine:
         if progress:
             self._log = print
 
+        # ── Explore mode: zero k-NN, force balanced/no-bias family ───
+        if explore:
+            self.objective.explore = True  # disables empirical k-NN weight
+            if family is None:
+                family = "balanced"  # widest Sobol coverage, no region bias
+            # Boost L1 sample count for wider initial coverage
+            cfg = dict(cfg)  # copy so we don't mutate the shared BUDGET_TIERS entry
+            cfg["l1_n_sobol"] = max(cfg["l1_n_sobol"], 2000)
+            cfg["l1_keep"] = max(cfg["l1_keep"], 100)
+
         t_total = time.time()
         all_stats: list[LayerStats] = []
         total_evals = 0
 
         l2_from_l1 = cfg.get("l2_from_l1", cfg["l1_keep"])
+        explore_tag = " | EXPLORE" if explore else ""
         family_tag = f" | family={family}" if family else ""
 
         self._log(f"\n{'='*63}")
-        self._log(f"  GRID SEARCH — budget={budget.upper()}{family_tag}")
+        self._log(f"  GRID SEARCH — budget={budget.upper()}{family_tag}{explore_tag}")
         self._log(f"  L1={cfg['l1_n_sobol']:,} Sobol | keep={cfg['l1_keep']} "
                   f"| L2 from={l2_from_l1} skel "
                   f"| L3 top={cfg['l3_top_n']} | L4 top={cfg['l4_top_n']}")

@@ -1048,7 +1048,11 @@ def produce(
                     progress_cb=log,
                 )
                 search_family = getattr(args, "search_family", None)
-                gs_result = engine.run(budget=search_mode, progress=True, family=search_family)
+                explore_mode = getattr(args, "explore", False)
+                if explore_mode:
+                    objective.explore = True
+                    log("  [EXPLORE] k-NN empirical weight zeroed — pure physics search")
+                gs_result = engine.run(budget=search_mode, progress=True, family=search_family, explore=explore_mode)
                 log()
                 log(gs_result.summary())
             else:
@@ -1502,6 +1506,17 @@ def main():
                             "aggressive=high wing + stiff springs (max DF extraction), "
                             "balanced=full-range uniform coverage (default). "
                             "Only applies with --search-mode."
+                        ))
+    parser.add_argument("--explore", action="store_true", default=False,
+                        dest="explore",
+                        help=(
+                            "Exploration mode: disables k-NN empirical anchoring (w=0.0), "
+                            "forces 'balanced' Sobol family (no region bias), and boosts "
+                            "L1 sample budget for wider initial coverage. "
+                            "Use to validate that the current optimal is not a learned local "
+                            "minimum. Combine with --search-mode standard or exhaustive. "
+                            "Results show pure-physics recommendations unconstrained by "
+                            "historical session data."
                         ))
     parser.add_argument("--objective-profile", type=str, default="balanced",
                         choices=["robust", "aggressive", "balanced"],
