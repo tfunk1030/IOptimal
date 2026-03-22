@@ -955,13 +955,15 @@ class ObjectiveFunction:
         sigma_f = physics.front_sigma_mm  # [mm]
         # Threshold: stable platform = σ < 3mm at speed
         # Below threshold: no aero platform penalty
-        # Above threshold: each extra mm costs ~80ms (GTP literature estimate,
-        #   calibrated from F1 2022 porpoising data ~100ms/mm, discounted 20%
-        #   for GTP lower-sensitivity underbody)
-        # Source: ground effect aerodynamics research (Katz & Plotkin;
-        #   iRacing GTP setup analysis from Taylor Funk's 46 session dataset)
+        # Above threshold: each extra mm costs ~100ms (recalibrated 2026-03-22).
+        #   IBT correlation: dyn_frh r=+0.235 with lap_time across 63 sessions.
+        #   Observed 4mm dyn_frh spread (19→23mm) ≈ 0.5s lap time spread
+        #   → empirical ≈ 125ms/mm. Using 100ms/mm (conservative — some variance
+        #   in dyn_frh is driver/conditions, not pure setup).
+        #   Raised from 80ms/mm (original GTP literature estimate, pre-IBT data).
+        # Source: Taylor Funk 63-session Sebring IBT dataset (2026-03-22).
         SIGMA_F_STABLE_MM = 3.0
-        SIGMA_F_MS_PER_MM = 80.0  # ms per mm above stable threshold [ms/mm]
+        SIGMA_F_MS_PER_MM = 100.0  # ms per mm above stable threshold [ms/mm] — was 80
         if sigma_f > SIGMA_F_STABLE_MM:
             platform_loss = (sigma_f - SIGMA_F_STABLE_MM) * SIGMA_F_MS_PER_MM
             gain -= min(800.0, platform_loss)
@@ -989,6 +991,42 @@ class ObjectiveFunction:
         if cal_uncertainty > 0.2:
             gain -= (cal_uncertainty - 0.2) ** 1.5 * 8.0
 
+        # ── SPRING RATE REALISM WINDOW ───────────────────────────────────
+        # GTP physics model assumes heave spring behaves linearly and that
+        # the sigma_f model is valid. Both assumptions break down outside the
+        # realistic operating window (30–100 N/mm for Sebring).
+        #
+        # Very stiff springs (>150 N/mm) appear "safe" to the physics model
+        # (σ is very small → nearly zero platform penalty) but are slower in
+        # practice because:
+        #   1. The car loses compliance over bumps → tyre load variation spikes
+        #   2. iRacing tyre model loses performance under high unsprung load variance
+        #   3. The heave slider saturates → any bump pushes the car down hard
+        #
+        # Evidence: 63-session IBT dataset. Heave=900 N/mm sessions scored
+        # better than heave=50 by objective but ran 0.5–0.8s slower in practice.
+        # The sigma model gives heave=900 nearly zero penalty (σ→0) — but
+        # actual dyn_frh data shows these cars bounced more in the data, not less.
+        #
+        # Penalty structure (validated against Sebring IBT fastest setups):
+        #   Optimal: 30–100 N/mm → no penalty
+        #   Stiff: 100–200 N/mm → 0–50ms (moderate compliance loss)
+        #   Very stiff: 200–500 N/mm → 50–200ms (significant compliance loss)
+        #   Extreme: >500 N/mm → 200ms+ (car is essentially rigid, implausible)
+        # Source: Taylor Funk 63-session Sebring IBT analysis, 2026-03-22.
+        HEAVE_OPT_LO = 30.0   # N/mm — below this is too soft
+        HEAVE_OPT_HI = 100.0  # N/mm — above this starts compliance loss
+        if front_heave > HEAVE_OPT_HI:
+            # Progressive penalty: 0 at 100, 50ms at 200, 200ms at 500, capped 300ms
+            excess = front_heave - HEAVE_OPT_HI
+            compliance_penalty = min(300.0, excess * 0.5 + (max(0, excess - 100) ** 1.2) * 0.3)
+            gain -= compliance_penalty
+        elif front_heave < HEAVE_OPT_LO and front_heave > 0:
+            # Too soft: risk of bottoming / slider exhaustion already scored elsewhere,
+            # add small additional penalty for being below realistic GTP window
+            soft_penalty = (HEAVE_OPT_LO - front_heave) * 1.5
+            gain -= min(45.0, soft_penalty)
+
         # ═══════════════════════════════════════════════════════════════
         # TIER 2: LLTD BALANCE (flows through ARB blades and diameter)
         # ARB blade: ~0.5-1.0% LLTD per step × 12ms/% = 6-12ms/click ✓
@@ -996,12 +1034,18 @@ class ObjectiveFunction:
         # Both consistent with Taylor's 5-15ms (blade) / 30-80ms (size)
         # ═══════════════════════════════════════════════════════════════
 
-        # 12ms per 1% LLTD error at Sebring (high mechanical grip demand)
-        # Raised from 8ms — Sebring's slow-speed sections are more balance-sensitive
-        # than pure high-speed aero tracks where DF overwhelms traction balance.
-        LLTD_MS_PER_PCT = 2.5  # [ms / %LLTD_error] — tuned: old 8-12 amplified ARB blades via LLTD
+        # LLTD balance penalty — recalibrated 2026-03-22.
+        # IBT data: lltd_measured has r=-0.282 with lap_time (63 sessions).
+        # However, this correlation is confounded by torsion bar OD (which
+        # shifts LLTD mechanically). The LLTD *error* from target has near-zero
+        # correlation with lap time independently.
+        # Cap reduced from 25ms → 10ms: LLTD targeting is a soft guideline,
+        # not a primary lap time driver. The ARB/torsion terms already capture
+        # the physical stiffness effects; the LLTD error cap prevents over-penalizing
+        # setups that differ from the theoretical target but are fast in practice.
+        LLTD_MS_PER_PCT = 2.5  # [ms / %LLTD_error]
         lltd_penalty = physics.lltd_error * 100.0 * LLTD_MS_PER_PCT
-        gain -= min(25.0, lltd_penalty)  # cap tuned from 40-50 → 25
+        gain -= min(10.0, lltd_penalty)  # cap reduced from 25ms → 10ms (2026-03-22 IBT calibration)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 3: DAMPING RATIOS (secondary, 3-8ms per axis max)
