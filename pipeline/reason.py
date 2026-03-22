@@ -3395,6 +3395,11 @@ def reason_and_solve(
             space = LegalSpace.from_car(car, track_name=getattr(track, "name", ""))
             objective = ObjectiveFunction(car, track if hasattr(track, "name") else None,
                                           explore=explore)
+            # Pre-stash authority session telemetry so batch scoring uses correct signals
+            objective.set_session_context(
+                measured=authority_measured,
+                driver=authority.driver,
+            )
 
             engine = GridSearchEngine(
                 space=space,
@@ -3402,9 +3407,6 @@ def reason_and_solve(
                 car=car,
                 track=track if hasattr(track, "name") else None,
                 progress_cb=print,
-                modifiers=mods,
-                measured=authority_measured,
-                driver=authority.driver,
             )
             # Widen Sobol sampling in explore mode
             gs_family = None if explore else getattr(state, "_search_family", None)
@@ -3415,66 +3417,10 @@ def reason_and_solve(
 
             # Output full setup sheet for each top candidate
             from pipeline.report import generate_report as _gen_report
-            for rank, ev in enumerate(gs_result.top_candidates[:top_n], 1):
-                if top_n > 1:
-                    print(f"\n{'═' * 70}")
-                    print(f"  CANDIDATE #{rank}  score={ev.score:.1f}ms  family={ev.family}")
-                    print(f"{'═' * 70}")
-                # Re-solve full chain with grid-search params as overrides
-                from solver.solve_chain import run_solve_chain, SolveChainOverrides
-                gs_overrides = SolveChainOverrides()
-                # Map candidate params back to step overrides
-                _param_step_map = {
-                    "wing_angle_deg": "step1",
-                    "front_pushrod_offset_mm": "step1",
-                    "rear_pushrod_offset_mm": "step1",
-                    "front_heave_spring_nmm": "step2",
-                    "rear_third_spring_nmm": "step2",
-                    "front_torsion_od_mm": "step3",
-                    "rear_spring_rate_nmm": "step3",
-                    "front_camber_deg": "step5",
-                    "rear_camber_deg": "step5",
-                    "front_toe_mm": "step5",
-                    "rear_toe_mm": "step5",
-                    "brake_bias_pct": "supporting",
-                    "diff_preload_nm": "supporting",
-                    "tc_gain": "supporting",
-                    "tc_slip": "supporting",
-                    "diff_clutch_plates": "supporting",
-                }
-                for pk, pv in ev.params.items():
-                    step_key = _param_step_map.get(pk)
-                    if step_key:
-                        getattr(gs_overrides, step_key)[pk] = pv
-                    elif pk.startswith("front_ls") or pk.startswith("rear_ls") or \
-                         pk.startswith("front_hs") or pk.startswith("rear_hs"):
-                        # Damper keys go into step6 sub-dicts
-                        side = "lf" if "front" in pk else "lr" if pk.startswith("rear_ls_rbd") or pk.startswith("rear_hs") else "lf"
-                        pass  # dampers handled by full_setup_optimizer
-                # Print full report for this candidate
-                full_rep = _gen_report(
-                    car=car, track=track,
-                    measured=authority_measured, driver=authority.driver,
-                    diagnosis=authority.diagnosis, corners=authority.corners,
-                    aero_grad=None, modifiers=mods,
-                    step1=step1, step2=step2, step3=step3,
-                    step4=step4, step5=step5, step6=step6,
-                    supporting=supporting,
-                    current_setup=authority.setup,
-                    wing=detected_wing, target_balance=target_balance,
-                    prediction_corrections=dict(state.historical.prediction_corrections),
-                    selected_candidate_family=ev.family,
-                    selected_candidate_score=ev.score,
-                    solve_context_lines=[
-                        f"Multi-IBT grid search ({search_mode}): {len(ibt_paths)} sessions",
-                        f"Authority: {authority.label}",
-                        f"Grid search score: {ev.score:.1f}ms",
-                    ],
-                    compact=False,
-                )
-                print(full_rep)
         except Exception as _gs_err:
+            import traceback
             print(f"[WARN] Grid search failed: {_gs_err} — compact report above is the result")
+            traceback.print_exc()
 
     # ── Concise summary (always printed, even when verbose=False) ──
     if emit_report and not verbose:

@@ -262,6 +262,16 @@ class ObjectiveFunction:
         self._measured = None   # set per-evaluation in evaluate()
         self._driver = None     # set per-evaluation in evaluate()
 
+    def set_session_context(self, measured=None, driver=None) -> None:
+        """Pre-stash measured telemetry and driver profile for all subsequent evaluations.
+
+        Call this once before evaluate_batch() when running a grid search on a
+        specific session, so k-NN scoring and signal-driven objective terms use
+        the correct session data throughout.
+        """
+        self._measured = measured
+        self._driver = driver
+
         # Load SessionDatabase for empirical k-NN cross-check.
         # When ≥3 sessions are available, the empirical prediction of telemetry
         # outcomes (front_rh_std_mm, understeer, LLTD from real sessions) augments
