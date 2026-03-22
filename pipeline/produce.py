@@ -677,6 +677,7 @@ def produce(
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
             fuel_load_l=fuel,
             camber_confidence=_camber_conf,
+            measured=measured,
         )
         if not args.report_only:
             print(step5.summary())

@@ -161,9 +161,13 @@ TIER_A_KEYS: list[str] = [
     # Step 4
     "front_arb_blade",
     "rear_arb_blade",
+    "front_arb_size",
+    "rear_arb_size",
     # Step 5
     "front_camber_deg",
     "rear_camber_deg",
+    "front_toe_mm",
+    "rear_toe_mm",
     # Step 6
     "front_ls_comp",
     "front_ls_rbd",
@@ -178,6 +182,11 @@ TIER_A_KEYS: list[str] = [
     # Supporting
     "brake_bias_pct",
     "diff_preload_nm",
+    "diff_coast_ramp_idx",
+    "diff_drive_ramp_idx",
+    "diff_clutch_plates",
+    "tc_gain",
+    "tc_slip",
 ]
 
 # Keys that ARE searchable but are perch offsets — kept for reference / Tier B use
@@ -188,13 +197,6 @@ PERCH_KEYS: list[str] = [
 ]
 
 TIER_B_KEYS: list[str] = [
-    "front_toe_mm",
-    "rear_toe_mm",
-    "front_arb_size",
-    "rear_arb_size",
-    "tc_gain",
-    "tc_slip",
-    "diff_clutch_plates",
     "fuel_l",
 ]
 
@@ -693,6 +695,12 @@ def _build_dimension(
         "rear_spring_perch_mm": gr.rear_spring_perch_mm,
         "front_arb_blade": gr.arb_blade,
         "rear_arb_blade": gr.arb_blade,
+        "front_arb_size": (0.0, float(max(0, len(car.arb.front_size_labels) - 1))),
+        "rear_arb_size": (0.0, float(max(0, len(car.arb.rear_size_labels) - 1))),
+        "tc_gain": (1.0, 10.0),
+        "tc_slip": (1.0, 10.0),
+        "diff_coast_ramp_idx": (0.0, float(max(0, len(car.garage_ranges.diff_coast_drive_ramp_options) - 1))),
+        "diff_drive_ramp_idx": (0.0, float(max(0, len(car.garage_ranges.diff_coast_drive_ramp_options) - 1))),
         "front_camber_deg": gr.camber_front_deg,
         "rear_camber_deg": gr.camber_rear_deg,
         "front_toe_mm": gr.toe_front_mm,
@@ -749,6 +757,13 @@ def _build_dimension(
         resolution_map[dk] = 1.0
     resolution_map["front_arb_blade"] = 1.0
     resolution_map["rear_arb_blade"] = 1.0
+    resolution_map["front_arb_size"] = 1.0
+    resolution_map["rear_arb_size"] = 1.0
+    resolution_map["tc_gain"] = 1.0
+    resolution_map["tc_slip"] = 1.0
+    resolution_map["diff_coast_ramp_idx"] = 1.0
+    resolution_map["diff_drive_ramp_idx"] = 1.0
+    resolution_map["diff_clutch_plates"] = 1.0
 
     resolution = resolution_map.get(key, spec.resolution if spec and spec.resolution else 1.0)
 
@@ -759,6 +774,18 @@ def _build_dimension(
     if key == "wing_angle_deg" and car.wing_angles:
         discrete_values = sorted(car.wing_angles)
         kind = "discrete"
+    elif key == "front_arb_size":
+        discrete_values = list(range(len(car.arb.front_size_labels)))
+        kind = "ordinal"
+    elif key == "rear_arb_size":
+        discrete_values = list(range(len(car.arb.rear_size_labels)))
+        kind = "ordinal"
+    elif key in ("tc_gain", "tc_slip"):
+        discrete_values = list(range(1, 11))
+        kind = "ordinal"
+    elif key in ("diff_coast_ramp_idx", "diff_drive_ramp_idx"):
+        discrete_values = list(range(len(car.garage_ranges.diff_coast_drive_ramp_options)))
+        kind = "ordinal"
     elif key == "front_torsion_od_mm" and car.corner_spring.front_torsion_od_options:
         discrete_values = sorted(car.corner_spring.front_torsion_od_options)
         kind = "discrete"

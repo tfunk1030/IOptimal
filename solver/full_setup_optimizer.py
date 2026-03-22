@@ -460,6 +460,7 @@ class BMWSebringOptimizer:
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
             fuel_load_l=fuel_load_l,
             camber_confidence=camber_confidence,
+            measured=measured,
         )
         reconcile_ride_heights(
             self.car,

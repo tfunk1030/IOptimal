@@ -75,10 +75,12 @@
     "bmw_sebring_international_raceway_bmwtf",
     "bmw_sebring_international_raceway_bmwtry",
     "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-16_20-25-12",
-    "ferrari_sebring_international_raceway_ferrari499p_sebring%20international%202026-03-20%2020-35-17"
+    "ferrari_sebring_international_raceway_ferrari499p_sebring%20international%202026-03-20%2020-35-17",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring%20international%202026-03-22%2015-41-46",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring%20international%202026-03-21%2019-01-49"
   ],
-  "total_observations": 74,
-  "total_deltas": 95,
+  "total_observations": 76,
+  "total_deltas": 112,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -89,5 +91,5 @@
     "Sebring International Raceway_International",
     "Silverstone Circuit_Arena Grand Prix"
   ],
-  "last_updated": "2026-03-21T02:02:20.852362+00:00"
+  "last_updated": "2026-03-22T23:06:17.683760+00:00"
 }

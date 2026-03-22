@@ -258,6 +258,8 @@ class ObjectiveFunction:
         _track_slug = str(_track_raw).lower().split()[0].replace("-", "").replace("_", "")
 
         self._heave_cal = HeaveCalibration.load(_car_slug, _track_slug)
+        self._measured = None   # set per-evaluation in evaluate()
+        self._driver = None     # set per-evaluation in evaluate()
 
         # Load SessionDatabase for empirical k-NN cross-check.
         # When ≥3 sessions are available, the empirical prediction of telemetry
@@ -683,8 +685,17 @@ class ObjectiveFunction:
         # bar (larger OD) increases the coupling stiffness path from chassis roll
         # motion through to the blade, raising effective k_arb_front by up to 25%
         # of the relative torsional stiffness change (see TORSION_ARB_COUPLING).
-        front_arb_size = arb.front_baseline_size
-        rear_arb_size = arb.rear_baseline_size
+        # ARB size: may come as ordinal int (0=Soft,1=Medium,2=Stiff) or string label
+        _f_arb_size_raw = params.get("front_arb_size", arb.front_baseline_size)
+        _r_arb_size_raw = params.get("rear_arb_size", arb.rear_baseline_size)
+        def _resolve_arb_size(val, labels, baseline):
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                idx = int(round(float(val)))
+                if labels and 0 <= idx < len(labels):
+                    return labels[idx]
+            return val if val else baseline
+        front_arb_size = _resolve_arb_size(_f_arb_size_raw, arb.front_size_labels, arb.front_baseline_size)
+        rear_arb_size = _resolve_arb_size(_r_arb_size_raw, arb.rear_size_labels, arb.rear_baseline_size)
         k_arb_front_base = arb.front_roll_stiffness(front_arb_size, front_arb_blade)
         k_arb_rear = arb.rear_roll_stiffness(rear_arb_size, rear_arb_blade)
         k_arb_front = k_arb_front_base * self._torsion_arb_coupling_factor(front_torsion_od)
@@ -840,6 +851,10 @@ class ObjectiveFunction:
             driver_profile: DriverProfile from analyzer (if available)
             session_count: Number of sessions used for calibration
         """
+        # Stash measured/driver for use in sub-methods (avoids signature churn)
+        self._measured = measured
+        self._driver = driver_profile
+
         # Run forward physics evaluation
         physics = self.evaluate_physics(params)
 
@@ -1154,6 +1169,101 @@ class ObjectiveFunction:
         diff = params.get("diff_preload_nm", 20.0)
         diff_target = 10.0 if self._car_slug == "ferrari" else 65.0  # Nm, calibrated Mar21 (fastest=0Nm+LessLocking)
         gain -= min(8.0, abs(diff - diff_target) * 0.12)
+
+        # ═══════════════════════════════════════════════════════════════
+        # TIER 5: ARB SIZE (LLTD range — full steps, ~36-96ms each)
+        # ═══════════════════════════════════════════════════════════════
+        # ARB size controls available LLTD range. Wrong size = can't hit
+        # target LLTD even with blade adjustments. Penalty on size mismatch
+        # vs what's needed to achieve target LLTD with mid-range blade.
+        # Soft=0, Medium=1, Stiff=2 for ordinal encoding.
+        f_arb_size_idx = int(round(params.get("front_arb_size", 0)))
+        r_arb_size_idx = int(round(params.get("rear_arb_size", 1)))
+        f_arb_blade = int(round(params.get("front_arb_blade", 1)))
+        r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
+        # Penalty for extreme blade + wrong size (should have sized up/down)
+        # e.g., blade 5 + Soft = should be Medium; blade 1 + Stiff = should be Soft
+        max_blade = 5
+        if f_arb_blade >= max_blade and f_arb_size_idx == 0:
+            gain -= 15.0  # at max blade on Soft → too small, needs Medium
+        if r_arb_blade >= max_blade and r_arb_size_idx == 0:
+            gain -= 20.0
+        if f_arb_blade <= 1 and f_arb_size_idx >= 2:
+            gain -= 10.0  # at min blade on Stiff → too large, needs Medium
+        if r_arb_blade <= 1 and r_arb_size_idx >= 2:
+            gain -= 15.0
+
+        # ═══════════════════════════════════════════════════════════════
+        # TIER 5: DIFF RAMP ANGLES (corner-entry rotation + exit traction)
+        # ═══════════════════════════════════════════════════════════════
+        # Coast ramp controls corner-entry rotation (lower = more locking = more US)
+        # Drive ramp controls exit traction (higher = less locking = more wheelspin)
+        # Optimal: match to driver trail-brake depth and throttle progressiveness
+        ramp_options = getattr(
+            getattr(self.car, "garage_ranges", None), "diff_coast_drive_ramp_options",
+            [(40, 65), (45, 70), (50, 75)]
+        )
+        ramp_idx = int(round(params.get("diff_coast_ramp_idx", 1)))
+        ramp_idx = max(0, min(len(ramp_options) - 1, ramp_idx))
+        coast_deg, drive_deg = ramp_options[ramp_idx]
+
+        # Trail brake depth → coast ramp preference
+        # Deep trail braking (>0.4): prefer lower coast (more locking = rotation)
+        # Light trail braking (<0.2): prefer higher coast (less locking)
+        trail_brake = getattr(self._driver, "trail_brake_depth_p95", 0.3) if self._driver else 0.3
+        if trail_brake > 0.4:
+            # Deep trail brake: 40° coast optimal (index 0)
+            coast_target_idx = 0
+        elif trail_brake < 0.2:
+            # Light trail brake: 50° coast optimal (index 2)
+            coast_target_idx = 2
+        else:
+            coast_target_idx = 1  # 45° middle
+
+        coast_mismatch = abs(ramp_idx - coast_target_idx)
+        gain -= min(12.0, coast_mismatch * 6.0)  # ~6ms per step mismatch
+
+        # ═══════════════════════════════════════════════════════════════
+        # TIER 5: DIFF CLUTCH PLATES (lock authority, exit traction)
+        # ═══════════════════════════════════════════════════════════════
+        # More plates = more lock authority at same preload.
+        # Fewer plates = less mechanical traction effect, smoother.
+        # GTP baseline: 4 plates for traction-limited tracks, 6 for rotation-limited.
+        clutch_plates = int(round(params.get("diff_clutch_plates", 4)))
+        # Rear power slip p95 from measured
+        rear_slip_p95 = getattr(self._measured, "rear_power_slip_p95", None) if self._measured else None
+        if rear_slip_p95 is None:
+            rear_slip_p95 = 0.07  # Sebring BMW baseline
+        if rear_slip_p95 > 0.10:
+            # High rear slip → more plates needed for traction
+            plates_target = 6
+        elif rear_slip_p95 < 0.05:
+            # Low rear slip → fewer plates, smoother exit
+            plates_target = 2
+        else:
+            plates_target = 4
+        gain -= min(10.0, abs(clutch_plates - plates_target) * 3.0)
+
+        # ═══════════════════════════════════════════════════════════════
+        # TIER 5: TC GAIN / SLIP (traction control authority, 5-15ms)
+        # ═══════════════════════════════════════════════════════════════
+        # TC too aggressive: driver losing corner exit (intervention clips power)
+        # TC too passive: wheelspin on exit, tyre wear, rear instability
+        tc_gain = int(round(params.get("tc_gain", 4)))
+        tc_slip = int(round(params.get("tc_slip", 3)))
+
+        # Target: gain/slip from supporting_solver's recommendation
+        tc_gain_target = getattr(self._measured, "_tc_gain_recommendation", None) if self._measured else None
+        tc_slip_target = getattr(self._measured, "_tc_slip_recommendation", None) if self._measured else None
+        if tc_gain_target is not None:
+            gain -= min(8.0, abs(tc_gain - tc_gain_target) * 2.0)
+        if tc_slip_target is not None:
+            gain -= min(6.0, abs(tc_slip - tc_slip_target) * 2.0)
+        # Direct rear slip pressure: if rear_slip_p95 > 0.10, want higher TC
+        if rear_slip_p95 > 0.10 and tc_gain < 5:
+            gain -= min(8.0, (5 - tc_gain) * 3.0)
+        elif rear_slip_p95 < 0.04 and tc_gain > 6:
+            gain -= min(5.0, (tc_gain - 6) * 2.0)  # TC too aggressive for stable car
 
         return gain
 

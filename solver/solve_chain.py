@@ -786,12 +786,23 @@ def materialize_overrides(
     if rebuild_step4:
         arb_solver = ARBSolver(car, track)
         if overrides.step4:
+            # ARB size may come in as ordinal int (0=Soft,1=Medium,2=Stiff) from grid search
+            def _arb_size_label(val, labels):
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    idx = int(round(val))
+                    if labels and 0 <= idx < len(labels):
+                        return labels[idx]
+                return val  # already a string label
+            _f_arb_raw = overrides.step4.get("front_arb_size", step4.front_arb_size)
+            _r_arb_raw = overrides.step4.get("rear_arb_size", step4.rear_arb_size)
+            _f_arb_size = _arb_size_label(_f_arb_raw, car.arb.front_size_labels)
+            _r_arb_size = _arb_size_label(_r_arb_raw, car.arb.rear_size_labels)
             step4 = arb_solver.solution_from_explicit_settings(
                 front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
                 rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-                front_arb_size=overrides.step4.get("front_arb_size", step4.front_arb_size),
+                front_arb_size=_f_arb_size,
                 front_arb_blade_start=overrides.step4.get("front_arb_blade_start", step4.front_arb_blade_start),
-                rear_arb_size=overrides.step4.get("rear_arb_size", step4.rear_arb_size),
+                rear_arb_size=_r_arb_size,
                 rear_arb_blade_start=overrides.step4.get("rear_arb_blade_start", step4.rear_arb_blade_start),
                 lltd_offset=mods.lltd_offset,
                 rarb_blade_slow_corner=overrides.step4.get("rarb_blade_slow_corner", step4.rarb_blade_slow_corner),
@@ -829,6 +840,7 @@ def materialize_overrides(
                 rear_wheel_rate_nmm=rear_wheel_rate_nmm,
                 fuel_load_l=inputs.fuel_load_l,
                 camber_confidence=inputs.camber_confidence,
+                measured=inputs.measured,
             )
         reconcile_ride_heights(
             car,

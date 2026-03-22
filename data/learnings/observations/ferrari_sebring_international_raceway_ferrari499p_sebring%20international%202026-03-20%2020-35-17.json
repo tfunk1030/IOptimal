@@ -4,7 +4,7 @@
   "car": "ferrari",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-21T02:02:20.833162+00:00",
+  "timestamp": "2026-03-22T22:56:25.783970+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -420,7 +420,7 @@
     "understeer_low_deg": 0.165,
     "understeer_high_deg": 0.32,
     "front_pressure_hot_kpa": 180.2,
-    "rear_pressure_hot_kpa": 181.7
+    "rear_pressure_hot_kpa": 182.0
   },
   "solver_comparison": {},
   "corner_performance": [

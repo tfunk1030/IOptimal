@@ -1,16 +1,16 @@
 {
   "car": "ferrari",
   "track": "Sebring International Raceway",
-  "session_count": 8,
+  "session_count": 9,
   "key_insights": [
-    "Lap time range: 108.665s \u2013 111.119s (2.454s window across 8 sessions)",
+    "Lap time range: 108.665s \u2013 111.119s (2.454s window across 9 sessions)",
     "Changed damper_lf_ls_comp: -2, damper_lf_ls_rbd: 7, damper_rf_ls_comp: -2 (0.600s faster); effects: understeer_high_speed_deg +0.06, body_slip_p95_deg +0.67 [high confidence]"
   ],
   "setup_trends": [
-    "front_camber_deg: trending increasing (-2.9 -> -1.9 over 8 sessions)",
-    "rear_camber_deg: trending increasing (-1.8 -> -1.6 over 8 sessions)"
+    "rear_arb_blade: trending decreasing (4.0 -> 2.0 over 9 sessions)",
+    "rear_camber_deg: trending decreasing (-1.8 -> -1.9 over 9 sessions)"
   ],
   "unresolved_questions": [
-    "thermal:Front carcass temp 35C (target >80C) appears in 4/8 sessions \u2014 may need attention"
+    "thermal:Front carcass temp 35C (target >80C) appears in 5/9 sessions \u2014 may need attention"
   ]
 }

@@ -287,6 +287,13 @@ def _extract_target_maps(base_result: SolveChainResult) -> dict[str, Any]:
             "diff_preload_nm": base_result.supporting.diff_preload_nm,
             "tc_gain": base_result.supporting.tc_gain,
             "tc_slip": base_result.supporting.tc_slip,
+            "diff_clutch_plates": getattr(base_result.supporting, "diff_clutch_plates", 6),
+            "diff_ramp_coast": getattr(base_result.supporting, "diff_ramp_coast", 45),
+            "diff_ramp_drive": getattr(base_result.supporting, "diff_ramp_drive", 70),
+        },
+        "step4_arb_size": {
+            "front_arb_size": base_result.step4.front_arb_size,
+            "rear_arb_size": base_result.step4.rear_arb_size,
         },
     }
 
@@ -329,6 +336,18 @@ def _apply_cluster_center(targets: dict[str, Any], setup_cluster: Any) -> None:
         targets["supporting"]["tc_gain"] = int(round(center["tc_gain"]))
     if "tc_slip" in center:
         targets["supporting"]["tc_slip"] = int(round(center["tc_slip"]))
+    if "diff_clutch_plates" in center:
+        targets["supporting"]["diff_clutch_plates"] = int(round(center["diff_clutch_plates"]))
+    if "diff_ramp_coast" in center:
+        targets["supporting"]["diff_ramp_coast"] = int(round(center["diff_ramp_coast"]))
+    if "diff_ramp_drive" in center:
+        targets["supporting"]["diff_ramp_drive"] = int(round(center["diff_ramp_drive"]))
+    if "front_arb_size" in center:
+        if "step4_arb_size" in targets:
+            targets["step4_arb_size"]["front_arb_size"] = center["front_arb_size"]
+    if "rear_arb_size" in center:
+        if "step4_arb_size" in targets:
+            targets["step4_arb_size"]["rear_arb_size"] = center["rear_arb_size"]
 
 
 def _apply_family_state_adjustments(
@@ -457,8 +476,17 @@ def _target_overrides(base_result: SolveChainResult, targets: dict[str, Any]) ->
         if corner_overrides:
             overrides.step6[corner_name] = corner_overrides
     for field_name, value in targets["supporting"].items():
-        if getattr(base_result.supporting, field_name) != value:
-            overrides.supporting[field_name] = value
+        if field_name in ("diff_ramp_coast", "diff_ramp_drive", "diff_clutch_plates",
+                          "tc_gain", "tc_slip"):
+            if getattr(base_result.supporting, field_name, None) != value:
+                overrides.supporting[field_name] = value
+        elif hasattr(base_result.supporting, field_name):
+            if getattr(base_result.supporting, field_name) != value:
+                overrides.supporting[field_name] = value
+    # ARB size changes go into step4 overrides
+    for field_name, value in targets.get("step4_arb_size", {}).items():
+        if getattr(base_result.step4, field_name, None) != value:
+            overrides.step4[field_name] = value
     return overrides
 
 
