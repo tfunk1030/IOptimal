@@ -261,6 +261,7 @@ class ObjectiveFunction:
         self._heave_cal = HeaveCalibration.load(_car_slug, _track_slug)
         self._measured = None   # set per-evaluation in evaluate()
         self._driver = None     # set per-evaluation in evaluate()
+        self._session_db = None  # populated by set_session_context(); safe default for __main__ path
 
     def set_session_context(self, measured=None, driver=None) -> None:
         """Pre-stash measured telemetry and driver profile for all subsequent evaluations.
