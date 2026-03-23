@@ -450,7 +450,7 @@ def build_setup_schema(
             car=car_name,
             adapter="generic",
             ibt_path=str(ibt_path or ""),
-            warnings=["Detailed setup schema is currently Ferrari-first; returning generic CurrentSetup dump."],
+            warnings=[],
         )
         if current_setup is not None and is_dataclass(current_setup):
             for key, value in asdict(current_setup).items():
