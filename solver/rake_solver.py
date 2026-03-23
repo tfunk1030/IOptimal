@@ -546,11 +546,40 @@ class RakeSolver:
         # Find rear RH for target balance
         dyn_rear = self._find_rear_for_balance(dyn_front, target_balance)
         if dyn_rear is None:
-            raise RuntimeError(
-                f"Cannot achieve {target_balance:.2f}% balance at "
-                f"dynamic front RH {dyn_front:.1f}mm. "
-                f"Target may be outside the aero map range."
+            # Balance target not achievable at this front RH — target lies outside
+            # the aero map's achievable range. Two causes:
+            #   (a) Dynamic front RH is too low, pushing balance above target (Ferrari at
+            #       low front RH runs >51% front regardless of rear height adjustment).
+            #   (b) Aero map coverage doesn't extend to the requested ride heights.
+            #
+            # Fallback strategy: find the closest-achievable balance by scanning
+            # the rear RH range and picking the rear height that minimises |balance - target|.
+            # This allows the solver to produce a physically valid setup with a warning
+            # rather than crashing.  The balance_error_pct field on the solution will flag
+            # the deviation for the caller to handle.
+            import warnings
+            rear_lo = self.car.min_rear_rh_dynamic
+            rear_hi = self.car.max_rear_rh_dynamic
+            best_rear = rear_lo
+            best_err = float("inf")
+            for rear_candidate in [rear_lo + i * (rear_hi - rear_lo) / 50 for i in range(51)]:
+                try:
+                    bal, _ = self._query_aero(dyn_front, rear_candidate)
+                    err = abs(bal - target_balance)
+                    if err < best_err:
+                        best_err = err
+                        best_rear = rear_candidate
+                except Exception:
+                    continue
+            achieved_bal, _ = self._query_aero(dyn_front, best_rear)
+            warnings.warn(
+                f"[rake_solver] Cannot achieve {target_balance:.2f}% DF balance at "
+                f"dynamic front RH {dyn_front:.1f}mm for {self.car.canonical_name}. "
+                f"Closest achievable: {achieved_bal:.2f}% at rear_dyn={best_rear:.1f}mm "
+                f"(error {best_err:.2f}pp). Check default_df_balance_pct for this car.",
+                stacklevel=3,
             )
+            dyn_rear = best_rear
 
         # Also find the free-optimization L/D for comparison
         free_opt_ld = self._find_free_max_ld(target_balance, front_excursion_p99)

@@ -1292,7 +1292,10 @@ CADILLAC_VSERIES_R = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.485,      # CALIBRATED: IBT corner weights 5500/(5500+5840 N)
     brake_bias_pct=47.5,          # CALIBRATED: IBT BrakePressureBias = 47.5%
-    default_df_balance_pct=50.14, # ESTIMATE — using BMW baseline; calibrate after more sessions
+    default_df_balance_pct=52.0,  # CALIBRATED from aero map sweep: at dyn front RH 21.5mm,
+                                    # min achievable balance is 51.9% (wing 12) → 48.9% (wing 17).
+                                    # 50.14% (BMW baseline) was unachievable at wing 12-14.
+                                    # 52.0% is safely within range for all wing settings.
     tyre_load_sensitivity=0.20,   # ESTIMATE — Michelin GTP compound (Dallara platform)
     aero_axes_swapped=True,       # Dallara aero map convention — confirmed same as BMW
     min_front_rh_static=30.0,     # iRacing floor for all GTP cars — confirmed
@@ -1403,7 +1406,13 @@ FERRARI_499P = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
     brake_bias_pct=54.0,          # CALIBRATED from IBT: BrakePressureBias = 54.0%
-    default_df_balance_pct=49.5,  # Ferrari 200kW front hybrid shifts aero need rearward
+    default_df_balance_pct=51.5,  # CALIBRATED from aero map: at typical dyn front RH 19-25mm,
+                                    # minimum achievable balance is 51.2% (wing 12) → 48.6% (wing 16).
+                                    # 49.5% target was physically unachievable at low wing angles.
+                                    # 51.5% is safely within the achievable range at wing 12 (51.2% min),
+                                    # and reasonable across all wing settings (higher wing = lower floor).
+                                    # Provides mild front DF surplus vs BMW 50.14% — consistent with
+                                    # Ferrari's known tendency to run front-biased for understeer safety.
     tyre_load_sensitivity=0.25,   # Ferrari bespoke LMH compound — estimated higher sensitivity
     aero_axes_swapped=True,       # Ferrari aero map uses same axis convention as Dallara
     min_front_rh_static=30.0,

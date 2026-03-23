@@ -348,3 +348,152 @@ Each entry documents: source, key finding, formula (with units), and what was ap
    - **Key validation:** Check BMW M Hybrid V8 IBT weight/fuel telemetry channels to confirm
      actual fuel CG position. iRacing IBT likely exposes `FuelLevel` channel (litres remaining).
      Convert: m_fuel [kg] = FuelLevel [L] × 0.755 (petrol density).
+
+---
+
+## 2026-03-23 — Topic B: iRacing Shock Tuning — Official Guide + GTP Manual Data
+
+**Sources:**
+- iRacing Official Shock Tuning User Guide (2021)
+  https://s100.iracing.com/wp-content/uploads/2021/08/Shock-Tuning-User-Guide.pdf
+- Cadillac V-Series.R GTP Official User Manual V2 (2023)
+  https://s100.iracing.com/wp-content/uploads/2023/07/Cadillac-V-Series.R-GTP-Manual-V2.pdf
+- Coach Dave Academy, "Under the Hood: Cadillac V-Series.R GTP" (Sep 2025)
+  https://coachdaveacademy.com/tutorials/under-the-hood-tips-and-tricks-to-driving-the-cadillac-v-series-r-gtp/
+
+**Key findings:**
+
+1. **LS/HS transition velocity — 1.5 in/s = 38.1 mm/s:**
+   iRacing's official guide defines the low-to-high speed transition at "usually around 1.5
+   inches-per-second" of shock shaft velocity. Converting: 1.5 in/s × 25.4 = **38.1 mm/s**.
+   This is the v_knee in the two-regime damper model.
+   - v < 38 mm/s → low-speed zone (driver inputs: braking, throttle, steering)
+   - v > 38 mm/s → high-speed zone (track surface: bumps, kerbs, crests)
+   
+   **PREVIOUS ESTIMATE WAS WRONG:** physics-notes.md Topic A estimated v_knee = 25-75 mm/s
+   from generic racing damper literature. iRacing uses exactly **38.1 mm/s** (~1.5 in/s).
+   Update solver/damper_solver.py accordingly.
+
+2. **Click settings — force multiplier, NOT force per click:**
+   The iRacing guide confirms that click adjustments "affect the overall force from the shock
+   but leave the shape of the high-speed section alone." This means clicks are a SCALING FACTOR
+   on the base force curve, not an additive force per click. The formula is:
+     F_actual(v) = F_base(v) × click_scale_factor(click)
+   NOT:
+     F_actual(v) = F_base(v) + click × force_per_click
+   
+   The guide does NOT publish exact force-per-click values (these are car-specific and
+   proprietary to each car's shock package). However, the scaling behaviour is confirmed:
+   changing clicks shifts the entire force curve up/down proportionally.
+
+3. **Slope setting — changes HS profile between digressive and linear:**
+   - Low slope (1) → digressive curve: rapid force buildup at low HS velocity, then flattens.
+     Good for smooth tracks (COTA, Pocono). Absorbs small bumps without chassis disturbance.
+   - High slope (max) → nearly linear: force grows proportionally with velocity.
+     Good for bumpy tracks (Sebring, Atlanta, street circuits). Prevents chassis bottoming.
+   - Slope ONLY affects the high-speed region (>38 mm/s). Low-speed is unchanged.
+   - The compression and rebound slope should generally be set similarly, then fine-tuned.
+
+   **For iOptimal:** The slope setting determines the damper force model shape above v_knee.
+   At low slope: F_hs(v) ≈ F_knee + C_hs × ln(v/v_knee)  (digressive, logarithmic)
+   At high slope: F_hs(v) ≈ F_knee + C_hs × (v - v_knee)  (linear)
+   Intermediate slopes interpolate between these two profiles.
+
+4. **GTP suspension architecture — confirmed from Cadillac manual:**
+   - **Front:** Pushrod-actuated independent torsion bar suspension + front heave spring element
+   - **Rear:** Pushrod-actuated independent torsion bar suspension + rear third-spring element
+   - **Heave spring:** Controls vertical loads only (not roll). Stiffening = better aero
+     platform but worse bump absorption. The spring rate is indexed (not continuous).
+   - **Heave perch offset:** Adjusts preload on heave spring. LOWER = more preload = higher
+     front ride height. HIGHER = less preload = lower front ride height.
+     THIS IS INVERSE to what you might expect. The perch offset is a DOWNWARD displacement:
+     more negative = more spring compression = higher ride height.
+   - **Pushrod length offset:** Adjusts front ride height WITHOUT changing heave spring preload
+     or torsion bar settings. A clean ride-height-only adjustment.
+   - **Third spring (rear):** Same concept as heave but for the rear. Controls vertical loads
+     at the rear axle independent of roll.
+   
+   **For iOptimal:** This confirms the solver architecture is correct:
+   - Heave spring → ride height control (Step 2)
+   - Torsion bars → corner spring rates (Step 3)
+   - Pushrod → front RH fine-tuning (Step 1)
+   - Perch offsets are DEPENDENT on the chosen heave/torsion/pushrod settings → correctly
+     removed from the Tier A search dimensions (P1 already done).
+
+5. **Damper architecture (4-way adjustable, from Cadillac manual):**
+   - LS Compression: "Higher values increase compression resistance and transfer load onto a
+     given tire under low-speed conditions more quickly, inducing understeer."
+   - HS Compression: "Higher values cause the suspension to be stiffer [over bumps/kerbs]."
+   - HS Compression Slope: "Lower slope = digressive, higher slope = linear/aggressive."
+   - LS Rebound: "Controls shock extending at lower speeds during body movement from inputs."
+   - HS Rebound: "Controls shock behavior at higher speeds typically from bumps and kerbs."
+   - HS Rebound Slope: Same profile control as compression slope but for the rebound side.
+   
+   **Key insight for diagonal damper coupling:**
+   Under braking → front LS compression + rear LS rebound active simultaneously.
+   Under corner entry → outside-front LS compression + inside-rear LS rebound.
+   The iRacing guide explicitly states this X-pattern diagonal coupling. The solver should
+   evaluate damper balance as diagonal pairs, not individual corners.
+
+6. **Shock histogram method — load variation minimisation:**
+   iRacing provides shock velocity histograms showing % time in each velocity zone.
+   Target: "curved triangle" shape centred on zero with balanced bump/rebound.
+   - If HS bars too tall → reduce HS clicks and/or slope
+   - If LS bars imbalanced → adjust LS comp/rebound ratio
+   - Goal: minimise load variation = maximise grip consistency
+   
+   **For iOptimal objective function:** The IBT track profile already has shock velocity
+   distributions (p50, p95, p99 for front/rear). These can be used to:
+   - Score damper tuning: does the predicted force curve produce balanced LS/HS time-in-zone?
+   - Flag overdamped (too much HS time) or underdamped (too much chassis travel) conditions.
+
+7. **GTP-specific heave/third spring guidance (Coach Dave Academy):**
+   "Stiffening the front heave spring can help control the ride height and improve aerodynamic
+   performance. Over-stiffening it can cause the car to bounce too much on bumpy surfaces.
+   Generally, you should be able to stiffen these springs more on smoother tracks like Road
+   America and soften them on bumpy tracks like Watkins Glen."
+   
+   **For iOptimal:** Heave/third spring rate should be track-dependent:
+   - Score: penalise high heave stiffness on tracks with high p99 shock velocity (bumpy)
+   - Score: penalise low heave stiffness on tracks with low p99 shock velocity (smooth)
+   - The current solver uses a fixed heave spring rate per car — should become track-adaptive.
+
+---
+
+## 2026-03-23 — Topic C: Ferrari/Cadillac Aero Map Balance Floor Calibration
+
+**Sources:**
+- Direct analysis of parsed aero map JSON files from data/aero-maps/
+- Systematic sweep of DF balance vs dynamic front RH across wing angles
+
+**Key findings:**
+
+1. **Aero balance floor is car+wing dependent:**
+   At typical GTP operating ride heights (dynamic front 19-25mm), the achievable DF balance
+   has a FLOOR that varies by car and wing angle. This floor exists because ground-effect aero
+   produces more front DF at lower ride heights — and GTP cars run very low front RH.
+   
+   Balance floor at typical dyn_front for each car (wing 12):
+   - BMW: 48.5% (at 20mm dyn front) — below default target 50.14% ✓ achievable
+   - Ferrari: 51.2% (at 19.5mm dyn front) — ABOVE old target 49.5% ✗ unachievable
+   - Cadillac: 51.9% (at 21.5mm dyn front) — ABOVE old target 50.14% ✗ unachievable
+   - Porsche: ~49.0% (at 20mm dyn front) — below target 50.5% ✓ achievable
+   - Acura: ~47.0% (at 20mm dyn front) — below target 49.0% ✓ achievable
+
+2. **Corrections applied:**
+   - Ferrari: default_df_balance_pct 49.5% → 51.5% (safely above 51.2% floor at wing 12)
+   - Cadillac: default_df_balance_pct 50.14% → 52.0% (safely above 51.9% floor at wing 12)
+   - rake_solver: added fallback when balance target can't be bracketed — scans rear RH range
+     for minimum |balance - target| and warns instead of crashing.
+
+3. **Physics reasoning for the floor:**
+   At low dynamic front RH, the front diffuser's ground effect is maximised. The closer the
+   floor is to the ground, the more front suction is generated (up to vortex seal limit).
+   Meanwhile, the rear wing angle determines rear DF but has diminishing returns as wing angle
+   decreases. At low wing angles, rear DF is low → front fraction of total DF is high → balance
+   floor is higher. At high wing angles, rear DF increases → front fraction drops → balance
+   floor is lower.
+   
+   This explains the wing-dependent pattern:
+   - Ferrari wing 12: floor 51.2%, wing 14: 50.0%, wing 16: 48.6%
+   - As wing increases, floor drops because rear DF grows relative to the fixed front ground effect.
