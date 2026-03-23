@@ -3415,6 +3415,24 @@ def reason_and_solve(
             print()
             print(gs_result.summary())
 
+            # --save-setup: write flat recommended params as JSON
+            _save_setup_path = getattr(args, "save_setup", None) if "args" in dir() else None
+            if _save_setup_path and gs_result.best_overall is not None:
+                import json as _json
+                _rec = {
+                    "car": car.canonical_name if hasattr(car, "canonical_name") else str(car),
+                    "track": getattr(track, "name", str(track)) if track else None,
+                    "wing_deg": wing,
+                    "authority_session": authority.label,
+                    "authority_lap_s": getattr(authority, "fastest_lap_s", None) or getattr(authority, "sort_timestamp", None),
+                    "score_ms": round(gs_result.best_overall.score, 1) if hasattr(gs_result.best_overall, "score") else None,
+                    "recommended": {k: round(v, 4) if isinstance(v, float) else v
+                                    for k, v in gs_result.best_overall.params.items()},
+                }
+                with open(_save_setup_path, "w") as _f:
+                    _json.dump(_rec, _f, indent=2)
+                print(f"\n  Recommended setup saved to: {_save_setup_path}")
+
             # Output full setup sheet for each top candidate
             from pipeline.report import generate_report as _gen_report
         except Exception as _gs_err:
@@ -3553,6 +3571,11 @@ def main() -> None:
             "Use to validate that the current setup isn't a local minimum. "
             "Requires --search-mode."
         ),
+    )
+    parser.add_argument(
+        "--save-setup", type=str, default=None, dest="save_setup",
+        metavar="FILE",
+        help="Write the recommended setup params as a flat JSON file (e.g. setup.json). Requires --search-mode.",
     )
 
     args = parser.parse_args()
