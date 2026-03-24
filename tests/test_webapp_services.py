@@ -236,6 +236,26 @@ class WebAppServiceTests(unittest.TestCase):
         self.assertEqual(summary.buckets[0].track, "Sebring International Raceway")
         self.assertTrue(summary.buckets[0].corrections)
 
+    def test_knowledge_summary_uses_full_track_slug(self) -> None:
+        learn_dir = Path(self.tempdir.name) / "learn-full-slug"
+        store = KnowledgeStore(base_dir=learn_dir)
+        store.save_observation(
+            "bmw_road_atlanta_s1",
+            {"session_id": "bmw_road_atlanta_s1", "car": "bmw", "track": "Road Atlanta"},
+        )
+        (learn_dir / "insights" / "bmw_road_atlanta_insights.json").write_text(
+            json.dumps({"key_insights": ["Full slug lookup works."]})
+        )
+        (learn_dir / "models" / "bmw_road_atlanta_empirical.json").write_text(
+            json.dumps({"corrections": {"rear_third_nmm": 8.0}})
+        )
+
+        with patch("webapp.services.KnowledgeStore", return_value=store):
+            summary = self.service.load_knowledge_summary()
+
+        self.assertEqual(summary.buckets[0].track, "Road Atlanta")
+        self.assertEqual(summary.buckets[0].insights, ["Full slug lookup works."])
+
 
 if __name__ == "__main__":
     unittest.main()

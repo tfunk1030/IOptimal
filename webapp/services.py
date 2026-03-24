@@ -160,9 +160,18 @@ class IOptimalWebService:
         buckets: list[KnowledgeBucketView] = []
         for (car, track), items in sorted(bucket_map.items()):
             items.sort(key=lambda item: str(item.get("session_id", "")))
-            slug = _slug_fragment(track).split("_")[0] if track else "track"
-            insight_path = store.base / "insights" / f"{car}_{slug}_insights.json"
-            model_path = store.base / "models" / f"{car}_{slug}_empirical.json"
+            insight_path = _resolve_learning_file(
+                store.base / "insights",
+                car=car,
+                track=track,
+                suffix="insights.json",
+            )
+            model_path = _resolve_learning_file(
+                store.base / "models",
+                car=car,
+                track=track,
+                suffix="empirical.json",
+            )
             insights: list[str] = []
             corrections: list[str] = []
 
@@ -764,3 +773,17 @@ def _coalesce(*values: Any) -> Any:
 def _slug_fragment(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
     return slug or "unknown"
+
+
+def _resolve_learning_file(base_dir: Path, *, car: str, track: str, suffix: str) -> Path:
+    full_slug = _slug_fragment(track) if track else "track"
+    candidate_names = [f"{car}_{full_slug}_{suffix}"]
+    if full_slug:
+        legacy_slug = full_slug.split("_")[0]
+        if legacy_slug != full_slug:
+            candidate_names.append(f"{car}_{legacy_slug}_{suffix}")
+    for filename in candidate_names:
+        candidate = base_dir / filename
+        if candidate.exists():
+            return candidate
+    return base_dir / candidate_names[0]
