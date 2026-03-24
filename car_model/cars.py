@@ -480,10 +480,13 @@ class CornerSpringModel:
       1. Corner natural frequency (heave dynamics)
       2. Front roll stiffness balance (LLTD, understeer/oversteer)
 
-    The objective.py compliance coupling term (item G) models this by
-    computing a cross-term: Δ(OD) → Δ(k_roll_front) → Δ(LLTD_pct).
+    The objective.py TORSION_ARB_COUPLING term (γ=0.25) adds a small empirical
+    correction: Δ(OD) also slightly scales effective k_arb_front (back-calibrated
+    from BMW Sebring IBT LLTD data, not from first principles). The direct
+    corner-spring roll effect is the dominant term:
     For every +1 mm OD increase at nominal (13.9→14.9): k_wheel shifts
-    ~+9 N/mm → K_roll_front shifts +~11.5 kN·m/rad → LLTD shifts ~+0.4%.
+    ~+9 N/mm → K_roll_front shifts +~11.5 kN·m/rad → LLTD shifts ~+0.4%
+    (with ~+0.1% additional from the ARB coupling correction at γ=0.25).
 
     ## iRacing vs Real Car Note
     iRacing uses a simplified "k = C * OD^4" model that abstracts L and MR

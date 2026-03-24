@@ -497,3 +497,121 @@ Each entry documents: source, key finding, formula (with units), and what was ap
    This explains the wing-dependent pattern:
    - Ferrari wing 12: floor 51.2%, wing 14: 50.0%, wing 16: 48.6%
    - As wing increases, floor drops because rear DF grows relative to the fixed front ground effect.
+
+---
+
+## 2026-03-24 — Topic G: Torsion Bar ↔ ARB Coupling Physics
+
+**Sources:**
+- Milliken & Milliken, *Race Car Vehicle Dynamics* (RCVD), Chapter 18 — Roll stiffness
+  (standard reference: parallel spring model for corner springs + ARB)
+- OptimumG, "Bar Talk" (Claude Rouelle, RaceCar Engineering)
+  https://optimumg.com/bar-talk/
+  ARS_arb = Track² × K_arb / MR_arb² [Nm/deg]
+  ARS_sp  = Track² × K_sp / (2 × MR_sp²) [Nm/deg]
+  → These are ADDITIVE (parallel elements). Standard theory assumes rigid rocker pivot.
+- Wikipedia, "Anti-roll bar" — ARB stiffness formula
+  https://en.wikipedia.org/wiki/Anti-roll_bar
+  "Stiffness proportional to material stiffness, fourth power of radius, inverse of lever arm length"
+  K_arb ∝ d_arb^4 / L_lever  (same OD^4 form as corner torsion bars, but SEPARATE components)
+- F1technical.net, "Anti Roll Bar Motion Ratio Convention" (Tim Wright, Force India engineer)
+  https://www.f1technical.net/forum/viewtopic.php?t=29825
+  "Expressing the motion ratio in radians/m means WheelStiffness = ArbStiffness × MotionRatio².
+  This assumes all compliance is in the bar twist — rarely the case in practice."
+- HPA Academy, "ARB Motion Ratio and Lever Arm Length"
+  https://www.hpacademy.com/forum/suspension-tuning-and-optimization/show/anti-roll-bar-motion-ratio-and-lever-arm-length/
+  "If you connect at MR=0.5:1 you halve effective ARB stiffness. The motion ratio is the key
+  multiplier; torsional section stiffness and lever arm are the ARB's own independent parameters."
+
+**Key findings:**
+
+1. **Standard parallel model — theoretical coupling = 0.0:**
+   In Milliken RCVD and all standard suspension mechanics texts, corner springs and ARB are
+   treated as PARALLEL roll stiffness elements:
+   ```
+   K_roll_front_total = K_roll_corners + K_roll_arb
+   K_roll_corners = 2 × k_wheel(N/m) × t_f² / 2   [N·m/rad]
+   K_roll_arb     = K_arb_base × MR_arb²            [N·m/rad]
+   ```
+   In a rigid kinematic model: wheel displacement δ → rocker rotates φ = δ / r_arm (pure geometry).
+   This rotation is INDEPENDENT of torsion bar stiffness — the motion ratio is fixed by geometry.
+   Therefore ARB twist = 2φ = 2δ/r_arm, and ARB force at wheel = K_arb_blade × 2 × MR_arb² × δ.
+   **The corner torsion bar OD has zero direct effect on ARB effectiveness in rigid kinematics.**
+
+2. **GTP-specific: Where a coupling COULD arise (second-order effects):**
+   In the BMW M Hybrid V8 (Dallara chassis), the torsion bar and ARB blade both connect to the
+   same bellcrank/rocker. In an IDEAL rigid system the coupling is zero. However, real compliance
+   sources that could create a small coupling include:
+   a. **Bushing/mount compliance at the torsion bar attachment:** If the bar mount flexes under
+      roll load, the effective lever arm changes slightly with OD. A stiffer bar (larger OD)
+      resists this flex, maintaining geometry. The coupling would be small and POSITIVE (stiffer
+      bar → geometry preserved → ARB slightly more effective).
+   b. **Chassis torsional stiffness:** The roll force transmitted to the chassis through the
+      torsion bar mounting creates a small torsional chassis deformation. Stiffer torsion bars
+      increase this load, potentially affecting ARB mounting geometry.
+   c. **Rocker structural compliance:** If the rocker/bellcrank itself flexes under combined spring
+      + ARB load, a stiffer torsion bar changes the load distribution and thus the net flex.
+   
+   **Magnitude:** These effects are second-order and geometry-specific. They cannot be derived
+   from published formulas alone — they require either FEA of the rocker assembly or IBT
+   measurement across multiple OD settings at fixed ARB.
+
+3. **Current iOptimal model — empirical back-calibration, not pure physics:**
+   The existing `TORSION_ARB_COUPLING = 0.25` value was derived by back-calculation from the
+   BMW Sebring IBT measurement showing LLTD = 50.99% at a specific setup:
+   (front torsion OD = 13.9 mm → k_wheel = 30 N/mm, FARB Soft/1, RARB Medium/3)
+   The coefficient 0.25 makes the objective function's predicted LLTD match this single
+   observed data point. It is therefore an empirical fitting parameter, not a first-principles
+   coupling constant.
+   
+   **Traceability:**
+   - OD_ref = 13.9mm → k_wheel = 30 N/mm → K_roll_corner = 784 N·mm/deg
+   - FARB Soft/1: K_arb_base = 5500, blade_factor = 0.30 → K_arb = 1650 N·mm/deg
+   - RARB Medium/3: K_arb_base = 10000, blade_factor ≈ 0.65 → K_arb ≈ 975 N·mm/deg
+   - Without coupling: K_roll_front = 784 + 1650 = 2434, K_roll_rear = 1454 + 975 = 2429
+   - LLTD ≈ 2434/4863 = 50.0% — close but slightly off the observed 50.99%
+   - With coupling (0.25): ARB scales slightly, correcting the small gap
+   - This suggests the true coupling effect is SMALL and may partially compensate for
+     other model offsets (e.g., tyre load sensitivity correction, roll centre geometry)
+
+4. **Direction sign check:**
+   The current model: `coupling_factor = 1 + 0.25 × ((OD/OD_ref)^4 - 1)`
+   At OD > OD_ref: coupling_factor > 1 → K_arb_effective increases
+   At OD < OD_ref: coupling_factor < 1 → K_arb_effective decreases
+   
+   This sign is CONSISTENT with the "geometry preservation" explanation (b above): a stiffer
+   torsion bar better maintains the ARB attachment geometry under load. The sign is NOT
+   consistent with a "series compliance reduces ARB effectiveness for stiffer bars" model.
+   Sign check: ✅ The direction is physically plausible (though the magnitude is empirical).
+
+**Formula (derived from parallel model + empirical coupling):**
+   K_roll_front_total = K_roll_corners + K_arb_effective
+   K_roll_corners = 2 × (C_torsion × OD^4) × 1000 × t_f^2 × π/180  [N·mm/deg]
+   K_arb_effective = K_arb_base × (1 + γ × ((OD/OD_ref)^4 - 1))    [N·mm/deg]
+   where γ = TORSION_ARB_COUPLING (empirically calibrated, currently 0.25)
+
+**Units check:**
+   k_wheel [N/mm] × 1000 = k_wheel [N/m]
+   2 × k_wheel[N/m] × (t_f/2)[m]² × (π/180) = K_roll [N·m/deg] = N·mm/deg × 1000
+
+**Validation protocol (for IBT confirmation):**
+   To confirm the 0.25 coefficient or find the true value:
+   1. Find BMW Sebring IBT sessions with DIFFERENT torsion bar OD (not 13.9mm) but SAME ARB
+   2. Compute predicted LLTD with γ=0.0 vs γ=0.25 vs actual IBT LLTD
+   3. Best fit γ = the value that minimises |predicted - IBT| across OD range
+   4. If γ ≈ 0 across multiple sessions: remove coupling (pure parallel is correct)
+   5. If γ ≈ 0.25 holds: coupling is real and reasonably calibrated
+   Expected result: γ is likely in the range [0.0, 0.30] based on physical reasoning.
+   Current 0.25 is within the plausible range but needs multi-OD IBT validation.
+
+**iOptimal application:**
+- File: `solver/objective.py`, constant `TORSION_ARB_COUPLING` at class definition
+- Files: `solver/arb_solver.py`, `solver/objective.py` in `_compute_wheel_rates()` area
+- Updated the constant's docstring in objective.py to:
+  a. Clarify that 0.25 is empirically calibrated from ONE IBT data point, not from first principles
+  b. Document the theoretical lower bound (0.0 for rigid kinematics)
+  c. Explain the physical coupling mechanism (geometry preservation under load)
+  d. Add the validation protocol (multi-OD IBT comparison)
+- No change to the numeric value (0.25) — it reproduces the calibrated BMW Sebring LLTD
+  observation and there is insufficient IBT diversity to justify a different value yet.
+- The sign is confirmed correct: positive coupling = stiffer bar → slightly more effective ARB

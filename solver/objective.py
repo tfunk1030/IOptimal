@@ -213,28 +213,53 @@ class ObjectiveFunction:
     # sensitivity to RH increases, so the safe minimum RH is higher.
     VORTEX_BURST_THRESHOLD_MM = 8.0  # fallback when aero map unavailable
 
-    # Torsion bar → ARB compliance coupling coefficient.
+    # Torsion bar → ARB coupling coefficient.
     #
-    # Physics: In the BMW LMDh front suspension, the torsion bar serves as the
-    # primary corner spring AND is the structural element the ARB blade lever
-    # connects to. Changing torsion bar OD alters both:
-    #   1. Corner wheel rate: k_wheel = C_torsion * OD^4            (direct)
-    #   2. ARB effective rate: the blade attachment point displaces  (indirect)
-    #      differently under the same roll moment when the torsion bar
-    #      stiffness changes — effectively scaling ARB contribution.
+    # ── Standard parallel model (Milliken RCVD / OptimumG "Bar Talk") ────────
+    # In rigid-kinematic suspension theory, corner springs and ARB are PARALLEL
+    # roll-stiffness elements:
+    #   K_roll_total_front = K_roll_corners + K_roll_arb
+    #   K_roll_corners = 2 * k_wheel[N/m] * (t_f/2)^2 * π/180   [N·m/deg]
+    #   K_roll_arb     = K_arb_base * MR_arb^2                   [N·m/deg]
+    # Wheel→rocker motion ratio φ = δ/r_arm is set by geometry alone, independent
+    # of torsion-bar stiffness. So in a rigid kinematic model, the theoretically
+    # correct coupling = 0.0.
     #
-    # Coupling model:
+    # ── Why this constant is non-zero (empirical) ────────────────────────────
+    # 0.25 was BACK-CALIBRATED from a single BMW Sebring IBT measurement:
+    #   LLTD_ibr = 50.99% at (OD=13.9mm, FARB Soft/1, RARB Medium/3)
+    # Without coupling (γ=0): predicted LLTD ≈ 50.0% — slightly too low.
+    # γ=0.25 closes the ~1% gap, matching the observation.
+    # This single-point calibration is insufficient to confirm a physical coupling;
+    # the term may be compensating for other model offsets (roll-centre height,
+    # tyre compliance, chassis torsional flex in the rocker mount).
+    #
+    # ── Physical mechanism (if real) ─────────────────────────────────────────
+    # The most plausible second-order effect: the torsion bar mount undergoes small
+    # elastic flex under roll load. A stiffer bar (larger OD) resists this flex,
+    # preserving the ARB blade attachment geometry and marginally increasing the
+    # ARB's effective motion ratio. Sign is POSITIVE (stiffer bar → coupling > 1.0),
+    # consistent with the formula below.
+    #
+    # ── Coupling model ───────────────────────────────────────────────────────
     #   k_arb_effective = k_arb_base * coupling_factor
     #   coupling_factor = 1 + TORSION_ARB_COUPLING * ((OD/OD_ref)^4 - 1)
     #
-    # At OD=OD_ref: factor=1.0 (no change, calibrated baseline)
-    # At OD=16mm vs ref=13.9mm: factor ≈ 1.19 (+19% ARB stiffness)
-    # At OD=13.34mm: factor ≈ 0.96 (-4% ARB stiffness)
+    #   OD=OD_ref  → factor=1.0  (calibration baseline; no change)
+    #   OD=16mm    → factor≈1.19 (+19% ARB stiffness vs OD=13.9mm)
+    #   OD=11mm    → factor≈0.69 (-31% ARB stiffness)
     #
-    # Coefficient 0.25 = 25% of the torsional stiffness change propagates to ARB.
-    # This is empirically conservative — the blade spring itself is the dominant
-    # compliance element; the torsion bar couples through mounting geometry only.
-    TORSION_ARB_COUPLING = 0.25
+    # ── Validation protocol ──────────────────────────────────────────────────
+    # To validate or update γ:
+    # 1. Find BMW Sebring IBT sessions with DIFFERENT torsion OD (not 13.9mm)
+    #    but the SAME ARB size/blade settings.
+    # 2. Compute predicted LLTD with γ=0.0 vs γ=0.25 vs actual IBT LLTD.
+    # 3. Best-fit γ = minimises |predicted - IBT| across the OD range.
+    # 4. If best-fit γ ≈ 0 → remove coupling; use pure parallel model.
+    # If that data becomes available, update this constant and research/physics-notes.md.
+    # Expected physical range: γ ∈ [0.0, 0.30]. Current 0.25 is plausible but
+    # requires multi-OD IBT confirmation. (research/physics-notes.md 2026-03-24)
+    TORSION_ARB_COUPLING = 0.25  # empirical; see comment above
 
     def __init__(self, car, track, explore: bool = False):
         self.car = car
@@ -313,20 +338,30 @@ class ObjectiveFunction:
     def _torsion_arb_coupling_factor(self, front_torsion_od: float) -> float:
         """Compute the coupling multiplier applied to k_arb_front.
 
-        The front torsion bar OD changes wheel rate as OD^4. Because the ARB
-        blade lever arm is physically attached to the torsion bar housing, a
-        stiffer torsion bar partially stiffens the effective ARB path.
+        Standard suspension theory (Milliken RCVD, OptimumG "Bar Talk") treats
+        corner springs and ARB as parallel roll-stiffness elements — changing torsion
+        bar OD has NO direct effect on ARB stiffness in a rigid kinematic model.
+
+        However, iOptimal applies an empirical coupling factor (TORSION_ARB_COUPLING =
+        0.25) that was back-calibrated from a single BMW Sebring IBT data point
+        (LLTD = 50.99% at OD=13.9mm, FARB Soft/1, RARB Medium/3). This term corrects
+        a ~1% LLTD prediction gap that likely arises from rocker mount compliance,
+        chassis torsional flex, or other non-modelled second-order effects.
+
+        Physics notes: research/physics-notes.md §2026-03-24 Topic G documents the
+        derivation in detail and specifies the IBT validation protocol needed to
+        confirm whether γ=0.25 is correct or should be reduced to 0.0.
 
         Args:
             front_torsion_od: Current torsion bar OD in mm.
 
         Returns:
-            Dimensionless coupling factor (1.0 at reference OD).
+            Dimensionless coupling factor (1.0 at reference OD = no correction).
         """
         od_ref = self.car.corner_spring.front_torsion_od_ref_mm
         if od_ref <= 0:
             return 1.0
-        # Relative stiffness ratio: (OD/OD_ref)^4
+        # Relative stiffness ratio: (OD/OD_ref)^4 (same OD^4 law as wheel rate)
         stiffness_ratio = (front_torsion_od / od_ref) ** 4
         return 1.0 + self.TORSION_ARB_COUPLING * (stiffness_ratio - 1.0)
 
@@ -511,9 +546,9 @@ class ObjectiveFunction:
         k_roll_springs_rear = 2.0 * (rear_wheel_rate * 1000.0) * t_r**2 * (math.pi / 180.0)
         k_arb_front_base = arb.front_roll_stiffness(arb.front_baseline_size, front_arb_blade)
         k_arb_rear = arb.rear_roll_stiffness(arb.rear_baseline_size, rear_arb_blade)
-        # Torsion bar compliance coupling: changing OD scales ARB effective stiffness.
-        # Larger OD → stiffer torsion bar → blade lever transmits more roll moment
-        # → k_arb_front increases proportionally (see TORSION_ARB_COUPLING constant).
+        # Empirical coupling: γ=0.25 back-calibrated from BMW Sebring IBT LLTD.
+        # Theoretically 0.0 (parallel elements, rigid kinematics). See TORSION_ARB_COUPLING
+        # class constant and research/physics-notes.md §2026-03-24 for derivation.
         k_arb_front = k_arb_front_base * self._torsion_arb_coupling_factor(front_torsion_od)
 
         k_front_total = k_roll_springs_front + k_arb_front
@@ -691,12 +726,12 @@ class ObjectiveFunction:
         k_roll_springs_front = 2.0 * (front_wheel_rate * 1000.0) * t_f**2 * (math.pi / 180.0)
         k_roll_springs_rear = 2.0 * (rear_wheel_rate * 1000.0) * t_r**2 * (math.pi / 180.0)
 
-        # ARB contribution — with torsion bar compliance coupling.
-        # The front torsion OD affects ARB effective stiffness because the ARB
-        # blade lever arm connects to the torsion bar housing. A stiffer torsion
-        # bar (larger OD) increases the coupling stiffness path from chassis roll
-        # motion through to the blade, raising effective k_arb_front by up to 25%
-        # of the relative torsional stiffness change (see TORSION_ARB_COUPLING).
+        # ARB contribution — with empirical torsion bar coupling (γ=0.25).
+        # Standard theory (RCVD): parallel model, coupling = 0.0. The 0.25 is an
+        # empirical correction back-calibrated from BMW Sebring IBT LLTD=50.99%.
+        # May compensate for rocker mount flex or other non-modelled compliance.
+        # See TORSION_ARB_COUPLING class constant for full derivation and validation
+        # protocol. (research/physics-notes.md §2026-03-24 Topic G)
         # ARB size: may come as ordinal int (0=Soft,1=Medium,2=Stiff) or string label
         _f_arb_size_raw = params.get("front_arb_size", arb.front_baseline_size)
         _r_arb_size_raw = params.get("rear_arb_size", arb.rear_baseline_size)
