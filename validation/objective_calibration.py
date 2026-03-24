@@ -78,6 +78,15 @@ def _extract_params(setup: dict) -> dict[str, float]:
         "rear_ls_rbd": avg(lr, rr, "ls_rbd", 7),
         "rear_hs_comp": avg(lr, rr, "hs_comp", 3),
         "rear_hs_rbd": avg(lr, rr, "hs_rbd", 3),
+        # Pushrod offsets — used by objective for aero RH model when rh_model is set.
+        # Keys match JSON setup fields (front_pushrod / rear_pushrod = mm offset).
+        "front_pushrod_offset_mm": float(setup.get("front_pushrod", -26.0)),
+        "rear_pushrod_offset_mm": float(setup.get("rear_pushrod", -18.0)),
+        # Static ride heights — direct observed values (more accurate than model).
+        # Objective uses these as fallback when rh_model is None (e.g. BMW).
+        # Dynamic RH ≈ static − 4mm at speed (aero compression).
+        "front_rh_static_mm": float(setup.get("front_rh_static", 0.0)) or 0.0,
+        "rear_rh_static_mm": float(setup.get("rear_rh_static", 0.0)) or 0.0,
     }
     return params
 
@@ -118,15 +127,18 @@ class ScoredObservation:
     """Observation with its objective score and component breakdown."""
     row: ObservationRow
     total_score_ms: float
+    lap_gain_ms: float          # aero-derived lap time prediction (primary signal)
     platform_risk_ms: float
     driver_mismatch_ms: float
     telemetry_uncertainty_ms: float
     envelope_penalty_ms: float
-    # Physics details
+    # Physics details (read from ev.physics, not top-level ev)
     lltd: float
     lltd_error: float
     front_sigma_mm: float
     front_excursion_mm: float
+    df_balance_pct: float
+    df_balance_error_pct: float
 
 
 def score_observations(rows: list[ObservationRow]) -> list[ScoredObservation]:
@@ -147,18 +159,30 @@ def score_observations(rows: list[ObservationRow]) -> list[ScoredObservation]:
         try:
             ev = obj.evaluate(row.params)
             bd = ev.breakdown
+            ph = ev.physics  # physics lives here, NOT top-level on ev
+
+            # Platform risk: all zeros with track=None (no excursion data)
+            # but include for completeness and future track-profile experiments.
+            pr = bd.platform_risk
+            dm = bd.driver_mismatch
+            tu = bd.telemetry_uncertainty
+            ep = bd.envelope_penalty
 
             scored.append(ScoredObservation(
                 row=row,
                 total_score_ms=bd.total_score_ms,
-                platform_risk_ms=bd.platform_risk.total_ms if hasattr(bd, "platform_risk") else 0,
-                driver_mismatch_ms=bd.driver_mismatch.total_ms if hasattr(bd, "driver_mismatch") else 0,
-                telemetry_uncertainty_ms=bd.telemetry_uncertainty.total_ms if hasattr(bd, "telemetry_uncertainty") else 0,
-                envelope_penalty_ms=bd.envelope_penalty.total_ms if hasattr(bd, "envelope_penalty") else 0,
-                lltd=getattr(ev, "lltd", 0),
-                lltd_error=getattr(ev, "lltd_error", 0),
-                front_sigma_mm=getattr(ev, "front_sigma_mm", 0),
-                front_excursion_mm=getattr(ev, "front_excursion_mm", 0),
+                lap_gain_ms=bd.lap_gain_ms,
+                platform_risk_ms=pr.total_ms if hasattr(pr, "total_ms") else 0.0,
+                driver_mismatch_ms=dm.total_ms if hasattr(dm, "total_ms") else 0.0,
+                telemetry_uncertainty_ms=tu.total_ms if hasattr(tu, "total_ms") else 0.0,
+                envelope_penalty_ms=ep.total_ms if hasattr(ep, "total_ms") else 0.0,
+                # Physics — read from ev.physics (previously had wrong getattr path)
+                lltd=ph.lltd if ph is not None else 0.0,
+                lltd_error=ph.lltd_error if ph is not None else 0.0,
+                front_sigma_mm=ph.front_sigma_mm if ph is not None else 0.0,
+                front_excursion_mm=ph.front_excursion_mm if ph is not None else 0.0,
+                df_balance_pct=ph.df_balance_pct if ph is not None else 0.0,
+                df_balance_error_pct=ph.df_balance_error_pct if ph is not None else 0.0,
             ))
         except Exception as e:
             print(f"  WARN: {row.filename}: {e}")
@@ -317,20 +341,30 @@ def generate_report(
 
     components = {
         "total_score": scores,
+        "lap_gain_ms": [s.lap_gain_ms for s in scored],
         "platform_risk": [s.platform_risk_ms for s in scored],
         "driver_mismatch": [s.driver_mismatch_ms for s in scored],
         "telemetry_uncertainty": [s.telemetry_uncertainty_ms for s in scored],
         "envelope_penalty": [s.envelope_penalty_ms for s in scored],
+        # Physics components (now read correctly from ev.physics)
         "lltd": [s.lltd for s in scored],
         "lltd_error": [s.lltd_error for s in scored],
         "front_sigma_mm": [s.front_sigma_mm for s in scored],
+        "df_balance_pct": [s.df_balance_pct for s in scored],
+        "df_balance_error_pct": [s.df_balance_error_pct for s in scored],
     }
+
+    # Negative correlation expected (higher = faster): total_score, lap_gain_ms, df_balance_pct
+    # Positive correlation expected (more penalty = slower): everything else
+    negative_expected = {"total_score", "lap_gain_ms", "df_balance_pct"}
 
     for name, vals in components.items():
         rp = pearson_r(vals, lap_times)
         rs = spearman_r(vals, lap_times)
-        direction = "✅" if (name == "total_score" and rs < 0) or \
-                           (name != "total_score" and rs > 0) else "⚠️"
+        if name in negative_expected:
+            direction = "✅" if rs < 0 else "⚠️"
+        else:
+            direction = "✅" if rs > 0 else "⚠️"
         lines.append(f"| {name} | {rp:+.4f} | {rs:+.4f} | {direction} |")
 
     lines.append("")

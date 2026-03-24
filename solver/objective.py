@@ -828,9 +828,18 @@ class ObjectiveFunction:
                     dyn_f = max(_static_f - 4.0, float(surface.front_rh[0]))
                     dyn_r = max(_static_r - 4.0, float(surface.rear_rh[0]))
                 else:
-                    # Clamp to map floor to avoid extrapolation errors
-                    dyn_f = max(23.0, float(surface.front_rh[0]))
-                    dyn_r = max(42.0, float(surface.rear_rh[0]))
+                    # No rh_model — try direct static RH params if caller provided them.
+                    # These come from observed/IBT data and are more accurate than defaults.
+                    # Dynamic ≈ static − 4mm (aero compression at speed).
+                    _srh_f = float(params.get("front_rh_static_mm", 0.0))
+                    _srh_r = float(params.get("rear_rh_static_mm", 0.0))
+                    if _srh_f > 0.0 and _srh_r > 0.0:
+                        dyn_f = max(_srh_f - 4.0, float(surface.front_rh[0]))
+                        dyn_r = max(_srh_r - 4.0, float(surface.rear_rh[0]))
+                    else:
+                        # True fallback: clamp to map floor
+                        dyn_f = max(23.0, float(surface.front_rh[0]))
+                        dyn_r = max(42.0, float(surface.rear_rh[0]))
                 # BMW has aero_axes_swapped=True — convert to aero map coordinates
                 # before querying (map x-axis = actual rear RH, y-axis = actual front RH).
                 af, ar = car.to_aero_coords(dyn_f, dyn_r)
