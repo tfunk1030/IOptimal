@@ -1264,7 +1264,7 @@ class ObjectiveFunction:
             getattr(self.car, "garage_ranges", None), "diff_coast_drive_ramp_options",
             [(40, 65), (45, 70), (50, 75)]
         )
-        ramp_idx = int(round(params.get("diff_coast_ramp_idx", 1)))
+        ramp_idx = int(round(params.get("diff_ramp_option_idx", 1)))
         ramp_idx = max(0, min(len(ramp_options) - 1, ramp_idx))
         coast_deg, drive_deg = ramp_options[ramp_idx]
 

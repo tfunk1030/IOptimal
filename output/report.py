@@ -91,6 +91,39 @@ def _setting(label: str, value: str, note: str = "") -> str:
     return _full(text)
 
 
+def _rotation_search_maps(step4: Any, step5: Any, supporting: Any) -> tuple[dict[str, str], dict[str, list[str]]]:
+    status: dict[str, str] = {}
+    evidence: dict[str, list[str]] = {}
+    for container in (step4, step5, supporting):
+        if container is None:
+            continue
+        status.update(getattr(container, "parameter_search_status", {}) or {})
+        evidence.update(getattr(container, "parameter_search_evidence", {}) or {})
+    return status, evidence
+
+
+def _rotation_search_lines(step4: Any, step5: Any, supporting: Any) -> list[str]:
+    status, evidence = _rotation_search_maps(step4, step5, supporting)
+    if not status:
+        return []
+    lines: list[str] = []
+    groups = [
+        ("Diff search", ("diff_preload_nm", "diff_ramp_option_idx", "diff_clutch_plates")),
+        ("Geo search", ("front_toe_mm", "rear_toe_mm", "front_camber_deg", "rear_camber_deg")),
+        ("RARB search", ("rear_arb_size", "rear_arb_blade")),
+    ]
+    for label, fields in groups:
+        group_status = [status.get(field, "") for field in fields if status.get(field, "")]
+        if not group_status:
+            continue
+        summary = max(set(group_status), key=group_status.count)
+        lines.append(f"{label}: {summary}")
+    sample_evidence = next((value for value in evidence.values() if value), [])
+    if sample_evidence:
+        lines.append(f"Rotation evidence: {'; '.join(sample_evidence[:3])}")
+    return lines[:4]
+
+
 def print_full_setup_report(
     car_name: str,
     track_name: str,
@@ -123,9 +156,11 @@ def print_full_setup_report(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
     a = lines.append
+    garage_model = None
 
-    if garage_outputs is None and car is not None:
+    if car is not None:
         garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track_name)
+    if garage_outputs is None and garage_model is not None:
         if garage_model is not None:
             garage_outputs = garage_model.predict(
                 GarageSetupState.from_solver_steps(
@@ -255,6 +290,25 @@ def print_full_setup_report(
             "Heave spring deflection",
             f"{garage_outputs.heave_spring_defl_static_mm:.1f} / {garage_outputs.heave_spring_defl_max_mm:.1f} mm",
         ))
+        torsion_limit = (
+            garage_model.effective_torsion_bar_defl_limit_mm()
+            if garage_model is not None
+            else None
+        )
+        torsion_limit_str = (
+            f"{garage_outputs.torsion_bar_defl_mm:.1f} / {torsion_limit:.1f} mm"
+            if torsion_limit is not None
+            else f"{garage_outputs.torsion_bar_defl_mm:.1f} mm"
+        )
+        torsion_note = ""
+        if (
+            garage_model is not None
+            and getattr(garage_model, "max_torsion_bar_defl_mm", None) is not None
+            and torsion_limit is not None
+            and torsion_limit < garage_model.max_torsion_bar_defl_mm - 1e-6
+        ):
+            torsion_note = f"[hard {garage_model.max_torsion_bar_defl_mm:.1f}]"
+        a(_setting("Torsion bar deflection", torsion_limit_str, torsion_note))
     a(_blank())
     a(_full("  ARBS / GEOMETRY"))
     a(_setting("Front ARB size / blade", f"{step4.front_arb_size} / {step4.front_arb_blade_start}"))
@@ -344,6 +398,22 @@ def print_full_setup_report(
                 f"  Heave slider: {garage_outputs.heave_slider_defl_static_mm:.1f}/{garage_outputs.heave_slider_defl_max_mm:.1f} mm"
                 f"    Travel margin: {garage_outputs.travel_margin_front_mm:.1f} mm"
             ))
+            torsion_limit = (
+                garage_model.effective_torsion_bar_defl_limit_mm()
+                if garage_model is not None
+                else None
+            )
+            if torsion_limit is not None:
+                torsion_line = (
+                    f"  Torsion defl: {garage_outputs.torsion_bar_defl_mm:.1f}/{torsion_limit:.1f} mm"
+                )
+                if (
+                    garage_model is not None
+                    and getattr(garage_model, "max_torsion_bar_defl_mm", None) is not None
+                    and torsion_limit < garage_model.max_torsion_bar_defl_mm - 1e-6
+                ):
+                    torsion_line += f"    hard {garage_model.max_torsion_bar_defl_mm:.1f} mm"
+                a(_full(torsion_line))
         else:
             a(_full(
                 f"  Heave slider: {step2.slider_static_front_mm:.1f} mm"
@@ -365,6 +435,8 @@ def print_full_setup_report(
         a(_full(
             f"  RARB live: blade {step4.rarb_blade_slow_corner} slow  ->  blade {step4.rarb_blade_fast_corner} fast"
         ))
+        for line in _rotation_search_lines(step4, step5, supporting):
+            a(_full(f"  {line}"))
         a(_box_bot())
         a("")
         a("═" * W)

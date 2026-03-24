@@ -494,17 +494,24 @@ def build_setup_schema(
 
 
 def apply_live_control_overrides(current_setup: Any, measured: Any) -> list[str]:
-    """Promote stable Ferrari live controls into the authoritative setup view."""
-    if getattr(current_setup, "adapter_name", "") != "ferrari" or measured is None:
+    """Promote stable live cockpit controls into the authoritative setup view."""
+    adapter_name = getattr(current_setup, "adapter_name", "")
+    if adapter_name not in {"bmw", "ferrari"} or measured is None:
         return []
     applied: list[str] = []
-    for setup_attr, measured_attr, label in (
+    mappings = [
         ("brake_bias_pct", "live_brake_bias_pct", "dcBrakeBias"),
-        ("tc_gain", "live_tc_gain", "dcTractionControl2"),
-        ("tc_slip", "live_tc_slip", "dcTractionControl"),
         ("front_arb_blade", "live_front_arb_blade", "dcAntiRollFront"),
         ("rear_arb_blade", "live_rear_arb_blade", "dcAntiRollRear"),
-    ):
+    ]
+    if adapter_name == "ferrari":
+        mappings.extend(
+            [
+                ("tc_gain", "live_tc_gain", "dcTractionControl2"),
+                ("tc_slip", "live_tc_slip", "dcTractionControl"),
+            ]
+        )
+    for setup_attr, measured_attr, label in mappings:
         value = getattr(measured, measured_attr, None)
         if value is None:
             continue
@@ -513,6 +520,6 @@ def apply_live_control_overrides(current_setup: Any, measured: Any) -> list[str]
             applied.append(f"{setup_attr} <= {label} ({value})")
     if applied and hasattr(current_setup, "decode_warnings"):
         current_setup.decode_warnings.append(
-            "Ferrari live controls were promoted from stable telemetry channels where available."
+            f"{adapter_name.capitalize()} live controls were promoted from stable telemetry channels where available."
         )
     return applied

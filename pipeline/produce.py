@@ -20,6 +20,10 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from aero_model import load_car_surfaces
 from aero_model.gradient import compute_gradients
 from analyzer.adaptive_thresholds import compute_adaptive_thresholds
@@ -27,6 +31,7 @@ from analyzer.diagnose import diagnose
 from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 from analyzer.extract import extract_measurements
 from analyzer.segment import segment_lap
+from analyzer.stint_analysis import build_stint_dataset, dataset_to_evolution
 from analyzer.setup_reader import CurrentSetup
 from analyzer.setup_schema import apply_live_control_overrides, build_setup_schema
 from analyzer.telemetry_truth import summarize_signal_quality
@@ -44,10 +49,17 @@ from solver.predictor import predict_candidate_telemetry
 from solver.rake_solver import RakeSolver, reconcile_ride_heights
 from solver.supporting_solver import SupportingSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
+from solver.bmw_coverage import (
+    build_parameter_coverage,
+    build_search_baseline,
+    build_telemetry_coverage,
+)
+from solver.bmw_rotation_search import preserve_candidate_rotation_controls
 from solver.decision_trace import build_parameter_decisions
 from solver.full_setup_optimizer import optimize_if_supported
 from solver.legality_engine import validate_solution_legality
 from solver.solve_chain import SolveChainInputs, run_base_solve
+from solver.stint_reasoner import solve_stint_compromise
 from track_model.build_profile import build_profile
 from track_model.ibt_parser import IBTFile
 
@@ -108,6 +120,59 @@ def _find_lap_indices(ibt: IBTFile, lap_num: int) -> tuple[int, int] | None:
     return None
 
 
+def _stint_selection_payload(dataset) -> dict | None:
+    if dataset is None:
+        return None
+    return {
+        "mode": dataset.stint_select,
+        "segments": [
+            {
+                "segment_id": segment.segment_id,
+                "start_lap": segment.start_lap,
+                "end_lap": segment.end_lap,
+                "lap_count": segment.lap_count,
+                "source_label": segment.source_label,
+                "break_reasons": list(segment.break_reasons),
+            }
+            for segment in dataset.segments
+        ],
+        "selected_segments": [
+            {
+                "segment_id": segment.segment_id,
+                "start_lap": segment.start_lap,
+                "end_lap": segment.end_lap,
+                "lap_count": segment.lap_count,
+                "source_label": segment.source_label,
+            }
+            for segment in dataset.selected_segments
+        ],
+        "notes": list(dataset.selection_notes),
+    }
+
+
+def _stint_lap_payload(dataset) -> list[dict]:
+    if dataset is None:
+        return []
+    return [
+        {
+            "lap_number": lap.lap_number,
+            "lap_time_s": lap.lap_time_s,
+            "fuel_level_l": lap.fuel_level_l,
+            "progress": lap.progress,
+            "phase": lap.phase,
+            "quality": {
+                "status": lap.quality.status,
+                "direct_weight": lap.quality.direct_weight,
+                "trend_weight": lap.quality.trend_weight,
+                "flags": list(lap.quality.flags),
+            },
+            "selected_for_evaluation": lap.selected_for_evaluation,
+            "source_label": lap.source_label,
+        }
+        for lap in dataset.usable_laps
+    ]
+
+
 def produce(
     args: argparse.Namespace,
     _return_result: bool = False,
@@ -145,6 +210,10 @@ def produce(
                 explore_legal_space=getattr(args, "explore_legal_space", False),
                 search_budget=getattr(args, "search_budget", 1000),
                 keep_weird=getattr(args, "keep_weird", False),
+                stint=getattr(args, "stint", False),
+                stint_select=getattr(args, "stint_select", "all"),
+                stint_max_laps=getattr(args, "stint_max_laps", 40),
+                stint_threshold=getattr(args, "stint_threshold", 1.5),
             )
             return None
         ibt_path = ibt_arg[0]
@@ -273,20 +342,34 @@ def produce(
             return None
 
     # ── Phase B.5: Stint evolution (if --stint) ──
+    stint_dataset = None
     stint_evolution = None
     if getattr(args, "stint", False):
-        from analyzer.stint_analysis import analyze_stint_evolution
-        log("\nAnalyzing stint evolution (all qualifying laps)...")
-        stint_evolution = analyze_stint_evolution(
+        log("\nBuilding full-stint dataset...")
+        stint_dataset = build_stint_dataset(
             ibt_path=ibt_path,
             car=car,
+            stint_select=getattr(args, "stint_select", "longest"),
+            stint_max_laps=getattr(args, "stint_max_laps", 40),
             threshold_pct=getattr(args, "stint_threshold", 1.5),
             min_lap_time=getattr(args, "min_lap_time", 108.0),
             ibt=ibt,
         )
-        log(f"  {stint_evolution.qualifying_lap_count}/{stint_evolution.total_lap_count} "
-            f"laps within {stint_evolution.threshold_pct}% of fastest "
-            f"({stint_evolution.fastest_lap_time_s:.3f}s)")
+        stint_evolution = dataset_to_evolution(stint_dataset)
+        log(
+            f"  Selected {len(stint_dataset.selected_segments)} segment(s), "
+            f"{len(stint_dataset.usable_laps)} usable laps, "
+            f"{len(stint_dataset.evaluation_laps)} evaluation laps"
+        )
+        if stint_dataset.selected_segments:
+            ranges = ", ".join(
+                f"{segment.start_lap}-{segment.end_lap}"
+                for segment in stint_dataset.selected_segments
+            )
+            log(f"  Segment range(s): {ranges}")
+        if stint_dataset.selection_notes:
+            for note in stint_dataset.selection_notes[:3]:
+                log(f"  {note}")
         if stint_evolution.rates:
             log(f"  Fuel burn: {stint_evolution.rates.fuel_burn_l_per_lap:.2f} L/lap")
             log(f"  Understeer drift: {stint_evolution.rates.understeer_deg_per_lap:+.3f} deg/lap")
@@ -729,6 +812,7 @@ def produce(
         pin_front_min=not args.free,
         legacy_solver=getattr(args, "legacy_solver", False),
         camber_confidence=_camber_conf,
+        corners=corners,
     )
     base_solve_result = run_base_solve(solve_inputs)
     step1 = base_solve_result.step1
@@ -743,110 +827,30 @@ def produce(
     solve_notes = list(base_solve_result.notes)
 
     stint_compromise_info: list[str] = []
-    if stint_evolution is not None and stint_evolution.qualifying_lap_count >= 3:
-        log("\nRunning multi-solve stint compromise (start/mid/end)...")
-        _stint_solves: dict[str, tuple] = {}
-        for _label, _snap in [("start", stint_evolution.start_snapshot),
-                               ("mid", stint_evolution.mid_snapshot),
-                               ("end", stint_evolution.end_snapshot)]:
-            _fuel_at = _snap.fuel_level_l or fuel
-            _rs = RakeSolver(car, surface, track)
-            _s1 = _rs.solve(
-                target_balance=target_balance,
-                balance_tolerance=args.tolerance,
-                fuel_load_l=_fuel_at,
-                pin_front_min=not args.free,
-            )
-            _hs = HeaveSolver(car, track)
-            _s2 = _hs.solve(
-                dynamic_front_rh_mm=_s1.dynamic_front_rh_mm,
-                dynamic_rear_rh_mm=_s1.dynamic_rear_rh_mm,
-                front_pushrod_mm=_s1.front_pushrod_offset_mm,
-                rear_pushrod_mm=_s1.rear_pushrod_offset_mm,
-                fuel_load_l=_fuel_at,
-                front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            )
-            _cs = CornerSpringSolver(car, track)
-            _s3 = _cs.solve(
-                front_heave_nmm=_s2.front_heave_nmm,
-                rear_third_nmm=_s2.rear_third_nmm,
-                fuel_load_l=_fuel_at,
-            )
-            _rwr = _s3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-            _as = ARBSolver(car, track)
-            _s4 = _as.solve(
-                front_wheel_rate_nmm=_s3.front_wheel_rate_nmm,
-                rear_wheel_rate_nmm=_rwr,
-                lltd_offset=modifiers.lltd_offset,
-            )
-            _gs = WheelGeometrySolver(car, track)
-            _s5 = _gs.solve(
-                k_roll_total_nm_deg=_s4.k_roll_front_total + _s4.k_roll_rear_total,
-                front_wheel_rate_nmm=_s3.front_wheel_rate_nmm,
-                rear_wheel_rate_nmm=_rwr,
-                fuel_load_l=_fuel_at,
-                camber_confidence=_camber_conf,
-            )
-            _ds = DamperSolver(car, track)
-            _s6 = _ds.solve(
-                front_wheel_rate_nmm=_s3.front_wheel_rate_nmm,
-                rear_wheel_rate_nmm=_rwr,
-                front_dynamic_rh_mm=_s1.dynamic_front_rh_mm,
-                rear_dynamic_rh_mm=_s1.dynamic_rear_rh_mm,
-                fuel_load_l=_fuel_at,
-                damping_ratio_scale=modifiers.damping_ratio_scale,
-                measured=measured,
-                front_heave_nmm=_s2.front_heave_nmm,
-                rear_third_nmm=_s2.rear_third_nmm,
-            )
-            _stint_solves[_label] = (_s1, _s2, _s3, _s4, _s5, _s6)
-            log(f"  [{_label}] fuel={_fuel_at:.1f}L heave={_s2.front_heave_nmm:.0f} "
-                f"third={_s2.rear_third_nmm:.0f} LLTD={_s4.lltd_achieved:.1f}%")
-
-        # Compromise: safety-binding springs, averaged balance, mid-stint dampers
-        _start = _stint_solves["start"]
-        _mid = _stint_solves["mid"]
-        _end = _stint_solves["end"]
-
-        # Safety-binding: max heave/third across conditions (full fuel is heaviest)
-        max_heave = max(s[1].front_heave_nmm for s in _stint_solves.values())
-        max_third = max(s[1].rear_third_nmm for s in _stint_solves.values())
-        if max_heave > step2.front_heave_nmm:
-            stint_compromise_info.append(
-                f"Heave spring: {max_heave:.0f} N/mm (safety-bound from start condition, "
-                f"was {step2.front_heave_nmm:.0f})"
-            )
-            step2.front_heave_nmm = max_heave
-        if max_third > step2.rear_third_nmm:
-            stint_compromise_info.append(
-                f"Third spring: {max_third:.0f} N/mm (safety-bound from start condition, "
-                f"was {step2.rear_third_nmm:.0f})"
-            )
-            step2.rear_third_nmm = max_third
-
-        # Averaged LLTD target: use mid-stint ARB solution
-        avg_lltd = sum(s[3].lltd_achieved for s in _stint_solves.values()) / 3.0
-        stint_compromise_info.append(
-            f"LLTD target: {avg_lltd:.1f}% (avg of start {_start[3].lltd_achieved:.1f}% / "
-            f"mid {_mid[3].lltd_achieved:.1f}% / end {_end[3].lltd_achieved:.1f}%)"
+    stint_solve = None
+    if stint_dataset is not None and len(stint_dataset.usable_laps) >= 5:
+        log("\nRunning full-stint compromise solve...")
+        stint_solve = solve_stint_compromise(
+            dataset=stint_dataset,
+            base_inputs=solve_inputs,
+            base_result=base_solve_result,
         )
-        # Use mid-stint ARB solution as best compromise
-        step4 = _mid[3]
-
-        # Camber/toe: average from three conditions
-        avg_front_camber = sum(s[4].front_camber_deg for s in _stint_solves.values()) / 3.0
-        avg_rear_camber = sum(s[4].rear_camber_deg for s in _stint_solves.values()) / 3.0
-        step5.front_camber_deg = round(avg_front_camber, 2)
-        step5.rear_camber_deg = round(avg_rear_camber, 2)
-
-        # Dampers: use mid-stint solution (best single compromise)
-        step6 = _mid[5]
-        _apply_damper_modifiers(step6, modifiers, car)
-        stint_compromise_info.append("Dampers: mid-stint condition (best single compromise)")
-
-        log(f"\n  Stint compromise applied ({len(stint_compromise_info)} adjustments)")
-        for info in stint_compromise_info:
-            log(f"    {info}")
+        step1 = stint_solve.result.step1
+        step2 = stint_solve.result.step2
+        step3 = stint_solve.result.step3
+        step4 = stint_solve.result.step4
+        step5 = stint_solve.result.step5
+        step6 = stint_solve.result.step6
+        supporting = stint_solve.result.supporting
+        legal_validation = stint_solve.result.legal_validation
+        decision_trace = stint_solve.result.decision_trace
+        base_solve_result = stint_solve.result
+        stint_compromise_info = list(stint_solve.notes)
+        log(f"  Objective: {stint_solve.objective['total']:.4f}")
+        for info in stint_compromise_info[:5]:
+            log(f"  {info}")
+    elif stint_dataset is not None:
+        stint_compromise_info.append("Full-stint solve fell back to single-lap mode due to insufficient usable laps.")
 
     # ── Phase I: Compute supporting params ──
     log("\nComputing supporting parameters...")
@@ -992,19 +996,41 @@ def produce(
             f"(score {selected_candidate.score.total if selected_candidate.score else 0.0:.3f})"
         )
         if selected_candidate.selectable and selected_candidate.result is not None:
+            selected_candidate_result, preserved_rotation_controls = preserve_candidate_rotation_controls(
+                rotation_result=base_solve_result,
+                candidate_result=selected_candidate.result,
+                inputs=solve_inputs,
+            )
+            if selected_candidate_result is None:
+                selected_candidate_result = selected_candidate.result
+                preserved_rotation_controls = False
+            selected_candidate.result = selected_candidate_result
+            selected_candidate.step1 = selected_candidate_result.step1
+            selected_candidate.step2 = selected_candidate_result.step2
+            selected_candidate.step3 = selected_candidate_result.step3
+            selected_candidate.step4 = selected_candidate_result.step4
+            selected_candidate.step5 = selected_candidate_result.step5
+            selected_candidate.step6 = selected_candidate_result.step6
+            selected_candidate.supporting = selected_candidate_result.supporting
+            selected_candidate.legality = selected_candidate_result.legal_validation
+            selected_candidate.predicted = selected_candidate_result.prediction
             selected_candidate_applied = True
-            step1 = selected_candidate.result.step1
-            step2 = selected_candidate.result.step2
-            step3 = selected_candidate.result.step3
-            step4 = selected_candidate.result.step4
-            step5 = selected_candidate.result.step5
-            step6 = selected_candidate.result.step6
-            supporting = selected_candidate.result.supporting
-            legal_validation = selected_candidate.result.legal_validation
-            decision_trace = selected_candidate.result.decision_trace
+            step1 = selected_candidate_result.step1
+            step2 = selected_candidate_result.step2
+            step3 = selected_candidate_result.step3
+            step4 = selected_candidate_result.step4
+            step5 = selected_candidate_result.step5
+            step6 = selected_candidate_result.step6
+            supporting = selected_candidate_result.supporting
+            legal_validation = selected_candidate_result.legal_validation
+            decision_trace = selected_candidate_result.decision_trace
             solve_notes.append(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
+            if preserved_rotation_controls:
+                solve_notes.append(
+                    "Preserved BMW/Sebring second-stage rotation controls after candidate-family rematerialization."
+                )
 
     # ── Legal-manifold search (--explore-legal-space / --search-mode) ─────
     search_mode = getattr(args, "search_mode", None)
@@ -1012,23 +1038,20 @@ def produce(
     if do_legal_search:
         try:
             baseline_params = {
-                "front_heave_spring_nmm": step2.front_heave_nmm,
-                "rear_third_spring_nmm": step2.rear_third_nmm,
-                "rear_spring_rate_nmm": step3.rear_spring_rate_nmm,
-                "front_camber_deg": step5.front_camber_deg,
-                "rear_camber_deg": step5.rear_camber_deg,
-                "front_arb_blade": step4.front_arb_blade_start,
-                "rear_arb_blade": step4.rear_arb_blade_start,
-                "brake_bias_pct": getattr(supporting, "brake_bias_pct", 56.0),
-                "diff_preload_nm": getattr(supporting, "diff_preload_nm", 20.0),
-                "front_ls_comp": step6.lf.ls_comp,
-                "front_ls_rbd": step6.lf.ls_rbd,
-                "front_hs_comp": step6.lf.hs_comp,
-                "front_hs_rbd": step6.lf.hs_rbd,
-                "rear_ls_comp": step6.lr.ls_comp,
-                "rear_ls_rbd": step6.lr.ls_rbd,
-                "rear_hs_comp": step6.lr.hs_comp,
-                "rear_hs_rbd": step6.lr.hs_rbd,
+                key: value
+                for key, value in build_search_baseline(
+                    car=car,
+                    wing=wing,
+                    current_setup=current_setup,
+                    step1=step1,
+                    step2=step2,
+                    step3=step3,
+                    step4=step4,
+                    step5=step5,
+                    step6=step6,
+                    supporting=supporting,
+                ).items()
+                if value is not None
             }
 
             if search_mode is not None:
@@ -1109,10 +1132,10 @@ def produce(
             _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
             _extra_kw["pad_compound"] = supporting.pad_compound
             # Ferrari diff ramp uses labels ("More Locking"/"Less Locking")
-            if supporting.diff_ramp_coast >= 45:
-                _extra_kw["diff_coast_drive_ramp"] = "Less Locking"
-            else:
-                _extra_kw["diff_coast_drive_ramp"] = "More Locking"
+            _extra_kw["diff_coast_drive_ramp"] = (
+                getattr(supporting, "diff_ramp_angles", "")
+                or ("Less Locking" if supporting.diff_ramp_coast >= 45 else "More Locking")
+            )
             _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
             _extra_kw["tc_gain"] = supporting.tc_gain
@@ -1131,11 +1154,17 @@ def produce(
             _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
             _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
             _extra_kw["pad_compound"] = supporting.pad_compound
-            _extra_kw["diff_coast_drive_ramp"] = f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}"
+            _extra_kw["diff_coast_drive_ramp"] = (
+                getattr(supporting, "diff_ramp_angles", "")
+                or f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}"
+            )
             _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
             _extra_kw["tc_gain"] = supporting.tc_gain
             _extra_kw["tc_slip"] = supporting.tc_slip
+            _extra_kw["fuel_low_warning_l"] = getattr(supporting, "fuel_low_warning_l", fuel)
+            _extra_kw["gear_stack"] = getattr(supporting, "gear_stack", "")
+            _extra_kw["roof_light_color"] = getattr(supporting, "roof_light_color", "")
 
         sto_path = write_sto(
             car_name=car.name,
@@ -1154,6 +1183,19 @@ def produce(
         import dataclasses
         json_path = Path(args.json)
         json_path.parent.mkdir(parents=True, exist_ok=True)
+        parameter_coverage = build_parameter_coverage(
+            car=car,
+            wing=wing,
+            current_setup=current_setup,
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step4=step4,
+            step5=step5,
+            step6=step6,
+            supporting=supporting,
+        )
+        telemetry_coverage = build_telemetry_coverage(measured=measured)
         output = {
             "car": car.name,
             "track": f"{track.track_name} — {track.track_config}",
@@ -1167,6 +1209,22 @@ def produce(
             "telemetry_bundle": measured.telemetry_bundle,
             "setup_schema": setup_schema.to_dict(),
             "generated_candidates": [candidate_to_dict(candidate) for candidate in generated_candidates],
+            "parameter_coverage": parameter_coverage,
+            "telemetry_coverage": telemetry_coverage,
+            "stint_selection": _stint_selection_payload(stint_dataset),
+            "stint_laps": _stint_lap_payload(stint_dataset),
+            "stint_phases": getattr(stint_solve, "phase_summaries", getattr(stint_dataset, "phase_summaries", {})),
+            "stint_objective": getattr(stint_solve, "objective", None),
+            "stint_confidence": (
+                stint_solve.confidence
+                if stint_solve is not None
+                else getattr(stint_dataset, "confidence", None)
+            ),
+            "fallback_mode": (
+                stint_solve.fallback_mode
+                if stint_solve is not None
+                else getattr(stint_dataset, "fallback_mode", None)
+            ),
             "selected_candidate_family": getattr(selected_candidate, "family", None),
             "selected_candidate_score": (
                 selected_candidate.score.total
@@ -1209,6 +1267,7 @@ def produce(
         supporting=supporting,
         current_setup=current_setup,
         wing=wing,
+        fuel_l=fuel,
         target_balance=target_balance,
         stint_result=stint_result,
         sector_result=sector_result,
@@ -1255,6 +1314,8 @@ def produce(
             "step6": step6,
             "supporting": supporting,
             "generated_candidates": generated_candidates,
+            "stint_dataset": stint_dataset,
+            "stint_solve": stint_solve,
             "selected_candidate_family": getattr(selected_candidate, "family", None),
             "selected_candidate_score": (
                 selected_candidate.score.total
@@ -1473,10 +1534,14 @@ def main():
                              "Drops anomalously slow laps. Pass 0 to disable.")
     # Stint analysis
     parser.add_argument("--stint", action="store_true",
-                        help="Enable stint analysis: analyze all qualifying laps, "
-                             "run solver at start/mid/end conditions, produce compromise setup")
+                        help="Enable full-stint analysis and solve one compromise setup across the selected stint.")
     parser.add_argument("--stint-threshold", type=float, default=1.5, dest="stint_threshold",
-                        help="Max %% slower than fastest lap to include (default: 1.5)")
+                        help="Backward-compatible soft outlier/reporting threshold for stint lap quality (default: 1.5)")
+    parser.add_argument("--stint-select", type=str, default="longest", dest="stint_select",
+                        choices=["longest", "last", "all"],
+                        help="Which green-run stint segment(s) to use for the full-stint solve (default: longest)")
+    parser.add_argument("--stint-max-laps", type=int, default=40, dest="stint_max_laps",
+                        help="Maximum number of stint laps to score directly; longer stints keep phase-preserving representatives (default: 40)")
     parser.add_argument("--verbose", action="store_true",
                         help="Show full reasoning dump (multi-IBT mode)")
     # Legal-space search mode

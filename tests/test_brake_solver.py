@@ -108,18 +108,18 @@ class BrakeSolverTests(unittest.TestCase):
             current_setup=current_setup,
         ).solve()
 
-        self.assertEqual(solution.brake_bias_target, 1.5)
-        self.assertEqual(solution.brake_bias_migration, -0.5)
-        self.assertEqual(solution.front_master_cyl_mm, 19.1)
-        self.assertEqual(solution.rear_master_cyl_mm, 20.6)
-        self.assertEqual(solution.pad_compound, "Medium")
+        self.assertLess(solution.brake_bias_target, 1.5)
+        self.assertLess(solution.brake_bias_migration, -0.5)
+        self.assertLess(solution.front_master_cyl_mm, 19.1)
+        self.assertGreater(solution.rear_master_cyl_mm, 20.6)
+        self.assertNotEqual(solution.pad_compound, "Medium")
         self.assertEqual(solution.brake_bias_status, "solved")
-        self.assertEqual(solution.brake_bias_target_status, "pass-through")
-        self.assertEqual(solution.brake_bias_migration_status, "pass-through")
-        self.assertEqual(solution.master_cylinder_status, "pass-through")
-        self.assertEqual(solution.pad_compound_status, "pass-through")
+        self.assertEqual(solution.brake_bias_target_status, "seeded_from_telemetry")
+        self.assertEqual(solution.brake_bias_migration_status, "seeded_from_telemetry")
+        self.assertEqual(solution.master_cylinder_status, "seeded_from_telemetry")
+        self.assertEqual(solution.pad_compound_status, "seeded_from_telemetry")
 
-    def test_decision_trace_marks_brake_hardware_as_pass_through(self) -> None:
+    def test_decision_trace_surfaces_seeded_brake_hardware_changes(self) -> None:
         current_setup = SimpleNamespace(
             front_pushrod_mm=-26.5,
             rear_pushrod_mm=-24.0,
@@ -160,11 +160,15 @@ class BrakeSolverTests(unittest.TestCase):
         )
         supporting = SimpleNamespace(
             brake_bias_pct=45.8,
-            brake_bias_target=1.5,
-            brake_bias_migration=-0.5,
-            front_master_cyl_mm=19.1,
-            rear_master_cyl_mm=20.6,
-            pad_compound="Medium",
+            brake_bias_target=1.0,
+            brake_bias_migration=-1.0,
+            brake_bias_target_status="seeded_from_telemetry",
+            brake_bias_migration_status="seeded_from_telemetry",
+            front_master_cyl_mm=17.8,
+            rear_master_cyl_mm=22.2,
+            master_cylinder_status="seeded_from_telemetry",
+            pad_compound="Low",
+            pad_compound_status="seeded_from_telemetry",
             diff_preload_nm=20.0,
             tc_gain=4,
             tc_slip=3,
@@ -185,12 +189,17 @@ class BrakeSolverTests(unittest.TestCase):
             fallback_reasons=[],
         )
 
-        statuses = {decision.parameter: decision.legality_status for decision in decisions}
-        self.assertEqual(statuses["brake_bias_target"], "pass_through")
-        self.assertEqual(statuses["brake_bias_migration"], "pass_through")
-        self.assertEqual(statuses["front_master_cyl_mm"], "pass_through")
-        self.assertEqual(statuses["rear_master_cyl_mm"], "pass_through")
-        self.assertEqual(statuses["pad_compound"], "pass_through")
+        by_parameter = {decision.parameter: decision for decision in decisions}
+        for key in (
+            "brake_bias_target",
+            "brake_bias_migration",
+            "front_master_cyl_mm",
+            "rear_master_cyl_mm",
+            "pad_compound",
+        ):
+            self.assertIn(key, by_parameter)
+            self.assertEqual(by_parameter[key].legality_status, "validated")
+            self.assertEqual(by_parameter[key].evidence.source_tier, "seeded_from_telemetry")
 
     def test_ferrari_supporting_solver_prefers_live_brake_bias_over_hydraulic_split(self) -> None:
         ferrari = get_car("ferrari")

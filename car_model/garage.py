@@ -149,6 +149,7 @@ class GarageOutputModel:
     max_slider_mm: float = 45.0
     min_static_defl_mm: float = 3.0
     max_torsion_bar_defl_mm: float | None = None
+    torsion_bar_defl_safety_margin_mm: float = 0.0
     torsion_bar_rate_c: float = 0.0008036
     heave_spring_defl_max_intercept_mm: float = 106.43
     heave_spring_defl_max_slope: float = -0.310
@@ -453,6 +454,15 @@ class GarageOutputModel:
             travel_margin_front_mm=round(travel_margin, 3),
         )
 
+    def effective_torsion_bar_defl_limit_mm(self) -> float | None:
+        """Operational torsion-bar limit after applying a safety buffer."""
+        if self.max_torsion_bar_defl_mm is None:
+            return None
+        return max(
+            0.0,
+            float(self.max_torsion_bar_defl_mm) - max(0.0, float(self.torsion_bar_defl_safety_margin_mm)),
+        )
+
     def validate(
         self,
         setup: GarageSetupState,
@@ -467,9 +477,10 @@ class GarageOutputModel:
         front_static_raw = self.predict_front_static_rh_raw(setup)
         front_static_ok = front_static_raw >= self.front_rh_floor_mm - 1e-6
         slider_ok = outputs.heave_slider_defl_static_mm <= self.max_slider_mm + 1e-6
+        torsion_limit = self.effective_torsion_bar_defl_limit_mm()
         torsion_defl_ok = (
-            True if self.max_torsion_bar_defl_mm is None
-            else outputs.torsion_bar_defl_mm <= self.max_torsion_bar_defl_mm + 1e-6
+            True if torsion_limit is None
+            else outputs.torsion_bar_defl_mm <= torsion_limit + 1e-6
         )
         travel_ok = outputs.travel_margin_front_mm >= min_travel_margin_mm - 1e-6
         bottoming_ok = (
@@ -490,9 +501,19 @@ class GarageOutputModel:
                 f"heave slider {outputs.heave_slider_defl_static_mm:.2f}mm > limit {self.max_slider_mm:.1f}mm"
             )
         if not torsion_defl_ok:
-            messages.append(
-                f"torsion bar defl {outputs.torsion_bar_defl_mm:.2f}mm > limit {self.max_torsion_bar_defl_mm:.1f}mm"
-            )
+            if (
+                self.max_torsion_bar_defl_mm is not None
+                and torsion_limit is not None
+                and torsion_limit < self.max_torsion_bar_defl_mm - 1e-6
+            ):
+                messages.append(
+                    f"torsion bar defl {outputs.torsion_bar_defl_mm:.2f}mm > operating limit "
+                    f"{torsion_limit:.1f}mm (hard limit {self.max_torsion_bar_defl_mm:.1f}mm)"
+                )
+            else:
+                messages.append(
+                    f"torsion bar defl {outputs.torsion_bar_defl_mm:.2f}mm > limit {torsion_limit:.1f}mm"
+                )
         if not travel_ok:
             messages.append(
                 f"front travel margin {outputs.travel_margin_front_mm:.2f}mm < {min_travel_margin_mm:.1f}mm"

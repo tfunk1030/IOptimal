@@ -182,8 +182,7 @@ TIER_A_KEYS: list[str] = [
     # Supporting
     "brake_bias_pct",
     "diff_preload_nm",
-    "diff_coast_ramp_idx",
-    "diff_drive_ramp_idx",
+    "diff_ramp_option_idx",
     "diff_clutch_plates",
     "tc_gain",
     "tc_slip",
@@ -199,6 +198,8 @@ PERCH_KEYS: list[str] = [
 TIER_B_KEYS: list[str] = [
     "fuel_l",
 ]
+
+LOCAL_REFINE_KEYS: list[str] = list(PERCH_KEYS)
 
 
 @dataclass
@@ -699,14 +700,17 @@ def _build_dimension(
         "rear_arb_size": (0.0, float(max(0, len(car.arb.rear_size_labels) - 1))),
         "tc_gain": (1.0, 10.0),
         "tc_slip": (1.0, 10.0),
-        "diff_coast_ramp_idx": (0.0, float(max(0, len(car.garage_ranges.diff_coast_drive_ramp_options) - 1))),
-        "diff_drive_ramp_idx": (0.0, float(max(0, len(car.garage_ranges.diff_coast_drive_ramp_options) - 1))),
+        "diff_ramp_option_idx": (0.0, float(max(0, len(car.garage_ranges.diff_coast_drive_ramp_options) - 1))),
         "front_camber_deg": gr.camber_front_deg,
         "rear_camber_deg": gr.camber_rear_deg,
         "front_toe_mm": gr.toe_front_mm,
         "rear_toe_mm": gr.toe_rear_mm,
         "brake_bias_pct": (40.0, 60.0),  # broad legal range; car.brake_bias_pct is default
         "diff_preload_nm": gr.diff_preload_nm,
+        "diff_clutch_plates": (
+            float(min(gr.diff_clutch_plates_options or [2, 4, 6])),
+            float(max(gr.diff_clutch_plates_options or [2, 4, 6])),
+        ),
     }
 
     # Damper ranges from car.damper
@@ -761,8 +765,7 @@ def _build_dimension(
     resolution_map["rear_arb_size"] = 1.0
     resolution_map["tc_gain"] = 1.0
     resolution_map["tc_slip"] = 1.0
-    resolution_map["diff_coast_ramp_idx"] = 1.0
-    resolution_map["diff_drive_ramp_idx"] = 1.0
+    resolution_map["diff_ramp_option_idx"] = 1.0
     resolution_map["diff_clutch_plates"] = 1.0
 
     resolution = resolution_map.get(key, spec.resolution if spec and spec.resolution else 1.0)
@@ -783,7 +786,7 @@ def _build_dimension(
     elif key in ("tc_gain", "tc_slip"):
         discrete_values = list(range(1, 11))
         kind = "ordinal"
-    elif key in ("diff_coast_ramp_idx", "diff_drive_ramp_idx"):
+    elif key == "diff_ramp_option_idx":
         discrete_values = list(range(len(car.garage_ranges.diff_coast_drive_ramp_options)))
         kind = "ordinal"
     elif key == "front_torsion_od_mm" and car.corner_spring.front_torsion_od_options:

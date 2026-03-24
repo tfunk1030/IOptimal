@@ -99,6 +99,7 @@ class ParameterDecision:
     unit: str = ""
     confidence: float = 0.0
     legality_status: str = "validated"
+    search_status: str = ""
     blocked_reason: str = ""
     fallback_reason: str = ""
     evidence: ParameterEvidence = field(default_factory=ParameterEvidence)
@@ -297,6 +298,16 @@ def build_signal_map(measured: "MeasuredState") -> dict[str, TelemetrySignal[Any
             source="pitch_from_ride_height",
             confidence=0.8,
         ),
+        "abs_active_pct": _proxy(
+            measured.abs_active_pct,
+            source="abs_state_channel",
+            confidence=0.55,
+        ),
+        "pitch_range_deg": _trusted(
+            measured.pitch_range_deg,
+            source="pitch_from_ride_height",
+            confidence=0.78,
+        ),
         "pitch_mean_braking_deg": _trusted(
             measured.pitch_mean_braking_deg,
             source="pitch_from_ride_height",
@@ -382,16 +393,17 @@ def build_signal_map(measured: "MeasuredState") -> dict[str, TelemetrySignal[Any
             confidence=0.55,
         ),
     }
-    if getattr(measured, "hydraulic_brake_split_pct", 0.0) > 0:
+    hydraulic_brake_split = getattr(measured, "hydraulic_brake_split_pct", 0.0)
+    if isinstance(hydraulic_brake_split, (int, float)) and hydraulic_brake_split > 0:
         split_signal = (
             _trusted(
-                measured.hydraulic_brake_split_pct,
+                hydraulic_brake_split,
                 source="hydraulic_brake_line_pressure",
                 confidence=max(0.55, min(0.95, hydraulic_split_conf)),
             )
             if hydraulic_split_conf >= 0.7
             else _proxy(
-                measured.hydraulic_brake_split_pct,
+                hydraulic_brake_split,
                 source="hydraulic_brake_line_pressure",
                 confidence=max(0.3, hydraulic_split_conf),
             )
@@ -441,6 +453,7 @@ def build_telemetry_bundle(signals: dict[str, TelemetrySignal[Any]]) -> Telemetr
             "hydraulic_brake_split_pct": signals.get("hydraulic_brake_split_pct", TelemetrySignal()),
             "pitch_range_braking_deg": signals.get("pitch_range_braking_deg", TelemetrySignal()),
             "pitch_mean_braking_deg": signals.get("pitch_mean_braking_deg", TelemetrySignal()),
+            "abs_active_pct": signals.get("abs_active_pct", TelemetrySignal()),
             "front_rh_settle_time_ms": signals.get("front_rh_settle_time_ms", TelemetrySignal()),
         },
         traction_balance={
@@ -467,6 +480,9 @@ def build_telemetry_bundle(signals: dict[str, TelemetrySignal[Any]]) -> Telemetr
             "yaw_rate_correlation": signals.get("yaw_rate_correlation", TelemetrySignal()),
             "front_shock_oscillation_hz": signals.get("front_shock_oscillation_hz", TelemetrySignal()),
             "rear_shock_oscillation_hz": signals.get("rear_shock_oscillation_hz", TelemetrySignal()),
+            "front_shock_vel_p99_mps": signals.get("front_shock_vel_p99_mps", TelemetrySignal()),
+            "rear_shock_vel_p99_mps": signals.get("rear_shock_vel_p99_mps", TelemetrySignal()),
+            "pitch_range_deg": signals.get("pitch_range_deg", TelemetrySignal()),
         },
     )
 

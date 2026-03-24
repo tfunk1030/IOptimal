@@ -719,7 +719,11 @@ class GarageRanges:
     pushrod_resolution_mm: float = 0.5
     heave_spring_resolution_nmm: float = 10.0  # iRacing garage steps in 10 N/mm
     rear_spring_resolution_nmm: float = 5.0    # iRacing garage steps in 5 N/mm
+    # Perch resolutions differ by control on BMW: front heave is 0.5 mm,
+    # rear third is integer-only. Keep the old shared field for compatibility.
     perch_resolution_mm: float = 1.0
+    front_heave_perch_resolution_mm: float = 1.0
+    rear_third_perch_resolution_mm: float = 1.0
     rear_spring_perch_resolution_mm: float = 0.5  # rear spring perch uses 0.5 mm steps
 
     # Differential
@@ -1231,6 +1235,7 @@ BMW_M_HYBRID_V8 = CarModel(
         max_slider_mm=45.0,
         min_static_defl_mm=3.0,
         max_torsion_bar_defl_mm=25.0,
+        torsion_bar_defl_safety_margin_mm=0.2,
         torsion_bar_rate_c=0.0008036,
         heave_spring_defl_max_intercept_mm=96.019667,
         heave_spring_defl_max_slope=-0.082843,
@@ -1278,6 +1283,8 @@ BMW_M_HYBRID_V8 = CarModel(
         # BMW iRacing legal limits (verified 2026-03-18 by Taylor Funk)
         camber_front_deg=(-2.9, 0.0),   # max negative: -2.9°
         camber_rear_deg=(-1.9, 0.0),    # max negative: -1.9°
+        front_heave_perch_resolution_mm=0.5,
+        rear_third_perch_resolution_mm=1.0,
     ),
 )
 

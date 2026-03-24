@@ -34,6 +34,22 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def _front_perch_step(gr) -> float:
+    return (
+        getattr(gr, "front_heave_perch_resolution_mm", None)
+        or getattr(gr, "perch_resolution_mm", 1.0)
+        or 1.0
+    )
+
+
+def _rear_third_perch_step(gr) -> float:
+    return (
+        getattr(gr, "rear_third_perch_resolution_mm", None)
+        or getattr(gr, "perch_resolution_mm", 1.0)
+        or 1.0
+    )
+
+
 def validate_and_fix_garage_correlation(
     car,
     step1,
@@ -74,6 +90,7 @@ def validate_and_fix_garage_correlation(
         state,
         front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
     )
+    final = constraint
     if not constraint.valid:
         # Something is wrong — attempt auto-correction
         warnings.extend(_fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
@@ -115,6 +132,9 @@ def validate_and_fix_garage_correlation(
         )
         step1.static_rear_rh_mm = round(predicted_rear, 1)
         step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
+
+    setattr(step2, "garage_constraints_ok", bool(final.valid))
+    setattr(step2, "garage_constraint_notes", list(getattr(final, "messages", [])))
 
     return warnings
 
@@ -166,7 +186,7 @@ def _clamp_step2(step2, gr) -> list[str]:
         step2.front_heave_nmm = float(val)
 
     old = step2.perch_offset_front_mm
-    val = _snap(_clamp(old, *gr.front_heave_perch_mm), gr.perch_resolution_mm)
+    val = _snap(_clamp(old, *gr.front_heave_perch_mm), _front_perch_step(gr))
     if abs(val - old) > 0.01:
         msgs.append(f"front_heave_perch: {old:.1f} -> {val:.1f} mm (clamped/snapped)")
         step2.perch_offset_front_mm = val
@@ -178,7 +198,7 @@ def _clamp_step2(step2, gr) -> list[str]:
         step2.rear_third_nmm = float(val)
 
     old = step2.perch_offset_rear_mm
-    val = _snap(_clamp(old, *gr.rear_third_perch_mm), gr.perch_resolution_mm)
+    val = _snap(_clamp(old, *gr.rear_third_perch_mm), _rear_third_perch_step(gr))
     if val != old:
         msgs.append(f"rear_third_perch: {old:.1f} -> {val:.1f} mm (clamped/snapped)")
         step2.perch_offset_rear_mm = val
@@ -255,6 +275,7 @@ def _fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> li
     msgs: list[str] = []
     max_slider = garage_model.max_slider_mm
     max_iters = 20  # safety cap
+    front_step = _front_perch_step(gr)
 
     for _ in range(max_iters):
         state = GarageSetupState.from_solver_steps(
@@ -266,13 +287,13 @@ def _fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> li
             break
 
         # Try making perch more negative (tightens preload, lowers slider)
-        new_perch = step2.perch_offset_front_mm - gr.perch_resolution_mm
+        new_perch = step2.perch_offset_front_mm - front_step
         if new_perch >= gr.front_heave_perch_mm[0]:
             old_perch = step2.perch_offset_front_mm
             step2.perch_offset_front_mm = new_perch
             msgs.append(
                 f"heave slider {slider:.1f}mm > {max_slider:.0f}mm: "
-                f"perch {old_perch:.0f} -> {new_perch:.0f} mm"
+                f"perch {old_perch:.1f} -> {new_perch:.1f} mm"
             )
             continue
 
@@ -284,7 +305,7 @@ def _fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> li
             # Reset perch to middle of range for re-optimisation
             step2.perch_offset_front_mm = _snap(
                 (gr.front_heave_perch_mm[0] + gr.front_heave_perch_mm[1]) / 2,
-                gr.perch_resolution_mm,
+                front_step,
             )
             msgs.append(
                 f"heave slider still > {max_slider:.0f}mm after perch exhaust: "
@@ -375,10 +396,11 @@ def _fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> 
 def _fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> list[str]:
     """Fix torsion bar defl > max_torsion_bar_defl_mm by stiffening the bar or adjusting heave perch."""
     msgs: list[str] = []
-    if garage_model.max_torsion_bar_defl_mm is None:
+    max_defl = garage_model.effective_torsion_bar_defl_limit_mm()
+    if max_defl is None:
         return msgs
-    max_defl = garage_model.max_torsion_bar_defl_mm
     max_iters = 20
+    front_step = _front_perch_step(gr)
 
     for _ in range(max_iters):
         state = GarageSetupState.from_solver_steps(
@@ -387,10 +409,22 @@ def _fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l,
         )
         outputs = garage_model.predict(state)
         defl = outputs.torsion_bar_defl_mm
-        if defl <= max_defl + 0.1:
+        if defl <= max_defl + 1e-6:
             break
 
-        # Try stiffening the torsion bar (larger OD)
+        # First try a smaller front-heave perch move. It is usually the least
+        # disruptive way to pull BMW off the torsion-deflection edge.
+        new_perch = step2.perch_offset_front_mm - front_step
+        if new_perch >= gr.front_heave_perch_mm[0]:
+            old_perch = step2.perch_offset_front_mm
+            step2.perch_offset_front_mm = new_perch
+            msgs.append(
+                f"torsion bar defl {defl:.1f}mm > {max_defl:.1f}mm: "
+                f"heave perch {old_perch:.1f} -> {new_perch:.1f} mm"
+            )
+            continue
+
+        # If the perch is exhausted, stiffen the torsion bar.
         current_od = step3.front_torsion_od_mm
         options = getattr(car.corner_spring, "front_torsion_od_options", None)
         if options is not None:
@@ -399,34 +433,22 @@ def _fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l,
                 new_od = larger_options[0]
                 step3.front_torsion_od_mm = new_od
                 msgs.append(
-                    f"torsion bar defl {defl:.1f}mm > {max_defl:.0f}mm: "
+                    f"torsion bar defl {defl:.1f}mm > {max_defl:.1f}mm: "
                     f"torsion OD {current_od:.2f} -> {new_od:.2f} mm"
                 )
                 continue
         else:
-            # Fallback to continuous range
             new_od = round(current_od + 0.5, 2)
             if new_od <= gr.front_torsion_od_mm[1]:
                 step3.front_torsion_od_mm = new_od
                 msgs.append(
-                    f"torsion bar defl {defl:.1f}mm > {max_defl:.0f}mm: "
+                    f"torsion bar defl {defl:.1f}mm > {max_defl:.1f}mm: "
                     f"torsion OD {current_od:.2f} -> {new_od:.2f} mm"
                 )
                 continue
 
-        # Torsion bar maxed out - make heave perch more negative to take more preload load
-        new_perch = step2.perch_offset_front_mm - gr.perch_resolution_mm
-        if new_perch >= gr.front_heave_perch_mm[0]:
-            old_perch = step2.perch_offset_front_mm
-            step2.perch_offset_front_mm = new_perch
-            msgs.append(
-                f"torsion bar defl still > {max_defl:.0f}mm after OD maxed: "
-                f"heave perch {old_perch:.0f} -> {new_perch:.0f} mm"
-            )
-            continue
-
         msgs.append(
-            f"UNCORRECTABLE: torsion bar defl {defl:.1f}mm > {max_defl:.0f}mm "
+            f"UNCORRECTABLE: torsion bar defl {defl:.1f}mm > {max_defl:.1f}mm "
             f"(OD and heave perch at limits)"
         )
         break

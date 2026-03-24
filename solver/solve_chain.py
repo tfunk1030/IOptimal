@@ -4,6 +4,11 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any
 
+from car_model.setup_registry import (
+    diff_ramp_option_index,
+    diff_ramp_pair_for_option,
+    diff_ramp_string_for_option,
+)
 from solver.arb_solver import ARBSolver
 from solver.corner_spring_solver import CornerSpringSolver
 from solver.damper_solver import CornerDamperSettings, DamperSolver
@@ -41,6 +46,7 @@ class SolveChainInputs:
     supporting_driver: Any | None = None
     supporting_measured: Any | None = None
     supporting_diagnosis: Any | None = None
+    corners: list[Any] | None = None
 
     def resolved_supporting_driver(self) -> Any:
         return self.supporting_driver if self.supporting_driver is not None else self.driver
@@ -192,13 +198,16 @@ def _build_supporting(inputs: SolveChainInputs) -> Any:
     return solver.solve()
 
 
-def _snap_supporting_value(field_name: str, value: Any) -> Any:
+def _snap_supporting_value(field_name: str, value: Any, car: Any = None) -> Any:
     """Snap supporting parameter values to iRacing garage increments."""
     if not isinstance(value, (int, float)):
         return value
     v = float(value)
     if field_name == "diff_preload_nm":
         return round(v / 5) * 5  # 5 Nm increments
+    if field_name == "diff_ramp_option_idx":
+        options = getattr(getattr(car, "garage_ranges", None), "diff_coast_drive_ramp_options", [(40, 65), (45, 70), (50, 75)])
+        return int(max(0, min(len(options) - 1, round(v))))
     if field_name == "diff_ramp_coast":
         valid_coast = [40, 45, 50]
         return min(valid_coast, key=lambda r: abs(r - v))
@@ -211,6 +220,15 @@ def _snap_supporting_value(field_name: str, value: Any) -> Any:
     if field_name in ("tc_gain", "tc_slip"):
         return int(round(max(1, min(10, v))))
     if field_name == "brake_bias_pct":
+        return round(v, 1)
+    if field_name in ("brake_bias_target", "brake_bias_migration"):
+        return round(v * 2.0) / 2.0
+    if field_name in ("brake_bias_migration_gain", "hybrid_rear_drive_corner_pct"):
+        return round(v, 1)
+    if field_name in ("front_master_cyl_mm", "rear_master_cyl_mm"):
+        options = list(getattr(getattr(car, "garage_ranges", None), "brake_master_cyl_options_mm", []) or [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8])
+        return min(options, key=lambda candidate: abs(float(candidate) - v))
+    if field_name in ("fuel_low_warning_l", "fuel_target_l", "fuel_l"):
         return round(v, 1)
     return value
 
@@ -228,12 +246,39 @@ def _enforce_ramp_pair(supporting: Any, car: Any = None) -> None:
     best = min(valid_pairs, key=lambda p: abs(p[0] - coast) + abs(p[1] - drive))
     supporting.diff_ramp_coast = best[0]
     supporting.diff_ramp_drive = best[1]
+    supporting.diff_ramp_option_idx = diff_ramp_option_index(
+        car,
+        coast=supporting.diff_ramp_coast,
+        drive=supporting.diff_ramp_drive,
+        default=1,
+    ) or 1
+    supporting.diff_ramp_angles = diff_ramp_string_for_option(
+        car,
+        getattr(supporting, "diff_ramp_option_idx", 1),
+        ferrari_label=getattr(car, "canonical_name", "") == "ferrari",
+    )
 
 
-def _apply_supporting_overrides(supporting: Any, overrides: dict[str, Any]) -> None:
+def _apply_supporting_overrides(supporting: Any, overrides: dict[str, Any], car: Any = None) -> None:
     for field_name, value in overrides.items():
+        if field_name == "diff_ramp_option_idx":
+            option_idx = _snap_supporting_value(field_name, value, car)
+            coast, drive = diff_ramp_pair_for_option(car, option_idx, default_idx=1)
+            if hasattr(supporting, "diff_ramp_option_idx"):
+                supporting.diff_ramp_option_idx = option_idx
+            if hasattr(supporting, "diff_ramp_coast"):
+                supporting.diff_ramp_coast = coast
+            if hasattr(supporting, "diff_ramp_drive"):
+                supporting.diff_ramp_drive = drive
+            if hasattr(supporting, "diff_ramp_angles"):
+                supporting.diff_ramp_angles = diff_ramp_string_for_option(
+                    car,
+                    option_idx,
+                    ferrari_label=getattr(car, "canonical_name", "") == "ferrari",
+                )
+            continue
         if hasattr(supporting, field_name):
-            setattr(supporting, field_name, _snap_supporting_value(field_name, value))
+            setattr(supporting, field_name, _snap_supporting_value(field_name, value, car))
 
 
 def _apply_ferrari_passthrough(inputs: SolveChainInputs, *, step1: Any, step2: Any, step3: Any, step4: Any) -> None:
@@ -456,6 +501,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         fuel_load_l=fuel,
         camber_confidence=inputs.camber_confidence,
+        measured=inputs.measured,
     )
     reconcile_ride_heights(
         car,
@@ -551,7 +597,29 @@ def run_base_solve(inputs: SolveChainInputs) -> SolveChainResult:
             )
 
     supporting = _build_supporting(inputs)
+    supporting.fuel_l = round(float(inputs.fuel_load_l), 1)
+    supporting.fuel_target_l = round(float(getattr(inputs.current_setup, "fuel_target_l", 0.0) or inputs.fuel_load_l), 1)
     _enforce_ramp_pair(supporting, inputs.car)
+    from solver.bmw_rotation_search import search_rotation_controls
+
+    preliminary_result = _finalize_result(
+        inputs,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+        supporting=supporting,
+        notes=notes,
+        candidate_vetoes=candidate_vetoes,
+        optimizer_used=optimized is not None and not getattr(optimized, "all_candidates_vetoed", False),
+    )
+    rotation_search = search_rotation_controls(base_result=preliminary_result, inputs=inputs)
+    if rotation_search is not None:
+        result = rotation_search.result
+        result.notes = list(dict.fromkeys(list(preliminary_result.notes) + list(result.notes) + list(rotation_search.notes)))
+        return result
     return _finalize_result(
         inputs,
         step1=step1,
@@ -896,7 +964,7 @@ def materialize_overrides(
             apply_damper_modifiers(step6, mods, car)
 
     supporting = _build_supporting(inputs)
-    _apply_supporting_overrides(supporting, overrides.supporting)
+    _apply_supporting_overrides(supporting, overrides.supporting, inputs.car)
     _enforce_ramp_pair(supporting, inputs.car)
     notes = ["Materialized candidate through shared solve chain."]
     if overrides.supporting:

@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass, field as dc_field
+import re
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,13 @@ class CarFieldSpec:
     options: tuple | None = None       # discrete choices (frozen)
     index_map: dict | None = None      # Ferrari index→value decode (None = undecoded)
     parse_fn: str = "float"            # "float" | "int" | "string" | "defl"
+
+
+DEFAULT_DIFF_RAMP_OPTIONS: tuple[tuple[int, int], ...] = (
+    (40, 65),
+    (45, 70),
+    (50, 75),
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +142,7 @@ _FIELD_DEFS: list[FieldDefinition] = [
     FieldDefinition("pad_compound", "settable", "supporting", "", "string", True, False, "pad_compound"),
     FieldDefinition("diff_preload_nm", "settable", "supporting", "Nm", "continuous", True, False, "diff_preload_nm"),
     FieldDefinition("diff_ramp_angles", "settable", "supporting", "", "string", True, False, "diff_ramp_angles"),
+    FieldDefinition("diff_ramp_option_idx", "settable", "supporting", "idx", "indexed", True, False, "diff_ramp_angles"),
     FieldDefinition("diff_clutch_plates", "settable", "supporting", "", "discrete", True, False, "diff_clutch_plates"),
     FieldDefinition("front_diff_preload_nm", "settable", "supporting", "Nm", "continuous", True, False, "front_diff_preload_nm"),
     FieldDefinition("tc_gain", "settable", "supporting", "clicks", "discrete", True, False, "tc_gain"),
@@ -216,7 +225,7 @@ _BMW_SPECS: dict[str, CarFieldSpec] = {
     "rr_ride_height_mm":        _S("Chassis.RightRear.RideHeight",                   "CarSetup_Chassis_RightRear_RideHeight"),
     # Step 2: Heave / Third
     "front_heave_spring_nmm":   _S("Chassis.Front.HeaveSpring",                      "CarSetup_Chassis_Front_HeaveSpring",                range_min=0.0, range_max=900.0, resolution=10.0),
-    "front_heave_perch_mm":     _S("Chassis.Front.HeavePerchOffset",                 "CarSetup_Chassis_Front_HeavePerchOffset",           resolution=1.0),
+    "front_heave_perch_mm":     _S("Chassis.Front.HeavePerchOffset",                 "CarSetup_Chassis_Front_HeavePerchOffset",           resolution=0.5),
     "rear_third_spring_nmm":    _S("Chassis.Rear.ThirdSpring",                       "CarSetup_Chassis_Rear_ThirdSpring",                 range_min=0.0, range_max=900.0, resolution=10.0),
     "rear_third_perch_mm":      _S("Chassis.Rear.ThirdPerchOffset",                  "CarSetup_Chassis_Rear_ThirdPerchOffset",            resolution=1.0),
     "heave_spring_defl_static_mm": _S("Chassis.Front.HeaveSpringDefl",               "CarSetup_Chassis_Front_HeaveSpringDeflStatic",      parse_fn="defl"),
@@ -267,6 +276,7 @@ _BMW_SPECS: dict[str, CarFieldSpec] = {
     # Supporting: Diff
     "diff_preload_nm":          _S("BrakesDriveUnit.RearDiffSpec.Preload",            "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload",    range_min=0.0, range_max=150.0, resolution=5.0),
     "diff_ramp_angles":         _S("BrakesDriveUnit.RearDiffSpec.CoastDriveRampAngles", "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles", parse_fn="string"),
+    "diff_ramp_option_idx":     _S("BrakesDriveUnit.RearDiffSpec.CoastDriveRampAngles", "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles", range_min=0.0, range_max=2.0, resolution=1.0, options=(0, 1, 2), parse_fn="string"),
     "diff_clutch_plates":       _S("BrakesDriveUnit.RearDiffSpec.ClutchFrictionPlates", "CarSetup_BrakesDriveUnit_RearDiffSpec_ClutchFrictionPlates", parse_fn="int"),
     # Supporting: TC
     "tc_gain":                  _S("BrakesDriveUnit.TractionControl.TractionControlGain", "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain", range_min=1, range_max=10, parse_fn="int"),
@@ -336,6 +346,7 @@ _FERRARI_SPECS.update({
     "front_diff_preload_nm":    _S("Systems.FrontDiffSpec.Preload",                   "CarSetup_BrakesDriveUnit_FrontDiffSpec_Preload"),
     "diff_preload_nm":          _S("Systems.RearDiffSpec.Preload",                    "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload",    range_min=0.0, range_max=150.0, resolution=5.0),
     "diff_ramp_angles":         _S("Systems.RearDiffSpec.CoastDriveRampOptions",      "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles", parse_fn="string"),
+    "diff_ramp_option_idx":     _S("Systems.RearDiffSpec.CoastDriveRampOptions",      "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles", range_min=0.0, range_max=2.0, resolution=1.0, options=(0, 1, 2), parse_fn="string"),
     "diff_clutch_plates":       _S("Systems.RearDiffSpec.ClutchFrictionPlates",       "CarSetup_BrakesDriveUnit_RearDiffSpec_ClutchFrictionPlates", parse_fn="int"),
     "tc_gain":                  _S("Systems.TractionControl.TractionControlGain",     "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain", range_min=1, range_max=10, parse_fn="int"),
     "tc_slip":                  _S("Systems.TractionControl.TractionControlSlip",     "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip", range_min=1, range_max=10, parse_fn="int"),
@@ -463,6 +474,107 @@ def get_writer_param_ids(car: str) -> dict[str, str]:
     for canonical_key, spec in specs.items():
         result[canonical_key] = spec.sto_param_id
     return result
+
+
+def _car_name(car_or_name: object | str | None) -> str:
+    if isinstance(car_or_name, str):
+        return car_or_name.lower()
+    if car_or_name is None:
+        return "bmw"
+    return str(getattr(car_or_name, "canonical_name", "bmw")).lower()
+
+
+def get_diff_ramp_options(car_or_name: object | str | None = None) -> tuple[tuple[int, int], ...]:
+    """Return the legal coupled diff ramp pairs for a car."""
+    if car_or_name is not None and not isinstance(car_or_name, str):
+        garage_ranges = getattr(car_or_name, "garage_ranges", None)
+        options = getattr(garage_ranges, "diff_coast_drive_ramp_options", None)
+        if options:
+            return tuple((int(pair[0]), int(pair[1])) for pair in options)
+
+    car_name = _car_name(car_or_name)
+    if car_name in CAR_FIELD_SPECS:
+        return DEFAULT_DIFF_RAMP_OPTIONS
+    return DEFAULT_DIFF_RAMP_OPTIONS
+
+
+def parse_diff_ramp_pair(value: object) -> tuple[int, int] | None:
+    """Parse a diff ramp pair from strings like '40/65' or '40 / 65'."""
+    if value is None:
+        return None
+    if isinstance(value, (tuple, list)) and len(value) >= 2:
+        try:
+            return int(round(float(value[0]))), int(round(float(value[1])))
+        except (TypeError, ValueError):
+            return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered == "more locking":
+        return DEFAULT_DIFF_RAMP_OPTIONS[0]
+    if lowered == "less locking":
+        return DEFAULT_DIFF_RAMP_OPTIONS[-1]
+    match = re.search(r"(\d+)\s*/\s*(\d+)", text)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    return None
+
+
+def diff_ramp_option_index(
+    car_or_name: object | str | None = None,
+    *,
+    coast: object | None = None,
+    drive: object | None = None,
+    diff_ramp_angles: object | None = None,
+    default: int | None = None,
+) -> int | None:
+    """Map a coast/drive pair or ramp-angle string to the nearest legal option index."""
+    options = get_diff_ramp_options(car_or_name)
+    pair = parse_diff_ramp_pair(diff_ramp_angles)
+    if pair is None and coast is not None and drive is not None:
+        try:
+            pair = int(round(float(coast))), int(round(float(drive)))
+        except (TypeError, ValueError):
+            pair = None
+    if pair is None:
+        return default
+    best_idx = min(
+        range(len(options)),
+        key=lambda idx: abs(options[idx][0] - pair[0]) + abs(options[idx][1] - pair[1]),
+    )
+    return int(best_idx)
+
+
+def diff_ramp_pair_for_option(
+    car_or_name: object | str | None,
+    option_idx: object | None,
+    *,
+    default_idx: int = 0,
+) -> tuple[int, int]:
+    """Resolve a legal diff ramp pair from an option index."""
+    options = get_diff_ramp_options(car_or_name)
+    if not options:
+        return DEFAULT_DIFF_RAMP_OPTIONS[default_idx]
+    try:
+        idx = int(round(float(option_idx))) if option_idx is not None else default_idx
+    except (TypeError, ValueError):
+        idx = default_idx
+    idx = max(0, min(len(options) - 1, idx))
+    return int(options[idx][0]), int(options[idx][1])
+
+
+def diff_ramp_string_for_option(
+    car_or_name: object | str | None,
+    option_idx: object | None,
+    *,
+    ferrari_label: bool = False,
+) -> str:
+    """Resolve the export string for a diff ramp option index."""
+    coast, drive = diff_ramp_pair_for_option(car_or_name, option_idx, default_idx=1)
+    if ferrari_label:
+        return "More Locking" if coast <= 45 else "Less Locking"
+    return f"{coast}/{drive}"
 
 
 def validate_registry() -> list[str]:

@@ -106,6 +106,8 @@ class WheelGeometrySolution:
     # Camber confidence: "estimated" (physics model) or "calibrated" (thermal data)
     camber_confidence: str = "estimated"
     notes: list[str] = field(default_factory=list)
+    parameter_search_status: dict[str, str] = field(default_factory=dict)
+    parameter_search_evidence: dict[str, list[str]] = field(default_factory=dict)
 
     def summary(self) -> str:
         lines = [

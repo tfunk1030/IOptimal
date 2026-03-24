@@ -473,13 +473,28 @@ def extract_measurements(
             state.static_front_rh_sensor_mm = float(np.percentile(front_rh, 95))
             state.static_rear_rh_sensor_mm = float(np.percentile(rear_rh, 95))
 
-        if state.static_front_rh_sensor_mm > 0 and state.mean_front_rh_at_speed_mm > 0:
+        front_static_rh = state.static_front_rh_sensor_mm
+        front_mean_rh = state.mean_front_rh_at_speed_mm
+        rear_static_rh = state.static_rear_rh_sensor_mm
+        rear_mean_rh = state.mean_rear_rh_at_speed_mm
+
+        if (
+            isinstance(front_static_rh, (int, float))
+            and isinstance(front_mean_rh, (int, float))
+            and front_static_rh > 0
+            and front_mean_rh > 0
+        ):
             state.aero_compression_front_mm = (
-                state.static_front_rh_sensor_mm - state.mean_front_rh_at_speed_mm
+                front_static_rh - front_mean_rh
             )
-        if state.static_rear_rh_sensor_mm > 0 and state.mean_rear_rh_at_speed_mm > 0:
+        if (
+            isinstance(rear_static_rh, (int, float))
+            and isinstance(rear_mean_rh, (int, float))
+            and rear_static_rh > 0
+            and rear_mean_rh > 0
+        ):
             state.aero_compression_rear_mm = (
-                state.static_rear_rh_sensor_mm - state.mean_rear_rh_at_speed_mm
+                rear_static_rh - rear_mean_rh
             )
 
         # Bottoming events: samples where RH drops below 3-sigma from mean

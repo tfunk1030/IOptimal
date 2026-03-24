@@ -190,6 +190,7 @@ def generate_report(
     current_setup: CurrentSetup,
     wing: float,
     target_balance: float,
+    fuel_l: float | None = None,
     stint_result: StintStrategy | None = None,
     sector_result: SectorCompromiseResult | None = None,
     sensitivity_result: LaptimeSensitivityReport | None = None,
@@ -207,6 +208,7 @@ def generate_report(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
     a = lines.append
+    report_fuel_l = fuel_l if fuel_l is not None else getattr(current_setup, "fuel_l", 0.0)
     garage_outputs = None
     garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
     if garage_model is not None:
@@ -216,7 +218,7 @@ def generate_report(
                 step2=step2,
                 step3=step3,
                 step5=step5,
-                fuel_l=getattr(current_setup, "fuel_l", 0.0),
+                fuel_l=report_fuel_l,
             ),
             front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
         )
@@ -269,7 +271,7 @@ def generate_report(
             space_result=space_result,
             supporting=supporting,
             car=car,
-            fuel_l=getattr(current_setup, "fuel_l", 0.0),
+            fuel_l=report_fuel_l,
             garage_outputs=garage_outputs,
             compact=True,
             front_tb_turns_override=_ferrari_tb,
@@ -404,7 +406,7 @@ def generate_report(
         space_result=space_result,
         supporting=supporting,
         car=car,
-        fuel_l=getattr(current_setup, "fuel_l", 0.0),
+        fuel_l=report_fuel_l,
         garage_outputs=garage_outputs,
         front_tb_turns_override=_ferrari_tb,
         rear_tb_turns_override=_ferrari_rear_tb,

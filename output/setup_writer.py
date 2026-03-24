@@ -32,6 +32,19 @@ def _numeric(parent: Element, param_id: str, value: float | int, unit: str) -> N
     SubElement(parent, "Numeric", Id=param_id, Value=str(value), Unit=unit)
 
 
+def _decimal_1(value: float) -> float:
+    """Format to one decimal place without binary-rounding surprises."""
+    return float(f"{value:.1f}")
+
+
+def _snap_to_step(value: float, step: float) -> float:
+    """Snap a numeric value to an arbitrary garage step."""
+    if step <= 0:
+        return value
+    snapped = round(value / step) * step
+    return float(f"{snapped:.4f}")
+
+
 def _string(parent: Element, param_id: str, value: str, unit: str = "") -> None:
     """Add a String element to the XML."""
     SubElement(parent, "String", Id=param_id, Value=value, Unit=unit)
@@ -444,16 +457,16 @@ def write_sto(
     tyre_pressure_kpa: float = 152.0,
     # --- Defaults for fields not computed by the solver ---
     brake_bias_pct: float | None = None,  # None = compute from car physics
-    brake_bias_migration: float = 0.0,
-    brake_bias_target: float = 0.0,
-    pad_compound: str = "Medium",
-    front_master_cyl_mm: float = 19.1,
-    rear_master_cyl_mm: float = 20.6,
-    diff_coast_drive_ramp: str = "40/65",
-    diff_clutch_plates: int = 6,
-    diff_preload_nm: float = 10.0,
-    tc_gain: int = 4,
-    tc_slip: int = 3,
+    brake_bias_migration: float | None = None,
+    brake_bias_target: float | None = None,
+    pad_compound: str | None = None,
+    front_master_cyl_mm: float | None = None,
+    rear_master_cyl_mm: float | None = None,
+    diff_coast_drive_ramp: str | None = None,
+    diff_clutch_plates: int | None = None,
+    diff_preload_nm: float | None = None,
+    tc_gain: int | None = None,
+    tc_slip: int | None = None,
     gear_stack: str = "Short",
     fuel_low_warning_l: float = 8.0,
     roof_light_color: str = "Orange",
@@ -499,6 +512,19 @@ def write_sto(
         _car = _get_car(car_canonical)
     except Exception:
         _car = None
+    front_perch_step = 1.0
+    rear_third_perch_step = 1.0
+    if _car is not None:
+        front_perch_step = (
+            getattr(_car.garage_ranges, "front_heave_perch_resolution_mm", None)
+            or getattr(_car.garage_ranges, "perch_resolution_mm", 1.0)
+            or 1.0
+        )
+        rear_third_perch_step = (
+            getattr(_car.garage_ranges, "rear_third_perch_resolution_mm", None)
+            or getattr(_car.garage_ranges, "perch_resolution_mm", 1.0)
+            or 1.0
+        )
 
     # ── Pre-write validation: garage correlation fix + range clamping ─────
     from output.garage_validator import validate_and_fix_garage_correlation
@@ -544,17 +570,22 @@ def write_sto(
     if _car is not None:
         _gr = _car.garage_ranges
         # Brake bias target/migration
-        brake_bias_target = max(_gr.brake_bias_target[0], min(_gr.brake_bias_target[1], brake_bias_target))
-        brake_bias_migration = max(_gr.brake_bias_migration[0], min(_gr.brake_bias_migration[1], brake_bias_migration))
+        if brake_bias_target is not None:
+            brake_bias_target = max(_gr.brake_bias_target[0], min(_gr.brake_bias_target[1], brake_bias_target))
+        if brake_bias_migration is not None:
+            brake_bias_migration = max(_gr.brake_bias_migration[0], min(_gr.brake_bias_migration[1], brake_bias_migration))
         # Diff preload
-        diff_preload_nm = max(_gr.diff_preload_nm[0], min(_gr.diff_preload_nm[1], diff_preload_nm))
-        diff_preload_nm = round(diff_preload_nm / _gr.diff_preload_step_nm) * _gr.diff_preload_step_nm
+        if diff_preload_nm is not None:
+            diff_preload_nm = max(_gr.diff_preload_nm[0], min(_gr.diff_preload_nm[1], diff_preload_nm))
+            diff_preload_nm = round(diff_preload_nm / _gr.diff_preload_step_nm) * _gr.diff_preload_step_nm
         # Master cylinders — snap to nearest valid option
         _mc_opts = _gr.brake_master_cyl_options_mm
-        front_master_cyl_mm = min(_mc_opts, key=lambda x: abs(x - front_master_cyl_mm))
-        rear_master_cyl_mm = min(_mc_opts, key=lambda x: abs(x - rear_master_cyl_mm))
+        if front_master_cyl_mm is not None:
+            front_master_cyl_mm = min(_mc_opts, key=lambda x: abs(x - front_master_cyl_mm))
+        if rear_master_cyl_mm is not None:
+            rear_master_cyl_mm = min(_mc_opts, key=lambda x: abs(x - rear_master_cyl_mm))
         # Pad compound
-        if pad_compound not in _gr.brake_pad_compound_options:
+        if pad_compound is not None and pad_compound not in _gr.brake_pad_compound_options:
             pad_compound = "Medium"
 
     # ── Corner weights (physics-computed) ─────────────────────────────────
@@ -574,6 +605,8 @@ def write_sto(
 
     def _w_num(param: str, value: float | int, unit: str) -> None:
         """Write a numeric param using car-specific ID, or TODO comment if unmapped."""
+        if value is None:
+            return
         if param in ids:
             _numeric(details, ids[param], value, unit)
         else:
@@ -581,6 +614,8 @@ def write_sto(
 
     def _w_str(param: str, value: str, unit: str = "") -> None:
         """Write a string param using car-specific ID, or TODO comment if unmapped."""
+        if value is None:
+            return
         if param in ids:
             _string(details, ids[param], value, unit)
         else:
@@ -613,10 +648,10 @@ def write_sto(
     _w_num("ld_ratio",          round(step1.ld_ratio, 1),             "")
 
     # === Ride Heights ===
-    _w_num("lf_ride_height", round(step1.static_front_rh_mm, 0), "mm")
-    _w_num("rf_ride_height", round(step1.static_front_rh_mm, 0), "mm")
-    _w_num("lr_ride_height", round(step1.static_rear_rh_mm, 1),  "mm")
-    _w_num("rr_ride_height", round(step1.static_rear_rh_mm, 1),  "mm")
+    _w_num("lf_ride_height", _decimal_1(step1.static_front_rh_mm), "mm")
+    _w_num("rf_ride_height", _decimal_1(step1.static_front_rh_mm), "mm")
+    _w_num("lr_ride_height", _decimal_1(step1.static_rear_rh_mm),  "mm")
+    _w_num("rr_ride_height", _decimal_1(step1.static_rear_rh_mm),  "mm")
 
     # === Pushrod offsets ===
     _w_num("front_pushrod_offset", round(step1.front_pushrod_offset_mm * 2) / 2, "mm")
@@ -624,9 +659,9 @@ def write_sto(
 
     # === Heave / Third springs ===
     _w_num("front_heave_spring",   int(round(step2.front_heave_nmm)),      "N/mm")
-    _w_num("front_heave_perch",    int(round(step2.perch_offset_front_mm)), "mm")
+    _w_num("front_heave_perch",    _snap_to_step(step2.perch_offset_front_mm, front_perch_step), "mm")
     _w_num("rear_third_spring",    int(round(step2.rear_third_nmm)),        "N/mm")
-    _w_num("rear_third_perch",     int(round(step2.perch_offset_rear_mm)),  "mm")
+    _w_num("rear_third_perch",     _snap_to_step(step2.perch_offset_rear_mm, rear_third_perch_step),  "mm")
 
     # === Corner springs ===
     # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
@@ -824,17 +859,18 @@ def write_sto(
     _w_num("diff_preload",          diff_preload_nm,       "Nm")
     _w_num("tc_gain", tc_gain, "")
     _w_num("tc_slip", tc_slip, "")
+    _w_num("brake_bias_migration", brake_bias_migration,  "")
+    _w_num("brake_bias_target",    brake_bias_target,     "")
+    _w_str("pad_compound",         pad_compound)
+    _w_num("front_master_cyl",     front_master_cyl_mm,  "mm")
+    _w_num("rear_master_cyl",      rear_master_cyl_mm,   "mm")
+    _w_num("fuel_low_warning", fuel_low_warning_l, "L")
+    _w_str("gear_stack", gear_stack)
+    _w_str("roof_light_color", roof_light_color)
 
     # === Computed / display-only brake & drive parameters ===
     # These may cause iRacing to reject the .sto if unexpected.
     if include_computed:
-        _w_num("brake_bias_migration", brake_bias_migration,  "")
-        _w_num("brake_bias_target",    brake_bias_target,     "")
-        _w_str("pad_compound",         pad_compound)
-        _w_num("front_master_cyl",     front_master_cyl_mm,  "mm")
-        _w_num("rear_master_cyl",      rear_master_cyl_mm,   "mm")
-        _w_num("fuel_low_warning", fuel_low_warning_l, "L")
-        _w_str("gear_stack", gear_stack)
         _w_num("speed_in_first",   116, "Km/h")
         _w_num("speed_in_second",  151, "Km/h")
         _w_num("speed_in_third",   184, "Km/h")
@@ -842,7 +878,6 @@ def write_sto(
         _w_num("speed_in_fifth",   257, "Km/h")
         _w_num("speed_in_sixth",   288, "Km/h")
         _w_num("speed_in_seventh", 316, "Km/h")
-        _w_str("roof_light_color", roof_light_color)
 
     # Write XML
     tree = ElementTree(root)
