@@ -74,11 +74,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     ) -> RedirectResponse:
         settings_local: AppSettings = request.app.state.settings
         run_id = uuid4().hex
-        saved_files = await _persist_uploads(run_id, settings_local, ibt_files or [])
         run_request = RunCreateRequest(
             mode=mode if mode in {"single_session", "comparison", "track_solve"} else "single_session",
             car=car.strip().lower(),
-            ibt_paths=saved_files,
+            ibt_paths=[],
             track=(track or "").strip() or None,
             wing=wing,
             lap=lap,
@@ -89,8 +88,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             use_learning=use_learning is not None,
             synthesize=synthesize is not None or mode != "comparison",
         )
+        requires_uploads = run_request.mode in {"single_session", "comparison"}
+        if requires_uploads:
+            run_request.ibt_paths = await _persist_uploads(run_id, settings_local, ibt_files or [])
         error = _validate_run_request(run_request)
         if error is not None:
+            _cleanup_uploads(run_id, settings_local)
             return RedirectResponse(
                 url=f"/runs/new?mode={quote_plus(run_request.mode)}&error={quote_plus(error)}",
                 status_code=303,
@@ -206,6 +209,12 @@ async def _persist_uploads(run_id: str, settings: AppSettings, uploads: list[Upl
         await upload.close()
         paths.append(destination)
     return paths
+
+
+def _cleanup_uploads(run_id: str, settings: AppSettings) -> None:
+    upload_dir = settings.upload_dir_for(run_id)
+    if upload_dir.exists():
+        shutil.rmtree(upload_dir, ignore_errors=True)
 
 
 def _safe_filename(filename: str) -> str:
