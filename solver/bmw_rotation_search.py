@@ -12,9 +12,10 @@ if TYPE_CHECKING:
 
 
 _DIFF_FIELDS = ("diff_preload_nm", "diff_ramp_option_idx", "diff_clutch_plates")
+_STEP3_FIELDS = ("front_torsion_od_mm", "rear_spring_rate_nmm")
 _GEOMETRY_FIELDS = ("front_toe_mm", "rear_toe_mm", "front_camber_deg", "rear_camber_deg")
 _REAR_ARB_FIELDS = ("rear_arb_size", "rear_arb_blade")
-_TARGETED_FIELDS = _DIFF_FIELDS + _GEOMETRY_FIELDS + _REAR_ARB_FIELDS
+_TARGETED_FIELDS = _DIFF_FIELDS + _STEP3_FIELDS + _GEOMETRY_FIELDS + _REAR_ARB_FIELDS
 
 
 @dataclass
@@ -86,6 +87,37 @@ def _adjacent_labels(labels: list[str], value: Any) -> list[str]:
     if idx < len(labels) - 1:
         allowed.add(idx + 1)
     return [labels[i] for i in sorted(allowed)]
+
+
+def _torsion_candidates(car: Any, base_value: float) -> list[float]:
+    options = list(getattr(getattr(car, "corner_spring", None), "front_torsion_od_options", []) or [])
+    if not options:
+        return [round(base_value, 2)]
+    try:
+        idx = min(range(len(options)), key=lambda i: abs(float(options[i]) - float(base_value)))
+    except (TypeError, ValueError):
+        idx = 0
+    allowed = {idx}
+    if idx > 0:
+        allowed.add(idx - 1)
+    if idx < len(options) - 1:
+        allowed.add(idx + 1)
+    if idx == 0 and len(options) > 2:
+        allowed.add(2)
+    if idx == len(options) - 1 and len(options) > 2:
+        allowed.add(len(options) - 3)
+    return [round(float(options[i]), 2) for i in sorted(allowed)]
+
+
+def _torsion_option_index(car: Any, value: Any) -> int:
+    options = list(getattr(getattr(car, "corner_spring", None), "front_torsion_od_options", []) or [])
+    if not options:
+        return 0
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 0
+    return min(range(len(options)), key=lambda i: abs(float(options[i]) - numeric))
 
 
 def _float_candidates(
@@ -205,6 +237,16 @@ def _candidate_search_space(base_result: "SolveChainResult", car: Any) -> dict[s
         ),
         "diff_ramp_option_idx": list(range(len(getattr(gr, "diff_coast_drive_ramp_options", [(40, 65), (45, 70), (50, 75)])))),
         "diff_clutch_plates": list(getattr(gr, "diff_clutch_plates_options", [2, 4, 6])),
+        "front_torsion_od_mm": _torsion_candidates(
+            car,
+            _safe_float(getattr(base_result.step3, "front_torsion_od_mm", getattr(gr, "front_torsion_od_mm", (13.9, 14.34))[0])),
+        ),
+        "rear_spring_rate_nmm": _float_candidates(
+            _safe_float(getattr(base_result.step3, "rear_spring_rate_nmm", 160.0)),
+            deltas=(-20.0, -10.0, 0.0, 10.0, 20.0),
+            step=getattr(gr, "rear_spring_resolution_nmm", 5.0) or 5.0,
+            bounds=getattr(gr, "rear_spring_nmm", (100.0, 300.0)),
+        ),
         "front_toe_mm": _float_candidates(
             _safe_float(getattr(base_step5, "front_toe_mm", 0.0)),
             deltas=(-0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3),
@@ -289,6 +331,9 @@ def _score_controls(
 ) -> tuple[float, list[str]]:
     base_step4 = base_result.step4
     base_step5 = base_result.step5
+    base_step3 = base_result.step3
+    base_step2 = base_result.step2
+    base_step1 = base_result.step1
     base_support = base_result.supporting
     rear_labels = list(getattr(getattr(car, "arb", None), "rear_size_labels", []) or [])
 
@@ -299,6 +344,12 @@ def _score_controls(
     rear_toe_out_delta = (_safe_float(getattr(base_step5, "rear_toe_mm", 0.0)) - _safe_float(targets["rear_toe_mm"])) / 0.1
     front_camber_delta = (_safe_float(getattr(base_step5, "front_camber_deg", 0.0)) - _safe_float(targets["front_camber_deg"])) / 0.1
     rear_camber_relief = (_safe_float(targets["rear_camber_deg"]) - _safe_float(getattr(base_step5, "rear_camber_deg", 0.0))) / 0.1
+    torsion_stiffness = _torsion_option_index(car, targets["front_torsion_od_mm"]) - _torsion_option_index(
+        car, getattr(base_step3, "front_torsion_od_mm", None)
+    )
+    rear_spring_stiffness = (
+        _safe_float(targets["rear_spring_rate_nmm"]) - _safe_float(getattr(base_step3, "rear_spring_rate_nmm", 0.0))
+    ) / 10.0
     rear_arb_stiffness = (
         (_safe_int(targets["rear_arb_blade_start"], 1) - _safe_int(getattr(base_step4, "rear_arb_blade_start", 1), 1))
         + (_size_index(rear_labels, targets["rear_arb_size"]) - _size_index(rear_labels, getattr(base_step4, "rear_arb_size", None))) * 1.25
@@ -309,21 +360,36 @@ def _score_controls(
 
     predicted_exit = telemetry.exit_push - 0.34 * ramp_delta - 0.19 * plate_delta - preload_exit_gain * preload_delta
     predicted_exit -= 0.16 * front_toe_out_delta + 0.14 * front_camber_delta + 0.12 * rear_toe_out_delta + 0.24 * rear_arb_stiffness
+    predicted_exit += 0.09 * torsion_stiffness - 0.18 * rear_spring_stiffness
     predicted_exit += max(0.0, -rear_camber_relief) * 0.05
 
     predicted_entry = telemetry.entry_push - 0.18 * ramp_delta - 0.13 * front_toe_out_delta
     predicted_entry -= 0.10 * front_camber_delta + 0.08 * rear_toe_out_delta + 0.10 * rear_arb_stiffness
+    predicted_entry += 0.12 * torsion_stiffness - 0.08 * rear_spring_stiffness
 
     predicted_instability = telemetry.instability + 0.22 * ramp_delta + 0.18 * plate_delta + preload_instability_cost * preload_delta
     predicted_instability += 0.17 * rear_arb_stiffness + 0.08 * front_toe_out_delta + 0.12 * rear_toe_out_delta
+    predicted_instability -= 0.12 * torsion_stiffness
+    predicted_instability += 0.16 * rear_spring_stiffness
 
     predicted_traction = telemetry.traction_risk + 0.20 * ramp_delta + 0.15 * plate_delta + 0.13 * preload_delta
     predicted_traction += 0.16 * rear_arb_stiffness + max(0.0, -rear_camber_relief) * 0.09
+    predicted_traction += 0.14 * rear_spring_stiffness - 0.04 * torsion_stiffness
 
     predicted_front_thermal = telemetry.front_thermal + 0.08 * max(0.0, front_toe_out_delta) + 0.12 * max(0.0, front_camber_delta)
     predicted_front_thermal -= 0.05 * max(0.0, rear_arb_stiffness)
+    predicted_front_thermal += 0.10 * max(0.0, torsion_stiffness)
 
     predicted_rear_thermal = telemetry.rear_thermal + 0.06 * max(0.0, rear_arb_stiffness) + 0.08 * max(0.0, -rear_camber_relief)
+    predicted_rear_thermal += 0.08 * max(0.0, rear_spring_stiffness)
+
+    softest_index = 0
+    soft_front_bar_risk = 0.0
+    if _torsion_option_index(car, targets["front_torsion_od_mm"]) == softest_index:
+        fuel_factor = max(0.0, _safe_float(getattr(base_support, "fuel_l", 0.0)) - 40.0) / 18.0
+        perch_risk = max(0.0, _safe_float(getattr(base_step2, "perch_offset_front_mm", 0.0)) + 8.5)
+        pushrod_risk = max(0.0, -25.5 - _safe_float(getattr(base_step1, "front_pushrod_offset_mm", 0.0)))
+        soft_front_bar_risk = fuel_factor * (0.55 + 0.28 * perch_risk + 0.20 * pushrod_risk)
 
     predicted_exit = max(0.0, predicted_exit)
     predicted_entry = max(0.0, predicted_entry)
@@ -340,9 +406,11 @@ def _score_controls(
         + 2.15 * predicted_traction
         + 1.10 * predicted_front_thermal
         + 0.75 * predicted_rear_thermal
+        + 1.35 * soft_front_bar_risk
     )
     change_cost = (
         abs(preload_delta) * 0.03 + abs(ramp_delta) * 0.09 + abs(plate_delta) * 0.10
+        + abs(torsion_stiffness) * 0.08 + abs(rear_spring_stiffness) * 0.04
         + abs(front_toe_out_delta) * 0.03 + abs(rear_toe_out_delta) * 0.03
         + abs(front_camber_delta) * 0.025 + abs(rear_camber_relief) * 0.02
         + abs(rear_arb_stiffness) * 0.05
@@ -354,6 +422,8 @@ def _score_controls(
         f"pred_instability={predicted_instability:.2f}",
         f"pred_traction={predicted_traction:.2f}",
     ]
+    if soft_front_bar_risk > 0.0:
+        evidence.append(f"soft_front_bar_risk={soft_front_bar_risk:.2f}")
     return total, evidence
 
 
@@ -363,6 +433,8 @@ def _build_candidate_targets(
     diff_preload_nm: float,
     diff_ramp_option_idx: int,
     diff_clutch_plates: int,
+    front_torsion_od_mm: float,
+    rear_spring_rate_nmm: float,
     front_toe_mm: float,
     rear_toe_mm: float,
     front_camber_deg: float,
@@ -376,6 +448,8 @@ def _build_candidate_targets(
     targets["supporting"]["diff_preload_nm"] = diff_preload_nm
     targets["supporting"]["diff_ramp_option_idx"] = diff_ramp_option_idx
     targets["supporting"]["diff_clutch_plates"] = diff_clutch_plates
+    targets["step3"]["front_torsion_od_mm"] = front_torsion_od_mm
+    targets["step3"]["rear_spring_rate_nmm"] = rear_spring_rate_nmm
     targets["step5"]["front_toe_mm"] = front_toe_mm
     targets["step5"]["rear_toe_mm"] = rear_toe_mm
     targets["step5"]["front_camber_deg"] = front_camber_deg
@@ -396,6 +470,7 @@ def _candidate_summary(targets: dict[str, Any], car: Any) -> str:
     coast, drive = options[idx] if options else (45, 70)
     return (
         f"diff {targets['supporting']['diff_preload_nm']:.0f}Nm / {coast}/{drive} / {targets['supporting']['diff_clutch_plates']} plates; "
+        f"springs FTB {targets['step3']['front_torsion_od_mm']:.2f} / R {targets['step3']['rear_spring_rate_nmm']:.0f}; "
         f"toe F{targets['step5']['front_toe_mm']:+.1f} R{targets['step5']['rear_toe_mm']:+.1f}; "
         f"camber F{targets['step5']['front_camber_deg']:+.1f} R{targets['step5']['rear_camber_deg']:+.1f}; "
         f"RARB {targets['step4']['rear_arb_size']}/{int(targets['step4']['rear_arb_blade_start'])}"
@@ -418,6 +493,8 @@ def _search_metadata(
     _set("diff_preload_nm", getattr(base_result.supporting, "diff_preload_nm", None), getattr(selected_result.supporting, "diff_preload_nm", None), "Preload was searched against exit-push, instability, and rear power-slip evidence.")
     _set("diff_ramp_option_idx", getattr(base_result.supporting, "diff_ramp_option_idx", None), getattr(selected_result.supporting, "diff_ramp_option_idx", None), "The legal coupled ramp option was searched with extra weight on Sebring long-exit understeer.")
     _set("diff_clutch_plates", getattr(base_result.supporting, "diff_clutch_plates", None), getattr(selected_result.supporting, "diff_clutch_plates", None), "Clutch plate count was searched both toward less lock and more lock based on exit and traction evidence.")
+    _set("front_torsion_od_mm", getattr(base_result.step3, "front_torsion_od_mm", None), getattr(selected_result.step3, "front_torsion_od_mm", None), "Front torsion OD was searched from low-speed push, body-slip stability, and BMW/Sebring front-platform safety evidence.")
+    _set("rear_spring_rate_nmm", getattr(base_result.step3, "rear_spring_rate_nmm", None), getattr(selected_result.step3, "rear_spring_rate_nmm", None), "Rear spring rate was searched against exit rotation demand, traction risk, and rear tyre support evidence.")
     _set("front_toe_mm", getattr(base_result.step5, "front_toe_mm", None), getattr(selected_result.step5, "front_toe_mm", None), "Front toe was searched from low-speed push, yaw correlation, and front thermal support.")
     _set("rear_toe_mm", getattr(base_result.step5, "rear_toe_mm", None), getattr(selected_result.step5, "rear_toe_mm", None), "Rear toe was searched for the traction and rotation compromise instead of staying stability-only.")
     _set("front_camber_deg", getattr(base_result.step5, "front_camber_deg", None), getattr(selected_result.step5, "front_camber_deg", None), "Front camber was searched using loaded-front support, exit push, and tyre thermal evidence.")
@@ -434,6 +511,8 @@ def _apply_metadata(
     telemetry: RotationTelemetryState,
 ) -> None:
     status, evidence = _search_metadata(base_result=base_result, selected_result=selected_result, telemetry=telemetry)
+    selected_result.step3.parameter_search_status = {key: value for key, value in status.items() if key in _STEP3_FIELDS}
+    selected_result.step3.parameter_search_evidence = {key: value for key, value in evidence.items() if key in _STEP3_FIELDS}
     selected_result.step4.parameter_search_status = {key: value for key, value in status.items() if key in _REAR_ARB_FIELDS}
     selected_result.step4.parameter_search_evidence = {key: value for key, value in evidence.items() if key in _REAR_ARB_FIELDS}
     selected_result.step5.parameter_search_status = {key: value for key, value in status.items() if key in _GEOMETRY_FIELDS}
@@ -464,7 +543,7 @@ def _refresh_decision_trace(result: "SolveChainResult", inputs: "SolveChainInput
 def _targeted_status_maps(result: "SolveChainResult") -> tuple[dict[str, str], dict[str, list[str]]]:
     status: dict[str, str] = {}
     evidence: dict[str, list[str]] = {}
-    for source in (getattr(result, "step4", None), getattr(result, "step5", None), getattr(result, "supporting", None)):
+    for source in (getattr(result, "step3", None), getattr(result, "step4", None), getattr(result, "step5", None), getattr(result, "supporting", None)):
         if source is None:
             continue
         status.update(getattr(source, "parameter_search_status", {}) or {})
@@ -481,6 +560,7 @@ def _has_targeted_search_metadata(result: "SolveChainResult") -> bool:
 def _copy_targeted_metadata(*, source: "SolveChainResult", destination: "SolveChainResult") -> None:
     source_status, source_evidence = _targeted_status_maps(source)
     for target_obj, fields in (
+        (destination.step3, _STEP3_FIELDS),
         (destination.step4, _REAR_ARB_FIELDS),
         (destination.step5, _GEOMETRY_FIELDS),
         (destination.supporting, _DIFF_FIELDS),
@@ -508,6 +588,10 @@ def _rotation_preservation_overrides(
         rotation_value = getattr(rotation_result.supporting, field_name, None)
         if getattr(candidate_result.supporting, field_name, None) != rotation_value:
             overrides.supporting[field_name] = rotation_value
+    for field_name in _STEP3_FIELDS:
+        rotation_value = getattr(rotation_result.step3, field_name, None)
+        if getattr(candidate_result.step3, field_name, None) != rotation_value:
+            overrides.step3[field_name] = rotation_value
     for field_name in _GEOMETRY_FIELDS:
         rotation_value = getattr(rotation_result.step5, field_name, None)
         if getattr(candidate_result.step5, field_name, None) != rotation_value:
@@ -582,6 +666,8 @@ def search_rotation_controls(
         "diff_preload_nm": getattr(base_result.supporting, "diff_preload_nm", None),
         "diff_ramp_option_idx": getattr(base_result.supporting, "diff_ramp_option_idx", None),
         "diff_clutch_plates": getattr(base_result.supporting, "diff_clutch_plates", None),
+        "front_torsion_od_mm": getattr(base_result.step3, "front_torsion_od_mm", None),
+        "rear_spring_rate_nmm": getattr(base_result.step3, "rear_spring_rate_nmm", None),
         "front_toe_mm": getattr(base_result.step5, "front_toe_mm", None),
         "rear_toe_mm": getattr(base_result.step5, "rear_toe_mm", None),
         "front_camber_deg": getattr(base_result.step5, "front_camber_deg", None),
@@ -597,21 +683,25 @@ def search_rotation_controls(
     for preload in space["diff_preload_nm"]:
         for ramp_idx in space["diff_ramp_option_idx"]:
             for plates in space["diff_clutch_plates"]:
-                for profile in profiles:
-                    candidate_targets = _build_candidate_targets(base_targets, diff_preload_nm=preload, diff_ramp_option_idx=ramp_idx, diff_clutch_plates=plates, front_toe_mm=profile["front_toe_mm"], rear_toe_mm=profile["rear_toe_mm"], front_camber_deg=profile["front_camber_deg"], rear_camber_deg=profile["rear_camber_deg"], rear_arb_size=profile["rear_arb_size"], rear_arb_blade_start=profile["rear_arb_blade_start"], base_result=base_result, car=inputs.car)
-                    flat_targets = {
-                        "diff_preload_nm": candidate_targets["supporting"]["diff_preload_nm"],
-                        "diff_ramp_option_idx": candidate_targets["supporting"]["diff_ramp_option_idx"],
-                        "diff_clutch_plates": candidate_targets["supporting"]["diff_clutch_plates"],
-                        "front_toe_mm": candidate_targets["step5"]["front_toe_mm"],
-                        "rear_toe_mm": candidate_targets["step5"]["rear_toe_mm"],
-                        "front_camber_deg": candidate_targets["step5"]["front_camber_deg"],
-                        "rear_camber_deg": candidate_targets["step5"]["rear_camber_deg"],
-                        "rear_arb_size": candidate_targets["step4"]["rear_arb_size"],
-                        "rear_arb_blade_start": candidate_targets["step4"]["rear_arb_blade_start"],
-                    }
-                    score, evidence = _score_controls(targets=flat_targets, base_result=base_result, telemetry=telemetry, car=inputs.car)
-                    abstract_candidates.append((score, candidate_targets, evidence, profile["name"]))
+                for torsion_od in space["front_torsion_od_mm"]:
+                    for rear_spring in space["rear_spring_rate_nmm"]:
+                        for profile in profiles:
+                            candidate_targets = _build_candidate_targets(base_targets, diff_preload_nm=preload, diff_ramp_option_idx=ramp_idx, diff_clutch_plates=plates, front_torsion_od_mm=torsion_od, rear_spring_rate_nmm=rear_spring, front_toe_mm=profile["front_toe_mm"], rear_toe_mm=profile["rear_toe_mm"], front_camber_deg=profile["front_camber_deg"], rear_camber_deg=profile["rear_camber_deg"], rear_arb_size=profile["rear_arb_size"], rear_arb_blade_start=profile["rear_arb_blade_start"], base_result=base_result, car=inputs.car)
+                            flat_targets = {
+                                "diff_preload_nm": candidate_targets["supporting"]["diff_preload_nm"],
+                                "diff_ramp_option_idx": candidate_targets["supporting"]["diff_ramp_option_idx"],
+                                "diff_clutch_plates": candidate_targets["supporting"]["diff_clutch_plates"],
+                                "front_torsion_od_mm": candidate_targets["step3"]["front_torsion_od_mm"],
+                                "rear_spring_rate_nmm": candidate_targets["step3"]["rear_spring_rate_nmm"],
+                                "front_toe_mm": candidate_targets["step5"]["front_toe_mm"],
+                                "rear_toe_mm": candidate_targets["step5"]["rear_toe_mm"],
+                                "front_camber_deg": candidate_targets["step5"]["front_camber_deg"],
+                                "rear_camber_deg": candidate_targets["step5"]["rear_camber_deg"],
+                                "rear_arb_size": candidate_targets["step4"]["rear_arb_size"],
+                                "rear_arb_blade_start": candidate_targets["step4"]["rear_arb_blade_start"],
+                            }
+                            score, evidence = _score_controls(targets=flat_targets, base_result=base_result, telemetry=telemetry, car=inputs.car)
+                            abstract_candidates.append((score, candidate_targets, evidence, profile["name"]))
     abstract_candidates.sort(key=lambda item: item[0])
 
     best_result = copy.deepcopy(base_result)
@@ -630,6 +720,8 @@ def search_rotation_controls(
             "diff_preload_nm": getattr(candidate_result.supporting, "diff_preload_nm", None),
             "diff_ramp_option_idx": getattr(candidate_result.supporting, "diff_ramp_option_idx", None),
             "diff_clutch_plates": getattr(candidate_result.supporting, "diff_clutch_plates", None),
+            "front_torsion_od_mm": getattr(candidate_result.step3, "front_torsion_od_mm", None),
+            "rear_spring_rate_nmm": getattr(candidate_result.step3, "rear_spring_rate_nmm", None),
             "front_toe_mm": getattr(candidate_result.step5, "front_toe_mm", None),
             "rear_toe_mm": getattr(candidate_result.step5, "rear_toe_mm", None),
             "front_camber_deg": getattr(candidate_result.step5, "front_camber_deg", None),

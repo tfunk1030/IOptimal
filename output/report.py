@@ -91,10 +91,10 @@ def _setting(label: str, value: str, note: str = "") -> str:
     return _full(text)
 
 
-def _rotation_search_maps(step4: Any, step5: Any, supporting: Any) -> tuple[dict[str, str], dict[str, list[str]]]:
+def _rotation_search_maps(step3: Any, step4: Any, step5: Any, supporting: Any) -> tuple[dict[str, str], dict[str, list[str]]]:
     status: dict[str, str] = {}
     evidence: dict[str, list[str]] = {}
-    for container in (step4, step5, supporting):
+    for container in (step3, step4, step5, supporting):
         if container is None:
             continue
         status.update(getattr(container, "parameter_search_status", {}) or {})
@@ -102,13 +102,14 @@ def _rotation_search_maps(step4: Any, step5: Any, supporting: Any) -> tuple[dict
     return status, evidence
 
 
-def _rotation_search_lines(step4: Any, step5: Any, supporting: Any) -> list[str]:
-    status, evidence = _rotation_search_maps(step4, step5, supporting)
+def _rotation_search_lines(step3: Any, step4: Any, step5: Any, supporting: Any) -> list[str]:
+    status, evidence = _rotation_search_maps(step3, step4, step5, supporting)
     if not status:
         return []
     lines: list[str] = []
     groups = [
         ("Diff search", ("diff_preload_nm", "diff_ramp_option_idx", "diff_clutch_plates")),
+        ("Spring search", ("front_torsion_od_mm", "rear_spring_rate_nmm")),
         ("Geo search", ("front_toe_mm", "rear_toe_mm", "front_camber_deg", "rear_camber_deg")),
         ("RARB search", ("rear_arb_size", "rear_arb_blade")),
     ]
@@ -435,7 +436,7 @@ def print_full_setup_report(
         a(_full(
             f"  RARB live: blade {step4.rarb_blade_slow_corner} slow  ->  blade {step4.rarb_blade_fast_corner} fast"
         ))
-        for line in _rotation_search_lines(step4, step5, supporting):
+        for line in _rotation_search_lines(step3, step4, step5, supporting):
             a(_full(f"  {line}"))
         a(_box_bot())
         a("")

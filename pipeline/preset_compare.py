@@ -1,18 +1,19 @@
-"""Generate race/sprint/quali presets from one IBT and compare them."""
+"""Generate race/sprint/quali presets from one or more IBTs and compare them."""
 
 from __future__ import annotations
 
 import argparse
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from car_model.cars import get_car
 from pipeline.produce import produce_result
+from pipeline.reason import reason_and_solve
 
 
 PRESET_CONFIGS: dict[str, dict[str, Any]] = {
@@ -120,7 +121,7 @@ def _normalized(value: Any) -> Any:
 
 
 def _selected_segments_text(result: dict[str, Any]) -> str:
-    dataset = result.get("stint_dataset")
+    dataset = result.get("stint_dataset") or result.get("merged_stint_dataset")
     if dataset is None:
         return "best lap path"
     segments = getattr(dataset, "selected_segments", []) or []
@@ -128,17 +129,18 @@ def _selected_segments_text(result: dict[str, Any]) -> str:
         return "none"
     ranges = []
     for segment in segments:
+        prefix = f"{segment.source_label}:" if getattr(segment, "source_label", None) else ""
         if segment.start_lap == segment.end_lap:
-            ranges.append(f"{segment.start_lap}")
+            ranges.append(f"{prefix}{segment.start_lap}")
         else:
-            ranges.append(f"{segment.start_lap}-{segment.end_lap}")
+            ranges.append(f"{prefix}{segment.start_lap}-{segment.end_lap}")
     return ", ".join(ranges)
 
 
 def _stint_objective_text(result: dict[str, Any]) -> str:
-    stint_solve = result.get("stint_solve")
+    stint_solve = result.get("stint_solve") or result.get("stint_solve_result")
     if stint_solve is None or getattr(stint_solve, "objective", None) is None:
-        dataset = result.get("stint_dataset")
+        dataset = result.get("stint_dataset") or result.get("merged_stint_dataset")
         fallback = getattr(dataset, "fallback_mode", None) if dataset is not None else None
         return fallback or "single_lap"
     objective = stint_solve.objective
@@ -148,7 +150,7 @@ def _stint_objective_text(result: dict[str, Any]) -> str:
 def _build_args(
     *,
     car: str,
-    ibt: str,
+    ibts: list[str],
     fuel: float,
     stint: bool,
     stint_select: str,
@@ -161,7 +163,7 @@ def _build_args(
     return argparse.Namespace(
         car=car,
         track=None,
-        ibt=[ibt],
+        ibt=list(ibts),
         wing=wing,
         lap=None,
         balance=balance,
@@ -194,6 +196,35 @@ def _build_args(
     )
 
 
+def _normalize_reasoning_state(state: Any) -> dict[str, Any]:
+    authority_session = None
+    if getattr(state, "sessions", None):
+        authority_idx = getattr(state, "authority_session_idx", None)
+        if authority_idx is not None and 0 <= authority_idx < len(state.sessions):
+            authority_session = state.sessions[authority_idx].label
+    return {
+        "report": getattr(state, "final_report", ""),
+        "step1": getattr(state, "final_step1", None),
+        "step2": getattr(state, "final_step2", None),
+        "step3": getattr(state, "final_step3", None),
+        "step4": getattr(state, "final_step4", None),
+        "step5": getattr(state, "final_step5", None),
+        "step6": getattr(state, "final_step6", None),
+        "supporting": getattr(state, "final_supporting", None),
+        "fuel_l": getattr(state, "final_fuel_l", None),
+        "wing": getattr(state, "final_wing_angle", None),
+        "selected_candidate_family": getattr(state, "final_selected_candidate_family", None),
+        "selected_candidate_score": getattr(state, "final_selected_candidate_score", None),
+        "selected_candidate_applied": getattr(state, "final_selected_candidate_applied", False),
+        "stint_dataset": getattr(state, "merged_stint_dataset", None),
+        "merged_stint_dataset": getattr(state, "merged_stint_dataset", None),
+        "stint_solve": getattr(state, "stint_solve_result", None),
+        "stint_solve_result": getattr(state, "stint_solve_result", None),
+        "sessions_analyzed": len(getattr(state, "sessions", []) or []),
+        "authority_session": authority_session,
+    }
+
+
 def _print_divider(title: str, width: int = 100) -> None:
     print()
     print("=" * width)
@@ -212,6 +243,8 @@ def _print_comparison(results: dict[str, dict[str, Any]]) -> None:
     print("-" * len(header))
 
     summary_rows = [
+        ("Sessions", [str(results[name].get("sessions_analyzed") or 1) for name in presets]),
+        ("Authority", [str(results[name].get("authority_session") or "single") for name in presets]),
         ("Selected Segments", [ _selected_segments_text(results[name]) for name in presets ]),
         ("Candidate Family", [ str(results[name].get("selected_candidate_family") or "none") for name in presets ]),
         ("Candidate Score", [
@@ -220,8 +253,8 @@ def _print_comparison(results: dict[str, dict[str, Any]]) -> None:
         ]),
         ("Stint Obj Total", [_stint_objective_text(results[name]) for name in presets]),
         ("Fallback Mode", [
-            str(getattr(results[name].get("stint_solve"), "fallback_mode", None)
-                or getattr(results[name].get("stint_dataset"), "fallback_mode", None)
+            str(getattr(results[name].get("stint_solve") or results[name].get("stint_solve_result"), "fallback_mode", None)
+                or getattr(results[name].get("stint_dataset") or results[name].get("merged_stint_dataset"), "fallback_mode", None)
                 or "none")
             for name in presets
         ]),
@@ -249,11 +282,12 @@ def _print_comparison(results: dict[str, dict[str, Any]]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate race/sprint/quali presets from one IBT and compare them side-by-side.",
+        description="Generate race/sprint/quali presets from one or more IBTs and compare them side-by-side.",
     )
     parser.add_argument("--car", required=True, help="Car name (e.g. bmw)")
-    parser.add_argument("--ibt", required=True, help="Path to one IBT file")
+    parser.add_argument("--ibt", required=True, nargs="+", help="Path(s) to one or more IBT files")
     parser.add_argument("--out-dir", default="tmp/preset_compare", help="Output directory for .json/.sto artifacts")
+    parser.add_argument("--label", default=None, help="Optional output filename stem")
     parser.add_argument("--wing", type=float, default=None, help="Wing override")
     parser.add_argument("--balance", type=float, default=None, help="Target DF balance override")
     parser.add_argument("--race-fuel", type=float, default=58.0, help="Fuel load for the race preset")
@@ -262,13 +296,19 @@ def main() -> None:
     parser.add_argument("--stint-max-laps", type=int, default=40, help="Maximum stint laps to score directly")
     args = parser.parse_args()
 
-    ibt_path = Path(args.ibt)
-    if not ibt_path.exists():
-        raise FileNotFoundError(f"IBT file not found: {ibt_path}")
+    ibt_paths = [Path(path) for path in args.ibt]
+    for ibt_path in ibt_paths:
+        if not ibt_path.exists():
+            raise FileNotFoundError(f"IBT file not found: {ibt_path}")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    stem = ibt_path.stem
+    if args.label:
+        stem = args.label
+    elif len(ibt_paths) == 1:
+        stem = ibt_paths[0].stem
+    else:
+        stem = f"{args.car}_{len(ibt_paths)}ibt_compare"
 
     results: dict[str, dict[str, Any]] = {}
     for preset_name in ("race", "sprint", "quali"):
@@ -278,7 +318,7 @@ def main() -> None:
         sto_path = out_dir / f"{stem}_{preset_name}.sto"
         produce_args = _build_args(
             car=args.car,
-            ibt=str(ibt_path),
+            ibts=[str(path) for path in ibt_paths],
             fuel=fuel,
             stint=bool(config["stint"]),
             stint_select=str(config["stint_select"]),
@@ -288,7 +328,29 @@ def main() -> None:
             wing=args.wing,
             balance=args.balance,
         )
-        result = produce_result(produce_args, emit_report=False, compact_report=True)
+        if len(ibt_paths) == 1:
+            result = produce_result(produce_args, emit_report=False, compact_report=True)
+        else:
+            state = reason_and_solve(
+                car_name=args.car,
+                ibt_paths=[str(path) for path in ibt_paths],
+                wing=args.wing,
+                fuel=fuel,
+                balance_target=(
+                    float(args.balance)
+                    if args.balance is not None
+                    else float(get_car(args.car).default_df_balance_pct)
+                ),
+                sto_path=str(sto_path),
+                json_path=str(json_path),
+                verbose=False,
+                emit_report=False,
+                stint=bool(config["stint"]),
+                stint_select=str(config["stint_select"]),
+                stint_max_laps=int(args.stint_max_laps),
+                stint_threshold=1.5,
+            )
+            result = _normalize_reasoning_state(state)
         result["json_path"] = json_path
         result["sto_path"] = sto_path
         results[preset_name] = result

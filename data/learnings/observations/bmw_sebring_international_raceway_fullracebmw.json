@@ -4,7 +4,7 @@
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-24T20:14:36.427196+00:00",
+  "timestamp": "2026-03-25T00:49:39.595267+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -32,7 +32,7 @@
     "rear_camber_deg": -1.7,
     "front_toe_mm": -0.4,
     "rear_toe_mm": 0.3,
-    "brake_bias_pct": 46.25,
+    "brake_bias_pct": 46.2,
     "brake_bias_target": 0.0,
     "brake_bias_migration": 0.0,
     "brake_bias_migration_gain": 0.0,
@@ -460,7 +460,7 @@
         "severity": "minor",
         "symptom": "Hydraulic brake split 70.4% differs from setup 46.2% (delta 24.2%)",
         "measured": 70.4,
-        "threshold": 46.25,
+        "threshold": 46.2,
         "speed_context": "braking"
       }
     ]

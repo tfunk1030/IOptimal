@@ -462,8 +462,15 @@ def solved_value(
     return current_setup_value(field_name, current_setup, car_name=car_name)
 
 
-def _search_metadata_for_field(field_name: str, *, step4: Any | None, step5: Any | None, supporting: Any | None) -> tuple[str, list[str]]:
-    for container in (step4, step5, supporting):
+def _search_metadata_for_field(
+    field_name: str,
+    *,
+    step3: Any | None,
+    step4: Any | None,
+    step5: Any | None,
+    supporting: Any | None,
+) -> tuple[str, list[str]]:
+    for container in (step3, step4, step5, supporting):
         if container is None:
             continue
         status_map = getattr(container, "parameter_search_status", {}) or {}
@@ -561,6 +568,7 @@ def build_parameter_coverage(
         )
         search_status, search_evidence = _search_metadata_for_field(
             field_name,
+            step3=step3,
             step4=step4,
             step5=step5,
             supporting=supporting,

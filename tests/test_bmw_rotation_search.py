@@ -459,10 +459,76 @@ class BMWSebringRotationSearchTests(unittest.TestCase):
         )
         self.assertTrue(changed)
 
+    def test_rotation_search_can_change_torsion_and_rear_spring(self) -> None:
+        current_setup = _setup(front_torsion_od_mm=14.34, rear_spring_nmm=150.0)
+        supporting = _supporting()
+        measured = _measured(
+            understeer_low_speed_deg=2.0,
+            understeer_high_speed_deg=2.2,
+            understeer_mean_deg=1.9,
+            yaw_rate_correlation=0.86,
+            rear_power_slip_ratio_p95=0.04,
+            rear_slip_ratio_p95=0.04,
+            body_slip_p95_deg=2.5,
+            front_carcass_mean_c=94.0,
+            front_pressure_mean_kpa=167.0,
+        )
+        _inputs, base_result, rotation = self._run_rotation_search(
+            current_setup=current_setup,
+            measured=measured,
+            supporting=supporting,
+            corners=[_corner(exit_loss_s=0.34, throttle_delay_s=0.46, understeer_mean_deg=1.8)],
+        )
+        self.assertIsNotNone(rotation)
+        result = rotation.result
+        self.assertTrue(
+            result.step3.rear_spring_rate_nmm != base_result.step3.rear_spring_rate_nmm
+            or result.step3.front_torsion_od_mm != base_result.step3.front_torsion_od_mm
+        )
+        self.assertIn(
+            result.step3.parameter_search_status.get("front_torsion_od_mm"),
+            {"searched_and_changed", "searched_and_kept"},
+        )
+        self.assertIn(
+            result.step3.parameter_search_status.get("rear_spring_rate_nmm"),
+            {"searched_and_changed", "searched_and_kept"},
+        )
+
+    def test_rotation_search_can_move_step3_toward_stability_when_rear_is_nervous(self) -> None:
+        current_setup = _setup(front_torsion_od_mm=13.9, rear_spring_nmm=170.0)
+        supporting = _supporting()
+        measured = _measured(
+            understeer_low_speed_deg=0.6,
+            understeer_high_speed_deg=0.8,
+            understeer_mean_deg=0.7,
+            yaw_rate_correlation=0.84,
+            rear_power_slip_ratio_p95=0.13,
+            rear_slip_ratio_p95=0.13,
+            body_slip_p95_deg=4.8,
+            rear_carcass_mean_c=97.0,
+            rear_pressure_mean_kpa=172.0,
+        )
+        _inputs, base_result, rotation = self._run_rotation_search(
+            current_setup=current_setup,
+            measured=measured,
+            supporting=supporting,
+            corners=[],
+        )
+        self.assertIsNotNone(rotation)
+        result = rotation.result
+        self.assertGreaterEqual(result.step3.front_torsion_od_mm, base_result.step3.front_torsion_od_mm)
+        self.assertLessEqual(result.step3.rear_spring_rate_nmm, base_result.step3.rear_spring_rate_nmm)
+
     def test_parameter_coverage_surfaces_searched_kept_status_and_evidence(self) -> None:
         step1 = SimpleNamespace(front_pushrod_offset_mm=-26.0, rear_pushrod_offset_mm=-24.0)
         step2 = SimpleNamespace(front_heave_nmm=50.0, perch_offset_front_mm=-11.0, rear_third_nmm=520.0, perch_offset_rear_mm=42.0)
-        step3 = SimpleNamespace(front_torsion_od_mm=13.9, rear_spring_rate_nmm=160.0, rear_spring_perch_mm=30.0)
+        step3 = SimpleNamespace(
+            front_torsion_od_mm=13.9,
+            rear_spring_rate_nmm=160.0,
+            rear_spring_perch_mm=30.0,
+            parameter_search_status={"front_torsion_od_mm": "searched_and_kept"},
+            parameter_search_evidence={"front_torsion_od_mm": ["front_platform_margin=0.42"]},
+        )
         step4 = SimpleNamespace(
             front_arb_size="Soft",
             front_arb_blade_start=1,
@@ -513,6 +579,8 @@ class BMWSebringRotationSearchTests(unittest.TestCase):
         self.assertFalse(coverage["diff_preload_nm"]["changed"])
         self.assertEqual(coverage["diff_preload_nm"]["search_status"], "searched_and_kept")
         self.assertIn("exit_push=1.10", coverage["diff_preload_nm"]["search_evidence"])
+        self.assertEqual(coverage["front_torsion_od_mm"]["search_status"], "searched_and_kept")
+        self.assertIn("front_platform_margin=0.42", coverage["front_torsion_od_mm"]["search_evidence"])
         self.assertEqual(coverage["front_toe_mm"]["search_status"], "searched_and_kept")
         self.assertEqual(coverage["rear_arb_blade"]["search_status"], "searched_and_kept")
 
@@ -539,6 +607,8 @@ class BMWSebringRotationSearchTests(unittest.TestCase):
         rotation_result = rotation.result
         candidate_result = copy.deepcopy(rotation_result)
         candidate_result.step2.front_heave_nmm = rotation_result.step2.front_heave_nmm + 10.0
+        candidate_result.step3.front_torsion_od_mm = rotation_result.step3.front_torsion_od_mm + 0.44
+        candidate_result.step3.rear_spring_rate_nmm = rotation_result.step3.rear_spring_rate_nmm + 10.0
         candidate_result.step4.rear_arb_blade_start = max(1, rotation_result.step4.rear_arb_blade_start - 1)
         candidate_result.step4.rarb_blade_slow_corner = max(1, rotation_result.step4.rarb_blade_slow_corner - 1)
         candidate_result.step4.rarb_blade_fast_corner = max(1, rotation_result.step4.rarb_blade_fast_corner - 1)
@@ -552,6 +622,8 @@ class BMWSebringRotationSearchTests(unittest.TestCase):
 
         def _fake_materialize(candidate_base_result, overrides, _inputs):
             result = copy.deepcopy(candidate_base_result)
+            for field_name, value in overrides.step3.items():
+                setattr(result.step3, field_name, value)
             for field_name, value in overrides.step4.items():
                 setattr(result.step4, field_name, value)
             for field_name, value in overrides.step5.items():
@@ -583,6 +655,8 @@ class BMWSebringRotationSearchTests(unittest.TestCase):
         self.assertTrue(preserved_controls)
         self.assertIsNotNone(preserved_result)
         self.assertEqual(preserved_result.step2.front_heave_nmm, candidate_result.step2.front_heave_nmm)
+        self.assertEqual(preserved_result.step3.front_torsion_od_mm, rotation_result.step3.front_torsion_od_mm)
+        self.assertEqual(preserved_result.step3.rear_spring_rate_nmm, rotation_result.step3.rear_spring_rate_nmm)
         self.assertEqual(preserved_result.step5.front_toe_mm, rotation_result.step5.front_toe_mm)
         self.assertEqual(preserved_result.step4.rear_arb_blade_start, rotation_result.step4.rear_arb_blade_start)
         self.assertEqual(preserved_result.supporting.diff_preload_nm, rotation_result.supporting.diff_preload_nm)

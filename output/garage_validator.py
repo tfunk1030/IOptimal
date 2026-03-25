@@ -50,6 +50,29 @@ def _rear_third_perch_step(gr) -> float:
     )
 
 
+def _is_bmw_sebring_soft_front_bar_edge(car, track_name: str | None, step1, step2, step3, fuel_l: float) -> bool:
+    if getattr(car, "canonical_name", "").lower() != "bmw":
+        return False
+    if "sebring" not in (track_name or "").lower():
+        return False
+    options = list(getattr(getattr(car, "corner_spring", None), "front_torsion_od_options", []) or [])
+    if options:
+        softest_od = min(float(option) for option in options)
+    else:
+        softest_od = float(getattr(car.garage_ranges, "front_torsion_od_mm", (13.9, 16.0))[0])
+    if float(step3.front_torsion_od_mm) > softest_od + 0.05:
+        return False
+    if fuel_l < 40.0:
+        return False
+    if float(step2.front_heave_nmm) > 55.0:
+        return False
+    if float(step2.perch_offset_front_mm) <= -8.0:
+        return False
+    if float(step1.front_pushrod_offset_mm) > -25.5:
+        return False
+    return True
+
+
 def validate_and_fix_garage_correlation(
     car,
     step1,
@@ -91,10 +114,22 @@ def validate_and_fix_garage_correlation(
         front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
     )
     final = constraint
+    warnings.extend(_fix_bmw_soft_front_bar_edge(garage_model, car, step1, step2, step3, step5, fuel_l, gr, track_name))
+    if warnings:
+        state = GarageSetupState.from_solver_steps(
+            step1=step1, step2=step2, step3=step3,
+            step5=step5, fuel_l=fuel_l,
+        )
+        constraint = garage_model.validate(
+            state,
+            front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
+        )
+        final = constraint
     if not constraint.valid:
         # Something is wrong — attempt auto-correction
         warnings.extend(_fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
         warnings.extend(_fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
+        warnings.extend(_fix_bmw_soft_front_bar_edge(garage_model, car, step1, step2, step3, step5, fuel_l, gr, track_name))
         warnings.extend(_fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr))
 
         # Final verification
@@ -453,4 +488,39 @@ def _fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l,
         )
         break
 
+    return msgs
+
+
+def _fix_bmw_soft_front_bar_edge(garage_model, car, step1, step2, step3, step5, fuel_l, gr, track_name: str | None) -> list[str]:
+    """Apply a conservative BMW/Sebring guard for the softest front bar on race fuel.
+
+    Real-garage feedback shows the softest 13.90 mm bar can drop the front platform
+    materially lower than the linear garage regression predicts when race fuel and a
+    shallow front heave-perch are combined. Treat that combo as unsafe and move to the
+    next legal torsion bar before report/export.
+    """
+    msgs: list[str] = []
+    if not _is_bmw_sebring_soft_front_bar_edge(car, track_name, step1, step2, step3, fuel_l):
+        return msgs
+
+    options = sorted(list(getattr(getattr(car, "corner_spring", None), "front_torsion_od_options", []) or []))
+    current_od = float(step3.front_torsion_od_mm)
+    larger_options = [float(option) for option in options if float(option) > current_od + 0.05]
+    if larger_options:
+        new_od = round(larger_options[0], 2)
+        step3.front_torsion_od_mm = new_od
+        msgs.append(
+            f"BMW/Sebring soft-front-bar guard: torsion OD {current_od:.2f} -> {new_od:.2f} mm"
+        )
+        return msgs
+
+    new_pushrod = _snap(
+        _clamp(step1.front_pushrod_offset_mm + gr.pushrod_resolution_mm, *gr.front_pushrod_mm),
+        gr.pushrod_resolution_mm,
+    )
+    if abs(new_pushrod - step1.front_pushrod_offset_mm) > 0.01:
+        msgs.append(
+            f"BMW/Sebring soft-front-bar guard: front pushrod {step1.front_pushrod_offset_mm:.1f} -> {new_pushrod:.1f} mm"
+        )
+        step1.front_pushrod_offset_mm = new_pushrod
     return msgs
