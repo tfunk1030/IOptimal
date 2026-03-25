@@ -13,6 +13,8 @@ class FerrariSetupSchemaTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         cls.ibt_path = repo_root / "ibtfiles" / "ferrari499p_sebring international 2026-03-09 18-07-31.ibt"
+        if not cls.ibt_path.exists():
+            raise unittest.SkipTest(f"Ferrari setup fixture unavailable: {cls.ibt_path.name}")
         cls.car = get_car("ferrari")
         ibt = IBTFile(str(cls.ibt_path))
         cls.current_setup = CurrentSetup.from_ibt(ibt)

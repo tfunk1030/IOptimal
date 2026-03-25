@@ -22,6 +22,13 @@ if TYPE_CHECKING:
     from analyzer.extract import MeasuredState
 
 
+def _num(value: object, default: float = 0.0) -> float:
+    try:
+        return default if value is None else float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class SolverModifiers:
     """Adjustments applied to solver targets and outputs."""
@@ -122,7 +129,7 @@ def compute_modifiers(
 
         # Balance: speed gradient → DF balance offset
         if cat == "balance" and "speed" in symptom and "gradient" in symptom:
-            gradient = measured.understeer_high_speed_deg - measured.understeer_low_speed_deg
+            gradient = _num(measured.understeer_high_speed_deg) - _num(measured.understeer_low_speed_deg)
             if gradient > 1.5:
                 mods.df_balance_offset_pct += 0.5
                 mods.reasons.append(
@@ -141,7 +148,7 @@ def compute_modifiers(
                 # Floor estimate: use heave spring natural frequency constraint
                 # Higher shock velocity → stiffer spring needed to control platform
                 # BMW heave range is 30-50 N/mm; scale from p99 shock velocity
-                sv_floor = max(30.0, 35.0 + measured.front_shock_vel_p99_mps * 50)
+                sv_floor = max(30.0, 35.0 + _num(measured.front_shock_vel_p99_mps) * 50)
                 mods.front_heave_min_floor_nmm = max(
                     mods.front_heave_min_floor_nmm,
                     sv_floor,
@@ -180,24 +187,27 @@ def compute_modifiers(
                 )
 
     # ── From Heave Shock Velocity (platform stability) ──
-    if measured.front_heave_vel_hs_pct > 33:
+    front_heave_vel_hs_pct = _num(measured.front_heave_vel_hs_pct)
+    front_heave_vel_p95 = _num(measured.front_heave_vel_p95_mps)
+    pitch_range_deg = _num(measured.pitch_range_deg)
+    if front_heave_vel_hs_pct > 33:
         # >33% of heave velocity in HS regime = platform is getting pounded by surface
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 40.0)
         mods.reasons.append(
-            f"Heave HS regime {measured.front_heave_vel_hs_pct:.0f}% > 33% → heave floor 40 N/mm"
+            f"Heave HS regime {front_heave_vel_hs_pct:.0f}% > 33% → heave floor 40 N/mm"
         )
-    if measured.front_heave_vel_p95_mps > 0.35:
+    if front_heave_vel_p95 > 0.35:
         # Very high heave velocity → increase HS damping to control platform
         mods.front_hs_comp_offset += 1
         mods.reasons.append(
-            f"Heave vel p95 {measured.front_heave_vel_p95_mps:.3f} m/s > 0.35 → F HS comp +1"
+            f"Heave vel p95 {front_heave_vel_p95:.3f} m/s > 0.35 → F HS comp +1"
         )
 
     # ── From Pitch Dynamics (platform stability) ──
-    if measured.pitch_range_deg > 1.5:
+    if pitch_range_deg > 1.5:
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 38.0)
         mods.reasons.append(
-            f"Pitch range {measured.pitch_range_deg:.2f}° > 1.5° → heave floor 38 N/mm"
+            f"Pitch range {pitch_range_deg:.2f}° > 1.5° → heave floor 38 N/mm"
         )
 
     # ── From Heave Travel Utilization ──
@@ -215,8 +225,8 @@ def compute_modifiers(
         mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 70% → heave floor 40 N/mm")
 
     # ── From Directional Understeer (balance weighting) ──
-    us_left = measured.understeer_left_turn_deg
-    us_right = measured.understeer_right_turn_deg
+    us_left = _num(measured.understeer_left_turn_deg)
+    us_right = _num(measured.understeer_right_turn_deg)
     if abs(us_left) > 0.05 and abs(us_right) > 0.05:
         directional_delta = us_left - us_right
         # If one direction has significantly more understeer, weight LLTD offset
@@ -232,10 +242,11 @@ def compute_modifiers(
             )
 
     # ── From Corner Deflections (travel proximity) ──
-    if measured.front_corner_defl_p99_mm > 30:
+    front_corner_defl = _num(measured.front_corner_defl_p99_mm)
+    if front_corner_defl > 30:
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 35.0)
         mods.reasons.append(
-            f"Front corner defl p99 {measured.front_corner_defl_p99_mm:.1f}mm > 30mm "
+            f"Front corner defl p99 {front_corner_defl:.1f}mm > 30mm "
             f"→ heave floor 35 N/mm (travel proximity)"
         )
 
@@ -300,7 +311,7 @@ def compute_modifiers(
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 50.0)
     elif travel_pct >= 70.0:
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 40.0)
-    if measured.pitch_range_deg > 1.5:
+    if pitch_range_deg > 1.5:
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 38.0)
 
     # Clamp cumulative offsets to reasonable ranges

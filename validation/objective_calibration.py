@@ -32,6 +32,7 @@ if str(_root) not in sys.path:
 from car_model.cars import get_car
 from solver.objective import ObjectiveFunction
 from track_model.profile import TrackProfile
+from validation.observation_mapping import normalize_setup_to_canonical_params
 
 
 # ── Data Loading ─────────────────────────────────────────────────────────
@@ -48,47 +49,7 @@ class ObservationRow:
 
 def _extract_params(setup: dict) -> dict[str, float]:
     """Map observation setup keys → ObjectiveFunction param keys."""
-    dampers = setup.get("dampers", {})
-    lf = dampers.get("lf", {})
-    rf = dampers.get("rf", {})
-    lr = dampers.get("lr", {})
-    rr = dampers.get("rr", {})
-
-    # Average left/right for front/rear damper clicks
-    def avg(a, b, key, default=5):
-        return (a.get(key, default) + b.get(key, default)) / 2.0
-
-    params = {
-        "wing_angle_deg": float(setup.get("wing", 17.0)),
-        "front_heave_spring_nmm": float(setup.get("front_heave_nmm", 50.0)),
-        "rear_third_spring_nmm": float(setup.get("rear_third_nmm", 450.0)),
-        "rear_spring_rate_nmm": float(setup.get("rear_spring_nmm", 160.0)),
-        "front_torsion_od_mm": float(setup.get("torsion_bar_od_mm", 13.9)),
-        "front_camber_deg": float(setup.get("front_camber_deg", -2.9)),
-        "rear_camber_deg": float(setup.get("rear_camber_deg", -1.9)),
-        "brake_bias_pct": float(setup.get("brake_bias_pct", 50.0)),
-        "front_arb_blade": int(setup.get("front_arb_blade", 1)),
-        "rear_arb_blade": int(setup.get("rear_arb_blade", 3)),
-        # Damper clicks (averaged L/R)
-        "front_ls_comp": avg(lf, rf, "ls_comp", 7),
-        "front_ls_rbd": avg(lf, rf, "ls_rbd", 7),
-        "front_hs_comp": avg(lf, rf, "hs_comp", 5),
-        "front_hs_rbd": avg(lf, rf, "hs_rbd", 5),
-        "rear_ls_comp": avg(lr, rr, "ls_comp", 6),
-        "rear_ls_rbd": avg(lr, rr, "ls_rbd", 7),
-        "rear_hs_comp": avg(lr, rr, "hs_comp", 3),
-        "rear_hs_rbd": avg(lr, rr, "hs_rbd", 3),
-        # Pushrod offsets — used by objective for aero RH model when rh_model is set.
-        # Keys match JSON setup fields (front_pushrod / rear_pushrod = mm offset).
-        "front_pushrod_offset_mm": float(setup.get("front_pushrod", -26.0)),
-        "rear_pushrod_offset_mm": float(setup.get("rear_pushrod", -18.0)),
-        # Static ride heights — direct observed values (more accurate than model).
-        # Objective uses these as fallback when rh_model is None (e.g. BMW).
-        # Dynamic RH ≈ static − 4mm at speed (aero compression).
-        "front_rh_static_mm": float(setup.get("front_rh_static", 0.0)) or 0.0,
-        "rear_rh_static_mm": float(setup.get("rear_rh_static", 0.0)) or 0.0,
-    }
-    return params
+    return normalize_setup_to_canonical_params(setup, car=str(setup.get("adapter_name") or "bmw"))
 
 
 def load_observations() -> list[ObservationRow]:

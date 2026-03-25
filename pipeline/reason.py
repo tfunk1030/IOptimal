@@ -78,6 +78,7 @@ from solver.bmw_coverage import (
 )
 from solver.bmw_rotation_search import preserve_candidate_rotation_controls
 from solver.candidate_search import SetupCandidate, candidate_to_dict, generate_candidate_families
+from solver.scenario_profiles import resolve_scenario_name, should_run_legal_manifold_search
 from solver.solve_chain import SolveChainInputs, run_base_solve
 from solver.stint_reasoner import aggregate_stint_recommendations, solve_stint_compromise
 from track_model.build_profile import build_profile
@@ -2699,6 +2700,7 @@ def reason_and_solve(
     search_mode: str | None = None,   # "quick" | "standard" | "exhaustive" → full garage card
     top_n: int = 1,
     explore: bool = False,            # zero k-NN weight + widen Sobol sampling
+    scenario_profile: str | None = None,
     stint: bool = False,
     stint_select: str = "all",
     stint_max_laps: int = 40,
@@ -2717,6 +2719,9 @@ def reason_and_solve(
     Phase 9: Solve + report
     """
     car = get_car(car_name)
+    resolved_scenario = resolve_scenario_name(
+        scenario_profile or ("sprint" if stint and stint_select == "last" else "race" if stint else None)
+    )
     state = ReasoningState()
 
     def log(msg: str = "") -> None:
@@ -3175,6 +3180,7 @@ def reason_and_solve(
         wing_angle=detected_wing,
         modifiers=mods,
         prediction_corrections=dict(state.historical.prediction_corrections),
+        scenario_profile=resolved_scenario,
         failed_validation_clusters=state.validation_clusters,
         supporting_driver=best_driver.driver,
         supporting_measured=best_driver.measured,
@@ -3226,6 +3232,12 @@ def reason_and_solve(
     )
     selected_candidate = next((candidate for candidate in state.generated_candidates if candidate.selected), None)
     selected_candidate_applied = False
+    selected_candidate_family_output = getattr(selected_candidate, "family", None)
+    selected_candidate_score_output = (
+        selected_candidate.score.total
+        if selected_candidate is not None and selected_candidate.score is not None
+        else None
+    )
     if selected_candidate is not None:
         state.solver_notes.append(
             f"Candidate family selected: {selected_candidate.family} "
@@ -3261,6 +3273,10 @@ def reason_and_solve(
             supporting = candidate_result.supporting
             state.legal_validation = candidate_result.legal_validation
             state.decision_trace = candidate_result.decision_trace
+            selected_candidate_family_output = selected_candidate.family
+            selected_candidate_score_output = (
+                selected_candidate.score.total if selected_candidate.score is not None else None
+            )
             state.solver_notes.append(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
@@ -3311,7 +3327,12 @@ def reason_and_solve(
             stint_report_result = None
 
     # ── Legal-manifold search (--explore-legal-space) ──
-    if explore_legal_space:
+    if should_run_legal_manifold_search(
+        free_mode=False,
+        explicit_search=explore_legal_space,
+        search_mode=search_mode,
+        scenario_name=resolved_scenario,
+    ):
         try:
             from solver.legal_search import run_legal_search
 
@@ -3340,9 +3361,34 @@ def reason_and_solve(
                 driver_profile=authority.driver,
                 session_count=len(state.sessions),
                 keep_weird=keep_weird,
+                base_result=solve_result,
+                solve_inputs=solve_inputs,
+                scenario_profile=resolved_scenario,
             )
             print()
             print(ls_result.summary())
+            if ls_result.accepted_best_result is not None and ls_result.accepted_best is not None:
+                accepted_result = ls_result.accepted_best_result
+                step1 = accepted_result.step1
+                step2 = accepted_result.step2
+                step3 = accepted_result.step3
+                step4 = accepted_result.step4
+                step5 = accepted_result.step5
+                step6 = accepted_result.step6
+                supporting = accepted_result.supporting
+                state.legal_validation = accepted_result.legal_validation
+                state.decision_trace = accepted_result.decision_trace
+                selected_candidate_family_output = f"{resolved_scenario}:{ls_result.accepted_best.family}"
+                selected_candidate_score_output = ls_result.accepted_best.score
+                selected_candidate_applied = True
+                state.solver_notes.append(
+                    f"Applied legal-manifold scenario pick {ls_result.accepted_best.family} "
+                    f"for {resolved_scenario} after full legality + prediction sanity checks."
+                )
+            else:
+                state.solver_notes.append(
+                    f"Legal-manifold search found no fully accepted {resolved_scenario} candidate."
+                )
         except Exception as e:
             print(f"[legal-search] Skipped: {e}")
 
@@ -3580,12 +3626,9 @@ def reason_and_solve(
             ],
             "parameter_coverage": parameter_coverage,
             "telemetry_coverage": telemetry_coverage,
-            "selected_candidate_family": getattr(selected_candidate, "family", None),
-            "selected_candidate_score": (
-                selected_candidate.score.total
-                if selected_candidate is not None and selected_candidate.score is not None
-                else None
-            ),
+            "scenario_profile": resolved_scenario,
+            "selected_candidate_family": selected_candidate_family_output,
+            "selected_candidate_score": selected_candidate_score_output,
             "selected_candidate_applied": selected_candidate_applied,
             "legal_validation": state.legal_validation.to_dict() if state.legal_validation is not None else None,
             "decision_trace": [decision.to_dict() for decision in state.decision_trace],
@@ -3613,12 +3656,8 @@ def reason_and_solve(
     state.final_supporting = supporting
     state.final_wing_angle = detected_wing
     state.final_fuel_l = detected_fuel
-    state.final_selected_candidate_family = getattr(selected_candidate, "family", None)
-    state.final_selected_candidate_score = (
-        selected_candidate.score.total
-        if selected_candidate is not None and selected_candidate.score is not None
-        else None
-    )
+    state.final_selected_candidate_family = selected_candidate_family_output
+    state.final_selected_candidate_score = selected_candidate_score_output
     state.final_selected_candidate_applied = selected_candidate_applied
 
     # Build the final setup report
@@ -3647,12 +3686,8 @@ def reason_and_solve(
             else None
         ),
         prediction_corrections=dict(state.historical.prediction_corrections),
-        selected_candidate_family=getattr(selected_candidate, "family", None),
-        selected_candidate_score=(
-            selected_candidate.score.total
-            if selected_candidate is not None and selected_candidate.score is not None
-            else None
-        ),
+        selected_candidate_family=selected_candidate_family_output,
+        selected_candidate_score=selected_candidate_score_output,
         solve_context_lines=state.solver_notes + [
             f"Authority session: {authority.label}",
             f"Benchmark best session: {best.label}",
@@ -3875,6 +3910,21 @@ def main() -> None:
         metavar="FILE",
         help="Write the recommended setup params as a flat JSON file (e.g. setup.json). Requires --search-mode.",
     )
+    parser.add_argument(
+        "--scenario-profile",
+        type=str,
+        default="single_lap_safe",
+        choices=["single_lap_safe", "quali", "sprint", "race"],
+        dest="scenario_profile",
+        help="Scenario objective profile for candidate scoring and legal-manifold search.",
+    )
+    parser.add_argument(
+        "--objective-profile",
+        type=str,
+        choices=["single_lap_safe", "quali", "sprint", "race"],
+        dest="scenario_profile",
+        help="Legacy alias for --scenario-profile.",
+    )
 
     args = parser.parse_args()
 
@@ -3904,6 +3954,7 @@ def main() -> None:
         stint_select=getattr(args, "stint_select", "all"),
         stint_max_laps=getattr(args, "stint_max_laps", 40),
         stint_threshold=getattr(args, "stint_threshold", 1.5),
+        scenario_profile=getattr(args, "scenario_profile", "single_lap_safe"),
     )
 
     if args.learn:

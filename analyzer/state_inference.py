@@ -49,6 +49,20 @@ def _signal_confidence(measured: "MeasuredState", name: str, *, default: float =
     return confidence, float_value
 
 
+def _float_or(value: object, default: float = 0.0) -> float:
+    try:
+        return default if value is None else float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _optional_float(value: object) -> float | None:
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _append_issue(
     issues: list[CarStateIssue],
     *,
@@ -129,6 +143,10 @@ def infer_car_states(
     rear_temp_conf, rear_temp = _signal_confidence(measured, "rear_carcass_mean_c")
     front_pressure_conf, front_pressure = _signal_confidence(measured, "front_pressure_mean_kpa")
     rear_pressure_conf, rear_pressure = _signal_confidence(measured, "rear_pressure_mean_kpa")
+    pitch_range_braking = _float_or(getattr(measured, "pitch_range_braking_deg", None), 0.0)
+    front_bottoming = _float_or(getattr(measured, "bottoming_event_count_front_clean", None), 0.0)
+    rear_bottoming = _float_or(getattr(measured, "bottoming_event_count_rear_clean", None), 0.0)
+    abs_active_pct = _float_or(getattr(measured, "abs_active_pct", None), 0.0)
 
     # Front platform collapse under braking
     if (braking_travel or 0.0) > 85.0 or _problem_matches(problems, "braking pitch range"):
@@ -139,7 +157,7 @@ def infer_car_states(
         )
         severity = max(
             ((braking_travel or 0.0) - 85.0) / 15.0,
-            max(0.0, getattr(measured, "pitch_range_braking_deg", 0.0) - 0.9) / 0.8,
+            max(0.0, pitch_range_braking - 0.9) / 0.8,
             braking_phase_sev,
         )
         evidence = [
@@ -151,8 +169,8 @@ def infer_car_states(
             ),
             StateEvidence(
                 metric="pitch_range_braking_deg",
-                value=getattr(measured, "pitch_range_braking_deg", 0.0),
-                confidence=0.75 if getattr(measured, "pitch_range_braking_deg", 0.0) > 0 else 0.0,
+                value=pitch_range_braking,
+                confidence=0.75 if pitch_range_braking > 0 else 0.0,
                 note="Large braking pitch range indicates entry platform migration.",
             ),
         ]
@@ -178,7 +196,7 @@ def infer_car_states(
         severity = max(
             ((front_travel or 0.0) - 80.0) / 20.0,
             max(0.0, (front_var or 0.0) - 5.5) / 4.0,
-            max(0.0, getattr(measured, "bottoming_event_count_front_clean", 0)) / 8.0,
+            max(0.0, front_bottoming) / 8.0,
             aero_phase_sev,
         )
         evidence = [
@@ -217,7 +235,7 @@ def infer_car_states(
         severity = max(
             ((rear_travel or 0.0) - 80.0) / 20.0,
             max(0.0, (rear_var or 0.0) - 7.0) / 5.0,
-            max(0.0, getattr(measured, "bottoming_event_count_rear_clean", 0)) / 8.0,
+            max(0.0, rear_bottoming) / 8.0,
             rear_phase_sev,
         )
         evidence = [
@@ -388,8 +406,8 @@ def infer_car_states(
         )
 
     # Balance asymmetry
-    left = getattr(measured, "understeer_left_turn_deg", 0.0)
-    right = getattr(measured, "understeer_right_turn_deg", 0.0)
+    left = _float_or(getattr(measured, "understeer_left_turn_deg", None), 0.0)
+    right = _float_or(getattr(measured, "understeer_right_turn_deg", None), 0.0)
     if abs(left) > 0.05 and abs(right) > 0.05 and abs(left - right) > 0.35:
         severity = min(1.0, abs(left - right) / 1.5)
         evidence = [
@@ -420,10 +438,10 @@ def infer_car_states(
 
     # Front contact patch undercambered
     front_spreads = [
-        getattr(measured, "front_temp_spread_lf_c", 0.0),
-        getattr(measured, "front_temp_spread_rf_c", 0.0),
+        _optional_float(getattr(measured, "front_temp_spread_lf_c", None)),
+        _optional_float(getattr(measured, "front_temp_spread_rf_c", None)),
     ]
-    spread_support = [v for v in front_spreads if v != 0.0]
+    spread_support = [v for v in front_spreads if v is not None and v != 0.0]
     if spread_support and min(spread_support) < 6.0:
         severity = min(1.0, (6.0 - min(spread_support)) / 4.0)
         evidence = [
@@ -498,7 +516,7 @@ def infer_car_states(
         )
 
     # Brake system front limited
-    if (front_lock or 0.0) > 0.06 or getattr(measured, "abs_active_pct", 0.0) > 20.0:
+    if (front_lock or 0.0) > 0.06 or abs_active_pct > 20.0:
         brake_support, brake_phase_conf, brake_phase_sev = _corner_phase_support(
             corners,
             lambda corner: getattr(corner, "trail_brake_pct", 0.0) > 0.12 or getattr(corner, "braking_phase_s", 0.0) > 0.12,
@@ -507,7 +525,7 @@ def infer_car_states(
         brake_release_quality = float(getattr(driver, "brake_release_quality", 0.7) or 0.7) if driver is not None else 0.7
         severity = max(
             max(0.0, ((front_lock or 0.0) - 0.06) / 0.05),
-            max(0.0, getattr(measured, "abs_active_pct", 0.0) - 20.0) / 35.0,
+            max(0.0, abs_active_pct - 20.0) / 35.0,
             brake_phase_sev,
         )
         evidence = [
@@ -519,8 +537,8 @@ def infer_car_states(
             ),
             StateEvidence(
                 metric="abs_active_pct",
-                value=getattr(measured, "abs_active_pct", 0.0),
-                confidence=0.75 if getattr(measured, "abs_active_pct", 0.0) > 0 else 0.0,
+                value=abs_active_pct,
+                confidence=0.75 if abs_active_pct > 0 else 0.0,
                 note="Frequent ABS engagement indicates excessive front brake demand.",
             ),
         ]

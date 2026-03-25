@@ -34,6 +34,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from solver.scenario_profiles import get_scenario_profile
 from track_model.profile import TrackProfile
 from vertical_dynamics import damped_excursion_mm
 
@@ -261,10 +262,11 @@ class ObjectiveFunction:
     # requires multi-OD IBT confirmation. (research/physics-notes.md 2026-03-24)
     TORSION_ARB_COUPLING = 0.25  # empirical; see comment above
 
-    def __init__(self, car, track, explore: bool = False):
+    def __init__(self, car, track, explore: bool = False, scenario_profile: str | None = None):
         self.car = car
         self.track = track
         self.explore = explore  # when True: zero k-NN weight, no empirical anchoring
+        self._scenario_profile = get_scenario_profile(scenario_profile)
         self._surface = None  # lazy-loaded aero surface
         self._vortex_threshold_cache: dict[float, float] = {}  # wing_deg → threshold_mm
         # Empirical heave spring calibration — loads from real IBT telemetry data.
@@ -282,6 +284,7 @@ class ObjectiveFunction:
         else:
             _track_raw = getattr(track, "name", None) or getattr(track, "track_name", None) or str(track)
         _track_slug = str(_track_raw).lower().split()[0].replace("-", "").replace("_", "")
+        self._track_slug = _track_slug
 
         self._heave_cal = HeaveCalibration.load(_car_slug, _track_slug)
         self._measured = None   # set per-evaluation in evaluate()
@@ -305,10 +308,52 @@ class ObjectiveFunction:
         try:
             from solver.session_database import SessionDatabase
             self._session_db: "SessionDatabase | None" = SessionDatabase.load(
-                _car_slug, _track_slug
+                self._car_slug, self._track_slug
             )
         except Exception:
             self._session_db = None
+
+    def _new_breakdown(self) -> ObjectiveBreakdown:
+        weights = self._scenario_profile.objective
+        breakdown = ObjectiveBreakdown(
+            w_platform=weights.w_platform,
+            w_driver=weights.w_driver,
+            w_uncertainty=weights.w_uncertainty,
+            w_envelope=weights.w_envelope,
+            w_staleness=weights.w_staleness,
+            w_empirical=weights.w_empirical,
+        )
+        if self.explore:
+            breakdown.w_empirical = 0.0
+        return breakdown
+
+    @staticmethod
+    def _arb_size_label(raw: object, labels: list[str] | tuple[str, ...], baseline: str) -> str:
+        if isinstance(raw, str) and raw:
+            return raw
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            idx = int(round(float(raw)))
+            if labels and 0 <= idx < len(labels):
+                return str(labels[idx])
+        return str(baseline)
+
+    @classmethod
+    def _arb_size_index(
+        cls,
+        raw: object,
+        labels: list[str] | tuple[str, ...],
+        baseline: str,
+        *,
+        default: int = 0,
+    ) -> int:
+        if labels:
+            label = cls._arb_size_label(raw, labels, baseline)
+            if label in labels:
+                return labels.index(label)
+        try:
+            return int(round(float(raw)))
+        except (TypeError, ValueError):
+            return int(default)
 
     def _get_surface(self, wing_deg: float | None = None):
         """Lazy-load aero surface for DF balance queries.
@@ -735,14 +780,8 @@ class ObjectiveFunction:
         # ARB size: may come as ordinal int (0=Soft,1=Medium,2=Stiff) or string label
         _f_arb_size_raw = params.get("front_arb_size", arb.front_baseline_size)
         _r_arb_size_raw = params.get("rear_arb_size", arb.rear_baseline_size)
-        def _resolve_arb_size(val, labels, baseline):
-            if isinstance(val, (int, float)) and not isinstance(val, bool):
-                idx = int(round(float(val)))
-                if labels and 0 <= idx < len(labels):
-                    return labels[idx]
-            return val if val else baseline
-        front_arb_size = _resolve_arb_size(_f_arb_size_raw, arb.front_size_labels, arb.front_baseline_size)
-        rear_arb_size = _resolve_arb_size(_r_arb_size_raw, arb.rear_size_labels, arb.rear_baseline_size)
+        front_arb_size = self._arb_size_label(_f_arb_size_raw, arb.front_size_labels, arb.front_baseline_size)
+        rear_arb_size = self._arb_size_label(_r_arb_size_raw, arb.rear_size_labels, arb.rear_baseline_size)
         k_arb_front_base = arb.front_roll_stiffness(front_arb_size, front_arb_blade)
         k_arb_rear = arb.rear_roll_stiffness(rear_arb_size, rear_arb_blade)
         k_arb_front = k_arb_front_base * self._torsion_arb_coupling_factor(front_torsion_od)
@@ -917,9 +956,7 @@ class ObjectiveFunction:
         # Run forward physics evaluation
         physics = self.evaluate_physics(params)
 
-        breakdown = ObjectiveBreakdown()
-        if self.explore:
-            breakdown.w_empirical = 0.0  # explore mode: pure physics, no k-NN anchoring
+        breakdown = self._new_breakdown()
         veto_reasons: list[str] = []
         soft_penalties: list[str] = []
 
@@ -1238,8 +1275,18 @@ class ObjectiveFunction:
         # target LLTD even with blade adjustments. Penalty on size mismatch
         # vs what's needed to achieve target LLTD with mid-range blade.
         # Soft=0, Medium=1, Stiff=2 for ordinal encoding.
-        f_arb_size_idx = int(round(params.get("front_arb_size", 0)))
-        r_arb_size_idx = int(round(params.get("rear_arb_size", 1)))
+        f_arb_size_idx = self._arb_size_index(
+            params.get("front_arb_size", 0),
+            self.car.arb.front_size_labels,
+            self.car.arb.front_baseline_size,
+            default=0,
+        )
+        r_arb_size_idx = self._arb_size_index(
+            params.get("rear_arb_size", 1),
+            self.car.arb.rear_size_labels,
+            self.car.arb.rear_baseline_size,
+            default=1,
+        )
         f_arb_blade = int(round(params.get("front_arb_blade", 1)))
         r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
         # Penalty for extreme blade + wrong size (should have sized up/down)
@@ -1639,7 +1686,7 @@ class ObjectiveFunction:
             # Layer 1 fast path: skip driver/uncertainty/envelope
             if layer == 1:
                 physics = self.evaluate_physics(params)
-                breakdown = ObjectiveBreakdown()
+                breakdown = self._new_breakdown()
                 veto_reasons: list[str] = []
                 soft_penalties: list[str] = []
                 breakdown.lap_gain_ms = self._estimate_lap_gain(params, physics)
@@ -1662,7 +1709,7 @@ class ObjectiveFunction:
             elif layer == 2:
                 # Layer 2: add LLTD + DF balance via full physics, skip driver/uncertainty
                 physics = self.evaluate_physics(params)
-                breakdown = ObjectiveBreakdown()
+                breakdown = self._new_breakdown()
                 veto_reasons = []
                 soft_penalties = []
                 breakdown.lap_gain_ms = self._estimate_lap_gain(params, physics)

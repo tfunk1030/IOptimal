@@ -354,6 +354,127 @@ def _extract_target_maps(base_result: SolveChainResult) -> dict[str, Any]:
     }
 
 
+def canonical_params_to_overrides(
+    base_result: SolveChainResult,
+    params: dict[str, Any],
+    *,
+    car: Any | None = None,
+) -> SolveChainOverrides:
+    """Convert canonical legal-search params into snapped solve-chain overrides."""
+    targets = _extract_target_maps(base_result)
+    explicit_supporting_fields: set[str] = set()
+
+    def _set_step6(axle: str, field: str, value: Any) -> None:
+        corners = ("lf", "rf") if axle == "front" else ("lr", "rr")
+        for corner_name in corners:
+            targets["step6"][corner_name][field] = int(round(float(value)))
+
+    direct_step_map: dict[str, tuple[str, str]] = {
+        "front_pushrod_offset_mm": ("step1", "front_pushrod_offset_mm"),
+        "rear_pushrod_offset_mm": ("step1", "rear_pushrod_offset_mm"),
+        "front_heave_spring_nmm": ("step2", "front_heave_nmm"),
+        "front_heave_perch_mm": ("step2", "perch_offset_front_mm"),
+        "rear_third_spring_nmm": ("step2", "rear_third_nmm"),
+        "rear_third_perch_mm": ("step2", "perch_offset_rear_mm"),
+        "front_torsion_od_mm": ("step3", "front_torsion_od_mm"),
+        "rear_spring_rate_nmm": ("step3", "rear_spring_rate_nmm"),
+        "rear_spring_perch_mm": ("step3", "rear_spring_perch_mm"),
+        "front_camber_deg": ("step5", "front_camber_deg"),
+        "rear_camber_deg": ("step5", "rear_camber_deg"),
+        "front_toe_mm": ("step5", "front_toe_mm"),
+        "rear_toe_mm": ("step5", "rear_toe_mm"),
+        "brake_bias_pct": ("supporting", "brake_bias_pct"),
+        "brake_bias_target": ("supporting", "brake_bias_target"),
+        "brake_bias_migration": ("supporting", "brake_bias_migration"),
+        "front_master_cyl_mm": ("supporting", "front_master_cyl_mm"),
+        "rear_master_cyl_mm": ("supporting", "rear_master_cyl_mm"),
+        "pad_compound": ("supporting", "pad_compound"),
+        "diff_preload_nm": ("supporting", "diff_preload_nm"),
+        "diff_clutch_plates": ("supporting", "diff_clutch_plates"),
+        "diff_ramp_option_idx": ("supporting", "diff_ramp_option_idx"),
+        "tc_gain": ("supporting", "tc_gain"),
+        "tc_slip": ("supporting", "tc_slip"),
+        "fuel_l": ("supporting", "fuel_l"),
+        "fuel_low_warning_l": ("supporting", "fuel_low_warning_l"),
+        "fuel_target_l": ("supporting", "fuel_target_l"),
+        "gear_stack": ("supporting", "gear_stack"),
+        "roof_light_color": ("supporting", "roof_light_color"),
+    }
+
+    for key, value in params.items():
+        if value is None:
+            continue
+        if key in direct_step_map:
+            step_name, field_name = direct_step_map[key]
+            targets[step_name][field_name] = value
+            if step_name == "supporting":
+                explicit_supporting_fields.add(field_name)
+            continue
+        if key == "front_arb_size":
+            targets["step4_arb_size"]["front_arb_size"] = value
+            continue
+        if key == "rear_arb_size":
+            targets["step4_arb_size"]["rear_arb_size"] = value
+            continue
+        if key == "front_arb_blade":
+            blade = int(round(float(value)))
+            targets["step4"]["front_arb_blade_start"] = blade
+            targets["step4"]["farb_blade_locked"] = blade
+            continue
+        if key == "rear_arb_blade":
+            blade = int(round(float(value)))
+            targets["step4"]["rear_arb_blade_start"] = blade
+            targets["step4"]["rarb_blade_slow_corner"] = blade
+            targets["step4"]["rarb_blade_fast_corner"] = blade
+            continue
+        if key == "front_ls_comp":
+            _set_step6("front", "ls_comp", value)
+            continue
+        if key == "front_ls_rbd":
+            _set_step6("front", "ls_rbd", value)
+            continue
+        if key == "front_hs_comp":
+            _set_step6("front", "hs_comp", value)
+            continue
+        if key == "front_hs_rbd":
+            _set_step6("front", "hs_rbd", value)
+            continue
+        if key == "front_hs_slope":
+            _set_step6("front", "hs_slope", value)
+            continue
+        if key == "rear_ls_comp":
+            _set_step6("rear", "ls_comp", value)
+            continue
+        if key == "rear_ls_rbd":
+            _set_step6("rear", "ls_rbd", value)
+            continue
+        if key == "rear_hs_comp":
+            _set_step6("rear", "hs_comp", value)
+            continue
+        if key == "rear_hs_rbd":
+            _set_step6("rear", "hs_rbd", value)
+            continue
+        if key == "rear_hs_slope":
+            _set_step6("rear", "hs_slope", value)
+            continue
+        if key == "diff_ramp_angles":
+            current_idx = targets["supporting"].get("diff_ramp_option_idx", 1)
+            targets["supporting"]["diff_ramp_option_idx"] = diff_ramp_option_index(
+                getattr(car, "canonical_name", car),
+                diff_ramp_angles=value,
+                default=int(round(float(current_idx))) if current_idx is not None else 1,
+            )
+            explicit_supporting_fields.add("diff_ramp_option_idx")
+
+    _snap_targets_to_garage(targets, car)
+    overrides = _target_overrides(base_result, targets)
+    for field_name in explicit_supporting_fields:
+        target_value = targets["supporting"].get(field_name)
+        if getattr(base_result.supporting, field_name, None) != target_value:
+            overrides.supporting[field_name] = target_value
+    return overrides
+
+
 def _apply_cluster_center(targets: dict[str, Any], setup_cluster: Any, *, car_name: str = "bmw") -> None:
     center = getattr(setup_cluster, "center", {}) or {}
     if not center:

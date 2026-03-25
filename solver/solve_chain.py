@@ -40,6 +40,7 @@ class SolveChainInputs:
     prediction_corrections: dict[str, float] = field(default_factory=dict)
     balance_tolerance: float = 0.1
     pin_front_min: bool = True
+    scenario_profile: str = "single_lap_safe"
     legacy_solver: bool = False
     camber_confidence: str = "estimated"
     failed_validation_clusters: list[Any] | None = None

@@ -101,10 +101,19 @@
             <label for="tolerance">Tolerance (%)</label>
             <input id="tolerance" name="tolerance" type="number" step="0.01" value="0.1">
           </div>
+          <div class="field">
+            <label for="scenario_profile">Scenario</label>
+            <select id="scenario_profile" name="scenario_profile">
+              <option value="single_lap_safe">Single Lap Safe</option>
+              <option value="quali">Qualifying</option>
+              <option value="sprint">Sprint</option>
+              <option value="race">Race</option>
+            </select>
+          </div>
           <div class="field field-checks">
             <label class="checkbox">
               <input type="checkbox" name="free_opt">
-              <span>Use free optimization</span>
+              <span>Search the legal setup manifold</span>
             </label>
             <label class="checkbox">
               <input type="checkbox" name="use_learning" checked>

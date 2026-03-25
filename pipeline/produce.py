@@ -47,6 +47,7 @@ from solver.modifiers import SolverModifiers, compute_modifiers
 from solver.learned_corrections import apply_learned_corrections
 from solver.predictor import predict_candidate_telemetry
 from solver.rake_solver import RakeSolver, reconcile_ride_heights
+from solver.scenario_profiles import resolve_scenario_name, should_run_legal_manifold_search
 from solver.supporting_solver import SupportingSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
 from solver.bmw_coverage import (
@@ -173,6 +174,17 @@ def _stint_lap_payload(dataset) -> list[dict]:
     ]
 
 
+def _resolve_scenario_profile(args: argparse.Namespace) -> str:
+    explicit = getattr(args, "scenario_profile", None)
+    if explicit:
+        return resolve_scenario_name(explicit)
+    if getattr(args, "stint", False):
+        if getattr(args, "stint_select", "all") == "last":
+            return "sprint"
+        return "race"
+    return resolve_scenario_name(getattr(args, "objective_profile", None))
+
+
 def produce(
     args: argparse.Namespace,
     _return_result: bool = False,
@@ -189,6 +201,8 @@ def produce(
         _compact_report: Override compact/full report selection. Defaults to
             compact when ``report_only`` is enabled.
     """
+    free_mode = bool(getattr(args, "free", False))
+    scenario_profile_name = _resolve_scenario_profile(args)
 
     # ── Normalize IBT path(s) ──
     ibt_arg = args.ibt
@@ -210,6 +224,7 @@ def produce(
                 explore_legal_space=getattr(args, "explore_legal_space", False),
                 search_budget=getattr(args, "search_budget", 1000),
                 keep_weird=getattr(args, "keep_weird", False),
+                scenario_profile=scenario_profile_name,
                 stint=getattr(args, "stint", False),
                 stint_select=getattr(args, "stint_select", "all"),
                 stint_max_laps=getattr(args, "stint_max_laps", 40),
@@ -533,7 +548,7 @@ def produce(
         target_balance=target_balance,
         balance_tolerance=args.tolerance,
         fuel_load_l=fuel,
-        pin_front_min=not args.free,
+        pin_front_min=True,
         wing_angle=wing,
         legacy_solver=getattr(args, "legacy_solver", False),
         damping_ratio_scale=modifiers.damping_ratio_scale,
@@ -565,11 +580,11 @@ def produce(
             target_balance=target_balance,
             balance_tolerance=args.tolerance,
             fuel_load_l=fuel,
-            pin_front_min=not args.free,
+            pin_front_min=True,
         )
 
         # Run free optimization comparison if we're in pinned mode
-        if not args.free:
+        if False:
             try:
                 free_step1 = rake_solver.solve(
                     target_balance=target_balance,
@@ -591,8 +606,11 @@ def produce(
         if not args.report_only:
             print(step1.summary())
 
+        if free_mode:
+            log(f"  [free-opt] Legal-manifold search enabled from a pinned seed ({scenario_profile_name}).")
+
         # Advisory: compare free-mode L/D when running in pinned mode
-        if not args.free:
+        if False:
             try:
                 free_step1 = rake_solver.solve(
                     target_balance=target_balance,
@@ -809,7 +827,8 @@ def produce(
         modifiers=modifiers,
         prediction_corrections={},
         balance_tolerance=args.tolerance,
-        pin_front_min=not args.free,
+        pin_front_min=True,
+        scenario_profile=scenario_profile_name,
         legacy_solver=getattr(args, "legacy_solver", False),
         camber_confidence=_camber_conf,
         corners=corners,
@@ -990,6 +1009,12 @@ def produce(
     )
     selected_candidate = next((candidate for candidate in generated_candidates if candidate.selected), None)
     selected_candidate_applied = False
+    selected_candidate_family_output = getattr(selected_candidate, "family", None)
+    selected_candidate_score_output = (
+        selected_candidate.score.total
+        if selected_candidate is not None and selected_candidate.score is not None
+        else None
+    )
     if selected_candidate is not None:
         solve_notes.append(
             f"Candidate family selected: {selected_candidate.family} "
@@ -1024,6 +1049,10 @@ def produce(
             supporting = selected_candidate_result.supporting
             legal_validation = selected_candidate_result.legal_validation
             decision_trace = selected_candidate_result.decision_trace
+            selected_candidate_family_output = selected_candidate.family
+            selected_candidate_score_output = (
+                selected_candidate.score.total if selected_candidate.score is not None else None
+            )
             solve_notes.append(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
@@ -1034,7 +1063,12 @@ def produce(
 
     # ── Legal-manifold search (--explore-legal-space / --search-mode) ─────
     search_mode = getattr(args, "search_mode", None)
-    do_legal_search = getattr(args, "explore_legal_space", False) or search_mode is not None
+    do_legal_search = should_run_legal_manifold_search(
+        free_mode=free_mode,
+        explicit_search=getattr(args, "explore_legal_space", False),
+        search_mode=search_mode,
+        scenario_name=scenario_profile_name,
+    )
     if do_legal_search:
         try:
             baseline_params = {
@@ -1061,8 +1095,12 @@ def produce(
                 from solver.objective import ObjectiveFunction
 
                 space = LegalSpace.from_car(car, track_name=getattr(track, "name", ""))
-                objective = ObjectiveFunction(car, track if hasattr(track, "name") else None,
-                                              explore=getattr(args, "explore", False))
+                objective = ObjectiveFunction(
+                    car,
+                    track if hasattr(track, "name") else None,
+                    explore=getattr(args, "explore", False),
+                    scenario_profile=scenario_profile_name,
+                )
                 # Pre-stash session telemetry for batch scoring
                 if measured is not None:
                     objective.set_session_context(measured=measured, driver=driver_profile)
@@ -1097,9 +1135,34 @@ def produce(
                     driver_profile=driver,
                     session_count=1,
                     keep_weird=keep_weird,
+                    base_result=base_solve_result,
+                    solve_inputs=solve_inputs,
+                    scenario_profile=scenario_profile_name,
                 )
                 log()
                 log(ls_result.summary())
+                if ls_result.accepted_best_result is not None and ls_result.accepted_best is not None:
+                    accepted_result = ls_result.accepted_best_result
+                    step1 = accepted_result.step1
+                    step2 = accepted_result.step2
+                    step3 = accepted_result.step3
+                    step4 = accepted_result.step4
+                    step5 = accepted_result.step5
+                    step6 = accepted_result.step6
+                    supporting = accepted_result.supporting
+                    legal_validation = accepted_result.legal_validation
+                    decision_trace = accepted_result.decision_trace
+                    selected_candidate_family_output = f"{scenario_profile_name}:{ls_result.accepted_best.family}"
+                    selected_candidate_score_output = ls_result.accepted_best.score
+                    selected_candidate_applied = True
+                    solve_notes.append(
+                        f"Applied legal-manifold scenario pick {ls_result.accepted_best.family} "
+                        f"for {scenario_profile_name} after full legality + prediction sanity checks."
+                    )
+                else:
+                    solve_notes.append(
+                        f"Legal-manifold search found no fully accepted {scenario_profile_name} candidate."
+                    )
         except Exception as e:
             log(f"[legal-search] Skipped: {e}")
 
@@ -1220,17 +1283,14 @@ def produce(
                 if stint_solve is not None
                 else getattr(stint_dataset, "confidence", None)
             ),
+            "scenario_profile": scenario_profile_name,
             "fallback_mode": (
                 stint_solve.fallback_mode
                 if stint_solve is not None
                 else getattr(stint_dataset, "fallback_mode", None)
             ),
-            "selected_candidate_family": getattr(selected_candidate, "family", None),
-            "selected_candidate_score": (
-                selected_candidate.score.total
-                if selected_candidate is not None and selected_candidate.score is not None
-                else None
-            ),
+            "selected_candidate_family": selected_candidate_family_output,
+            "selected_candidate_score": selected_candidate_score_output,
             "selected_candidate_applied": selected_candidate_applied,
             "legal_validation": legal_validation.to_dict() if legal_validation is not None else None,
             "decision_trace": [decision.to_dict() for decision in decision_trace],
@@ -1275,12 +1335,8 @@ def produce(
         stint_evolution=stint_evolution,
         stint_compromise_info=stint_compromise_info,
         prediction_corrections={},
-        selected_candidate_family=getattr(selected_candidate, "family", None),
-        selected_candidate_score=(
-            selected_candidate.score.total
-            if selected_candidate is not None and selected_candidate.score is not None
-            else None
-        ),
+        selected_candidate_family=selected_candidate_family_output,
+        selected_candidate_score=selected_candidate_score_output,
         solve_context_lines=solve_notes,
         compact=report_compact,
     )
@@ -1316,12 +1372,9 @@ def produce(
             "generated_candidates": generated_candidates,
             "stint_dataset": stint_dataset,
             "stint_solve": stint_solve,
-            "selected_candidate_family": getattr(selected_candidate, "family", None),
-            "selected_candidate_score": (
-                selected_candidate.score.total
-                if selected_candidate is not None and selected_candidate.score is not None
-                else None
-            ),
+            "scenario_profile": scenario_profile_name,
+            "selected_candidate_family": selected_candidate_family_output,
+            "selected_candidate_score": selected_candidate_score_output,
             "selected_candidate_applied": selected_candidate_applied,
             "legal_validation": legal_validation,
             "decision_trace": decision_trace,
@@ -1511,7 +1564,7 @@ def main():
     parser.add_argument("--fuel", type=float, default=None,
                         help="Fuel load in liters (auto-detected if not specified)")
     parser.add_argument("--free", action="store_true",
-                        help="Free optimization (don't pin front RH at sim floor)")
+                        help="Search the legal setup manifold from the pinned baseline and apply the best accepted candidate")
     parser.add_argument("--sto", type=str, default=None,
                         help="Export iRacing .sto setup file")
     parser.add_argument("--json", type=str, default=None,
@@ -1587,9 +1640,12 @@ def main():
                             "Results show pure-physics recommendations unconstrained by "
                             "historical session data."
                         ))
+    parser.add_argument("--scenario-profile", type=str, default=None,
+                        choices=["single_lap_safe", "quali", "sprint", "race"],
+                        help="Scenario objective and sanity profile to use for legal-manifold search")
     parser.add_argument("--objective-profile", type=str, default="balanced",
                         choices=["robust", "aggressive", "balanced"],
-                        help="Objective function weighting profile (default: balanced)")
+                        help="Legacy objective alias. 'balanced' maps to the default single-lap-safe scenario.")
     # Legacy flags (kept for backward-compat; no-op since auto is default)
     parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)

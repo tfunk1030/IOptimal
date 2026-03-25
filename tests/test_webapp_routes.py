@@ -37,6 +37,8 @@ class WebAppRouteTests(unittest.TestCase):
                         "wing": "17",
                         "balance": "50.14",
                         "tolerance": "0.1",
+                        "scenario_profile": "race",
+                        "free_opt": "on",
                         "use_learning": "on",
                     },
                     follow_redirects=False,
@@ -47,6 +49,8 @@ class WebAppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertIsNotNone(payload)
         self.assertEqual(payload["run"]["mode"], "track_solve")
+        self.assertEqual(payload["input"]["scenario_profile"], "race")
+        self.assertTrue(payload["input"]["free_opt"])
 
     def test_invalid_compare_request_redirects_back_with_error(self) -> None:
         with TestClient(self.app) as client:

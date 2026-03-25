@@ -28,6 +28,7 @@ from solver.damper_solver import DamperSolver
 from solver.full_setup_optimizer import optimize_if_supported
 from output.report import print_full_setup_report, save_json_summary
 from output.setup_writer import write_sto
+from solver.scenario_profiles import resolve_scenario_name, should_run_legal_manifold_search
 from solver.supporting_solver import compute_brake_bias
 from solver.learned_corrections import apply_learned_corrections
 
@@ -64,6 +65,77 @@ def find_track_profile(track_name: str) -> TrackProfile:
     return TrackProfile.load(matches[0])
 
 
+def _apply_candidate_params_to_steps(
+    params: dict[str, object],
+    *,
+    step1: object,
+    step2: object,
+    step3: object,
+    step4: object,
+    step5: object,
+    step6: object,
+) -> None:
+    direct_fields = {
+        "front_pushrod_offset_mm": (step1, "front_pushrod_offset_mm"),
+        "rear_pushrod_offset_mm": (step1, "rear_pushrod_offset_mm"),
+        "front_rh_static_mm": (step1, "static_front_rh_mm"),
+        "rear_rh_static_mm": (step1, "static_rear_rh_mm"),
+        "front_heave_spring_nmm": (step2, "front_heave_nmm"),
+        "front_heave_perch_mm": (step2, "perch_offset_front_mm"),
+        "rear_third_spring_nmm": (step2, "rear_third_nmm"),
+        "rear_third_perch_mm": (step2, "perch_offset_rear_mm"),
+        "front_torsion_od_mm": (step3, "front_torsion_od_mm"),
+        "rear_spring_rate_nmm": (step3, "rear_spring_rate_nmm"),
+        "rear_spring_perch_mm": (step3, "rear_spring_perch_mm"),
+        "front_arb_size": (step4, "front_arb_size"),
+        "rear_arb_size": (step4, "rear_arb_size"),
+        "front_camber_deg": (step5, "front_camber_deg"),
+        "rear_camber_deg": (step5, "rear_camber_deg"),
+        "front_toe_mm": (step5, "front_toe_mm"),
+        "rear_toe_mm": (step5, "rear_toe_mm"),
+    }
+    for key, target in direct_fields.items():
+        value = params.get(key)
+        if value is None:
+            continue
+        target_obj, field_name = target
+        if hasattr(target_obj, field_name):
+            setattr(target_obj, field_name, value)
+
+    front_arb_blade = params.get("front_arb_blade")
+    if front_arb_blade is not None:
+        for field_name in ("front_arb_blade_start", "farb_blade_locked"):
+            if hasattr(step4, field_name):
+                setattr(step4, field_name, int(round(float(front_arb_blade))))
+
+    rear_arb_blade = params.get("rear_arb_blade")
+    if rear_arb_blade is not None:
+        for field_name in ("rear_arb_blade_start", "rarb_blade_slow_corner", "rarb_blade_fast_corner"):
+            if hasattr(step4, field_name):
+                setattr(step4, field_name, int(round(float(rear_arb_blade))))
+
+    axle_damper_fields = {
+        "front_ls_comp": ("ls_comp", ("lf", "rf")),
+        "front_ls_rbd": ("ls_rbd", ("lf", "rf")),
+        "front_hs_comp": ("hs_comp", ("lf", "rf")),
+        "front_hs_rbd": ("hs_rbd", ("lf", "rf")),
+        "front_hs_slope": ("hs_slope", ("lf", "rf")),
+        "rear_ls_comp": ("ls_comp", ("lr", "rr")),
+        "rear_ls_rbd": ("ls_rbd", ("lr", "rr")),
+        "rear_hs_comp": ("hs_comp", ("lr", "rr")),
+        "rear_hs_rbd": ("hs_rbd", ("lr", "rr")),
+        "rear_hs_slope": ("hs_slope", ("lr", "rr")),
+    }
+    for key, (field_name, corners) in axle_damper_fields.items():
+        value = params.get(key)
+        if value is None:
+            continue
+        for corner_name in corners:
+            corner = getattr(step6, corner_name, None)
+            if corner is not None and hasattr(corner, field_name):
+                setattr(corner, field_name, int(round(float(value))))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="GTP Setup Solver — Physics-based setup calculator"
@@ -80,7 +152,7 @@ def main():
     parser.add_argument("--mid-stint", action="store_true",
                         help="Optimize for mid-stint conditions (half fuel)")
     parser.add_argument("--free", action="store_true",
-                        help="Free optimization (don't pin front RH at sim floor)")
+                        help="Search the legal setup manifold from a pinned baseline seed")
     parser.add_argument("--json", action="store_true",
                         help="Output as JSON instead of human-readable")
     parser.add_argument("--save", type=str, default=None,
@@ -107,6 +179,14 @@ def main():
                         help="Run legal-manifold search after physics solver")
     parser.add_argument("--search-budget", type=int, default=1000,
                         help="Number of candidates for legal-space search (default: 1000)")
+    parser.add_argument("--scenario-profile", type=str, default="single_lap_safe",
+                        choices=["single_lap_safe", "quali", "sprint", "race"],
+                        dest="scenario_profile",
+                        help="Scenario objective profile for legal-manifold search")
+    parser.add_argument("--objective-profile", type=str,
+                        choices=["single_lap_safe", "quali", "sprint", "race"],
+                        dest="scenario_profile",
+                        help="Legacy alias for --scenario-profile")
 
     args = parser.parse_args()
     run_solver(args)
@@ -149,8 +229,12 @@ def run_solver(args: "argparse.Namespace") -> None:
         args.learn = not getattr(args, "no_learn", False)
     if not hasattr(args, "legacy_solver"):
         args.legacy_solver = False
+    if not hasattr(args, "scenario_profile") or not args.scenario_profile:
+        args.scenario_profile = "single_lap_safe"
 
     quiet = bool(args.report_only)
+    free_mode = bool(args.free)
+    resolved_scenario = resolve_scenario_name(getattr(args, "scenario_profile", None))
 
     def log(message: str = "") -> None:
         if not quiet:
@@ -170,6 +254,8 @@ def run_solver(args: "argparse.Namespace") -> None:
         original_fuel = args.fuel
         args.fuel = args.fuel * 0.5
         log(f"[mid-stint] Optimizing for half fuel: {args.fuel:.0f} L (was {original_fuel:.0f} L)")
+    if free_mode:
+        log(f"[free-opt] Legal-manifold search enabled from a pinned seed ({resolved_scenario}).")
 
     # Apply learned corrections if requested
     learned = None
@@ -231,7 +317,7 @@ def run_solver(args: "argparse.Namespace") -> None:
         target_balance=args.balance,
         balance_tolerance=args.tolerance,
         fuel_load_l=args.fuel,
-        pin_front_min=not args.free,
+        pin_front_min=True,
         wing_angle=args.wing,
         legacy_solver=args.legacy_solver,
         camber_confidence=_camber_conf,
@@ -263,7 +349,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             target_balance=args.balance,
             balance_tolerance=args.tolerance,
             fuel_load_l=args.fuel,
-            pin_front_min=not args.free,
+            pin_front_min=True,
         )
 
         if not args.json and not args.report_only:
@@ -584,11 +670,19 @@ def run_solver(args: "argparse.Namespace") -> None:
             log(f"[bayesian] Skipped: {e}")
 
     # ─── Legal-Manifold Search (--legal-search) ───────────────────────
-    if getattr(args, "legal_search", False):
+    if should_run_legal_manifold_search(
+        free_mode=free_mode,
+        explicit_search=getattr(args, "legal_search", False),
+        search_mode=None,
+        scenario_name=resolved_scenario,
+    ):
         try:
             from solver.legal_search import run_legal_search
 
+            baseline_brake_bias, _ = compute_brake_bias(car, fuel_load_l=args.fuel)
             baseline_params = {
+                "front_pushrod_offset_mm": step1.front_pushrod_offset_mm,
+                "rear_pushrod_offset_mm": step1.rear_pushrod_offset_mm,
                 "front_heave_spring_nmm": step2.front_heave_nmm,
                 "rear_third_spring_nmm": step2.rear_third_nmm,
                 "rear_spring_rate_nmm": step3.rear_spring_rate_nmm,
@@ -596,7 +690,7 @@ def run_solver(args: "argparse.Namespace") -> None:
                 "rear_camber_deg": step5.rear_camber_deg,
                 "front_arb_blade": step4.front_arb_blade_start,
                 "rear_arb_blade": step4.rear_arb_blade_start,
-                "brake_bias_pct": 56.0,
+                "brake_bias_pct": baseline_brake_bias,
                 "diff_preload_nm": 20.0,
                 "front_ls_comp": step6.lf.ls_comp,
                 "front_ls_rbd": step6.lf.ls_rbd,
@@ -613,7 +707,19 @@ def run_solver(args: "argparse.Namespace") -> None:
                 track=track,
                 baseline_params=baseline_params,
                 budget=search_budget,
+                scenario_profile=resolved_scenario,
             )
+            selected = ls_result.accepted_best or ls_result.best_robust
+            if selected is not None and getattr(selected, "params", None):
+                _apply_candidate_params_to_steps(
+                    getattr(selected, "params", {}),
+                    step1=step1,
+                    step2=step2,
+                    step3=step3,
+                    step4=step4,
+                    step5=step5,
+                    step6=step6,
+                )
             if not args.report_only and not args.json:
                 log()
                 log(ls_result.summary())

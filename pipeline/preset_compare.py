@@ -21,16 +21,19 @@ PRESET_CONFIGS: dict[str, dict[str, Any]] = {
         "stint": True,
         "stint_select": "all",
         "fuel_attr": "race_fuel",
+        "scenario_profile": "race",
     },
     "sprint": {
         "stint": True,
         "stint_select": "last",
         "fuel_attr": "sprint_fuel",
+        "scenario_profile": "sprint",
     },
     "quali": {
         "stint": False,
         "stint_select": "longest",
         "fuel_attr": "quali_fuel",
+        "scenario_profile": "quali",
     },
 }
 
@@ -157,6 +160,7 @@ def _build_args(
     stint_max_laps: int,
     json_path: str,
     sto_path: str,
+    scenario_profile: str,
     wing: float | None = None,
     balance: float | None = None,
 ) -> argparse.Namespace:
@@ -190,6 +194,7 @@ def _build_args(
         top_n=1,
         search_family=None,
         explore=False,
+        scenario_profile=scenario_profile,
         objective_profile="balanced",
         learn=False,
         auto_learn=False,
@@ -325,6 +330,7 @@ def main() -> None:
             stint_max_laps=int(args.stint_max_laps),
             json_path=str(json_path),
             sto_path=str(sto_path),
+            scenario_profile=str(config["scenario_profile"]),
             wing=args.wing,
             balance=args.balance,
         )
@@ -345,6 +351,7 @@ def main() -> None:
                 json_path=str(json_path),
                 verbose=False,
                 emit_report=False,
+                scenario_profile=str(config["scenario_profile"]),
                 stint=bool(config["stint"]),
                 stint_select=str(config["stint_select"]),
                 stint_max_laps=int(args.stint_max_laps),

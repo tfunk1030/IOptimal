@@ -190,14 +190,16 @@ class SupportingSolver:
             front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, -1)
             rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, +1)
             target = _clamp(current_target - 0.5, *getattr(self.car.garage_ranges, "brake_bias_target", (-5.0, 5.0)))
+            migration = _clamp(current_migration - 0.5, *getattr(self.car.garage_ranges, "brake_bias_migration", (-5.0, 5.0)))
             pad = self._pad_step(current_pad, -1)
-            hardware_reasons.append("front-lock evidence shifted hardware seed rearward")
+            hardware_reasons.append("front-lock evidence shifted brake hardware and migration rearward")
         elif front_lock <= 0.03 and braking_pitch <= 0.8 and abs_activity < 8.0:
             front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, +1)
             rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, -1)
             target = _clamp(current_target + 0.5, *getattr(self.car.garage_ranges, "brake_bias_target", (-5.0, 5.0)))
+            migration = _clamp(current_migration + 0.5, *getattr(self.car.garage_ranges, "brake_bias_migration", (-5.0, 5.0)))
             pad = self._pad_step(current_pad, +1)
-            hardware_reasons.append("stable braking allowed a slightly more aggressive hardware seed")
+            hardware_reasons.append("stable braking allowed a slightly more aggressive brake hardware seed")
 
         sol.brake_bias_target = round(target, 1)
         sol.brake_bias_migration = round(migration, 1)
@@ -207,13 +209,12 @@ class SupportingSolver:
         sol.brake_bias_status = "solved"
         if hardware_reasons:
             sol.brake_bias_target_status = "seeded_from_telemetry"
-            sol.brake_bias_migration_status = "seeded_from_setup"
+            sol.brake_bias_migration_status = "seeded_from_telemetry"
             sol.master_cylinder_status = "seeded_from_telemetry"
             sol.pad_compound_status = "seeded_from_telemetry"
             sol.brake_hardware_status = (
                 "Static brake bias is solved from telemetry; brake target, master cylinders, "
-                "and pad compound were conservatively seeded from braking evidence. "
-                "Brake migration stays setup-derived until a real live migration channel is verified."
+                "pad compound, and migration were conservatively seeded from braking evidence."
             )
             sol.brake_bias_reasoning = f"{sol.brake_bias_reasoning} | {'; '.join(hardware_reasons)}"
         else:

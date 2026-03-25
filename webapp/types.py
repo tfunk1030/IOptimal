@@ -24,6 +24,7 @@ class RunCreateRequest:
     fuel: float | None = None
     balance: float = 50.14
     tolerance: float = 0.1
+    scenario_profile: str = "single_lap_safe"
     free_opt: bool = False
     use_learning: bool = True
     synthesize: bool = True

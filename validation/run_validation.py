@@ -1,11 +1,4 @@
-"""
-Objective Validation Script — Sprint 4
-Run: python3 validation/run_validation.py (from repo root)
-
-Reads all bmw_*.json observation files, scores each through
-ObjectiveFunction.evaluate(), then computes Pearson correlation
-between objective score and actual lap time.
-"""
+"""Recompute the current objective evidence from repo-local observations."""
 
 from __future__ import annotations
 
@@ -13,416 +6,447 @@ import json
 import math
 import os
 import sys
-import glob
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import date
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from car_model.cars import get_car
-from track_model.profile import TrackProfile
 from solver.objective import ObjectiveFunction
+from track_model.profile import TrackProfile
+from validation.observation_mapping import normalize_setup_to_canonical_params, resolve_validation_signals
 
 
-OBS_DIR = Path("data/learnings/observations")
-TRACK_JSON = Path("data/tracks/sebring_international_raceway_international.json")
-OUT_PATH = Path("validation/objective_validation.md")
+ROOT = Path(__file__).resolve().parent.parent
+OBS_DIR = ROOT / "data" / "learnings" / "observations"
+TRACK_DIR = ROOT / "data" / "tracks"
+OUT_MD = ROOT / "validation" / "objective_validation.md"
+OUT_JSON = ROOT / "validation" / "objective_validation.json"
 
 
 @dataclass
-class SessionResult:
-    filename: str
+class ObservationSample:
+    path: Path
     session_id: str
+    car: str
+    track: str
+    track_config: str
     lap_time_s: float
-    score_ms: float
-    vetoed: bool
-    veto_reasons: list[str] = field(default_factory=list)
-    # Setup params
-    wing: float = 0.0
-    heave_nmm: float = 0.0
-    third_nmm: float = 0.0
-    torsion_od: float = 0.0
-    front_arb: float = 0
-    rear_arb: float = 0
-    front_rh_static: float = 0.0
-    rear_rh_static: float = 0.0
-    # Telemetry
-    lltd_measured: float = 0.0
-    dynamic_front_rh: float = 0.0
-    front_shock_p99: float = 0.0
-    consistency_cv: float = 0.0
-    lap_number: int = 0
-    # Scoring breakdown
-    lap_gain_ms: float = 0.0
-    platform_risk_ms: float = 0.0
-    envelope_ms: float = 0.0
-    lltd_error_pct: float = 0.0
-    notes: str = ""
+    params: dict[str, Any]
+    telemetry: dict[str, Any]
+    performance: dict[str, Any]
+    signal_sources: dict[str, dict[str, Any]]
 
 
-def setup_to_params(setup: dict) -> dict:
-    """Map observation setup keys → ObjectiveFunction canonical param keys."""
-    return {
-        "wing_angle_deg": float(setup.get("wing", 17.0)),
-        "front_heave_nmm": float(setup.get("front_heave_nmm", 50.0)),
-        "rear_third_nmm": float(setup.get("rear_third_nmm", 530.0)),
-        "torsion_bar_od_mm": float(setup.get("torsion_bar_od_mm", 13.9)),
-        "front_arb_blade": float(setup.get("front_arb_blade", 1)),
-        "rear_arb_blade": float(setup.get("rear_arb_blade", 3)),
-        "front_rh_static": float(setup.get("front_rh_static", 30.0)),
-        "rear_rh_static": float(setup.get("rear_rh_static", 47.0)),
-        "front_camber_deg": float(setup.get("front_camber_deg", -3.0)),
-        "rear_camber_deg": float(setup.get("rear_camber_deg", -2.0)),
-        "front_toe_mm": float(setup.get("front_toe_mm", -0.4)),
-        "rear_toe_mm": float(setup.get("rear_toe_mm", -0.2)),
-        # Dampers (LF as proxy for symmetric)
-        "lf_ls_comp": float(setup.get("dampers", {}).get("lf", {}).get("ls_comp", 7)),
-        "lf_ls_rbd": float(setup.get("dampers", {}).get("lf", {}).get("ls_rbd", 6)),
-        "lf_hs_comp": float(setup.get("dampers", {}).get("lf", {}).get("hs_comp", 5)),
-        "lf_hs_rbd": float(setup.get("dampers", {}).get("lf", {}).get("hs_rbd", 3)),
-        "lr_ls_comp": float(setup.get("dampers", {}).get("lr", {}).get("ls_comp", 5)),
-        "lr_ls_rbd": float(setup.get("dampers", {}).get("lr", {}).get("ls_rbd", 5)),
-    }
+def slugify(value: str) -> str:
+    return (
+        str(value or "")
+        .strip()
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+        .replace(".", "")
+    )
 
 
 def pearson_r(xs: list[float], ys: list[float]) -> float:
-    """Pearson correlation coefficient."""
-    n = len(xs)
-    if n < 2:
+    if len(xs) < 2 or len(ys) < 2 or len(xs) != len(ys):
         return float("nan")
-    mx = sum(xs) / n
-    my = sum(ys) / n
+    mx = sum(xs) / len(xs)
+    my = sum(ys) / len(ys)
     num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
     sx = math.sqrt(sum((x - mx) ** 2 for x in xs))
     sy = math.sqrt(sum((y - my) ** 2 for y in ys))
-    if sx * sy == 0:
+    if sx == 0 or sy == 0:
         return float("nan")
     return num / (sx * sy)
 
 
-def load_observations() -> list[dict]:
-    files = sorted(glob.glob(str(OBS_DIR / "bmw_*.json")))
-    obs = []
-    for f in files:
-        try:
-            d = json.loads(Path(f).read_text())
-            d["_filename"] = os.path.basename(f)
-            obs.append(d)
-        except Exception as e:
-            print(f"  [WARN] Cannot parse {os.path.basename(f)}: {e}")
-    return obs
+def spearman_r(xs: list[float], ys: list[float]) -> float:
+    if len(xs) < 2 or len(ys) < 2 or len(xs) != len(ys):
+        return float("nan")
+
+    def _ranks(values: list[float]) -> list[float]:
+        ordered = sorted(enumerate(values), key=lambda item: item[1])
+        ranks = [0.0] * len(values)
+        for rank, (idx, _) in enumerate(ordered, start=1):
+            ranks[idx] = float(rank)
+        return ranks
+
+    return pearson_r(_ranks(xs), _ranks(ys))
 
 
-def run_validation() -> list[SessionResult]:
-    car = get_car("bmw")
-    track = TrackProfile.load(str(TRACK_JSON))
-    obj = ObjectiveFunction(car, track)
-
-    observations = load_observations()
-    print(f"Loaded {len(observations)} observation files")
-
-    results = []
-    skip_no_lap = 0
-    score_errors = 0
-
-    for d in observations:
-        fname = d["_filename"]
-        session_id = d.get("session_id", fname.replace(".json", ""))
-        perf = d.get("performance", {})
-        setup = d.get("setup", {})
-        tel = d.get("telemetry", {})
-
-        lap_time = perf.get("best_lap_time_s")
-        if not lap_time or float(lap_time) < 80:
-            skip_no_lap += 1
-            continue
-
-        lap_time = float(lap_time)
-        params = setup_to_params(setup)
-
-        # Run objective
-        score_ms = float("-inf")
-        vetoed = True
-        veto_reasons: list[str] = []
-        lap_gain_ms = 0.0
-        platform_risk_ms = 0.0
-        envelope_ms = 0.0
-        notes = ""
-
-        try:
-            ev = obj.evaluate(params)
-            score_ms = ev.breakdown.total_score_ms
-            vetoed = ev.hard_vetoed
-            veto_reasons = ev.veto_reasons or []
-            lap_gain_ms = ev.breakdown.lap_gain_ms
-            platform_risk_ms = ev.breakdown.platform_risk.total_ms
-            envelope_ms = ev.breakdown.envelope_penalty.total_ms
-        except Exception as e:
-            score_errors += 1
-            notes = f"Eval error: {e}"
-            score_ms = float("nan")
-            vetoed = False
-
-        # LLTD error from objective target (52% nominal)
-        lltd_measured = tel.get("lltd_measured", 0.0) or 0.0
-        lltd_target = 0.52  # BMW objective target
-        lltd_error_pct = abs(float(lltd_measured) - lltd_target) * 100 if lltd_measured else 0.0
-
-        results.append(SessionResult(
-            filename=fname,
-            session_id=session_id,
-            lap_time_s=lap_time,
-            score_ms=score_ms,
-            vetoed=vetoed,
-            veto_reasons=veto_reasons,
-            wing=float(setup.get("wing", 17.0)),
-            heave_nmm=float(setup.get("front_heave_nmm", 50.0)),
-            third_nmm=float(setup.get("rear_third_nmm", 530.0)),
-            torsion_od=float(setup.get("torsion_bar_od_mm", 13.9)),
-            front_arb=float(setup.get("front_arb_blade", 1)),
-            rear_arb=float(setup.get("rear_arb_blade", 3)),
-            front_rh_static=float(setup.get("front_rh_static", 30.0)),
-            rear_rh_static=float(setup.get("rear_rh_static", 47.0)),
-            lltd_measured=float(lltd_measured),
-            dynamic_front_rh=float(tel.get("dynamic_front_rh_mm", 0.0) or 0.0),
-            front_shock_p99=float(tel.get("front_shock_vel_p99_mps", 0.0) or 0.0),
-            consistency_cv=float(perf.get("consistency_cv", 0.0) or 0.0),
-            lap_number=int(perf.get("lap_number", 0) or 0),
-            lap_gain_ms=lap_gain_ms,
-            platform_risk_ms=platform_risk_ms,
-            envelope_ms=envelope_ms,
-            lltd_error_pct=lltd_error_pct,
-            notes=notes,
-        ))
-
-    print(f"Scored: {len(results)}, Skipped (no lap time): {skip_no_lap}, Errors: {score_errors}")
-    return results
-
-
-def compute_correlations(results: list[SessionResult]) -> dict:
-    # Filter for non-vetoed, non-nan results only (can score vetoed too for completeness)
-    non_vetoed = [r for r in results if not r.vetoed and not math.isnan(r.score_ms)]
-    all_valid = [r for r in results if not math.isnan(r.score_ms)]
-
-    def corr_safe(xs, ys):
-        pairs = [(x, y) for x, y in zip(xs, ys) if not math.isnan(x) and not math.isnan(y)]
-        if len(pairs) < 2:
-            return float("nan"), 0
-        xs2, ys2 = zip(*pairs)
-        return pearson_r(list(xs2), list(ys2)), len(pairs)
-
-    lap_times_nv = [r.lap_time_s for r in non_vetoed]
-    lap_times_all = [r.lap_time_s for r in all_valid]
-
-    corr = {}
-    for subset, label in [(non_vetoed, "non_vetoed"), (all_valid, "all_valid")]:
-        lt = [r.lap_time_s for r in subset]
-        corr[f"{label}_total_score"] = corr_safe(lt, [r.score_ms for r in subset])
-        corr[f"{label}_lap_gain"] = corr_safe(lt, [r.lap_gain_ms for r in subset])
-        corr[f"{label}_platform_risk"] = corr_safe(lt, [r.platform_risk_ms for r in subset])
-        corr[f"{label}_envelope"] = corr_safe(lt, [r.envelope_ms for r in subset])
-        corr[f"{label}_lltd_error"] = corr_safe(lt, [r.lltd_error_pct for r in subset])
-        corr[f"{label}_dynamic_rh"] = corr_safe(lt, [r.dynamic_front_rh for r in subset])
-        corr[f"{label}_consistency"] = corr_safe(lt, [r.consistency_cv for r in subset])
-    return corr
-
-
-def format_session_id(session_id: str) -> str:
-    """Shorten session id for table display."""
-    if "bmwlmdh_sebring" in session_id and "2026-" in session_id:
-        # Extract just the date-time suffix
-        parts = session_id.split("_")
-        for i, p in enumerate(parts):
-            if p.startswith("2026-"):
-                return "_".join(parts[i:])[:20]
-    return session_id[-30:]
-
-
-def write_report(results: list[SessionResult], correlations: dict):
-    today = date.today().isoformat()
-    total = len(results)
-    vetoed = [r for r in results if r.vetoed]
-    non_vetoed = [r for r in results if not r.vetoed and not math.isnan(r.score_ms)]
-
-    lap_times = [r.lap_time_s for r in results]
-    fastest = min(results, key=lambda r: r.lap_time_s)
-    slowest = max(results, key=lambda r: r.lap_time_s)
-
-    # Sort by lap time for table
-    sorted_results = sorted(results, key=lambda r: r.lap_time_s)
-
-    lines = []
-    lines.append(f"## Objective Validation — {today}")
-    lines.append("")
-    lines.append("**Branch:** claw-research  ")
-    lines.append(f"**Dataset:** {total} BMW LMDH sessions with lap times, Sebring International  ")
-    lines.append(f"**Objective version:** Sprint 4 (e0c78bb — LLTD calibration + vortex fix)  ")
-    lines.append("")
-
-    # Dataset summary
-    lines.append("### Dataset Summary")
-    lines.append("")
-    lines.append("| Metric | Value |")
-    lines.append("|--------|-------|")
-    lines.append(f"| Sessions with lap times | {total} |")
-    lines.append(f"| Hard-vetoed | {len(vetoed)} ({len(vetoed)*100//total}%) |")
-    lines.append(f"| Non-vetoed, scoreable | {len(non_vetoed)} |")
-    lines.append(f"| Lap time range | {min(lap_times):.3f}s – {max(lap_times):.3f}s (Δ = {max(lap_times)-min(lap_times):.3f}s) |")
-    lines.append(f"| Fastest session | {format_session_id(fastest.session_id)} — {fastest.lap_time_s:.3f}s |")
-    lines.append(f"| Slowest session | {format_session_id(slowest.session_id)} — {slowest.lap_time_s:.3f}s |")
-
-    # Setup variation summary
-    heave_vals = sorted(set(round(r.heave_nmm, 0) for r in results))
-    third_vals = sorted(set(round(r.third_nmm, 0) for r in results))
-    od_vals = sorted(set(round(r.torsion_od, 2) for r in results))
-    f_arb_vals = sorted(set(int(r.front_arb) for r in results))
-    r_arb_vals = sorted(set(int(r.rear_arb) for r in results))
-    lines.append(f"| Heave spring variants | {heave_vals} N/mm |")
-    lines.append(f"| Third spring variants | {third_vals} N/mm |")
-    lines.append(f"| Torsion bar OD variants | {od_vals} mm |")
-    lines.append(f"| Front ARB blade variants | {f_arb_vals} |")
-    lines.append(f"| Rear ARB blade variants | {r_arb_vals} |")
-    lines.append("")
-
-    # Full data table (sorted by lap time)
-    lines.append("### Data")
-    lines.append("")
-    lines.append("| Session | Lap Time (s) | Obj Score (ms) | Vetoed | Heave | 3rd | Torsion | F-ARB | R-ARB | LLTD_meas | Dyn_FRH | Notes |")
-    lines.append("|---------|-------------|----------------|--------|-------|-----|---------|-------|-------|-----------|---------|-------|")
-
-    for rank, r in enumerate(sorted_results, 1):
-        sid = format_session_id(r.session_id)
-        score_str = f"{r.score_ms:.1f}" if not math.isnan(r.score_ms) else "N/A"
-        veto_str = "✗ " + (r.veto_reasons[0][:20] if r.veto_reasons else "veto") if r.vetoed else "—"
-        lltd_str = f"{r.lltd_measured*100:.1f}%" if r.lltd_measured else "—"
-        rh_str = f"{r.dynamic_front_rh:.1f}" if r.dynamic_front_rh else "—"
-        lines.append(
-            f"| {rank}. {sid} | {r.lap_time_s:.3f} | {score_str} | {veto_str} "
-            f"| {r.heave_nmm:.0f} | {r.third_nmm:.0f} | {r.torsion_od:.2f} "
-            f"| {int(r.front_arb)} | {int(r.rear_arb)} | {lltd_str} | {rh_str} | {r.notes[:30] if r.notes else ''} |"
-        )
-    lines.append("")
-
-    # Correlation section
-    lines.append("### Correlation")
-    lines.append("")
-    r_nv = correlations.get("non_vetoed_total_score", (float("nan"), 0))
-    r_all = correlations.get("all_valid_total_score", (float("nan"), 0))
-    lines.append(f"**Pearson r (lap_time vs obj_score, non-vetoed only, n={r_nv[1]}):** `{r_nv[0]:.3f}`  ")
-    lines.append(f"**Pearson r (lap_time vs obj_score, all valid, n={r_all[1]}):** `{r_all[0]:.3f}`  ")
-    lines.append("")
-    lines.append("_Note: Negative r means higher score → faster lap (desired). Values near 0 indicate low signal._")
-    lines.append("")
-    lines.append("| Term | r (non-vetoed) | r (all) | Direction | Notes |")
-    lines.append("|------|---------------|---------|-----------|-------|")
-
-    term_map = [
-        ("total_score", "Total Score", "neg = good"),
-        ("lap_gain", "Lap Gain", "neg = good"),
-        ("platform_risk", "Platform Risk", "pos = good"),
-        ("envelope", "Envelope Penalty", "neg = good"),
-        ("lltd_error", "LLTD Error %", "pos = good (high error → slower)"),
-        ("dynamic_rh", "Dynamic Front RH", "neg (lower RH → faster in theory)"),
-        ("consistency", "Consistency CV", "pos (higher variance → slower)"),
+def _find_track_profile(track_name: str, track_config: str) -> Path | None:
+    track_slug = slugify(track_name)
+    config_slug = slugify(track_config)
+    candidates = [
+        TRACK_DIR / f"{track_slug}_{config_slug}.json",
+        TRACK_DIR / f"{track_slug}.json",
     ]
-    for key, label, direction in term_map:
-        r_nv2 = correlations.get(f"non_vetoed_{key}", (float("nan"), 0))
-        r_all2 = correlations.get(f"all_valid_{key}", (float("nan"), 0))
-        r_nv_str = f"{r_nv2[0]:.3f}" if not math.isnan(r_nv2[0]) else "N/A"
-        r_all_str = f"{r_all2[0]:.3f}" if not math.isnan(r_all2[0]) else "N/A"
-        lines.append(f"| {label} | {r_nv_str} | {r_all_str} | {direction} | |")
-    lines.append("")
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
-    # Key findings
-    lines.append("### Key Findings")
-    lines.append("")
 
-    # Find best scoring term (highest |r| for non-vetoed)
-    term_scores = {}
-    for key, label, _ in term_map:
-        r_nv2 = correlations.get(f"non_vetoed_{key}", (float("nan"), 0))
-        if not math.isnan(r_nv2[0]):
-            term_scores[label] = abs(r_nv2[0])
-    if term_scores:
-        best_term = max(term_scores, key=term_scores.get)
-        lines.append(f"- **Best predictor:** `{best_term}` (|r| = {term_scores[best_term]:.3f}) — strongest single-term correlation with lap time")
-    else:
-        lines.append("- **Best predictor:** Insufficient data to determine")
+def load_observations() -> list[ObservationSample]:
+    rows: list[ObservationSample] = []
+    for path in sorted(OBS_DIR.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        perf = payload.get("performance", {}) or {}
+        lap_time = perf.get("best_lap_time_s") or perf.get("lap_time_s")
+        try:
+            lap_time_s = float(lap_time)
+        except (TypeError, ValueError):
+            continue
+        if lap_time_s < 60.0:
+            continue
+        car = str(payload.get("car") or "").strip().lower()
+        track = str(payload.get("track") or "").strip()
+        track_config = str(payload.get("track_config") or "").strip()
+        setup = payload.get("setup", {}) or {}
+        telemetry = payload.get("telemetry", {}) or {}
+        rows.append(
+            ObservationSample(
+                path=path,
+                session_id=str(payload.get("session_id") or path.stem),
+                car=car,
+                track=track,
+                track_config=track_config,
+                lap_time_s=lap_time_s,
+                params=normalize_setup_to_canonical_params(setup, car=car),
+                telemetry=telemetry,
+                performance=perf,
+                signal_sources=resolve_validation_signals(telemetry),
+            )
+        )
+    return rows
 
-    # LLTD analysis on fast sessions
-    top5 = sorted_results[:5]
-    top5_lltd = [r.lltd_measured for r in top5 if r.lltd_measured > 0]
-    if top5_lltd:
-        avg_fast_lltd = sum(top5_lltd) / len(top5_lltd)
-        lines.append(f"- **Fast session LLTD:** Top-5 average LLTD = {avg_fast_lltd*100:.1f}% vs objective target 52% — gap of {(0.52 - avg_fast_lltd)*100:.1f}% (same rear-bias finding as Sprint 3)")
 
-    # Overfitted setups (high score but slow)
-    overfitted = [r for r in non_vetoed if r.score_ms > -800 and r.lap_time_s > 110.5]
-    if overfitted:
-        lines.append(f"- **Potential overfit ({len(overfitted)} setups):** Score > -800ms but lap_time > 110.5s — objective may overvalue certain physics terms")
-    else:
-        lines.append("- **Overfit check:** No obvious cases where score is high but lap time is slow")
+def _count_by_bucket(rows: list[ObservationSample]) -> dict[str, dict[str, int]]:
+    counts: dict[str, dict[str, int]] = {}
+    for row in rows:
+        counts.setdefault(row.car, {})
+        track_key = f"{row.track} ({row.track_config or 'default'})"
+        counts[row.car][track_key] = counts[row.car].get(track_key, 0) + 1
+    return counts
 
-    # Veto false-positive analysis
-    fast_vetoed = [r for r in vetoed if r.lap_time_s < 110.0]
-    if fast_vetoed:
-        lines.append(f"- **False veto concern:** {len(fast_vetoed)} vetoed sessions have lap_time < 110s — these ran fine in iRacing, vortex threshold still too aggressive")
-    else:
-        lines.append(f"- **Veto rate:** {len(vetoed)}/{total} sessions vetoed ({len(vetoed)*100//total}%) — check for false positives if fast sessions are in vetoed set")
 
-    # Setup diversity
-    lines.append(f"- **Setup diversity:** {len(heave_vals)} distinct heave values, {len(od_vals)} torsion ODs, {len(r_arb_vals)} rear ARB blades — low variation continues to limit correlation power")
+def _confidence_tier(row: ObservationSample, count: int) -> str:
+    track_slug = slugify(row.track)
+    if row.car == "bmw" and track_slug == "sebring_international_raceway":
+        return "calibrated"
+    if row.car == "ferrari" and track_slug == "sebring_international_raceway":
+        return "partial"
+    if row.car == "cadillac" and track_slug == "silverstone_circuit":
+        return "exploratory"
+    return "unsupported"
 
-    # New vs old sessions
-    new_sessions = [r for r in results if "2026-03-1" in r.filename or "2026-03-2" in r.filename]
-    if new_sessions:
-        new_lap_times = [r.lap_time_s for r in new_sessions if "2026-03-18" in r.filename or "2026-03-19" in r.filename or "2026-03-20" in r.filename]
-        if new_lap_times:
-            lines.append(f"- **New sessions (Mar 18+):** {len(new_lap_times)} new sessions with lap times {min(new_lap_times):.3f}s–{max(new_lap_times):.3f}s — consistent with earlier data")
 
-    lines.append("")
-    lines.append("### Recommended Weight Adjustments")
-    lines.append("")
-    lines.append("Based on Sprint 4 validation data:")
-    lines.append("")
-    lines.append("| Parameter | Current | Recommended | Rationale |")
-    lines.append("|-----------|---------|-------------|-----------|")
-    lines.append("| LLTD target (BMW Sebring) | 52% | 40–43% | IBT consistently shows 38–43% in fast sessions |")
-    lines.append("| Vortex p-tile for excursion | p99 | p95 | p99 inflates excursion, causes 43%+ false veto rate |")
-    lines.append("| LLTD weight in objective | 0.7 | 0.5 | Over-penalizing rear-bias balance that is actually fast |")
-    lines.append("| Empirical k-NN weight | 0.40 | 0.40 | Sufficient when ≥10 sessions available — keep |")
-    lines.append("")
+def _serialize_file_mtime(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"path": str(path), "exists": False}
+    ts = path.stat().st_mtime
+    return {
+        "path": str(path),
+        "exists": True,
+        "modified_at_utc": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
+    }
 
-    lines.append("---")
-    lines.append("")
-    lines.append("_Validation generated by `claw-research` Sprint 4 — 2026-03-21._  ")
-    lines.append("_Update when: vortex threshold recalibrated, LLTD target updated, or new setup variety available._")
 
-    OUT_PATH.write_text("\n".join(lines))
-    print(f"Report written to {OUT_PATH}")
+def _target_samples(rows: list[ObservationSample]) -> list[ObservationSample]:
+    return [
+        row
+        for row in rows
+        if row.car == "bmw" and slugify(row.track) == "sebring_international_raceway"
+    ]
+
+
+def build_validation_report() -> dict[str, Any]:
+    observations = load_observations()
+    if not observations:
+        raise RuntimeError("No observation files with usable lap times were found.")
+
+    target_rows = _target_samples(observations)
+    if not target_rows:
+        raise RuntimeError("No BMW/Sebring observations were found.")
+
+    track_path = _find_track_profile(target_rows[0].track, target_rows[0].track_config)
+    track_profile = TrackProfile.load(str(track_path)) if track_path is not None else None
+    objective = ObjectiveFunction(get_car("bmw"), track_profile, scenario_profile="single_lap_safe")
+
+    scored_rows: list[dict[str, Any]] = []
+    for row in target_rows:
+        status = {
+            "session_id": row.session_id,
+            "filename": row.path.name,
+            "lap_time_s": row.lap_time_s,
+            "vetoed": False,
+            "score_ms": float("nan"),
+            "lap_gain_ms": float("nan"),
+            "platform_risk_ms": float("nan"),
+            "telemetry_uncertainty_ms": float("nan"),
+            "envelope_penalty_ms": float("nan"),
+            "staleness_penalty_ms": float("nan"),
+            "empirical_penalty_ms": float("nan"),
+            "veto_reasons": [],
+            "signal_sources": row.signal_sources,
+            "params": row.params,
+        }
+        try:
+            ev = objective.evaluate(row.params)
+            status.update(
+                {
+                    "score_ms": ev.score,
+                    "vetoed": ev.hard_vetoed,
+                    "veto_reasons": list(ev.veto_reasons),
+                    "lap_gain_ms": ev.breakdown.lap_gain_ms,
+                    "platform_risk_ms": ev.breakdown.platform_risk.total_ms,
+                    "telemetry_uncertainty_ms": ev.breakdown.telemetry_uncertainty.total_ms,
+                    "envelope_penalty_ms": ev.breakdown.envelope_penalty.total_ms,
+                    "staleness_penalty_ms": ev.breakdown.staleness_penalty_ms,
+                    "empirical_penalty_ms": ev.breakdown.empirical_penalty_ms,
+                }
+            )
+        except Exception as exc:
+            status["error"] = str(exc)
+        scored_rows.append(status)
+
+    all_valid = [row for row in scored_rows if not math.isnan(float(row["score_ms"]))]
+    non_vetoed = [row for row in all_valid if not bool(row["vetoed"])]
+    lap_times_all = [float(row["lap_time_s"]) for row in all_valid]
+    scores_all = [float(row["score_ms"]) for row in all_valid]
+    lap_times_nv = [float(row["lap_time_s"]) for row in non_vetoed]
+    scores_nv = [float(row["score_ms"]) for row in non_vetoed]
+
+    param_correlations: list[dict[str, Any]] = []
+    numeric_param_keys = sorted(
+        key
+        for key in target_rows[0].params.keys()
+        if isinstance(target_rows[0].params.get(key), (int, float))
+    )
+    for key in numeric_param_keys:
+        values = [row["params"].get(key) for row in non_vetoed]
+        if any(value is None for value in values):
+            continue
+        numeric_values = [float(value) for value in values]
+        if len(set(round(value, 6) for value in numeric_values)) < 2:
+            continue
+        param_correlations.append(
+            {
+                "field": key,
+                "pearson_r": pearson_r(numeric_values, lap_times_nv),
+                "spearman_r": spearman_r(numeric_values, lap_times_nv),
+            }
+        )
+    param_correlations.sort(key=lambda item: abs(item["spearman_r"]), reverse=True)
+
+    signal_usage: dict[str, dict[str, int]] = {}
+    for row in scored_rows:
+        for metric, resolved in row["signal_sources"].items():
+            bucket = signal_usage.setdefault(metric, {"direct": 0, "fallback": 0, "missing": 0})
+            source = str(resolved.get("source") or "missing")
+            bucket[source] = bucket.get(source, 0) + 1
+
+    newest_observation = max(sample.path.stat().st_mtime for sample in observations)
+    model_paths = [
+        ROOT / "data" / "learnings" / "heave_calibration_bmw_sebring.json",
+        ROOT / "data" / "learnings" / "models" / "bmw_sebring_empirical.json",
+        ROOT / "data" / "learnings" / "models" / "bmw_global_empirical.json",
+    ]
+    freshness = []
+    for path in model_paths:
+        entry = _serialize_file_mtime(path)
+        if entry.get("exists"):
+            entry["older_than_latest_observation_days"] = round(
+                max(0.0, newest_observation - path.stat().st_mtime) / 86400.0,
+                2,
+            )
+        freshness.append(entry)
+
+    bmw_car = get_car("bmw")
+    garage_model = bmw_car.active_garage_output_model("sebring")
+    total_fallbacks = sum(bucket["fallback"] for bucket in signal_usage.values())
+    total_missing = sum(bucket["missing"] for bucket in signal_usage.values())
+
+    support_rows: list[dict[str, Any]] = []
+    by_bucket: dict[tuple[str, str, str], int] = {}
+    exemplar_rows: dict[tuple[str, str, str], ObservationSample] = {}
+    for row in observations:
+        bucket_key = (row.car, row.track, row.track_config)
+        by_bucket[bucket_key] = by_bucket.get(bucket_key, 0) + 1
+        exemplar_rows.setdefault(bucket_key, row)
+    for bucket_key, count in sorted(by_bucket.items(), key=lambda item: (item[0][0], item[0][1])):
+        exemplar = exemplar_rows[bucket_key]
+        support_rows.append(
+            {
+                "car": exemplar.car,
+                "track": exemplar.track,
+                "track_config": exemplar.track_config,
+                "samples": count,
+                "confidence_tier": _confidence_tier(exemplar, count),
+            }
+        )
+
+    claim_audit = {
+        "garage_output_regressions": {
+            "status": "supported" if garage_model is not None else "unsupported",
+            "detail": "BMW/Sebring garage-output model is available for full rematerialized legality checks."
+            if garage_model is not None
+            else "No BMW/Sebring garage-output model is configured.",
+        },
+        "telemetry_extraction_proxies": {
+            "status": "partial" if total_fallbacks > 0 or total_missing > 0 else "supported",
+            "detail": f"{total_fallbacks} fallback signal resolutions and {total_missing} missing signal resolutions were observed across validation metrics.",
+        },
+        "learned_corrections": {
+            "status": "supported" if any(entry.get("exists") for entry in freshness) else "unsupported",
+            "detail": "Empirical and heave-calibration model files were found for BMW/Sebring."
+            if any(entry.get("exists") for entry in freshness)
+            else "No BMW/Sebring empirical or heave-calibration files were found.",
+        },
+        "predictor_directionality": {
+            "status": "unverified",
+            "detail": "Directional predictor claims remain downgraded until the objective ranking and full predictor sanity metrics show stable negative correlation with lap time.",
+        },
+        "objective_ranking": {
+            "status": "unverified",
+            "detail": "Current score-vs-lap correlation remains near zero, so objective rankings are not authoritative yet.",
+        },
+    }
+
+    return {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "workflow_map": [
+            "IBT",
+            "track/analyzer",
+            "diagnosis/driver/style",
+            "solve_chain/legality",
+            "report/.sto",
+            "webapp",
+        ],
+        "support_matrix": support_rows,
+        "sample_counts_by_car_track": _count_by_bucket(observations),
+        "bmw_sebring": {
+            "samples": len(target_rows),
+            "non_vetoed_samples": len(non_vetoed),
+            "vetoed_samples": len(target_rows) - len(non_vetoed),
+            "veto_rate": (len(target_rows) - len(non_vetoed)) / len(target_rows),
+            "score_correlation": {
+                "pearson_r_all_valid": pearson_r(scores_all, lap_times_all),
+                "spearman_r_all_valid": spearman_r(scores_all, lap_times_all),
+                "pearson_r_non_vetoed": pearson_r(scores_nv, lap_times_nv),
+                "spearman_r_non_vetoed": spearman_r(scores_nv, lap_times_nv),
+            },
+            "top_parameter_correlations": param_correlations[:12],
+            "signal_usage": signal_usage,
+            "model_freshness": freshness,
+            "claim_audit": claim_audit,
+            "track_profile": str(track_path) if track_path is not None else None,
+            "rows": scored_rows,
+        },
+    }
+
+
+def write_report(report: dict[str, Any]) -> None:
+    bmw = report["bmw_sebring"]
+    score_corr = bmw["score_correlation"]
+    lines = [
+        f"## Objective Validation — {report['generated_at_utc'][:10]}",
+        "",
+        "### Workflow",
+        "",
+        f"`{' -> '.join(report['workflow_map'])}`",
+        "",
+        "### Support Tiers",
+        "",
+        "| Car | Track | Samples | Confidence |",
+        "|-----|-------|---------|------------|",
+    ]
+    for row in report["support_matrix"]:
+        lines.append(
+            f"| {row['car']} | {row['track']} ({row['track_config'] or 'default'}) | {row['samples']} | {row['confidence_tier']} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "### BMW/Sebring Evidence",
+            "",
+            f"- Samples: `{bmw['samples']}` total, `{bmw['non_vetoed_samples']}` non-vetoed",
+            f"- Veto rate: `{bmw['veto_rate']:.3f}`",
+            f"- Score correlation (all valid): Pearson `{score_corr['pearson_r_all_valid']:+.6f}`, Spearman `{score_corr['spearman_r_all_valid']:+.6f}`",
+            f"- Score correlation (non-vetoed): Pearson `{score_corr['pearson_r_non_vetoed']:+.6f}`, Spearman `{score_corr['spearman_r_non_vetoed']:+.6f}`",
+            "",
+            "### Claim Audit",
+            "",
+        ]
+    )
+    for claim_name, payload in bmw["claim_audit"].items():
+        lines.append(f"- `{claim_name}`: **{payload['status']}** — {payload['detail']}")
+
+    lines.extend(
+        [
+            "",
+            "### Signal Usage",
+            "",
+            "| Metric | Direct | Fallback | Missing |",
+            "|--------|--------|----------|---------|",
+        ]
+    )
+    for metric, counts in sorted(bmw["signal_usage"].items()):
+        lines.append(
+            f"| {metric} | {counts['direct']} | {counts['fallback']} | {counts['missing']} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "### Top Raw Setup Correlations",
+            "",
+            "| Field | Pearson r | Spearman r |",
+            "|-------|-----------|------------|",
+        ]
+    )
+    for row in bmw["top_parameter_correlations"]:
+        lines.append(
+            f"| {row['field']} | {row['pearson_r']:+.6f} | {row['spearman_r']:+.6f} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "### Model Freshness",
+            "",
+            "| File | Exists | Modified (UTC) | Older Than Latest Observation (days) |",
+            "|------|--------|----------------|--------------------------------------|",
+        ]
+    )
+    for row in bmw["model_freshness"]:
+        lines.append(
+            f"| {Path(row['path']).name} | {row.get('exists', False)} | {row.get('modified_at_utc', 'N/A')} | {row.get('older_than_latest_observation_days', 'N/A')} |"
+        )
+
+    OUT_MD.write_text("\n".join(lines), encoding="utf-8")
+    OUT_JSON.write_text(json.dumps(report, indent=2, allow_nan=True), encoding="utf-8")
+
+
+def main() -> None:
+    os.chdir(ROOT)
+    report = build_validation_report()
+    write_report(report)
+    bmw = report["bmw_sebring"]
+    corr = bmw["score_correlation"]["spearman_r_non_vetoed"]
+    print(f"BMW/Sebring samples: {bmw['samples']} (non-vetoed {bmw['non_vetoed_samples']})")
+    print(f"BMW/Sebring Spearman (non-vetoed): {corr:+.6f}")
+    print(f"Wrote {OUT_MD}")
+    print(f"Wrote {OUT_JSON}")
 
 
 if __name__ == "__main__":
-    os.chdir(Path(__file__).parent.parent)
-    results = run_validation()
-
-    if not results:
-        print("ERROR: No results with lap times found.")
-        sys.exit(1)
-
-    correlations = compute_correlations(results)
-
-    # Print summary to stdout
-    non_vetoed = [r for r in results if not r.vetoed]
-    print(f"\n=== SUMMARY ===")
-    print(f"Total sessions scored: {len(results)}")
-    print(f"Vetoed: {sum(1 for r in results if r.vetoed)}")
-    print(f"Non-vetoed: {len(non_vetoed)}")
-    if results:
-        lap_times = [r.lap_time_s for r in results]
-        print(f"Lap time range: {min(lap_times):.3f}s – {max(lap_times):.3f}s")
-    r_nv = correlations.get("non_vetoed_total_score", (float("nan"), 0))
-    print(f"Pearson r (score vs lap_time, non-vetoed): {r_nv[0]:.3f}")
-
-    write_report(results, correlations)
+    main()

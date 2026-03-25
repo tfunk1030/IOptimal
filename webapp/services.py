@@ -232,6 +232,7 @@ class IOptimalWebService:
             balance=request.balance,
             tolerance=request.tolerance,
             fuel=request.fuel,
+            scenario_profile=request.scenario_profile,
             free=request.free_opt,
             sto=str(sto_path),
             json=str(json_path),
@@ -289,6 +290,7 @@ class IOptimalWebService:
         overview_badges = [
             f"Wing {result['wing']:.0f} deg" if result.get("wing") is not None else "Wing auto",
             f"Fuel {result.get('fuel_l', 0):.0f} L",
+            f"Scenario {request.scenario_profile.replace('_', ' ')}",
         ]
         if result.get("selected_candidate_family"):
             overview_badges.append(f"Family {str(result['selected_candidate_family']).replace('_', ' ')}")
@@ -350,6 +352,7 @@ class IOptimalWebService:
             balance=request.balance,
             tolerance=request.tolerance,
             fuel=request.fuel if request.fuel is not None else 89.0,
+            scenario_profile=request.scenario_profile,
             free=request.free_opt,
             json=False,
             save=str(json_path),
@@ -394,7 +397,11 @@ class IOptimalWebService:
             assessment="Physics-only recommendation",
             confidence_label="Telemetry-free",
             confidence_value=None,
-            overview_badges=[f"Wing {request.wing:.0f} deg", f"Fuel {(request.fuel if request.fuel is not None else 89.0):.0f} L"],
+            overview_badges=[
+                f"Wing {request.wing:.0f} deg",
+                f"Fuel {(request.fuel if request.fuel is not None else 89.0):.0f} L",
+                f"Scenario {request.scenario_profile.replace('_', ' ')}",
+            ],
             problems=[],
             top_changes=_pick_top_changes(setup_groups),
             setup_groups=setup_groups,
