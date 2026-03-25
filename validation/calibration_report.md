@@ -45,14 +45,15 @@ Generated from 69 BMW Sebring observations.
 
 ## Optimized Weights (Grid Search)
 
-Best Spearman ρ achievable: **-0.0686**
+Best Spearman ρ achievable: **-0.3023**
 
 | Weight | Current | Suggested |
 |--------|---------|-----------|
+| lap_gain | 1.0 | 0.5 |
 | platform | 1.0 | 0.0 |
 | driver | 0.5 | 0.0 |
 | telemetry | 0.6 | 0.0 |
-| envelope | 0.7 | 0.2 |
+| envelope | 0.7 | 0.0 |
 
 ## Top 10 Best-Scored Setups vs Actual Lap Time
 
@@ -178,3 +179,28 @@ Based on 68 real BMW sessions at Sebring:
 thick torsion bar) and rear compliance (soft 3rd spring). Rear bottoming is
 a significant pace killer. Higher LLTD (rear weight transfer) is correlated
 with pace — the car prefers a rear-biased balance at this track.
+
+## Calibration Interpretation
+
+Best ρ = -0.3023 achieved with lap_gain weight=0.5, all penalties=0.0 total
+
+**Why penalty weights = 0.0:**
+When `track=None` (intentional — see score_observations docstring), the physics terms
+platform_risk, driver_mismatch, and telemetry_uncertainty all evaluate to zero.
+They require a track profile (excursion data, speed histogram) to be non-zero.
+This is by design: calibration without a track profile avoids session-specific bias.
+
+**What this means for the objective function:**
+  - lap_gain_ms is the primary signal (ρ=-0.30). It predicts pace well on its own.
+  - Penalty terms add value at runtime (with track profile) but can't be calibrated
+    from track-agnostic observations.
+  - To calibrate penalty weights, re-run with a specific track profile loaded.
+    That will produce non-zero platform_risk values for comparison.
+
+**Action items:**
+  1. Current penalty weights are physics-derived, not data-driven — leave as-is until
+     per-track calibration with track profile is added.
+  2. lap_gain weight could be reduced from 1.0 → 0.5 to avoid over-fitting to
+     aero prediction noise.
+  3. The 2.16s lap time spread across 69 sessions is sufficient signal.
+     Next step: add sessions from more diverse setups (extremes, not just midfield).
