@@ -373,6 +373,7 @@ class ModifierWithConfidence:
 class ReasoningState:
     """Accumulated understanding across all sessions."""
     sessions: list[SessionSnapshot] = field(default_factory=list)
+    skipped_sessions: list["SkippedSession"] = field(default_factory=list)
 
     # Phase 2: All-pairs deltas
     weighted_deltas: list[WeightedDelta] = field(default_factory=list)
@@ -445,6 +446,14 @@ class ReasoningState:
     final_selected_candidate_family: str | None = None
     final_selected_candidate_score: float | None = None
     final_selected_candidate_applied: bool = False
+
+
+@dataclass
+class SkippedSession:
+    """A session that could not be analyzed and was excluded."""
+    label: str
+    ibt_path: str
+    reason: str
 
 
 _FILENAME_TIMESTAMP_PATTERNS = (
@@ -840,6 +849,9 @@ def _resolve_authority_session(state: ReasoningState) -> None:
             )
             state.solver_notes.append(cluster.reason)
             break
+    skipped_summary = _skipped_session_summary(state)
+    if skipped_summary:
+        state.solver_notes.insert(0, skipped_summary)
 
 
 def _build_aggregate_measured(state: ReasoningState) -> dict[str, float]:
@@ -1017,6 +1029,89 @@ def _analyze_session(
     )
 
 
+def _skip_session(
+    state: ReasoningState,
+    *,
+    label: str,
+    ibt_path: str,
+    error: Exception,
+    log,
+) -> None:
+    reason = str(error).strip() or error.__class__.__name__
+    state.skipped_sessions.append(
+        SkippedSession(
+            label=label,
+            ibt_path=ibt_path,
+            reason=reason,
+        )
+    )
+    log(f"  Skipping {label}: {Path(ibt_path).name} ({reason})")
+
+
+def _load_sessions_into_state(
+    state: ReasoningState,
+    *,
+    ibt_paths: list[str],
+    car: CarModel,
+    min_lap_time: float,
+    stint: bool,
+    stint_select: str,
+    stint_max_laps: int,
+    stint_threshold: float,
+    log,
+) -> None:
+    for i, ibt_path in enumerate(ibt_paths):
+        label = f"S{i+1}"
+        log(f"[Phase 1] Reading {label}: {Path(ibt_path).name}...")
+        try:
+            snap = _analyze_session(
+                ibt_path,
+                car,
+                label,
+                min_lap_time=min_lap_time,
+                stint=stint,
+                stint_select=stint_select,
+                stint_max_laps=stint_max_laps,
+                stint_threshold=stint_threshold,
+            )
+        except Exception as exc:
+            _skip_session(
+                state,
+                label=label,
+                ibt_path=ibt_path,
+                error=exc,
+                log=log,
+            )
+            continue
+
+        state.sessions.append(snap)
+        log(
+            f"  Lap {snap.lap_number}: {snap.lap_time_s:.3f}s | "
+            f"{snap.driver.style} | {len(snap.diagnosis.problems)} problems | "
+            f"{len(snap.corners)} corners"
+        )
+        for note in snap.live_override_notes:
+            log(f"    Live override: {note}")
+        if stint and snap.stint_dataset is not None:
+            log(
+                f"    Stint: {len(snap.stint_dataset.selected_segments)} segment(s), "
+                f"{len(snap.stint_dataset.usable_laps)} usable laps, "
+                f"{len(snap.stint_dataset.evaluation_laps)} scored"
+            )
+
+
+def _skipped_session_summary(state: ReasoningState) -> str | None:
+    if not state.skipped_sessions:
+        return None
+    skipped_names = ", ".join(
+        f"{Path(skipped.ibt_path).name} ({skipped.reason})"
+        for skipped in state.skipped_sessions[:3]
+    )
+    if len(state.skipped_sessions) > 3:
+        skipped_names += f", +{len(state.skipped_sessions) - 3} more"
+    return f"Skipped {len(state.skipped_sessions)} unanalyzable session(s): {skipped_names}"
+
+
 def _setup_schema_dump_payload(state: ReasoningState, car: CarModel) -> dict[str, object]:
     authority_label = None
     authority_schema = None
@@ -1045,6 +1140,14 @@ def _setup_schema_dump_payload(state: ReasoningState, car: CarModel) -> dict[str
                 ),
             }
             for snap in state.sessions
+        ],
+        "skipped_sessions": [
+            {
+                "label": skipped.label,
+                "ibt_path": skipped.ibt_path,
+                "reason": skipped.reason,
+            }
+            for skipped in state.skipped_sessions
         ],
     }
 
@@ -2764,33 +2867,32 @@ def reason_and_solve(
     else:
         log(f"  Lap time floor: {_auto_min:.1f}s (no valid laps found)")
 
-    for i, ibt_path in enumerate(ibt_paths):
-        label = f"S{i+1}"
-        log(f"[Phase 1] Reading {label}: {Path(ibt_path).name}...")
+    _load_sessions_into_state(
+        state,
+        ibt_paths=ibt_paths,
+        car=car,
+        min_lap_time=_auto_min,
+        stint=stint,
+        stint_select=stint_select,
+        stint_max_laps=stint_max_laps,
+        stint_threshold=stint_threshold,
+        log=log,
+    )
 
-        snap = _analyze_session(
-            ibt_path,
-            car,
-            label,
-            min_lap_time=_auto_min,
-            stint=stint,
-            stint_select=stint_select,
-            stint_max_laps=stint_max_laps,
-            stint_threshold=stint_threshold,
+    if not state.sessions:
+        skipped_summary = "; ".join(
+            f"{Path(skipped.ibt_path).name}: {skipped.reason}"
+            for skipped in state.skipped_sessions
         )
-        state.sessions.append(snap)
+        raise ValueError(
+            "No analyzable IBT sessions found."
+            + (f" Skipped sessions: {skipped_summary}" if skipped_summary else "")
+        )
 
-        log(f"  Lap {snap.lap_number}: {snap.lap_time_s:.3f}s | "
-            f"{snap.driver.style} | {len(snap.diagnosis.problems)} problems | "
-            f"{len(snap.corners)} corners")
-        for note in snap.live_override_notes:
-            log(f"    Live override: {note}")
-        if stint and snap.stint_dataset is not None:
-            log(
-                f"    Stint: {len(snap.stint_dataset.selected_segments)} segment(s), "
-                f"{len(snap.stint_dataset.usable_laps)} usable laps, "
-                f"{len(snap.stint_dataset.evaluation_laps)} scored"
-            )
+    if state.skipped_sessions:
+        skipped_summary = _skipped_session_summary(state)
+        if skipped_summary:
+            log(f"  {skipped_summary}")
 
     _sort_sessions_chronologically(state)
 
@@ -3617,6 +3719,14 @@ def reason_and_solve(
                     "telemetry_signals": signals_to_dict(snap.measured.telemetry_signals),
                 }
                 for snap in state.sessions
+            ],
+            "skipped_sessions": [
+                {
+                    "label": skipped.label,
+                    "ibt_path": skipped.ibt_path,
+                    "reason": skipped.reason,
+                }
+                for skipped in state.skipped_sessions
             ],
             "validation_clusters": [cluster.to_dict() for cluster in state.validation_clusters],
             "candidate_vetoes": [veto.to_dict() for veto in state.candidate_vetoes],

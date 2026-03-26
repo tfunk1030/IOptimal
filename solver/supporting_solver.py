@@ -13,7 +13,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from car_model.setup_registry import diff_ramp_option_index, diff_ramp_string_for_option
+from car_model.setup_registry import (
+    diff_ramp_option_index,
+    diff_ramp_string_for_option,
+    get_numeric_resolution,
+    snap_to_resolution,
+)
 
 if TYPE_CHECKING:
     from analyzer.diagnose import Diagnosis
@@ -168,8 +173,22 @@ class SupportingSolver:
         sol.brake_bias_pct = brake_solution.brake_bias_pct
         sol.brake_bias_reasoning = brake_solution.reasoning
         sol._brake_solution = brake_solution
-        current_target = float(getattr(self.current_setup, "brake_bias_target", 0.0) or 0.0)
-        current_migration = float(getattr(self.current_setup, "brake_bias_migration", 0.0) or 0.0)
+        target_limits = getattr(self.car.garage_ranges, "brake_bias_target", (-5.0, 5.0))
+        migration_limits = getattr(self.car.garage_ranges, "brake_bias_migration", (-5.0, 5.0))
+        target_step = get_numeric_resolution(self.car, "brake_bias_target", default=0.5) or 0.5
+        migration_step = get_numeric_resolution(self.car, "brake_bias_migration", default=0.5) or 0.5
+        current_target = snap_to_resolution(
+            float(getattr(self.current_setup, "brake_bias_target", 0.0) or 0.0),
+            target_step,
+            lo=float(target_limits[0]),
+            hi=float(target_limits[1]),
+        )
+        current_migration = snap_to_resolution(
+            float(getattr(self.current_setup, "brake_bias_migration", 0.0) or 0.0),
+            migration_step,
+            lo=float(migration_limits[0]),
+            hi=float(migration_limits[1]),
+        )
         current_front_mc = float(getattr(self.current_setup, "front_master_cyl_mm", 19.1) or 19.1)
         current_rear_mc = float(getattr(self.current_setup, "rear_master_cyl_mm", 20.6) or 20.6)
         current_pad = getattr(self.current_setup, "pad_compound", "") or "Medium"
@@ -189,20 +208,25 @@ class SupportingSolver:
         if front_lock >= 0.075 or hydraulic_split >= sol.brake_bias_pct + 0.5:
             front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, -1)
             rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, +1)
-            target = _clamp(current_target - 0.5, *getattr(self.car.garage_ranges, "brake_bias_target", (-5.0, 5.0)))
-            migration = _clamp(current_migration - 0.5, *getattr(self.car.garage_ranges, "brake_bias_migration", (-5.0, 5.0)))
+            target = _clamp(current_target - target_step, *target_limits)
+            migration = _clamp(current_migration - migration_step, *migration_limits)
             pad = self._pad_step(current_pad, -1)
             hardware_reasons.append("front-lock evidence shifted brake hardware and migration rearward")
         elif front_lock <= 0.03 and braking_pitch <= 0.8 and abs_activity < 8.0:
             front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, +1)
             rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, -1)
-            target = _clamp(current_target + 0.5, *getattr(self.car.garage_ranges, "brake_bias_target", (-5.0, 5.0)))
-            migration = _clamp(current_migration + 0.5, *getattr(self.car.garage_ranges, "brake_bias_migration", (-5.0, 5.0)))
+            target = _clamp(current_target + target_step, *target_limits)
+            migration = _clamp(current_migration + migration_step, *migration_limits)
             pad = self._pad_step(current_pad, +1)
             hardware_reasons.append("stable braking allowed a slightly more aggressive brake hardware seed")
 
-        sol.brake_bias_target = round(target, 1)
-        sol.brake_bias_migration = round(migration, 1)
+        sol.brake_bias_target = snap_to_resolution(target, target_step, lo=float(target_limits[0]), hi=float(target_limits[1]))
+        sol.brake_bias_migration = snap_to_resolution(
+            migration,
+            migration_step,
+            lo=float(migration_limits[0]),
+            hi=float(migration_limits[1]),
+        )
         sol.front_master_cyl_mm = round(front_mc, 1)
         sol.rear_master_cyl_mm = round(rear_mc, 1)
         sol.pad_compound = pad

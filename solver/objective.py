@@ -6,7 +6,7 @@ where it did.
 
 Score formula:
     total_score = (
-        + lap_gain_ms
+        + w_lap_gain * lap_gain_ms
         - 1.0 * platform_risk_ms        [primary — platform collapse is catastrophic]
         - 0.5 * driver_mismatch_ms
         - 0.6 * telemetry_uncertainty_ms
@@ -126,9 +126,55 @@ class PhysicsResult:
 
 
 @dataclass
+class LapGainBreakdown:
+    """Penalty components that make up raw lap-gain scoring."""
+
+    lltd_balance_ms: float = 0.0
+    damping_ms: float = 0.0
+    rebound_ratio_ms: float = 0.0
+    df_balance_ms: float = 0.0
+    camber_ms: float = 0.0
+    diff_preload_ms: float = 0.0
+    arb_extreme_ms: float = 0.0
+    diff_ramp_ms: float = 0.0
+    diff_clutch_ms: float = 0.0
+    tc_ms: float = 0.0
+
+    @property
+    def total_penalty_ms(self) -> float:
+        return (
+            self.lltd_balance_ms
+            + self.damping_ms
+            + self.rebound_ratio_ms
+            + self.df_balance_ms
+            + self.camber_ms
+            + self.diff_preload_ms
+            + self.arb_extreme_ms
+            + self.diff_ramp_ms
+            + self.diff_clutch_ms
+            + self.tc_ms
+        )
+
+    def as_dict(self) -> dict[str, float]:
+        return {
+            "lltd_balance_ms": self.lltd_balance_ms,
+            "damping_ms": self.damping_ms,
+            "rebound_ratio_ms": self.rebound_ratio_ms,
+            "df_balance_ms": self.df_balance_ms,
+            "camber_ms": self.camber_ms,
+            "diff_preload_ms": self.diff_preload_ms,
+            "arb_extreme_ms": self.arb_extreme_ms,
+            "diff_ramp_ms": self.diff_ramp_ms,
+            "diff_clutch_ms": self.diff_clutch_ms,
+            "tc_ms": self.tc_ms,
+        }
+
+
+@dataclass
 class ObjectiveBreakdown:
     """Full scoring breakdown — never rank on a black box."""
     lap_gain_ms: float = 0.0
+    lap_gain_detail: LapGainBreakdown = field(default_factory=LapGainBreakdown)
     platform_risk: PlatformRisk = field(default_factory=PlatformRisk)
     driver_mismatch: DriverMismatch = field(default_factory=DriverMismatch)
     telemetry_uncertainty: TelemetryUncertainty = field(default_factory=TelemetryUncertainty)
@@ -136,6 +182,7 @@ class ObjectiveBreakdown:
     staleness_penalty_ms: float = 0.0
 
     # Weights (explicit and tunable)
+    w_lap_gain: float = 1.0
     # Platform risk weight raised to 1.0 — platform collapse = catastrophic.
     # For ground-effect GTP cars, an unstable platform is the DOMINANT risk.
     # Source: Taylor Funk (2026 calibration) — "rake/ride height dwarfs ARBs"
@@ -150,7 +197,7 @@ class ObjectiveBreakdown:
     @property
     def total_score_ms(self) -> float:
         return (
-            self.lap_gain_ms
+            self.w_lap_gain * self.lap_gain_ms
             - self.w_platform * self.platform_risk.total_ms
             - self.w_driver * self.driver_mismatch.total_ms
             - self.w_uncertainty * self.telemetry_uncertainty.total_ms
@@ -162,7 +209,8 @@ class ObjectiveBreakdown:
     def summary(self) -> str:
         lines = [
             f"  Total score:           {self.total_score_ms:+.1f} ms",
-            f"    Lap gain:            {self.lap_gain_ms:+.1f} ms",
+            f"    Lap gain:            {self.w_lap_gain * self.lap_gain_ms:+.1f} ms "
+            f"(raw={self.lap_gain_ms:+.1f}, w={self.w_lap_gain:.2f})",
             f"    Platform risk:       {-self.w_platform * self.platform_risk.total_ms:+.1f} ms "
             f"(bottom={self.platform_risk.bottoming_risk_ms:.0f}, "
             f"vortex={self.platform_risk.vortex_risk_ms:.0f}, "
@@ -313,9 +361,28 @@ class ObjectiveFunction:
         except Exception:
             self._session_db = None
 
+    def _is_bmw_sebring_track_aware_single_lap_safe(self) -> bool:
+        return bool(
+            self.track is not None
+            and self._scenario_profile.name == "single_lap_safe"
+            and self._car_slug == "bmw"
+            and self._track_slug == "sebring"
+        )
+
+    def _apply_runtime_calibration_guard(self, breakdown: ObjectiveBreakdown) -> ObjectiveBreakdown:
+        # BMW/Sebring recalibration currently shows that the track-aware
+        # single-lap runtime objective overweights raw lap-gain estimates
+        # relative to the platform/envelope penalties. Keep this guard narrow
+        # until a broader evidence-backed calibration exists.
+        if self._is_bmw_sebring_track_aware_single_lap_safe():
+            breakdown.w_lap_gain = min(breakdown.w_lap_gain, 0.25)
+            breakdown.w_envelope = min(breakdown.w_envelope, 0.40)
+        return breakdown
+
     def _new_breakdown(self) -> ObjectiveBreakdown:
         weights = self._scenario_profile.objective
         breakdown = ObjectiveBreakdown(
+            w_lap_gain=weights.w_lap_gain,
             w_platform=weights.w_platform,
             w_driver=weights.w_driver,
             w_uncertainty=weights.w_uncertainty,
@@ -325,7 +392,41 @@ class ObjectiveFunction:
         )
         if self.explore:
             breakdown.w_empirical = 0.0
-        return breakdown
+        return self._apply_runtime_calibration_guard(breakdown)
+
+    def _heave_calibration_uncertainty_penalty_ms(self, front_heave: float) -> float:
+        cal_uncertainty = self._heave_cal.uncertainty(front_heave)
+        if cal_uncertainty <= 0.2:
+            return 0.0
+        return (cal_uncertainty - 0.2) ** 1.5 * 8.0
+
+    @staticmethod
+    def _heave_realism_penalty_ms(front_heave: float) -> float:
+        # Keep solver search inside a realistic GTP heave window even when
+        # the forward physics looks artificially "safe" at very stiff rates.
+        # This remains an envelope/realism concern, not raw lap-gain.
+        heave_opt_lo = 30.0
+        heave_opt_hi = 100.0
+        if front_heave > heave_opt_hi:
+            excess = front_heave - heave_opt_hi
+            return min(300.0, excess * 0.5 + (max(0.0, excess - 100.0) ** 1.2) * 0.3)
+        if 0.0 < front_heave < heave_opt_lo:
+            return min(45.0, (heave_opt_lo - front_heave) * 1.5)
+        return 0.0
+
+    def _df_balance_lap_penalty_ms(self, physics: PhysicsResult) -> float:
+        ms_per_pct = 20.0
+        if self._is_bmw_sebring_track_aware_single_lap_safe():
+            ms_per_pct = 10.0
+        return physics.df_balance_error_pct * ms_per_pct
+
+    def _camber_lap_penalty_ms(self, front_camber: float, rear_camber: float) -> float:
+        scale = 1.0
+        if self._is_bmw_sebring_track_aware_single_lap_safe():
+            scale = 0.5
+        front_penalty = min(8.0, abs(front_camber - (-3.0)) * 5.0)
+        rear_penalty = min(6.0, abs(rear_camber - (-2.0)) * 4.0)
+        return scale * (front_penalty + rear_penalty)
 
     @staticmethod
     def _arb_size_label(raw: object, labels: list[str] | tuple[str, ...], baseline: str) -> str:
@@ -961,6 +1062,7 @@ class ObjectiveFunction:
         soft_penalties: list[str] = []
 
         # ── 1. Lap gain from physics ────────────────────────────────────
+        breakdown.lap_gain_detail = self._compute_lap_gain_breakdown(params, physics)
         breakdown.lap_gain_ms = self._estimate_lap_gain(params, physics)
 
         # ── 2. Platform risk from physics ───────────────────────────────
@@ -1057,88 +1159,6 @@ class ObjectiveFunction:
         OptimumG ground effect platform analysis; Taylor Funk (2026)
         """
         gain = 0.0
-
-        # ═══════════════════════════════════════════════════════════════
-        # TIER 1: HEAVE / THIRD SPRING PLATFORM STABILITY
-        # Dominant lap time driver for ground-effect cars.
-        # σ_front is computed in evaluate_physics() from heave spring rate
-        # + track p99 shock velocity via damped_excursion_mm().
-        # ═══════════════════════════════════════════════════════════════
-
-        sigma_f = physics.front_sigma_mm  # [mm]
-        # Threshold: stable platform = σ < 3mm at speed
-        # Below threshold: no aero platform penalty
-        # Above threshold: each extra mm costs ~100ms (recalibrated 2026-03-22).
-        #   IBT correlation: dyn_frh r=+0.235 with lap_time across 63 sessions.
-        #   Observed 4mm dyn_frh spread (19→23mm) ≈ 0.5s lap time spread
-        #   → empirical ≈ 125ms/mm. Using 100ms/mm (conservative — some variance
-        #   in dyn_frh is driver/conditions, not pure setup).
-        #   Raised from 80ms/mm (original GTP literature estimate, pre-IBT data).
-        # Source: Taylor Funk 63-session Sebring IBT dataset (2026-03-22).
-        SIGMA_F_STABLE_MM = 3.0
-        SIGMA_F_MS_PER_MM = 100.0  # ms per mm above stable threshold [ms/mm] — was 80
-        if sigma_f > SIGMA_F_STABLE_MM:
-            platform_loss = (sigma_f - SIGMA_F_STABLE_MM) * SIGMA_F_MS_PER_MM
-            gain -= min(800.0, platform_loss)
-
-        # Rear platform (third spring): less sensitive than front — rear
-        # diffuser is less ground-coupled than front underfloor in GTP
-        sigma_r = physics.rear_sigma_mm  # [mm]
-        SIGMA_R_STABLE_MM = 5.0
-        SIGMA_R_MS_PER_MM = 40.0  # half the front sensitivity [ms/mm]
-        if sigma_r > SIGMA_R_STABLE_MM:
-            gain -= min(300.0, (sigma_r - SIGMA_R_STABLE_MM) * SIGMA_R_MS_PER_MM)
-
-        # ── HEAVE CALIBRATION UNCERTAINTY PENALTY ───────────────────────
-        # The empirical sigma is now wired into physics.front_sigma_mm and
-        # flows into _compute_platform_risk (rh_collapse_risk_ms).
-        # Here we add an ADDITIONAL uncertainty penalty for exploring beyond
-        # the calibrated range — the solver is free to go there, but pays an
-        # increasing cost reflecting reduced confidence in the prediction.
-        # When you actually run 380 N/mm and drop the IBT, uncertainty drops
-        # to ~0.15mm and the true sigma (whatever it is) is used instead.
-        front_heave = params.get("front_heave_spring_nmm", 50.0)
-        cal_uncertainty = self._heave_cal.uncertainty(front_heave)
-        # Uncertainty penalty: 0 for well-calibrated, grows for extrapolated
-        # At uncertainty=0.15mm (near data) → 0ms; at 3.4mm (380 N/mm) → ~27ms
-        if cal_uncertainty > 0.2:
-            gain -= (cal_uncertainty - 0.2) ** 1.5 * 8.0
-
-        # ── SPRING RATE REALISM WINDOW ───────────────────────────────────
-        # GTP physics model assumes heave spring behaves linearly and that
-        # the sigma_f model is valid. Both assumptions break down outside the
-        # realistic operating window (30–100 N/mm for Sebring).
-        #
-        # Very stiff springs (>150 N/mm) appear "safe" to the physics model
-        # (σ is very small → nearly zero platform penalty) but are slower in
-        # practice because:
-        #   1. The car loses compliance over bumps → tyre load variation spikes
-        #   2. iRacing tyre model loses performance under high unsprung load variance
-        #   3. The heave slider saturates → any bump pushes the car down hard
-        #
-        # Evidence: 63-session IBT dataset. Heave=900 N/mm sessions scored
-        # better than heave=50 by objective but ran 0.5–0.8s slower in practice.
-        # The sigma model gives heave=900 nearly zero penalty (σ→0) — but
-        # actual dyn_frh data shows these cars bounced more in the data, not less.
-        #
-        # Penalty structure (validated against Sebring IBT fastest setups):
-        #   Optimal: 30–100 N/mm → no penalty
-        #   Stiff: 100–200 N/mm → 0–50ms (moderate compliance loss)
-        #   Very stiff: 200–500 N/mm → 50–200ms (significant compliance loss)
-        #   Extreme: >500 N/mm → 200ms+ (car is essentially rigid, implausible)
-        # Source: Taylor Funk 63-session Sebring IBT analysis, 2026-03-22.
-        HEAVE_OPT_LO = 30.0   # N/mm — below this is too soft
-        HEAVE_OPT_HI = 100.0  # N/mm — above this starts compliance loss
-        if front_heave > HEAVE_OPT_HI:
-            # Progressive penalty: 0 at 100, 50ms at 200, 200ms at 500, capped 300ms
-            excess = front_heave - HEAVE_OPT_HI
-            compliance_penalty = min(300.0, excess * 0.5 + (max(0, excess - 100) ** 1.2) * 0.3)
-            gain -= compliance_penalty
-        elif front_heave < HEAVE_OPT_LO and front_heave > 0:
-            # Too soft: risk of bottoming / slider exhaustion already scored elsewhere,
-            # add small additional penalty for being below realistic GTP window
-            soft_penalty = (HEAVE_OPT_LO - front_heave) * 1.5
-            gain -= min(45.0, soft_penalty)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 2: LLTD BALANCE (flows through ARB blades and diameter)
@@ -1241,7 +1261,7 @@ class ObjectiveFunction:
 
         # Each 0.1% DF balance error: ~5ms at speed tracks
         # Raised from 30ms/pct to 50ms/pct — more aggressive aero sensitivity
-        gain -= physics.df_balance_error_pct * 20.0  # tuned from 45-50 → 20
+        gain -= self._df_balance_lap_penalty_ms(physics)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: CAMBER (contact patch optimization, tertiary)
@@ -1251,10 +1271,8 @@ class ObjectiveFunction:
         # Rear camber target: -2.0° (less roll compensation needed)
         # Max contribution: ~8ms (small vs platform + balance terms)
         front_camber = params.get("front_camber_deg", -3.5)
-        gain -= min(8.0, abs(front_camber - (-3.0)) * 5.0)
-
         rear_camber = params.get("rear_camber_deg", -2.0)
-        gain -= min(6.0, abs(rear_camber - (-2.0)) * 4.0)
+        gain -= self._camber_lap_penalty_ms(front_camber, rear_camber)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: DIFF PRELOAD (exit traction, small effect)
@@ -1374,6 +1392,126 @@ class ObjectiveFunction:
             gain -= min(5.0, (tc_gain - 6) * 2.0)  # TC too aggressive for stable car
 
         return gain
+
+    def _compute_lap_gain_breakdown(
+        self, params: dict[str, float], physics: PhysicsResult,
+    ) -> LapGainBreakdown:
+        """Mirror _estimate_lap_gain() as explicit penalty components."""
+        detail = LapGainBreakdown()
+
+        lltd_ms_per_pct = 2.5
+        lltd_penalty = physics.lltd_error * 100.0 * lltd_ms_per_pct
+        detail.lltd_balance_ms += min(10.0, lltd_penalty)
+
+        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.88)
+        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.30)
+        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.45)
+        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.14)
+        detail.damping_ms += min(8.0, zeta_ls_front_err * 10.0)
+        detail.damping_ms += min(6.0, zeta_ls_rear_err * 8.0)
+        detail.damping_ms += min(5.0, zeta_hs_front_err * 7.0)
+        detail.damping_ms += min(5.0, zeta_hs_rear_err * 7.0)
+
+        f_ls_comp = params.get("front_ls_comp", 7)
+        f_ls_rbd = params.get("front_ls_rbd", 6)
+        f_hs_comp = params.get("front_hs_comp", 5)
+        f_hs_rbd = params.get("front_hs_rbd", 5)
+        r_ls_comp = params.get("rear_ls_comp", 5)
+        r_ls_rbd = params.get("rear_ls_rbd", 5)
+        r_hs_comp = params.get("rear_hs_comp", 3)
+        r_hs_rbd = params.get("rear_hs_rbd", 3)
+        ls_rbd_comp_target = 0.95
+        hs_rbd_comp_target = 0.60
+        rbd_penalty_ms_per_unit = 8.0
+
+        def _rbd_penalty(rbd: float, comp: float, target: float) -> float:
+            if comp < 1.0:
+                return 0.0
+            rbd_target = comp * target
+            err = abs(rbd - rbd_target)
+            return min(5.0, err * rbd_penalty_ms_per_unit / max(1.0, comp))
+
+        detail.rebound_ratio_ms += _rbd_penalty(f_ls_rbd, f_ls_comp, ls_rbd_comp_target)
+        detail.rebound_ratio_ms += _rbd_penalty(f_hs_rbd, f_hs_comp, hs_rbd_comp_target)
+        detail.rebound_ratio_ms += _rbd_penalty(r_ls_rbd, r_ls_comp, ls_rbd_comp_target)
+        detail.rebound_ratio_ms += _rbd_penalty(r_hs_rbd, r_hs_comp, hs_rbd_comp_target)
+
+        detail.df_balance_ms += self._df_balance_lap_penalty_ms(physics)
+
+        front_camber = params.get("front_camber_deg", -3.5)
+        rear_camber = params.get("rear_camber_deg", -2.0)
+        detail.camber_ms += self._camber_lap_penalty_ms(front_camber, rear_camber)
+
+        diff = params.get("diff_preload_nm", 20.0)
+        diff_target = 10.0 if self._car_slug == "ferrari" else 65.0
+        detail.diff_preload_ms += min(8.0, abs(diff - diff_target) * 0.12)
+
+        f_arb_size_idx = self._arb_size_index(
+            params.get("front_arb_size", 0),
+            self.car.arb.front_size_labels,
+            self.car.arb.front_baseline_size,
+            default=0,
+        )
+        r_arb_size_idx = self._arb_size_index(
+            params.get("rear_arb_size", 1),
+            self.car.arb.rear_size_labels,
+            self.car.arb.rear_baseline_size,
+            default=1,
+        )
+        f_arb_blade = int(round(params.get("front_arb_blade", 1)))
+        r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
+        max_blade = 5
+        if f_arb_blade >= max_blade and f_arb_size_idx == 0:
+            detail.arb_extreme_ms += 15.0
+        if r_arb_blade >= max_blade and r_arb_size_idx == 0:
+            detail.arb_extreme_ms += 20.0
+        if f_arb_blade <= 1 and f_arb_size_idx >= 2:
+            detail.arb_extreme_ms += 10.0
+        if r_arb_blade <= 1 and r_arb_size_idx >= 2:
+            detail.arb_extreme_ms += 15.0
+
+        ramp_options = getattr(
+            getattr(self.car, "garage_ranges", None), "diff_coast_drive_ramp_options",
+            [(40, 65), (45, 70), (50, 75)]
+        )
+        ramp_idx = int(round(params.get("diff_ramp_option_idx", 1)))
+        ramp_idx = max(0, min(len(ramp_options) - 1, ramp_idx))
+        trail_brake = getattr(self._driver, "trail_brake_depth_p95", 0.3) if self._driver else 0.3
+        if trail_brake > 0.4:
+            coast_target_idx = 0
+        elif trail_brake < 0.2:
+            coast_target_idx = 2
+        else:
+            coast_target_idx = 1
+        coast_mismatch = abs(ramp_idx - coast_target_idx)
+        detail.diff_ramp_ms += min(12.0, coast_mismatch * 6.0)
+
+        clutch_plates = int(round(params.get("diff_clutch_plates", 4)))
+        rear_slip_p95 = getattr(self._measured, "rear_power_slip_p95", None) if self._measured else None
+        if rear_slip_p95 is None:
+            rear_slip_p95 = 0.07
+        if rear_slip_p95 > 0.10:
+            plates_target = 6
+        elif rear_slip_p95 < 0.05:
+            plates_target = 2
+        else:
+            plates_target = 4
+        detail.diff_clutch_ms += min(10.0, abs(clutch_plates - plates_target) * 3.0)
+
+        tc_gain = int(round(params.get("tc_gain", 4)))
+        tc_slip = int(round(params.get("tc_slip", 3)))
+        tc_gain_target = getattr(self._measured, "_tc_gain_recommendation", None) if self._measured else None
+        tc_slip_target = getattr(self._measured, "_tc_slip_recommendation", None) if self._measured else None
+        if tc_gain_target is not None:
+            detail.tc_ms += min(8.0, abs(tc_gain - tc_gain_target) * 2.0)
+        if tc_slip_target is not None:
+            detail.tc_ms += min(6.0, abs(tc_slip - tc_slip_target) * 2.0)
+        if rear_slip_p95 > 0.10 and tc_gain < 5:
+            detail.tc_ms += min(8.0, (5 - tc_gain) * 3.0)
+        elif rear_slip_p95 < 0.04 and tc_gain > 6:
+            detail.tc_ms += min(5.0, (tc_gain - 6) * 2.0)
+
+        return detail
 
     def _compute_platform_risk(
         self,
@@ -1614,6 +1752,25 @@ class ObjectiveFunction:
                     f"Unusual heave/third ratio: {ratio:.3f} (normal 0.04-0.15)"
                 )
 
+        # Heave extrapolation and realism belong in the validated operating
+        # envelope, not in raw pace. This avoids double-counting platform
+        # instability against _compute_platform_risk().
+        uncertainty_penalty = self._heave_calibration_uncertainty_penalty_ms(front_heave)
+        if uncertainty_penalty > 0.0:
+            penalty.setup_distance_ms += uncertainty_penalty
+            soft_penalties.append(
+                f"Heave calibration extrapolation: k={front_heave:.0f} N/mm "
+                f"(penalty {uncertainty_penalty:.1f}ms)"
+            )
+
+        realism_penalty = self._heave_realism_penalty_ms(front_heave)
+        if realism_penalty > 0.0:
+            penalty.setup_distance_ms += realism_penalty
+            soft_penalties.append(
+                f"Heave spring outside realistic window: k={front_heave:.0f} N/mm "
+                f"(penalty {realism_penalty:.0f}ms)"
+            )
+
         # Extreme damping — underdamped or overdamped
         if physics.zeta_ls_front > 1.5:
             penalty.setup_distance_ms += 15.0
@@ -1689,6 +1846,7 @@ class ObjectiveFunction:
                 breakdown = self._new_breakdown()
                 veto_reasons: list[str] = []
                 soft_penalties: list[str] = []
+                breakdown.lap_gain_detail = self._compute_lap_gain_breakdown(params, physics)
                 breakdown.lap_gain_ms = self._estimate_lap_gain(params, physics)
                 breakdown.platform_risk = self._compute_platform_risk(
                     params, physics, veto_reasons, soft_penalties
@@ -1712,6 +1870,7 @@ class ObjectiveFunction:
                 breakdown = self._new_breakdown()
                 veto_reasons = []
                 soft_penalties = []
+                breakdown.lap_gain_detail = self._compute_lap_gain_breakdown(params, physics)
                 breakdown.lap_gain_ms = self._estimate_lap_gain(params, physics)
                 breakdown.platform_risk = self._compute_platform_risk(
                     params, physics, veto_reasons, soft_penalties

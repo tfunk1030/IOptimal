@@ -17,8 +17,17 @@
 
 - Samples: `73` total, `72` non-vetoed
 - Veto rate: `0.014`
-- Score correlation (all valid): Pearson `+0.037458`, Spearman `+0.092558`
-- Score correlation (non-vetoed): Pearson `+0.071100`, Spearman `+0.077722`
+- Score correlation (all valid): Pearson `+0.037458`, Spearman `-0.100611`
+- Score correlation (non-vetoed): Pearson `+0.034870`, Spearman `-0.120522`
+
+### Recalibration Snapshot
+
+- Track-aware Spearman: `-0.120522`
+- Trackless Spearman: `-0.064976`
+- Track-aware holdout mean Spearman: `-0.072143`
+- Track-aware holdout worst Spearman: `+0.428571`
+- Recommended runtime evidence mode: `track_aware`
+- Auto-apply enabled: `False`
 
 ### Claim Audit
 

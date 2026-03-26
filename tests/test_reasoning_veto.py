@@ -6,14 +6,17 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from analyzer.setup_reader import CurrentSetup
 from car_model.cars import get_car
 from pipeline.reason import (
     PhysicsReasoning,
     ReasoningState,
+    SessionSnapshot,
     SpeedRegimeAnalysis,
     _build_validation_clusters,
+    _load_sessions_into_state,
     _reason_to_modifiers,
     _run_physics_validations,
     _score_categories,
@@ -134,6 +137,24 @@ def _session(label, lap_time_s, measured=None, setup=None):
     )
 
 
+def _snapshot(label: str, ibt_path: str, lap_time_s: float) -> SessionSnapshot:
+    return SessionSnapshot(
+        label=label,
+        ibt_path=ibt_path,
+        setup=SimpleNamespace(),
+        setup_schema=None,
+        measured=SimpleNamespace(lap_time_s=lap_time_s, lap_number=1),
+        driver=SimpleNamespace(style="smooth"),
+        diagnosis=SimpleNamespace(problems=[]),
+        session_context=None,
+        track=SimpleNamespace(),
+        corners=[],
+        observation=SimpleNamespace(session_id=label),
+        lap_time_s=lap_time_s,
+        lap_number=1,
+    )
+
+
 def _solver_fp_from_json(data: dict):
     step6 = data["step6_dampers"]
     return fingerprint_from_solver_steps(
@@ -196,6 +217,35 @@ class ReasoningVetoIntegrationTests(unittest.TestCase):
 
 
 class ReasoningVetoUnitTests(unittest.TestCase):
+    def test_load_sessions_into_state_skips_invalid_ibt(self):
+        state = ReasoningState()
+        car = get_car("bmw")
+
+        def _side_effect(ibt_path, _car, label, **_kwargs):
+            if "bad" in ibt_path:
+                raise ValueError("No valid laps found in IBT file")
+            lap_time_s = 100.0 if "good1" in ibt_path else 101.0
+            return _snapshot(label, ibt_path, lap_time_s)
+
+        with mock.patch("pipeline.reason._analyze_session", side_effect=_side_effect):
+            _load_sessions_into_state(
+                state,
+                ibt_paths=["good1.ibt", "bad.ibt", "good2.ibt"],
+                car=car,
+                min_lap_time=60.0,
+                stint=False,
+                stint_select="all",
+                stint_max_laps=40,
+                stint_threshold=1.5,
+                log=lambda *_args, **_kwargs: None,
+            )
+
+        self.assertEqual(2, len(state.sessions))
+        self.assertEqual(["good1.ibt", "good2.ibt"], [snap.ibt_path for snap in state.sessions])
+        self.assertEqual(1, len(state.skipped_sessions))
+        self.assertEqual("bad.ibt", state.skipped_sessions[0].ibt_path)
+        self.assertEqual("No valid laps found in IBT file", state.skipped_sessions[0].reason)
+
     def test_selected_candidate_result_uses_rematerialized_result(self):
         rematerialized = SimpleNamespace(
             step1=SimpleNamespace(front_pushrod_offset_mm=-30.0),

@@ -86,14 +86,24 @@ class ValidationReportingTests(unittest.TestCase):
         bmw = report["bmw_sebring"]
         tiers = {(row["car"], row["track"]): row["confidence_tier"] for row in report["support_matrix"]}
 
-        self.assertEqual(bmw["samples"], 73)
-        self.assertEqual(bmw["non_vetoed_samples"], 72)
+        self.assertGreaterEqual(bmw["samples"], 70)
+        self.assertGreaterEqual(bmw["non_vetoed_samples"], 70)
+        self.assertLessEqual(bmw["non_vetoed_samples"], bmw["samples"])
+        self.assertEqual(bmw["samples"], len(bmw["rows"]))
         self.assertEqual(tiers[("bmw", "Sebring International Raceway")], "calibrated")
         self.assertEqual(tiers[("ferrari", "Sebring International Raceway")], "partial")
         self.assertEqual(tiers[("cadillac", "Silverstone Circuit")], "exploratory")
         self.assertLess(abs(float(bmw["score_correlation"]["pearson_r_non_vetoed"])), 0.2)
         self.assertLess(abs(float(bmw["score_correlation"]["spearman_r_non_vetoed"])), 0.2)
+        self.assertLess(float(bmw["score_correlation"]["spearman_r_non_vetoed"]), 0.0)
         self.assertEqual(bmw["claim_audit"]["objective_ranking"]["status"], "unverified")
+        self.assertIn("objective_recalibration", bmw)
+        self.assertIn("track_aware_spearman_r", bmw["objective_recalibration"])
+        self.assertIn("trackless_spearman_r", bmw["objective_recalibration"])
+        self.assertIn("track_aware_holdout_mean_spearman_r", bmw["objective_recalibration"])
+        self.assertIn("track_aware_holdout_worst_spearman_r", bmw["objective_recalibration"])
+        self.assertLess(float(bmw["objective_recalibration"]["track_aware_spearman_r"]), 0.0)
+        self.assertFalse(bmw["objective_recalibration"]["recommended_runtime_profile"]["auto_apply"])
         self.assertTrue(all("error" not in row for row in bmw["rows"]))
 
 

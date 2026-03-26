@@ -8,6 +8,8 @@ from car_model.setup_registry import (
     diff_ramp_option_index,
     diff_ramp_pair_for_option,
     diff_ramp_string_for_option,
+    get_numeric_resolution,
+    snap_to_resolution,
 )
 from solver.arb_solver import ARBSolver
 from solver.corner_spring_solver import CornerSpringSolver
@@ -223,7 +225,13 @@ def _snap_supporting_value(field_name: str, value: Any, car: Any = None) -> Any:
     if field_name == "brake_bias_pct":
         return round(v, 1)
     if field_name in ("brake_bias_target", "brake_bias_migration"):
-        return round(v * 2.0) / 2.0
+        limits = getattr(getattr(car, "garage_ranges", None), field_name, (-5.0, 5.0))
+        return snap_to_resolution(
+            v,
+            get_numeric_resolution(car, field_name, default=0.5),
+            lo=float(limits[0]),
+            hi=float(limits[1]),
+        )
     if field_name in ("brake_bias_migration_gain", "hybrid_rear_drive_corner_pct"):
         return round(v, 1)
     if field_name in ("front_master_cyl_mm", "rear_master_cyl_mm"):

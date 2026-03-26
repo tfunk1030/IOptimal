@@ -65,6 +65,29 @@ from track_model.build_profile import build_profile
 from track_model.ibt_parser import IBTFile
 
 
+class PipelineInputError(RuntimeError):
+    """User-facing pipeline input error."""
+
+
+def _wrap_no_valid_laps_error(
+    exc: Exception,
+    *,
+    ibt_path: str,
+    car_name: str,
+    track_hint: str | None = None,
+) -> Exception:
+    if "No valid laps found in IBT file" not in str(exc):
+        return exc
+    track_example = track_hint or "<track>"
+    return PipelineInputError(
+        f"No usable complete timed lap was detected in IBT lap telemetry: {Path(ibt_path).name}. "
+        "The file can still contain a full session recording, but pipeline.produce needs at least one valid completed lap "
+        "to build the track profile and extract telemetry. "
+        f"If you only need a track-profile-based baseline, run "
+        f"`python -m solver.solve --car {car_name} --track {track_example} ...` instead."
+    )
+
+
 def _compute_single_session_authority(
     diagnosis, session_context, measured, envelope_distance: float, setup_distance: float,
 ) -> dict:
@@ -322,19 +345,41 @@ def produce(
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
     else:
         log("\nBuilding track profile from IBT...")
-        track = build_profile(ibt_path)
+        try:
+            track = build_profile(ibt_path)
+        except Exception as exc:
+            wrapped = _wrap_no_valid_laps_error(
+                exc,
+                ibt_path=ibt_path,
+                car_name=args.car,
+                track_hint=track_hint,
+            )
+            if wrapped is not exc:
+                raise wrapped from None
+            raise
         log(f"  Track: {track.track_name} — {track.track_config}")
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
 
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")
-    measured = extract_measurements(
-        ibt_path,
-        car,
-        lap=args.lap,
-        min_lap_time=getattr(args, "min_lap_time", 108.0),
-        outlier_pct=getattr(args, "outlier_pct", 0.115),
-    )
+    try:
+        measured = extract_measurements(
+            ibt_path,
+            car,
+            lap=args.lap,
+            min_lap_time=getattr(args, "min_lap_time", 108.0),
+            outlier_pct=getattr(args, "outlier_pct", 0.115),
+        )
+    except Exception as exc:
+        wrapped = _wrap_no_valid_laps_error(
+            exc,
+            ibt_path=ibt_path,
+            car_name=args.car,
+            track_hint=track_hint,
+        )
+        if wrapped is not exc:
+            raise wrapped from None
+        raise
     live_override_notes = apply_live_control_overrides(current_setup, measured)
     log(f"  Lap {measured.lap_number}: {measured.lap_time_s:.3f}s")
     for note in live_override_notes:
@@ -1650,8 +1695,11 @@ def main():
     parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
-
-    produce(args)
+    try:
+        produce(args)
+    except PipelineInputError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

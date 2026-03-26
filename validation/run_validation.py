@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from car_model.cars import get_car
 from solver.objective import ObjectiveFunction
 from track_model.profile import TrackProfile
+from validation.objective_calibration import build_calibration_report
 from validation.observation_mapping import normalize_setup_to_canonical_params, resolve_validation_signals
 
 
@@ -319,6 +320,7 @@ def build_validation_report() -> dict[str, Any]:
             "detail": "Current score-vs-lap correlation remains near zero, so objective rankings are not authoritative yet.",
         },
     }
+    calibration_summary = build_calibration_report(include_search=False)
 
     return {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -347,6 +349,13 @@ def build_validation_report() -> dict[str, Any]:
             "signal_usage": signal_usage,
             "model_freshness": freshness,
             "claim_audit": claim_audit,
+            "objective_recalibration": {
+                "track_aware_spearman_r": calibration_summary["modes"]["track_aware"]["score_correlation"]["spearman_r"],
+                "trackless_spearman_r": calibration_summary["modes"]["trackless"]["score_correlation"]["spearman_r"],
+                "track_aware_holdout_mean_spearman_r": calibration_summary["modes"]["track_aware"]["holdout_validation"]["current_runtime"]["mean_spearman_r"],
+                "track_aware_holdout_worst_spearman_r": calibration_summary["modes"]["track_aware"]["holdout_validation"]["current_runtime"]["worst_spearman_r"],
+                "recommended_runtime_profile": calibration_summary["recommended_runtime_profile"],
+            },
             "track_profile": str(track_path) if track_path is not None else None,
             "rows": scored_rows,
         },
@@ -382,6 +391,15 @@ def write_report(report: dict[str, Any]) -> None:
             f"- Veto rate: `{bmw['veto_rate']:.3f}`",
             f"- Score correlation (all valid): Pearson `{score_corr['pearson_r_all_valid']:+.6f}`, Spearman `{score_corr['spearman_r_all_valid']:+.6f}`",
             f"- Score correlation (non-vetoed): Pearson `{score_corr['pearson_r_non_vetoed']:+.6f}`, Spearman `{score_corr['spearman_r_non_vetoed']:+.6f}`",
+            "",
+            "### Recalibration Snapshot",
+            "",
+            f"- Track-aware Spearman: `{bmw['objective_recalibration']['track_aware_spearman_r']:+.6f}`",
+            f"- Trackless Spearman: `{bmw['objective_recalibration']['trackless_spearman_r']:+.6f}`",
+            f"- Track-aware holdout mean Spearman: `{bmw['objective_recalibration']['track_aware_holdout_mean_spearman_r']:+.6f}`",
+            f"- Track-aware holdout worst Spearman: `{bmw['objective_recalibration']['track_aware_holdout_worst_spearman_r']:+.6f}`",
+            f"- Recommended runtime evidence mode: `{bmw['objective_recalibration']['recommended_runtime_profile']['mode']}`",
+            f"- Auto-apply enabled: `{bmw['objective_recalibration']['recommended_runtime_profile']['auto_apply']}`",
             "",
             "### Claim Audit",
             "",

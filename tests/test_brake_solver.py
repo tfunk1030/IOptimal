@@ -108,16 +108,73 @@ class BrakeSolverTests(unittest.TestCase):
             current_setup=current_setup,
         ).solve()
 
-        self.assertLess(solution.brake_bias_target, 1.5)
-        self.assertLess(solution.brake_bias_migration, -0.5)
-        self.assertLess(solution.front_master_cyl_mm, 19.1)
-        self.assertGreater(solution.rear_master_cyl_mm, 20.6)
-        self.assertNotEqual(solution.pad_compound, "Medium")
+        self.assertEqual(solution.brake_bias_target, 1.0)
+        self.assertEqual(solution.brake_bias_migration, -2.0)
+        self.assertEqual(solution.front_master_cyl_mm, 17.8)
+        self.assertEqual(solution.rear_master_cyl_mm, 22.2)
+        self.assertEqual(solution.pad_compound, "Low")
         self.assertEqual(solution.brake_bias_status, "solved")
         self.assertEqual(solution.brake_bias_target_status, "seeded_from_telemetry")
         self.assertEqual(solution.brake_bias_migration_status, "seeded_from_telemetry")
         self.assertEqual(solution.master_cylinder_status, "seeded_from_telemetry")
         self.assertEqual(solution.pad_compound_status, "seeded_from_telemetry")
+
+    def test_supporting_solver_snaps_bmw_brake_context_to_whole_steps(self) -> None:
+        current_setup = SimpleNamespace(
+            brake_bias_target=1.5,
+            brake_bias_migration=-0.5,
+            front_master_cyl_mm=19.1,
+            rear_master_cyl_mm=20.6,
+            pad_compound="Medium",
+            diff_clutch_plates=4,
+        )
+        driver = SimpleNamespace(
+            trail_brake_depth_p95=0.45,
+            trail_brake_classification="deep",
+            throttle_classification="moderate",
+            throttle_progressiveness=0.6,
+            throttle_onset_rate_pct_per_s=220.0,
+            consistency="consistent",
+        )
+        measured = SimpleNamespace(
+            fuel_level_at_measurement_l=89.0,
+            braking_decel_peak_g=2.2,
+            front_braking_lock_ratio_p95=0.05,
+            front_slip_ratio_p95=0.05,
+            front_brake_wheel_decel_asymmetry_p95_ms2=4.2,
+            body_slip_p95_deg=3.0,
+            hydraulic_brake_split_pct=46.0,
+            abs_active_pct=10.0,
+            abs_cut_mean_pct=12.0,
+            rear_power_slip_ratio_p95=0.05,
+            rear_slip_ratio_p95=0.05,
+            tc_intervention_pct=0.0,
+            mguk_torque_peak_nm=0.0,
+            ers_battery_min_pct=0.0,
+            front_pressure_mean_kpa=165.0,
+            rear_pressure_mean_kpa=166.0,
+            front_carcass_mean_c=92.0,
+            rear_carcass_mean_c=93.0,
+            track_temp_c=30.0,
+            lf_pressure_kpa=165.0,
+            rf_pressure_kpa=165.0,
+            lr_pressure_kpa=166.0,
+            rr_pressure_kpa=166.0,
+        )
+        diagnosis = SimpleNamespace()
+
+        solution = SupportingSolver(
+            self.car,
+            driver,
+            measured,
+            diagnosis,
+            current_setup=current_setup,
+        ).solve()
+
+        self.assertEqual(solution.brake_bias_target, 2.0)
+        self.assertEqual(solution.brake_bias_migration, -1.0)
+        self.assertEqual(solution.brake_bias_target_status, "seeded_from_setup")
+        self.assertEqual(solution.brake_bias_migration_status, "seeded_from_setup")
 
     def test_decision_trace_surfaces_seeded_brake_hardware_changes(self) -> None:
         current_setup = SimpleNamespace(

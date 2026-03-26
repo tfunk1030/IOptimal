@@ -276,6 +276,19 @@ class CandidateSearchTests(unittest.TestCase):
         self.assertEqual(overrides.supporting["diff_ramp_option_idx"], 2)
         self.assertEqual(overrides.supporting["brake_bias_pct"], self.base_result.supporting.brake_bias_pct + 0.5)
 
+    def test_materialize_overrides_snaps_bmw_brake_target_and_migration_to_whole_steps(self) -> None:
+        result = self._materialize(
+            SolveChainOverrides(
+                supporting={
+                    "brake_bias_target": 1.5,
+                    "brake_bias_migration": -0.5,
+                }
+            )
+        )
+
+        self.assertEqual(result.supporting.brake_bias_target, 2.0)
+        self.assertEqual(result.supporting.brake_bias_migration, -1.0)
+
     def test_generate_candidate_families_returns_rematerialized_candidates(self) -> None:
         with (
             patch("solver.solve_chain._build_supporting", return_value=_supporting()),

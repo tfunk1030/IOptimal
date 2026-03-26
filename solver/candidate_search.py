@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from car_model.setup_registry import diff_ramp_option_index
+from car_model.setup_registry import diff_ramp_option_index, get_numeric_resolution, snap_to_resolution
 from solver.candidate_ranker import CandidateScore, score_from_prediction
 from solver.solve_chain import (
     SolveChainInputs,
@@ -158,7 +158,12 @@ def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> 
         ("brake_bias_migration", getattr(gr, "brake_bias_migration", (-5.0, 5.0)) if gr is not None else (-5.0, 5.0)),
     ):
         if f in sup and isinstance(sup[f], (int, float)):
-            sup[f] = round(_clamp(float(sup[f]), float(limits[0]), float(limits[1])) * 2.0) / 2.0
+            sup[f] = snap_to_resolution(
+                _clamp(float(sup[f]), float(limits[0]), float(limits[1])),
+                get_numeric_resolution(car, f, default=0.5),
+                lo=float(limits[0]),
+                hi=float(limits[1]),
+            )
     mc_options = list(getattr(gr, "brake_master_cyl_options_mm", []) or [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8]) if gr is not None else [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8]
     for f in ("front_master_cyl_mm", "rear_master_cyl_mm"):
         if f in sup and isinstance(sup[f], (int, float)):

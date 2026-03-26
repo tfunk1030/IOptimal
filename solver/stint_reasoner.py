@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from analyzer.stint_analysis import StintDataset, StintLapState
+from car_model.setup_registry import get_numeric_resolution
 from solver.candidate_search import _extract_target_maps, _snap_targets_to_garage, _target_overrides
 from solver.solve_chain import SolveChainInputs, SolveChainResult, materialize_overrides, run_base_solve
 
@@ -228,7 +229,13 @@ def _field_multiplier(field_name: str, lap: StintLapState) -> float:
     return 1.0
 
 
-def _distance(field_name: str, candidate: Any, ideal: Any) -> float:
+def _field_scale(field_name: str, car: Any | None = None) -> float:
+    if field_name in {"brake_bias_target", "brake_bias_migration"}:
+        return float(get_numeric_resolution(car, field_name, default=_FIELD_SCALE.get(field_name, 1.0)) or 1.0)
+    return _FIELD_SCALE.get(field_name, 1.0)
+
+
+def _distance(field_name: str, candidate: Any, ideal: Any, *, car: Any | None = None) -> float:
     if candidate == ideal:
         return 0.0
     if isinstance(candidate, str) or isinstance(ideal, str):
@@ -238,7 +245,7 @@ def _distance(field_name: str, candidate: Any, ideal: Any) -> float:
         ideal_val = float(ideal)
     except (TypeError, ValueError):
         return 1.0
-    scale = _FIELD_SCALE.get(field_name, 1.0)
+    scale = _field_scale(field_name, car)
     distance = abs(candidate_val - ideal_val) / max(scale, 1e-6)
     if field_name in _SUPPORT_HIGHER_IS_SAFER:
         if candidate_val < ideal_val:
@@ -358,6 +365,8 @@ def _score_candidate(
     candidate_result: SolveChainResult,
     lap_payloads: list[dict[str, Any]],
     config: StintObjectiveConfig,
+    *,
+    car: Any | None = None,
 ) -> tuple[dict[str, float], list[LapPenalty]]:
     candidate_flat = _flatten_targets(_extract_target_maps(candidate_result))
     lap_penalties: list[LapPenalty] = []
@@ -374,7 +383,7 @@ def _score_candidate(
             if candidate_value is None:
                 continue
             base_name = field_name
-            terms.append(_distance(base_name, candidate_value, ideal_value))
+            terms.append(_distance(base_name, candidate_value, ideal_value, car=car))
             multipliers.append(_field_multiplier(base_name, lap))
         penalty = 0.0
         if terms:
@@ -443,7 +452,7 @@ def _local_refine(
             candidate_targets[step_name][field_name] = trial_value
             overrides = _target_overrides(base_result, candidate_targets)
             candidate_result = materialize_overrides(base_result, overrides, base_inputs)
-            objective, penalties = _score_candidate(candidate_result, lap_payloads, config)
+            objective, penalties = _score_candidate(candidate_result, lap_payloads, config, car=base_inputs.car)
             if objective["total"] + 1e-6 < best_objective["total"]:
                 best_result = candidate_result
                 best_objective = objective
@@ -468,7 +477,7 @@ def solve_stint_compromise(
         base_result = run_base_solve(base_inputs)
 
     if len(dataset.usable_laps) < 5:
-        objective, penalties = _score_candidate(base_result, [], config)
+        objective, penalties = _score_candidate(base_result, [], config, car=base_inputs.car)
         return StintSolveResult(
             dataset=dataset,
             result=base_result,
@@ -500,7 +509,7 @@ def solve_stint_compromise(
         )
 
     if len(lap_payloads) < 2:
-        objective, penalties = _score_candidate(base_result, [], config)
+        objective, penalties = _score_candidate(base_result, [], config, car=base_inputs.car)
         return StintSolveResult(
             dataset=dataset,
             result=base_result,
@@ -518,7 +527,7 @@ def solve_stint_compromise(
         candidate_targets = _candidate_targets(base_result, lap_payloads, profile=profile, car=base_inputs.car)
         overrides = _target_overrides(base_result, candidate_targets)
         candidate_result = materialize_overrides(base_result, overrides, base_inputs)
-        objective, penalties = _score_candidate(candidate_result, lap_payloads, config)
+        objective, penalties = _score_candidate(candidate_result, lap_payloads, config, car=base_inputs.car)
         scored_candidates.append((profile, candidate_result, objective, penalties))
 
     profile, selected_result, selected_objective, selected_penalties = min(

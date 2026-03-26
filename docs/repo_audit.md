@@ -1,6 +1,6 @@
 # Repo Audit
 
-Generated: 2026-03-25T02:16:36.036796+00:00
+Generated: 2026-03-26T00:49:21.470977+00:00
 
 ## Workflow Map
 
@@ -16,8 +16,8 @@ Generated: 2026-03-25T02:16:36.036796+00:00
 
 - Samples: `73`
 - Non-vetoed samples: `72`
-- Pearson (non-vetoed): `0.07110007293908954`
-- Spearman (non-vetoed): `0.07772204000257252`
+- Pearson (non-vetoed): `0.03487001368078883`
+- Spearman (non-vetoed): `-0.12052222007846165`
 - Current objective status: `unverified` until score-vs-lap correlation improves materially.
 
 ## Support Tiers
@@ -29,7 +29,7 @@ Generated: 2026-03-25T02:16:36.036796+00:00
 
 ## Value Classes
 
-- Source of truth: `259` inventoried files
+- Source of truth: `261` inventoried files
 - Calibration evidence: `183` inventoried files
 - Generated artifact: `29` inventoried files
 - Disposable scratch/history: `60` inventoried files
@@ -38,7 +38,7 @@ Generated: 2026-03-25T02:16:36.036796+00:00
 
 - `node_modules`: `45` files (third-party, not first-party source)
 - Generated artifacts: `56` files
-- Scratch/history: `51` files
+- Scratch/history: `52` files
 
 ## Official iRacing Sources Used
 
@@ -78,10 +78,10 @@ Generated: 2026-03-25T02:16:36.036796+00:00
 | `scripts` | 2 | Source of truth | Repo maintenance, diagnostics, and generated-document utilities. |
 | `skill` | 4 | Source of truth | Repo files |
 | `solver` | 44 | Source of truth | Setup solve chain, objective function, legality checks, and search strategies. |
-| `tests` | 29 | Source of truth | Regression coverage and fixture-backed validation. |
+| `tests` | 30 | Source of truth | Regression coverage and fixture-backed validation. |
 | `tmp` | 60 | Disposable scratch/history | Scratch artifacts and temporary work products. |
 | `track_model` | 5 | Source of truth | IBT parsing, track-profile building, and track metadata. |
-| `validation` | 7 | Source of truth | Calibration/evidence reporting and schema normalization. |
+| `validation` | 8 | Source of truth | Calibration/evidence reporting and schema normalization. |
 | `validator` | 7 | Source of truth | Cross-checks for solver behavior and garage consistency. |
 | `webapp` | 18 | Source of truth | FastAPI UI, service adapters, templates, and persistence. |
 

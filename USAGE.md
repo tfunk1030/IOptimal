@@ -33,15 +33,22 @@ This installs `pytest` plus the Python solver dependencies used by the focused r
 | Porsche | `--car porsche` | Porsche 963 GTP |
 | Acura | `--car acura` | Acura ARX-06 |
 
+Current support tiers in the codebase:
+
+- BMW/Sebring: calibrated
+- Ferrari/Sebring: partial
+- Cadillac/Silverstone: exploratory
+- Porsche/Acura: unsupported until more telemetry exists
+
 ## Quick Start
 
 **Produce a setup from a telemetry file:**
 
 ```bash
-python -m pipeline --car bmw --ibt session.ibt --wing 17 --sto my_setup.sto
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --scenario-profile single_lap_safe --sto my_setup.sto
 ```
 
-This reads your IBT telemetry, profiles your driving style, diagnoses handling, runs the 6-step physics solver, and writes an iRacing `.sto` setup file you can load directly in the garage.
+This reads your IBT telemetry, profiles your driving style, diagnoses handling, runs the 6-step physics solver, and writes an iRacing `.sto` setup file you can load directly in the garage. For BMW/Sebring, the runtime objective currently reproduces `73` observed sessions with `72` non-vetoed rows and a non-vetoed Spearman of `-0.120522`, so treat outputs as calibrated-but-not-yet-authoritative rather than guaranteed optimal.
 
 ---
 
@@ -52,7 +59,7 @@ This reads your IBT telemetry, profiles your driving style, diagnoses handling, 
 The primary workflow. Takes a telemetry file and produces a complete, driver-adaptive setup.
 
 ```bash
-python -m pipeline --car bmw --ibt session.ibt --wing 17 --sto output.sto
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --scenario-profile single_lap_safe --sto output.sto
 ```
 
 **Arguments:**
@@ -66,7 +73,10 @@ python -m pipeline --car bmw --ibt session.ibt --wing 17 --sto output.sto
 | `--balance` | No | 50.14 | Target aero DF balance (%) |
 | `--tolerance` | No | 0.1 | Balance tolerance (%) |
 | `--fuel` | No | auto | Fuel load in liters |
-| `--free` | No | off | Free optimization (don't pin front ride height at sim floor) |
+| `--free` | No | off | Search the legal setup manifold from the pinned baseline and apply the best fully accepted candidate |
+| `--explore-legal-space` | No | off | Run legal-manifold search after the base physics solve |
+| `--search-mode` | No | off | Structured legal-manifold search mode: `quick`, `standard`, or `exhaustive` |
+| `--scenario-profile` | No | `single_lap_safe` | Scenario objective profile: `single_lap_safe`, `quali`, `sprint`, or `race` |
 | `--sto` | No | — | Export iRacing .sto setup file to this path |
 | `--json` | No | — | Save full solver results as JSON |
 | `--report-only` | No | off | Only print the final report (skip per-step details) |
@@ -77,19 +87,22 @@ python -m pipeline --car bmw --ibt session.ibt --wing 17 --sto output.sto
 
 ```bash
 # Basic setup production
-python -m pipeline --car bmw --ibt session.ibt --wing 17 --sto output.sto
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --scenario-profile single_lap_safe --sto output.sto
 
-# Analyze a specific lap
-python -m pipeline --car bmw --ibt session.ibt --wing 17 --lap 25 --json output.json
+# Qualifying-biased single-lap solve
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --lap 25 --scenario-profile quali --json output.json
+
+# Race-stint legal-manifold search from the pinned physics seed
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --free --scenario-profile race --sto output.sto
 
 # Use learning system for refined output
-python -m pipeline --car bmw --ibt session.ibt --wing 17 --sto output.sto --learn --auto-learn
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --scenario-profile sprint --sto output.sto --learn --auto-learn
 
 # Concise report only
-python -m pipeline --car bmw --ibt session.ibt --wing 17 --report-only
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --report-only
 ```
 
-The pipeline prints a detailed engineering report covering: driver profile, handling diagnosis, aero analysis, each solver step, supporting parameters, and a comparison of your current setup vs the produced setup.
+The pipeline prints a detailed engineering report covering: driver profile, handling diagnosis, aero analysis, each solver step, supporting parameters, selected scenario profile, decision trace, legal-manifold candidate status, and a comparison of your current setup vs the produced setup.
 
 ---
 
@@ -125,7 +138,7 @@ The report includes: setup readout, ride height statistics, shock velocity histo
 Runs the 6-step physics solver using a pre-built track profile (no IBT needed). Useful when you already have a track profile saved and just want to compute a setup.
 
 ```bash
-python -m solver.solve --car bmw --track sebring --wing 17 --sto output.sto
+python -m solver.solve --car bmw --track sebring --wing 17 --scenario-profile single_lap_safe --sto output.sto
 ```
 
 **Arguments:**
@@ -138,7 +151,9 @@ python -m solver.solve --car bmw --track sebring --wing 17 --sto output.sto
 | `--balance` | No | 50.14 | Target DF balance (%) |
 | `--tolerance` | No | 0.1 | Balance tolerance (%) |
 | `--fuel` | No | 89.0 | Fuel load in liters |
-| `--free` | No | off | Free optimization mode |
+| `--free` | No | off | Search the legal setup manifold from a pinned baseline seed |
+| `--legal-search` | No | off | Run legal-manifold search after the base physics solve |
+| `--scenario-profile` | No | `single_lap_safe` | Scenario objective profile: `single_lap_safe`, `quali`, `sprint`, or `race` |
 | `--json` | No | off | Output as JSON to stdout |
 | `--save` | No | — | Save full JSON summary to file |
 | `--sto` | No | — | Export iRacing .sto setup file |
@@ -149,10 +164,13 @@ python -m solver.solve --car bmw --track sebring --wing 17 --sto output.sto
 
 ```bash
 # Solve and export
-python -m solver.solve --car bmw --track sebring --wing 17 --sto output.sto
+python -m solver.solve --car bmw --track sebring --wing 17 --scenario-profile single_lap_safe --sto output.sto
 
 # Save JSON for validation
-python -m solver.solve --car bmw --track sebring --wing 17 --save solver_output.json
+python -m solver.solve --car bmw --track sebring --wing 17 --scenario-profile quali --save solver_output.json
+
+# Run legal-manifold search for a race profile
+python -m solver.solve --car bmw --track sebring --wing 17 --legal-search --scenario-profile race --sto output.sto
 
 # Quick garage sheet
 python -m solver.solve --car bmw --track sebring --wing 17 --report-only

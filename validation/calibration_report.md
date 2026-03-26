@@ -1,206 +1,198 @@
-# Objective Weight Calibration Report
+# Objective Recalibration Report
 
-Generated from 69 BMW Sebring observations.
+Generated: 2026-03-25T23:57:24.311376+00:00
 
-## Current Model Correlation
+BMW/Sebring samples: `73`
 
-- Pearson r (score vs lap_time):  **-0.1404**
-- Spearman ρ (score vs lap_time): **-0.2119**
-- Expected: negative (higher score → lower lap time)
+## Track Aware
 
-⚠️ Weak negative correlation — weights need tuning.
+- Samples: `73` total, `72` non-vetoed
+- Pearson: `+0.034870`
+- Spearman: `-0.120522`
 
-## Lap Time Distribution
+### Term Correlations
 
-- Min: 108.334s
-- Median: 109.333s
-- Max: 110.492s
-- Spread: 2.159s
+| Term | Pearson r | Spearman r |
+|------|-----------|------------|
+| lap_gain_ms | -0.090503 | -0.290437 |
+| weighted_lap_gain_ms | -0.090503 | -0.290437 |
+| weighted_platform_ms | +0.042996 | -0.120747 |
+| total_score_ms | +0.034870 | -0.120522 |
+| platform_risk_ms | -0.042996 | +0.098592 |
+| driver_mismatch_ms | +nan | -0.088398 |
+| telemetry_uncertainty_ms | +nan | -0.088398 |
+| staleness_penalty_ms | +nan | -0.088398 |
+| empirical_penalty_ms | +nan | -0.088398 |
+| weighted_driver_ms | +nan | -0.088398 |
+| weighted_uncertainty_ms | +nan | -0.088398 |
+| weighted_staleness_ms | +nan | -0.088398 |
 
-## Score Distribution
+### Lap-Gain Components
 
-- Min: -440.4ms
-- Median: -94.3ms
-- Max: -68.0ms
-- Spread: 372.3ms
+| Component | Pearson r | Spearman r |
+|-----------|-----------|------------|
+| rebound_ratio_ms | +0.276961 | +0.332787 |
+| damping_ms | +0.269508 | +0.192392 |
+| arb_extreme_ms | -0.292777 | -0.151843 |
+| camber_ms | +0.066690 | +0.118110 |
+| tc_ms | +nan | -0.088398 |
+| lltd_balance_ms | +0.037094 | +0.077272 |
+| diff_ramp_ms | -0.176625 | -0.072802 |
+| df_balance_ms | +0.053097 | +0.053733 |
+| diff_clutch_ms | -0.023300 | -0.026047 |
+| diff_preload_ms | +0.042728 | -0.013023 |
 
-## Component-Level Correlation with Lap Time
+### Lap-Gain Component Ablations
 
-| Component | Pearson r | Spearman ρ | Direction |
-|-----------|-----------|------------|-----------|
-| total_score | -0.1404 | -0.2119 | ✅ |
-| lap_gain_ms | -0.1401 | -0.3023 | ✅ |
-| platform_risk | +0.0000 | -0.0479 | ⚠️ |
-| driver_mismatch | +0.0000 | -0.0479 | ⚠️ |
-| telemetry_uncertainty | +0.0000 | -0.0479 | ⚠️ |
-| envelope_penalty | +0.0370 | +0.0117 | ✅ |
-| lltd | -0.1548 | -0.0622 | ⚠️ |
-| lltd_error | -0.0071 | +0.1214 | ✅ |
-| front_sigma_mm | +0.0000 | -0.0479 | ⚠️ |
-| df_balance_pct | -0.0711 | -0.0263 | ✅ |
-| df_balance_error_pct | +0.0717 | +0.0391 | ✅ |
+| Component Removed | Spearman r | Holdout Mean | Holdout Worst | In-Sample Improvement | Holdout Mean Improvement |
+|-------------------|------------|--------------|---------------|-----------------------|--------------------------|
+| arb_extreme_ms | -0.121487 | -0.072143 | +0.428571 | +0.000965 | +0.000000 |
+| tc_ms | -0.120522 | -0.072143 | +0.428571 | +0.000000 | +0.000000 |
+| rebound_ratio_ms | -0.119879 | -0.072143 | +0.428571 | -0.000643 | +0.000000 |
+| diff_ramp_ms | -0.119397 | -0.070714 | +0.428571 | -0.001125 | -0.001429 |
+| camber_ms | -0.120426 | -0.069286 | +0.428571 | -0.000096 | -0.002857 |
+| df_balance_ms | -0.119075 | -0.066429 | +0.428571 | -0.001447 | -0.005714 |
+| damping_ms | -0.119236 | -0.065989 | +0.459341 | -0.001286 | -0.006154 |
+| diff_preload_ms | -0.113994 | -0.060275 | +0.459341 | -0.006528 | -0.011868 |
+| diff_clutch_ms | -0.111004 | -0.054560 | +0.428571 | -0.009518 | -0.017582 |
+| lltd_balance_ms | -0.110489 | -0.054560 | +0.428571 | -0.010033 | -0.017582 |
 
-*Penalties should correlate POSITIVELY with lap time (more penalty → slower).*
-*Total score should correlate NEGATIVELY (higher score → faster).*
+### Holdout Validation
 
-## Optimized Weights (Grid Search)
+- Folds: `5`
+- Current runtime mean test Spearman: `-0.072143`
+- Current runtime worst test Spearman: `+0.428571`
+- Train-searched mean test Spearman: `-0.091099`
+- Train-searched worst test Spearman: `+0.265934`
 
-Best Spearman ρ achievable: **-0.3023**
+### Ablations
 
-| Weight | Current | Suggested |
-|--------|---------|-----------|
-| lap_gain | 1.0 | 0.5 |
-| platform | 1.0 | 0.0 |
-| driver | 0.5 | 0.0 |
-| telemetry | 0.6 | 0.0 |
-| envelope | 0.7 | 0.0 |
+| Variant | Pearson r | Spearman r |
+|---------|-----------|------------|
+| lap_gain_only | -0.090503 | -0.290437 |
+| drop_lap_gain | +0.036078 | -0.134478 |
+| penalties_only | +0.030427 | -0.131841 |
+| current | +0.034870 | -0.120522 |
+| drop_driver | +0.034870 | -0.120522 |
+| drop_uncertainty | +0.034870 | -0.120522 |
+| drop_staleness | +0.034870 | -0.120522 |
+| drop_empirical | +0.034870 | -0.120522 |
+| drop_envelope | +0.041836 | -0.104058 |
+| drop_platform | -0.078282 | -0.074410 |
 
-## Top 10 Best-Scored Setups vs Actual Lap Time
+### Weight Search
 
-| Rank | Score (ms) | Lap Time (s) | File |
-|------|-----------|--------------|------|
-| 1 | -68.0 | 109.264 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 2 | -74.3 | 109.257 | bmw_sebring_international_raceway_bmw2bad.json |
-| 3 | -75.0 | 109.040 | bmw_sebring_international_raceway_bmw2.json |
-| 4 | -78.0 | 109.013 | bmw_sebring_international_raceway_bmw20.json |
-| 5 | -78.5 | 109.242 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 6 | -80.0 | 109.428 | bmw_sebring_international_raceway_bmwbad2.json |
-| 7 | -83.0 | 109.418 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 8 | -83.8 | 109.655 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 9 | -83.9 | 109.927 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 10 | -83.9 | 109.535 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
+- Current Spearman: `-0.120522`
+- Best Spearman found: `-0.295357`
+- Improvement: `+0.174834`
+- Manual review recommended: `True`
 
-## Bottom 10 Worst-Scored Setups vs Actual Lap Time
+| Weight | Suggested |
+|--------|-----------|
+| lap_gain | 1.25 |
+| platform | 0.00 |
+| driver | 0.00 |
+| uncertainty | 0.00 |
+| envelope | 0.20 |
+| staleness | 0.00 |
+| empirical | 0.00 |
 
-| Rank | Score (ms) | Lap Time (s) | File |
-|------|-----------|--------------|------|
-| 60 | -101.9 | 109.378 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 61 | -102.1 | 109.361 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 62 | -103.9 | 109.504 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 63 | -107.9 | 109.521 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 64 | -109.1 | 109.733 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 65 | -122.5 | 109.114 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 66 | -129.3 | 109.372 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 67 | -129.3 | 109.834 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
-| 68 | -135.3 | 109.820 | bmw_sebring_international_raceway_bmwbad.json |
-| 69 | -440.4 | 109.614 | bmw_sebring_international_raceway_bmwlmdh_sebring_ |
+## Trackless
 
-## Anomalies (Model vs Reality Disagreements)
+- Samples: `73` total, `73` non-vetoed
+- Pearson: `-0.057583`
+- Spearman: `-0.064976`
 
-| Score Rank | Time Rank | Δ | Score (ms) | Lap (s) | File |
-|-----------|-----------|---|-----------|---------|------|
-| 9 | 66 | 57 | -83.9 | 109.927 | bmw_sebring_international_raceway_bmwlmd |
-| 17 | 69 | 52 | -87.7 | 110.492 | bmw_sebring_international_raceway_bmwlmd |
-| 65 | 15 | 50 | -122.5 | 109.114 | bmw_sebring_international_raceway_bmwlmd |
-| 53 | 3 | 50 | -98.7 | 108.473 | bmw_sebring_international_raceway_bmwlmd |
-| 8 | 58 | 50 | -83.8 | 109.655 | bmw_sebring_international_raceway_bmwlmd |
-| 56 | 11 | 45 | -100.3 | 109.094 | bmw_sebring_international_raceway_bmwlmd |
-| 10 | 52 | 42 | -83.9 | 109.535 | bmw_sebring_international_raceway_bmwlmd |
-| 6 | 47 | 41 | -80.0 | 109.428 | bmw_sebring_international_raceway_bmwbad |
-| 44 | 4 | 40 | -96.8 | 108.573 | bmw_sebring_international_raceway_bmwlmd |
-| 18 | 57 | 39 | -88.2 | 109.628 | bmw_sebring_international_raceway_bmwlmd |
+### Term Correlations
 
-*Large Δ = model disagrees with reality. Investigate these setups.*
+| Term | Pearson r | Spearman r |
+|------|-----------|------------|
+| lap_gain_ms | -0.084623 | -0.227601 |
+| weighted_lap_gain_ms | -0.084623 | -0.227601 |
+| platform_risk_ms | -0.291774 | -0.168826 |
+| driver_mismatch_ms | +nan | -0.106041 |
+| telemetry_uncertainty_ms | +nan | -0.106041 |
+| staleness_penalty_ms | +nan | -0.106041 |
+| empirical_penalty_ms | +nan | -0.106041 |
+| weighted_driver_ms | +nan | -0.106041 |
+| weighted_uncertainty_ms | +nan | -0.106041 |
+| weighted_staleness_ms | +nan | -0.106041 |
+| weighted_empirical_ms | +nan | -0.106041 |
+| envelope_penalty_ms | +0.067975 | -0.077410 |
 
-## Setup Parameter Correlations with Lap Time (Sebring)
+### Lap-Gain Components
 
-Direct correlation of raw setup values vs observed lap time (n=68 sessions).
-Negative ρ → higher value = faster lap. Positive ρ → higher value = slower.
+| Component | Pearson r | Spearman r |
+|-----------|-----------|------------|
+| rebound_ratio_ms | +0.271019 | +0.346076 |
+| damping_ms | +0.256107 | +0.204060 |
+| arb_extreme_ms | -0.291774 | -0.168826 |
+| camber_ms | +0.071464 | +0.134271 |
+| tc_ms | +nan | -0.106041 |
+| diff_ramp_ms | -0.175367 | -0.090090 |
+| lltd_balance_ms | +0.033908 | +0.057448 |
+| diff_clutch_ms | -0.024190 | -0.045631 |
+| df_balance_ms | +0.044584 | +0.037671 |
+| diff_preload_ms | +0.056325 | +0.007898 |
 
-| Parameter | Spearman ρ | Direction | Signal |
-|-----------|-----------|-----------|--------|
-| front_ls_comp | -0.425 | faster ↑ | 🟢 strong |
-| front_hs_comp | -0.295 | faster ↑ | 🟡 moderate |
-| brake_bias_pct | -0.295 | faster ↑ | 🟡 moderate |
-| rear_hs_comp | -0.293 | faster ↑ | 🟡 moderate |
-| rear_camber_deg | +0.249 | slower ↑ | 🟡 moderate |
-| rear_third_spring_nmm | +0.240 | slower ↑ | 🟡 moderate |
-| front_torsion_od_mm | -0.233 | faster ↑ | 🟡 moderate |
-| rear_spring_rate_nmm | -0.167 | faster ↑ | 🟡 moderate |
-| front_ls_rbd | -0.150 | faster ↑ | ⚫ noise |
-| rear_pushrod_offset_mm | -0.146 | faster ↑ | ⚫ noise |
-| front_heave_spring_nmm | +0.142 | slower ↑ | ⚫ noise |
-| rear_arb_blade | +0.134 | slower ↑ | ⚫ noise |
-| front_hs_rbd | +0.099 | weak | ⚫ noise |
-| front_pushrod_offset_mm | +0.052 | weak | ⚫ noise |
-| front_arb_blade | -0.049 | weak | ⚫ noise |
-| rear_ls_rbd | +0.048 | weak | ⚫ noise |
-| front_camber_deg | +0.044 | weak | ⚫ noise |
-| front_rh_static_mm | +0.037 | weak | ⚫ noise |
-| rear_ls_comp | -0.036 | weak | ⚫ noise |
-| rear_hs_rbd | -0.009 | weak | ⚫ noise |
-| rear_rh_static_mm | -0.005 | weak | ⚫ noise |
+### Lap-Gain Component Ablations
 
-## Telemetry Correlations with Lap Time (Sebring)
+| Component Removed | Spearman r | Holdout Mean | Holdout Worst | In-Sample Improvement | Holdout Mean Improvement |
+|-------------------|------------|--------------|---------------|-----------------------|--------------------------|
+| diff_ramp_ms | -0.083642 | -0.101593 | +0.121429 | +0.018666 | +0.010385 |
+| arb_extreme_ms | -0.075003 | -0.098242 | +0.121429 | +0.010027 | +0.007033 |
+| tc_ms | -0.064976 | -0.091209 | +0.121429 | +0.000000 | +0.000000 |
+| camber_ms | -0.037671 | -0.076429 | +0.250000 | -0.027305 | -0.014780 |
+| diff_clutch_ms | -0.047544 | -0.070495 | +0.217857 | -0.017432 | -0.020714 |
+| df_balance_ms | -0.093145 | -0.063022 | +0.239286 | +0.028169 | -0.028187 |
+| damping_ms | -0.034709 | -0.054176 | +0.217857 | -0.030267 | -0.037033 |
+| diff_preload_ms | -0.045014 | -0.050110 | +0.178571 | -0.019962 | -0.041099 |
+| rebound_ratio_ms | +0.006602 | -0.029286 | +0.232143 | -0.071578 | -0.061923 |
+| lltd_balance_ms | -0.011971 | -0.001209 | +0.267857 | -0.053005 | -0.090000 |
 
-IBT-measured telemetry vs observed lap time. Shows what physical states predict pace.
+### Holdout Validation
 
-| Telemetry Field | Spearman ρ | Direction | Signal |
-|----------------|-----------|-----------|--------|
-| roll_gradient_deg_per_g | +0.370 | slower ↑ | 🟢 strong |
-| rear_bottoming_events | +0.351 | slower ↑ | 🟢 strong |
-| body_roll_p95_deg | -0.343 | faster ↑ | 🟢 strong |
-| body_roll_max_deg | +0.307 | slower ↑ | 🟢 strong |
-| lltd_measured | -0.271 | faster ↑ | 🟡 moderate |
-| rear_rh_std_mm | +0.238 | slower ↑ | 🟡 moderate |
-| dynamic_front_rh_mm | +0.230 | slower ↑ | 🟡 moderate |
-| front_dominant_freq_hz | -0.179 | faster ↑ | 🟡 moderate |
-| dynamic_rear_rh_mm | +0.152 | slower ↑ | 🟡 moderate |
-| rear_shock_vel_p99_mps | +0.135 | slower ↑ | ⚫ noise |
-| body_slip_p95_deg | +0.110 | slower ↑ | ⚫ noise |
-| front_shock_vel_p95_mps | -0.096 | weak | ⚫ noise |
-| front_rh_std_mm | +0.093 | weak | ⚫ noise |
-| front_shock_vel_p99_mps | -0.091 | weak | ⚫ noise |
-| front_bottoming_events | +0.053 | weak | ⚫ noise |
-| understeer_mean_deg | +0.034 | weak | ⚫ noise |
-| front_rh_settle_time_ms | -0.030 | weak | ⚫ noise |
-| understeer_low_speed_deg | +0.018 | weak | ⚫ noise |
-| rear_dominant_freq_hz | -0.011 | weak | ⚫ noise |
-| understeer_high_speed_deg | +0.011 | weak | ⚫ noise |
+- Folds: `5`
+- Current runtime mean test Spearman: `-0.091209`
+- Current runtime worst test Spearman: `+0.121429`
+- Train-searched mean test Spearman: `-0.259890`
+- Train-searched worst test Spearman: `+0.072527`
 
-## Sebring Setup Recommendations (Data-Driven)
+### Ablations
 
-Based on 68 real BMW sessions at Sebring:
+| Variant | Pearson r | Spearman r |
+|---------|-----------|------------|
+| lap_gain_only | -0.084623 | -0.227601 |
+| drop_envelope | -0.004177 | -0.214272 |
+| drop_platform | -0.088460 | -0.075003 |
+| current | -0.057583 | -0.064976 |
+| drop_driver | -0.057583 | -0.064976 |
+| drop_uncertainty | -0.057583 | -0.064976 |
+| drop_staleness | -0.057583 | -0.064976 |
+| drop_empirical | -0.057583 | -0.064976 |
+| penalties_only | -0.031938 | +0.165803 |
+| drop_lap_gain | -0.031938 | +0.165803 |
 
-| Finding | Setup Direction | Strength |
-|---------|----------------|---------|
-| Front LS compression (clicks) | Higher = faster (ρ=-0.36) | 🟢 strong |
-| Front HS compression (clicks) | Higher = faster (ρ=-0.27) | 🟢 strong |
-| Front torsion bar OD | Thicker = faster (ρ=-0.26) | 🟢 strong |
-| Brake bias % | Higher (more fwd) = faster (ρ=-0.25) | 🟢 strong |
-| Rear 3rd spring | Softer = faster (ρ=+0.24) | 🟡 moderate |
-| Rear camber | Less negative = faster (ρ=+0.23) | 🟡 moderate |
-| Body roll (p95) | Less roll = faster (ρ=-0.32) | 🟢 strong |
-| LLTD measured | Higher = faster (ρ=-0.29) | 🟢 strong |
-| Roll gradient | Steeper = slower (ρ=+0.35) | 🟢 strong |
-| Rear bottoming events | More = slower (ρ=+0.34) | 🟢 strong |
+### Weight Search
 
-**Key Sebring insight:** The track rewards front-end stiffness (high LS comp,
-thick torsion bar) and rear compliance (soft 3rd spring). Rear bottoming is
-a significant pace killer. Higher LLTD (rear weight transfer) is correlated
-with pace — the car prefers a rear-biased balance at this track.
+- Current Spearman: `-0.064976`
+- Best Spearman found: `-0.227601`
+- Improvement: `+0.162625`
+- Manual review recommended: `True`
 
-## Calibration Interpretation
+| Weight | Suggested |
+|--------|-----------|
+| lap_gain | 0.25 |
+| platform | 0.00 |
+| driver | 0.00 |
+| uncertainty | 0.00 |
+| envelope | 0.00 |
+| staleness | 0.00 |
+| empirical | 0.00 |
 
-Best ρ = -0.3023 achieved with lap_gain weight=0.5, all penalties=0.0 total
+## Runtime Recommendation
 
-**Why penalty weights = 0.0:**
-When `track=None` (intentional — see score_observations docstring), the physics terms
-platform_risk, driver_mismatch, and telemetry_uncertainty all evaluate to zero.
-They require a track profile (excursion data, speed histogram) to be non-zero.
-This is by design: calibration without a track profile avoids session-specific bias.
-
-**What this means for the objective function:**
-  - lap_gain_ms is the primary signal (ρ=-0.30). It predicts pace well on its own.
-  - Penalty terms add value at runtime (with track profile) but can't be calibrated
-    from track-agnostic observations.
-  - To calibrate penalty weights, re-run with a specific track profile loaded.
-    That will produce non-zero platform_risk values for comparison.
-
-**Action items:**
-  1. Current penalty weights are physics-derived, not data-driven — leave as-is until
-     per-track calibration with track profile is added.
-  2. lap_gain weight could be reduced from 1.0 → 0.5 to avoid over-fitting to
-     aero prediction noise.
-  3. The 2.16s lap time spread across 69 sessions is sufficient signal.
-     Next step: add sessions from more diverse setups (extremes, not just midfield).
+- Preferred evidence mode today: `track_aware`
+- Auto-apply: `False`
+- Manual review required: `True`
+- Reason: Calibration tooling is implemented, but runtime auto-application stays disabled until track-aware correlation is materially negative and stable under stronger validation.

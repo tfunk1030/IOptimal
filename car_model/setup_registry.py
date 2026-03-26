@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass, field as dc_field
+from decimal import Decimal, ROUND_HALF_UP
 import re
 
 
@@ -267,8 +268,8 @@ _BMW_SPECS: dict[str, CarFieldSpec] = {
     "rear_hs_slope":            _S("Chassis.LeftRear.HsCompDampSlope",               "CarSetup_Chassis_LeftRear_HsCompDampSlope",         range_min=0, range_max=11, parse_fn="int"),
     # Supporting: Brakes
     "brake_bias_pct":           _S("BrakesDriveUnit.BrakeSpec.BrakePressureBias",     "CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias"),
-    "brake_bias_target":        _S("BrakesDriveUnit.BrakeSpec.BrakeBiasTarget",       "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget"),
-    "brake_bias_migration":     _S("BrakesDriveUnit.BrakeSpec.BrakeBiasMigration",    "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration"),
+    "brake_bias_target":        _S("BrakesDriveUnit.BrakeSpec.BrakeBiasTarget",       "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget", range_min=-5.0, range_max=5.0, resolution=1.0),
+    "brake_bias_migration":     _S("BrakesDriveUnit.BrakeSpec.BrakeBiasMigration",    "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration", range_min=-5.0, range_max=5.0, resolution=1.0),
     "brake_bias_migration_gain": _S("BrakesDriveUnit.BrakeSpec.BiasMigrationGain",    "CarSetup_BrakesDriveUnit_BrakeSpec_BiasMigrationGain"),
     "front_master_cyl_mm":      _S("BrakesDriveUnit.BrakeSpec.FrontMasterCyl",        "CarSetup_BrakesDriveUnit_BrakeSpec_FrontMasterCyl"),
     "rear_master_cyl_mm":       _S("BrakesDriveUnit.BrakeSpec.RearMasterCyl",         "CarSetup_BrakesDriveUnit_BrakeSpec_RearMasterCyl"),
@@ -390,6 +391,8 @@ _CADILLAC_SPECS: dict[str, CarFieldSpec] = {
     **_BMW_SPECS,
     "front_arb_blade":          _S("Chassis.Front.ArbBlades",                        "CarSetup_Chassis_Front_ArbBlades[0]",               range_min=1, range_max=5, parse_fn="int"),
     "rear_arb_blade":           _S("Chassis.Rear.ArbBlades",                         "CarSetup_Chassis_Rear_ArbBlades[0]",                range_min=1, range_max=5, parse_fn="int"),
+    "brake_bias_target":        _S("BrakesDriveUnit.BrakeSpec.BrakeBiasTarget",      "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget", range_min=-5.0, range_max=5.0, resolution=0.5),
+    "brake_bias_migration":     _S("BrakesDriveUnit.BrakeSpec.BrakeBiasMigration",   "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration", range_min=-5.0, range_max=5.0, resolution=0.5),
 }
 
 # Acura — same as Cadillac
@@ -397,6 +400,8 @@ _ACURA_SPECS: dict[str, CarFieldSpec] = {
     **_BMW_SPECS,
     "front_arb_blade":          _S("Chassis.Front.ArbBlades",                        "CarSetup_Chassis_Front_ArbBlades[0]",               range_min=1, range_max=5, parse_fn="int"),
     "rear_arb_blade":           _S("Chassis.Rear.ArbBlades",                         "CarSetup_Chassis_Rear_ArbBlades[0]",                range_min=1, range_max=5, parse_fn="int"),
+    "brake_bias_target":        _S("BrakesDriveUnit.BrakeSpec.BrakeBiasTarget",      "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget", range_min=-5.0, range_max=5.0, resolution=0.5),
+    "brake_bias_migration":     _S("BrakesDriveUnit.BrakeSpec.BrakeBiasMigration",   "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration", range_min=-5.0, range_max=5.0, resolution=0.5),
 }
 
 CAR_FIELD_SPECS: dict[str, dict[str, CarFieldSpec]] = {
@@ -482,6 +487,47 @@ def _car_name(car_or_name: object | str | None) -> str:
     if car_or_name is None:
         return "bmw"
     return str(getattr(car_or_name, "canonical_name", "bmw")).lower()
+
+
+def get_numeric_resolution(
+    car_or_name: object | str | None,
+    canonical_key: str,
+    *,
+    default: float | None = None,
+) -> float | None:
+    """Return the numeric garage resolution for a car field when defined."""
+    spec = get_car_spec(_car_name(car_or_name), canonical_key)
+    if spec is None or spec.resolution is None:
+        return default
+    return float(spec.resolution)
+
+
+def snap_to_resolution(
+    value: object,
+    resolution: float | None,
+    *,
+    lo: float | None = None,
+    hi: float | None = None,
+) -> float:
+    """Snap a numeric value to a garage step using half-up rounding."""
+    numeric_value = float(value)
+    if resolution is None or float(resolution) <= 0.0:
+        snapped = numeric_value
+    else:
+        decimal_value = Decimal(str(numeric_value))
+        decimal_step = Decimal(str(float(resolution)))
+        snapped = float(
+            (decimal_value / decimal_step).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * decimal_step
+        )
+    if lo is not None:
+        snapped = max(float(lo), snapped)
+    if hi is not None:
+        snapped = min(float(hi), snapped)
+    if resolution is None:
+        return float(snapped)
+    resolution_text = format(float(resolution), "f").rstrip("0").rstrip(".")
+    decimals = len(resolution_text.split(".", 1)[1]) if "." in resolution_text else 0
+    return round(float(snapped), decimals)
 
 
 def get_diff_ramp_options(car_or_name: object | str | None = None) -> tuple[tuple[int, int], ...]:
