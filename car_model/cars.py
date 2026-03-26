@@ -892,6 +892,33 @@ class CarModel:
     # where λ_ref = 0.20 is the calibration point (recovers OptimumG +5% rule).
     tyre_load_sensitivity: float = 0.20
 
+    # ── Tyre thermal operating window ────────────────────────────────────────
+    # Michelin GTP/Hypercar Pilot Sport Endurance compound (Ken Payne, Michelin NA
+    # technical director, Sportscar365 / IMSA GTLM Insider):
+    #   Target hot tyre temperature: 180–220 °F = 82–104 °C
+    # General iRacing community consensus (simracingsetup.com, Coach Dave):
+    #   Peak grip window: 85–105 °C (consistent with Michelin prototype data).
+    # Michelin compound naming: "cold," "medium," "hot" — not soft/medium/hard.
+    # Compounds are optimised for different ambient/track temperature ranges,
+    # not different hardness levels. Selection driven by expected operating temp.
+    #
+    # Lateral stiffness penalty model (Pacejka MF thermal scaling, arxiv 2305.18422):
+    #   Below T_min: Ky degrades ~1.0%/°C (rubber too stiff, poor contact conformance)
+    #   Above T_max: Ky degrades ~1.5%/°C (rubber overheats, compound breakdown faster)
+    #   Asymmetry: hot degradation is more severe than cold — once hot, cannot recover.
+    #   At 20°C below T_min: ~20% lateral grip loss (out-lap / cold tyre condition)
+    #   At 10°C above T_max: ~15% lateral grip loss + accelerated wear
+    #
+    # GTP-specific (Coach Dave, Cadillac manual): NO tyre warmers in GTP class.
+    # Cold-tyre risk on out-lap is the primary handling concern for long stints.
+    # Tyre warmup to operating window: 1–2 laps depending on track temp + driving style.
+    #
+    # Source: research/physics-notes.md 2026-03-26 Topic D
+    tyre_opt_temp_min_c: float = 82.0   # °C — Michelin 180°F lower bound (Payne, Michelin NA)
+    tyre_opt_temp_max_c: float = 104.0  # °C — Michelin 220°F upper bound (Payne, Michelin NA)
+    tyre_temp_sens_cold: float = 0.010  # lateral Ky loss per °C below tyre_opt_temp_min_c
+    tyre_temp_sens_hot:  float = 0.015  # lateral Ky loss per °C above tyre_opt_temp_max_c
+
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
 

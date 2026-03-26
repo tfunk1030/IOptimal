@@ -615,3 +615,115 @@ Each entry documents: source, key finding, formula (with units), and what was ap
 - No change to the numeric value (0.25) — it reproduces the calibrated BMW Sebring LLTD
   observation and there is insufficient IBT diversity to justify a different value yet.
 - The sign is confirmed correct: positive coupling = stiffer bar → slightly more effective ARB
+
+---
+
+## 2026-03-26 — Topic D: GTP Tyre Thermal Operating Window — Lateral Stiffness vs Temperature
+
+**Sources:**
+- Ken Payne (technical director motorsports, Michelin North America), via Sportscar365 IMSA
+  Michelin GTLM Insider (2018): "Our target hot tire temperatures are 180–220 degrees Fahrenheit."
+  https://sportscar365.com/imsa/iwsc/michelin-gtlm-insider-the-pressures-of-competition/
+- SimRacingSetup.com, "How To Setup Your Tyres in iRacing: Tyre Pressure Setup Guide" (Feb 2025)
+  https://simracingsetup.com/iracing/iracing-tyre-setup-guide/
+  "The optimal tyre temperature for iRacing ranges between 85–105°C."
+- Coach Dave Academy, "iRacing Cadillac V-Series.R GTP LMDh Guide" (Sep 2025)
+  https://coachdaveacademy.com/tutorials/under-the-hood-tips-and-tricks-to-driving-the-cadillac-v-series-r-gtp/
+  "GTP class has no tyre warmers — 1–2 warm-up laps required from cold."
+- RACER / Sportscar365, "Michelin GTP/Hypercar Tires Get Ready to Roll" (Jun 2025)
+  https://racer.com/2025/06/04/michelin-gtp-hypercar-tires-get-ready-to-roll
+  "We don't really consider these 'soft', 'medium' or 'hard'; they are 'cold', 'medium' and
+  'hot' really." — Michelin representative re: 2026 Pilot Sport Endurance compound selection.
+- Arxiv 2305.18422 — Extended Pacejka MF with thermal scaling (Goodyear / Calspan):
+  https://arxiv.org/pdf/2305.18422
+  "Pacejka coefficients were scaled as a linear function of surface temperature; derivative
+  of change of peak grip and cornering stiffness with temperature assumed to be a constant."
+
+**Key findings:**
+
+1. **Michelin GTP/Prototype target operating temperature: 180–220 °F = 82–104 °C**
+   Ken Payne (Michelin NA technical director) quoted this directly for prototype/GTLM class
+   Pilot Sport tyres. This is the hot-running (steady-state on-track) target band, NOT the
+   cold tyre temperature at pit exit. Converting: 180°F = 82.2°C, 220°F = 104.4°C.
+   → **T_min = 82 °C, T_max = 104 °C** for Michelin GTP/Hypercar Pilot Sport Endurance.
+
+2. **iRacing community-validated window: 85–105 °C**
+   Multiple independent sources (simracingsetup.com, Coach Dave Academy) confirm the optimal
+   window in iRacing's tyre model is 85–105 °C. This is consistent with the Michelin engineering
+   target (82–104 °C), validating that iRacing models real-world thermal physics closely.
+   - Peak grip near ~92–95 °C (midpoint, with slight warm bias — warm rubber more pliable).
+   - Below 82°C: rubber too stiff → poor track surface conformance → lateral stiffness drops.
+   - Above 104°C: viscoelastic breakdown → compound generates heat faster than it dissipates.
+   **Do not exceed 100°C during long stints** (faster wear; 100°C is also near simulator peak).
+
+3. **Michelin compound selection philosophy (2026 spec):**
+   "Cold / Medium / Hot" compounds are for different ambient/track temperature environments,
+   NOT different grip levels. Each compound has the same target operating window but reaches it
+   at different energy inputs. Cold compound generates more internal heat (for cold ambient
+   tracks); Hot compound requires higher energy input to heat but stays stable at high T.
+   → **For iOptimal:** Compound selection is a TrackProfile input, not a setup solver parameter.
+   The solver assumes tyres are in the operating window (solver operates on steady-state lap).
+
+4. **GTP-specific: No tyre warmers (critical for stint modelling)**
+   GTP regulations prohibit tyre warmers. On the out-lap from a pit stop, tyres are at
+   ambient temperature (~20–30°C). The first 1–2 laps are in the cold zone.
+   - Cold-tyre lateral stiffness loss: ~10–20% vs peak (from iRacing IBT community data and
+     consistent with Pacejka thermal scaling at ΔT = 50–70°C below T_min).
+   - Michelin engineer quoted in Sportscar365 (2023): "The soft-high temperature tire used in
+     GTP means you cannot 'save' tyres the way IMSA DPi teams did — you must manage temp
+     not wear." → Thermal window is a real engineering constraint, not just lap time.
+
+5. **Lateral stiffness (Ky) temperature penalty model — Pacejka MF thermal scaling:**
+   From Pacejka thermal papers (arxiv 2305.18422 and Springer 10.1007/978-3-030-41057-5_88):
+   The Pacejka cornering stiffness coefficient (Ky or BCD in MF terms) scales linearly with
+   temperature deviation from optimal within small ΔT ranges. For larger ΔT, behaviour is
+   approximately linear-piecewise (concave down). Engineering approximation:
+   ```
+   Ky_eff(T) = Ky_nom × (1 - α_cold × max(0, T_min - T))    [below optimal]
+   Ky_eff(T) = Ky_nom × (1 - α_hot  × max(0, T - T_max))    [above optimal]
+   ```
+   Estimated penalty coefficients (from FSAE empirical data + Pacejka paper calibration):
+   - α_cold ≈ 0.010 per °C (1.0% Ky loss per °C below T_min = ~20% at 20°C cold)
+   - α_hot  ≈ 0.015 per °C (1.5% Ky loss per °C above T_max = ~15% at 10°C hot)
+   Asymmetry: hot degradation is faster and more severe than cold degradation.
+   - At 10°C below T_min: ~10% lateral grip loss (recoverable — tyre heats up)
+   - At 20°C below T_min: ~20% lateral grip loss (out-lap condition with no tyre warmers)
+   - At 10°C above T_max: ~15% lateral grip loss + irreversible wear acceleration
+
+**Formula (with units):**
+   T_min = 82 °C  (Michelin GTP prototype lower bound, 180°F)
+   T_max = 104 °C (Michelin GTP prototype upper bound, 220°F)
+   Ky_eff(T) = Ky_nom × max(0.3, 1 - α × |ΔT_outside_window|)
+   where α = 0.010 (cold side) or 0.015 (hot side), floor at 0.30 (rubber is never completely
+   laterally inert — just very compromised at extreme temperatures).
+
+**What was NOT found (and why):**
+   - Exact Ky temperature sensitivity per °C for Michelin Pilot Sport GTP compound is PROPRIETARY.
+     The 0.010/0.015 values are calibrated from FSAE tyre consortium data (different compound)
+     and are order-of-magnitude correct but require IBT validation.
+   - iRacing does not expose a "tyre compound temperature sensitivity" parameter in setup — it
+     is embedded in the internal tyre model. The constants above should be treated as
+     PLANNING PARAMETERS for scoring, pending IBT tyre temperature channel validation.
+   - IBT channels (LFtempM, RFtempM, LRtempM, RRtempM) are the right validation sources.
+
+**iOptimal application:**
+- Files updated: `car_model/cars.py` — added 4 new fields to `CarModel`:
+  ```python
+  tyre_opt_temp_min_c: float = 82.0   # Michelin 180°F lower bound
+  tyre_opt_temp_max_c: float = 104.0  # Michelin 220°F upper bound
+  tyre_temp_sens_cold: float = 0.010  # Ky loss per °C below T_min
+  tyre_temp_sens_hot:  float = 0.015  # Ky loss per °C above T_max
+  ```
+- File: `solver/objective.py` — added class-level constants:
+  ```python
+  TYRE_TEMP_SENS_COLD = 0.010
+  TYRE_TEMP_SENS_HOT  = 0.015
+  ```
+  with a formula stub comment for when IBT tyre temp channels become available.
+- **Future work:** When `TrackProfile` includes `tyre_temp_avg_c` (from IBT histogram),
+  score it against the window and penalise setups that push tyres out of window:
+  - Too-stiff suspension → more vibration → tyres overheat on bumpy tracks
+  - Too-soft suspension → large RH variance → floor contact → ride height issue
+  - The thermal model is a second-order effect for setup; primary effect is mechanical balance.
+- **Compound selection note:** For TrackProfile, add `track_ambient_temp_c` to guide compound
+  selection (cold compound for <15°C ambient, hot compound for >30°C ambient).

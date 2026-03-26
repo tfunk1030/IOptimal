@@ -113,10 +113,10 @@ class PhysicsResult:
     lltd: float = 0.52
     lltd_error: float = 0.0
     # Damping
-    zeta_ls_front: float = 0.88
-    zeta_ls_rear: float = 0.30
-    zeta_hs_front: float = 0.45
-    zeta_hs_rear: float = 0.14
+    zeta_ls_front: float = 0.68   # IBT-calibrated: top-15 fastest mean (73 sessions, 2026-03-26)
+    zeta_ls_rear: float = 0.23    # IBT-calibrated
+    zeta_hs_front: float = 0.47   # IBT-calibrated
+    zeta_hs_rear: float = 0.20    # IBT-calibrated (was 0.14)
     # Wheel rates
     front_wheel_rate_nmm: float = 30.0
     rear_wheel_rate_nmm: float = 60.0
@@ -186,6 +186,14 @@ class ObjectiveBreakdown:
     # Platform risk weight raised to 1.0 — platform collapse = catastrophic.
     # For ground-effect GTP cars, an unstable platform is the DOMINANT risk.
     # Source: Taylor Funk (2026 calibration) — "rake/ride height dwarfs ARBs"
+    # NOTE (2026-03-26): 73-session IBT calibration found best Spearman
+    # ρ=-0.30 at lap_gain×0.5, all penalties×0. However, reducing penalty
+    # weights WORSENED total_score correlation because lap_gain_ms itself
+    # is positively correlated with lap time (wrong direction). The
+    # penalties accidentally correct this by counteracting the broken
+    # lap_gain signal. Penalty weights are kept at original values until
+    # lap_gain_ms is fundamentally fixed. See:
+    # validation/calibration_weights.json, validation/calibration_report.md
     w_platform: float = 1.0   # raised from 0.9 — platform is primary risk
     w_driver: float = 0.5     # lowered from 0.6 — secondary to physics
     w_uncertainty: float = 0.6  # lowered from 0.7 — less aggressive no-data penalty
@@ -309,6 +317,20 @@ class ObjectiveFunction:
     # Expected physical range: γ ∈ [0.0, 0.30]. Current 0.25 is plausible but
     # requires multi-OD IBT confirmation. (research/physics-notes.md 2026-03-24)
     TORSION_ARB_COUPLING = 0.25  # empirical; see comment above
+
+    # ── Tyre thermal constants (for future IBT-driven temperature scoring) ───
+    # GTP Michelin Pilot Sport Endurance operating window: 82–104 °C.
+    # Source: Ken Payne (Michelin NA technical director), IMSA Michelin Insider 2018.
+    # Confirmed by iRacing community: optimal 85–105 °C (simracingsetup.com 2025).
+    # Lateral stiffness (Ky) penalty model — Pacejka MF thermal scaling:
+    #   cold: Ky_eff = Ky_nom × (1 - TYRE_TEMP_SENS_COLD × max(0, T_min - T))
+    #   hot:  Ky_eff = Ky_nom × (1 - TYRE_TEMP_SENS_HOT  × max(0, T - T_max))
+    # where T_min/T_max come from car.tyre_opt_temp_min_c / tyre_opt_temp_max_c.
+    # These constants mirror the car model defaults (research/physics-notes.md 2026-03-26).
+    # When IBT tyre temp channels (LFtempM, RFtempM, etc.) become available in
+    # track profiles, plug them into this model to score temperature management.
+    TYRE_TEMP_SENS_COLD = 0.010  # Ky loss per °C below T_min (~20% at 20°C cold)
+    TYRE_TEMP_SENS_HOT  = 0.015  # Ky loss per °C above T_max (~15% at 10°C hot)
 
     def __init__(self, car, track, explore: bool = False, scenario_profile: str | None = None):
         self.car = car
@@ -1184,22 +1206,42 @@ class ObjectiveFunction:
         # TIER 3: DAMPING RATIOS (secondary, 3-8ms per axis max)
         # Dampers matter, but their total contribution across all 10 axes
         # is ~20-40ms — not 5ms per axis × 10 = 50ms.
-        # Source: Taylor Funk IBT validation (46 sessions), objective
-        # calibration from validation/objective_validation.md
+        # ── DAMPER SCORING ─────────────────────────────────────────────
+        # 2026-03-26: IBT regression (73 BMW Sebring sessions) found
+        # front_ls_comp is the #1 lap-time correlate (r=-0.447).
+        #
+        # Zeta targets kept at original values (0.88/0.30/0.45/0.14).
+        # Although 0.88 is unreachable at legal click values, the DIRECTION
+        # is correct: higher ls_comp → higher zeta → lower penalty, and
+        # this correlates with faster laps up to clicks 8-9. The original
+        # targets accidentally act as "always want more damping" which
+        # matches the partial-r direction from IBT data.
+        #
+        # IBT-calibrated optimal zeta (top-15 fastest sessions):
+        #   LS front=0.68, LS rear=0.23, HS front=0.47, HS rear=0.20
+        # These are stored in PhysicsResult defaults for reference but
+        # NOT used as penalty targets — the monotonic penalty direction
+        # of the original targets is more useful than being centered at
+        # the correct value but pulling the wrong direction near the peak.
+        #
+        # Future: replace zeta model with non-monotonic empirical click
+        # scoring as a separate ObjectiveBreakdown component (not inside
+        # lap_gain_ms) to properly capture the peak at clicks 8-9.
         # ═══════════════════════════════════════════════════════════════
 
-        # Front LS near ζ=0.88 (near-critical): entry stability, braking control
-        # Rear LS near ζ=0.30 (compliant): traction compliance over kerbs
-        # Each axis: max ~8ms penalty, down from old 5ms (recalibrated upward)
+        # Front LS near ζ=0.88 (direction correct: more damping → faster)
         zeta_ls_front_err = abs(physics.zeta_ls_front - 0.88)
         gain -= min(8.0, zeta_ls_front_err * 10.0)
 
+        # Rear LS near ζ=0.30 (compliant): traction compliance over kerbs
         zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.30)
         gain -= min(6.0, zeta_ls_rear_err * 8.0)
 
+        # Front HS near ζ=0.45
         zeta_hs_front_err = abs(physics.zeta_hs_front - 0.45)
         gain -= min(5.0, zeta_hs_front_err * 7.0)
 
+        # Rear HS near ζ=0.14
         zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.14)
         gain -= min(5.0, zeta_hs_rear_err * 7.0)
 
