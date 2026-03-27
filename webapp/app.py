@@ -182,6 +182,89 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Artifact file no longer exists")
         return FileResponse(path=path, filename=path.name, media_type="application/octet-stream")
 
+    # ── Team pages ─────────────────────────────────────────────────
+
+    @app.get("/team", response_class=HTMLResponse)
+    async def team_dashboard(request: Request) -> HTMLResponse:
+        from desktop.config import AppConfig
+        config = AppConfig.load()
+        team_data = _load_team_data(config)
+        return templates.TemplateResponse(
+            request,
+            "team_dashboard.html",
+            _page_context(request, "team", **team_data),
+        )
+
+    @app.get("/team/setups", response_class=HTMLResponse)
+    async def team_setups(request: Request) -> HTMLResponse:
+        from desktop.config import AppConfig
+        config = AppConfig.load()
+        setups = _fetch_team_setups(config)
+        return templates.TemplateResponse(
+            request,
+            "team_setups.html",
+            _page_context(request, "team", setups=setups, cars=[], tracks=[]),
+        )
+
+    @app.get("/team/leaderboard", response_class=HTMLResponse)
+    async def team_leaderboard(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "team_leaderboard.html",
+            _page_context(request, "team", entries=[]),
+        )
+
+    @app.get("/team/cars", response_class=HTMLResponse)
+    async def team_cars(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "team_cars.html",
+            _page_context(request, "team", cars=[]),
+        )
+
+    @app.get("/team/knowledge", response_class=HTMLResponse)
+    async def team_knowledge(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "team_knowledge.html",
+            _page_context(request, "team", knowledge=[]),
+        )
+
+    @app.get("/settings", response_class=HTMLResponse)
+    async def settings_page(request: Request) -> HTMLResponse:
+        from desktop.config import AppConfig
+        config = AppConfig.load()
+        return templates.TemplateResponse(
+            request,
+            "settings.html",
+            _page_context(request, "settings", config=config),
+        )
+
+    @app.post("/settings", response_class=HTMLResponse)
+    async def save_settings(
+        request: Request,
+        team_server_url: str = Form(""),
+        api_key: str = Form(""),
+        telemetry_dir: str = Form(""),
+        auto_ingest: bool = Form(False),
+        auto_sync: bool = Form(False),
+        notification_sound: bool = Form(False),
+        open_browser_on_start: bool = Form(False),
+    ) -> RedirectResponse:
+        from desktop.config import AppConfig
+        config = AppConfig.load()
+        config.team_server_url = team_server_url
+        if api_key:
+            config.api_key = api_key
+        if telemetry_dir:
+            config.telemetry_dir = telemetry_dir
+        config.auto_ingest = auto_ingest
+        config.auto_sync = auto_sync
+        config.notification_sound = notification_sound
+        config.open_browser_on_start = open_browser_on_start
+        config.save()
+        return RedirectResponse(url="/settings", status_code=302)
+
     return app
 
 
@@ -193,6 +276,60 @@ def _page_context(request: Request, active_nav: str, **extra: Any) -> dict[str, 
     }
     context.update(extra)
     return context
+
+
+def _load_team_data(config) -> dict:
+    """Load team data from sync client or return empty defaults."""
+    if not config.is_team_configured:
+        return {
+            "team_name": "(Not connected)",
+            "stats": {"members": 0, "sessions": 0, "cars": 0, "tracks": 0},
+            "activity": [],
+            "recent_sessions": [],
+        }
+    try:
+        from teamdb.sync_client import SyncClient
+        client = SyncClient(config.team_server_url, config.api_key)
+        import httpx
+        resp = httpx.get(
+            f"{config.team_server_url.rstrip('/')}/api/stats",
+            headers={"Authorization": f"Bearer {config.api_key}"},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return {
+                "team_name": data.get("team_name", "My Team"),
+                "stats": data.get("stats", {}),
+                "activity": data.get("recent_activity", []),
+                "recent_sessions": data.get("recent_sessions", []),
+            }
+    except Exception:
+        pass
+    return {
+        "team_name": config.team_name or "My Team",
+        "stats": {"members": 0, "sessions": 0, "cars": 0, "tracks": 0},
+        "activity": [],
+        "recent_sessions": [],
+    }
+
+
+def _fetch_team_setups(config) -> list:
+    """Fetch shared setups from team server."""
+    if not config.is_team_configured:
+        return []
+    try:
+        import httpx
+        resp = httpx.get(
+            f"{config.team_server_url.rstrip('/')}/api/setups",
+            headers={"Authorization": f"Bearer {config.api_key}"},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("setups", [])
+    except Exception:
+        pass
+    return []
 
 
 async def _persist_uploads(run_id: str, settings: AppSettings, uploads: list[UploadFile]) -> list[Path]:

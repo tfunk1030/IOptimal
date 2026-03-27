@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+  <h1>Settings</h1>
+
+  <form method="POST" action="/settings">
+    <div class="panel" style="padding: 1rem; margin-bottom: 1rem;">
+      <h2>Team Connection</h2>
+      <div class="grid-two" style="gap: 1rem;">
+        <label>
+          Server URL<br>
+          <input type="url" name="team_server_url" value="{{ config.team_server_url }}"
+                 placeholder="https://ioptimal-server-xxx.run.app" style="width: 100%;">
+        </label>
+        <label>
+          API Key<br>
+          <input type="text" name="api_key" value="{{ config.api_key }}"
+                 placeholder="Your team API key" style="width: 100%;">
+        </label>
+      </div>
+      {% if not config.is_team_configured %}
+      <p style="margin-top: 0.5rem; color: #6b7280;">
+        Not connected to a team. Enter your server URL and API key, or join a team below.
+      </p>
+      {% else %}
+      <p style="margin-top: 0.5rem; color: #1c5a4f;">
+        Connected to team server.
+      </p>
+      {% endif %}
+    </div>
+
+    {% if not config.is_team_configured %}
+    <div class="panel" style="padding: 1rem; margin-bottom: 1rem;">
+      <h2>Join a Team</h2>
+      <p>Ask your team admin for an invite code.</p>
+      <div class="grid-two" style="gap: 1rem;">
+        <label>
+          Invite Code<br>
+          <input type="text" id="invite_code" placeholder="abc12def" style="width: 100%;">
+        </label>
+        <label>
+          Your iRacing Name<br>
+          <input type="text" id="iracing_name" placeholder="Driver Name" style="width: 100%;">
+        </label>
+      </div>
+      <button type="button" class="button-secondary" style="margin-top: 0.5rem;"
+              onclick="alert('Join team functionality requires a running team server.')">
+        Join Team
+      </button>
+    </div>
+    {% endif %}
+
+    <div class="panel" style="padding: 1rem; margin-bottom: 1rem;">
+      <h2>Telemetry</h2>
+      <label>
+        iRacing Telemetry Directory<br>
+        <input type="text" name="telemetry_dir" value="{{ config.telemetry_dir }}" style="width: 100%;">
+      </label>
+      <label style="display: block; margin-top: 0.5rem;">
+        <input type="checkbox" name="auto_ingest" value="true"
+               {% if config.auto_ingest %}checked{% endif %}>
+        Auto-ingest new IBT files
+      </label>
+    </div>
+
+    <div class="panel" style="padding: 1rem; margin-bottom: 1rem;">
+      <h2>Sync</h2>
+      <label>
+        <input type="checkbox" name="auto_sync" value="true"
+               {% if config.auto_sync %}checked{% endif %}>
+        Auto-sync observations to team server
+      </label>
+    </div>
+
+    <div class="panel" style="padding: 1rem; margin-bottom: 1rem;">
+      <h2>Notifications</h2>
+      <label>
+        <input type="checkbox" name="notification_sound" value="true"
+               {% if config.notification_sound %}checked{% endif %}>
+        Play notification sounds
+      </label><br>
+      <label>
+        <input type="checkbox" name="open_browser_on_start" value="true"
+               {% if config.open_browser_on_start %}checked{% endif %}>
+        Open dashboard in browser on startup
+      </label>
+    </div>
+
+    <button type="submit" class="button-primary">Save Settings</button>
+  </form>
+</div>
+{% endblock %}
