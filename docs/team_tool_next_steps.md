@@ -7,44 +7,46 @@
 | Module | Files | Status | Description |
 |--------|-------|--------|-------------|
 | `watcher/` | 3 | Working | IBT auto-detection via watchdog, file stability check, car identification from IBT headers, bulk import |
-| `teamdb/` | 4 | Needs fixes | SQLAlchemy ORM (12 tables), sync client with offline queue, server-side aggregator |
-| `server/` | 10 | Needs fixes | FastAPI REST API, invite-code auth, observation/setup/knowledge endpoints, Dockerfile |
-| `desktop/` | 5 | Needs fixes | System tray app, config management, service orchestration |
-| `webapp/` | 8 modified | Needs fixes | Team dashboard, setups, leaderboard, cars, knowledge, settings pages |
+| `teamdb/` | 4 | Working | SQLAlchemy ORM (13 tables incl. SetupRating), sync client with offline queue, server-side aggregator |
+| `server/` | 10 | Working | FastAPI REST API, invite-code auth, observation/setup/knowledge endpoints, Dockerfile |
+| `desktop/` | 5 | Working | System tray app, config management, service orchestration |
+| `webapp/` | 8 modified | Working | Team dashboard, setups, leaderboard, cars, knowledge, settings pages |
 | `docs/team_tool_plan.md` | 1 | Complete | Full architecture plan |
 
 ---
 
-## Known Bugs (12 total — must fix before first run)
+## Known Bugs — ALL 12 FIXED
 
-### CRITICAL (8) — will crash at runtime
+All 12 bugs identified in the code review have been resolved (commit `e2933a9`).
 
-| # | Bug | Files | Fix |
-|---|-----|-------|-----|
-| 1 | **Config field name mismatches** — `settings.html` uses `server_url`, `sound_enabled`, `browser_open_on_start` but `desktop/config.py` has `team_server_url`, `notification_sound`, `open_browser_on_start` | `desktop/config.py`, `webapp/app.py`, `settings.html` | Align field names: rename config fields to match template OR add property aliases |
-| 2 | **Missing config fields** — Template references `invite_code`, `iracing_name`, `push_interval`, `pull_interval`, `team_connected` which don't exist in AppConfig | `desktop/config.py` | Add these fields to the dataclass |
-| 3 | **POST /settings handler missing form params** — Handler doesn't accept `invite_code`, `iracing_name`, `push_interval`, `pull_interval` from the form | `webapp/app.py` | Add missing Form() parameters to handler |
-| 4 | **Server routes import nonexistent `Car` model** — Should be `CarDefinition` | `server/routes/observations.py`, `knowledge.py`, `setups.py` | Change `Car` to `CarDefinition` |
-| 5 | **Server routes import nonexistent `SetupRating` model** | `server/routes/setups.py` | Create `SetupRating` table in `teamdb/models.py` |
-| 6 | **ActivityLog field names wrong** — Routes use `action`/`detail` but model has `event_type`/`summary` | `server/routes/observations.py`, `setups.py`, `team.py` | Fix field names |
-| 7 | **Member field name wrong** — Routes use `joined_at` but model has `created_at` | `server/routes/team.py` | Fix to `created_at` |
-| 8 | **SharedSetup rating mismatch** — Routes use `rating` but model has `rating_sum`/`rating_count` | `server/routes/setups.py` | Fix to use `rating_sum`/`rating_count` |
+### CRITICAL (8) — FIXED
 
-### HIGH (4) — will cause template errors or wrong data
+| # | Bug | Fix Applied |
+|---|-----|------------|
+| 1 | **Config field name mismatches** | Renamed config fields to `sound_enabled`, `browser_open_on_start`; template uses `team_server_url` |
+| 2 | **Missing config fields** | Added `invite_code`, `iracing_name`, `push_interval`, `pull_interval` + `team_connected` property |
+| 3 | **POST /settings handler missing form params** | Handler now accepts all form fields from `settings.html` |
+| 4 | **Server routes import nonexistent `Car` model** | Changed to `CarDefinition` with correct field names (`car_name`, `display_name`) |
+| 5 | **Missing `SetupRating` model** | Added `SetupRating` table to `teamdb/models.py` (13 tables total) |
+| 6 | **ActivityLog field names wrong** | Fixed `action`→`event_type`, `detail`→`summary` in all routes |
+| 7 | **Member field name wrong** | Fixed `joined_at`→`created_at` in schemas, queries, and construction |
+| 8 | **SharedSetup rating mismatch** | Fixed to use `rating_sum`/`rating_count` everywhere |
 
-| # | Bug | Files | Fix |
-|---|-----|-------|-----|
-| 9 | **team_dashboard stats not flattened** — Template expects `total_members`, `total_sessions` etc. but gets nested `stats` dict | `webapp/app.py`, `team_dashboard.html` | Flatten stats dict in `_load_team_data()` |
-| 10 | **team_leaderboard missing filter lists** — Template expects `cars` and `tracks` but route doesn't pass them | `webapp/app.py` | Add `cars=[], tracks=[]` to leaderboard context |
-| 11 | **Pydantic schemas don't match ORM models** — `MemberOut.joined_at`, `ActivityOut.action/detail`, `EmpiricalModelOut.model_id/model_type`, `LeaderboardEntry.session_id` | `server/routes/*.py` | Update schemas to match model field names |
-| 12 | **SQLite dev mode incompatible** — Models use PostgreSQL-specific types (JSONB, ARRAY, UUID) but default DATABASE_URL is SQLite | `server/database.py`, `teamdb/models.py` | Add type adapters or use dialect-agnostic types for dev mode |
+### HIGH (4) — FIXED
+
+| # | Bug | Fix Applied |
+|---|-----|------------|
+| 9 | **team_dashboard stats not flattened** | `_load_team_data()` now returns flat keys: `total_members`, `total_sessions`, `cars_tracked`, `tracks_covered` |
+| 10 | **team_leaderboard missing filter lists** | Added `cars=[]`, `tracks=[]` to leaderboard context |
+| 11 | **Pydantic schemas don't match ORM models** | All schemas (`EmpiricalModelOut`, `LeaderboardEntry`, `MemberOut`, `ActivityOut`) match ORM fields |
+| 12 | **SQLite dev mode incompatible** | Models use portable type aliases (`_JsonType`, `_UuidType`, `_ArrayTextType`) that auto-detect PostgreSQL vs SQLite |
 
 ---
 
 ## Developer Next Steps (in order)
 
-### Step 1: Fix the 12 bugs above
-Ask Claude to fix them — all 12 can be done in one pass.
+### Step 1: ~~Fix the 12 bugs~~ DONE
+All 12 bugs fixed in commit `e2933a9`.
 
 ### Step 2: Install new Python dependencies
 ```bash
@@ -157,4 +159,4 @@ This produces `dist/IOptimal/IOptimal.exe` — zip it for distribution.
 | 6 | Multi-Class Car Onboarding | Week 8-10 |
 | 7 | Polish + Team Beta | Week 10-12 |
 
-All 7 phases are scaffolded in code. Phases 1-5 have working code (pending the 12 bug fixes). Phase 6-7 require manual car data and team testing.
+All 7 phases are scaffolded in code. Phases 1-5 have working code (all 12 bugs fixed). Phase 6-7 require manual car data and team testing.
