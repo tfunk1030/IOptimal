@@ -50,14 +50,14 @@ class MemberOut(BaseModel):
     iracing_member_id: Optional[int] = None
     primary_class: Optional[str] = None
     role: str
-    joined_at: datetime
+    created_at: datetime
 
 
 class ActivityOut(BaseModel):
     id: str
     member_id: str
-    action: str
-    detail: Optional[str] = None
+    event_type: str
+    summary: Optional[str] = None
     created_at: datetime
 
 
@@ -86,7 +86,7 @@ async def create_team(body: TeamCreateRequest, db: AsyncSession = Depends(get_db
         iracing_name="admin",
         role="admin",
         api_key_hash=hash_api_key(raw_api_key),
-        joined_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(admin_member)
     await db.commit()
@@ -115,7 +115,7 @@ async def join_team(body: TeamJoinRequest, db: AsyncSession = Depends(get_db)):
         primary_class=body.primary_class,
         role="member",
         api_key_hash=hash_api_key(raw_api_key),
-        joined_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(member)
     await db.commit()
@@ -129,7 +129,7 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Member).where(Member.team_id == member.team_id).order_by(Member.joined_at)
+        select(Member).where(Member.team_id == member.team_id).order_by(Member.created_at)
     )
     return [
         MemberOut(
@@ -138,7 +138,7 @@ async def list_members(
             iracing_member_id=m.iracing_member_id,
             primary_class=m.primary_class,
             role=m.role,
-            joined_at=m.joined_at,
+            created_at=m.created_at,
         )
         for m in result.scalars().all()
     ]
@@ -166,8 +166,8 @@ async def team_activity(
         ActivityOut(
             id=a.id,
             member_id=a.member_id,
-            action=a.action,
-            detail=a.detail,
+            event_type=a.event_type,
+            summary=a.summary,
             created_at=a.created_at,
         )
         for a in result.scalars().all()

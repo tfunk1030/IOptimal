@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import verify_api_key
 from server.database import get_db
-from teamdb.models import ActivityLog, Car, Member, Observation
+from teamdb.models import ActivityLog, CarDefinition, Member, Observation
 
 router = APIRouter(prefix="/observations", tags=["observations"])
 
@@ -57,18 +57,19 @@ async def create_observation(
 ):
     # Auto-register car if not already present for this team.
     result = await db.execute(
-        select(Car).where(Car.team_id == member.team_id, Car.name == body.car)
+        select(CarDefinition).where(CarDefinition.team_id == member.team_id, CarDefinition.car_name == body.car)
     )
     if result.scalar_one_or_none() is None:
-        car = Car(
+        car_def = CarDefinition(
             id=uuid.uuid4().hex,
             team_id=member.team_id,
-            name=body.car,
-            car_class=body.car_class,
+            car_name=body.car,
+            car_class=body.car_class or "unknown",
+            display_name=body.car,
             support_tier="exploratory",
             created_at=datetime.now(timezone.utc),
         )
-        db.add(car)
+        db.add(car_def)
 
     obs = Observation(
         id=uuid.uuid4().hex,
@@ -90,9 +91,9 @@ async def create_observation(
         id=uuid.uuid4().hex,
         team_id=member.team_id,
         member_id=member.id,
-        action="observation_upload",
+        event_type="observation_upload",
         car_class=body.car_class,
-        detail=f"{body.car}/{body.track} — {body.lap_count or '?'} laps",
+        summary=f"{body.car}/{body.track} — {body.lap_count or '?'} laps",
         created_at=datetime.now(timezone.utc),
     )
     db.add(activity)

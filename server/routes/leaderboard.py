@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -27,8 +26,8 @@ class LeaderboardEntry(BaseModel):
     car: str
     track: str
     best_lap_time_s: float
-    session_id: Optional[str] = None
-    created_at: datetime
+    session_date: datetime
+    updated_at: datetime
 
 
 # ---------------------------------------------------------------------------
@@ -59,8 +58,8 @@ async def get_leaderboard(
             car=e.car,
             track=e.track,
             best_lap_time_s=e.best_lap_time_s,
-            session_id=e.session_id,
-            created_at=e.created_at,
+            session_date=e.session_date,
+            updated_at=e.updated_at,
         )
         for e in result.scalars().all()
     ]

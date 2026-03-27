@@ -17,18 +17,36 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
     mapped_column,
     relationship,
 )
+
+# Use PostgreSQL-native types when available, fall back to generic types for
+# SQLite dev mode.  This lets `create_all` work against both dialects.
+try:
+    from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY, JSONB, UUID
+except ImportError:  # pragma: no cover — shouldn't happen w/ sqlalchemy installed
+    JSONB = JSON  # type: ignore[misc,assignment]
+    UUID = None  # type: ignore[misc,assignment]
+    PG_ARRAY = None  # type: ignore[misc,assignment]
+
+import os as _os
+
+_USE_PG = "postgresql" in _os.environ.get("DATABASE_URL", "")
+
+# Portable column types
+_JsonType = JSONB if (_USE_PG and JSONB is not JSON) else JSON
+_UuidType = UUID(as_uuid=True) if (_USE_PG and UUID is not None) else String(32)
+_ArrayTextType = PG_ARRAY(Text) if (_USE_PG and PG_ARRAY is not None) else JSON
 
 
 class Base(DeclarativeBase):
@@ -45,7 +63,7 @@ class Team(Base):
     __tablename__ = "teams"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     invite_code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
@@ -74,10 +92,10 @@ class Member(Base):
     __tablename__ = "members"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     iracing_name: Mapped[str] = mapped_column(String(255), nullable=False)
     iracing_member_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -110,10 +128,10 @@ class Division(Base):
     __tablename__ = "divisions"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     car_class: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -139,13 +157,13 @@ division_members = Table(
     Base.metadata,
     Column(
         "division_id",
-        UUID(as_uuid=True),
+        _UuidType,
         ForeignKey("divisions.id", ondelete="CASCADE"),
         primary_key=True,
     ),
     Column(
         "member_id",
-        UUID(as_uuid=True),
+        _UuidType,
         ForeignKey("members.id", ondelete="CASCADE"),
         primary_key=True,
     ),
@@ -163,10 +181,10 @@ class CarDefinition(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     car_name: Mapped[str] = mapped_column(String(128), nullable=False)
     car_class: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -178,7 +196,7 @@ class CarDefinition(Base):
         String(16), nullable=False, default="unsupported"
     )  # 'unsupported' | 'exploratory' | 'partial' | 'calibrated'
     observation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    car_model_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    car_model_json: Mapped[Optional[dict]] = mapped_column(_JsonType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )
@@ -201,22 +219,17 @@ class Observation(Base):
         Index("ix_observations_team_car_track", "team_id", "car", "track"),
         Index("ix_observations_team_car_class", "team_id", "car_class"),
         Index("ix_observations_team_member", "team_id", "member_id"),
-        Index(
-            "ix_observations_team_created",
-            "team_id",
-            "created_at",
-            postgresql_ops={"created_at": "DESC"},
-        ),
+        Index("ix_observations_team_created", "team_id", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     member_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("members.id", ondelete="SET NULL"), nullable=False
+        _UuidType, ForeignKey("members.id", ondelete="SET NULL"), nullable=False
     )
     session_id: Mapped[str] = mapped_column(String(255), nullable=False)
     car: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -224,7 +237,7 @@ class Observation(Base):
     track: Mapped[str] = mapped_column(String(255), nullable=False)
     best_lap_time_s: Mapped[float] = mapped_column(Float, nullable=False)
     lap_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    observation_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    observation_json: Mapped[dict] = mapped_column(_JsonType, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )
@@ -242,18 +255,18 @@ class Delta(Base):
     __tablename__ = "deltas"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     member_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("members.id", ondelete="SET NULL"), nullable=False
+        _UuidType, ForeignKey("members.id", ondelete="SET NULL"), nullable=False
     )
     car: Mapped[str] = mapped_column(String(128), nullable=False)
     track: Mapped[str] = mapped_column(String(255), nullable=False)
     setup_changes_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    delta_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    delta_json: Mapped[dict] = mapped_column(_JsonType, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )
@@ -274,14 +287,14 @@ class EmpiricalModel(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     car: Mapped[str] = mapped_column(String(128), nullable=False)
     track: Mapped[str] = mapped_column(String(255), nullable=False)
-    model_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    model_json: Mapped[dict] = mapped_column(_JsonType, nullable=False)
     observation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     support_tier: Mapped[str] = mapped_column(
         String(16), nullable=False, default="unsupported"
@@ -305,15 +318,15 @@ class GlobalCarModel(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     car: Mapped[str] = mapped_column(String(128), nullable=False)
-    model_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    model_json: Mapped[dict] = mapped_column(_JsonType, nullable=False)
     tracks_included: Mapped[list[str]] = mapped_column(
-        ARRAY(Text), nullable=False, default=list
+        _ArrayTextType, nullable=False, default=list
     )
     total_sessions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(
@@ -332,20 +345,20 @@ class SharedSetup(Base):
     __tablename__ = "shared_setups"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     member_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("members.id", ondelete="SET NULL"), nullable=False
+        _UuidType, ForeignKey("members.id", ondelete="SET NULL"), nullable=False
     )
     car: Mapped[str] = mapped_column(String(128), nullable=False)
     car_class: Mapped[str] = mapped_column(String(64), nullable=False)
     track: Mapped[str] = mapped_column(String(255), nullable=False)
     scenario: Mapped[str] = mapped_column(String(64), nullable=False)
     sto_content: Mapped[str] = mapped_column(Text, nullable=False)
-    setup_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    setup_json: Mapped[dict] = mapped_column(_JsonType, nullable=False)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     lap_time_s: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     rating_sum: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -360,6 +373,31 @@ class SharedSetup(Base):
 
 
 # ---------------------------------------------------------------------------
+# 10b. setup_ratings (per-member votes on shared setups)
+# ---------------------------------------------------------------------------
+
+class SetupRating(Base):
+    __tablename__ = "setup_ratings"
+    __table_args__ = (
+        UniqueConstraint("setup_id", "member_id", name="uq_setup_ratings_setup_member"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        _UuidType, primary_key=True, default=uuid.uuid4
+    )
+    setup_id: Mapped[uuid.UUID] = mapped_column(
+        _UuidType, ForeignKey("shared_setups.id", ondelete="CASCADE"), nullable=False
+    )
+    member_id: Mapped[uuid.UUID] = mapped_column(
+        _UuidType, ForeignKey("members.id", ondelete="CASCADE"), nullable=False
+    )
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # -1 or +1
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
 # 11. activity_log
 # ---------------------------------------------------------------------------
 
@@ -370,10 +408,10 @@ class ActivityLog(Base):
         BigInteger, primary_key=True, autoincrement=True
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     member_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("members.id", ondelete="SET NULL"), nullable=False
+        _UuidType, ForeignKey("members.id", ondelete="SET NULL"), nullable=False
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     car: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
@@ -403,15 +441,15 @@ class Leaderboard(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+        _UuidType, primary_key=True, default=uuid.uuid4
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
     car: Mapped[str] = mapped_column(String(128), nullable=False)
     track: Mapped[str] = mapped_column(String(255), nullable=False)
     member_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("members.id", ondelete="CASCADE"), nullable=False
+        _UuidType, ForeignKey("members.id", ondelete="CASCADE"), nullable=False
     )
     best_lap_time_s: Mapped[float] = mapped_column(Float, nullable=False)
     session_date: Mapped[datetime] = mapped_column(nullable=False)

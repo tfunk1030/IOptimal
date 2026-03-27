@@ -211,7 +211,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         return templates.TemplateResponse(
             request,
             "team_leaderboard.html",
-            _page_context(request, "team", entries=[]),
+            _page_context(request, "team", entries=[], cars=[], tracks=[]),
         )
 
     @app.get("/team/cars", response_class=HTMLResponse)
@@ -245,23 +245,31 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         request: Request,
         team_server_url: str = Form(""),
         api_key: str = Form(""),
+        invite_code: str = Form(""),
+        iracing_name: str = Form(""),
         telemetry_dir: str = Form(""),
         auto_ingest: bool = Form(False),
         auto_sync: bool = Form(False),
-        notification_sound: bool = Form(False),
-        open_browser_on_start: bool = Form(False),
+        push_interval: int = Form(5),
+        pull_interval: int = Form(5),
+        sound_enabled: bool = Form(False),
+        browser_open_on_start: bool = Form(False),
     ) -> RedirectResponse:
         from desktop.config import AppConfig
         config = AppConfig.load()
         config.team_server_url = team_server_url
         if api_key:
             config.api_key = api_key
+        config.invite_code = invite_code
+        config.iracing_name = iracing_name
         if telemetry_dir:
             config.telemetry_dir = telemetry_dir
         config.auto_ingest = auto_ingest
         config.auto_sync = auto_sync
-        config.notification_sound = notification_sound
-        config.open_browser_on_start = open_browser_on_start
+        config.push_interval = push_interval
+        config.pull_interval = pull_interval
+        config.sound_enabled = sound_enabled
+        config.browser_open_on_start = browser_open_on_start
         config.save()
         return RedirectResponse(url="/settings", status_code=302)
 
@@ -280,16 +288,18 @@ def _page_context(request: Request, active_nav: str, **extra: Any) -> dict[str, 
 
 def _load_team_data(config) -> dict:
     """Load team data from sync client or return empty defaults."""
+    defaults = {
+        "team_name": config.team_name or "(Not connected)",
+        "total_members": 0,
+        "total_sessions": 0,
+        "cars_tracked": 0,
+        "tracks_covered": 0,
+        "activity": [],
+        "recent_sessions": [],
+    }
     if not config.is_team_configured:
-        return {
-            "team_name": "(Not connected)",
-            "stats": {"members": 0, "sessions": 0, "cars": 0, "tracks": 0},
-            "activity": [],
-            "recent_sessions": [],
-        }
+        return defaults
     try:
-        from teamdb.sync_client import SyncClient
-        client = SyncClient(config.team_server_url, config.api_key)
         import httpx
         resp = httpx.get(
             f"{config.team_server_url.rstrip('/')}/api/stats",
@@ -299,19 +309,17 @@ def _load_team_data(config) -> dict:
         if resp.status_code == 200:
             data = resp.json()
             return {
-                "team_name": data.get("team_name", "My Team"),
-                "stats": data.get("stats", {}),
+                "team_name": data.get("team_name", config.team_name or "My Team"),
+                "total_members": data.get("total_members", 0),
+                "total_sessions": data.get("total_observations", 0),
+                "cars_tracked": len(data.get("cars", [])),
+                "tracks_covered": len(data.get("tracks", [])),
                 "activity": data.get("recent_activity", []),
                 "recent_sessions": data.get("recent_sessions", []),
             }
     except Exception:
         pass
-    return {
-        "team_name": config.team_name or "My Team",
-        "stats": {"members": 0, "sessions": 0, "cars": 0, "tracks": 0},
-        "activity": [],
-        "recent_sessions": [],
-    }
+    return defaults
 
 
 def _fetch_team_setups(config) -> list:

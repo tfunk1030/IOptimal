@@ -14,7 +14,7 @@ from server.auth import verify_api_key
 from server.database import get_db
 from teamdb.models import (
     ActivityLog,
-    Car,
+    CarDefinition,
     EmpiricalModel,
     Member,
     Observation,
@@ -29,12 +29,12 @@ router = APIRouter(tags=["knowledge"])
 
 class EmpiricalModelOut(BaseModel):
     id: str
-    model_id: str
     car: str
     track: str
-    model_type: str
     model_json: dict[str, Any]
-    created_at: datetime
+    observation_count: int
+    support_tier: str
+    updated_at: datetime
 
 
 class KnowledgeResponse(BaseModel):
@@ -73,24 +73,24 @@ async def get_knowledge(
             EmpiricalModel.team_id == member.team_id,
             EmpiricalModel.car == car,
             EmpiricalModel.track == track,
-        ).order_by(EmpiricalModel.created_at.desc())
+        ).order_by(EmpiricalModel.updated_at.desc())
     )
     models = [
         EmpiricalModelOut(
             id=m.id,
-            model_id=m.model_id,
             car=m.car,
             track=m.track,
-            model_type=m.model_type,
             model_json=m.model_json,
-            created_at=m.created_at,
+            observation_count=m.observation_count,
+            support_tier=m.support_tier,
+            updated_at=m.updated_at,
         )
         for m in result.scalars().all()
     ]
 
     # Global car model (if a car row exists with car_model_json populated).
     car_result = await db.execute(
-        select(Car).where(Car.team_id == member.team_id, Car.name == car)
+        select(CarDefinition).where(CarDefinition.team_id == member.team_id, CarDefinition.car_name == car)
     )
     car_row = car_result.scalar_one_or_none()
     car_model = car_row.car_model_json if car_row and car_row.car_model_json else None
@@ -114,10 +114,10 @@ async def get_stats(
     )).scalar_one()
 
     cars_result = await db.execute(
-        select(Car).where(Car.team_id == team_id)
+        select(CarDefinition).where(CarDefinition.team_id == team_id)
     )
     cars = [
-        CarStat(name=c.name, car_class=c.car_class, support_tier=c.support_tier)
+        CarStat(name=c.car_name, car_class=c.car_class, support_tier=c.support_tier)
         for c in cars_result.scalars().all()
     ]
 

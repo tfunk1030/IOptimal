@@ -43,23 +43,34 @@ class AppConfig:
     api_key: str = ""
     team_name: str = ""
     member_name: str = ""
+    invite_code: str = ""
+    iracing_name: str = ""
 
     # Telemetry
     telemetry_dir: str = field(default_factory=_default_telemetry_dir)
     auto_ingest: bool = True
     auto_sync: bool = True
 
+    # Sync intervals (minutes)
+    push_interval: int = 5
+    pull_interval: int = 5
+
     # Filtering
     car_filter: list[str] = field(default_factory=list)  # empty = all cars
 
     # UI
-    notification_sound: bool = True
-    open_browser_on_start: bool = True
+    sound_enabled: bool = True
+    browser_open_on_start: bool = True
     webapp_port: int = 8000
 
     # State
     first_run_complete: bool = False
     bulk_import_done: bool = False
+
+    @property
+    def team_connected(self) -> bool:
+        """Whether we have a valid team connection (API key set)."""
+        return bool(self.team_server_url and self.api_key)
 
     def save(self, config_dir: Path | None = None) -> None:
         """Persist config to disk."""

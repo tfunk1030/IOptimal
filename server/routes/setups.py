@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import verify_api_key
 from server.database import get_db
-from teamdb.models import ActivityLog, Member, SharedSetup, SetupRating
+from teamdb.models import ActivityLog, Member, SetupRating, SharedSetup
 
 router = APIRouter(prefix="/setups", tags=["setups"])
 
@@ -44,7 +44,8 @@ class SetupOut(BaseModel):
     setup_json: Optional[dict[str, Any]] = None
     notes: Optional[str] = None
     lap_time_s: Optional[float] = None
-    rating: int
+    rating_sum: int
+    rating_count: int
     created_at: datetime
 
 
@@ -79,7 +80,6 @@ async def share_setup(
         setup_json=body.setup_json,
         notes=body.notes,
         lap_time_s=body.lap_time_s,
-        rating=0,
         created_at=datetime.now(timezone.utc),
     )
     db.add(setup)
@@ -88,9 +88,9 @@ async def share_setup(
         id=uuid.uuid4().hex,
         team_id=member.team_id,
         member_id=member.id,
-        action="setup_shared",
+        event_type="setup_shared",
         car_class=body.car_class,
-        detail=f"{body.car}/{body.track} ({body.scenario or 'default'})",
+        summary=f"{body.car}/{body.track} ({body.scenario or 'default'})",
         created_at=datetime.now(timezone.utc),
     )
     db.add(activity)
@@ -109,7 +109,8 @@ async def share_setup(
         setup_json=setup.setup_json,
         notes=setup.notes,
         lap_time_s=setup.lap_time_s,
-        rating=setup.rating,
+        rating_sum=setup.rating_sum,
+        rating_count=setup.rating_count,
         created_at=setup.created_at,
     )
 
@@ -130,7 +131,7 @@ async def list_setups(
             SharedSetup.car == car,
             SharedSetup.track == track,
         )
-        .order_by(SharedSetup.rating.desc(), SharedSetup.created_at.desc())
+        .order_by(SharedSetup.rating_sum.desc(), SharedSetup.created_at.desc())
         .offset(offset)
         .limit(limit)
     )
@@ -147,7 +148,8 @@ async def list_setups(
             setup_json=s.setup_json,
             notes=s.notes,
             lap_time_s=s.lap_time_s,
-            rating=s.rating,
+            rating_sum=s.rating_sum,
+            rating_count=s.rating_count,
             created_at=s.created_at,
         )
         for s in result.scalars().all()
@@ -182,10 +184,11 @@ async def rate_setup(
 
     if existing_rating is not None:
         # Undo old rating, apply new.
-        setup.rating = setup.rating - existing_rating.rating + body.rating
+        setup.rating_sum = setup.rating_sum - existing_rating.rating + body.rating
         existing_rating.rating = body.rating
     else:
-        setup.rating += body.rating
+        setup.rating_sum += body.rating
+        setup.rating_count += 1
         new_rating = SetupRating(
             id=uuid.uuid4().hex,
             setup_id=setup_id,
@@ -197,4 +200,4 @@ async def rate_setup(
 
     await db.commit()
 
-    return RateResponse(setup_id=setup_id, new_rating=setup.rating)
+    return RateResponse(setup_id=setup_id, new_rating=setup.rating_sum)
