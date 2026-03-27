@@ -8,3 +8,11 @@ data/Ferraridata/
 ibtfiles/*.ibt
 ibtfiles/*.zip
 ibtfiles/
+
+# Scratch/debug artifacts
+_git_push*.py
+_git_push_result*.txt
+_test_*.txt
+_test_*.py
+_syntax_check*.py
+_commit_msg*.txt

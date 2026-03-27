@@ -8,7 +8,7 @@ Build a physics-first setup solver for iRacing's GTP/Hypercar class that searche
 - Workflow map: `IBT -> track/analyzer -> diagnosis/driver/style -> solve_chain/legality -> report/.sto -> webapp`
 - Scenario engine: `solver/scenario_profiles.py` defines `single_lap_safe`, `quali`, `sprint`, and `race`, and those profiles now drive `pipeline/produce.py`, `pipeline/reason.py`, `solver/solve.py`, preset comparison, and the webapp.
 - Legal-manifold search: `--free`, `--explore-legal-space`, and `--legal-search` now mean "start from the pinned physics solve and search the full legal setup manifold". Accepted candidates must pass setup-registry legality, garage-output validation, and telemetry sanity checks.
-- Current BMW/Sebring evidence: `73` observations, `72` non-vetoed, non-vetoed Pearson `+0.034870`, non-vetoed Spearman `-0.120522`, 5-fold holdout mean Spearman `-0.072143`, worst fold `+0.428571`. Runtime auto-apply stays off because the objective is still not stable enough to claim a true optimum.
+- Current BMW/Sebring evidence: `73` observations, `72` non-vetoed. Previous non-vetoed Spearman was `-0.120522` with hardcoded damper zeta targets and equal penalty weights. Damper targets updated to IBT-calibrated values (0.68/0.23/0.47/0.20), penalty scaling halved, and `single_lap_safe` weights set to calibration-searched values (lap_gain=1.25, envelope=0.20, rest=0). Pending re-validation to confirm improvement.
 - Current support tiers from `validation/objective_validation.json`: BMW/Sebring = `calibrated`, Ferrari/Sebring = `partial`, Cadillac/Silverstone = `exploratory`, Porsche/Sebring = `unsupported`.
 - Current source-of-truth reports: `docs/repo_audit.md`, `validation/objective_validation.md`, and `validation/calibration_report.md`.
 - Current roadmap for improving the score model and onboarding the rest of the GTP field: `enhancementplan.md`.
@@ -227,7 +227,7 @@ Key features:
 - BMW/Sebring is the only calibrated path. Other cars/tracks should not be described as equally validated.
 - The objective is improving but still not authoritative: current BMW/Sebring non-vetoed Spearman is `-0.120522` and holdout stability is not yet strong enough for automatic runtime weight application.
 - Several BMW validation signals still lean on fallbacks for some rows (`front_excursion_mm`, `braking_pitch_deg`, `rear_power_slip_p95`, hot pressures, lock proxies), so some supporting heuristics remain lower confidence.
-- Ferrari rear suspension is modeled as coil spring (placeholder) — actually a torsion bar. Corner spring and LLTD outputs for Ferrari are unreliable until the index→OD mapping is decoded.
+- Ferrari rear torsion bar is calibrated (C=0.001282, MR=0.612, 4-point fit, max 3.2% error). Corner spring and LLTD outputs are functional but need more observations (currently 9) to validate against lap time.
 - `m_eff` empirical correction uses lap-wide statistics (not filtered to high-speed straights), causing overestimation. Treat as rough indicator.
 - `min_sessions=5` gate for non-prediction learned corrections. Prediction-based corrections
   (from solver feedback loop) need only 3 sessions since they measure specific prediction errors.

@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from solver.wheel_geometry_solver import WheelGeometrySolution
     from track_model.profile import TrackProfile
 
-from output.report import print_full_setup_report
+from output.report import print_full_setup_report, _load_support_tier
 
 W = 70
 
@@ -301,6 +301,24 @@ def generate_report(
     a(f"  {car.name}  ·  {track.track_name} — {track.track_config}  ·  Wing {wing}°")
     a(f"  Telemetry-calibrated{lap_str}  ·  {now}")
     a("═" * W)
+    a("")
+
+    # ── CONFIDENCE & EVIDENCE ────────────────────────────────────────
+    _car_slug = getattr(car, "canonical_name", "bmw")
+    _tier_info = _load_support_tier(_car_slug, track.track_name)
+    _sig_quality = summarize_signal_quality(measured)
+    _direct_count = _sig_quality.get("direct", 0) if isinstance(_sig_quality, dict) else 0
+    _total_count = sum(_sig_quality.values()) if isinstance(_sig_quality, dict) else 0
+    if _tier_info is not None:
+        _tier = _tier_info.get("confidence_tier", "unknown")
+        _samples = _tier_info.get("samples", 0)
+        a(f"  Support: {_tier}  ·  {_samples} observations  ·  Signals: {_direct_count}/{_total_count} direct")
+    else:
+        a(f"  Support: unknown  ·  Signals: {_direct_count}/{_total_count} direct")
+    if prediction_confidence is not None:
+        _conf = getattr(prediction_confidence, "overall", None)
+        if _conf is not None:
+            a(f"  Prediction confidence: {_conf:.2f}")
     a("")
 
     # Driver profile (one line each)

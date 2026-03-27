@@ -50,14 +50,17 @@ _SCENARIOS: dict[str, ScenarioProfile] = {
         name="single_lap_safe",
         label="Single Lap Safe",
         description="Conservative telemetry-backed hotlap profile used as the default validation path.",
+        # Weights from 73-sample BMW/Sebring grid search (2026-03-27).
+        # Best in-sample Spearman ρ=-0.295 at these values.
+        # Re-evaluate as observation count grows beyond ~100.
         objective=ObjectiveWeightProfile(
-            w_lap_gain=1.00,
-            w_platform=1.00,
-            w_driver=0.50,
-            w_uncertainty=0.60,
-            w_envelope=0.70,
-            w_staleness=0.30,
-            w_empirical=0.40,
+            w_lap_gain=1.25,
+            w_platform=0.00,
+            w_driver=0.00,
+            w_uncertainty=0.00,
+            w_envelope=0.20,
+            w_staleness=0.00,
+            w_empirical=0.00,
         ),
         sanity=PredictionSanityProfile(
             min_overall_confidence=0.45,

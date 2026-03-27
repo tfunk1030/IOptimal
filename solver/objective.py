@@ -186,14 +186,13 @@ class ObjectiveBreakdown:
     # Platform risk weight raised to 1.0 — platform collapse = catastrophic.
     # For ground-effect GTP cars, an unstable platform is the DOMINANT risk.
     # Source: Taylor Funk (2026 calibration) — "rake/ride height dwarfs ARBs"
-    # NOTE (2026-03-26): 73-session IBT calibration found best Spearman
-    # ρ=-0.30 at lap_gain×0.5, all penalties×0. However, reducing penalty
-    # weights WORSENED total_score correlation because lap_gain_ms itself
-    # is positively correlated with lap time (wrong direction). The
-    # penalties accidentally correct this by counteracting the broken
-    # lap_gain signal. Penalty weights are kept at original values until
-    # lap_gain_ms is fundamentally fixed. See:
-    # validation/calibration_weights.json, validation/calibration_report.md
+    # NOTE (2026-03-27): Damper zeta targets updated from hardcoded (0.88/0.30/
+    # 0.45/0.14) to IBT-calibrated values (0.68/0.23/0.47/0.20) and penalty
+    # scaling halved. Previous targets caused damping_ms and rebound_ratio_ms
+    # to correlate positively with lap time (wrong direction: Spearman +0.19
+    # and +0.33 respectively). Weight search recommends lap_gain=1.25 with
+    # penalties near zero — applied in scenario_profiles.py single_lap_safe.
+    # See: validation/calibration_report.md
     w_platform: float = 1.0   # raised from 0.9 — platform is primary risk
     w_driver: float = 0.5     # lowered from 0.6 — secondary to physics
     w_uncertainty: float = 0.6  # lowered from 0.7 — less aggressive no-data penalty
@@ -1229,21 +1228,21 @@ class ObjectiveFunction:
         # lap_gain_ms) to properly capture the peak at clicks 8-9.
         # ═══════════════════════════════════════════════════════════════
 
-        # Front LS near ζ=0.88 (direction correct: more damping → faster)
-        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.88)
-        gain -= min(8.0, zeta_ls_front_err * 10.0)
+        # Front LS near ζ=0.68 (IBT-calibrated from top-15 fastest BMW/Sebring sessions)
+        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
+        gain -= min(4.0, zeta_ls_front_err * 5.0)
 
-        # Rear LS near ζ=0.30 (compliant): traction compliance over kerbs
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.30)
-        gain -= min(6.0, zeta_ls_rear_err * 8.0)
+        # Rear LS near ζ=0.23 (IBT-calibrated): traction compliance over kerbs
+        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
+        gain -= min(3.0, zeta_ls_rear_err * 4.0)
 
-        # Front HS near ζ=0.45
-        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.45)
-        gain -= min(5.0, zeta_hs_front_err * 7.0)
+        # Front HS near ζ=0.47 (IBT-calibrated)
+        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
+        gain -= min(2.5, zeta_hs_front_err * 3.5)
 
-        # Rear HS near ζ=0.14
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.14)
-        gain -= min(5.0, zeta_hs_rear_err * 7.0)
+        # Rear HS near ζ=0.20 (IBT-calibrated)
+        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
+        gain -= min(2.5, zeta_hs_rear_err * 3.5)
 
         # ── REBOUND : COMPRESSION RATIO (previously invisible — pinning bug) ──
         # Rebound clicks had ZERO gradient in the objective because ζ was computed
@@ -1282,7 +1281,7 @@ class ObjectiveFunction:
         # This gives the coord descent a gradient on rbd without destabilizing comp.
         LS_RBD_COMP_TARGET = 0.95   # [ratio] LS rebound / LS comp target
         HS_RBD_COMP_TARGET = 0.60   # [ratio] HS rebound / HS comp target (GTP kerb rule)
-        RBD_PENALTY_MS_PER_UNIT = 8.0   # weak — max 5ms, never overpowers ζ
+        RBD_PENALTY_MS_PER_UNIT = 4.0   # halved from 8.0 — was wrong-direction correlated (+0.33 Spearman)
 
         def _rbd_penalty(rbd: float, comp: float, target: float) -> float:
             if comp < 1.0:
@@ -1445,14 +1444,15 @@ class ObjectiveFunction:
         lltd_penalty = physics.lltd_error * 100.0 * lltd_ms_per_pct
         detail.lltd_balance_ms += min(10.0, lltd_penalty)
 
-        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.88)
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.30)
-        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.45)
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.14)
-        detail.damping_ms += min(8.0, zeta_ls_front_err * 10.0)
-        detail.damping_ms += min(6.0, zeta_ls_rear_err * 8.0)
-        detail.damping_ms += min(5.0, zeta_hs_front_err * 7.0)
-        detail.damping_ms += min(5.0, zeta_hs_rear_err * 7.0)
+        # IBT-calibrated zeta targets (top-15 fastest BMW/Sebring sessions, 2026-03-26)
+        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
+        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
+        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
+        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
+        detail.damping_ms += min(4.0, zeta_ls_front_err * 5.0)
+        detail.damping_ms += min(3.0, zeta_ls_rear_err * 4.0)
+        detail.damping_ms += min(2.5, zeta_hs_front_err * 3.5)
+        detail.damping_ms += min(2.5, zeta_hs_rear_err * 3.5)
 
         f_ls_comp = params.get("front_ls_comp", 7)
         f_ls_rbd = params.get("front_ls_rbd", 6)
@@ -1464,7 +1464,7 @@ class ObjectiveFunction:
         r_hs_rbd = params.get("rear_hs_rbd", 3)
         ls_rbd_comp_target = 0.95
         hs_rbd_comp_target = 0.60
-        rbd_penalty_ms_per_unit = 8.0
+        rbd_penalty_ms_per_unit = 4.0  # halved from 8.0 — was wrong-direction correlated
 
         def _rbd_penalty(rbd: float, comp: float, target: float) -> float:
             if comp < 1.0:

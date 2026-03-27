@@ -26,6 +26,21 @@ from typing import Any, TYPE_CHECKING
 
 from car_model.garage import GarageSetupState
 
+
+def _load_support_tier(car_slug: str, track_name: str) -> dict[str, Any] | None:
+    """Load support tier for a car/track pair from validation evidence."""
+    validation_path = Path(__file__).resolve().parent.parent / "validation" / "objective_validation.json"
+    if not validation_path.exists():
+        return None
+    try:
+        data = json.loads(validation_path.read_text())
+        for entry in data.get("support_matrix", []):
+            if entry.get("car", "").lower() == car_slug.lower() and track_name.lower().startswith(entry.get("track", "").lower()[:10]):
+                return entry
+    except Exception:
+        pass
+    return None
+
 if TYPE_CHECKING:
     from solver.rake_solver import RakeSolution
     from solver.heave_solver import HeaveSolution
@@ -243,6 +258,17 @@ def print_full_setup_report(
     a(title)
     a(f"  Physics-based setup  ·  {now}")
     a("═" * W)
+    a("")
+
+    # ── CONFIDENCE & EVIDENCE ────────────────────────────────────────
+    _car_slug = getattr(car, "canonical_name", car_name.lower().split()[0]) if car is not None else car_name.lower().split()[0]
+    _tier_info = _load_support_tier(_car_slug, track_name)
+    if _tier_info is not None:
+        _tier = _tier_info.get("confidence_tier", "unknown")
+        _samples = _tier_info.get("samples", 0)
+        a(f"  Support: {_tier}  ·  {_samples} observations")
+    else:
+        a("  Support: unknown  ·  no validation evidence found")
     a("")
 
     # ── FULL PARAMETER SHEET ─────────────────────────────────────────
