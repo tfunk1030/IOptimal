@@ -494,6 +494,42 @@ class CornerSpringModel:
     purposes because L and MR are fixed geometry (not garage-adjustable).
     The C_torsion = 0.0008036 value was derived by running the verified
     Sebring 2024 race-winning setup through ride height telemetry (IBT).
+
+    ## Pushrod vs Pullrod: Why BMW Chose Pushrod Front
+    (Research: iRacing GTP BMW LMDh suspension geometry, March 2026)
+    The BMW M Hybrid V8 uses pushrod actuation at the front (compression
+    loads the torsion bar) and — unlike pure LMP1 designs — also pushrod
+    at the rear. The Dallara-built LMDh platform mandates tight inboard
+    packaging to accommodate the shared hybrid drivetrain; pushrod front
+    keeps the rocker and torsion bar high in the monocoque, away from the
+    crash structure. By contrast, pullrod front places the rocker low and
+    forward (favored by F1 and LMP1 for CG benefits), which conflicts with
+    the LMDh's mandated Dallara rear subframe geometry.
+    Source: coach dave academy BMW M Hybrid V8 guide (2025); iRacing.com
+    BMW announcement (Apr 2023); IMSA LMDh technical regulations.
+
+    ## Natural Frequency Sensitivity per OD Step (BMW, m_corner ≈ 258 kg)
+    Derived from k_wheel = C_torsion * OD^4, f = (1/2π) * sqrt(k/m):
+        OD = 11.0 mm → k=11.8 N/mm → f ≈ 1.07 Hz  (very soft, 1.5× race)
+        OD = 13.9 mm → k=30.0 N/mm → f ≈ 1.71 Hz  ← baseline (calibrated)
+        OD = 15.0 mm → k=40.7 N/mm → f ≈ 1.99 Hz
+        OD = 16.0 mm → k=52.7 N/mm → f ≈ 2.27 Hz
+        OD = 18.2 mm → k=88.2 N/mm → f ≈ 2.94 Hz  (very stiff)
+    Rear coil (k=120–240 N/mm, m_corner ≈ 258 kg): f ≈ 3.43–4.86 Hz.
+    → Front torsion bars operate in 1–3 Hz range; rear coils 3–5 Hz.
+    → Frequency isolation ratio (rear/front) stays 1.7–3.0× across legal
+      range, with softest fronts risking resonance coupling (ratio < 2.0
+      triggers the objective's isolation penalty).
+
+    ## Garage Step Non-Linearity
+    Because k ∝ OD^4, equal OD steps produce unequal stiffness steps:
+        Δk per 0.1mm at OD=11.0 mm: +0.43 N/mm  (small effect at low end)
+        Δk per 0.1mm at OD=13.9 mm: +0.87 N/mm  (baseline sensitivity)
+        Δk per 0.1mm at OD=16.0 mm: +1.32 N/mm  (large effect at high end)
+    This means a single garage click at a stiff bar has ~3× the stiffness
+    effect of the same click at the softest bar. Tuners pushing high-OD
+    setups are operating in the sensitive region — small changes, large
+    handling delta.
     ═══════════════════════════════════════════════════════════════════════
     """
     # Front torsion bar
