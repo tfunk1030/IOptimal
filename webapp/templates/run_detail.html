@@ -10,6 +10,7 @@
   <div class="hero-meta">
     <span class="status-pill">{{ summary.assessment }}</span>
     <span class="status-pill">{{ summary.confidence_label }} confidence</span>
+    <span class="status-pill">Support: {{ summary.support_tier }}{% if summary.observation_count %} ({{ summary.observation_count }} obs){% endif %}</span>
   </div>
 </section>
 

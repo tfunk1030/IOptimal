@@ -18,6 +18,7 @@ from comparison.report import format_comparison_report, save_comparison_json
 from comparison.score import score_sessions
 from comparison.synthesize import SynthesisResult, synthesize_setup
 from learner.knowledge_store import KnowledgeStore
+from output.report import _load_support_tier
 from output.setup_writer import write_sto
 from solver.predictor import predict_candidate_telemetry
 from solver.solve import run_solver
@@ -301,6 +302,8 @@ class IOptimalWebService:
                 "Legality check passed." if not issues else f"Legality check flagged {len(issues)} issue(s)."
             )
 
+        _car_slug = getattr(result["car"], "canonical_name", "bmw")
+        _tier_info = _load_support_tier(_car_slug, track_name) or {}
         summary = SessionResultView(
             result_kind="single_session",
             title="Single Session Analysis",
@@ -311,6 +314,8 @@ class IOptimalWebService:
             assessment=str(getattr(result["diagnosis"], "assessment", "unknown")).replace("_", " ").title(),
             confidence_label=_score_label(score_value),
             confidence_value=score_value,
+            support_tier=_tier_info.get("confidence_tier", "unknown"),
+            observation_count=_tier_info.get("samples", 0),
             overview_badges=overview_badges,
             problems=problems,
             top_changes=top_changes,
@@ -387,6 +392,7 @@ class IOptimalWebService:
             "supporting": {},
         }
         setup_groups = _build_setup_groups(context)
+        _tier_info_ts = _load_support_tier(getattr(car, "canonical_name", "bmw"), request.track) or {}
         summary = SessionResultView(
             result_kind="track_solve",
             title="Track-Only Solve",
@@ -397,6 +403,8 @@ class IOptimalWebService:
             assessment="Physics-only recommendation",
             confidence_label="Telemetry-free",
             confidence_value=None,
+            support_tier=_tier_info_ts.get("confidence_tier", "unknown"),
+            observation_count=_tier_info_ts.get("samples", 0),
             overview_badges=[
                 f"Wing {request.wing:.0f} deg",
                 f"Fuel {(request.fuel if request.fuel is not None else 89.0):.0f} L",

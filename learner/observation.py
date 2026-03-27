@@ -286,6 +286,13 @@ def build_observation(
         # Pitch dynamics
         "pitch_mean_at_speed_deg": getattr(m, "pitch_mean_at_speed_deg", 0.0),
         "pitch_range_deg": getattr(m, "pitch_range_deg", 0.0),
+        "pitch_range_braking_deg": getattr(m, "pitch_range_braking_deg", None),
+        # Validation-primary signals (previously missing → forced fallback resolution)
+        "front_rh_excursion_measured_mm": getattr(m, "front_rh_excursion_measured_mm", None),
+        "front_braking_lock_ratio_p95": getattr(m, "front_braking_lock_ratio_p95", None),
+        "rear_power_slip_ratio_p95": getattr(m, "rear_power_slip_ratio_p95", None),
+        "front_pressure_mean_kpa": getattr(m, "front_pressure_mean_kpa", None),
+        "rear_pressure_mean_kpa": getattr(m, "rear_pressure_mean_kpa", None),
         # New Phase 4: Directional understeer & per-corner shock vel
         "understeer_left_turn_deg": getattr(m, "understeer_left_turn_deg", 0.0),
         "understeer_right_turn_deg": getattr(m, "understeer_right_turn_deg", 0.0),
