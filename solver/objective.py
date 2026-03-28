@@ -1348,17 +1348,15 @@ class ObjectiveFunction:
         )
         f_arb_blade = int(round(params.get("front_arb_blade", 1)))
         r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
-        # Penalty for extreme blade + wrong size (should have sized up/down)
-        # e.g., blade 5 + Soft = should be Medium; blade 1 + Stiff = should be Soft
-        max_blade = 5
-        if f_arb_blade >= max_blade and f_arb_size_idx == 0:
-            gain -= 15.0  # at max blade on Soft → too small, needs Medium
-        if r_arb_blade >= max_blade and r_arb_size_idx == 0:
-            gain -= 20.0
-        if f_arb_blade <= 1 and f_arb_size_idx >= 2:
-            gain -= 10.0  # at min blade on Stiff → too large, needs Medium
-        if r_arb_blade <= 1 and r_arb_size_idx >= 2:
-            gain -= 15.0
+        # ARB extreme-combo penalty ZEROED OUT (2026-03-28, calibration evidence):
+        # Removing this term improved BMW/Sebring in-sample Spearman by +0.048 and
+        # holdout mean by +0.062.  The heuristic (max blade + Soft = wrong size) does
+        # not hold in the 75-session dataset — fast BMW setups use a range of ARB
+        # size/blade combos including those this term would penalise.  The physics
+        # reasoning (blade maxed → size up) is sound in principle but the lap-time
+        # signal is absent, so applying it adds noise that hurts ranking quality.
+        # See validation/calibration_report.md — ablation: arb_extreme_ms removed.
+        # gain -= ...  (placeholder — do NOT restore without corroborating IBT evidence)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: DIFF RAMP ANGLES (corner-entry rotation + exit traction)
@@ -1388,7 +1386,14 @@ class ObjectiveFunction:
             coast_target_idx = 1  # 45° middle
 
         coast_mismatch = abs(ramp_idx - coast_target_idx)
-        gain -= min(12.0, coast_mismatch * 6.0)  # ~6ms per step mismatch
+        # diff_ramp penalty reduced from min(12.0, 6ms/step) to min(4.0, 2ms/step)
+        # (2026-03-28, calibration evidence): removing this term improved trackless
+        # Spearman by +0.069 in-sample and +0.049 holdout mean.  The trail-brake→ramp
+        # mapping is directionally correct but the 6ms-per-step magnitude was too
+        # aggressive, causing correlated noise with driver-profile fallbacks.  Reduced
+        # to 2ms/step max 4ms to keep directional signal while cutting noise floor.
+        # See validation/calibration_report.md — ablation: diff_ramp_ms removed.
+        gain -= min(4.0, coast_mismatch * 2.0)  # reduced from 6ms → 2ms per step mismatch
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: DIFF CLUTCH PLATES (lock authority, exit traction)
@@ -1503,14 +1508,8 @@ class ObjectiveFunction:
         f_arb_blade = int(round(params.get("front_arb_blade", 1)))
         r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
         max_blade = 5
-        if f_arb_blade >= max_blade and f_arb_size_idx == 0:
-            detail.arb_extreme_ms += 15.0
-        if r_arb_blade >= max_blade and r_arb_size_idx == 0:
-            detail.arb_extreme_ms += 20.0
-        if f_arb_blade <= 1 and f_arb_size_idx >= 2:
-            detail.arb_extreme_ms += 10.0
-        if r_arb_blade <= 1 and r_arb_size_idx >= 2:
-            detail.arb_extreme_ms += 15.0
+        # arb_extreme_ms zeroed out — see _estimate_lap_gain() comment (2026-03-28)
+        # detail.arb_extreme_ms += ...  (kept at 0.0 — calibration shows it adds noise)
 
         ramp_options = getattr(
             getattr(self.car, "garage_ranges", None), "diff_coast_drive_ramp_options",
@@ -1526,7 +1525,7 @@ class ObjectiveFunction:
         else:
             coast_target_idx = 1
         coast_mismatch = abs(ramp_idx - coast_target_idx)
-        detail.diff_ramp_ms += min(12.0, coast_mismatch * 6.0)
+        detail.diff_ramp_ms += min(4.0, coast_mismatch * 2.0)  # reduced — see _estimate_lap_gain() comment
 
         clutch_plates = int(round(params.get("diff_clutch_plates", 4)))
         rear_slip_p95 = getattr(self._measured, "rear_power_slip_p95", None) if self._measured else None
