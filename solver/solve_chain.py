@@ -8,8 +8,7 @@ from car_model.setup_registry import (
     diff_ramp_option_index,
     diff_ramp_pair_for_option,
     diff_ramp_string_for_option,
-    get_numeric_resolution,
-    snap_to_resolution,
+    snap_supporting_field_value,
 )
 from solver.arb_solver import ARBSolver
 from solver.corner_spring_solver import CornerSpringSolver
@@ -203,43 +202,19 @@ def _build_supporting(inputs: SolveChainInputs) -> Any:
 
 def _snap_supporting_value(field_name: str, value: Any, car: Any = None) -> Any:
     """Snap supporting parameter values to iRacing garage increments."""
-    if not isinstance(value, (int, float)):
-        return value
-    v = float(value)
-    if field_name == "diff_preload_nm":
-        return round(v / 5) * 5  # 5 Nm increments
-    if field_name == "diff_ramp_option_idx":
-        options = getattr(getattr(car, "garage_ranges", None), "diff_coast_drive_ramp_options", [(40, 65), (45, 70), (50, 75)])
-        return int(max(0, min(len(options) - 1, round(v))))
     if field_name == "diff_ramp_coast":
+        if not isinstance(value, (int, float)):
+            return value
+        v = float(value)
         valid_coast = [40, 45, 50]
         return min(valid_coast, key=lambda r: abs(r - v))
     if field_name == "diff_ramp_drive":
+        if not isinstance(value, (int, float)):
+            return value
+        v = float(value)
         valid_drive = [65, 70, 75]
         return min(valid_drive, key=lambda r: abs(r - v))
-    if field_name == "diff_clutch_plates":
-        valid_plates = [2, 4, 6]
-        return min(valid_plates, key=lambda p: abs(p - v))
-    if field_name in ("tc_gain", "tc_slip"):
-        return int(round(max(1, min(10, v))))
-    if field_name == "brake_bias_pct":
-        return round(v, 1)
-    if field_name in ("brake_bias_target", "brake_bias_migration"):
-        limits = getattr(getattr(car, "garage_ranges", None), field_name, (-5.0, 5.0))
-        return snap_to_resolution(
-            v,
-            get_numeric_resolution(car, field_name, default=0.5),
-            lo=float(limits[0]),
-            hi=float(limits[1]),
-        )
-    if field_name in ("brake_bias_migration_gain", "hybrid_rear_drive_corner_pct"):
-        return round(v, 1)
-    if field_name in ("front_master_cyl_mm", "rear_master_cyl_mm"):
-        options = list(getattr(getattr(car, "garage_ranges", None), "brake_master_cyl_options_mm", []) or [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8])
-        return min(options, key=lambda candidate: abs(float(candidate) - v))
-    if field_name in ("fuel_low_warning_l", "fuel_target_l", "fuel_l"):
-        return round(v, 1)
-    return value
+    return snap_supporting_field_value(car, field_name, value)
 
 
 def _enforce_ramp_pair(supporting: Any, car: Any = None) -> None:
