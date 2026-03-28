@@ -139,6 +139,7 @@ class LapGainBreakdown:
     diff_ramp_ms: float = 0.0
     diff_clutch_ms: float = 0.0
     tc_ms: float = 0.0
+    carcass_ms: float = 0.0   # penalty for tyre carcass temp outside optimal window
 
     @property
     def total_penalty_ms(self) -> float:
@@ -153,6 +154,7 @@ class LapGainBreakdown:
             + self.diff_ramp_ms
             + self.diff_clutch_ms
             + self.tc_ms
+            + self.carcass_ms
         )
 
     def as_dict(self) -> dict[str, float]:
@@ -167,6 +169,7 @@ class LapGainBreakdown:
             "diff_ramp_ms": self.diff_ramp_ms,
             "diff_clutch_ms": self.diff_clutch_ms,
             "tc_ms": self.tc_ms,
+            "carcass_ms": self.carcass_ms,
         }
 
 
@@ -528,9 +531,14 @@ class ObjectiveFunction:
         od_ref = self.car.corner_spring.front_torsion_od_ref_mm
         if od_ref <= 0:
             return 1.0
+        # Use car-specific coupling — defaults to 0.0 for uncalibrated cars.
+        # Only BMW/Sebring (γ=0.25) has IBT validation for this term.
+        coupling = getattr(self.car, "torsion_arb_coupling", self.TORSION_ARB_COUPLING)
+        if coupling == 0.0:
+            return 1.0  # no coupling for this car — standard parallel-element model
         # Relative stiffness ratio: (OD/OD_ref)^4 (same OD^4 law as wheel rate)
         stiffness_ratio = (front_torsion_od / od_ref) ** 4
-        return 1.0 + self.TORSION_ARB_COUPLING * (stiffness_ratio - 1.0)
+        return 1.0 + coupling * (stiffness_ratio - 1.0)
 
     def _compute_vortex_threshold_mm(self, wing_deg: float) -> float:
         """Compute wing-specific minimum safe front RH from aero map gradient.
@@ -1551,6 +1559,22 @@ class ObjectiveFunction:
             detail.tc_ms += min(8.0, (5 - tc_gain) * 3.0)
         elif rear_slip_p95 < 0.04 and tc_gain > 6:
             detail.tc_ms += min(5.0, (tc_gain - 6) * 2.0)
+
+        # ── Tyre carcass temperature — thermal window penalty ────────────────
+        # GTP/LMDh Michelin compound optimal window: ~82-104°C (180-220°F)
+        # Source: Ken Payne (Michelin NA), Sportscar365; iRacing GTP data
+        CARCASS_OPTIMAL_MIN_C = 82.0
+        CARCASS_OPTIMAL_MAX_C = 104.0
+        CARCASS_MS_PER_DEG_COLD = 1.2   # ms penalty per °C below min (cold = low grip)
+        CARCASS_MS_PER_DEG_HOT = 1.8    # ms penalty per °C above max (hot = graining)
+        if self._measured is not None:
+            for attr in ("front_carcass_mean_c", "rear_carcass_mean_c"):
+                carcass_temp = getattr(self._measured, attr, None)
+                if carcass_temp is not None and float(carcass_temp) > 20.0:
+                    temp = float(carcass_temp)
+                    cold_pen = max(0.0, CARCASS_OPTIMAL_MIN_C - temp) * CARCASS_MS_PER_DEG_COLD
+                    hot_pen = max(0.0, temp - CARCASS_OPTIMAL_MAX_C) * CARCASS_MS_PER_DEG_HOT
+                    detail.carcass_ms += min(15.0, cold_pen + hot_pen)
 
         return detail
 

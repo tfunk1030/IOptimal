@@ -268,6 +268,10 @@ def produce(
     car = get_car(args.car)
     log(f"Car: {car.name}")
 
+    # ── Run trace (data provenance) ──
+    from output.run_trace import RunTrace
+    run_trace = RunTrace()
+
     # Resolve DF balance target from car model if not explicitly set
     if getattr(args, "balance", None) is None:
         args.balance = car.default_df_balance_pct
@@ -359,6 +363,8 @@ def produce(
             raise
         log(f"  Track: {track.track_name} — {track.track_config}")
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
+        run_trace.record_car_track(car.canonical_name, track.track_name, wing_angle=getattr(args, "wing", None))
+        run_trace.record_calibration()
 
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")
@@ -384,6 +390,7 @@ def produce(
     log(f"  Lap {measured.lap_number}: {measured.lap_time_s:.3f}s")
     for note in live_override_notes:
         log(f"  Live override: {note}")
+    run_trace.record_signals(measured)
 
     setup_schema = build_setup_schema(
         car=car,
@@ -890,6 +897,25 @@ def produce(
     decision_trace = base_solve_result.decision_trace
     solve_notes = list(base_solve_result.notes)
 
+    # ── Record solver path and steps in RunTrace ──
+    _rt_path = getattr(base_solve_result, "solver_path", "sequential")
+    _rt_reason = (
+        "BMW/Sebring garage model active — constrained SciPy optimizer used"
+        if getattr(base_solve_result, "optimizer_used", False)
+        else "Sequential 6-step physics solver"
+    )
+    run_trace.record_solver_path(_rt_path, reason=_rt_reason)
+    _is_ferrari_pt = getattr(base_solve_result, "ferrari_passthrough", False)
+    run_trace.record_step(1, step1, physics_override=False)
+    run_trace.record_step(2, step2, physics_override=_is_ferrari_pt,
+                          notes=["springs/perch passed through from IBT (not solved)"] if _is_ferrari_pt else [])
+    run_trace.record_step(3, step3, physics_override=_is_ferrari_pt)
+    run_trace.record_step(4, step4, physics_override=_is_ferrari_pt)
+    run_trace.record_step(5, step5)
+    run_trace.record_step(6, step6)
+    run_trace.record_step(7, supporting)
+    run_trace.record_legality(legal_validation)
+
     stint_compromise_info: list[str] = []
     stint_solve = None
     if stint_dataset is not None and len(stint_dataset.usable_laps) >= 5:
@@ -992,6 +1018,12 @@ def produce(
         step4.front_arb_size = _cs.front_arb_size
         step4.rear_arb_size = _cs.rear_arb_size
         # Geometry, dampers, brake/diff/TC — solver computes from telemetry
+        solve_notes.append(
+            "⚠️  Ferrari indexed spring parameters passed through from IBT "
+            "(front/rear heave springs, torsion OD, ARB sizes are NOT solver-optimized — "
+            "they reflect the current garage setup). Only dampers, geometry, brake/diff/TC "
+            "are solver-computed for Ferrari."
+        )
 
     # ── Phase J: Output ──
     legal_validation = validate_solution_legality(
@@ -1098,6 +1130,14 @@ def produce(
             selected_candidate_score_output = (
                 selected_candidate.score.total if selected_candidate.score is not None else None
             )
+            run_trace.candidate_family = selected_candidate_family_output
+            run_trace.candidate_score = selected_candidate_score_output
+            if selected_candidate.score is not None:
+                run_trace.record_objective(
+                    getattr(selected_candidate.score, "breakdown", None),
+                    float(selected_candidate_score_output or 0.0),
+                    scoring_system="ObjectiveFunction (candidate family)",
+                )
             solve_notes.append(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
@@ -1165,6 +1205,77 @@ def produce(
                 gs_result = engine.run(budget=search_mode, progress=True, family=search_family, explore=explore_mode)
                 log()
                 log(gs_result.summary())
+                # ── Apply grid search best result to final output ────────────
+                # Previously this was silently discarded — now we rematerialize
+                # the best candidate through the solve chain.
+                _gs_best = gs_result.best_robust or gs_result.best_overall
+                if _gs_best is not None and not _gs_best.hard_vetoed:
+                    try:
+                        from solver.solve_chain import SolveChainOverrides, materialize_overrides
+                        # Build overrides from the candidate's params
+                        _gs_overrides = SolveChainOverrides()
+                        _gs_params = _gs_best.params or {}
+                        # Map canonical param keys to step overrides
+                        _step1_keys = {"front_pushrod_offset_mm", "rear_pushrod_offset_mm"}
+                        _step2_keys = {"front_heave_spring_nmm", "rear_third_spring_nmm"}
+                        _step3_keys = {"front_torsion_od_mm", "rear_spring_rate_nmm"}
+                        _step4_keys = {"front_arb_blade", "rear_arb_blade"}
+                        _step5_keys = {"front_camber_deg", "rear_camber_deg", "front_toe_deg", "rear_toe_deg"}
+                        for k, v in _gs_params.items():
+                            if k in _step1_keys:
+                                _gs_overrides.step1[k] = v
+                            elif k in _step2_keys:
+                                _gs_overrides.step2[k] = v
+                            elif k in _step3_keys:
+                                _gs_overrides.step3[k] = v
+                            elif k in _step4_keys:
+                                _gs_overrides.step4[k] = v
+                            elif k in _step5_keys:
+                                _gs_overrides.step5[k] = v
+                        _gs_materialized = materialize_overrides(
+                            base_solve_result, _gs_overrides, solve_inputs
+                        )
+                        step1 = _gs_materialized.step1
+                        step2 = _gs_materialized.step2
+                        step3 = _gs_materialized.step3
+                        step4 = _gs_materialized.step4
+                        step5 = _gs_materialized.step5
+                        step6 = _gs_materialized.step6
+                        supporting = _gs_materialized.supporting
+                        legal_validation = _gs_materialized.legal_validation
+                        decision_trace = _gs_materialized.decision_trace
+                        selected_candidate_family_output = (
+                            f"{scenario_profile_name}:grid_{_gs_best.family}"
+                        )
+                        selected_candidate_score_output = _gs_best.score
+                        selected_candidate_applied = True
+                        run_trace.record_solver_path("grid_search", reason=f"--search-mode {search_mode}")
+                        run_trace.candidate_family = selected_candidate_family_output
+                        run_trace.candidate_score = selected_candidate_score_output
+                        run_trace.record_objective(
+                            _gs_best.breakdown,
+                            float(_gs_best.score),
+                            scoring_system="ObjectiveFunction (grid search)",
+                        )
+                        solve_notes.append(
+                            f"Applied grid search best candidate "
+                            f"({_gs_best.family}, score={_gs_best.score:+.1f}ms) "
+                            f"from {search_mode} search — rematerialized through solve chain."
+                        )
+                    except Exception as e:
+                        solve_notes.append(
+                            f"Grid search found best={_gs_best.family} ({_gs_best.score:+.1f}ms) "
+                            f"but rematerialization failed: {e} — base solve result retained."
+                        )
+                        run_trace.add_warning(f"Grid search rematerialization failed: {e}")
+                else:
+                    if _gs_best is not None:
+                        solve_notes.append(
+                            f"Grid search best ({_gs_best.family}) was hard-vetoed — base solve result retained."
+                        )
+                    else:
+                        solve_notes.append("Grid search found no acceptable candidates — base solve result retained.")
+                run_trace.search_mode = search_mode
             else:
                 # ── Original random family search ───────────────────────────
                 from solver.legal_search import run_legal_search
@@ -1200,6 +1311,9 @@ def produce(
                     selected_candidate_family_output = f"{scenario_profile_name}:{ls_result.accepted_best.family}"
                     selected_candidate_score_output = ls_result.accepted_best.score
                     selected_candidate_applied = True
+                    run_trace.record_solver_path("legal_search", reason=f"scenario={scenario_profile_name}")
+                    run_trace.candidate_family = selected_candidate_family_output
+                    run_trace.candidate_score = float(selected_candidate_score_output or 0.0)
                     solve_notes.append(
                         f"Applied legal-manifold scenario pick {ls_result.accepted_best.family} "
                         f"for {scenario_profile_name} after full legality + prediction sanity checks."
@@ -1210,6 +1324,20 @@ def produce(
                     )
         except Exception as e:
             log(f"[legal-search] Skipped: {e}")
+
+    # ── Update RunTrace with final legality and notes ──
+    run_trace.record_legality(legal_validation)
+    for _n in solve_notes:
+        run_trace.add_note(_n)
+    if getattr(base_solve_result, "ferrari_passthrough", False):
+        run_trace.add_warning(
+            "Ferrari spring/ARB parameters were NOT solver-optimized — "
+            "they were passed through from the current IBT garage setup."
+        )
+
+    # ── Print RunTrace ──
+    _verbose = getattr(args, "verbose", False)
+    run_trace.print_report(verbose=_verbose)
 
     if args.sto and car.canonical_name == "ferrari":
         solve_notes.append(

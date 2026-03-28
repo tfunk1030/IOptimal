@@ -928,6 +928,14 @@ class CarModel:
     # where λ_ref = 0.20 is the calibration point (recovers OptimumG +5% rule).
     tyre_load_sensitivity: float = 0.20
 
+    # Torsion-ARB coupling factor — empirical correction for LLTD model.
+    # Standard RCVD parallel-element model gives coupling = 0.0.
+    # BMW/Sebring IBT data (73 sessions) required γ=0.25 to match measured LLTD=50.99%.
+    # May compensate for rocker flex or other non-modelled compliance.
+    # DEFAULT = 0.0 (no coupling) — only set to non-zero for cars with IBT calibration.
+    # Used by ObjectiveFunction._torsion_arb_coupling_factor().
+    torsion_arb_coupling: float = 0.0
+
     # ── Tyre thermal operating window ────────────────────────────────────────
     # Michelin GTP/Hypercar Pilot Sport Endurance compound (Ken Payne, Michelin NA
     # technical director, Sportscar365 / IMSA GTLM Insider):
@@ -1100,6 +1108,7 @@ BMW_M_HYBRID_V8 = CarModel(
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
     default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
     tyre_load_sensitivity=0.22,    # BMW Michelin GTP compound — moderate sensitivity
+    torsion_arb_coupling=0.25,     # Back-calibrated from 73 IBT sessions at Sebring (LLTD=50.99%)
     # IBT-calibrated LLTD target: 46 BMW Sebring sessions show 38-43% actual balance.
     # Theoretical W_front + λ*0.05 = 0.4727 + 0.055 = 0.528 is ~10-14% too high.
     # This override cuts false LLTD penalty by ~10x for real BMW setups.

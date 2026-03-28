@@ -108,6 +108,11 @@ class SolveChainResult:
     notes: list[str] = field(default_factory=list)
     candidate_vetoes: list[CandidateVeto] = field(default_factory=list)
     optimizer_used: bool = False
+    # True when Ferrari indexed spring params were passed through from IBT
+    # rather than being solver-optimized (springs/ARBs not solved for Ferrari)
+    ferrari_passthrough: bool = False
+    # Solver path taken: "optimizer" | "sequential" | "sequential_fallback"
+    solver_path: str = "sequential"
 
 
 def apply_damper_modifiers(
@@ -357,6 +362,7 @@ def _finalize_result(
         supporting=supporting,
         corrections=inputs.prediction_corrections,
     )
+    is_ferrari_passthrough = getattr(inputs.car, "canonical_name", "") == "ferrari"
     return SolveChainResult(
         step1=step1,
         step2=step2,
@@ -372,6 +378,8 @@ def _finalize_result(
         notes=list(notes or []),
         candidate_vetoes=list(candidate_vetoes or []),
         optimizer_used=optimizer_used,
+        ferrari_passthrough=is_ferrari_passthrough,
+        solver_path="optimizer" if optimizer_used else "sequential",
     )
 
 

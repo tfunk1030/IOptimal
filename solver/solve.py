@@ -166,11 +166,11 @@ def main():
     parser.add_argument("--space", action="store_true",
                         help="Run setup space exploration (feasible region and flat-bottom analysis)")
     parser.add_argument("--explore", action="store_true",
-                        help="Run unconstrained parameter space exploration (ignores best-practice constraints)")
+                        help="[EXPERIMENTAL] Run unconstrained parameter space exploration (ignores best-practice constraints)")
     parser.add_argument("--bayesian", action="store_true",
-                        help="Run Bayesian optimization over full legal parameter space")
+                        help="[EXPERIMENTAL] Run Bayesian optimization over full legal parameter space — research only, not validated")
     parser.add_argument("--multi-speed", action="store_true",
-                        help="Run multi-speed compromise analysis (low/mid/high speed regimes)")
+                        help="[EXPERIMENTAL] Run multi-speed compromise analysis (low/mid/high speed regimes) — research only")
     parser.add_argument("--stint-laps", type=int, default=30,
                         help="Stint length for stint analysis (default: 30)")
     parser.add_argument("--legacy-solver", action="store_true",
@@ -615,6 +615,7 @@ def run_solver(args: "argparse.Namespace") -> None:
 
     # ─── Multi-Speed Compromise Analysis (--multi-speed) ──────────────
     if args.multi_speed:
+        log("[EXPERIMENTAL] Multi-speed solver is research-only and not validated for production use.")
         try:
             from solver.multi_speed_solver import MultiSpeedSolver
             from car_model.cars import CarModel as _CM
@@ -635,6 +636,7 @@ def run_solver(args: "argparse.Namespace") -> None:
 
     # ─── Unconstrained Explorer (--explore) ───────────────────────────
     if args.explore:
+        log("[EXPERIMENTAL] Setup explorer is research-only and not validated for production use.")
         try:
             from solver.explorer import SetupExplorer
             explore_result = SetupExplorer(car, surface, track).explore(
@@ -649,6 +651,7 @@ def run_solver(args: "argparse.Namespace") -> None:
 
     # ─── Bayesian Optimization (--bayesian) ───────────────────────────
     if args.bayesian:
+        log("[EXPERIMENTAL] Bayesian optimizer is research-only and not validated for production use.")
         try:
             from solver.bayesian_optimizer import BayesianOptimizer
             physics_baseline = {
@@ -762,6 +765,25 @@ def run_solver(args: "argparse.Namespace") -> None:
         _supporting = _StandaloneSupporting()
     except Exception:
         pass
+
+    # ── RunTrace for track-only path ──
+    try:
+        from output.run_trace import RunTrace
+        _rt = RunTrace()
+        _rt.record_car_track(car.canonical_name, f"{track.track_name} — {track.track_config}", wing_angle=args.wing)
+        _rt.record_solver_path("sequential", reason="Track-only mode (no IBT) — all signals at physics defaults")
+        _rt.record_step(1, step1)
+        _rt.record_step(2, step2)
+        _rt.record_step(3, step3)
+        _rt.record_step(4, step4)
+        _rt.record_step(5, step5)
+        _rt.record_step(6, step6)
+        _rt.record_calibration()
+        _rt.add_note("Track-only mode: no telemetry signals — solver used physics defaults for all targets.")
+        _verbose = getattr(args, "verbose", False)
+        _rt.print_report(verbose=_verbose)
+    except Exception:
+        pass  # RunTrace is non-critical — never break solver output
 
     report = print_full_setup_report(
         car_name=car.name,

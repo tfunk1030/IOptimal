@@ -24,6 +24,12 @@ class LegalValidation:
     corrected_fields: list[str] = field(default_factory=list)
     constraint_violations: list[str] = field(default_factory=list)
 
+    # Validation tier — indicates depth of validation performed
+    # "full"        = garage model active, physics constraints checked (BMW/Sebring)
+    # "range_clamp" = no garage model, geometric range checks only
+    # "none"        = no validation available for this car/track
+    validation_tier: str = "range_clamp"
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
@@ -50,11 +56,19 @@ def validate_solution_legality(
 
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is None:
+        car_name = getattr(car, "canonical_name", "unknown")
+        support_note = (
+            f"⚠ No garage model for {car_name} at {track_name}. "
+            "Validation is geometric range-clamp ONLY — physics constraints "
+            "(bottoming, vortex, slider travel) are NOT checked. "
+            "Treat output as exploratory."
+        )
         return LegalValidation(
             valid=True,
             warnings=warnings,
-            messages=["No active garage model; range-clamp validation only."],
+            messages=[support_note],
             snapped_or_corrected=bool(warnings),
+            validation_tier="range_clamp",
         )
 
     state = GarageSetupState.from_solver_steps(
@@ -75,6 +89,7 @@ def validate_solution_legality(
         warnings=warnings,
         messages=list(getattr(constraint, "messages", [])),
         snapped_or_corrected=bool(warnings),
+        validation_tier="full",
     )
 
 
