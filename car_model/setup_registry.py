@@ -544,6 +544,58 @@ def get_diff_ramp_options(car_or_name: object | str | None = None) -> tuple[tupl
     return DEFAULT_DIFF_RAMP_OPTIONS
 
 
+def snap_supporting_field_value(
+    car_or_name: object | str | None,
+    field_name: str,
+    value: object,
+) -> object:
+    """Snap a supporting-field value to legal garage increments/options.
+
+    Centralizes supporting-parameter snapping so solver paths do not reimplement
+    slightly different rounding/clamping rules.
+    """
+    if not isinstance(value, (int, float)):
+        if field_name == "pad_compound":
+            options = ("Low", "Medium", "High")
+            return value if value in options else "Medium"
+        return value
+
+    car_name = _car_name(car_or_name)
+    spec = get_car_spec(car_name, field_name)
+    numeric = float(value)
+    lo = float(spec.range_min) if spec and spec.range_min is not None else None
+    hi = float(spec.range_max) if spec and spec.range_max is not None else None
+
+    if field_name in {"tc_gain", "tc_slip"}:
+        return int(max(1, min(10, round(numeric))))
+    if field_name in {"fuel_low_warning_l", "fuel_target_l", "fuel_l"}:
+        return round(numeric, 1)
+    if field_name == "diff_preload_nm":
+        return snap_to_resolution(numeric, 5.0, lo=lo, hi=hi)
+    if field_name == "diff_ramp_option_idx":
+        options = get_diff_ramp_options(car_or_name)
+        return int(max(0, min(len(options) - 1, round(numeric))))
+    if field_name in {"diff_clutch_plates"}:
+        allowed = (2, 4, 6)
+        return int(min(allowed, key=lambda candidate: abs(candidate - numeric)))
+    if field_name in {"brake_bias_pct", "brake_bias_migration_gain", "hybrid_rear_drive_corner_pct"}:
+        return round(numeric, 1)
+    if field_name in {"front_master_cyl_mm", "rear_master_cyl_mm"}:
+        options = (15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8)
+        return float(min(options, key=lambda candidate: abs(candidate - numeric)))
+
+    resolution = float(spec.resolution) if spec and spec.resolution else None
+    if field_name in {"brake_bias_target", "brake_bias_migration"} and resolution is None:
+        resolution = 0.5
+    snapped = snap_to_resolution(numeric, resolution, lo=lo, hi=hi)
+
+    if spec and spec.parse_fn == "int":
+        return int(round(snapped))
+    if spec and spec.options:
+        return min((float(o) for o in spec.options), key=lambda option: abs(option - snapped))
+    return snapped
+
+
 def parse_diff_ramp_pair(value: object) -> tuple[int, int] | None:
     """Parse a diff ramp pair from strings like '40/65' or '40 / 65'."""
     if value is None:

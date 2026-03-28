@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Team</p>
+    <h1>Car Registry</h1>
+  </div>
+</div>
+
+{% if cars %}
+<div class="mode-grid">
+  {% for car in cars %}
+  <div class="panel">
+    <div class="panel-head">
+      <h3>{{ car.display_name }}</h3>
+      <span class="badge">{{ car.car_class }}</span>
+    </div>
+    <div class="badge-row" style="margin-bottom: 0.75rem;">
+      {% if car.support_tier == 'calibrated' %}
+        <span class="badge" style="background: #1c5a4f; color: white;">Calibrated</span>
+      {% elif car.support_tier == 'partial' %}
+        <span class="badge" style="background: #2563eb; color: white;">Partial</span>
+      {% elif car.support_tier == 'exploratory' %}
+        <span class="badge" style="background: #d97706; color: white;">Exploratory</span>
+      {% else %}
+        <span class="badge" style="background: #6b7280; color: white;">Unsupported</span>
+      {% endif %}
+    </div>
+    <p style="margin: 0 0 0.5rem;"><strong>{{ car.observation_count }}</strong> observations</p>
+    <p style="margin: 0; color: var(--muted); line-height: 1.8;">
+      {% if car.has_aero_maps %}&#10003;{% else %}&#10007;{% endif %} Aero maps<br>
+      {% if car.has_car_model %}&#10003;{% else %}&#10007;{% endif %} Car model<br>
+      {% if car.has_setup_writer %}&#10003;{% else %}&#10007;{% endif %} Setup writer
+    </p>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="panel">
+  <p class="empty-copy">No cars registered yet.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -3,7 +3,7 @@
 ## Project Goal
 Build a physics-first setup solver for iRacing's GTP/Hypercar class that searches only legal garage states and explains why a setup should work. The current authoritative implementation target is BMW M Hybrid V8 at Sebring International Raceway; Ferrari, Cadillac, Porsche, and Acura paths remain partial or exploratory until more telemetry and garage-truth coverage exists.
 
-## Current Codebase Status (2026-03-25)
+## Current Codebase Status (2026-03-27)
 
 - Workflow map: `IBT -> track/analyzer -> diagnosis/driver/style -> solve_chain/legality -> report/.sto -> webapp`
 - Scenario engine: `solver/scenario_profiles.py` defines `single_lap_safe`, `quali`, `sprint`, and `race`, and those profiles now drive `pipeline/produce.py`, `pipeline/reason.py`, `solver/solve.py`, preset comparison, and the webapp.
@@ -12,6 +12,7 @@ Build a physics-first setup solver for iRacing's GTP/Hypercar class that searche
 - Current support tiers from `validation/objective_validation.json`: BMW/Sebring = `calibrated`, Ferrari/Sebring = `partial`, Cadillac/Silverstone = `exploratory`, Porsche/Sebring = `unsupported`.
 - Current source-of-truth reports: `docs/repo_audit.md`, `validation/objective_validation.md`, and `validation/calibration_report.md`.
 - Current roadmap for improving the score model and onboarding the rest of the GTP field: `enhancementplan.md`.
+- **Team tool deployed (2026-03-27):** Server live at `https://ioptimal-server-27191526338.us-central1.run.app`, team "SOELPEC Precision Racing" created (invite code `5a1c520b`), desktop app packaged at `dist/IOptimal/IOptimal.exe`. All 18 bugs fixed (12 original + 6 deployment). See `docs/team_tool_next_steps.md` for full deployment reference.
 
 ## Architecture
 
@@ -172,6 +173,28 @@ Key features:
 - **Recurring problem detection**: flags issues that appear in >50% of sessions.
 - **Damper oscillation validation**: rear shock oscillation frequency extracted from
   telemetry; if >1.5× natural frequency, damper solver bumps ζ_hs_rear (0.14→0.21).
+
+#### 9. `watcher/` — IBT Auto-Detection
+- `monitor.py` — Filesystem event handler using watchdog; file stability check (3s no-growth)
+- `service.py` — WatcherService orchestrates detection → ingestion → sync queue; car auto-detection from IBT headers
+
+#### 10. `teamdb/` — Team Database & Sync
+- `models.py` — SQLAlchemy 2.0 ORM (13 tables: Team, Member, Division, CarDefinition, Observation, Delta, EmpiricalModel, GlobalCarModel, SharedSetup, SetupRating, ActivityLog, Leaderboard, division_members)
+- `sync_client.py` — Background push/pull with offline SQLite queue (~/.ioptimal_app/sync_queue.db), exponential backoff, 30s push / 300s pull intervals
+- `aggregator.py` — Server-side empirical model fitting from team observations
+
+#### 11. `server/` — Team REST API
+- FastAPI app on Cloud Run (`server/app.py`), async SQLAlchemy with PostgreSQL (asyncpg)
+- Auth: Bearer API key (SHA-256 hashed in Member.api_key_hash)
+- Routes: `/api/team`, `/api/observations`, `/api/knowledge`, `/api/setups`, `/api/leaderboard`
+- Deployed: `https://ioptimal-server-27191526338.us-central1.run.app`
+- Dockerfile at project root (builds `server/` + `teamdb/`)
+
+#### 12. `desktop/` — Desktop App
+- `app.py` — Orchestrates watcher + sync + webapp; CLI entry point with `--no-tray`, `--bulk-import`
+- `config.py` — AppConfig dataclass persisted to JSON (%APPDATA%/IOptimal/config.json)
+- `tray.py` — System tray icon via pystray (pause watcher, sync now, status, quit)
+- Packaged via PyInstaller: `dist/IOptimal/IOptimal.exe` (177 MB)
 
 ### Data Files
 - `data/aeromaps/` — Raw xlsx files (provided)

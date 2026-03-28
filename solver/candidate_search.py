@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from car_model.setup_registry import diff_ramp_option_index, get_numeric_resolution, snap_to_resolution
+from car_model.setup_registry import diff_ramp_option_index, snap_supporting_field_value
 from solver.candidate_ranker import CandidateScore, score_from_prediction
 from solver.solve_chain import (
     SolveChainInputs,
@@ -137,37 +137,9 @@ def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> 
             limits = toe_front if "front" in f else toe_rear
             s5[f] = _snap_step(s5[f], 0.1, limits[0], limits[1])
 
-    # Supporting: diff preload (5 Nm), TC (integer), brake bias + brake hardware
-    if "diff_preload_nm" in sup and isinstance(sup["diff_preload_nm"], (int, float)):
-        diff_range = getattr(gr, "diff_preload_nm", (0.0, 150.0)) if gr is not None else (0.0, 150.0)
-        diff_step = getattr(gr, "diff_preload_step_nm", 5.0) or 5.0
-        sup["diff_preload_nm"] = _snap_step(sup["diff_preload_nm"], diff_step, diff_range[0], diff_range[1])
-    if "diff_ramp_option_idx" in sup and isinstance(sup["diff_ramp_option_idx"], (int, float)):
-        ramp_options = getattr(gr, "diff_coast_drive_ramp_options", [(40, 65), (45, 70), (50, 75)]) if gr is not None else [(40, 65), (45, 70), (50, 75)]
-        sup["diff_ramp_option_idx"] = int(max(0, min(len(ramp_options) - 1, round(float(sup["diff_ramp_option_idx"])))))
-    if "diff_clutch_plates" in sup and isinstance(sup["diff_clutch_plates"], (int, float)):
-        clutch_options = list(getattr(gr, "diff_clutch_plates_options", []) or [2, 4, 6]) if gr is not None else [2, 4, 6]
-        sup["diff_clutch_plates"] = int(_snap_option(float(sup["diff_clutch_plates"]), [float(x) for x in clutch_options]))
-    for f in ("tc_gain", "tc_slip"):
-        if f in sup and isinstance(sup[f], (int, float)):
-            sup[f] = int(round(max(1, min(10, sup[f]))))
-    if "brake_bias_pct" in sup and isinstance(sup["brake_bias_pct"], (int, float)):
-        sup["brake_bias_pct"] = round(sup["brake_bias_pct"], 1)
-    for f, limits in (
-        ("brake_bias_target", getattr(gr, "brake_bias_target", (-5.0, 5.0)) if gr is not None else (-5.0, 5.0)),
-        ("brake_bias_migration", getattr(gr, "brake_bias_migration", (-5.0, 5.0)) if gr is not None else (-5.0, 5.0)),
-    ):
-        if f in sup and isinstance(sup[f], (int, float)):
-            sup[f] = snap_to_resolution(
-                _clamp(float(sup[f]), float(limits[0]), float(limits[1])),
-                get_numeric_resolution(car, f, default=0.5),
-                lo=float(limits[0]),
-                hi=float(limits[1]),
-            )
-    mc_options = list(getattr(gr, "brake_master_cyl_options_mm", []) or [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8]) if gr is not None else [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8]
-    for f in ("front_master_cyl_mm", "rear_master_cyl_mm"):
-        if f in sup and isinstance(sup[f], (int, float)):
-            sup[f] = _snap_option(float(sup[f]), [float(x) for x in mc_options])
+    # Supporting: centralized registry-backed snapping.
+    for field_name, field_value in list(sup.items()):
+        sup[field_name] = snap_supporting_field_value(car, field_name, field_value)
     if "pad_compound" in sup:
         pad_options = list(getattr(gr, "brake_pad_compound_options", []) or ["Low", "Medium", "High"]) if gr is not None else ["Low", "Medium", "High"]
         if sup["pad_compound"] not in pad_options:
