@@ -86,6 +86,15 @@ def format_report(
         "",
     ]
 
+    def _num(name: str, default: float = 0.0) -> float:
+        if measured is None:
+            return default
+        try:
+            value = getattr(measured, name, None)
+            return default if value is None else float(value)
+        except (TypeError, ValueError):
+            return default
+
     # --- Current Setup Summary ---
     setup = result.current_setup
     lines.append(section("CURRENT SETUP (from IBT)"))
@@ -245,127 +254,142 @@ def format_report(
             lines.append("")
 
     # --- Tyre Data ---
-    if measured is not None and (measured.front_carcass_mean_c > 0 or
-                                  measured.front_pressure_mean_kpa > 0):
+    front_carcass = _num("front_carcass_mean_c")
+    rear_carcass = _num("rear_carcass_mean_c")
+    front_pressure = _num("front_pressure_mean_kpa")
+    rear_pressure = _num("rear_pressure_mean_kpa")
+    front_spread_lf = _num("front_temp_spread_lf_c")
+    front_spread_rf = _num("front_temp_spread_rf_c")
+    rear_spread_lr = _num("rear_temp_spread_lr_c")
+    rear_spread_rr = _num("rear_temp_spread_rr_c")
+    front_wear = _num("front_wear_mean_pct")
+    rear_wear = _num("rear_wear_mean_pct")
+    if measured is not None and (front_carcass > 0 or front_pressure > 0):
         lines.append(section("TYRE DATA"))
         lines.append("")
 
-        if measured.front_carcass_mean_c > 0 or measured.rear_carcass_mean_c > 0:
+        if front_carcass > 0 or rear_carcass > 0:
             lines.append("  Carcass temp (operating):")
-            if measured.front_carcass_mean_c > 0:
-                lines.append(f"    Fronts:  {measured.front_carcass_mean_c:.0f} C")
-            if measured.rear_carcass_mean_c > 0:
-                lines.append(f"    Rears:   {measured.rear_carcass_mean_c:.0f} C")
+            if front_carcass > 0:
+                lines.append(f"    Fronts:  {front_carcass:.0f} C")
+            if rear_carcass > 0:
+                lines.append(f"    Rears:   {rear_carcass:.0f} C")
 
-        if measured.front_pressure_mean_kpa > 0 or measured.rear_pressure_mean_kpa > 0:
+        if front_pressure > 0 or rear_pressure > 0:
             lines.append("  Hot pressure:")
-            if measured.front_pressure_mean_kpa > 0:
-                lines.append(f"    Fronts:  {measured.front_pressure_mean_kpa:.0f} kPa")
-            if measured.rear_pressure_mean_kpa > 0:
-                lines.append(f"    Rears:   {measured.rear_pressure_mean_kpa:.0f} kPa")
+            if front_pressure > 0:
+                lines.append(f"    Fronts:  {front_pressure:.0f} kPa")
+            if rear_pressure > 0:
+                lines.append(f"    Rears:   {rear_pressure:.0f} kPa")
 
-        has_spread = (measured.front_temp_spread_lf_c != 0 or
-                      measured.front_temp_spread_rf_c != 0 or
-                      measured.rear_temp_spread_lr_c != 0 or
-                      measured.rear_temp_spread_rr_c != 0)
+        has_spread = any(value != 0 for value in (front_spread_lf, front_spread_rf, rear_spread_lr, rear_spread_rr))
         if has_spread:
             lines.append("  Temp spread (inner - outer):")
-            if measured.front_temp_spread_lf_c != 0:
-                lines.append(f"    LF:  {measured.front_temp_spread_lf_c:+.1f} C")
-            if measured.front_temp_spread_rf_c != 0:
-                lines.append(f"    RF:  {measured.front_temp_spread_rf_c:+.1f} C")
-            if measured.rear_temp_spread_lr_c != 0:
-                lines.append(f"    LR:  {measured.rear_temp_spread_lr_c:+.1f} C")
-            if measured.rear_temp_spread_rr_c != 0:
-                lines.append(f"    RR:  {measured.rear_temp_spread_rr_c:+.1f} C")
+            if front_spread_lf != 0:
+                lines.append(f"    LF:  {front_spread_lf:+.1f} C")
+            if front_spread_rf != 0:
+                lines.append(f"    RF:  {front_spread_rf:+.1f} C")
+            if rear_spread_lr != 0:
+                lines.append(f"    LR:  {rear_spread_lr:+.1f} C")
+            if rear_spread_rr != 0:
+                lines.append(f"    RR:  {rear_spread_rr:+.1f} C")
 
-        if measured.front_wear_mean_pct > 0 or measured.rear_wear_mean_pct > 0:
+        if front_wear > 0 or rear_wear > 0:
             lines.append("  Tyre wear remaining:")
-            if measured.front_wear_mean_pct > 0:
-                lines.append(f"    Fronts:  {measured.front_wear_mean_pct:.0f}%")
-            if measured.rear_wear_mean_pct > 0:
-                lines.append(f"    Rears:   {measured.rear_wear_mean_pct:.0f}%")
+            if front_wear > 0:
+                lines.append(f"    Fronts:  {front_wear:.0f}%")
+            if rear_wear > 0:
+                lines.append(f"    Rears:   {rear_wear:.0f}%")
 
         lines.append("")
 
     # --- Handling Dynamics ---
-    if measured is not None and (measured.understeer_mean_deg != 0 or
-                                  measured.body_slip_p95_deg > 0):
+    understeer_mean = _num("understeer_mean_deg")
+    understeer_low = _num("understeer_low_speed_deg")
+    understeer_high = _num("understeer_high_speed_deg")
+    body_slip = _num("body_slip_p95_deg")
+    rear_power_slip_p95 = _num("rear_power_slip_ratio_p95")
+    rear_slip_p95 = _num("rear_slip_ratio_p95")
+    front_lock_p95 = _num("front_braking_lock_ratio_p95")
+    front_slip_p95 = _num("front_slip_ratio_p95")
+    yaw_corr = _num("yaw_rate_correlation")
+    roll_proxy_direct = _num("roll_distribution_proxy")
+    lltd_measured = _num("lltd_measured")
+    roll_gradient = _num("roll_gradient_measured_deg_per_g")
+    roll_rate = _num("roll_rate_p95_deg_per_s")
+    pitch_rate = _num("pitch_rate_p95_deg_per_s")
+    pitch_range_braking = _num("pitch_range_braking_deg")
+    pitch_mean_braking = _num("pitch_mean_braking_deg")
+    hydraulic_split = _num("hydraulic_brake_split_pct")
+    braking_decel_mean = _num("braking_decel_mean_g")
+    braking_decel_peak = _num("braking_decel_peak_g")
+    brake_asym = _num("front_brake_wheel_decel_asymmetry_p95_ms2")
+    front_settle = _num("front_rh_settle_time_ms")
+    rear_settle = _num("rear_rh_settle_time_ms")
+    if measured is not None and (understeer_mean != 0 or body_slip > 0):
         lines.append(section("HANDLING DYNAMICS"))
         lines.append("")
 
-        if measured.understeer_mean_deg != 0:
-            us_label = "UNDERSTEER" if measured.understeer_mean_deg > 0 else "OVERSTEER"
-            lines.append(f"  Understeer angle (mean):    {measured.understeer_mean_deg:+.1f} deg  ({us_label})")
-        if measured.understeer_low_speed_deg != 0:
-            lines.append(f"    Low speed (<120 kph):     {measured.understeer_low_speed_deg:+.1f} deg")
-        if measured.understeer_high_speed_deg != 0:
-            lines.append(f"    High speed (>180 kph):    {measured.understeer_high_speed_deg:+.1f} deg")
+        if understeer_mean != 0:
+            us_label = "UNDERSTEER" if understeer_mean > 0 else "OVERSTEER"
+            lines.append(f"  Understeer angle (mean):    {understeer_mean:+.1f} deg  ({us_label})")
+        if understeer_low != 0:
+            lines.append(f"    Low speed (<120 kph):     {understeer_low:+.1f} deg")
+        if understeer_high != 0:
+            lines.append(f"    High speed (>180 kph):    {understeer_high:+.1f} deg")
 
-        lines.append(f"  Body slip angle (p95):      {measured.body_slip_p95_deg:.1f} deg")
-        rear_power_slip = (
-            measured.rear_power_slip_ratio_p95
-            if measured.rear_power_slip_ratio_p95 > 0
-            else measured.rear_slip_ratio_p95
-        )
-        front_lock = (
-            measured.front_braking_lock_ratio_p95
-            if measured.front_braking_lock_ratio_p95 > 0
-            else measured.front_slip_ratio_p95
-        )
+        lines.append(f"  Body slip angle (p95):      {body_slip:.1f} deg")
+        rear_power_slip = rear_power_slip_p95 if rear_power_slip_p95 > 0 else rear_slip_p95
+        front_lock = front_lock_p95 if front_lock_p95 > 0 else front_slip_p95
         if rear_power_slip > 0:
             lines.append(f"  Rear power slip (p95):      {rear_power_slip:.3f}")
         if front_lock > 0:
             lines.append(f"  Front braking lock (p95):   {front_lock:.3f}")
 
-        if measured.yaw_rate_correlation > 0:
-            qual = "excellent" if measured.yaw_rate_correlation > 0.90 else \
-                   "good" if measured.yaw_rate_correlation > 0.75 else \
-                   "marginal" if measured.yaw_rate_correlation > 0.60 else "poor"
-            lines.append(f"  Yaw correlation (R^2):      {measured.yaw_rate_correlation:.3f}  ({qual})")
+        if yaw_corr > 0:
+            qual = "excellent" if yaw_corr > 0.90 else \
+                   "good" if yaw_corr > 0.75 else \
+                   "marginal" if yaw_corr > 0.60 else "poor"
+            lines.append(f"  Yaw correlation (R^2):      {yaw_corr:.3f}  ({qual})")
 
-        roll_proxy = (
-            measured.roll_distribution_proxy
-            if measured.roll_distribution_proxy > 0
-            else measured.lltd_measured
-        )
+        roll_proxy = roll_proxy_direct if roll_proxy_direct > 0 else lltd_measured
         if roll_proxy > 0:
             lines.append(f"  Roll distribution proxy:    {roll_proxy*100:.1f}%")
-        if measured.roll_gradient_measured_deg_per_g > 0:
-            lines.append(f"  Roll gradient:              {measured.roll_gradient_measured_deg_per_g:.3f} deg/g")
+        if roll_gradient > 0:
+            lines.append(f"  Roll gradient:              {roll_gradient:.3f} deg/g")
 
-        if measured.roll_rate_p95_deg_per_s > 0:
-            lines.append(f"  Roll rate (p95):            {measured.roll_rate_p95_deg_per_s:.1f} deg/s")
-        if measured.pitch_rate_p95_deg_per_s > 0:
-            lines.append(f"  Pitch rate (p95):           {measured.pitch_rate_p95_deg_per_s:.1f} deg/s")
-        if measured.pitch_range_braking_deg > 0:
+        if roll_rate > 0:
+            lines.append(f"  Roll rate (p95):            {roll_rate:.1f} deg/s")
+        if pitch_rate > 0:
+            lines.append(f"  Pitch rate (p95):           {pitch_rate:.1f} deg/s")
+        if pitch_range_braking > 0:
             lines.append(
-                f"  Braking pitch range:        {measured.pitch_range_braking_deg:.2f} deg"
+                f"  Braking pitch range:        {pitch_range_braking:.2f} deg"
             )
-        if measured.pitch_mean_braking_deg != 0:
+        if pitch_mean_braking != 0:
             lines.append(
-                f"  Mean pitch under brake:     {measured.pitch_mean_braking_deg:+.2f} deg"
+                f"  Mean pitch under brake:     {pitch_mean_braking:+.2f} deg"
             )
-        if measured.hydraulic_brake_split_pct > 0:
+        if hydraulic_split > 0:
             confidence = measured.hydraulic_brake_split_confidence or "low"
             lines.append(
-                f"  Hydraulic brake split:      {measured.hydraulic_brake_split_pct:.1f}% ({confidence})"
+                f"  Hydraulic brake split:      {hydraulic_split:.1f}% ({confidence})"
             )
-        if measured.braking_decel_mean_g > 0:
+        if braking_decel_mean > 0:
             lines.append(
-                f"  Braking decel mean/peak:    {measured.braking_decel_mean_g:.2f} / "
-                f"{measured.braking_decel_peak_g:.2f} g"
+                f"  Braking decel mean/peak:    {braking_decel_mean:.2f} / "
+                f"{braking_decel_peak:.2f} g"
             )
-        if measured.front_brake_wheel_decel_asymmetry_p95_ms2 > 0:
+        if brake_asym > 0:
             lines.append(
                 f"  Front brake decel asym.:    "
-                f"{measured.front_brake_wheel_decel_asymmetry_p95_ms2:.1f} m/s^2"
+                f"{brake_asym:.1f} m/s^2"
             )
 
-        if measured.front_rh_settle_time_ms > 0:
-            lines.append(f"  Front settle time:          {measured.front_rh_settle_time_ms:.0f} ms")
-        if measured.rear_rh_settle_time_ms > 0:
-            lines.append(f"  Rear settle time:           {measured.rear_rh_settle_time_ms:.0f} ms")
+        if front_settle > 0:
+            lines.append(f"  Front settle time:          {front_settle:.0f} ms")
+        if rear_settle > 0:
+            lines.append(f"  Rear settle time:           {rear_settle:.0f} ms")
         if measured.metric_fallbacks:
             lines.append("  Metric fallbacks:")
             for fallback in measured.metric_fallbacks:
@@ -475,14 +499,26 @@ def _get_ok_items(diag: Diagnosis, measured: MeasuredState | None) -> list[str]:
     problem_cats = {p.category for p in diag.problems}
     problem_symptoms = " ".join(p.symptom.lower() for p in diag.problems)
 
+    def _positive(name: str) -> float | None:
+        try:
+            value = getattr(measured, name, None)
+            if value is None:
+                return None
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0.0 else None
+
     if "safety" not in problem_cats:
         ok.append("Safety: no bottoming, no vortex burst")
 
     if measured is not None:
-        if "front rh variance" not in problem_symptoms and measured.front_rh_std_mm > 0:
-            ok.append(f"Front variance: {measured.front_rh_std_mm:.1f}mm (threshold 8.0)")
-        if "rear rh variance" not in problem_symptoms and measured.rear_rh_std_mm > 0:
-            ok.append(f"Rear variance: {measured.rear_rh_std_mm:.1f}mm (threshold 10.0)")
+        front_rh_std = _positive("front_rh_std_mm")
+        rear_rh_std = _positive("rear_rh_std_mm")
+        if "front rh variance" not in problem_symptoms and front_rh_std is not None:
+            ok.append(f"Front variance: {front_rh_std:.1f}mm (threshold 8.0)")
+        if "rear rh variance" not in problem_symptoms and rear_rh_std is not None:
+            ok.append(f"Rear variance: {rear_rh_std:.1f}mm (threshold 10.0)")
 
     if "balance" not in problem_cats:
         ok.append("Balance: neutral handling, roll-distribution proxy within range")
@@ -491,8 +527,8 @@ def _get_ok_items(diag: Diagnosis, measured: MeasuredState | None) -> list[str]:
         ok.append("Dampers: settle time and yaw response OK")
 
     if "thermal" not in problem_cats and measured is not None:
-        if measured.front_carcass_mean_c > 0:
-            ok.append(f"Thermals: tyres in operating window")
+        if _positive("front_carcass_mean_c") is not None:
+            ok.append("Thermals: tyres in operating window")
 
     return ok
 

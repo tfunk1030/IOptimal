@@ -26,8 +26,11 @@ class WebAppServiceTests(unittest.TestCase):
     def test_single_session_adapter_returns_normalized_view(self) -> None:
         ibt_path = Path(self.tempdir.name) / "session.ibt"
         ibt_path.write_bytes(b"ibt")
+        captured: dict[str, object] = {}
 
         def fake_produce_result(args, emit_report=False, compact_report=False):
+            captured["scenario_profile"] = args.scenario_profile
+            captured["free"] = args.free
             Path(args.json).write_text("{}")
             Path(args.sto).write_text("sto")
             return {
@@ -119,7 +122,14 @@ class WebAppServiceTests(unittest.TestCase):
         ):
             kind, payload, artifacts = self.service.execute_run(
                 "run1",
-                RunCreateRequest(mode="single_session", car="bmw", ibt_paths=[ibt_path], use_learning=False),
+                RunCreateRequest(
+                    mode="single_session",
+                    car="bmw",
+                    ibt_paths=[ibt_path],
+                    use_learning=False,
+                    scenario_profile="quali",
+                    free_opt=True,
+                ),
                 lambda phase: None,
             )
 
@@ -127,11 +137,17 @@ class WebAppServiceTests(unittest.TestCase):
         self.assertEqual(payload["result_kind"], "single_session")
         self.assertEqual(payload["assessment"], "Compromised")
         self.assertEqual(payload["confidence_label"], "Medium")
+        self.assertEqual(captured["scenario_profile"], "quali")
+        self.assertTrue(captured["free"])
         self.assertTrue(any(row["label"] == "Rear ride height" for group in payload["setup_groups"] for row in group["rows"]))
         self.assertEqual({artifact.kind for artifact in artifacts}, {"report", "json", "sto"})
 
     def test_track_solve_adapter_handles_report_and_json_artifacts(self) -> None:
+        captured: dict[str, object] = {}
+
         def fake_run_solver(args):
+            captured["scenario_profile"] = args.scenario_profile
+            captured["free"] = args.free
             Path(args.save).write_text(json.dumps({
                 "step1_rake": {"front_pushrod_offset_mm": -24.0, "rear_pushrod_offset_mm": -18.0, "static_rear_rh_mm": 50.0},
                 "step2_heave": {"front_heave_nmm": 45.0, "rear_third_nmm": 400.0},
@@ -146,12 +162,22 @@ class WebAppServiceTests(unittest.TestCase):
         with patch("webapp.services.run_solver", side_effect=fake_run_solver):
             kind, payload, artifacts = self.service.execute_run(
                 "run2",
-                RunCreateRequest(mode="track_solve", car="bmw", track="sebring", wing=17.0, use_learning=False),
+                RunCreateRequest(
+                    mode="track_solve",
+                    car="bmw",
+                    track="sebring",
+                    wing=17.0,
+                    use_learning=False,
+                    scenario_profile="race",
+                    free_opt=True,
+                ),
                 lambda phase: None,
             )
 
         self.assertEqual(kind, "track_solve")
         self.assertEqual(payload["confidence_label"], "Telemetry-free")
+        self.assertEqual(captured["scenario_profile"], "race")
+        self.assertTrue(captured["free"])
         self.assertEqual(len(artifacts), 3)
 
     def test_comparison_adapter_returns_rankings_and_synthesis(self) -> None:
@@ -235,6 +261,26 @@ class WebAppServiceTests(unittest.TestCase):
         self.assertEqual(summary.total_observations, 1)
         self.assertEqual(summary.buckets[0].track, "Sebring International Raceway")
         self.assertTrue(summary.buckets[0].corrections)
+
+    def test_knowledge_summary_uses_full_track_slug(self) -> None:
+        learn_dir = Path(self.tempdir.name) / "learn-full-slug"
+        store = KnowledgeStore(base_dir=learn_dir)
+        store.save_observation(
+            "bmw_road_atlanta_s1",
+            {"session_id": "bmw_road_atlanta_s1", "car": "bmw", "track": "Road Atlanta"},
+        )
+        (learn_dir / "insights" / "bmw_road_atlanta_insights.json").write_text(
+            json.dumps({"key_insights": ["Full slug lookup works."]})
+        )
+        (learn_dir / "models" / "bmw_road_atlanta_empirical.json").write_text(
+            json.dumps({"corrections": {"rear_third_nmm": 8.0}})
+        )
+
+        with patch("webapp.services.KnowledgeStore", return_value=store):
+            summary = self.service.load_knowledge_summary()
+
+        self.assertEqual(summary.buckets[0].track, "Road Atlanta")
+        self.assertEqual(summary.buckets[0].insights, ["Full slug lookup works."])
 
 
 if __name__ == "__main__":

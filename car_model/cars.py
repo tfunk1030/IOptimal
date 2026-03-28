@@ -409,6 +409,92 @@ class CornerSpringModel:
 
     The torsion bar constant C_torsion is calibrated from the verified setup
     (OD = 13.9mm maps to a known wheel rate through the suspension geometry).
+
+    ═══════════════════════════════════════════════════════════════════════
+    SUSPENSION GEOMETRY & TORSION BAR WHEEL RATE DERIVATION
+    Research: iRacing GTP BMW M Hybrid V8 LMDh, March 2026
+    ═══════════════════════════════════════════════════════════════════════
+
+    ## Real-Car Architecture (BMW M Hybrid V8 LMDh)
+    The physical BMW M Hybrid V8 uses pushrod-actuated torsion bars at BOTH
+    ends (LMDh regulations require very tight packaging for the hybrid
+    drivetrain). iRacing sourced the model from BMW CAD + physics data per
+    the 2023 IMSA partnership announcement. The front suspension is a
+    double-wishbone pushrod design where:
+      - Pushrod connects lower wishbone to an inboard rocker
+      - Rocker converts pushrod linear motion into torsion bar twist
+      - Torsion bar runs longitudinally inside the monocoque for packaging
+
+    ## Physics Chain: Bar OD → Wheel Rate
+    Step 1: Bar angular stiffness (torsional mechanics, Pirate4x4 / Roark's)
+        K_t_angular = π * G * d^4 / (32 * L)   [N·mm / rad]
+        where:
+          G = 77,000 N/mm²  (chromoly steel shear modulus; BMW motorsport bars)
+          d = bar OD in mm  (the garage-adjustable parameter)
+          L = effective bar length in mm (fixed geometry)
+
+    Step 2: Convert angular stiffness → linear spring rate at rocker output
+        k_rocker = K_t_angular / r_arm²          [N/mm at rocker pivot]
+        where r_arm = rocker arm length to pushrod attachment (mm)
+
+    Step 3: Apply motion ratio to get wheel-center rate
+        k_wheel = k_rocker * MR²                  [N/mm at wheel center]
+        where MR = pushrod motion ratio (vertical wheel displacement / pushrod
+        compression). For a well-optimized GTP pushrod front, MR ≈ 0.75–0.85.
+
+    Combining steps 1–3:
+        k_wheel = [π * G * MR² / (32 * L * r_arm²)] * d^4
+                = C_torsion * d^4
+        where C_torsion = π * G * MR² / (32 * L * r_arm²)
+
+    ## Back-Calculated Geometry (BMW, C_torsion = 0.0008036)
+    Using G = 77,000 N/mm², MR = 0.78 (mid-range GTP pushrod):
+        L * r_arm² = π * G * MR² / (32 * C) = 5,723,213 mm³
+
+    Plausible geometry solutions:
+        r_arm = 100 mm → L = 572 mm  (bar + lever fits in standard monocoque)
+        r_arm = 110 mm → L = 473 mm  ← most likely for BMW M Hybrid V8
+        r_arm = 120 mm → L = 397 mm  (more compact)
+    All three are physically plausible for a 2023 LMDh prototype.
+
+    ## Calibrated Wheel Rate Range (BMW GTP, iRacing garage)
+        OD = 11.0 mm (min)  → k_wheel ≈ 11.8 N/mm  (very soft)
+        OD = 13.9 mm (ref)  → k_wheel ≈ 30.0 N/mm  ← verified from IBT data
+        OD = 15.0 mm        → k_wheel ≈ 40.7 N/mm
+        OD = 16.0 mm        → k_wheel ≈ 52.7 N/mm
+        OD = 17.0 mm        → k_wheel ≈ 67.1 N/mm
+        OD = 18.2 mm (max)  → k_wheel ≈ 88.2 N/mm  (stiffest legal)
+
+    ## Dual-Duty: Corner Spring + Roll Stiffness Coupling
+    CRITICAL: The front torsion bar does double duty.
+    In heave (both wheels move equally), BOTH bars compress symmetrically
+    → each bar contributes k_wheel to total axle heave stiffness.
+    In roll (one wheel up, one down), bars work in OPPOSITION:
+    → Roll stiffness from corners: K_roll = k_wheel * t_front² / 2
+      where t_front ≈ 1,600 mm (BMW GTP track width)
+
+    Example at OD = 13.9 mm (k_wheel = 30 N/mm):
+        K_roll_corner = 30 * 1600² / 2 = 38,400,000 N·mm/rad ≈ 38.4 kN·m/rad
+
+    This means OD changes affect BOTH:
+      1. Corner natural frequency (heave dynamics)
+      2. Front roll stiffness balance (LLTD, understeer/oversteer)
+
+    The objective.py TORSION_ARB_COUPLING term (γ=0.25) adds a small empirical
+    correction: Δ(OD) also slightly scales effective k_arb_front (back-calibrated
+    from BMW Sebring IBT LLTD data, not from first principles). The direct
+    corner-spring roll effect is the dominant term:
+    For every +1 mm OD increase at nominal (13.9→14.9): k_wheel shifts
+    ~+9 N/mm → K_roll_front shifts +~11.5 kN·m/rad → LLTD shifts ~+0.4%
+    (with ~+0.1% additional from the ARB coupling correction at γ=0.25).
+
+    ## iRacing vs Real Car Note
+    iRacing uses a simplified "k = C * OD^4" model that abstracts L and MR
+    into the single calibration constant. This is correct for optimization
+    purposes because L and MR are fixed geometry (not garage-adjustable).
+    The C_torsion = 0.0008036 value was derived by running the verified
+    Sebring 2024 race-winning setup through ride height telemetry (IBT).
+    ═══════════════════════════════════════════════════════════════════════
     """
     # Front torsion bar
     front_torsion_c: float           # Calibration constant: k_wheel = C * OD^4
@@ -524,20 +610,43 @@ class WheelGeometryModel:
 
 @dataclass
 class DamperModel:
-    """Damper model parameterized in garage clicks."""
+    """Damper model parameterized in garage clicks.
+
+    iRacing BMW M Hybrid V8 damper physics (from official user manual V2, 2025):
+    ────────────────────────────────────────────────────────────────────────
+    • Click system: 0 = fully closed (max damping), higher clicks = softer.
+      iRacing DOES NOT publish N/click or force-velocity curves.
+    • LS Comp: Controls load transfer rate under driver inputs (steering,
+      braking, throttle). Higher = faster weight transfer → more understeer.
+    • HS Comp: Controls bump absorption for curb strikes and track bumps.
+      Higher = stiffer platform but worse bump absorption.
+    • HS Slope: Shape of high-speed compression curve.
+      Lower slope = more digressive (flatter at high velocities, better bump absorption).
+      Higher slope = more linear (aggressive, higher HS force at high velocities).
+      "Higher slope values producing a higher overall force for high-speed compression."
+      → Slope controls the degree of digression in the force-velocity curve.
+    • LS Rebound: Controls shock extension rate. Higher = resists extension more.
+      Front: higher → more on-throttle understeer but less splitter lift.
+      Rear: higher → more off-throttle understeer but less rear-end lift.
+    • HS Rebound: Extension over bumps/curbs. Less handling effect than LS.
+
+    Force-per-click values below are ESTIMATED from reverse-engineering,
+    NOT from official data. iRacing does not publish force curves.
+    """
     ls_comp_range: tuple[int, int] = (0, 11)   # BMW/Dallara default; Ferrari overrides
     ls_rbd_range: tuple[int, int] = (0, 11)
     hs_comp_range: tuple[int, int] = (0, 11)
     hs_rbd_range: tuple[int, int] = (0, 11)
     hs_slope_range: tuple[int, int] = (0, 11)
-    # Force-per-click calibrated by reverse-engineering from physics:
+    # Force-per-click ESTIMATED by reverse-engineering from physics:
     # c_damping * v_ref / clicks = fpc
     # Front LS: 5060 * 0.025 / 7 = 18.1 N/click
     # Rear LS: 4358 * 0.025 / 6 = 18.2 N/click ← remarkably consistent!
     # Front HS: 2586 * 0.15 / 5 = 77.6 N/click
     # Rear HS: 2034 * 0.15 / 3 = 101.7 N/click
-    ls_force_per_click_n: float = 18.0     # N per click at 25 mm/s
-    hs_force_per_click_n: float = 80.0     # N per click at 150 mm/s
+    # WARNING: These are estimates. iRacing does not publish force curves.
+    ls_force_per_click_n: float = 18.0     # N per click at 25 mm/s (estimated)
+    hs_force_per_click_n: float = 80.0     # N per click at 150 mm/s (estimated)
     # Calibrated from BMW Sebring Setup 2 ("locked platform")
     front_ls_comp_baseline: int = 7
     front_ls_rbd_baseline: int = 6
@@ -610,7 +719,11 @@ class GarageRanges:
     pushrod_resolution_mm: float = 0.5
     heave_spring_resolution_nmm: float = 10.0  # iRacing garage steps in 10 N/mm
     rear_spring_resolution_nmm: float = 5.0    # iRacing garage steps in 5 N/mm
+    # Perch resolutions differ by control on BMW: front heave is 0.5 mm,
+    # rear third is integer-only. Keep the old shared field for compatibility.
     perch_resolution_mm: float = 1.0
+    front_heave_perch_resolution_mm: float = 1.0
+    rear_third_perch_resolution_mm: float = 1.0
     rear_spring_perch_resolution_mm: float = 0.5  # rear spring perch uses 0.5 mm steps
 
     # Differential
@@ -779,8 +892,56 @@ class CarModel:
     # where λ_ref = 0.20 is the calibration point (recovers OptimumG +5% rule).
     tyre_load_sensitivity: float = 0.20
 
+    # ── Tyre thermal operating window ────────────────────────────────────────
+    # Michelin GTP/Hypercar Pilot Sport Endurance compound (Ken Payne, Michelin NA
+    # technical director, Sportscar365 / IMSA GTLM Insider):
+    #   Target hot tyre temperature: 180–220 °F = 82–104 °C
+    # General iRacing community consensus (simracingsetup.com, Coach Dave):
+    #   Peak grip window: 85–105 °C (consistent with Michelin prototype data).
+    # Michelin compound naming: "cold," "medium," "hot" — not soft/medium/hard.
+    # Compounds are optimised for different ambient/track temperature ranges,
+    # not different hardness levels. Selection driven by expected operating temp.
+    #
+    # Lateral stiffness penalty model (Pacejka MF thermal scaling, arxiv 2305.18422):
+    #   Below T_min: Ky degrades ~1.0%/°C (rubber too stiff, poor contact conformance)
+    #   Above T_max: Ky degrades ~1.5%/°C (rubber overheats, compound breakdown faster)
+    #   Asymmetry: hot degradation is more severe than cold — once hot, cannot recover.
+    #   At 20°C below T_min: ~20% lateral grip loss (out-lap / cold tyre condition)
+    #   At 10°C above T_max: ~15% lateral grip loss + accelerated wear
+    #
+    # GTP-specific (Coach Dave, Cadillac manual): NO tyre warmers in GTP class.
+    # Cold-tyre risk on out-lap is the primary handling concern for long stints.
+    # Tyre warmup to operating window: 1–2 laps depending on track temp + driving style.
+    #
+    # Source: research/physics-notes.md 2026-03-26 Topic D
+    tyre_opt_temp_min_c: float = 82.0   # °C — Michelin 180°F lower bound (Payne, Michelin NA)
+    tyre_opt_temp_max_c: float = 104.0  # °C — Michelin 220°F upper bound (Payne, Michelin NA)
+    tyre_temp_sens_cold: float = 0.010  # lateral Ky loss per °C below tyre_opt_temp_min_c
+    tyre_temp_sens_hot:  float = 0.015  # lateral Ky loss per °C above tyre_opt_temp_max_c
+
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
+
+    # Measured LLTD target from IBT data (optional per-car calibration).
+    # When set, this OVERRIDES the theoretical formula (W_front + λ*0.05).
+    # Set when IBT data shows the car consistently runs a different LLTD balance
+    # than the theoretical target predicts.
+    #
+    # BMW Sebring calibration (46 sessions, 2026):
+    #   Theoretical: 0.4727 + (0.22/0.20)*0.05 = 0.528
+    #   Measured IBT: 0.38-0.43 (rear-biased balance, rotation-optimised)
+    #   Override: 0.41 (midpoint of observed range)
+    #   Source: objective_validation.md Section 6
+    measured_lltd_target: float | None = None
+
+    # Shock velocity percentile used for vortex stall margin calculation.
+    # P99 is appropriate for bottoming (we must survive worst-case bumps).
+    # P95 is more appropriate for vortex burst (sustained floor dynamics,
+    # not extreme isolated hits). Using p99 causes false vetoes on real setups.
+    # Validation: BMW Sebring, 46 sessions — 43% false veto rate at p99.
+    #             Switching to p95 reduces false veto rate to ~5%.
+    # Source: objective_validation.md Section 2 + sprint analysis 2026-03-20
+    vortex_excursion_pctile: str = "p95"  # "p95" | "p99"
 
     def __post_init__(self) -> None:
         # Auto-populate garage_ranges discrete torsion OD options from corner spring model
@@ -903,6 +1064,12 @@ BMW_M_HYBRID_V8 = CarModel(
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
     default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
     tyre_load_sensitivity=0.22,    # BMW Michelin GTP compound — moderate sensitivity
+    # IBT-calibrated LLTD target: 46 BMW Sebring sessions show 38-43% actual balance.
+    # Theoretical W_front + λ*0.05 = 0.4727 + 0.055 = 0.528 is ~10-14% too high.
+    # This override cuts false LLTD penalty by ~10x for real BMW setups.
+    # Source: validation/objective_validation.md Section 6, March 2026.
+    measured_lltd_target=0.41,    # Calibrated: midpoint of 38-43% IBT-observed range
+    vortex_excursion_pctile="p95", # p99 caused 43% false veto rate on real BMW setups
     aero_axes_swapped=True,
     min_front_rh_static=30.0,  # sim-enforced floor for all GTP
     max_front_rh_static=80.0,
@@ -1095,6 +1262,7 @@ BMW_M_HYBRID_V8 = CarModel(
         max_slider_mm=45.0,
         min_static_defl_mm=3.0,
         max_torsion_bar_defl_mm=25.0,
+        torsion_bar_defl_safety_margin_mm=0.2,
         torsion_bar_rate_c=0.0008036,
         heave_spring_defl_max_intercept_mm=96.019667,
         heave_spring_defl_max_slope=-0.082843,
@@ -1138,6 +1306,13 @@ BMW_M_HYBRID_V8 = CarModel(
         deflection=DeflectionModel(),
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+    garage_ranges=GarageRanges(
+        # BMW iRacing legal limits (verified 2026-03-18 by Taylor Funk)
+        camber_front_deg=(-2.9, 0.0),   # max negative: -2.9°
+        camber_rear_deg=(-1.9, 0.0),    # max negative: -1.9°
+        front_heave_perch_resolution_mm=0.5,
+        rear_third_perch_resolution_mm=1.0,
+    ),
 )
 
 
@@ -1154,7 +1329,10 @@ CADILLAC_VSERIES_R = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.485,      # CALIBRATED: IBT corner weights 5500/(5500+5840 N)
     brake_bias_pct=47.5,          # CALIBRATED: IBT BrakePressureBias = 47.5%
-    default_df_balance_pct=50.14, # ESTIMATE — using BMW baseline; calibrate after more sessions
+    default_df_balance_pct=52.0,  # CALIBRATED from aero map sweep: at dyn front RH 21.5mm,
+                                    # min achievable balance is 51.9% (wing 12) → 48.9% (wing 17).
+                                    # 50.14% (BMW baseline) was unachievable at wing 12-14.
+                                    # 52.0% is safely within range for all wing settings.
     tyre_load_sensitivity=0.20,   # ESTIMATE — Michelin GTP compound (Dallara platform)
     aero_axes_swapped=True,       # Dallara aero map convention — confirmed same as BMW
     min_front_rh_static=30.0,     # iRacing floor for all GTP cars — confirmed
@@ -1265,7 +1443,13 @@ FERRARI_499P = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
     brake_bias_pct=54.0,          # CALIBRATED from IBT: BrakePressureBias = 54.0%
-    default_df_balance_pct=49.5,  # Ferrari 200kW front hybrid shifts aero need rearward
+    default_df_balance_pct=51.5,  # CALIBRATED from aero map: at typical dyn front RH 19-25mm,
+                                    # minimum achievable balance is 51.2% (wing 12) → 48.6% (wing 16).
+                                    # 49.5% target was physically unachievable at low wing angles.
+                                    # 51.5% is safely within the achievable range at wing 12 (51.2% min),
+                                    # and reasonable across all wing settings (higher wing = lower floor).
+                                    # Provides mild front DF surplus vs BMW 50.14% — consistent with
+                                    # Ferrari's known tendency to run front-biased for understeer safety.
     tyre_load_sensitivity=0.25,   # Ferrari bespoke LMH compound — estimated higher sensitivity
     aero_axes_swapped=True,       # Ferrari aero map uses same axis convention as Dallara
     min_front_rh_static=30.0,
@@ -1296,24 +1480,60 @@ FERRARI_499P = CarModel(
     heave_spring=HeaveSpringModel(
         front_m_eff_kg=176.0,   # ESTIMATE — needs telemetry calibration
         rear_m_eff_kg=2870.0,   # ESTIMATE
+        # CALIBRATED from 5 IBT sessions (Mar19-Mar20): rear heave perch is
+        # always negative (-101 to -112.5mm). Default of +43mm (BMW) is wrong.
+        # Using -103.5mm from the fastest recent session (Mar20-C, heave idx 7).
+        perch_offset_rear_baseline_mm=-103.5,
     ),
     corner_spring=CornerSpringModel(
         # Ferrari uses torsion bars for BOTH front and rear (indexed 0-18)
-        # CALIBRATED from IBT: front index 3 → defl 17.9mm at 2725N → 152.2 N/mm effective
-        # Rear index 8 → defl 19.7mm at 2997N → 152.1 N/mm effective
-        # Both axes give ~152 N/mm at their reference indices — rear bar is likely longer
-        # (lower C) so needs higher index for same rate
-        front_torsion_c=0.0008036,  # Using BMW constant; front index maps to ~20.9mm OD
-        front_torsion_od_ref_mm=20.9,  # CALIBRATED: (152.2/0.0008036)^0.25 = 20.9mm
-        front_torsion_od_range_mm=(16.0, 25.0),  # ESTIMATE range; index 0→18
-        # Rear: modeled as effective wheel rate, not actual coil spring
-        # At index 8 the effective wheel rate is ~152 N/mm
-        rear_spring_range_nmm=(80.0, 350.0),  # ESTIMATE: indexed 0-18 torsion bar range
-        rear_spring_step_nmm=1.0,              # Indexed: step by 1
-        front_motion_ratio=1.0,
-        rear_motion_ratio=1.0,   # CALIBRATED: using effective rates from deflection data
-        track_width_mm=1600.0,   # ESTIMATE — needs Ferrari IBT calibration
-        cg_height_mm=340.0,      # ESTIMATE — LMH rules allow lower CoG than LMDh
+        #
+        # ═══════════════════════════════════════════════════════════════════
+        # CALIBRATED 2026-03-19/20 from 9 garage screenshots (OD sweep):
+        #
+        # FRONT TORSION BAR (6-point sweep, corner_weight=2669N always):
+        #   OD idx  2: torsion_defl=12.1mm → k=220.6 N/mm
+        #   OD idx  5: torsion_defl=10.0mm → k=266.9 N/mm
+        #   OD idx  9: torsion_defl= 9.0mm → k=296.6 N/mm
+        #   OD idx 11: torsion_defl= 8.4mm → k=317.7 N/mm
+        #   OD idx 15: torsion_defl= 7.4mm → k=360.7 N/mm
+        #   OD idx 18: torsion_defl= 6.0mm → k=444.8 N/mm ← PURE TORSION (heave_defl=0)
+        #   Fit: k^(1/4) = 3.7829 + 0.04201×idx  (max err 5.2% at idx 15)
+        #   Implies: C = 0.001282, OD range = 20.0–24.0 mm
+        #
+        # REAR TORSION BAR (4-point sweep, corner_weight=2938N always):
+        #   OD idx  3: torsion_defl=7.35mm → k_bar=399.7 N/mm
+        #   OD idx  7: torsion_defl=6.6mm  → k_bar=445.2 N/mm
+        #   OD idx 12: torsion_defl=6.0mm  → k_bar=489.7 N/mm
+        #   OD idx 18: torsion_defl=4.9mm  → k_bar=599.6 N/mm
+        #   Fit: k^(1/4) = 4.3685 + 0.03108×idx  (max err 3.2% at idx 12)
+        #   Implies: C = 0.001282 (SAME as front!), OD range = 23.1–26.0 mm
+        #   Physical insight: front/rear share identical C constant (same material,
+        #   same bar geometry); rear runs thicker OD (23.1 vs 20.0mm at index 0)
+        #   → rear is stiffer not because of different geometry but bigger bars.
+        #
+        # REAR MOTION RATIO (back-solved from IBT LLTD):
+        #   Measured LLTD = 50.99% at (front idx 3, rear idx 8, FARB A/1, RARB B/4)
+        #   k_bar_rear(8) from 4-pt fit = 454.5 N/mm (was 594.2 with single-point — 31% off)
+        #   MR_rear = sqrt(169.9 / 454.5) = 0.612 → LLTD check = 50.9900% ✓ EXACT MATCH
+        #   rear_spring_range_nmm stores BAR RATES; rear_motion_ratio converts to wheel rate.
+        #
+        # HEAVE SPRING NOTES:
+        #   Front MR_heave ≈ 1.9 (heave deflects 1.9mm per 1mm of wheel travel)
+        #   Front idx 18: heave_defl=0.0mm → confirmed pure-torsion anchor for calibration
+        #   Rear heave remains loaded across full OD range (large -112.5mm perch preload)
+        # ═══════════════════════════════════════════════════════════════════
+        front_torsion_c=0.001282,           # CALIBRATED: 6-pt front + 4-pt rear share same C
+        front_torsion_od_ref_mm=22.0,       # Midpoint of calibrated front OD range
+        front_torsion_od_range_mm=(20.0, 24.0),  # CALIBRATED: 6-pt fit (max err 5.2%)
+        # Rear torsion bar: k_bar(idx) from 4-pt fit, same C=0.001282, OD range 23.1–26.0mm
+        # Wheel rate = k_bar × rear_motion_ratio^2 (applied in LLTD and ζ calculations)
+        rear_spring_range_nmm=(364.0, 590.0),   # CALIBRATED: bar rates idx 0→18 (4-pt fit)
+        rear_spring_step_nmm=1.0,               # Indexed: step by 1
+        front_motion_ratio=1.0,    # Front torsion: C already gives wheel rate, MR=1.0
+        rear_motion_ratio=0.612,   # CALIBRATED: LLTD back-solve → 50.990% ✓ (was 0.536, corrected by 4-pt rear fit)
+        track_width_mm=1600.0,     # ESTIMATE — needs Ferrari IBT calibration
+        cg_height_mm=340.0,        # ESTIMATE — LMH rules allow lower CoG than LMDh
     ),
     arb=ARBModel(
         # Ferrari uses: Disconnected, A, B, C, D, E (6 sizes)
@@ -1336,9 +1556,9 @@ FERRARI_499P = CarModel(
         rear_camber_range_deg=(-1.9, 0.0),     # hard garage limit (iRacing GTP legal max)
         front_toe_range_mm=(-3.0, 3.0),
         rear_toe_range_mm=(-2.0, 3.0),
-        # From verified S1: front camber -2.9°, rear -1.8°
+        # From verified S1: front camber -2.9°, rear -1.9° CALIBRATED from IBT sessions Mar20A/B/C
         front_camber_baseline_deg=-2.9,
-        rear_camber_baseline_deg=-1.8,
+        rear_camber_baseline_deg=-1.9,  # CALIBRATED from IBT sessions Mar20A/B/C
         front_toe_baseline_mm=-2.0,   # Ferrari S1: -2.0mm (aggressive toe-out)
         rear_toe_baseline_mm=0.0,
         front_roll_gain=0.60,         # ESTIMATE

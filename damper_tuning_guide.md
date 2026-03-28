@@ -1,112 +1,45 @@
-%PDF-1.4
-%“Œ‹ž ReportLab Generated PDF document (opensource)
-1 0 obj
-<<
-/F1 2 0 R /F2 3 0 R
->>
-endobj
-2 0 obj
-<<
-/BaseFont /Helvetica /Encoding /WinAnsiEncoding /Name /F1 /Subtype /Type1 /Type /Font
->>
-endobj
-3 0 obj
-<<
-/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Name /F2 /Subtype /Type1 /Type /Font
->>
-endobj
-4 0 obj
-<<
-/Contents 10 0 R /MediaBox [ 0 0 612 792 ] /Parent 9 0 R /Resources <<
-/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
->> /Rotate 0 /Trans <<
-
->> 
-  /Type /Page
->>
-endobj
-5 0 obj
-<<
-/Contents 11 0 R /MediaBox [ 0 0 612 792 ] /Parent 9 0 R /Resources <<
-/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
->> /Rotate 0 /Trans <<
-
->> 
-  /Type /Page
->>
-endobj
-6 0 obj
-<<
-/Contents 12 0 R /MediaBox [ 0 0 612 792 ] /Parent 9 0 R /Resources <<
-/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
->> /Rotate 0 /Trans <<
-
->> 
-  /Type /Page
->>
-endobj
-7 0 obj
-<<
-/PageMode /UseNone /Pages 9 0 R /Type /Catalog
->>
-endobj
-8 0 obj
-<<
-/Author (\(anonymous\)) /CreationDate (D:20260318233850+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20260318233850+00'00') /Producer (ReportLab PDF Library - \(opensource\)) 
-  /Subject (\(unspecified\)) /Title (\(anonymous\)) /Trapped /False
->>
-endobj
-9 0 obj
-<<
-/Count 3 /Kids [ 4 0 R 5 0 R 6 0 R ] /Type /Pages
->>
-endobj
-10 0 obj
-<<
-/Filter [ /ASCII85Decode /FlateDecode ] /Length 2041
->>
-stream
-Gatm;9lo&K'#"0DoOTNCQHTr?00?X&ZcRT39ubRlCUFD'"=:u3^]?\NRR;Q$^'6!CEh'YF'n8djWUABA?U(nqRc$7:J+K,mG""X08L_nt<DkkNB!hE*rjfW8lQY`a>V)(tQBN2(a/_cm8T,@nSK=s^e!l<_p&^r955Kk32'Q[tKuhq)a.5qgCiY0/X+Ef*M7Sh8<ioDK95e$781KUqpSt)POlODR>(*'o5NlkW5%+7$hiI7YXuh#D+JoS,As(<caZR:!%J>F4;oY(r_q/O^G"\Ub"23.%JR5uD*tL"1J*B2dhqe6telfGWf;<Fb,mu3)WTbelEaoK'B:O0/m^(DM!5=gii$n'`qs-[k:%@E7m=c$oehgS`P6IOXo_urLJFcL[R2qd7FJ/#p3MSF)4"1O)7b=-%Q1JU'7GX=&F:n+UYE"X_7ur]39P;I0@R).br#@-IN8eT89U9`^h:(SieC'5S3fn-Q\-K5m*DB+QTfr4BUa!['OHmqQ5L?RR99h70#-tNI?Ju@s3RkJ/<op&"@83d1%W\Xe&lS]\XZ=@9N7'n`(#i+CKm%]n3(o5=^nq3J#eAb7O8Q%I#-Vc58lH4j=Qu>2RY3;Rkse]k(rD[64-f8J$]H];-\,>ZUW'*nZk6&68k\`0p;Yqo[3]2K`b^+q`%9\cPXh0t`.,=31g9:BQ!aure;^`)RErj)']-M3eHtPTYP\l`HUjs/_X'/"31$un2:d$4%h1#+]oB7&j_Z:pJI<3*I!n$C.>aS+ONna9$5A)!l)Cqf(05ukn;nUVXf4W+"S\r_Mik;?kSK4[NK_0>U^MAT1m&1%k7S4LA]`cO4_?ZI1n0R(#Rlt<P:C&u!6)B-=O_u1&<U%*a^"lY>mhP!]p)5^V`?hPi9)6G<#]LBkZ(J.%jeHYa-94.H6a*V3/S%XHR'#qFYkgrY[E>(`&_gjhTDloj*cqRWM(UAl]<J!s6lb\eo@LY?<N/oJs'[kGpX$n+K?390aEc:Wma1]N0XSAZ:5H#&6^rIjGg.+l\\p659J>3Q\,l"PX>Oo]Gm(N_F+>)QVZ+>jttESJ^L*So7DaF]1)H<p?/:sRskm3bS%K%Q-c3RYKpi#p)+#'FWf/djGED3r4h8P'Y)nc4n3IH_GYsf%>YK`"eg4)!gie=LtimbLBV+T*QG$'d2ugOjRd&Qc%81Rab'-'iGg3u@VmeMdIs:bqT&TE*c9WB=^P'?WRC_JI5ZT<Xur1$b9-SM+'_/(=Yfs74>qs#Vh8]aU,sS.aTndi]XCDqhmgsq<%qjUgq^&BRFoB(977eE@nt)!aa+Z7g/V`,q#]ONrNHiP_&*7("%"u$7,;I:aHZ[gB37`llRZ!]\O2u2.I5/iA3ZVY^?oT/Dn^<MO+,Pic[[5JE):=P87:,/H\b2O":-k8I9">m%OC%rjuf_0^kR[jJB0lX'@%1?[RYc>b]L^$CuBjHMtiU5_a'pQ(lmX0o6F$r3ZH!$M@Zi\Ca@D(SWk/I;G*>)#0&.[1Q5n'Dd7FW2Mu38DtoR,o&f4tO.(Ncl3p(0*Cb@GIQ*a(fo$2h3_fjN*7Sg\EC2M8m8Ut3m:DY%fc>+WULj?*TAeB)eo[Kcgf\^>c1#Q5GHOXk[9ucJT:`>BpNb\I/!sBe\5a\N=iKR?1jWPI4P\d_+jt=\W6GE;`2Tk>-$DK>!N-Wl"i,Hd%Q!t[?gk:A5Y"CHZLf.<-TUnBp2MMg'0f3jY($jmFjT'AI?0,0?5<Du":p"f;BNoKchgZbG47Cr5Yni,]ErP07i]$<.IX;s8\!q$Kr;9QpJCVnT,6.[I[4`\oCNEf488@P(o1Bgr%jr_d`M'l):L'5;I*^"LA+>#308eFN&R*7;^!uTmXXW9@fF5>`:e;C#0YQ`@PqR+0jG+a#*`.9WUUkWXd\gZ*o>T(-E^X&^>de+QX?Y"Z$^$/O6(iFUp&8/1*dgdfu'pC_dN\d%0,F/K,mqh.F%AH^TPUS?(\E<UoWhNr_W?U@L&C?'RMcpDj?7[r@(B:@U8"^'D)=W\1cJ/Hs>4gb=B4l`W#qq)=<R~>endstream
-endobj
-11 0 obj
-<<
-/Filter [ /ASCII85Decode /FlateDecode ] /Length 1877
->>
-stream
-Gatm;?#SIU'RfGR\8QEm8$c_fNjGX\>Hn5KL:&(W!I:@bb$lTX.S7VP97HaJ8UWTjj(:gj`3r)(hK/*FpX1e@n;@2EZm**<cqj+?MA+_)'JH0aD18Bi2fHFCM;+:3X!j[l/AZ@3`VR+%,$mc4g/Jb>h,AcpRCeV\'[PUmUNaBrgAFL*Rs;>%UWmG?d*^T<c869Q)R9OED,\tdUkRe&Y3:>>Noj;@F>I@t)>?\`Pg#jp>e<#f)dmS0rteuP!*h'U!Pl0#42s0c"DhRI!U"!Ge8h[eV+TS6N0Gk(FME!em0cd3T=]8;_Ys?W`k@0dKeSa*<\Z+&b!_hBc"5$h8:\oD'jU)4gB!_<"d;#C'k];kOYZlf+jFopL`of&Y(bYn&N_F^OYUX5#XW:PS=-s1dK5IeNknn%0!/M-)9]I_'_]n/'#lc`6mjsQj,V#[]Y929Ge]cnf?#6I(P0@)_Xd>)HMWp>^!2[#?*f^9e04<ms+OH1^-&%*Ed@IaFZc9bZXf?2h"EQ2.2hHO,$drl&[RRc;rH5>*"%X6>.$^T_6a$a^cOoogiBl&c$<o7b>VH8L.tin^h,c:V)0S!V*R,Mh!R1hXeqK0HsEQcP[%qI9s%sg;AcA9E@`>5W'(i<XFQHQdoY*lYX70>dK,N_M#1dhE_\/agb;H:>nkABq2EECl-oc3GM%W9[!4nib9V?B\QhO/)-e+Vbs)7-7`,r0cgrS:k3FDKf#?Wu[&qG-5G/?3LpU?NALEVOA2[N#3q?S--B+E!E1,u<FhYb7Sj*pkit00_TH$=YbQ]nf/PM01;dZq%bB"j*B?3@_%0%gDeC3@u,HFs^Kp"_X\,>149R1J\T<JL*TtPbi>H!`<`tjb0W"6)"KqN;;5PBYKgJUeC@[Z-+?)WFa:a"!@&D7.reA`D?SbTi-PUVd<;VTg9Be%XmD<?91LV[jT+UQa]3@n>?M/_2Oh/Q[)TAb>MV%>Z:MNIm;hP%Kf7[\RGDJ:aZ>BnTm=Pff3B2b&>\o\EF)6Q;5)Nimn:7f3Y/\!/[\EU8iYeU<4ISmT>RoT#uke'ho%;lWT$r3t!Z^\;%kG-@1)L]#BG34M@(`Gn*8uHNfTag/.fS:B]6e]l.O\4>I\._X84/K/b$9+L[&c04SGUSWoTA7mFeJIMD)H]UX-i15V/FO9;"\DfDePbAd:5_0-pM+XfrsC"t!X;^@SD>3a[:0.!4*9YUSO1WSD8\k2T,^Gi_D+V'BHLpsR'sjA+@YcN@!T=HW4aV&@oQldn$]2cjt\JfHJ?rC9m1lmc(bg9OeG)]oAu177*0OrkQ%qGjX$dkCF.$m0/SQ:k%C%:H-"8a(rLHp%OcmRaJA3#PbWU%W<EqSa_Hm\VaP??QGFEET_O2XP0<N63UA!JU)@Mi9GP<!i!W5T6O(@t`f\ahWDboo]>m<*orF[_.Jc326iF:>O!0;b1C4lEB2Rk'6[Nrr@W98G>MElSgkd@+TU01>H>G>bk%GSpF])uGG:";U/7>.@mt78SG'=*!ooHS&L2)bH##,An;V^dM7Z$=fn,e\RW5>f5U$2t4Frd4i\K.5anp];I_c>9pB/nN2Th;>Q9edSZcEd/>k9''4$'+;3c,X+b(Nqc+5GBKL[H".B,rYCsI#Eq![8B'ij(jD&fa$oU_/TiF@?u-uIuP,p$7@UFG#J.=ZZ1lt+R/?$-Wfqq4%Z01dbD@ab)aa[RDBIgE`N$S=1uMu&6X4m`Nar-Tl?74O"GZ+s,jhGT5HpCSUlc-hT82BdJK[$H1J/.3N=Ma@P(Q4FU`_ZOR-@MFHb8G4+:3XhfV-]Zh>SjHhI1/7@QSC%fM]?Da,\EOi]=$'Rge=Oc%2]*\MFfm]#DEIak[7PMp1a"nkE]d$t%8J/85o~>endstream
-endobj
-12 0 obj
-<<
-/Filter [ /ASCII85Decode /FlateDecode ] /Length 936
->>
-stream
-Gat%`>BA7I&;B$5/'])bBhb*WQhIP8Q@WHKB`(>F;!`<K.SE6oS,2$KP+Bs?*TG"tF]n*\k=@$KI&6@>eA,XUQe*\7.Img[Q=S(oj!l.!)l:Hn`A3ijZ!-^;DWUEQ0uPV9k/_>6o.V]7R=pk58NI6O?_2EKj=bcAoJgsjU%-QE>b4/Mrq/jI0eOG,dmD1!_c.BKNj,eJN_Zf+\_VO%#B,<>'j3'[(7'X0$X4r[HWa@Ej.+71mC@.F>$\uag^uD`4jIZ@N$r[-(>Q=*ZFPAno6?_m/3/MM'haF;UE>mLLG2Eh'43tfb6E!:7e.7.HIbH3%&*thI]Lju;0Z5_rLABa#l^77F.%0O]PJ;@?78rC1lXAefTAgGp!AecU^J4casZ?SWkD@=gK'US.q:'&-l]B3d4j6:foo7G1-B3B^_FmO+/9!7r%;a4?7>P$*bfrY0hK\,.=OB\PM+X](EQ]iK+4#5'W[%!(%`eLG,K+/4Q2R1RXtS>^A9s]rLY"]T@I=f$<0n2KuQ[N:V[AU[)81h(SOf`S[`;uaEDB.mo^W52_8A+QSk:X0YX9.;@^"A>V4,s"\h"%&W8\b;7=m2Y-6U!\dP9+)8`W%q2W$m<7[E)EH.ZoXi\CTqk2RQG=uF5F!E5_W`?p9m^UuJXd^s0Xl@W7+3bSl44IrC(7]Daj#t"oe+unW:cVb(eh2oJQ7XV&_$$R:<#\QQHe.E@6?2n.4$B#QmjrZ(pD$cP*cJ/EQ22c[G"A,EV#Q4jk**-Eno*6KXC/73*..+$2bI-7^Gg(#3Y&<T/XOS2s!b%!(Hu'*%UkrRA_L@"Yt21BN8O4>D"cgu>R^quI.5ld:HfW9CX_!hc>fQ$%aV<&6h_":a63-9RkM:B:7$2W*FgMNE6\]EK,b:l#A[;?Viru?[.)3cJ2b2Xa;oMr5#-!GLXC=.o=Ef~>endstream
-endobj
-xref
-0 13
-0000000000 65535 f 
-0000000061 00000 n 
-0000000102 00000 n 
-0000000209 00000 n 
-0000000321 00000 n 
-0000000515 00000 n 
-0000000709 00000 n 
-0000000903 00000 n 
-0000000971 00000 n 
-0000001251 00000 n 
-0000001322 00000 n 
-0000003455 00000 n 
-0000005424 00000 n 
-trailer
-<<
-/ID 
-[<b61ffc9c95be732652b4795f3d583e19><b61ffc9c95be732652b4795f3d583e19>]
-% ReportLab generated PDF document -- digest (opensource)
-
-/Info 8 0 R
-/Root 7 0 R
-/Size 13
->>
-startxref
-6451
-%%EOF
+1. This may get a bit complicated but I'll try for it not to and will be over a number of posts due to the joys of discords character limit.... In terms of just looking at histograms then **generally** speaking you want the histograms looking relatively symmetrical around the zero velocity point. This means that the damper is spending roughly equal time in compression and rebound and will get you started in terms of a reasonable baseline to work from. There are probably going to be so many caveats in this that you'll soon see why experience is important in all of this because although you would normally look for them to be symmetrical, in cars that have lots of downforce (protoypes in particular on iracing) sometimes the dampers will be set primarily to control the aero platform and so they can appear skewed if, for example, you're running a very stiff front rebound in order to try and keep the nose of the car down as much as possible and in those cases the histograms can look a bit strange. I'll also add up front now that there are certain cars and certain settings on dampers that screw up the physics and the telemetry output and will result in really strange looking histograms with dual peaks if you just look at using the iRacing telemetry values for damper velocity. That is one of the reasons why in the Cosworth software we went away from using the actual logged telemetry values for damper velocity provided by iracing and we calculate them ourselves in the maths channels from the damper displacement telemetry in order to make sure you get the correct data to look at.
+    
+2. Going back to the very basics, you have to remember that the histograms show you how much time the damper is spending in each of those particular speeds going across the graph. So in order to equal things up then if you, for example, have a damper histogram that looks like this one and is skewed to the right so that you're spending more time in compression (bump) than in rebound (if you look at the %ge numbers you can see ,for example, that you're spending 18.9 + 26.8 = 45.7% of the time in rebound compared to 54.3% of the time in compression) then you would want to even that up by either stiffening up the rebound side which will slow down the shock when it is in rebound and so you will spend more time in that area or, alternatively, you could soften off the compression side so that you spend less time in compression. Again, knowing which way to do it gets a bit more in depth as you start having to look at what your actual average damper velocities are compared to where you would like them to be but I said I'd try and keep this simple so try both and see which one feels better
+    ![[image.png]]
+    
+3. ### Andy 'Foxy' Fox [SPR],  _—_ 5:01 PM
+    
+    Then also, you want to be looking at the relationship between the front and rear histograms and again, looking to get them relatively symmetrical. If you take, for example, this particular set of histograms from an LMP2 then you can see that the rear ones look a lot fatter and flatter than the fronts. This means that the rear dampers are moving a lot faster than the fronts and that is borne out in the numbers in the table for the average damper velocities in each area so you can see that the average left front velocities in compression and rebound are around 31mm/s whereas the left rear velocities are around the 55ish mm/s mark. What this means is that you likely have too little damping on the rear and if you actually look at the car ride heights over a bump as an example you'll see the results of that
+    
+![[Pasted image 20260318182024.png]]
+    
+4. This is the ride height plot from that same setup that produced those histograms as the car hits a single bump in the road. So before the car hits the bump you can see that the front ride height is roughly 12.4mm and the rear is at 28.5mm
+    ![[Pasted image 20260318182041.png]]
+ 
+    
+5. Then as the front end hits the bump you can see it raises to 21.2mm so a jump up of 8.8mm in height
+    
+![[Pasted image 20260318182059.png]]
+    
+6. The rear end, by comparison, hits the bump and raises up to 49.3mm which is a difference of 20.8mm and so you can see the big difference between the front end only moving 9mm and the rear moving 21mm so that will cause potential stability issues as you're going over bumps as the car rake will be altering dramatically etc....
+    
+    ![[Pasted image 20260318182106.png]]
+    
+7. If we then look at the histograms with the damper settings after I had stiffened up the rear damping and balance them out you will see that the average speeds are much more equal
+    
+    ![[Pasted image 20260318182145.png]]
+1. ### Andy 'Foxy' Fox [SPR],  _—_ 5:08 PM
+    
+    And if you then look at the corresponding ride height plot for hitting the same bump you can see just from looking (I won't bore you all with going through the numbers again) but the ride heights are controlled a lot better and have a lot less movement on the rear in particular which will result in a much more stable balance in the car
+    
+    ![[Pasted image 20260318182153.png]]
+    
+2. That's the sort of basics covered in terms of how you adjust the dampers and what you should be looking at in terms of doing their primary job of handling bumps and controlling the platform of the car
+    
+3. ### Andy 'Foxy' Fox [SPR],  _—_ 5:19 PM
+    
+    The other job that the dampers are crucial for, as I alluded to in my first post on all of this, is that they can alter the way in which the car behaves particularly under braking, on turn in, on corner exit and under traction. The best way I've found to think about this and what you want to play around with and change is in simple terms, the dampers control the rate at which the weight transfer load is transmitted to the tyres. They do not change the amount of weight transfer as that is set by purely the weight of the vehicle, the height of the centre of gravity, the track width and how fast you're going but they control how quickly you can transfer that weight (load) onto the tyre. And the way in which I think of it is that in compression, the stiffer the damping, the faster the load is transferred onto the tyre which gives you very good initial response of the car, however if you transfer the load too quickly because you're too stiff then you can overload the tyre and cause it to then lose grip. As an example of this if you think about the car under heavy braking the front dampers go into compression as soon as you press the brake pedal. If you have stiff front compression on your dampers then the weight transfer gets quickly moved onto the tyre and this will cause a good initial bite however if you move it all onto the tyre too quickly and you overload it then you will likely lock up and just start to slide the fronts causing initial turn in understeer. Likewise under traction the rear dampers will go into compression as the weight moves rearwards as you accelerate. If you have really stiff rear compression then you will get good initial traction up until the point where you begin to overload the tyres and that will quickly turn into snap oversteer as the tyres let go
+    
+4. The inverse is true for the rebound settings so the stiffer you are in rebound then you slow down the rate of weight transfer from the tyre and keep load over them for longer. So looking at the same scenarios as above, if you're getting locking under initial braking or you're getting understeer on turn in then you want to try and slow down the weight transfer from the rear so you can stiffen the rear rebound to stop the load moving off the rear tyres too quickly and give the fronts time to bite into the corner however if you go too far with stiffening the rebound then you will get to a point where when you hit the brakes you start to lift the rear of the car up and the wheels lift up which reduces the contact patch and you can start to lock rears and cause instability so as always these things rely on experience when setting them up but if you understand the basics behind them then you can play with them to help you out. Similarly with traction issues, you want to slow down the rate of weight transfer off the front tyres in order to not overload the rears too quickly so you can stiffen the front rebound
+    
+5. ### Andy 'Foxy' Fox [SPR],  _—_ 5:34 PM
+    
+    Then it's just a matter of visualising what the suspension is doing in each phase of the corner and what you are looking to get from it but that can lead to interesting thoughts in your head and you can come up with 2 completely different options for what you want to do. As an example. say you're getting understeer as you're turning in whilst reducing your trail braking. You can look at it and think that you're getting the understeer because you've overloaded the front tyres too quickly on the initial turn in and so you'd want to potentially look at softening off the front compression in order to slow down the load transfer to the front tyres.... however as it's also as you're coming off your trail braking then the weight transfer that is happening in that stage is that it is being moved backwards as you're lifting off the brake therefore you might also want to have a look at the front rebound setting in order to try and keep the load (and grip) on your front tyres as you're lifting off the brake. In summary, it's not easy and there are sometimes you get a number of options to try but experience and testing will get you the right answers as long as you understand the basics behind it (which is hopefully what I've tried to outline here)
+    
+6. Also, as a final point I'll add that generally speaking dampers have very little impact on rotation levels in the middle of a corner when you're in 'steady state'. They will have an impact on the mid corner stuff on particularly bumpy tracks because they will still be active but I'm generalising here so as to not try to overcomplicate everything

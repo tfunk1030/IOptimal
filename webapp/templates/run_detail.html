@@ -10,6 +10,7 @@
   <div class="hero-meta">
     <span class="status-pill">{{ summary.assessment }}</span>
     <span class="status-pill">{{ summary.confidence_label }} confidence</span>
+    <span class="status-pill">Support: {{ summary.support_tier }}{% if summary.observation_count %} ({{ summary.observation_count }} obs){% endif %}</span>
   </div>
 </section>
 
@@ -61,6 +62,7 @@
               <h3>{{ change.label }}</h3>
               <p><strong>{{ change.current }}</strong> → <strong>{{ change.recommended }}</strong></p>
               <small>{{ change.delta }}</small>
+              {% if change.reason %}<p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">{{ change.reason }}</p>{% endif %}
             </article>
           {% endfor %}
         </div>
@@ -84,6 +86,7 @@
                   <th>Current</th>
                   <th>Recommended</th>
                   <th>Delta</th>
+                  <th>Why</th>
                 </tr>
               </thead>
               <tbody>
@@ -93,6 +96,7 @@
                     <td>{{ row.current }}</td>
                     <td>{{ row.recommended }}</td>
                     <td>{{ row.delta }}</td>
+                    <td style="font-size: 0.85rem; color: var(--text-muted); max-width: 300px;">{{ row.reason }}</td>
                   </tr>
                 {% endfor %}
               </tbody>

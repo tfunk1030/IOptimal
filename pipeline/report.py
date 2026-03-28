@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from solver.wheel_geometry_solver import WheelGeometrySolution
     from track_model.profile import TrackProfile
 
-from output.report import print_full_setup_report
+from output.report import print_full_setup_report, _load_support_tier
 
 W = 70
 
@@ -190,6 +190,7 @@ def generate_report(
     current_setup: CurrentSetup,
     wing: float,
     target_balance: float,
+    fuel_l: float | None = None,
     stint_result: StintStrategy | None = None,
     sector_result: SectorCompromiseResult | None = None,
     sensitivity_result: LaptimeSensitivityReport | None = None,
@@ -207,6 +208,7 @@ def generate_report(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
     a = lines.append
+    report_fuel_l = fuel_l if fuel_l is not None else getattr(current_setup, "fuel_l", 0.0)
     garage_outputs = None
     garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
     if garage_model is not None:
@@ -216,7 +218,7 @@ def generate_report(
                 step2=step2,
                 step3=step3,
                 step5=step5,
-                fuel_l=getattr(current_setup, "fuel_l", 0.0),
+                fuel_l=report_fuel_l,
             ),
             front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
         )
@@ -226,6 +228,18 @@ def generate_report(
         if current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
         else None
     )
+    _ferrari_rear_tb = (
+        current_setup.rear_torsion_bar_turns
+        if current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
+        else None
+    )
+    _is_ferrari_pipeline = current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
+    _front_camber_override = -2.9 if _is_ferrari_pipeline else None
+    _rear_camber_override = -1.9 if _is_ferrari_pipeline else None
+    _hybrid_enabled = getattr(current_setup, "hybrid_rear_drive_enabled", None) if _is_ferrari_pipeline else None
+    _hybrid_corner_pct = getattr(current_setup, "hybrid_rear_drive_corner_pct", None) if _is_ferrari_pipeline else None
+    _front_diff_preload_nm = getattr(current_setup, "front_diff_preload_nm", None) if _is_ferrari_pipeline else None
+    _bias_migration_gain = getattr(current_setup, "brake_bias_migration_gain", None) if _is_ferrari_pipeline else None
     prediction_lines, predicted_telemetry, prediction_confidence = _build_prediction_lines(
         current_setup=current_setup,
         measured=measured,
@@ -257,10 +271,17 @@ def generate_report(
             space_result=space_result,
             supporting=supporting,
             car=car,
-            fuel_l=getattr(current_setup, "fuel_l", 0.0),
+            fuel_l=report_fuel_l,
             garage_outputs=garage_outputs,
             compact=True,
             front_tb_turns_override=_ferrari_tb,
+            rear_tb_turns_override=_ferrari_rear_tb,
+            front_camber_override=_front_camber_override,
+            rear_camber_override=_rear_camber_override,
+            hybrid_enabled=_hybrid_enabled,
+            hybrid_corner_pct=_hybrid_corner_pct,
+            front_diff_preload_nm=_front_diff_preload_nm,
+            bias_migration_gain=_bias_migration_gain,
         )
         if selected_candidate_family is not None:
             report += "\n" + _hdr("CANDIDATE SELECTION") + "\n"
@@ -280,6 +301,24 @@ def generate_report(
     a(f"  {car.name}  ·  {track.track_name} — {track.track_config}  ·  Wing {wing}°")
     a(f"  Telemetry-calibrated{lap_str}  ·  {now}")
     a("═" * W)
+    a("")
+
+    # ── CONFIDENCE & EVIDENCE ────────────────────────────────────────
+    _car_slug = getattr(car, "canonical_name", "bmw")
+    _tier_info = _load_support_tier(_car_slug, track.track_name)
+    _sig_quality = summarize_signal_quality(measured)
+    _direct_count = _sig_quality.get("direct", 0) if isinstance(_sig_quality, dict) else 0
+    _total_count = sum(_sig_quality.values()) if isinstance(_sig_quality, dict) else 0
+    if _tier_info is not None:
+        _tier = _tier_info.get("confidence_tier", "unknown")
+        _samples = _tier_info.get("samples", 0)
+        a(f"  Support: {_tier}  ·  {_samples} observations  ·  Signals: {_direct_count}/{_total_count} direct")
+    else:
+        a(f"  Support: unknown  ·  Signals: {_direct_count}/{_total_count} direct")
+    if prediction_confidence is not None:
+        _conf = getattr(prediction_confidence, "overall", None)
+        if _conf is not None:
+            a(f"  Prediction confidence: {_conf:.2f}")
     a("")
 
     # Driver profile (one line each)
@@ -385,9 +424,16 @@ def generate_report(
         space_result=space_result,
         supporting=supporting,
         car=car,
-        fuel_l=getattr(current_setup, "fuel_l", 0.0),
+        fuel_l=report_fuel_l,
         garage_outputs=garage_outputs,
         front_tb_turns_override=_ferrari_tb,
+        rear_tb_turns_override=_ferrari_rear_tb,
+        front_camber_override=_front_camber_override,
+        rear_camber_override=_rear_camber_override,
+        hybrid_enabled=_hybrid_enabled,
+        hybrid_corner_pct=_hybrid_corner_pct,
+        front_diff_preload_nm=_front_diff_preload_nm,
+        bias_migration_gain=_bias_migration_gain,
     ))
 
     # ── CURRENT vs RECOMMENDED ────────────────────────────────────────

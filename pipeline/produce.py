@@ -20,6 +20,10 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from aero_model import load_car_surfaces
 from aero_model.gradient import compute_gradients
 from analyzer.adaptive_thresholds import compute_adaptive_thresholds
@@ -27,6 +31,7 @@ from analyzer.diagnose import diagnose
 from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 from analyzer.extract import extract_measurements
 from analyzer.segment import segment_lap
+from analyzer.stint_analysis import build_stint_dataset, dataset_to_evolution
 from analyzer.setup_reader import CurrentSetup
 from analyzer.setup_schema import apply_live_control_overrides, build_setup_schema
 from analyzer.telemetry_truth import summarize_signal_quality
@@ -42,14 +47,45 @@ from solver.modifiers import SolverModifiers, compute_modifiers
 from solver.learned_corrections import apply_learned_corrections
 from solver.predictor import predict_candidate_telemetry
 from solver.rake_solver import RakeSolver, reconcile_ride_heights
+from solver.scenario_profiles import resolve_scenario_name, should_run_legal_manifold_search
 from solver.supporting_solver import SupportingSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
+from solver.bmw_coverage import (
+    build_parameter_coverage,
+    build_search_baseline,
+    build_telemetry_coverage,
+)
+from solver.bmw_rotation_search import preserve_candidate_rotation_controls
 from solver.decision_trace import build_parameter_decisions
 from solver.full_setup_optimizer import optimize_if_supported
 from solver.legality_engine import validate_solution_legality
 from solver.solve_chain import SolveChainInputs, run_base_solve
+from solver.stint_reasoner import solve_stint_compromise
 from track_model.build_profile import build_profile
 from track_model.ibt_parser import IBTFile
+
+
+class PipelineInputError(RuntimeError):
+    """User-facing pipeline input error."""
+
+
+def _wrap_no_valid_laps_error(
+    exc: Exception,
+    *,
+    ibt_path: str,
+    car_name: str,
+    track_hint: str | None = None,
+) -> Exception:
+    if "No valid laps found in IBT file" not in str(exc):
+        return exc
+    track_example = track_hint or "<track>"
+    return PipelineInputError(
+        f"No usable complete timed lap was detected in IBT lap telemetry: {Path(ibt_path).name}. "
+        "The file can still contain a full session recording, but pipeline.produce needs at least one valid completed lap "
+        "to build the track profile and extract telemetry. "
+        f"If you only need a track-profile-based baseline, run "
+        f"`python -m solver.solve --car {car_name} --track {track_example} ...` instead."
+    )
 
 
 def _compute_single_session_authority(
@@ -108,6 +144,70 @@ def _find_lap_indices(ibt: IBTFile, lap_num: int) -> tuple[int, int] | None:
     return None
 
 
+def _stint_selection_payload(dataset) -> dict | None:
+    if dataset is None:
+        return None
+    return {
+        "mode": dataset.stint_select,
+        "segments": [
+            {
+                "segment_id": segment.segment_id,
+                "start_lap": segment.start_lap,
+                "end_lap": segment.end_lap,
+                "lap_count": segment.lap_count,
+                "source_label": segment.source_label,
+                "break_reasons": list(segment.break_reasons),
+            }
+            for segment in dataset.segments
+        ],
+        "selected_segments": [
+            {
+                "segment_id": segment.segment_id,
+                "start_lap": segment.start_lap,
+                "end_lap": segment.end_lap,
+                "lap_count": segment.lap_count,
+                "source_label": segment.source_label,
+            }
+            for segment in dataset.selected_segments
+        ],
+        "notes": list(dataset.selection_notes),
+    }
+
+
+def _stint_lap_payload(dataset) -> list[dict]:
+    if dataset is None:
+        return []
+    return [
+        {
+            "lap_number": lap.lap_number,
+            "lap_time_s": lap.lap_time_s,
+            "fuel_level_l": lap.fuel_level_l,
+            "progress": lap.progress,
+            "phase": lap.phase,
+            "quality": {
+                "status": lap.quality.status,
+                "direct_weight": lap.quality.direct_weight,
+                "trend_weight": lap.quality.trend_weight,
+                "flags": list(lap.quality.flags),
+            },
+            "selected_for_evaluation": lap.selected_for_evaluation,
+            "source_label": lap.source_label,
+        }
+        for lap in dataset.usable_laps
+    ]
+
+
+def _resolve_scenario_profile(args: argparse.Namespace) -> str:
+    explicit = getattr(args, "scenario_profile", None)
+    if explicit:
+        return resolve_scenario_name(explicit)
+    if getattr(args, "stint", False):
+        if getattr(args, "stint_select", "all") == "last":
+            return "sprint"
+        return "race"
+    return resolve_scenario_name(getattr(args, "objective_profile", None))
+
+
 def produce(
     args: argparse.Namespace,
     _return_result: bool = False,
@@ -124,6 +224,8 @@ def produce(
         _compact_report: Override compact/full report selection. Defaults to
             compact when ``report_only`` is enabled.
     """
+    free_mode = bool(getattr(args, "free", False))
+    scenario_profile_name = _resolve_scenario_profile(args)
 
     # ── Normalize IBT path(s) ──
     ibt_arg = args.ibt
@@ -145,6 +247,11 @@ def produce(
                 explore_legal_space=getattr(args, "explore_legal_space", False),
                 search_budget=getattr(args, "search_budget", 1000),
                 keep_weird=getattr(args, "keep_weird", False),
+                scenario_profile=scenario_profile_name,
+                stint=getattr(args, "stint", False),
+                stint_select=getattr(args, "stint_select", "all"),
+                stint_max_laps=getattr(args, "stint_max_laps", 40),
+                stint_threshold=getattr(args, "stint_threshold", 1.5),
             )
             return None
         ibt_path = ibt_arg[0]
@@ -238,19 +345,41 @@ def produce(
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
     else:
         log("\nBuilding track profile from IBT...")
-        track = build_profile(ibt_path)
+        try:
+            track = build_profile(ibt_path)
+        except Exception as exc:
+            wrapped = _wrap_no_valid_laps_error(
+                exc,
+                ibt_path=ibt_path,
+                car_name=args.car,
+                track_hint=track_hint,
+            )
+            if wrapped is not exc:
+                raise wrapped from None
+            raise
         log(f"  Track: {track.track_name} — {track.track_config}")
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
 
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")
-    measured = extract_measurements(
-        ibt_path,
-        car,
-        lap=args.lap,
-        min_lap_time=getattr(args, "min_lap_time", 108.0),
-        outlier_pct=getattr(args, "outlier_pct", 0.115),
-    )
+    try:
+        measured = extract_measurements(
+            ibt_path,
+            car,
+            lap=args.lap,
+            min_lap_time=getattr(args, "min_lap_time", 108.0),
+            outlier_pct=getattr(args, "outlier_pct", 0.115),
+        )
+    except Exception as exc:
+        wrapped = _wrap_no_valid_laps_error(
+            exc,
+            ibt_path=ibt_path,
+            car_name=args.car,
+            track_hint=track_hint,
+        )
+        if wrapped is not exc:
+            raise wrapped from None
+        raise
     live_override_notes = apply_live_control_overrides(current_setup, measured)
     log(f"  Lap {measured.lap_number}: {measured.lap_time_s:.3f}s")
     for note in live_override_notes:
@@ -273,20 +402,34 @@ def produce(
             return None
 
     # ── Phase B.5: Stint evolution (if --stint) ──
+    stint_dataset = None
     stint_evolution = None
     if getattr(args, "stint", False):
-        from analyzer.stint_analysis import analyze_stint_evolution
-        log("\nAnalyzing stint evolution (all qualifying laps)...")
-        stint_evolution = analyze_stint_evolution(
+        log("\nBuilding full-stint dataset...")
+        stint_dataset = build_stint_dataset(
             ibt_path=ibt_path,
             car=car,
+            stint_select=getattr(args, "stint_select", "longest"),
+            stint_max_laps=getattr(args, "stint_max_laps", 40),
             threshold_pct=getattr(args, "stint_threshold", 1.5),
             min_lap_time=getattr(args, "min_lap_time", 108.0),
             ibt=ibt,
         )
-        log(f"  {stint_evolution.qualifying_lap_count}/{stint_evolution.total_lap_count} "
-            f"laps within {stint_evolution.threshold_pct}% of fastest "
-            f"({stint_evolution.fastest_lap_time_s:.3f}s)")
+        stint_evolution = dataset_to_evolution(stint_dataset)
+        log(
+            f"  Selected {len(stint_dataset.selected_segments)} segment(s), "
+            f"{len(stint_dataset.usable_laps)} usable laps, "
+            f"{len(stint_dataset.evaluation_laps)} evaluation laps"
+        )
+        if stint_dataset.selected_segments:
+            ranges = ", ".join(
+                f"{segment.start_lap}-{segment.end_lap}"
+                for segment in stint_dataset.selected_segments
+            )
+            log(f"  Segment range(s): {ranges}")
+        if stint_dataset.selection_notes:
+            for note in stint_dataset.selection_notes[:3]:
+                log(f"  {note}")
         if stint_evolution.rates:
             log(f"  Fuel burn: {stint_evolution.rates.fuel_burn_l_per_lap:.2f} L/lap")
             log(f"  Understeer drift: {stint_evolution.rates.understeer_deg_per_lap:+.3f} deg/lap")
@@ -450,7 +593,7 @@ def produce(
         target_balance=target_balance,
         balance_tolerance=args.tolerance,
         fuel_load_l=fuel,
-        pin_front_min=not args.free,
+        pin_front_min=True,
         wing_angle=wing,
         legacy_solver=getattr(args, "legacy_solver", False),
         damping_ratio_scale=modifiers.damping_ratio_scale,
@@ -482,11 +625,11 @@ def produce(
             target_balance=target_balance,
             balance_tolerance=args.tolerance,
             fuel_load_l=fuel,
-            pin_front_min=not args.free,
+            pin_front_min=True,
         )
 
         # Run free optimization comparison if we're in pinned mode
-        if not args.free:
+        if False:
             try:
                 free_step1 = rake_solver.solve(
                     target_balance=target_balance,
@@ -508,8 +651,11 @@ def produce(
         if not args.report_only:
             print(step1.summary())
 
+        if free_mode:
+            log(f"  [free-opt] Legal-manifold search enabled from a pinned seed ({scenario_profile_name}).")
+
         # Advisory: compare free-mode L/D when running in pinned mode
-        if not args.free:
+        if False:
             try:
                 free_step1 = rake_solver.solve(
                     target_balance=target_balance,
@@ -677,6 +823,7 @@ def produce(
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
             fuel_load_l=fuel,
             camber_confidence=_camber_conf,
+            measured=measured,
         )
         if not args.report_only:
             print(step5.summary())
@@ -725,9 +872,11 @@ def produce(
         modifiers=modifiers,
         prediction_corrections={},
         balance_tolerance=args.tolerance,
-        pin_front_min=not args.free,
+        pin_front_min=True,
+        scenario_profile=scenario_profile_name,
         legacy_solver=getattr(args, "legacy_solver", False),
         camber_confidence=_camber_conf,
+        corners=corners,
     )
     base_solve_result = run_base_solve(solve_inputs)
     step1 = base_solve_result.step1
@@ -742,110 +891,30 @@ def produce(
     solve_notes = list(base_solve_result.notes)
 
     stint_compromise_info: list[str] = []
-    if stint_evolution is not None and stint_evolution.qualifying_lap_count >= 3:
-        log("\nRunning multi-solve stint compromise (start/mid/end)...")
-        _stint_solves: dict[str, tuple] = {}
-        for _label, _snap in [("start", stint_evolution.start_snapshot),
-                               ("mid", stint_evolution.mid_snapshot),
-                               ("end", stint_evolution.end_snapshot)]:
-            _fuel_at = _snap.fuel_level_l or fuel
-            _rs = RakeSolver(car, surface, track)
-            _s1 = _rs.solve(
-                target_balance=target_balance,
-                balance_tolerance=args.tolerance,
-                fuel_load_l=_fuel_at,
-                pin_front_min=not args.free,
-            )
-            _hs = HeaveSolver(car, track)
-            _s2 = _hs.solve(
-                dynamic_front_rh_mm=_s1.dynamic_front_rh_mm,
-                dynamic_rear_rh_mm=_s1.dynamic_rear_rh_mm,
-                front_pushrod_mm=_s1.front_pushrod_offset_mm,
-                rear_pushrod_mm=_s1.rear_pushrod_offset_mm,
-                fuel_load_l=_fuel_at,
-                front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            )
-            _cs = CornerSpringSolver(car, track)
-            _s3 = _cs.solve(
-                front_heave_nmm=_s2.front_heave_nmm,
-                rear_third_nmm=_s2.rear_third_nmm,
-                fuel_load_l=_fuel_at,
-            )
-            _rwr = _s3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-            _as = ARBSolver(car, track)
-            _s4 = _as.solve(
-                front_wheel_rate_nmm=_s3.front_wheel_rate_nmm,
-                rear_wheel_rate_nmm=_rwr,
-                lltd_offset=modifiers.lltd_offset,
-            )
-            _gs = WheelGeometrySolver(car, track)
-            _s5 = _gs.solve(
-                k_roll_total_nm_deg=_s4.k_roll_front_total + _s4.k_roll_rear_total,
-                front_wheel_rate_nmm=_s3.front_wheel_rate_nmm,
-                rear_wheel_rate_nmm=_rwr,
-                fuel_load_l=_fuel_at,
-                camber_confidence=_camber_conf,
-            )
-            _ds = DamperSolver(car, track)
-            _s6 = _ds.solve(
-                front_wheel_rate_nmm=_s3.front_wheel_rate_nmm,
-                rear_wheel_rate_nmm=_rwr,
-                front_dynamic_rh_mm=_s1.dynamic_front_rh_mm,
-                rear_dynamic_rh_mm=_s1.dynamic_rear_rh_mm,
-                fuel_load_l=_fuel_at,
-                damping_ratio_scale=modifiers.damping_ratio_scale,
-                measured=measured,
-                front_heave_nmm=_s2.front_heave_nmm,
-                rear_third_nmm=_s2.rear_third_nmm,
-            )
-            _stint_solves[_label] = (_s1, _s2, _s3, _s4, _s5, _s6)
-            log(f"  [{_label}] fuel={_fuel_at:.1f}L heave={_s2.front_heave_nmm:.0f} "
-                f"third={_s2.rear_third_nmm:.0f} LLTD={_s4.lltd_achieved:.1f}%")
-
-        # Compromise: safety-binding springs, averaged balance, mid-stint dampers
-        _start = _stint_solves["start"]
-        _mid = _stint_solves["mid"]
-        _end = _stint_solves["end"]
-
-        # Safety-binding: max heave/third across conditions (full fuel is heaviest)
-        max_heave = max(s[1].front_heave_nmm for s in _stint_solves.values())
-        max_third = max(s[1].rear_third_nmm for s in _stint_solves.values())
-        if max_heave > step2.front_heave_nmm:
-            stint_compromise_info.append(
-                f"Heave spring: {max_heave:.0f} N/mm (safety-bound from start condition, "
-                f"was {step2.front_heave_nmm:.0f})"
-            )
-            step2.front_heave_nmm = max_heave
-        if max_third > step2.rear_third_nmm:
-            stint_compromise_info.append(
-                f"Third spring: {max_third:.0f} N/mm (safety-bound from start condition, "
-                f"was {step2.rear_third_nmm:.0f})"
-            )
-            step2.rear_third_nmm = max_third
-
-        # Averaged LLTD target: use mid-stint ARB solution
-        avg_lltd = sum(s[3].lltd_achieved for s in _stint_solves.values()) / 3.0
-        stint_compromise_info.append(
-            f"LLTD target: {avg_lltd:.1f}% (avg of start {_start[3].lltd_achieved:.1f}% / "
-            f"mid {_mid[3].lltd_achieved:.1f}% / end {_end[3].lltd_achieved:.1f}%)"
+    stint_solve = None
+    if stint_dataset is not None and len(stint_dataset.usable_laps) >= 5:
+        log("\nRunning full-stint compromise solve...")
+        stint_solve = solve_stint_compromise(
+            dataset=stint_dataset,
+            base_inputs=solve_inputs,
+            base_result=base_solve_result,
         )
-        # Use mid-stint ARB solution as best compromise
-        step4 = _mid[3]
-
-        # Camber/toe: average from three conditions
-        avg_front_camber = sum(s[4].front_camber_deg for s in _stint_solves.values()) / 3.0
-        avg_rear_camber = sum(s[4].rear_camber_deg for s in _stint_solves.values()) / 3.0
-        step5.front_camber_deg = round(avg_front_camber, 2)
-        step5.rear_camber_deg = round(avg_rear_camber, 2)
-
-        # Dampers: use mid-stint solution (best single compromise)
-        step6 = _mid[5]
-        _apply_damper_modifiers(step6, modifiers, car)
-        stint_compromise_info.append("Dampers: mid-stint condition (best single compromise)")
-
-        log(f"\n  Stint compromise applied ({len(stint_compromise_info)} adjustments)")
-        for info in stint_compromise_info:
-            log(f"    {info}")
+        step1 = stint_solve.result.step1
+        step2 = stint_solve.result.step2
+        step3 = stint_solve.result.step3
+        step4 = stint_solve.result.step4
+        step5 = stint_solve.result.step5
+        step6 = stint_solve.result.step6
+        supporting = stint_solve.result.supporting
+        legal_validation = stint_solve.result.legal_validation
+        decision_trace = stint_solve.result.decision_trace
+        base_solve_result = stint_solve.result
+        stint_compromise_info = list(stint_solve.notes)
+        log(f"  Objective: {stint_solve.objective['total']:.4f}")
+        for info in stint_compromise_info[:5]:
+            log(f"  {info}")
+    elif stint_dataset is not None:
+        stint_compromise_info.append("Full-stint solve fell back to single-lap mode due to insufficient usable laps.")
 
     # ── Phase I: Compute supporting params ──
     log("\nComputing supporting parameters...")
@@ -896,10 +965,6 @@ def produce(
             step1=step1, step2=step2, step3=step3,
             step4=step4, step5=step5,
             brake_bias_pct=supporting.brake_bias_pct,
-            step6=step6,
-            supporting=supporting,
-            measured=measured,
-            wing=wing,
         )
     except (KeyError, AttributeError) as e:
         sensitivity_result = None
@@ -989,101 +1054,160 @@ def produce(
     )
     selected_candidate = next((candidate for candidate in generated_candidates if candidate.selected), None)
     selected_candidate_applied = False
+    selected_candidate_family_output = getattr(selected_candidate, "family", None)
+    selected_candidate_score_output = (
+        selected_candidate.score.total
+        if selected_candidate is not None and selected_candidate.score is not None
+        else None
+    )
     if selected_candidate is not None:
         solve_notes.append(
             f"Candidate family selected: {selected_candidate.family} "
             f"(score {selected_candidate.score.total if selected_candidate.score else 0.0:.3f})"
         )
         if selected_candidate.selectable and selected_candidate.result is not None:
+            selected_candidate_result, preserved_rotation_controls = preserve_candidate_rotation_controls(
+                rotation_result=base_solve_result,
+                candidate_result=selected_candidate.result,
+                inputs=solve_inputs,
+            )
+            if selected_candidate_result is None:
+                selected_candidate_result = selected_candidate.result
+                preserved_rotation_controls = False
+            selected_candidate.result = selected_candidate_result
+            selected_candidate.step1 = selected_candidate_result.step1
+            selected_candidate.step2 = selected_candidate_result.step2
+            selected_candidate.step3 = selected_candidate_result.step3
+            selected_candidate.step4 = selected_candidate_result.step4
+            selected_candidate.step5 = selected_candidate_result.step5
+            selected_candidate.step6 = selected_candidate_result.step6
+            selected_candidate.supporting = selected_candidate_result.supporting
+            selected_candidate.legality = selected_candidate_result.legal_validation
+            selected_candidate.predicted = selected_candidate_result.prediction
             selected_candidate_applied = True
-            step1 = selected_candidate.result.step1
-            step2 = selected_candidate.result.step2
-            step3 = selected_candidate.result.step3
-            step4 = selected_candidate.result.step4
-            step5 = selected_candidate.result.step5
-            step6 = selected_candidate.result.step6
-            supporting = selected_candidate.result.supporting
-            legal_validation = selected_candidate.result.legal_validation
-            decision_trace = selected_candidate.result.decision_trace
+            step1 = selected_candidate_result.step1
+            step2 = selected_candidate_result.step2
+            step3 = selected_candidate_result.step3
+            step4 = selected_candidate_result.step4
+            step5 = selected_candidate_result.step5
+            step6 = selected_candidate_result.step6
+            supporting = selected_candidate_result.supporting
+            legal_validation = selected_candidate_result.legal_validation
+            decision_trace = selected_candidate_result.decision_trace
+            selected_candidate_family_output = selected_candidate.family
+            selected_candidate_score_output = (
+                selected_candidate.score.total if selected_candidate.score is not None else None
+            )
             solve_notes.append(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
+            if preserved_rotation_controls:
+                solve_notes.append(
+                    "Preserved BMW/Sebring second-stage rotation controls after candidate-family rematerialization."
+                )
 
-    # ── Legal-manifold search (--explore-legal-space) ──────────────────
-    if getattr(args, "explore_legal_space", False):
+    # ── Legal-manifold search (--explore-legal-space / --search-mode) ─────
+    search_mode = getattr(args, "search_mode", None)
+    do_legal_search = should_run_legal_manifold_search(
+        free_mode=free_mode,
+        explicit_search=getattr(args, "explore_legal_space", False),
+        search_mode=search_mode,
+        scenario_name=scenario_profile_name,
+    )
+    if do_legal_search:
         try:
-            from solver.legal_search import run_legal_search
-
             baseline_params = {
-                "wing_angle_deg": float(getattr(args, "wing", 17) or 17),
-                "front_pushrod_offset_mm": getattr(step1, "front_pushrod_offset_mm",
-                    car.garage_ranges.front_pushrod_mm[0]),
-                "rear_pushrod_offset_mm": getattr(step1, "rear_pushrod_offset_mm",
-                    car.garage_ranges.rear_pushrod_mm[0]),
-                "front_heave_spring_nmm": step2.front_heave_nmm,
-                "rear_third_spring_nmm": step2.rear_third_nmm,
-                "rear_spring_rate_nmm": step3.rear_spring_rate_nmm,
-                "front_torsion_od_mm": getattr(step3, "front_torsion_od_mm",
-                    car.corner_spring.front_torsion_od_options[0]
-                    if car.corner_spring.front_torsion_od_options else 14.34),
-                "front_camber_deg": step5.front_camber_deg,
-                "rear_camber_deg": step5.rear_camber_deg,
-                "front_arb_blade": step4.front_arb_blade_start,
-                "rear_arb_blade": step4.rear_arb_blade_start,
-                "brake_bias_pct": getattr(supporting, "brake_bias_pct", 56.0),
-                "diff_preload_nm": getattr(supporting, "diff_preload_nm", 20.0),
-                "front_ls_comp": step6.lf.ls_comp,
-                "front_ls_rbd": step6.lf.ls_rbd,
-                "front_hs_comp": step6.lf.hs_comp,
-                "front_hs_rbd": step6.lf.hs_rbd,
-                "rear_ls_comp": step6.lr.ls_comp,
-                "rear_ls_rbd": step6.lr.ls_rbd,
-                "rear_hs_comp": step6.lr.hs_comp,
-                "rear_hs_rbd": step6.lr.hs_rbd,
+                key: value
+                for key, value in build_search_baseline(
+                    car=car,
+                    wing=wing,
+                    current_setup=current_setup,
+                    step1=step1,
+                    step2=step2,
+                    step3=step3,
+                    step4=step4,
+                    step5=step5,
+                    step6=step6,
+                    supporting=supporting,
+                ).items()
+                if value is not None
             }
-            search_budget = getattr(args, "search_budget", 1000)
-            keep_weird = getattr(args, "keep_weird", True)
-            search_mode = getattr(args, "search_mode", None)
 
-            ls_result = run_legal_search(
-                car=car,
-                track=track,
-                baseline_params=baseline_params,
-                budget=search_budget,
-                measured=measured,
-                driver_profile=driver,
-                session_count=1,
-                keep_weird=keep_weird,
-                mode=search_mode,
-            )
-            log()
-            log(ls_result.summary())
-
-            # Sprint 4: Generate comprehensive analysis report
-            try:
-                from output.search_report import generate_search_report
+            if search_mode is not None:
+                # ── GridSearchEngine: hierarchical structured search ────────
+                from solver.grid_search import GridSearchEngine
                 from solver.legal_space import LegalSpace
                 from solver.objective import ObjectiveFunction
 
-                track_name = track if isinstance(track, str) else getattr(track, "name", "")
-                space = LegalSpace.from_car(car, track_name=track_name)
-                obj = ObjectiveFunction(car, track)
+                space = LegalSpace.from_car(car, track_name=getattr(track, "name", ""))
+                objective = ObjectiveFunction(
+                    car,
+                    track if hasattr(track, "name") else None,
+                    explore=getattr(args, "explore", False),
+                    scenario_profile=scenario_profile_name,
+                )
+                # Pre-stash session telemetry for batch scoring
+                if measured is not None:
+                    objective.set_session_context(measured=measured, driver=driver_profile)
 
-                analysis_report = generate_search_report(
-                    ls_result=ls_result,
-                    baseline_params=baseline_params,
+                engine = GridSearchEngine(
                     space=space,
-                    objective=obj,
+                    objective=objective,
                     car=car,
-                    sensitivity_top_n=3,
-                    diff_top_n=5,
-                    cluster_count=4,
+                    track=track if hasattr(track, "name") else None,
+                    progress_cb=log,
+                )
+                search_family = getattr(args, "search_family", None)
+                explore_mode = getattr(args, "explore", False)
+                if explore_mode:
+                    objective.explore = True
+                    log("  [EXPLORE] k-NN empirical weight zeroed — pure physics search")
+                gs_result = engine.run(budget=search_mode, progress=True, family=search_family, explore=explore_mode)
+                log()
+                log(gs_result.summary())
+            else:
+                # ── Original random family search ───────────────────────────
+                from solver.legal_search import run_legal_search
+                search_budget = getattr(args, "search_budget", 1000)
+                keep_weird = getattr(args, "keep_weird", True)
+
+                ls_result = run_legal_search(
+                    car=car,
+                    track=track,
+                    baseline_params=baseline_params,
+                    budget=search_budget,
+                    measured=measured,
+                    driver_profile=driver,
+                    session_count=1,
+                    keep_weird=keep_weird,
+                    base_result=base_solve_result,
+                    solve_inputs=solve_inputs,
+                    scenario_profile=scenario_profile_name,
                 )
                 log()
-                log(analysis_report)
-            except Exception as e:
-                log(f"[search-analysis] Report generation skipped: {e}")
-
+                log(ls_result.summary())
+                if ls_result.accepted_best_result is not None and ls_result.accepted_best is not None:
+                    accepted_result = ls_result.accepted_best_result
+                    step1 = accepted_result.step1
+                    step2 = accepted_result.step2
+                    step3 = accepted_result.step3
+                    step4 = accepted_result.step4
+                    step5 = accepted_result.step5
+                    step6 = accepted_result.step6
+                    supporting = accepted_result.supporting
+                    legal_validation = accepted_result.legal_validation
+                    decision_trace = accepted_result.decision_trace
+                    selected_candidate_family_output = f"{scenario_profile_name}:{ls_result.accepted_best.family}"
+                    selected_candidate_score_output = ls_result.accepted_best.score
+                    selected_candidate_applied = True
+                    solve_notes.append(
+                        f"Applied legal-manifold scenario pick {ls_result.accepted_best.family} "
+                        f"for {scenario_profile_name} after full legality + prediction sanity checks."
+                    )
+                else:
+                    solve_notes.append(
+                        f"Legal-manifold search found no fully accepted {scenario_profile_name} candidate."
+                    )
         except Exception as e:
             log(f"[legal-search] Skipped: {e}")
 
@@ -1116,14 +1240,20 @@ def produce(
             _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
             _extra_kw["pad_compound"] = supporting.pad_compound
             # Ferrari diff ramp uses labels ("More Locking"/"Less Locking")
-            if supporting.diff_ramp_coast >= 45:
-                _extra_kw["diff_coast_drive_ramp"] = "Less Locking"
-            else:
-                _extra_kw["diff_coast_drive_ramp"] = "More Locking"
+            _extra_kw["diff_coast_drive_ramp"] = (
+                getattr(supporting, "diff_ramp_angles", "")
+                or ("Less Locking" if supporting.diff_ramp_coast >= 45 else "More Locking")
+            )
             _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
             _extra_kw["tc_gain"] = supporting.tc_gain
             _extra_kw["tc_slip"] = supporting.tc_slip
+            _extra_kw["front_camber_override"] = -2.9  # empirical from 7 IBT sessions
+            _extra_kw["rear_camber_override"] = -1.9   # empirical from 7 IBT sessions
+            _extra_kw["hybrid_enabled"] = current_setup.hybrid_rear_drive_enabled
+            _extra_kw["hybrid_corner_pct"] = current_setup.hybrid_rear_drive_corner_pct
+            _extra_kw["front_diff_preload_nm"] = current_setup.front_diff_preload_nm
+            _extra_kw["bias_migration_gain"] = current_setup.brake_bias_migration_gain
         else:
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
@@ -1132,11 +1262,17 @@ def produce(
             _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
             _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
             _extra_kw["pad_compound"] = supporting.pad_compound
-            _extra_kw["diff_coast_drive_ramp"] = f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}"
+            _extra_kw["diff_coast_drive_ramp"] = (
+                getattr(supporting, "diff_ramp_angles", "")
+                or f"{supporting.diff_ramp_coast}/{supporting.diff_ramp_drive}"
+            )
             _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
             _extra_kw["tc_gain"] = supporting.tc_gain
             _extra_kw["tc_slip"] = supporting.tc_slip
+            _extra_kw["fuel_low_warning_l"] = getattr(supporting, "fuel_low_warning_l", fuel)
+            _extra_kw["gear_stack"] = getattr(supporting, "gear_stack", "")
+            _extra_kw["roof_light_color"] = getattr(supporting, "roof_light_color", "")
 
         sto_path = write_sto(
             car_name=car.name,
@@ -1155,6 +1291,19 @@ def produce(
         import dataclasses
         json_path = Path(args.json)
         json_path.parent.mkdir(parents=True, exist_ok=True)
+        parameter_coverage = build_parameter_coverage(
+            car=car,
+            wing=wing,
+            current_setup=current_setup,
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step4=step4,
+            step5=step5,
+            step6=step6,
+            supporting=supporting,
+        )
+        telemetry_coverage = build_telemetry_coverage(measured=measured)
         output = {
             "car": car.name,
             "track": f"{track.track_name} — {track.track_config}",
@@ -1168,12 +1317,25 @@ def produce(
             "telemetry_bundle": measured.telemetry_bundle,
             "setup_schema": setup_schema.to_dict(),
             "generated_candidates": [candidate_to_dict(candidate) for candidate in generated_candidates],
-            "selected_candidate_family": getattr(selected_candidate, "family", None),
-            "selected_candidate_score": (
-                selected_candidate.score.total
-                if selected_candidate is not None and selected_candidate.score is not None
-                else None
+            "parameter_coverage": parameter_coverage,
+            "telemetry_coverage": telemetry_coverage,
+            "stint_selection": _stint_selection_payload(stint_dataset),
+            "stint_laps": _stint_lap_payload(stint_dataset),
+            "stint_phases": getattr(stint_solve, "phase_summaries", getattr(stint_dataset, "phase_summaries", {})),
+            "stint_objective": getattr(stint_solve, "objective", None),
+            "stint_confidence": (
+                stint_solve.confidence
+                if stint_solve is not None
+                else getattr(stint_dataset, "confidence", None)
             ),
+            "scenario_profile": scenario_profile_name,
+            "fallback_mode": (
+                stint_solve.fallback_mode
+                if stint_solve is not None
+                else getattr(stint_dataset, "fallback_mode", None)
+            ),
+            "selected_candidate_family": selected_candidate_family_output,
+            "selected_candidate_score": selected_candidate_score_output,
             "selected_candidate_applied": selected_candidate_applied,
             "legal_validation": legal_validation.to_dict() if legal_validation is not None else None,
             "decision_trace": [decision.to_dict() for decision in decision_trace],
@@ -1210,6 +1372,7 @@ def produce(
         supporting=supporting,
         current_setup=current_setup,
         wing=wing,
+        fuel_l=fuel,
         target_balance=target_balance,
         stint_result=stint_result,
         sector_result=sector_result,
@@ -1217,12 +1380,8 @@ def produce(
         stint_evolution=stint_evolution,
         stint_compromise_info=stint_compromise_info,
         prediction_corrections={},
-        selected_candidate_family=getattr(selected_candidate, "family", None),
-        selected_candidate_score=(
-            selected_candidate.score.total
-            if selected_candidate is not None and selected_candidate.score is not None
-            else None
-        ),
+        selected_candidate_family=selected_candidate_family_output,
+        selected_candidate_score=selected_candidate_score_output,
         solve_context_lines=solve_notes,
         compact=report_compact,
     )
@@ -1256,12 +1415,11 @@ def produce(
             "step6": step6,
             "supporting": supporting,
             "generated_candidates": generated_candidates,
-            "selected_candidate_family": getattr(selected_candidate, "family", None),
-            "selected_candidate_score": (
-                selected_candidate.score.total
-                if selected_candidate is not None and selected_candidate.score is not None
-                else None
-            ),
+            "stint_dataset": stint_dataset,
+            "stint_solve": stint_solve,
+            "scenario_profile": scenario_profile_name,
+            "selected_candidate_family": selected_candidate_family_output,
+            "selected_candidate_score": selected_candidate_score_output,
             "selected_candidate_applied": selected_candidate_applied,
             "legal_validation": legal_validation,
             "decision_trace": decision_trace,
@@ -1322,6 +1480,40 @@ def produce(
                 if obs_data:
                     obs_data["solver_predictions"] = solver_predictions
                     store.save_observation(session_id, obs_data)
+
+            # ── Auto-update heave calibration from this IBT run ──────────
+            # Every new IBT teaches the system the actual (heave → σ) relationship.
+            # When you run 380 N/mm, drop in the IBT, and σ comes back elevated,
+            # the solver automatically down-scores that heave range going forward.
+            try:
+                from solver.heave_calibration import HeaveCalibration
+                _setup = result.get("setup", {})
+                _tel = result.get("telemetry", {})
+                _perf = result.get("performance", {})
+                _heave = _setup.get("front_heave_nmm") or _setup.get("front_heave_spring_nmm")
+                _sigma = _tel.get("front_rh_std_mm")
+                if _heave and _sigma:
+                    _track_raw = result.get("track", "unknown")
+                    _track_slug = str(_track_raw).lower().split()[0]
+                    _car_raw = result.get("car", "unknown")
+                    _car_slug = str(_car_raw).lower()
+                    _cal = HeaveCalibration.load(_car_slug, _track_slug)
+                    _cal.add_run(
+                        heave_nmm=float(_heave),
+                        sigma_mm=float(_sigma),
+                        rear_sigma_mm=_tel.get("rear_rh_std_mm"),
+                        shock_vel_p99=_tel.get("front_shock_vel_p99_mps"),
+                        dominant_freq_hz=_tel.get("front_dominant_freq_hz"),
+                        heave_travel_pct=_tel.get("front_heave_travel_used_pct"),
+                        best_lap_s=_perf.get("best_lap_time_s"),
+                        session_ts=result.get("timestamp", ""),
+                    )
+                    _cal.save()
+                    log(f"[heave_cal] Updated {_car_slug}/{_track_slug}: "
+                        f"heave={_heave:.0f} N/mm → σ={_sigma:.2f}mm "
+                        f"(n={sum(s.n for s in _cal.summary)} total runs)")
+            except Exception as _e:
+                log(f"[heave_cal] Calibration update skipped: {_e}")
 
             if result.get("new_learnings"):
                 for ln in result["new_learnings"]:
@@ -1417,7 +1609,7 @@ def main():
     parser.add_argument("--fuel", type=float, default=None,
                         help="Fuel load in liters (auto-detected if not specified)")
     parser.add_argument("--free", action="store_true",
-                        help="Free optimization (don't pin front RH at sim floor)")
+                        help="Search the legal setup manifold from the pinned baseline and apply the best accepted candidate")
     parser.add_argument("--sto", type=str, default=None,
                         help="Export iRacing .sto setup file")
     parser.add_argument("--json", type=str, default=None,
@@ -1440,10 +1632,14 @@ def main():
                              "Drops anomalously slow laps. Pass 0 to disable.")
     # Stint analysis
     parser.add_argument("--stint", action="store_true",
-                        help="Enable stint analysis: analyze all qualifying laps, "
-                             "run solver at start/mid/end conditions, produce compromise setup")
+                        help="Enable full-stint analysis and solve one compromise setup across the selected stint.")
     parser.add_argument("--stint-threshold", type=float, default=1.5, dest="stint_threshold",
-                        help="Max %% slower than fastest lap to include (default: 1.5)")
+                        help="Backward-compatible soft outlier/reporting threshold for stint lap quality (default: 1.5)")
+    parser.add_argument("--stint-select", type=str, default="longest", dest="stint_select",
+                        choices=["longest", "last", "all"],
+                        help="Which green-run stint segment(s) to use for the full-stint solve (default: longest)")
+    parser.add_argument("--stint-max-laps", type=int, default=40, dest="stint_max_laps",
+                        help="Maximum number of stint laps to score directly; longer stints keep phase-preserving representatives (default: 40)")
     parser.add_argument("--verbose", action="store_true",
                         help="Show full reasoning dump (multi-IBT mode)")
     # Legal-space search mode
@@ -1451,22 +1647,59 @@ def main():
                         help="Run legal-manifold search after physics solver")
     parser.add_argument("--search-budget", type=int, default=1000,
                         help="Number of candidates to evaluate in legal-space search (default: 1000)")
-    parser.add_argument("--search-mode", type=str, default=None,
-                        choices=["quick", "standard", "exhaustive", "maximum"],
-                        help="Search mode: quick/standard use Sobol sampling, "
-                             "exhaustive/maximum use hierarchical grid engine. "
-                             "If not specified, inferred from --search-budget.")
     parser.add_argument("--keep-weird", action="store_true",
                         help="Retain unconventional but legal candidates in results")
+    parser.add_argument("--search-mode", type=str, default=None,
+                        choices=["quick", "standard", "exhaustive"],
+                        dest="search_mode",
+                        help=(
+                            "Hierarchical grid search mode (uses GridSearchEngine). "
+                            "quick=~5s, standard=~4min, exhaustive=~80min. "
+                            "When set, uses structured Sobol+grid search instead of "
+                            "random family sampling. Implies --explore-legal-space."
+                        ))
+    parser.add_argument("--top-n", type=int, default=1, dest="top_n",
+                        help=(
+                            "Number of top candidates to output as full setup sheets "
+                            "after --search-mode. Default=1 (only best). "
+                            "Use --top-n 5 to see top 5 full setups ranked by score."
+                        ))
+    parser.add_argument("--family", type=str, default=None,
+                        choices=["robust", "aggressive", "balanced"],
+                        dest="search_family",
+                        help=(
+                            "Setup family to bias the Layer 1 Sobol search toward. "
+                            "robust=low wing + soft springs (mechanical safety margin), "
+                            "aggressive=high wing + stiff springs (max DF extraction), "
+                            "balanced=full-range uniform coverage (default). "
+                            "Only applies with --search-mode."
+                        ))
+    parser.add_argument("--explore", action="store_true", default=False,
+                        dest="explore",
+                        help=(
+                            "Exploration mode: disables k-NN empirical anchoring (w=0.0), "
+                            "forces 'balanced' Sobol family (no region bias), and boosts "
+                            "L1 sample budget for wider initial coverage. "
+                            "Use to validate that the current optimal is not a learned local "
+                            "minimum. Combine with --search-mode standard or exhaustive. "
+                            "Results show pure-physics recommendations unconstrained by "
+                            "historical session data."
+                        ))
+    parser.add_argument("--scenario-profile", type=str, default=None,
+                        choices=["single_lap_safe", "quali", "sprint", "race"],
+                        help="Scenario objective and sanity profile to use for legal-manifold search")
     parser.add_argument("--objective-profile", type=str, default="balanced",
                         choices=["robust", "aggressive", "balanced"],
-                        help="Objective function weighting profile (default: balanced)")
+                        help="Legacy objective alias. 'balanced' maps to the default single-lap-safe scenario.")
     # Legacy flags (kept for backward-compat; no-op since auto is default)
     parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
-
-    produce(args)
+    try:
+        produce(args)
+    except PipelineInputError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

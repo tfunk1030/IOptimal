@@ -52,6 +52,14 @@ class RegistryConsistencyTests(unittest.TestCase):
         self.assertIsNotNone(spec)
         self.assertIn("FrontDiffSpec", spec.sto_param_id)
 
+    def test_bmw_brake_target_and_migration_use_whole_step_resolution(self):
+        target_spec = get_car_spec("bmw", "brake_bias_target")
+        migration_spec = get_car_spec("bmw", "brake_bias_migration")
+        self.assertIsNotNone(target_spec)
+        self.assertIsNotNone(migration_spec)
+        self.assertEqual(target_spec.resolution, 1.0)
+        self.assertEqual(migration_spec.resolution, 1.0)
+
     def test_porsche_has_minimal_but_valid_specs(self):
         porsche = CAR_FIELD_SPECS["porsche"]
         self.assertGreaterEqual(len(porsche), 15)

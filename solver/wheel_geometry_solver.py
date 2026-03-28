@@ -106,6 +106,8 @@ class WheelGeometrySolution:
     # Camber confidence: "estimated" (physics model) or "calibrated" (thermal data)
     camber_confidence: str = "estimated"
     notes: list[str] = field(default_factory=list)
+    parameter_search_status: dict[str, str] = field(default_factory=dict)
+    parameter_search_evidence: dict[str, list[str]] = field(default_factory=dict)
 
     def summary(self) -> str:
         lines = [
@@ -240,33 +242,61 @@ class WheelGeometrySolver:
         target_laps_to_op_temp: float,
         baseline_mm: float,
         is_front: bool,
+        understeer_low: float = 0.0,
+        understeer_high: float = 0.0,
+        body_slip_p95: float = 0.0,
     ) -> float:
-        """Recommend toe adjustment based on thermal conditioning need.
+        """Recommend toe based on thermal conditioning (front) and balance (rear+front).
 
-        BMW fronts condition at +2.2-2.6°C/lap. Operating window at 85°C,
-        starting at ~25°C cold → need ~60°C rise → ~25 laps at 2.4°C/lap.
-        For sprint sessions, slightly more toe-out accelerates heating.
+        Front toe:
+          - Thermal baseline: -0.4mm (toe-out) for BMW/Sebring
+          - More toe-out (-0.6mm) if conditioning slow (<1.5°C/lap)
+          - Less toe-out (-0.2mm) if overheating (>3.5°C/lap)
+          - Additional -0.2mm if high understeer at low speed (turn-in deficit)
+          - +0.2mm if snap/oversteer tendencies (straight-line stability)
 
-        For rear: toe-in (0mm baseline) — don't increase toe-out, it
-        destabilizes the car. Rear toe is a stability parameter, not thermal.
+        Rear toe:
+          - Stability baseline: 0mm (neutral)
+          - +0.5mm toe-in if oversteer at high speed (body_slip_p95 > 3.0°)
+          - +0.3mm toe-in if rear instability / lift-off oversteer signal
+          - Never go negative (rear toe-out = destabilizing)
         """
         geo = self.car.geometry
-        # For rear: keep at baseline (stability)
-        if not is_front:
-            return baseline_mm
 
-        # For front: if conditioning is very slow (<1.5°C/lap), add 0.2mm toe-out
+        if not is_front:
+            # Rear toe: stability-driven
+            candidate = baseline_mm  # 0mm neutral
+            if body_slip_p95 > 3.5:
+                candidate += 0.5   # significant rear instability → toe-in
+            elif body_slip_p95 > 2.0:
+                candidate += 0.3   # moderate rear instability
+            # Understeer at high speed = front grip deficit, not rear toe issue
+            # Oversteer at high speed (US < 0) = add rear toe-in
+            if understeer_high < -0.2:
+                candidate += 0.3   # high-speed oversteer → rear toe-in
+            r_min, r_max = geo.rear_toe_range_mm
+            # Never go negative (destabilizing)
+            candidate = max(0.0, candidate)
+            return max(r_min, min(r_max,
+                round(candidate / geo.rear_toe_step_mm) * geo.rear_toe_step_mm))
+
+        # Front toe: thermal + balance
         if conditioning_rate_deg_per_lap < 1.5:
-            candidate = baseline_mm - 0.2
+            candidate = baseline_mm - 0.2   # slow heating → more toe-out
         elif conditioning_rate_deg_per_lap > 3.5:
-            # Too fast → reduce toe-out to avoid overheating
-            candidate = baseline_mm + 0.2
+            candidate = baseline_mm + 0.2   # overheating → less toe-out
         else:
             candidate = baseline_mm
 
-        # Clamp to valid range
+        # Balance correction on top of thermal
+        if understeer_low > 0.3:
+            candidate -= 0.2   # understeer at low speed → more toe-out (sharpens turn-in)
+        elif understeer_low < -0.2 or body_slip_p95 > 3.5:
+            candidate += 0.2   # entry oversteer / instability → less toe-out
+
         t_min, t_max = geo.front_toe_range_mm
-        return max(t_min, min(t_max, round(candidate / geo.front_toe_step_mm) * geo.front_toe_step_mm))
+        return max(t_min, min(t_max,
+            round(candidate / geo.front_toe_step_mm) * geo.front_toe_step_mm))
 
     def _laps_to_operating_temp(
         self,
@@ -300,6 +330,7 @@ class WheelGeometrySolver:
         rear_wheel_rate_nmm: float,
         fuel_load_l: float = 89.0,
         camber_confidence: str = "estimated",
+        measured: object | None = None,
     ) -> WheelGeometrySolution:
         """Compute optimal wheel geometry.
 
@@ -375,12 +406,19 @@ class WheelGeometrySolver:
         front_conditioning_rate = 2.4   # °C/lap baseline (Sebring)
         rear_conditioning_rate = 3.2    # °C/lap baseline
 
-        # Toe recommendation
+        # Toe recommendation — driven by thermal conditioning + balance signals
+        # Signals come from the TelemetryMeasurements object, not the track profile
+        us_low = getattr(measured, "understeer_low_speed_deg", None) or 0.0
+        us_high = getattr(measured, "understeer_high_speed_deg", None) or 0.0
+        slip_p95 = getattr(measured, "body_slip_p95_deg", None) or 0.0
+
         front_toe = self._toe_recommendation(
-            front_conditioning_rate, 25.0, geo.front_toe_baseline_mm, is_front=True
+            front_conditioning_rate, 25.0, geo.front_toe_baseline_mm, is_front=True,
+            understeer_low=us_low, understeer_high=us_high, body_slip_p95=slip_p95,
         )
         rear_toe = self._toe_recommendation(
-            rear_conditioning_rate, 20.0, geo.rear_toe_baseline_mm, is_front=False
+            rear_conditioning_rate, 20.0, geo.rear_toe_baseline_mm, is_front=False,
+            understeer_low=us_low, understeer_high=us_high, body_slip_p95=slip_p95,
         )
 
         # Thermal predictions

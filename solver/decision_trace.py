@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from analyzer.telemetry_truth import (
-    ParameterDecision,
-    ParameterEvidence,
-    get_signal,
+from analyzer.telemetry_truth import ParameterDecision, ParameterEvidence, get_signal
+from solver.bmw_coverage import (
+    build_parameter_coverage,
+    parameter_classification,
+    required_signals_for_field,
 )
 
 
@@ -32,31 +33,45 @@ def _telemetry_lines(measured: Any, signal_names: list[str], *, allow_proxy: boo
 
 
 def _estimate_gain_ms(parameter: str, measured: Any) -> float:
-    if parameter == "front_heave_nmm":
-        _ht = getattr(measured, "front_heave_travel_used_pct", 0.0) or 0.0
-        _bc = getattr(measured, "bottoming_event_count_front_clean", 0) or 0
-        return round(
-            max(0.0, (_ht - 85.0) * 1.5)
-            + max(0.0, _bc) * 8.0,
-            1,
-        )
-    if parameter == "rear_third_nmm":
-        _brc = getattr(measured, "bottoming_event_count_rear_clean", 0) or 0
-        _rps = getattr(measured, "rear_power_slip_ratio_p95", 0.0) or 0.0
-        return round(
-            max(0.0, _brc) * 6.0
-            + max(0.0, (_rps - 0.08) * 4000.0),
-            1,
-        )
+    if parameter in {"front_heave_spring_nmm", "front_heave_perch_mm"}:
+        heave = getattr(measured, "front_heave_travel_used_pct", 0.0) or 0.0
+        bottoming = getattr(measured, "bottoming_event_count_front_clean", 0) or 0
+        return round(max(0.0, (heave - 85.0) * 1.5) + max(0.0, bottoming) * 8.0, 1)
+    if parameter in {"rear_third_spring_nmm", "rear_third_perch_mm"}:
+        bottoming = getattr(measured, "bottoming_event_count_rear_clean", 0) or 0
+        slip = getattr(measured, "rear_power_slip_ratio_p95", 0.0) or 0.0
+        return round(max(0.0, bottoming) * 6.0 + max(0.0, (slip - 0.08) * 4000.0), 1)
     if parameter in {"front_camber_deg", "rear_camber_deg", "front_toe_mm", "rear_toe_mm"}:
         return round(abs(getattr(measured, "understeer_mean_deg", 0.0) or 0.0) * 35.0, 1)
-    if parameter.startswith("damper_"):
+    if parameter in {
+        "front_ls_comp",
+        "front_ls_rbd",
+        "front_hs_comp",
+        "front_hs_rbd",
+        "front_hs_slope",
+        "rear_ls_comp",
+        "rear_ls_rbd",
+        "rear_hs_comp",
+        "rear_hs_rbd",
+        "rear_hs_slope",
+    }:
         settle = getattr(measured, "front_rh_settle_time_ms", 125.0) or 125.0
         return round(abs(settle - 125.0) * 0.4, 1)
-    if parameter == "brake_bias_pct":
-        return round(max(0.0, (getattr(measured, "front_braking_lock_ratio_p95", 0.0) or 0.0) - 0.06) * 2000.0, 1)
-    if parameter in {"diff_preload_nm", "tc_gain", "tc_slip"}:
-        return round(max(0.0, (getattr(measured, "rear_power_slip_ratio_p95", 0.0) or 0.0) - 0.08) * 1800.0, 1)
+    if parameter in {"brake_bias_pct", "brake_bias_target", "brake_bias_migration"}:
+        front_lock = getattr(measured, "front_braking_lock_ratio_p95", 0.0) or 0.0
+        return round(max(0.0, front_lock - 0.06) * 2000.0, 1)
+    if parameter in {
+        "diff_preload_nm",
+        "diff_ramp_option_idx",
+        "diff_clutch_plates",
+        "tc_gain",
+        "tc_slip",
+        "front_master_cyl_mm",
+        "rear_master_cyl_mm",
+        "pad_compound",
+    }:
+        slip = getattr(measured, "rear_power_slip_ratio_p95", 0.0) or 0.0
+        return round(max(0.0, slip - 0.08) * 1800.0, 1)
     return 0.0
 
 
@@ -64,50 +79,28 @@ def _estimate_cost_ms(parameter: str, proposed_value: Any, current_value: Any) -
     try:
         delta = abs(float(proposed_value) - float(current_value))
     except (TypeError, ValueError):
-        delta = 0.0
-    if parameter in {"front_heave_nmm", "rear_third_nmm"}:
+        delta = 0.0 if proposed_value == current_value else 1.0
+    if parameter in {"front_heave_spring_nmm", "rear_third_spring_nmm"}:
         return round(delta * 0.3, 1)
-    if parameter.startswith("damper_"):
+    if parameter in {
+        "front_ls_comp",
+        "front_ls_rbd",
+        "front_hs_comp",
+        "front_hs_rbd",
+        "front_hs_slope",
+        "rear_ls_comp",
+        "rear_ls_rbd",
+        "rear_hs_comp",
+        "rear_hs_rbd",
+        "rear_hs_slope",
+    }:
         return round(delta * 2.0, 1)
     if parameter in {"front_camber_deg", "rear_camber_deg"}:
         return round(delta * 8.0, 1)
     return round(delta * 0.5, 1)
 
 
-def _append_pass_through_decision(
-    decisions: list[ParameterDecision],
-    *,
-    parameter: str,
-    current_value: Any,
-    proposed_value: Any,
-    unit: str,
-    rationale: str,
-    legality_text: str,
-    fallback_text: str,
-) -> None:
-    decisions.append(
-        ParameterDecision(
-            parameter=parameter,
-            current_value=current_value,
-            proposed_value=proposed_value,
-            unit=unit,
-            confidence=0.0,
-            legality_status="pass_through",
-            fallback_reason=fallback_text,
-            evidence=ParameterEvidence(
-                telemetry=[],
-                physics_rationale=rationale,
-                legality=legality_text,
-                expected_gain_ms=0.0,
-                expected_cost_ms=0.0,
-                confidence=0.0,
-                source_tier="pass_through",
-            ),
-        )
-    )
-
-
-def _parameter_spec(car_name: str) -> list[dict[str, Any]]:
+def _legacy_parameter_spec(car_name: str) -> list[dict[str, Any]]:
     is_ferrari = car_name.lower() == "ferrari"
     rear_heave_label = "rear_third_nmm" if not is_ferrari else "rear_heave_index"
     rear_spring_label = "rear_spring_nmm" if not is_ferrari else "rear_torsion_bar_index"
@@ -219,7 +212,40 @@ def _parameter_spec(car_name: str) -> list[dict[str, Any]]:
     ]
 
 
-def build_parameter_decisions(
+def _append_pass_through_decision(
+    decisions: list[ParameterDecision],
+    *,
+    parameter: str,
+    current_value: Any,
+    proposed_value: Any,
+    unit: str,
+    rationale: str,
+    legality_text: str,
+    fallback_text: str,
+) -> None:
+    decisions.append(
+        ParameterDecision(
+            parameter=parameter,
+            current_value=current_value,
+            proposed_value=proposed_value,
+            unit=unit,
+            confidence=0.0,
+            legality_status="pass_through",
+            fallback_reason=fallback_text,
+            evidence=ParameterEvidence(
+                telemetry=[],
+                physics_rationale=rationale,
+                legality=legality_text,
+                expected_gain_ms=0.0,
+                expected_cost_ms=0.0,
+                confidence=0.0,
+                source_tier="pass_through",
+            ),
+        )
+    )
+
+
+def _legacy_build_parameter_decisions(
     *,
     car_name: str,
     current_setup: Any,
@@ -240,12 +266,11 @@ def build_parameter_decisions(
     if legality is not None:
         legality_text = "garage validated" if legality.valid else "garage validation warning"
 
-    for spec in _parameter_spec(car_name):
+    for spec in _legacy_parameter_spec(car_name):
         current_value = spec["current"](current_setup, step1, step2, step3, step4, step5, supporting)
         proposed_value = spec["proposed"](current_setup, step1, step2, step3, step4, step5, supporting)
         if current_value == proposed_value:
             continue
-
         signal_names = list(spec["signals"])
         confidence = _avg_confidence(measured, signal_names)
         decisions.append(
@@ -343,5 +368,156 @@ def build_parameter_decisions(
                     ),
                 )
             )
+    return decisions
 
+
+def _supporting_status(parameter: str, supporting: Any) -> str:
+    mapping = {
+        "brake_bias_pct": "brake_bias_status",
+        "brake_bias_target": "brake_bias_target_status",
+        "brake_bias_migration": "brake_bias_migration_status",
+        "front_master_cyl_mm": "master_cylinder_status",
+        "rear_master_cyl_mm": "master_cylinder_status",
+        "pad_compound": "pad_compound_status",
+    }
+    attr = mapping.get(parameter, "")
+    return str(getattr(supporting, attr, "") or "")
+
+
+def _parameter_rationale(parameter: str, classification: str, status: str) -> str:
+    if classification == "local_refine":
+        return "Local refinement keeps the perch/slider position legal and physically correlated after the coarse spring search."
+    if classification == "deterministic_context":
+        return "This field is preserved or derived deterministically from session context instead of lap-time search."
+    if classification == "computed_display":
+        return "This display/export field is derived from the canonical searched control to keep JSON and .sto output aligned."
+    if parameter in {"front_arb_size", "rear_arb_size"}:
+        return "ARB size is surfaced because blade range and available LLTD span both matter on the legal BMW manifold."
+    if parameter in {"front_arb_blade", "rear_arb_blade"}:
+        return "ARB blade is driven by balance and LLTD evidence from low-speed and high-speed handling."
+    if parameter in {"diff_ramp_option_idx", "diff_ramp_angles"}:
+        return "Diff ramp is modelled as one coupled legal BMW ramp pair, so the option index is the canonical searched control."
+    if parameter in {"diff_clutch_plates", "diff_preload_nm", "tc_gain", "tc_slip"}:
+        return "Supporting traction controls are adjusted from exit-slip and rotation evidence."
+    if parameter in {"brake_bias_target", "brake_bias_migration", "front_master_cyl_mm", "rear_master_cyl_mm", "pad_compound"}:
+        if status.startswith("seeded_from_telemetry"):
+            return "Brake hardware is conservatively seeded from braking telemetry instead of being left as silent pass-through context."
+        if status.startswith("seeded_from_setup"):
+            return "Brake hardware remains legal seeded context when telemetry does not justify a change."
+        return "Brake hardware is surfaced explicitly so JSON/export output matches the final BMW setup state."
+    if parameter.startswith("front_") or parameter.startswith("rear_"):
+        return "The solver uses telemetry-backed state evidence to move this control on the legal garage manifold."
+    return "The solver uses telemetry-backed state evidence to move this control on the legal garage manifold."
+
+
+def _decision_confidence(classification: str, measured: Any, signal_names: list[str], status: str) -> float:
+    if classification == "deterministic_context":
+        return 1.0
+    if classification == "computed_display":
+        return 1.0
+    confidence = _avg_confidence(measured, signal_names)
+    if status.startswith("seeded_from_telemetry"):
+        return max(confidence, 0.45)
+    if status.startswith("seeded_from_setup"):
+        return max(confidence, 0.25)
+    return confidence
+
+
+def _legality_status(classification: str, legality: Any | None) -> str:
+    if classification == "deterministic_context":
+        return "context"
+    if classification == "computed_display":
+        return "derived"
+    return "validated" if legality is None or getattr(legality, "valid", True) else "warning"
+
+
+def _source_tier(classification: str, status: str) -> str:
+    if classification == "local_refine":
+        return "local_refine"
+    if classification == "deterministic_context":
+        return "deterministic_context"
+    if classification == "computed_display":
+        return "computed_display"
+    if status:
+        return status
+    return "telemetry"
+
+
+def build_parameter_decisions(
+    *,
+    car_name: str,
+    current_setup: Any,
+    measured: Any,
+    step1: Any,
+    step2: Any,
+    step3: Any,
+    step4: Any,
+    step5: Any,
+    step6: Any,
+    supporting: Any,
+    legality: Any | None = None,
+    fallback_reasons: list[str] | None = None,
+) -> list[ParameterDecision]:
+    if car_name.lower() != "bmw":
+        return _legacy_build_parameter_decisions(
+            car_name=car_name,
+            current_setup=current_setup,
+            measured=measured,
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step4=step4,
+            step5=step5,
+            step6=step6,
+            supporting=supporting,
+            legality=legality,
+            fallback_reasons=fallback_reasons,
+        )
+
+    decisions: list[ParameterDecision] = []
+    fallback_text = "; ".join(fallback_reasons or [])
+    legality_text = "garage validated"
+    if legality is not None:
+        legality_text = "garage validated" if legality.valid else "garage validation warning"
+
+    coverage = build_parameter_coverage(
+        car=car_name,
+        wing=None,
+        current_setup=current_setup,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+        supporting=supporting,
+    )
+    for parameter, entry in coverage.items():
+        if not entry["changed"]:
+            continue
+        classification = parameter_classification(parameter)
+        signal_names = required_signals_for_field(parameter)
+        status = _supporting_status(parameter, supporting)
+        confidence = _decision_confidence(classification, measured, signal_names, status)
+        decisions.append(
+            ParameterDecision(
+                parameter=parameter,
+                current_value=entry["current_value"],
+                proposed_value=entry["proposed_value"],
+                unit=entry["unit"],
+                confidence=confidence,
+                legality_status=_legality_status(classification, legality),
+                search_status=str(entry.get("search_status", "") or ""),
+                fallback_reason=fallback_text,
+                evidence=ParameterEvidence(
+                    telemetry=_telemetry_lines(measured, signal_names),
+                    physics_rationale=_parameter_rationale(parameter, classification, status),
+                    legality=legality_text,
+                    expected_gain_ms=_estimate_gain_ms(parameter, measured),
+                    expected_cost_ms=_estimate_cost_ms(parameter, entry["proposed_value"], entry["current_value"]),
+                    confidence=confidence,
+                    source_tier=_source_tier(classification, status),
+                ),
+            )
+        )
     return decisions

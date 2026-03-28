@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from car_model.setup_registry import diff_ramp_option_index, get_numeric_resolution, snap_to_resolution
 from solver.candidate_ranker import CandidateScore, score_from_prediction
 from solver.solve_chain import (
     SolveChainInputs,
@@ -31,6 +32,27 @@ def _snap_step(value: float, step: float, lo: float | None = None, hi: float | N
     return snapped
 
 
+def _snap_option(value: float, options: list[float]) -> float:
+    return min(options, key=lambda x: abs(float(x) - float(value)))
+
+
+def _step_option(value: float, options: list[float], delta: int) -> float:
+    if not options:
+        return value
+    ordered = sorted(float(item) for item in options)
+    nearest_idx = min(range(len(ordered)), key=lambda idx: abs(ordered[idx] - float(value)))
+    target_idx = max(0, min(len(ordered) - 1, nearest_idx + int(delta)))
+    return ordered[target_idx]
+
+
+def _step_string_option(value: str, options: list[str], delta: int, *, default_idx: int = 0) -> str:
+    if not options:
+        return value
+    normalized = value if value in options else options[max(0, min(len(options) - 1, default_idx))]
+    idx = max(0, min(len(options) - 1, options.index(normalized) + int(delta)))
+    return options[idx]
+
+
 def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> None:
     """Snap all blended target values to valid iRacing garage increments."""
     gr = getattr(car, "garage_ranges", None)
@@ -52,7 +74,16 @@ def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> 
     heave_step = getattr(gr, "heave_spring_resolution_nmm", 10.0) or 10.0
     front_heave_range = getattr(gr, "front_heave_nmm", (0.0, 900.0)) if gr is not None else (0.0, 900.0)
     rear_heave_range = getattr(gr, "rear_third_nmm", (0.0, 900.0)) if gr is not None else (0.0, 900.0)
-    perch_step = getattr(gr, "perch_resolution_mm", 1.0) or 1.0
+    front_perch_step = (
+        getattr(gr, "front_heave_perch_resolution_mm", None)
+        or getattr(gr, "perch_resolution_mm", 1.0)
+        or 1.0
+    )
+    rear_perch_step = (
+        getattr(gr, "rear_third_perch_resolution_mm", None)
+        or getattr(gr, "perch_resolution_mm", 1.0)
+        or 1.0
+    )
     front_perch_range = getattr(gr, "front_heave_perch_mm", (-100.0, 100.0)) if gr is not None else (-100.0, 100.0)
     rear_perch_range = getattr(gr, "rear_third_perch_mm", (-100.0, 100.0)) if gr is not None else (-100.0, 100.0)
     if "front_heave_nmm" in s2 and isinstance(s2["front_heave_nmm"], (int, float)):
@@ -60,9 +91,9 @@ def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> 
     if "rear_third_nmm" in s2 and isinstance(s2["rear_third_nmm"], (int, float)):
         s2["rear_third_nmm"] = _snap_step(s2["rear_third_nmm"], heave_step, rear_heave_range[0], rear_heave_range[1])
     if "perch_offset_front_mm" in s2 and isinstance(s2["perch_offset_front_mm"], (int, float)):
-        s2["perch_offset_front_mm"] = _snap_step(s2["perch_offset_front_mm"], perch_step, front_perch_range[0], front_perch_range[1])
+        s2["perch_offset_front_mm"] = _snap_step(s2["perch_offset_front_mm"], front_perch_step, front_perch_range[0], front_perch_range[1])
     if "perch_offset_rear_mm" in s2 and isinstance(s2["perch_offset_rear_mm"], (int, float)):
-        s2["perch_offset_rear_mm"] = _snap_step(s2["perch_offset_rear_mm"], perch_step, rear_perch_range[0], rear_perch_range[1])
+        s2["perch_offset_rear_mm"] = _snap_step(s2["perch_offset_rear_mm"], rear_perch_step, rear_perch_range[0], rear_perch_range[1])
 
     # Step 3: torsion OD (discrete), rear spring (5 N/mm step), rear spring perch (0.5 mm)
     torsion_range = getattr(gr, "front_torsion_od_mm", (13.9, 18.2)) if gr is not None else (13.9, 18.2)
@@ -106,16 +137,41 @@ def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> 
             limits = toe_front if "front" in f else toe_rear
             s5[f] = _snap_step(s5[f], 0.1, limits[0], limits[1])
 
-    # Supporting: diff preload (5 Nm), TC (integer), brake bias (0.1%)
+    # Supporting: diff preload (5 Nm), TC (integer), brake bias + brake hardware
     if "diff_preload_nm" in sup and isinstance(sup["diff_preload_nm"], (int, float)):
         diff_range = getattr(gr, "diff_preload_nm", (0.0, 150.0)) if gr is not None else (0.0, 150.0)
         diff_step = getattr(gr, "diff_preload_step_nm", 5.0) or 5.0
         sup["diff_preload_nm"] = _snap_step(sup["diff_preload_nm"], diff_step, diff_range[0], diff_range[1])
+    if "diff_ramp_option_idx" in sup and isinstance(sup["diff_ramp_option_idx"], (int, float)):
+        ramp_options = getattr(gr, "diff_coast_drive_ramp_options", [(40, 65), (45, 70), (50, 75)]) if gr is not None else [(40, 65), (45, 70), (50, 75)]
+        sup["diff_ramp_option_idx"] = int(max(0, min(len(ramp_options) - 1, round(float(sup["diff_ramp_option_idx"])))))
+    if "diff_clutch_plates" in sup and isinstance(sup["diff_clutch_plates"], (int, float)):
+        clutch_options = list(getattr(gr, "diff_clutch_plates_options", []) or [2, 4, 6]) if gr is not None else [2, 4, 6]
+        sup["diff_clutch_plates"] = int(_snap_option(float(sup["diff_clutch_plates"]), [float(x) for x in clutch_options]))
     for f in ("tc_gain", "tc_slip"):
         if f in sup and isinstance(sup[f], (int, float)):
             sup[f] = int(round(max(1, min(10, sup[f]))))
     if "brake_bias_pct" in sup and isinstance(sup["brake_bias_pct"], (int, float)):
         sup["brake_bias_pct"] = round(sup["brake_bias_pct"], 1)
+    for f, limits in (
+        ("brake_bias_target", getattr(gr, "brake_bias_target", (-5.0, 5.0)) if gr is not None else (-5.0, 5.0)),
+        ("brake_bias_migration", getattr(gr, "brake_bias_migration", (-5.0, 5.0)) if gr is not None else (-5.0, 5.0)),
+    ):
+        if f in sup and isinstance(sup[f], (int, float)):
+            sup[f] = snap_to_resolution(
+                _clamp(float(sup[f]), float(limits[0]), float(limits[1])),
+                get_numeric_resolution(car, f, default=0.5),
+                lo=float(limits[0]),
+                hi=float(limits[1]),
+            )
+    mc_options = list(getattr(gr, "brake_master_cyl_options_mm", []) or [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8]) if gr is not None else [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8]
+    for f in ("front_master_cyl_mm", "rear_master_cyl_mm"):
+        if f in sup and isinstance(sup[f], (int, float)):
+            sup[f] = _snap_option(float(sup[f]), [float(x) for x in mc_options])
+    if "pad_compound" in sup:
+        pad_options = list(getattr(gr, "brake_pad_compound_options", []) or ["Low", "Medium", "High"]) if gr is not None else ["Low", "Medium", "High"]
+        if sup["pad_compound"] not in pad_options:
+            sup["pad_compound"] = pad_options[min(len(pad_options) - 1, 1)]
 
 
 def _cluster_center_issues(car: Any | None, setup_cluster: Any | None) -> list[str]:
@@ -287,11 +343,144 @@ def _extract_target_maps(base_result: SolveChainResult) -> dict[str, Any]:
             "diff_preload_nm": base_result.supporting.diff_preload_nm,
             "tc_gain": base_result.supporting.tc_gain,
             "tc_slip": base_result.supporting.tc_slip,
+            "diff_clutch_plates": getattr(base_result.supporting, "diff_clutch_plates", 6),
+            "diff_ramp_option_idx": getattr(base_result.supporting, "diff_ramp_option_idx", 1),
+            "diff_ramp_angles": getattr(base_result.supporting, "diff_ramp_angles", ""),
+            "fuel_l": getattr(base_result.supporting, "fuel_l", 0.0),
+            "fuel_low_warning_l": getattr(base_result.supporting, "fuel_low_warning_l", 0.0),
+            "fuel_target_l": getattr(base_result.supporting, "fuel_target_l", 0.0),
+            "gear_stack": getattr(base_result.supporting, "gear_stack", ""),
+            "roof_light_color": getattr(base_result.supporting, "roof_light_color", ""),
+        },
+        "step4_arb_size": {
+            "front_arb_size": base_result.step4.front_arb_size,
+            "rear_arb_size": base_result.step4.rear_arb_size,
         },
     }
 
 
-def _apply_cluster_center(targets: dict[str, Any], setup_cluster: Any) -> None:
+def canonical_params_to_overrides(
+    base_result: SolveChainResult,
+    params: dict[str, Any],
+    *,
+    car: Any | None = None,
+) -> SolveChainOverrides:
+    """Convert canonical legal-search params into snapped solve-chain overrides."""
+    targets = _extract_target_maps(base_result)
+    explicit_supporting_fields: set[str] = set()
+
+    def _set_step6(axle: str, field: str, value: Any) -> None:
+        corners = ("lf", "rf") if axle == "front" else ("lr", "rr")
+        for corner_name in corners:
+            targets["step6"][corner_name][field] = int(round(float(value)))
+
+    direct_step_map: dict[str, tuple[str, str]] = {
+        "front_pushrod_offset_mm": ("step1", "front_pushrod_offset_mm"),
+        "rear_pushrod_offset_mm": ("step1", "rear_pushrod_offset_mm"),
+        "front_heave_spring_nmm": ("step2", "front_heave_nmm"),
+        "front_heave_perch_mm": ("step2", "perch_offset_front_mm"),
+        "rear_third_spring_nmm": ("step2", "rear_third_nmm"),
+        "rear_third_perch_mm": ("step2", "perch_offset_rear_mm"),
+        "front_torsion_od_mm": ("step3", "front_torsion_od_mm"),
+        "rear_spring_rate_nmm": ("step3", "rear_spring_rate_nmm"),
+        "rear_spring_perch_mm": ("step3", "rear_spring_perch_mm"),
+        "front_camber_deg": ("step5", "front_camber_deg"),
+        "rear_camber_deg": ("step5", "rear_camber_deg"),
+        "front_toe_mm": ("step5", "front_toe_mm"),
+        "rear_toe_mm": ("step5", "rear_toe_mm"),
+        "brake_bias_pct": ("supporting", "brake_bias_pct"),
+        "brake_bias_target": ("supporting", "brake_bias_target"),
+        "brake_bias_migration": ("supporting", "brake_bias_migration"),
+        "front_master_cyl_mm": ("supporting", "front_master_cyl_mm"),
+        "rear_master_cyl_mm": ("supporting", "rear_master_cyl_mm"),
+        "pad_compound": ("supporting", "pad_compound"),
+        "diff_preload_nm": ("supporting", "diff_preload_nm"),
+        "diff_clutch_plates": ("supporting", "diff_clutch_plates"),
+        "diff_ramp_option_idx": ("supporting", "diff_ramp_option_idx"),
+        "tc_gain": ("supporting", "tc_gain"),
+        "tc_slip": ("supporting", "tc_slip"),
+        "fuel_l": ("supporting", "fuel_l"),
+        "fuel_low_warning_l": ("supporting", "fuel_low_warning_l"),
+        "fuel_target_l": ("supporting", "fuel_target_l"),
+        "gear_stack": ("supporting", "gear_stack"),
+        "roof_light_color": ("supporting", "roof_light_color"),
+    }
+
+    for key, value in params.items():
+        if value is None:
+            continue
+        if key in direct_step_map:
+            step_name, field_name = direct_step_map[key]
+            targets[step_name][field_name] = value
+            if step_name == "supporting":
+                explicit_supporting_fields.add(field_name)
+            continue
+        if key == "front_arb_size":
+            targets["step4_arb_size"]["front_arb_size"] = value
+            continue
+        if key == "rear_arb_size":
+            targets["step4_arb_size"]["rear_arb_size"] = value
+            continue
+        if key == "front_arb_blade":
+            blade = int(round(float(value)))
+            targets["step4"]["front_arb_blade_start"] = blade
+            targets["step4"]["farb_blade_locked"] = blade
+            continue
+        if key == "rear_arb_blade":
+            blade = int(round(float(value)))
+            targets["step4"]["rear_arb_blade_start"] = blade
+            targets["step4"]["rarb_blade_slow_corner"] = blade
+            targets["step4"]["rarb_blade_fast_corner"] = blade
+            continue
+        if key == "front_ls_comp":
+            _set_step6("front", "ls_comp", value)
+            continue
+        if key == "front_ls_rbd":
+            _set_step6("front", "ls_rbd", value)
+            continue
+        if key == "front_hs_comp":
+            _set_step6("front", "hs_comp", value)
+            continue
+        if key == "front_hs_rbd":
+            _set_step6("front", "hs_rbd", value)
+            continue
+        if key == "front_hs_slope":
+            _set_step6("front", "hs_slope", value)
+            continue
+        if key == "rear_ls_comp":
+            _set_step6("rear", "ls_comp", value)
+            continue
+        if key == "rear_ls_rbd":
+            _set_step6("rear", "ls_rbd", value)
+            continue
+        if key == "rear_hs_comp":
+            _set_step6("rear", "hs_comp", value)
+            continue
+        if key == "rear_hs_rbd":
+            _set_step6("rear", "hs_rbd", value)
+            continue
+        if key == "rear_hs_slope":
+            _set_step6("rear", "hs_slope", value)
+            continue
+        if key == "diff_ramp_angles":
+            current_idx = targets["supporting"].get("diff_ramp_option_idx", 1)
+            targets["supporting"]["diff_ramp_option_idx"] = diff_ramp_option_index(
+                getattr(car, "canonical_name", car),
+                diff_ramp_angles=value,
+                default=int(round(float(current_idx))) if current_idx is not None else 1,
+            )
+            explicit_supporting_fields.add("diff_ramp_option_idx")
+
+    _snap_targets_to_garage(targets, car)
+    overrides = _target_overrides(base_result, targets)
+    for field_name in explicit_supporting_fields:
+        target_value = targets["supporting"].get(field_name)
+        if getattr(base_result.supporting, field_name, None) != target_value:
+            overrides.supporting[field_name] = target_value
+    return overrides
+
+
+def _apply_cluster_center(targets: dict[str, Any], setup_cluster: Any, *, car_name: str = "bmw") -> None:
     center = getattr(setup_cluster, "center", {}) or {}
     if not center:
         return
@@ -323,12 +512,41 @@ def _apply_cluster_center(targets: dict[str, Any], setup_cluster: Any) -> None:
         _set_numeric(targets["step5"], "rear_toe_mm", center["rear_toe_mm"])
     if "brake_bias_pct" in center:
         _set_numeric(targets["supporting"], "brake_bias_pct", center["brake_bias_pct"])
+    if "brake_bias_target" in center:
+        _set_numeric(targets["supporting"], "brake_bias_target", center["brake_bias_target"])
+    if "brake_bias_migration" in center:
+        _set_numeric(targets["supporting"], "brake_bias_migration", center["brake_bias_migration"])
+    if "front_master_cyl_mm" in center:
+        _set_numeric(targets["supporting"], "front_master_cyl_mm", center["front_master_cyl_mm"])
+    if "rear_master_cyl_mm" in center:
+        _set_numeric(targets["supporting"], "rear_master_cyl_mm", center["rear_master_cyl_mm"])
+    if "pad_compound" in center:
+        targets["supporting"]["pad_compound"] = center["pad_compound"]
     if "diff_preload_nm" in center:
         _set_numeric(targets["supporting"], "diff_preload_nm", center["diff_preload_nm"])
     if "tc_gain" in center:
         targets["supporting"]["tc_gain"] = int(round(center["tc_gain"]))
     if "tc_slip" in center:
         targets["supporting"]["tc_slip"] = int(round(center["tc_slip"]))
+    if "diff_clutch_plates" in center:
+        targets["supporting"]["diff_clutch_plates"] = int(round(center["diff_clutch_plates"]))
+    if "diff_ramp_option_idx" in center:
+        targets["supporting"]["diff_ramp_option_idx"] = int(round(center["diff_ramp_option_idx"]))
+    elif "diff_ramp_coast" in center or "diff_ramp_drive" in center:
+        ramp_idx = diff_ramp_option_index(
+            car_name,
+            coast=center.get("diff_ramp_coast"),
+            drive=center.get("diff_ramp_drive"),
+            default=1,
+        )
+        if ramp_idx is not None:
+            targets["supporting"]["diff_ramp_option_idx"] = ramp_idx
+    if "front_arb_size" in center:
+        if "step4_arb_size" in targets:
+            targets["step4_arb_size"]["front_arb_size"] = center["front_arb_size"]
+    if "rear_arb_size" in center:
+        if "step4_arb_size" in targets:
+            targets["step4_arb_size"]["rear_arb_size"] = center["rear_arb_size"]
 
 
 def _apply_family_state_adjustments(
@@ -426,9 +644,61 @@ def _apply_family_state_adjustments(
         _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round(rear_support * family_intensity)), lo=0, hi=20)
 
     _adjust_numeric(targets["supporting"], "brake_bias_pct", -0.3 * front_lock * family_intensity, decimals=3)
+    _adjust_numeric(targets["supporting"], "brake_bias_target", -0.5 * front_lock * family_intensity, decimals=3)
+    _adjust_numeric(targets["supporting"], "brake_bias_migration", -0.35 * front_lock * family_intensity, decimals=3)
     _adjust_numeric(targets["supporting"], "diff_preload_nm", 5.0 * exit_instability * family_intensity, decimals=3)
+    _adjust_integer(
+        targets["supporting"],
+        "diff_ramp_option_idx",
+        int(round((0.8 * entry_push - 1.2 * exit_instability) * family_intensity)),
+        lo=0,
+        hi=2,
+    )
+    _adjust_integer(
+        targets["supporting"],
+        "diff_clutch_plates",
+        int(round(2.0 * exit_instability * family_intensity)),
+        lo=2,
+        hi=6,
+    )
     _adjust_integer(targets["supporting"], "tc_gain", int(round(exit_instability * family_intensity)), lo=1, hi=10)
     _adjust_integer(targets["supporting"], "tc_slip", int(round(0.8 * exit_instability * family_intensity)), lo=1, hi=10)
+    mc_options = [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8]
+    pad_options = ["Low", "Medium", "High"]
+    if front_lock > 0.2:
+        targets["supporting"]["front_master_cyl_mm"] = _step_option(
+            float(targets["supporting"].get("front_master_cyl_mm", 19.1)),
+            mc_options,
+            -1,
+        )
+        targets["supporting"]["rear_master_cyl_mm"] = _step_option(
+            float(targets["supporting"].get("rear_master_cyl_mm", 20.6)),
+            mc_options,
+            +1,
+        )
+        targets["supporting"]["pad_compound"] = _step_string_option(
+            str(targets["supporting"].get("pad_compound", "Medium") or "Medium"),
+            pad_options,
+            -1,
+            default_idx=1,
+        )
+    elif front_lock < 0.05 and family != "incremental":
+        targets["supporting"]["front_master_cyl_mm"] = _step_option(
+            float(targets["supporting"].get("front_master_cyl_mm", 19.1)),
+            mc_options,
+            +1,
+        )
+        targets["supporting"]["rear_master_cyl_mm"] = _step_option(
+            float(targets["supporting"].get("rear_master_cyl_mm", 20.6)),
+            mc_options,
+            -1,
+        )
+        targets["supporting"]["pad_compound"] = _step_string_option(
+            str(targets["supporting"].get("pad_compound", "Medium") or "Medium"),
+            pad_options,
+            +1,
+            default_idx=1,
+        )
 
 
 def _target_overrides(base_result: SolveChainResult, targets: dict[str, Any]) -> SolveChainOverrides:
@@ -457,8 +727,13 @@ def _target_overrides(base_result: SolveChainResult, targets: dict[str, Any]) ->
         if corner_overrides:
             overrides.step6[corner_name] = corner_overrides
     for field_name, value in targets["supporting"].items():
-        if getattr(base_result.supporting, field_name) != value:
-            overrides.supporting[field_name] = value
+        if hasattr(base_result.supporting, field_name):
+            if getattr(base_result.supporting, field_name) != value:
+                overrides.supporting[field_name] = value
+    # ARB size changes go into step4 overrides
+    for field_name, value in targets.get("step4_arb_size", {}).items():
+        if getattr(base_result.step4, field_name, None) != value:
+            overrides.step4[field_name] = value
     return overrides
 
 
@@ -509,7 +784,17 @@ def _estimate_candidate_disruption(current_session: Any, candidate: SetupCandida
     _append(getattr(setup, "front_hs_comp", None), getattr(getattr(candidate.step6, "lf", None), "hs_comp", None), 3.0)
     _append(getattr(setup, "rear_hs_comp", None), getattr(getattr(candidate.step6, "lr", None), "hs_comp", None), 3.0)
     _append(getattr(setup, "brake_bias_pct", None), getattr(candidate.supporting, "brake_bias_pct", None), 0.8)
+    _append(getattr(setup, "brake_bias_target", None), getattr(candidate.supporting, "brake_bias_target", None), 1.0)
+    _append(getattr(setup, "brake_bias_migration", None), getattr(candidate.supporting, "brake_bias_migration", None), 1.0)
+    _append(getattr(setup, "front_master_cyl_mm", None), getattr(candidate.supporting, "front_master_cyl_mm", None), 1.6)
+    _append(getattr(setup, "rear_master_cyl_mm", None), getattr(candidate.supporting, "rear_master_cyl_mm", None), 1.6)
     _append(getattr(setup, "diff_preload_nm", None), getattr(candidate.supporting, "diff_preload_nm", None), 20.0)
+    _append(getattr(setup, "diff_clutch_plates", None), getattr(candidate.supporting, "diff_clutch_plates", None), 2.0)
+    _append(
+        diff_ramp_option_index("bmw", diff_ramp_angles=getattr(setup, "diff_ramp_angles", None), default=1),
+        getattr(candidate.supporting, "diff_ramp_option_idx", None),
+        1.0,
+    )
     _append(getattr(setup, "tc_gain", None), getattr(candidate.supporting, "tc_gain", None), 2.0)
     _append(getattr(setup, "tc_slip", None), getattr(candidate.supporting, "tc_slip", None), 2.0)
 
@@ -571,25 +856,22 @@ def generate_candidate_families(
 
     candidates: list[SetupCandidate] = []
     for family in ("incremental", "compromise", "baseline_reset"):
+        preblocked_reason: str | None = None
+        preblocked_notes: list[str] = []
         # Hard gate: baseline_reset requires overhaul assessment to justify it,
         # OR a large setup cluster distance (>= 3.0) that independently signals wrong region.
         # A soft prior/penalty alone is insufficient — this prevents unnecessary solver blows.
         if family == "baseline_reset" and overhaul_class != "baseline_reset":
             large_setup_distance = setup_distance >= 3.0 or envelope_distance >= 3.0
             if not large_setup_distance:
-                candidate = SetupCandidate(
-                    family=family,
-                    description=family_descriptions[family],
-                    selectable=False,
-                    status="blocked",
-                    failure_reason=(
-                        f"Overhaul assessment '{overhaul_class}' does not justify baseline_reset "
-                        f"(requires 'baseline_reset' classification or setup_distance >= 3.0)"
-                    ),
-                    notes=[f"Overhaul class: {overhaul_class}, setup_distance: {setup_distance:.2f}, envelope_distance: {envelope_distance:.2f}"],
+                preblocked_reason = (
+                    f"Overhaul assessment '{overhaul_class}' does not justify baseline_reset "
+                    f"(requires 'baseline_reset' classification or setup_distance >= 3.0)"
                 )
-                candidates.append(candidate)
-                continue
+                preblocked_notes = [
+                    f"Overhaul class: {overhaul_class}, setup_distance: {setup_distance:.2f}, envelope_distance: {envelope_distance:.2f}",
+                    "Materialized for legality/reporting, but baseline_reset remains non-selectable without overhaul justification.",
+                ]
 
         if family == "baseline_reset" and setup_cluster is not None:
             cluster_issues = _cluster_center_issues(car, setup_cluster)
@@ -614,7 +896,7 @@ def generate_candidate_families(
         # how much to anchor back to a historical setup.
         cluster_seeded = family == "baseline_reset" and setup_cluster is not None
         if cluster_seeded:
-            _apply_cluster_center(targets, setup_cluster)
+            _apply_cluster_center(targets, setup_cluster, car_name=getattr(car, "canonical_name", "bmw"))
         _apply_family_state_adjustments(
             targets,
             family=family,
@@ -663,7 +945,13 @@ def generate_candidate_families(
                 candidate.failure_reason = "; ".join(result.legal_validation.messages[:2]) or "candidate failed legality validation"
                 candidate.notes.append(candidate.failure_reason)
             else:
-                candidate.status = "ready"
+                if preblocked_reason is not None:
+                    candidate.selectable = False
+                    candidate.status = "blocked"
+                    candidate.failure_reason = preblocked_reason
+                    candidate.notes.extend(preblocked_notes)
+                else:
+                    candidate.status = "ready"
                 candidate.notes.extend(result.notes)
         except Exception as exc:
             candidate.selectable = False
@@ -753,8 +1041,13 @@ def candidate_to_dict(candidate: SetupCandidate) -> dict[str, Any]:
                 "rear_spring_perch_mm": getattr(candidate.step3, "rear_spring_perch_mm", None),
             },
             "step4": {
+                "front_arb_size": getattr(candidate.step4, "front_arb_size", None),
                 "front_arb_blade_start": getattr(candidate.step4, "front_arb_blade_start", None),
+                "farb_blade_locked": getattr(candidate.step4, "farb_blade_locked", None),
+                "rear_arb_size": getattr(candidate.step4, "rear_arb_size", None),
                 "rear_arb_blade_start": getattr(candidate.step4, "rear_arb_blade_start", None),
+                "rarb_blade_slow_corner": getattr(candidate.step4, "rarb_blade_slow_corner", None),
+                "rarb_blade_fast_corner": getattr(candidate.step4, "rarb_blade_fast_corner", None),
                 "lltd_achieved": getattr(candidate.step4, "lltd_achieved", None),
             },
             "step5": {
@@ -768,16 +1061,65 @@ def candidate_to_dict(candidate: SetupCandidate) -> dict[str, Any]:
             "step6": {
                 "front_ls_comp": getattr(getattr(candidate.step6, "lf", None), "ls_comp", None),
                 "front_ls_rbd": getattr(getattr(candidate.step6, "lf", None), "ls_rbd", None),
+                "front_hs_comp": getattr(getattr(candidate.step6, "lf", None), "hs_comp", None),
+                "front_hs_rbd": getattr(getattr(candidate.step6, "lf", None), "hs_rbd", None),
+                "front_hs_slope": getattr(getattr(candidate.step6, "lf", None), "hs_slope", None),
                 "rear_ls_comp": getattr(getattr(candidate.step6, "lr", None), "ls_comp", None),
                 "rear_ls_rbd": getattr(getattr(candidate.step6, "lr", None), "ls_rbd", None),
+                "rear_hs_comp": getattr(getattr(candidate.step6, "lr", None), "hs_comp", None),
+                "rear_hs_rbd": getattr(getattr(candidate.step6, "lr", None), "hs_rbd", None),
+                "rear_hs_slope": getattr(getattr(candidate.step6, "lr", None), "hs_slope", None),
+                "lf": {
+                    "ls_comp": getattr(getattr(candidate.step6, "lf", None), "ls_comp", None),
+                    "ls_rbd": getattr(getattr(candidate.step6, "lf", None), "ls_rbd", None),
+                    "hs_comp": getattr(getattr(candidate.step6, "lf", None), "hs_comp", None),
+                    "hs_rbd": getattr(getattr(candidate.step6, "lf", None), "hs_rbd", None),
+                    "hs_slope": getattr(getattr(candidate.step6, "lf", None), "hs_slope", None),
+                },
+                "rf": {
+                    "ls_comp": getattr(getattr(candidate.step6, "rf", None), "ls_comp", None),
+                    "ls_rbd": getattr(getattr(candidate.step6, "rf", None), "ls_rbd", None),
+                    "hs_comp": getattr(getattr(candidate.step6, "rf", None), "hs_comp", None),
+                    "hs_rbd": getattr(getattr(candidate.step6, "rf", None), "hs_rbd", None),
+                    "hs_slope": getattr(getattr(candidate.step6, "rf", None), "hs_slope", None),
+                },
+                "lr": {
+                    "ls_comp": getattr(getattr(candidate.step6, "lr", None), "ls_comp", None),
+                    "ls_rbd": getattr(getattr(candidate.step6, "lr", None), "ls_rbd", None),
+                    "hs_comp": getattr(getattr(candidate.step6, "lr", None), "hs_comp", None),
+                    "hs_rbd": getattr(getattr(candidate.step6, "lr", None), "hs_rbd", None),
+                    "hs_slope": getattr(getattr(candidate.step6, "lr", None), "hs_slope", None),
+                },
+                "rr": {
+                    "ls_comp": getattr(getattr(candidate.step6, "rr", None), "ls_comp", None),
+                    "ls_rbd": getattr(getattr(candidate.step6, "rr", None), "ls_rbd", None),
+                    "hs_comp": getattr(getattr(candidate.step6, "rr", None), "hs_comp", None),
+                    "hs_rbd": getattr(getattr(candidate.step6, "rr", None), "hs_rbd", None),
+                    "hs_slope": getattr(getattr(candidate.step6, "rr", None), "hs_slope", None),
+                },
                 "c_hs_front": getattr(candidate.step6, "c_hs_front", None),
                 "c_hs_rear": getattr(candidate.step6, "c_hs_rear", None),
             },
             "supporting": {
                 "brake_bias_pct": getattr(candidate.supporting, "brake_bias_pct", None),
+                "brake_bias_target": getattr(candidate.supporting, "brake_bias_target", None),
+                "brake_bias_migration": getattr(candidate.supporting, "brake_bias_migration", None),
+                "front_master_cyl_mm": getattr(candidate.supporting, "front_master_cyl_mm", None),
+                "rear_master_cyl_mm": getattr(candidate.supporting, "rear_master_cyl_mm", None),
+                "pad_compound": getattr(candidate.supporting, "pad_compound", None),
                 "diff_preload_nm": getattr(candidate.supporting, "diff_preload_nm", None),
+                "diff_ramp_option_idx": getattr(candidate.supporting, "diff_ramp_option_idx", None),
+                "diff_ramp_angles": getattr(candidate.supporting, "diff_ramp_angles", None),
+                "diff_ramp_coast": getattr(candidate.supporting, "diff_ramp_coast", None),
+                "diff_ramp_drive": getattr(candidate.supporting, "diff_ramp_drive", None),
+                "diff_clutch_plates": getattr(candidate.supporting, "diff_clutch_plates", None),
                 "tc_gain": getattr(candidate.supporting, "tc_gain", None),
                 "tc_slip": getattr(candidate.supporting, "tc_slip", None),
+                "fuel_l": getattr(candidate.supporting, "fuel_l", None),
+                "fuel_low_warning_l": getattr(candidate.supporting, "fuel_low_warning_l", None),
+                "fuel_target_l": getattr(candidate.supporting, "fuel_target_l", None),
+                "gear_stack": getattr(candidate.supporting, "gear_stack", None),
+                "roof_light_color": getattr(candidate.supporting, "roof_light_color", None),
             },
         },
         "score": (

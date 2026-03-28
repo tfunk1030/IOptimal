@@ -1,0 +1,834 @@
+{
+  "version": 2,
+  "car": "bmw",
+  "track": "sebring",
+  "n_runs": 76,
+  "runs": [
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.4555,
+      "rear_sigma_mm": 7.2135,
+      "front_shock_vel_p99_mps": 0.274,
+      "front_dominant_freq_hz": 2.85,
+      "heave_travel_pct": 92.1,
+      "best_lap_s": 109.1377,
+      "session_ts": "2026-03-17T00:42:14"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.2758,
+      "rear_sigma_mm": 7.2915,
+      "front_shock_vel_p99_mps": 0.2773,
+      "front_dominant_freq_hz": 2.89,
+      "heave_travel_pct": 93.5,
+      "best_lap_s": 109.1182,
+      "session_ts": "2026-03-17T00:34:57"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.4214,
+      "rear_sigma_mm": 7.2728,
+      "front_shock_vel_p99_mps": 0.239,
+      "front_dominant_freq_hz": 2.82,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.7334,
+      "session_ts": "2026-03-13T17:20:15"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.0972,
+      "rear_sigma_mm": 7.6726,
+      "front_shock_vel_p99_mps": 0.283,
+      "front_dominant_freq_hz": 2.8,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.6281,
+      "session_ts": "2026-03-13T17:20:20"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.6822,
+      "rear_sigma_mm": 7.6525,
+      "front_shock_vel_p99_mps": 0.2782,
+      "front_dominant_freq_hz": 2.79,
+      "heave_travel_pct": 92.5,
+      "best_lap_s": 109.2221,
+      "session_ts": "2026-03-15T06:08:19"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.3116,
+      "rear_sigma_mm": 7.545,
+      "front_shock_vel_p99_mps": 0.2924,
+      "front_dominant_freq_hz": 2.86,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.1675,
+      "session_ts": "2026-03-13T17:20:31"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.3327,
+      "rear_sigma_mm": 7.7637,
+      "front_shock_vel_p99_mps": 0.2576,
+      "front_dominant_freq_hz": 2.86,
+      "heave_travel_pct": 91.3,
+      "best_lap_s": 109.4545,
+      "session_ts": "2026-03-15T22:26:53"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.286,
+      "rear_sigma_mm": 7.4961,
+      "front_shock_vel_p99_mps": 0.2732,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": 91.2,
+      "best_lap_s": 109.2417,
+      "session_ts": "2026-03-16T03:24:07"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.3464,
+      "rear_sigma_mm": 8.17,
+      "front_shock_vel_p99_mps": 0.2456,
+      "front_dominant_freq_hz": 2.89,
+      "heave_travel_pct": 92.5,
+      "best_lap_s": 109.274,
+      "session_ts": "2026-03-16T03:24:08"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.6154,
+      "rear_sigma_mm": 7.655,
+      "front_shock_vel_p99_mps": 0.2866,
+      "front_dominant_freq_hz": 2.85,
+      "heave_travel_pct": 92.7,
+      "best_lap_s": 109.7142,
+      "session_ts": "2026-03-15T22:26:55"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.2077,
+      "rear_sigma_mm": 7.8557,
+      "front_shock_vel_p99_mps": 0.2739,
+      "front_dominant_freq_hz": 2.89,
+      "heave_travel_pct": 89.0,
+      "best_lap_s": 109.2777,
+      "session_ts": "2026-03-16T03:24:09"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.405,
+      "rear_sigma_mm": 7.4153,
+      "front_shock_vel_p99_mps": 0.2424,
+      "front_dominant_freq_hz": 2.86,
+      "heave_travel_pct": 92.7,
+      "best_lap_s": 109.1314,
+      "session_ts": "2026-03-15T22:26:57"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.3041,
+      "rear_sigma_mm": 7.9785,
+      "front_shock_vel_p99_mps": 0.2873,
+      "front_dominant_freq_hz": 2.81,
+      "heave_travel_pct": 92.7,
+      "best_lap_s": 109.5041,
+      "session_ts": "2026-03-15T22:44:40"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.0575,
+      "rear_sigma_mm": 7.8982,
+      "front_shock_vel_p99_mps": 0.2593,
+      "front_dominant_freq_hz": 2.91,
+      "heave_travel_pct": 91.1,
+      "best_lap_s": 109.3608,
+      "session_ts": "2026-03-15T23:15:36"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 8.0493,
+      "rear_sigma_mm": 8.3376,
+      "front_shock_vel_p99_mps": 0.2559,
+      "front_dominant_freq_hz": 2.94,
+      "heave_travel_pct": 89.2,
+      "best_lap_s": 109.3777,
+      "session_ts": "2026-03-16T21:54:16"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.7778,
+      "rear_sigma_mm": 7.2435,
+      "front_shock_vel_p99_mps": 0.2681,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": 91.7,
+      "best_lap_s": 109.0395,
+      "session_ts": "2026-03-17T12:52:08"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 7.7059,
+      "rear_sigma_mm": 7.4059,
+      "front_shock_vel_p99_mps": 0.2704,
+      "front_dominant_freq_hz": 2.8,
+      "heave_travel_pct": 90.9,
+      "best_lap_s": 109.6858,
+      "session_ts": "2026-03-14T14:56:30"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.955,
+      "rear_sigma_mm": 7.2206,
+      "front_shock_vel_p99_mps": 0.2686,
+      "front_dominant_freq_hz": 2.8,
+      "heave_travel_pct": 91.2,
+      "best_lap_s": 109.3326,
+      "session_ts": "2026-03-14T14:56:30"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.9315,
+      "rear_sigma_mm": 6.9112,
+      "front_shock_vel_p99_mps": 0.267,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": 92.3,
+      "best_lap_s": 109.5208,
+      "session_ts": "2026-03-14T14:56:31"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.7256,
+      "rear_sigma_mm": 6.7361,
+      "front_shock_vel_p99_mps": 0.2381,
+      "front_dominant_freq_hz": 2.91,
+      "heave_travel_pct": 91.4,
+      "best_lap_s": 109.0994,
+      "session_ts": "2026-03-17T19:58:38"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.881,
+      "rear_sigma_mm": 7.461,
+      "front_shock_vel_p99_mps": 0.2371,
+      "front_dominant_freq_hz": 2.85,
+      "heave_travel_pct": null,
+      "best_lap_s": 110.0126,
+      "session_ts": "2026-03-13T23:48:35"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.881,
+      "rear_sigma_mm": 7.461,
+      "front_shock_vel_p99_mps": 0.2371,
+      "front_dominant_freq_hz": 2.85,
+      "heave_travel_pct": null,
+      "best_lap_s": 110.0126,
+      "session_ts": "2026-03-13T17:20:14"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.9838,
+      "rear_sigma_mm": 7.5082,
+      "front_shock_vel_p99_mps": 0.272,
+      "front_dominant_freq_hz": 2.81,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.5686,
+      "session_ts": "2026-03-13T17:20:16"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.3658,
+      "rear_sigma_mm": 6.9033,
+      "front_shock_vel_p99_mps": 0.2391,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.6549,
+      "session_ts": "2026-03-13T17:20:18"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.7078,
+      "rear_sigma_mm": 7.1608,
+      "front_shock_vel_p99_mps": 0.2556,
+      "front_dominant_freq_hz": 2.86,
+      "heave_travel_pct": null,
+      "best_lap_s": 108.8289,
+      "session_ts": "2026-03-13T17:20:18"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.6738,
+      "rear_sigma_mm": 7.0028,
+      "front_shock_vel_p99_mps": 0.2478,
+      "front_dominant_freq_hz": 2.98,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.9268,
+      "session_ts": "2026-03-13T17:20:19"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.5812,
+      "rear_sigma_mm": 7.0154,
+      "front_shock_vel_p99_mps": 0.2511,
+      "front_dominant_freq_hz": 2.85,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.5351,
+      "session_ts": "2026-03-13T17:20:21"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.5367,
+      "rear_sigma_mm": 7.4435,
+      "front_shock_vel_p99_mps": 0.2564,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.1219,
+      "session_ts": "2026-03-13T17:20:22"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.9478,
+      "rear_sigma_mm": 7.1181,
+      "front_shock_vel_p99_mps": 0.2679,
+      "front_dominant_freq_hz": 2.8,
+      "heave_travel_pct": 92.9,
+      "best_lap_s": 109.5625,
+      "session_ts": "2026-03-15T07:18:58"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.7218,
+      "rear_sigma_mm": 7.0481,
+      "front_shock_vel_p99_mps": 0.2537,
+      "front_dominant_freq_hz": 2.82,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.2148,
+      "session_ts": "2026-03-13T17:20:25"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.7442,
+      "rear_sigma_mm": 8.5816,
+      "front_shock_vel_p99_mps": 0.2381,
+      "front_dominant_freq_hz": 2.94,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.2644,
+      "session_ts": "2026-03-13T17:20:33"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 6.1155,
+      "rear_sigma_mm": 8.6085,
+      "front_shock_vel_p99_mps": 0.2486,
+      "front_dominant_freq_hz": 2.9,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.4181,
+      "session_ts": "2026-03-14T02:37:56"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.5624,
+      "rear_sigma_mm": 6.8172,
+      "front_shock_vel_p99_mps": 0.2504,
+      "front_dominant_freq_hz": 2.82,
+      "heave_travel_pct": 89.7,
+      "best_lap_s": 109.4426,
+      "session_ts": "2026-03-14T14:56:29"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.53,
+      "rear_sigma_mm": 7.0654,
+      "front_shock_vel_p99_mps": 0.2504,
+      "front_dominant_freq_hz": 3.4,
+      "heave_travel_pct": 86.6,
+      "best_lap_s": 108.9368,
+      "session_ts": "2026-03-16T04:02:41"
+    },
+    {
+      "heave_nmm": 60.0,
+      "front_sigma_mm": 5.5497,
+      "rear_sigma_mm": 7.4772,
+      "front_shock_vel_p99_mps": 0.2624,
+      "front_dominant_freq_hz": 2.85,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.6052,
+      "session_ts": "2026-03-13T17:20:22"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 5.255,
+      "rear_sigma_mm": 8.1202,
+      "front_shock_vel_p99_mps": 0.2639,
+      "front_dominant_freq_hz": 2.87,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.3723,
+      "session_ts": "2026-03-13T17:20:26"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 6.0468,
+      "rear_sigma_mm": 8.5905,
+      "front_shock_vel_p99_mps": 0.2869,
+      "front_dominant_freq_hz": 2.82,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.8343,
+      "session_ts": "2026-03-13T17:20:26"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 5.3644,
+      "rear_sigma_mm": 7.1882,
+      "front_shock_vel_p99_mps": 0.2549,
+      "front_dominant_freq_hz": 2.82,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.0941,
+      "session_ts": "2026-03-13T17:20:27"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 5.0513,
+      "rear_sigma_mm": 7.8412,
+      "front_shock_vel_p99_mps": 0.2664,
+      "front_dominant_freq_hz": 2.81,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.7204,
+      "session_ts": "2026-03-13T17:20:28"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 5.0986,
+      "rear_sigma_mm": 7.4438,
+      "front_shock_vel_p99_mps": 0.2598,
+      "front_dominant_freq_hz": 2.81,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.1001,
+      "session_ts": "2026-03-13T17:20:29"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 5.0556,
+      "rear_sigma_mm": 7.5204,
+      "front_shock_vel_p99_mps": 0.2651,
+      "front_dominant_freq_hz": 2.85,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.3805,
+      "session_ts": "2026-03-13T17:20:30"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 4.9913,
+      "rear_sigma_mm": 7.5918,
+      "front_shock_vel_p99_mps": 0.2739,
+      "front_dominant_freq_hz": 2.87,
+      "heave_travel_pct": 89.6,
+      "best_lap_s": 109.2904,
+      "session_ts": "2026-03-15T07:18:58"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 5.2818,
+      "rear_sigma_mm": 7.8391,
+      "front_shock_vel_p99_mps": 0.2493,
+      "front_dominant_freq_hz": 2.93,
+      "heave_travel_pct": null,
+      "best_lap_s": 110.4925,
+      "session_ts": "2026-03-13T17:20:33"
+    },
+    {
+      "heave_nmm": 80.0,
+      "front_sigma_mm": 4.9001,
+      "rear_sigma_mm": 7.3502,
+      "front_shock_vel_p99_mps": 0.2566,
+      "front_dominant_freq_hz": 2.81,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.3399,
+      "session_ts": "2026-03-13T17:20:28"
+    },
+    {
+      "heave_nmm": 90.0,
+      "front_sigma_mm": 4.9332,
+      "rear_sigma_mm": 7.7305,
+      "front_shock_vel_p99_mps": 0.2729,
+      "front_dominant_freq_hz": 2.81,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.2787,
+      "session_ts": "2026-03-13T17:20:32"
+    },
+    {
+      "heave_nmm": 900.0,
+      "front_sigma_mm": 5.9749,
+      "rear_sigma_mm": 7.7191,
+      "front_shock_vel_p99_mps": 0.2012,
+      "front_dominant_freq_hz": 9.44,
+      "heave_travel_pct": null,
+      "best_lap_s": 109.6136,
+      "session_ts": "2026-03-16T03:33:31"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.386963844299316,
+      "rear_sigma_mm": 6.7712812423706055,
+      "front_shock_vel_p99_mps": 0.2543808558583258,
+      "front_dominant_freq_hz": 2.82,
+      "heave_travel_pct": 84.2,
+      "best_lap_s": 109.1171646118164,
+      "session_ts": "2026-03-18T23:17:59"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.283793926239014,
+      "rear_sigma_mm": 6.628663539886475,
+      "front_shock_vel_p99_mps": 0.2680859360098839,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": 91.7,
+      "best_lap_s": 109.03953552246094,
+      "session_ts": "2026-03-18T23:18:05"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.320084571838379,
+      "rear_sigma_mm": 6.591409206390381,
+      "front_shock_vel_p99_mps": 0.25543152451515116,
+      "front_dominant_freq_hz": 2.88,
+      "heave_travel_pct": 91.4,
+      "best_lap_s": 109.01306915283203,
+      "session_ts": "2026-03-18T23:18:11"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.72556734085083,
+      "rear_sigma_mm": 6.73607873916626,
+      "front_shock_vel_p99_mps": 0.2380838051438335,
+      "front_dominant_freq_hz": 2.91,
+      "heave_travel_pct": 91.4,
+      "best_lap_s": 109.09940338134766,
+      "session_ts": "2026-03-18T23:00:57"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.468794822692871,
+      "rear_sigma_mm": 6.689794063568115,
+      "front_shock_vel_p99_mps": 0.24372672304511053,
+      "front_dominant_freq_hz": 2.82,
+      "heave_travel_pct": 89.2,
+      "best_lap_s": 109.33973693847656,
+      "session_ts": "2026-03-18T23:18:17"
+    },
+    {
+      "heave_nmm": 60.0,
+      "front_sigma_mm": 4.442923545837402,
+      "rear_sigma_mm": 6.766694068908691,
+      "front_shock_vel_p99_mps": 0.25899174451828,
+      "front_dominant_freq_hz": 3.37,
+      "heave_travel_pct": 87.6,
+      "best_lap_s": 109.25676727294922,
+      "session_ts": "2026-03-18T23:18:23"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.346963882446289,
+      "rear_sigma_mm": 6.719510555267334,
+      "front_shock_vel_p99_mps": 0.2679634779691701,
+      "front_dominant_freq_hz": 2.81,
+      "heave_travel_pct": 83.8,
+      "best_lap_s": 109.23300170898438,
+      "session_ts": "2026-03-18T23:18:30"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.074319839477539,
+      "rear_sigma_mm": 10.048261642456055,
+      "front_shock_vel_p99_mps": 0.23934376806020705,
+      "front_dominant_freq_hz": 2.66,
+      "heave_travel_pct": 87.0,
+      "best_lap_s": 109.82026672363281,
+      "session_ts": "2026-03-18T23:18:36"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.023240089416504,
+      "rear_sigma_mm": 6.798922061920166,
+      "front_shock_vel_p99_mps": 0.2564647343754766,
+      "front_dominant_freq_hz": 2.87,
+      "heave_travel_pct": 88.1,
+      "best_lap_s": 109.42753601074219,
+      "session_ts": "2026-03-18T23:18:43"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.475279808044434,
+      "rear_sigma_mm": 6.655144214630127,
+      "front_shock_vel_p99_mps": 0.2503983345627785,
+      "front_dominant_freq_hz": 2.82,
+      "heave_travel_pct": 89.1,
+      "best_lap_s": 109.44256591796875,
+      "session_ts": "2026-03-18T23:18:50"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 7.676712989807129,
+      "rear_sigma_mm": 7.049411296844482,
+      "front_shock_vel_p99_mps": 0.2704379993677138,
+      "front_dominant_freq_hz": 2.8,
+      "heave_travel_pct": 89.9,
+      "best_lap_s": 109.68579864501953,
+      "session_ts": "2026-03-18T23:18:56"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.882051944732666,
+      "rear_sigma_mm": 7.056384563446045,
+      "front_shock_vel_p99_mps": 0.26861088305711744,
+      "front_dominant_freq_hz": 2.8,
+      "heave_travel_pct": 90.2,
+      "best_lap_s": 109.33260345458984,
+      "session_ts": "2026-03-18T23:19:02"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.90008544921875,
+      "rear_sigma_mm": 6.8018083572387695,
+      "front_shock_vel_p99_mps": 0.26696081191301363,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": 91.3,
+      "best_lap_s": 109.52083587646484,
+      "session_ts": "2026-03-18T23:19:09"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.068708419799805,
+      "rear_sigma_mm": 7.348248481750488,
+      "front_shock_vel_p99_mps": 0.2575631934404374,
+      "front_dominant_freq_hz": 2.86,
+      "heave_travel_pct": 91.3,
+      "best_lap_s": 109.45452880859375,
+      "session_ts": "2026-03-18T23:19:16"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.1729631423950195,
+      "rear_sigma_mm": 7.211120128631592,
+      "front_shock_vel_p99_mps": 0.2732365667819977,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": 91.2,
+      "best_lap_s": 109.24166870117188,
+      "session_ts": "2026-03-18T23:19:22"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.1968560218811035,
+      "rear_sigma_mm": 7.7662177085876465,
+      "front_shock_vel_p99_mps": 0.24557749882340354,
+      "front_dominant_freq_hz": 2.89,
+      "heave_travel_pct": 92.5,
+      "best_lap_s": 109.27400207519531,
+      "session_ts": "2026-03-18T23:19:28"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.2914581298828125,
+      "rear_sigma_mm": 7.256277084350586,
+      "front_shock_vel_p99_mps": 0.2866218873858439,
+      "front_dominant_freq_hz": 2.85,
+      "heave_travel_pct": 92.7,
+      "best_lap_s": 109.7142333984375,
+      "session_ts": "2026-03-18T23:19:35"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 5.963204860687256,
+      "rear_sigma_mm": 7.484114646911621,
+      "front_shock_vel_p99_mps": 0.2739019215106949,
+      "front_dominant_freq_hz": 2.89,
+      "heave_travel_pct": 89.0,
+      "best_lap_s": 109.2777328491211,
+      "session_ts": "2026-03-18T23:19:41"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.080913066864014,
+      "rear_sigma_mm": 7.052282333374023,
+      "front_shock_vel_p99_mps": 0.2424412758648394,
+      "front_dominant_freq_hz": 2.86,
+      "heave_travel_pct": 92.7,
+      "best_lap_s": 109.13140106201172,
+      "session_ts": "2026-03-18T23:19:47"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 6.152894496917725,
+      "rear_sigma_mm": 7.652583599090576,
+      "front_shock_vel_p99_mps": 0.2872579279541972,
+      "front_dominant_freq_hz": 2.81,
+      "heave_travel_pct": 92.7,
+      "best_lap_s": 109.50409698486328,
+      "session_ts": "2026-03-18T23:19:54"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 5.960400104522705,
+      "rear_sigma_mm": 7.620540142059326,
+      "front_shock_vel_p99_mps": 0.25933107763528795,
+      "front_dominant_freq_hz": 2.91,
+      "heave_travel_pct": 91.1,
+      "best_lap_s": 109.36080169677734,
+      "session_ts": "2026-03-18T23:20:00"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.628474712371826,
+      "rear_sigma_mm": 6.772000312805176,
+      "front_shock_vel_p99_mps": 0.27330688655376406,
+      "front_dominant_freq_hz": 2.89,
+      "heave_travel_pct": 89.8,
+      "best_lap_s": 109.27310180664062,
+      "session_ts": "2026-03-18T23:20:08"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.304096221923828,
+      "rear_sigma_mm": 6.7899675369262695,
+      "front_shock_vel_p99_mps": 0.25040345966815913,
+      "front_dominant_freq_hz": 3.4,
+      "heave_travel_pct": 86.6,
+      "best_lap_s": 108.936767578125,
+      "session_ts": "2026-03-18T23:20:14"
+    },
+    {
+      "heave_nmm": 40.0,
+      "front_sigma_mm": 5.719269752502441,
+      "rear_sigma_mm": 6.666470527648926,
+      "front_shock_vel_p99_mps": 0.24574417889118194,
+      "front_dominant_freq_hz": 2.81,
+      "heave_travel_pct": 88.8,
+      "best_lap_s": 109.73373413085938,
+      "session_ts": "2026-03-18T23:20:20"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 5.881945610046387,
+      "rear_sigma_mm": 7.657818794250488,
+      "front_shock_vel_p99_mps": 0.2520927554368975,
+      "front_dominant_freq_hz": 2.91,
+      "heave_travel_pct": 91.2,
+      "best_lap_s": 109.242431640625,
+      "session_ts": "2026-03-18T23:20:29"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 4.472893238067627,
+      "rear_sigma_mm": 7.466264247894287,
+      "front_shock_vel_p99_mps": 0.2548232078552246,
+      "front_dominant_freq_hz": 2.87,
+      "heave_travel_pct": 87.4,
+      "best_lap_s": 109.39046478271484,
+      "session_ts": "2026-03-18T23:20:40"
+    },
+    {
+      "heave_nmm": 70.0,
+      "front_sigma_mm": 4.31675910949707,
+      "rear_sigma_mm": 6.837132930755615,
+      "front_shock_vel_p99_mps": 0.2385268583893776,
+      "front_dominant_freq_hz": 2.88,
+      "heave_travel_pct": 87.0,
+      "best_lap_s": 109.38459777832031,
+      "session_ts": "2026-03-18T23:20:46"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 4.8848419189453125,
+      "rear_sigma_mm": 7.017549991607666,
+      "front_shock_vel_p99_mps": 0.24766894295811642,
+      "front_dominant_freq_hz": 2.88,
+      "heave_travel_pct": 88.5,
+      "best_lap_s": 109.19786834716797,
+      "session_ts": "2026-03-18T23:20:58"
+    },
+    {
+      "heave_nmm": 50.0,
+      "front_sigma_mm": 5.614561557769775,
+      "rear_sigma_mm": 6.831784725189209,
+      "front_shock_vel_p99_mps": 0.2606343314051629,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": 86.9,
+      "best_lap_s": 109.17220306396484,
+      "session_ts": "2026-03-18T23:21:04"
+    },
+    {
+      "heave_nmm": 30.0,
+      "front_sigma_mm": 5.8585896492004395,
+      "rear_sigma_mm": 6.862079620361328,
+      "front_shock_vel_p99_mps": 0.2733524408936504,
+      "front_dominant_freq_hz": 2.83,
+      "heave_travel_pct": 91.0,
+      "best_lap_s": 109.36740112304688,
+      "session_ts": "2026-03-18T23:21:11"
+    }
+  ],
+  "summary": [
+    {
+      "heave_nmm": 30.0,
+      "n": 25,
+      "sigma_mean": 6.299,
+      "sigma_min": 5.8586,
+      "sigma_p25": 6.0809,
+      "lap_best_s": 109.1182
+    },
+    {
+      "heave_nmm": 40.0,
+      "n": 16,
+      "sigma_mean": 5.9022,
+      "sigma_min": 5.2838,
+      "sigma_p25": 5.4688,
+      "lap_best_s": 109.0131
+    },
+    {
+      "heave_nmm": 50.0,
+      "n": 20,
+      "sigma_mean": 5.5805,
+      "sigma_min": 4.8848,
+      "sigma_p25": 5.4753,
+      "lap_best_s": 108.8289
+    },
+    {
+      "heave_nmm": 60.0,
+      "n": 2,
+      "sigma_mean": 4.9963,
+      "sigma_min": 4.4429,
+      "sigma_p25": 4.4429,
+      "lap_best_s": 109.2568
+    },
+    {
+      "heave_nmm": 70.0,
+      "n": 10,
+      "sigma_mean": 5.0934,
+      "sigma_min": 4.3168,
+      "sigma_p25": 4.9913,
+      "lap_best_s": 109.0941
+    },
+    {
+      "heave_nmm": 80.0,
+      "n": 1,
+      "sigma_mean": 4.9001,
+      "sigma_min": 4.9001,
+      "sigma_p25": 4.9001,
+      "lap_best_s": 109.3399
+    },
+    {
+      "heave_nmm": 90.0,
+      "n": 1,
+      "sigma_mean": 4.9332,
+      "sigma_min": 4.9332,
+      "sigma_p25": 4.9332,
+      "lap_best_s": 109.2787
+    },
+    {
+      "heave_nmm": 900.0,
+      "n": 1,
+      "sigma_mean": 5.9749,
+      "sigma_min": 5.9749,
+      "sigma_p25": 5.9749,
+      "lap_best_s": 109.6136
+    }
+  ]
+}

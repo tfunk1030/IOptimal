@@ -1,7 +1,18 @@
 # GTP Setup Builder — Physics-Based Setup Calculator for iRacing GTP/Hypercar
 
 ## Project Goal
-Build a physics engine that calculates optimal setup parameters from first principles for any car/track combination in iRacing's GTP class. Not a database of "what worked" — a constraint solver that reasons about WHY parameters should be specific values.
+Build a physics-first setup solver for iRacing's GTP/Hypercar class that searches only legal garage states and explains why a setup should work. The current authoritative implementation target is BMW M Hybrid V8 at Sebring International Raceway; Ferrari, Cadillac, Porsche, and Acura paths remain partial or exploratory until more telemetry and garage-truth coverage exists.
+
+## Current Codebase Status (2026-03-27)
+
+- Workflow map: `IBT -> track/analyzer -> diagnosis/driver/style -> solve_chain/legality -> report/.sto -> webapp`
+- Scenario engine: `solver/scenario_profiles.py` defines `single_lap_safe`, `quali`, `sprint`, and `race`, and those profiles now drive `pipeline/produce.py`, `pipeline/reason.py`, `solver/solve.py`, preset comparison, and the webapp.
+- Legal-manifold search: `--free`, `--explore-legal-space`, and `--legal-search` now mean "start from the pinned physics solve and search the full legal setup manifold". Accepted candidates must pass setup-registry legality, garage-output validation, and telemetry sanity checks.
+- Current BMW/Sebring evidence: `73` observations, `72` non-vetoed. Previous non-vetoed Spearman was `-0.120522` with hardcoded damper zeta targets and equal penalty weights. Damper targets updated to IBT-calibrated values (0.68/0.23/0.47/0.20), penalty scaling halved, and `single_lap_safe` weights set to calibration-searched values (lap_gain=1.25, envelope=0.20, rest=0). Pending re-validation to confirm improvement.
+- Current support tiers from `validation/objective_validation.json`: BMW/Sebring = `calibrated`, Ferrari/Sebring = `partial`, Cadillac/Silverstone = `exploratory`, Porsche/Sebring = `unsupported`.
+- Current source-of-truth reports: `docs/repo_audit.md`, `validation/objective_validation.md`, and `validation/calibration_report.md`.
+- Current roadmap for improving the score model and onboarding the rest of the GTP field: `enhancementplan.md`.
+- **Team tool deployed (2026-03-27):** Server live at `https://ioptimal-server-27191526338.us-central1.run.app`, team "SOELPEC Precision Racing" created (invite code `5a1c520b`), desktop app packaged at `dist/IOptimal/IOptimal.exe`. All 18 bugs fixed (12 original + 6 deployment). See `docs/team_tool_next_steps.md` for full deployment reference.
 
 ## Architecture
 
@@ -112,6 +123,7 @@ IBT → extract → segment corners → driver style → diagnose
     → supporting params → .sto + JSON + engineering report
 ```
 - `produce.py` — CLI orchestrator: `python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --sto output.sto`
+- `produce.py` / `reason.py` now resolve a scenario profile, keep the base physics solve as the seed, optionally run legal-manifold search, and persist the selected candidate family plus decision trace.
 - `report.py` — Engineering report: driver profile, handling diagnosis, aero analysis, 6-step solution summary, supporting parameters, setup comparison (current vs produced), confidence assessment
 - `__main__.py` — Entry point for `python -m pipeline`
 
@@ -162,6 +174,28 @@ Key features:
 - **Damper oscillation validation**: rear shock oscillation frequency extracted from
   telemetry; if >1.5× natural frequency, damper solver bumps ζ_hs_rear (0.14→0.21).
 
+#### 9. `watcher/` — IBT Auto-Detection
+- `monitor.py` — Filesystem event handler using watchdog; file stability check (3s no-growth)
+- `service.py` — WatcherService orchestrates detection → ingestion → sync queue; car auto-detection from IBT headers
+
+#### 10. `teamdb/` — Team Database & Sync
+- `models.py` — SQLAlchemy 2.0 ORM (13 tables: Team, Member, Division, CarDefinition, Observation, Delta, EmpiricalModel, GlobalCarModel, SharedSetup, SetupRating, ActivityLog, Leaderboard, division_members)
+- `sync_client.py` — Background push/pull with offline SQLite queue (~/.ioptimal_app/sync_queue.db), exponential backoff, 30s push / 300s pull intervals
+- `aggregator.py` — Server-side empirical model fitting from team observations
+
+#### 11. `server/` — Team REST API
+- FastAPI app on Cloud Run (`server/app.py`), async SQLAlchemy with PostgreSQL (asyncpg)
+- Auth: Bearer API key (SHA-256 hashed in Member.api_key_hash)
+- Routes: `/api/team`, `/api/observations`, `/api/knowledge`, `/api/setups`, `/api/leaderboard`
+- Deployed: `https://ioptimal-server-27191526338.us-central1.run.app`
+- Dockerfile at project root (builds `server/` + `teamdb/`)
+
+#### 12. `desktop/` — Desktop App
+- `app.py` — Orchestrates watcher + sync + webapp; CLI entry point with `--no-tray`, `--bulk-import`
+- `config.py` — AppConfig dataclass persisted to JSON (%APPDATA%/IOptimal/config.json)
+- `tray.py` — System tray icon via pystray (pause watcher, sync now, status, quit)
+- Packaged via PyInstaller: `dist/IOptimal/IOptimal.exe` (177 MB)
+
 ### Data Files
 - `data/aeromaps/` — Raw xlsx files (provided)
 - `data/aeromaps_parsed/` — Parsed JSON/numpy arrays
@@ -170,10 +204,11 @@ Key features:
 - `data/telemetry/` — Reference IBT sessions for validation
 
 ### Validation Strategy
-- Parse existing IBT sessions (BMW 7 sessions, Ferrari 3, Porsche 2)
-- For each session: run solver with same inputs, compare output to actual setup
-- Track where solver agrees/disagrees with human-tuned setup
-- Use disagreements to calibrate model parameters
+- Canonical validation lives in `validation/run_validation.py` and `validation/objective_calibration.py`.
+- All evidence uses canonical registry-backed setup mappings (`validation/observation_mapping.py`) instead of stale aliases.
+- Current authority is BMW/Sebring only: `73` observations, `72` non-vetoed, with objective correlation still weak enough that "optimal" claims are not yet allowed.
+- Validation reports now track score correlation, top parameter correlations, signal usage, claim audit status, and scenario-aware recalibration metrics including holdout performance.
+- Support tiers are explicit and enforced in documentation: BMW/Sebring `calibrated`, Ferrari/Sebring `partial`, Cadillac/Silverstone `exploratory`, Porsche/Acura `unsupported`.
 
 ### Tech Stack
 - Python 3.11+
@@ -212,7 +247,10 @@ Key features:
 - Both `ingest.py` and `recall.py` use `track_name.lower().split()[0]` for consistency
 
 **Known limitations:**
-- Ferrari rear suspension is modeled as coil spring (placeholder) — actually a torsion bar. Corner spring and LLTD outputs for Ferrari are unreliable until the index→OD mapping is decoded.
+- BMW/Sebring is the only calibrated path. Other cars/tracks should not be described as equally validated.
+- The objective is improving but still not authoritative: current BMW/Sebring non-vetoed Spearman is `-0.120522` and holdout stability is not yet strong enough for automatic runtime weight application.
+- Several BMW validation signals still lean on fallbacks for some rows (`front_excursion_mm`, `braking_pitch_deg`, `rear_power_slip_p95`, hot pressures, lock proxies), so some supporting heuristics remain lower confidence.
+- Ferrari rear torsion bar is calibrated (C=0.001282, MR=0.612, 4-point fit, max 3.2% error). Corner spring and LLTD outputs are functional but need more observations (currently 9) to validate against lap time.
 - `m_eff` empirical correction uses lap-wide statistics (not filtered to high-speed straights), causing overestimation. Treat as rough indicator.
 - `min_sessions=5` gate for non-prediction learned corrections. Prediction-based corrections
   (from solver feedback loop) need only 3 sessions since they measure specific prediction errors.
@@ -226,13 +264,14 @@ Key features:
 
 ### Standalone solver (pre-built track profile):
 ```bash
-python -m solver.solve --car bmw --track sebring --wing 17 --sto output.sto
+python -m solver.solve --car bmw --track sebring --wing 17 --scenario-profile single_lap_safe --sto output.sto
 ```
 
 ### Full pipeline (IBT → .sto, driver-adaptive):
 ```bash
-python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --sto output.sto
-python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --lap 25 --json output.json
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --scenario-profile single_lap_safe --sto output.sto
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --lap 25 --scenario-profile quali --json output.json
+python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --free --scenario-profile race --sto output.sto
 ```
 
 ### Full pipeline with learning:

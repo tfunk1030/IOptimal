@@ -20,9 +20,12 @@ import random
 from dataclasses import dataclass, field
 
 from car_model.cars import CarModel
+from solver.candidate_search import canonical_params_to_overrides
 from solver.legal_space import LegalSpace, LegalCandidate, compute_perch_offsets
 from solver.legality_engine import validate_candidate_legality
 from solver.objective import ObjectiveFunction, CandidateEvaluation
+from solver.scenario_profiles import get_scenario_profile, prediction_passes_sanity, resolve_scenario_name
+from solver.solve_chain import SolveChainInputs, SolveChainResult, materialize_overrides
 from track_model.profile import TrackProfile
 
 
@@ -218,6 +221,12 @@ class LegalSearchResult:
     best_robust: CandidateEvaluation | None = None
     best_aggressive: CandidateEvaluation | None = None
     best_weird: CandidateEvaluation | None = None
+    accepted_evaluations: list[CandidateEvaluation] = field(default_factory=list)
+    accepted_best: CandidateEvaluation | None = None
+    accepted_best_result: SolveChainResult | None = None
+    accepted_candidates_count: int = 0
+    scenario_profile: str | None = None
+    acceptance_notes: list[str] = field(default_factory=list)
     vetoed_count: int = 0
     total_evaluated: int = 0
     families_searched: list[str] = field(default_factory=list)
@@ -235,6 +244,9 @@ class LegalSearchResult:
             f"  Vetoed (hard):    {self.vetoed_count}",
             f"  Families:         {', '.join(self.families_searched)}",
         ]
+        if self.scenario_profile is not None:
+            lines.append(f"  Scenario:         {self.scenario_profile}")
+        lines.append(f"  Fully accepted:   {self.accepted_candidates_count}")
         if self.locally_optimal:
             lines.append("  Local optimality: GUARANTEED (Layer 4 polish applied)")
         if self.layer_times:
@@ -309,6 +321,14 @@ class LegalSearchResult:
         lines.append("")
         lines.extend(_fmt("Best Weird-but-Legal", self.best_weird))
         lines.append("")
+        lines.extend(_fmt("Scenario Pick", self.accepted_best))
+        lines.append("")
+
+        if self.acceptance_notes:
+            lines.append("  --- Acceptance notes ---")
+            for note in self.acceptance_notes[:8]:
+                lines.append(f"    {note}")
+            lines.append("")
 
         # Top 10
         selectable = [e for e in self.all_evaluations if not e.hard_vetoed]
@@ -371,6 +391,10 @@ def run_legal_search(
     keep_weird: bool = True,
     seed: int = 42,
     mode: str | None = None,
+    base_result: SolveChainResult | None = None,
+    solve_inputs: SolveChainInputs | None = None,
+    scenario_profile: str | None = None,
+    accept_top_n: int = 12,
 ) -> LegalSearchResult:
     """Run the legal-manifold search.
 
@@ -409,6 +433,7 @@ def run_legal_search(
             measured=measured,
             driver_profile=driver_profile,
             session_count=session_count,
+            scenario_profile=scenario_profile,
         )
 
     # ── Sobol sampling path (quick / standard) ─────────────────────
@@ -423,6 +448,10 @@ def run_legal_search(
         session_count=session_count,
         keep_weird=keep_weird,
         seed=seed,
+        base_result=base_result,
+        solve_inputs=solve_inputs,
+        scenario_profile=scenario_profile,
+        accept_top_n=accept_top_n,
     )
 
 
@@ -434,6 +463,7 @@ def _run_grid_search(
     measured=None,
     driver_profile=None,
     session_count: int = 0,
+    scenario_profile: str | None = None,
 ) -> LegalSearchResult:
     """Dispatch to the GridSearchEngine for exhaustive/maximum modes."""
     from solver.grid_search import GridSearchEngine, GridSearchResult
@@ -442,7 +472,11 @@ def _run_grid_search(
     track_obj = track if isinstance(track, TrackProfile) else None
 
     space = LegalSpace.from_car(car, track_name=track_name)
-    objective = ObjectiveFunction(car, track_obj if track_obj is not None else track_name)
+    objective = ObjectiveFunction(
+        car,
+        track_obj if track_obj is not None else track_name,
+        scenario_profile=scenario_profile,
+    )
 
     engine = GridSearchEngine(
         space=space,
@@ -462,6 +496,7 @@ def _run_grid_search(
         best_robust=grid_result.best_robust,
         best_aggressive=grid_result.best_aggressive,
         best_weird=grid_result.best_weird,
+        scenario_profile=resolve_scenario_name(scenario_profile),
         vetoed_count=grid_result.vetoed_count,
         total_evaluated=grid_result.total_evaluated,
         families_searched=families_seen,
@@ -482,17 +517,27 @@ def _run_sampling_search(
     session_count: int = 0,
     keep_weird: bool = True,
     seed: int = 42,
+    base_result: SolveChainResult | None = None,
+    solve_inputs: SolveChainInputs | None = None,
+    scenario_profile: str | None = None,
+    accept_top_n: int = 12,
 ) -> LegalSearchResult:
     """Original two-stage Sobol + edge-family sampling search."""
     track_name = track if isinstance(track, str) else getattr(track, "name", "")
     track_obj = track if isinstance(track, TrackProfile) else None
     rng = random.Random(seed)
+    resolved_scenario = resolve_scenario_name(scenario_profile)
+    profile = get_scenario_profile(resolved_scenario)
 
     # Build legal space
     space = LegalSpace.from_car(car, track_name=track_name)
 
     # Build objective — pass actual TrackProfile for physics evaluation
-    objective = ObjectiveFunction(car, track_obj if track_obj is not None else track_name)
+    objective = ObjectiveFunction(
+        car,
+        track_obj if track_obj is not None else track_name,
+        scenario_profile=resolved_scenario,
+    )
 
     # Budget allocation: baseline gets 30%, each edge family ~10%, uniform scatter 10%
     n_families = len(EDGE_FAMILIES) + 2  # +1 baseline, +1 uniform
@@ -527,12 +572,63 @@ def _run_sampling_search(
     best_weird = weird[0] if weird else None
 
     families_seen = sorted(set(e.family for e in evaluations))
+    accepted_pairs: list[tuple[CandidateEvaluation, SolveChainResult]] = []
+    acceptance_notes: list[str] = []
+    accepted_best: CandidateEvaluation | None = None
+    accepted_best_result: SolveChainResult | None = None
+
+    if selectable and base_result is not None and solve_inputs is not None:
+        for ev in selectable[: max(1, int(accept_top_n))]:
+            try:
+                overrides = canonical_params_to_overrides(base_result, ev.params, car=car)
+                rematerialized = materialize_overrides(base_result, overrides, solve_inputs)
+            except Exception as exc:
+                acceptance_notes.append(f"{ev.family}: materialization failed ({exc})")
+                continue
+            if not rematerialized.legal_validation.valid:
+                reason = "; ".join(rematerialized.legal_validation.messages[:2]) or "full legality failed"
+                acceptance_notes.append(f"{ev.family}: rejected by full legality ({reason})")
+                continue
+            sane, sanity_issues = prediction_passes_sanity(
+                rematerialized.prediction,
+                rematerialized.prediction_confidence,
+                resolved_scenario,
+            )
+            if not sane:
+                acceptance_notes.append(
+                    f"{ev.family}: rejected by {resolved_scenario} sanity ({'; '.join(sanity_issues[:2])})"
+                )
+                continue
+            accepted_pairs.append((ev, rematerialized))
+    elif selectable:
+        acceptance_notes.append("full acceptance skipped: missing base_result/solve_inputs")
+
+    if accepted_pairs:
+        accepted_lookup = {id(ev): result for ev, result in accepted_pairs}
+        preferred = {
+            "best_robust": best_robust,
+            "best_aggressive": best_aggressive,
+            "best_weird": best_weird,
+        }.get(profile.preferred_result_key)
+        if preferred is not None and id(preferred) in accepted_lookup:
+            accepted_best = preferred
+            accepted_best_result = accepted_lookup[id(preferred)]
+        else:
+            accepted_best, accepted_best_result = max(accepted_pairs, key=lambda item: item[0].score)
+    else:
+        acceptance_notes.append(f"no candidate survived full {resolved_scenario} acceptance")
 
     return LegalSearchResult(
         all_evaluations=evaluations,
         best_robust=best_robust,
         best_aggressive=best_aggressive,
         best_weird=best_weird,
+        accepted_evaluations=[ev for ev, _ in accepted_pairs],
+        accepted_best=accepted_best,
+        accepted_best_result=accepted_best_result,
+        accepted_candidates_count=len(accepted_pairs),
+        scenario_profile=resolved_scenario,
+        acceptance_notes=acceptance_notes,
         vetoed_count=len(vetoed),
         total_evaluated=len(evaluations),
         families_searched=families_seen,

@@ -7,7 +7,7 @@ from aero_model import load_car_surfaces
 from car_model.cars import get_car
 from learner.setup_clusters import SetupCluster
 from solver.candidate_ranker import score_from_prediction
-from solver.candidate_search import generate_candidate_families
+from solver.candidate_search import canonical_params_to_overrides, generate_candidate_families
 from solver.solve_chain import SolveChainInputs, SolveChainOverrides, SolveChainResult, materialize_overrides, run_base_solve
 from track_model.profile import TrackProfile
 
@@ -251,6 +251,43 @@ class CandidateSearchTests(unittest.TestCase):
             self.base_result.step5.front_dynamic_camber_at_peak_deg,
         )
         self.assertNotEqual(result.step6.c_hs_front, self.base_result.step6.c_hs_front)
+
+    def test_canonical_params_to_overrides_maps_axle_and_supporting_fields(self) -> None:
+        overrides = canonical_params_to_overrides(
+            self.base_result,
+            {
+                "front_heave_spring_nmm": self.base_result.step2.front_heave_nmm + 20.0,
+                "rear_arb_blade": self.base_result.step4.rear_arb_blade_start + 1,
+                "front_ls_comp": self.base_result.step6.lf.ls_comp + 1,
+                "rear_hs_comp": self.base_result.step6.lr.hs_comp - 1,
+                "diff_ramp_option_idx": 2,
+                "brake_bias_pct": self.base_result.supporting.brake_bias_pct + 0.5,
+            },
+            car=self.car,
+        )
+
+        self.assertEqual(overrides.step2["front_heave_nmm"], self.base_result.step2.front_heave_nmm + 20.0)
+        self.assertEqual(overrides.step4["rear_arb_blade_start"], self.base_result.step4.rear_arb_blade_start + 1)
+        self.assertEqual(overrides.step4["rarb_blade_slow_corner"], self.base_result.step4.rear_arb_blade_start + 1)
+        self.assertEqual(overrides.step6["lf"]["ls_comp"], self.base_result.step6.lf.ls_comp + 1)
+        self.assertEqual(overrides.step6["rf"]["ls_comp"], self.base_result.step6.lf.ls_comp + 1)
+        self.assertEqual(overrides.step6["lr"]["hs_comp"], self.base_result.step6.lr.hs_comp - 1)
+        self.assertEqual(overrides.step6["rr"]["hs_comp"], self.base_result.step6.lr.hs_comp - 1)
+        self.assertEqual(overrides.supporting["diff_ramp_option_idx"], 2)
+        self.assertEqual(overrides.supporting["brake_bias_pct"], self.base_result.supporting.brake_bias_pct + 0.5)
+
+    def test_materialize_overrides_snaps_bmw_brake_target_and_migration_to_whole_steps(self) -> None:
+        result = self._materialize(
+            SolveChainOverrides(
+                supporting={
+                    "brake_bias_target": 1.5,
+                    "brake_bias_migration": -0.5,
+                }
+            )
+        )
+
+        self.assertEqual(result.supporting.brake_bias_target, 2.0)
+        self.assertEqual(result.supporting.brake_bias_migration, -1.0)
 
     def test_generate_candidate_families_returns_rematerialized_candidates(self) -> None:
         with (

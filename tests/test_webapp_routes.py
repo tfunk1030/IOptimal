@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from io import BytesIO
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -36,6 +37,8 @@ class WebAppRouteTests(unittest.TestCase):
                         "wing": "17",
                         "balance": "50.14",
                         "tolerance": "0.1",
+                        "scenario_profile": "race",
+                        "free_opt": "on",
                         "use_learning": "on",
                     },
                     follow_redirects=False,
@@ -46,6 +49,8 @@ class WebAppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertIsNotNone(payload)
         self.assertEqual(payload["run"]["mode"], "track_solve")
+        self.assertEqual(payload["input"]["scenario_profile"], "race")
+        self.assertTrue(payload["input"]["free_opt"])
 
     def test_invalid_compare_request_redirects_back_with_error(self) -> None:
         with TestClient(self.app) as client:
@@ -57,6 +62,18 @@ class WebAppRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         self.assertIn("/runs/new?mode=comparison", response.headers["location"])
+
+    def test_invalid_compare_request_cleans_orphaned_uploads(self) -> None:
+        with TestClient(self.app) as client:
+            response = client.post(
+                "/runs",
+                data={"mode": "comparison", "car": "bmw"},
+                files={"ibt_files": ("session.ibt", BytesIO(b"ibt"), "application/octet-stream")},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(list(self.settings.uploads_dir.glob("*")), [])
 
     def test_completed_run_page_renders_summary(self) -> None:
         with TestClient(self.app) as client:

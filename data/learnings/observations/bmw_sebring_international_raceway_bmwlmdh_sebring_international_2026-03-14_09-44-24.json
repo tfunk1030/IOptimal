@@ -1,14 +1,17 @@
 {
   "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-14_09-44-24",
-  "ibt_path": "ibtfiles\\bmwlmdh_sebring international 2026-03-14 09-44-24.ibt",
+  "ibt_path": "ibtfiles/bmwlmdh_sebring international 2026-03-14 09-44-24.ibt",
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-16T03:24:08.395855+00:00",
+  "timestamp": "2026-03-18T23:19:28.354332+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
+    "adapter_name": "bmw",
     "fuel_l": 89.0,
+    "fuel_low_warning_l": 8.0,
+    "fuel_target_l": 0.0,
     "front_rh_static": 30.2,
     "rear_rh_static": 49.7,
     "front_pushrod": -25.5,
@@ -17,6 +20,10 @@
     "rear_third_nmm": 360.0,
     "torsion_bar_od_mm": 13.9,
     "rear_spring_nmm": 130.0,
+    "front_heave_index": 30.0,
+    "rear_heave_index": 360.0,
+    "front_torsion_bar_index": 13.9,
+    "rear_torsion_bar_index": 130.0,
     "front_arb_size": "Soft",
     "front_arb_blade": 1,
     "rear_arb_size": "Soft",
@@ -26,6 +33,29 @@
     "front_toe_mm": -0.4,
     "rear_toe_mm": -0.0,
     "brake_bias_pct": 46.0,
+    "brake_bias_target": 0.0,
+    "brake_bias_migration": 0.0,
+    "brake_bias_migration_gain": 0.0,
+    "front_master_cyl_mm": 19.1,
+    "rear_master_cyl_mm": 20.6,
+    "pad_compound": "Medium",
+    "front_diff_preload_nm": 0.0,
+    "diff_preload_nm": 35.0,
+    "diff_ramp_label": "45/70",
+    "diff_clutch_plates": 6,
+    "tc_gain": 5,
+    "tc_slip": 4,
+    "gear_stack": "Short",
+    "speed_in_first_kph": 115.8,
+    "speed_in_second_kph": 151.4,
+    "speed_in_third_kph": 184.2,
+    "speed_in_fourth_kph": 219.7,
+    "speed_in_fifth_kph": 257.0,
+    "speed_in_sixth_kph": 288.3,
+    "speed_in_seventh_kph": 315.8,
+    "hybrid_rear_drive_enabled": "",
+    "hybrid_rear_drive_corner_pct": 0.0,
+    "roof_light_color": "Orange",
     "dampers": {
       "lf": {
         "ls_comp": 7,
@@ -67,12 +97,12 @@
   "telemetry": {
     "dynamic_front_rh_mm": 17.666946411132812,
     "dynamic_rear_rh_mm": 25.091196060180664,
-    "front_rh_std_mm": 6.346374988555908,
-    "rear_rh_std_mm": 8.169967651367188,
-    "front_shock_vel_p95_mps": 0.127971813082695,
-    "rear_shock_vel_p95_mps": 0.18454717099666595,
-    "front_shock_vel_p99_mps": 0.24557749927043915,
-    "rear_shock_vel_p99_mps": 0.33310168981552124,
+    "front_rh_std_mm": 6.1968560218811035,
+    "rear_rh_std_mm": 7.7662177085876465,
+    "front_shock_vel_p95_mps": 0.12797181159257887,
+    "rear_shock_vel_p95_mps": 0.18454717323184003,
+    "front_shock_vel_p99_mps": 0.24557749882340354,
+    "rear_shock_vel_p99_mps": 0.3331016907095908,
     "peak_lat_g": 3.8536646366119385,
     "body_roll_p95_deg": 1.67,
     "body_roll_max_deg": -0.2697565245628357,
@@ -81,14 +111,14 @@
     "understeer_mean_deg": 0.03553364425897598,
     "understeer_high_speed_deg": 0.17397186160087585,
     "understeer_low_speed_deg": 0.038086652755737305,
-    "body_slip_p95_deg": 2.9991326332092285,
+    "body_slip_p95_deg": 2.999132513999939,
     "front_bottoming_events": 0,
     "rear_bottoming_events": 3,
     "front_heave_defl_p99_mm": 89.95,
     "front_heave_travel_used_pct": 92.5,
     "front_heave_travel_used_braking_pct": 93.1,
-    "rear_heave_defl_p99_mm": 0.0,
-    "rear_heave_travel_used_pct": 0.0,
+    "rear_heave_defl_p99_mm": null,
+    "rear_heave_travel_used_pct": null,
     "heave_bottoming_events_front": 1,
     "heave_bottoming_events_rear": 0,
     "front_rh_settle_time_ms": 0.0,
@@ -101,7 +131,7 @@
     "front_corner_defl_p99_mm": 32.36,
     "rear_corner_defl_p99_mm": 44.81,
     "front_heave_vel_p95_mps": 0.3372,
-    "rear_heave_vel_p95_mps": 0.0,
+    "rear_heave_vel_p95_mps": null,
     "front_heave_vel_ls_pct": 24.1,
     "front_heave_vel_hs_pct": 30.8,
     "lltd_low_speed": 0.5125871698601486,
@@ -132,10 +162,10 @@
     "pitch_range_deg": 1.82,
     "understeer_left_turn_deg": 0.18768028914928436,
     "understeer_right_turn_deg": -0.05381402745842934,
-    "lf_shock_vel_p95_mps": 0.1405576914548874,
-    "rf_shock_vel_p95_mps": 0.11664602160453796,
-    "lr_shock_vel_p95_mps": 0.1961900293827057,
-    "rr_shock_vel_p95_mps": 0.17421764135360718,
+    "lf_shock_vel_p95_mps": 0.1405576877295971,
+    "rf_shock_vel_p95_mps": 0.11664601974189281,
+    "lr_shock_vel_p95_mps": 0.196190033107996,
+    "rr_shock_vel_p95_mps": 0.17421763390302658,
     "lf_pressure_kpa": 185.0,
     "rf_pressure_kpa": 183.9,
     "lr_pressure_kpa": 180.9,
@@ -152,25 +182,38 @@
     "rf_temp_middle_c": 65.2,
     "lr_temp_middle_c": 70.6,
     "rr_temp_middle_c": 69.6,
+    "rear_shock_oscillation_hz": 7.94,
+    "front_shock_oscillation_hz": 10.1,
+    "front_heave_vel_p95_hs_mps": 0.3469,
+    "front_rh_std_hs_mm": 4.883186340332031,
     "throttle_raw_mean": 0.718,
     "brake_raw_peak": 0.87,
     "gear_at_apex_mode": 0,
     "max_gear": 7,
     "tc2_adjustments": 0,
     "abs_adjustments": 0,
-    "deploy_mode_adjustments": 0
+    "deploy_mode_adjustments": 0,
+    "live_brake_bias_pct": null,
+    "live_tc_gain": 5,
+    "live_tc_slip": 4,
+    "live_front_arb_blade": 1,
+    "live_rear_arb_blade": null
   },
   "driver_profile": {
     "style": "aggressive-erratic",
     "trail_braking_depth": 0.2804583333333333,
     "trail_braking_p95": 0.9879999999999999,
     "trail_braking_class": "moderate",
+    "brake_release_quality": 0.041675393908727654,
     "throttle_progressiveness": 0.6273798262700102,
     "throttle_onset_rate_pct_per_s": 50.392322546202855,
+    "throttle_onset_aggression": 0.12598080636550713,
     "throttle_classification": "moderate",
     "steering_smoothness": "smooth",
-    "steering_jerk_p95_rad_per_s2": 32.250484466552734,
+    "steering_jerk_p95_rad_per_s2": 32.25048274993897,
     "apex_speed_cv": 0.0829625071984654,
+    "driver_noise_index": 0.6637000575877232,
+    "classification_confidence": 0.683,
     "consistency": "erratic",
     "cornering_aggression": "limit",
     "avg_peak_lat_g_utilization": 19.889015135676665
@@ -178,6 +221,129 @@
   "diagnosis": {
     "assessment": "compromised",
     "problem_count": 13,
+    "evidence_strength": 0.65,
+    "overhaul_assessment": {
+      "classification": "moderate_rework",
+      "confidence": 0.73,
+      "score": 2.016,
+      "reasons": [
+        "Major states: thermal_window_invalid (1.00/0.85)",
+        "Impacted solver steps: 1, 2, 3, 4, 5, 6",
+        "State issues span multiple subsystems; more than a single tweak is required."
+      ]
+    },
+    "state_issues": [
+      {
+        "state_id": "thermal_window_invalid",
+        "severity": 1.0,
+        "confidence": 0.85,
+        "estimated_loss_ms": 290.2,
+        "implicated_steps": [
+          5
+        ],
+        "likely_causes": [
+          "tyres operating outside thermal/pressure target window",
+          "contact patch efficiency reduced"
+        ],
+        "recommended_direction": "move thermal state back toward target window before fine-tuning balance"
+      },
+      {
+        "state_id": "brake_system_front_limited",
+        "severity": 1.0,
+        "confidence": 0.587,
+        "estimated_loss_ms": 165.8,
+        "implicated_steps": [
+          6
+        ],
+        "likely_causes": [
+          "front brake demand exceeds tyre support",
+          "bias too far forward",
+          "entry platform collapsing into front lock"
+        ],
+        "recommended_direction": "reduce front brake limitation before chasing corner-entry rotation"
+      },
+      {
+        "state_id": "front_contact_patch_undercambered",
+        "severity": 0.55,
+        "confidence": 0.85,
+        "estimated_loss_ms": 78.5,
+        "implicated_steps": [
+          5
+        ],
+        "likely_causes": [
+          "insufficient front negative camber",
+          "front tyre contact patch too flat under load"
+        ],
+        "recommended_direction": "increase front negative camber or reduce front outer-shoulder overload"
+      },
+      {
+        "state_id": "front_platform_near_limit_high_speed",
+        "severity": 0.625,
+        "confidence": 0.637,
+        "estimated_loss_ms": 180.0,
+        "implicated_steps": [
+          1,
+          2,
+          6
+        ],
+        "likely_causes": [
+          "front heave support too soft",
+          "insufficient front ride-height margin",
+          "HS damping not controlling aero events"
+        ],
+        "recommended_direction": "increase high-speed front platform support"
+      },
+      {
+        "state_id": "front_platform_collapse_braking",
+        "severity": 0.65,
+        "confidence": 0.375,
+        "estimated_loss_ms": 181.0,
+        "implicated_steps": [
+          2,
+          6
+        ],
+        "likely_causes": [
+          "front heave spring too soft",
+          "front heave perch consuming travel",
+          "front LS damping mismatch"
+        ],
+        "recommended_direction": "increase front heave support and preserve braking travel margin"
+      },
+      {
+        "state_id": "rear_platform_under_supported",
+        "severity": 0.375,
+        "confidence": 0.637,
+        "estimated_loss_ms": 126.2,
+        "implicated_steps": [
+          2,
+          3,
+          6
+        ],
+        "likely_causes": [
+          "rear third spring too soft",
+          "rear spring support too low",
+          "rear HS damping too soft"
+        ],
+        "recommended_direction": "increase rear platform support"
+      },
+      {
+        "state_id": "exit_traction_limited",
+        "severity": 0.131,
+        "confidence": 0.615,
+        "estimated_loss_ms": 97.1,
+        "implicated_steps": [
+          3,
+          4,
+          6
+        ],
+        "likely_causes": [
+          "rear support not matching traction demand",
+          "diff/TC too aggressive or too open",
+          "rear contact patch overloaded on exit"
+        ],
+        "recommended_direction": "increase exit traction support and rear stability"
+      }
+    ],
     "problems": [
       {
         "category": "safety",
@@ -207,7 +373,7 @@
         "category": "platform",
         "severity": "significant",
         "symptom": "Front excursion p99 15.3mm = 102% of dynamic RH (15mm)",
-        "measured": 101.83350880940756,
+        "measured": 101.83351084391286,
         "threshold": 80.0,
         "speed_context": "high"
       },
@@ -221,7 +387,7 @@
       },
       {
         "category": "thermal",
-        "severity": "significant",
+        "severity": "minor",
         "symptom": "LF spread +3.8C vs target +10C (too flat / outer loaded)",
         "measured": -6.2,
         "threshold": 4.8,
@@ -263,7 +429,7 @@
         "category": "grip",
         "severity": "significant",
         "symptom": "Front braking slip p95 = 0.118 (target <0.06)",
-        "measured": 0.11833146959543228,
+        "measured": 0.11833147108554841,
         "threshold": 0.06,
         "speed_context": "braking"
       },
@@ -288,6 +454,23 @@
   "conditions": {
     "telemetry_source": "bmwlmdh_sebring international 2026-03-14 09-44-24.ibt \u2014 best lap 109.274s"
   },
+  "solver_predictions": {
+    "front_rh_std_mm": 0.0,
+    "rear_rh_std_mm": 0.0,
+    "lltd_predicted": 0.5292,
+    "body_roll_predicted_deg_per_g": 0.0,
+    "front_bottoming_predicted": 0,
+    "front_heave_travel_used_pct": 66.6,
+    "front_excursion_mm": 10.998,
+    "braking_pitch_deg": 1.022,
+    "front_lock_p95": 0.0854,
+    "rear_power_slip_p95": 0.0705,
+    "body_slip_p95_deg": 2.962,
+    "understeer_low_deg": 0.117,
+    "understeer_high_deg": 0.269,
+    "front_pressure_hot_kpa": 184.5,
+    "rear_pressure_hot_kpa": 180.3
+  },
   "solver_comparison": {},
   "corner_performance": [
     {
@@ -297,7 +480,17 @@
       "speed_class": "high",
       "speed_kph": 255.8,
       "understeer_deg": 0.01,
-      "body_slip_deg": 0.07
+      "body_slip_deg": 0.07,
+      "braking_phase_s": 0.0,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.117,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.9,
+      "corner_confidence": 0.75,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.214,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 1,
@@ -306,7 +499,17 @@
       "speed_class": "high",
       "speed_kph": 269.8,
       "understeer_deg": -0.0,
-      "body_slip_deg": 0.04
+      "body_slip_deg": 0.04,
+      "braking_phase_s": 0.0,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.033,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.167,
+      "corner_confidence": 0.55,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.038,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 2,
@@ -315,7 +518,17 @@
       "speed_class": "high",
       "speed_kph": 271.8,
       "understeer_deg": -0.03,
-      "body_slip_deg": 0.21
+      "body_slip_deg": 0.21,
+      "braking_phase_s": 0.0,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.117,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 1.25,
+      "corner_confidence": 0.75,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.758,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 3,
@@ -324,7 +537,17 @@
       "speed_class": "high",
       "speed_kph": 187.3,
       "understeer_deg": 0.6,
-      "body_slip_deg": 2.82
+      "body_slip_deg": 2.82,
+      "braking_phase_s": 1.433,
+      "release_phase_s": 1.75,
+      "turn_in_phase_s": 1.383,
+      "apex_phase_s": 0.233,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 5.633,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 1.053,
+      "aero_collapse_severity": 1.164,
+      "exit_slip_severity": 0.107
     },
     {
       "corner_id": 4,
@@ -333,7 +556,17 @@
       "speed_class": "low",
       "speed_kph": 103.5,
       "understeer_deg": -0.18,
-      "body_slip_deg": 4.22
+      "body_slip_deg": 4.22,
+      "braking_phase_s": 2.867,
+      "release_phase_s": 0.267,
+      "turn_in_phase_s": 2.017,
+      "apex_phase_s": 0.233,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 15.583,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 1.339,
+      "aero_collapse_severity": 1.388,
+      "exit_slip_severity": 0.573
     },
     {
       "corner_id": 5,
@@ -342,7 +575,17 @@
       "speed_class": "high",
       "speed_kph": 265.6,
       "understeer_deg": 0.01,
-      "body_slip_deg": 0.11
+      "body_slip_deg": 0.11,
+      "braking_phase_s": 0.883,
+      "release_phase_s": 1.35,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.133,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.0,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 0.093,
+      "aero_collapse_severity": 0.0,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 6,
@@ -351,7 +594,17 @@
       "speed_class": "high",
       "speed_kph": 194.9,
       "understeer_deg": 0.03,
-      "body_slip_deg": 0.22
+      "body_slip_deg": 0.22,
+      "braking_phase_s": 1.217,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.6,
+      "apex_phase_s": 0.117,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.0,
+      "corner_confidence": 0.75,
+      "entry_pitch_severity": 1.5,
+      "aero_collapse_severity": 0.084,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 7,
@@ -360,7 +613,17 @@
       "speed_class": "mid",
       "speed_kph": 140.7,
       "understeer_deg": -0.03,
-      "body_slip_deg": 0.14
+      "body_slip_deg": 0.14,
+      "braking_phase_s": 2.067,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.383,
+      "apex_phase_s": 0.083,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.0,
+      "corner_confidence": 0.75,
+      "entry_pitch_severity": 1.5,
+      "aero_collapse_severity": 0.0,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 8,
@@ -369,7 +632,17 @@
       "speed_class": "low",
       "speed_kph": 70.8,
       "understeer_deg": 0.22,
-      "body_slip_deg": 4.56
+      "body_slip_deg": 4.56,
+      "braking_phase_s": 3.483,
+      "release_phase_s": 1.083,
+      "turn_in_phase_s": 1.317,
+      "apex_phase_s": 0.233,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 2.45,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 0.653,
+      "aero_collapse_severity": 0.98,
+      "exit_slip_severity": 0.686
     },
     {
       "corner_id": 9,
@@ -378,7 +651,17 @@
       "speed_class": "mid",
       "speed_kph": 130.3,
       "understeer_deg": -0.04,
-      "body_slip_deg": 1.4
+      "body_slip_deg": 1.4,
+      "braking_phase_s": 3.483,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.117,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 5.05,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.839,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 10,
@@ -387,7 +670,17 @@
       "speed_class": "high",
       "speed_kph": 233.9,
       "understeer_deg": 0.1,
-      "body_slip_deg": 1.31
+      "body_slip_deg": 1.31,
+      "braking_phase_s": 3.483,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.117,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 4.133,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.725,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 11,
@@ -396,7 +689,17 @@
       "speed_class": "low",
       "speed_kph": 91.3,
       "understeer_deg": 0.13,
-      "body_slip_deg": 4.27
+      "body_slip_deg": 4.27,
+      "braking_phase_s": 2.967,
+      "release_phase_s": 0.35,
+      "turn_in_phase_s": 1.767,
+      "apex_phase_s": 0.233,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 15.45,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 1.295,
+      "aero_collapse_severity": 1.193,
+      "exit_slip_severity": 0.589
     },
     {
       "corner_id": 12,
@@ -405,7 +708,17 @@
       "speed_class": "high",
       "speed_kph": 213.8,
       "understeer_deg": 0.02,
-      "body_slip_deg": 0.06
+      "body_slip_deg": 0.06,
+      "braking_phase_s": 2.15,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.067,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.333,
+      "corner_confidence": 0.65,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.0,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 13,
@@ -414,7 +727,17 @@
       "speed_class": "high",
       "speed_kph": 220.6,
       "understeer_deg": 0.22,
-      "body_slip_deg": 1.9
+      "body_slip_deg": 1.9,
+      "braking_phase_s": 2.15,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.117,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 5.3,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.553,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 14,
@@ -423,7 +746,17 @@
       "speed_class": "mid",
       "speed_kph": 123.3,
       "understeer_deg": -0.09,
-      "body_slip_deg": 3.95
+      "body_slip_deg": 3.95,
+      "braking_phase_s": 2.483,
+      "release_phase_s": 5.867,
+      "turn_in_phase_s": 2.167,
+      "apex_phase_s": 0.233,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 4.567,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 0.442,
+      "aero_collapse_severity": 1.793,
+      "exit_slip_severity": 0.484
     },
     {
       "corner_id": 15,
@@ -432,7 +765,17 @@
       "speed_class": "high",
       "speed_kph": 218.4,
       "understeer_deg": 0.01,
-      "body_slip_deg": 0.03
+      "body_slip_deg": 0.03,
+      "braking_phase_s": 1.1,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.117,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.583,
+      "corner_confidence": 0.65,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.0,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 16,
@@ -441,7 +784,17 @@
       "speed_class": "high",
       "speed_kph": 237.2,
       "understeer_deg": -0.01,
-      "body_slip_deg": 0.05
+      "body_slip_deg": 0.05,
+      "braking_phase_s": 1.1,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.083,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.483,
+      "corner_confidence": 0.65,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.0,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 17,
@@ -450,7 +803,17 @@
       "speed_class": "high",
       "speed_kph": 255.7,
       "understeer_deg": -0.02,
-      "body_slip_deg": 0.13
+      "body_slip_deg": 0.13,
+      "braking_phase_s": 1.1,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.083,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.483,
+      "corner_confidence": 0.75,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.0,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 18,
@@ -459,7 +822,17 @@
       "speed_class": "high",
       "speed_kph": 266.2,
       "understeer_deg": 0.01,
-      "body_slip_deg": 0.05
+      "body_slip_deg": 0.05,
+      "braking_phase_s": 1.1,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.067,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.383,
+      "corner_confidence": 0.75,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.0,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 19,
@@ -468,7 +841,17 @@
       "speed_class": "high",
       "speed_kph": 274.3,
       "understeer_deg": -0.01,
-      "body_slip_deg": 0.06
+      "body_slip_deg": 0.06,
+      "braking_phase_s": 1.1,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.1,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.55,
+      "corner_confidence": 0.75,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.0,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 20,
@@ -477,7 +860,17 @@
       "speed_class": "high",
       "speed_kph": 284.2,
       "understeer_deg": 0.01,
-      "body_slip_deg": 0.05
+      "body_slip_deg": 0.05,
+      "braking_phase_s": 1.1,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.117,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.85,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.0,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 21,
@@ -486,7 +879,17 @@
       "speed_class": "mid",
       "speed_kph": 126.7,
       "understeer_deg": -0.23,
-      "body_slip_deg": 4.62
+      "body_slip_deg": 4.62,
+      "braking_phase_s": 1.1,
+      "release_phase_s": 5.8,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.233,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 7.3,
+      "corner_confidence": 0.85,
+      "entry_pitch_severity": 1.086,
+      "aero_collapse_severity": 1.08,
+      "exit_slip_severity": 0.706
     },
     {
       "corner_id": 22,
@@ -495,7 +898,17 @@
       "speed_class": "high",
       "speed_kph": 243.0,
       "understeer_deg": 0.0,
-      "body_slip_deg": 0.03
+      "body_slip_deg": 0.03,
+      "braking_phase_s": 1.2,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.017,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.15,
+      "corner_confidence": 0.65,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.102,
+      "exit_slip_severity": 0.0
     },
     {
       "corner_id": 23,
@@ -504,7 +917,17 @@
       "speed_class": "high",
       "speed_kph": 246.8,
       "understeer_deg": -0.01,
-      "body_slip_deg": 0.05
+      "body_slip_deg": 0.05,
+      "braking_phase_s": 1.2,
+      "release_phase_s": 0.0,
+      "turn_in_phase_s": 0.0,
+      "apex_phase_s": 0.033,
+      "throttle_pickup_phase_s": 0.0,
+      "exit_phase_s": 0.25,
+      "corner_confidence": 0.65,
+      "entry_pitch_severity": 0.0,
+      "aero_collapse_severity": 0.497,
+      "exit_slip_severity": 0.0
     }
   ]
 }

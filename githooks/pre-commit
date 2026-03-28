@@ -1,0 +1,42 @@
+#!/bin/sh
+# Enforce Git LFS only for .ibt files at/above the host push limit (GitHub: 100 MiB per blob).
+# Smaller .ibt files remain regular git objects. Override threshold: LFS_IBT_MIN_BYTES=...
+
+LFS_IBT_MIN_BYTES="${LFS_IBT_MIN_BYTES:-104857600}"
+
+if ! git lfs version >/dev/null 2>&1; then
+	echo "pre-commit: install Git LFS (https://git-lfs.com) or skip this hook." >&2
+	exit 1
+fi
+
+gitdir=$(git rev-parse --git-dir) || exit 1
+tmp="$gitdir/pre-commit-ibt-$$"
+trap 'rm -f "$tmp"' EXIT INT HUP TERM
+
+git diff --cached --name-only --diff-filter=ACM >"$tmp" || exit 1
+
+while IFS= read -r f; do
+	case "$f" in
+	*.ibt | *.IBT) ;;
+	*) continue ;;
+	esac
+	[ -n "$f" ] || continue
+	[ -f "$f" ] || continue
+
+	wc_out=$(wc -c <"$f" 2>/dev/null | tr -d " \t")
+	size="${wc_out:-0}"
+	if ! [ "$size" -ge "$LFS_IBT_MIN_BYTES" ] 2>/dev/null; then
+		continue
+	fi
+
+	filter=$(git check-attr filter -- "$f" | sed -n 's/.*: filter: //p')
+	if [ "$filter" = "lfs" ]; then
+		continue
+	fi
+
+	echo "pre-commit: routing large .ibt through Git LFS (>= ${LFS_IBT_MIN_BYTES} bytes): $f" >&2
+	git lfs track --filename "$f" || exit 1
+	git add -- .gitattributes "$f" || exit 1
+done <"$tmp"
+
+exit 0

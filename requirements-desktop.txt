@@ -1,0 +1,23 @@
+# Core solver/pipeline
+numpy
+scipy
+openpyxl
+pyyaml
+
+# Web UI
+fastapi
+jinja2
+python-multipart
+uvicorn
+httpx
+
+# Database / sync
+sqlalchemy>=2.0
+aiosqlite>=0.20
+
+# IBT watcher
+watchdog
+
+# Desktop system tray
+pystray
+Pillow

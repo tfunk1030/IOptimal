@@ -1,268 +1,416 @@
-# IOptimal Enhancement Plan — Exhaustive Legal Manifold Search
-
-## Current State Assessment (codextwo branch)
-
-### What’s Built and Working
-
-|Module                                 |Status                    |Notes                                                                                                                                                                                               |
-|---------------------------------------|--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|`solver/legal_space.py` (514 lines)    |**Complete**              |26 Tier A dimensions, `SearchDimension`, `LegalCandidate`, `SearchBounds`, `sample_seeded()`, `sample_uniform()`, `enumerate_discrete_subspace()`, `mutate_candidate()`, `from_car()` factory       |
-|`solver/objective.py` (688 lines)      |**Complete**              |Full `ObjectiveFunction` with forward physics eval (excursion, LLTD, damping ratios, DF balance), `PlatformRisk`, `DriverMismatch`, `TelemetryUncertainty`, `EnvelopePenalty`, transparent breakdown|
-|`solver/legal_search.py` (382 lines)   |**Functional but limited**|Two-stage search with 6 edge families + uniform scatter. Produces `best_robust`, `best_aggressive`, `best_weird`. Budget-capped random sampling only                                                |
-|`solver/legality_engine.py` (180 lines)|**Complete**              |Hard veto vs soft penalty distinction, `validate_candidate_legality()` fast path                                                                                                                    |
-|`solver/explorer.py` (318 lines)       |**Legacy**                |Old LHS-based explorer with simple heuristic scores. Not connected to `objective.py`. Superseded by `legal_search.py`                                                                               |
-|`pipeline/produce.py` integration      |**Wired**                 |`--explore-legal-space`, `--search-budget`, `--keep-weird` flags working                                                                                                                            |
-
-### The Core Problem
-
-**BMW Sebring Tier A = 26 dimensions × ~1.8×10³⁶ total combinations.**
-
-The current search does random sampling around edge anchors with a budget of ~1,000 candidates. That’s sampling 0.000…% of the space. You’re finding the *neighborhood* of extremes but missing everything in between.
-
-What you want: **systematically evaluate every viable combination between the legal bounds** — not just the edges and their random neighbors.
-
------
-
-## The Plan: Hierarchical Exhaustive Search
-
-The key insight: you can’t enumerate 10³⁶ combos, but you CAN enumerate if you decompose the problem into **layered subspaces** where each layer fixes the parameters above it and exhausts the ones below.
-
-### Architecture: 3-Layer Search
-
-```
-Layer 1: Platform Skeleton    (wing × pushrod_F × pushrod_R × heave × third × rear_spring)
-                               ~6 × 161 × 161 × 91 × 179 × 21 = TOO BIG
-                               → Sobol/LHS grid: 50,000 skeletons
-                               → Physics filter: keep top 2,000
-
-Layer 2: Balance Tuning        For each surviving skeleton:
-                               (torsion_OD × ARB_F × ARB_R × camber_F × camber_R × bias × diff)
-                               14 × 5 × 5 × 51 × 41 × 41 × 31 = ~1.5 billion → still too big
-                               → Smart grid: fix camber/bias/diff at 3 levels each
-                               14 × 5 × 5 × 3 × 3 × 3 × 3 = 28,350 per skeleton
-                               → 2,000 skeletons × 28,350 = 56.7M candidates
-                               → Physics score on GPU-like batch = feasible in ~10 min
-
-Layer 3: Damper Optimization   For each top-500 from Layer 2:
-                               10 damper knobs × 12 clicks each = 12¹⁰ = 61 billion → nope
-                               → Coordinate descent: optimize one axis at a time
-                               → 10 axes × 12 values = 120 evals per candidate
-                               → 500 × 120 = 60,000 evals
-                               → Then cross-axis refinement on top 50
-
-Layer 4: Fine Tuning           For top 50 from Layer 3:
-                               Full neighborhood enumeration of all ±1 step neighbors
-                               26 dims × 2 directions = 52 neighbors per candidate
-                               50 × 52 = 2,600 evals → trivial
-```
-
-**Total evaluations: ~57M** — aggressive but computable if the per-candidate scorer is fast (current `ObjectiveFunction.evaluate()` does physics in ~0.5ms = ~8 hours at 57M).
-
-### Practical Budget Tiers
-
-|Mode                        |Budget     |What it covers                    |Runtime |
-|----------------------------|-----------|----------------------------------|--------|
-|`--search-budget quick`     |10,000     |Current behavior + denser sampling|~5 sec  |
-|`--search-budget standard`  |500,000    |Layer 1 + Layer 2 at coarse grid  |~4 min  |
-|`--search-budget exhaustive`|10,000,000 |Full Layer 1-3 pipeline           |~80 min |
-|`--search-budget maximum`   |50,000,000+|Full Layer 1-4 with fine tuning   |~7 hours|
-
------
-
-## Implementation: 4 New/Modified Files
-
-### 1. NEW: `solver/grid_search.py` — The Exhaustive Engine
-
-This is the big new module. It replaces the random sampling in `legal_search.py` with structured enumeration.
-
-```python
-class GridSearchEngine:
-    """Hierarchical exhaustive search across the legal manifold."""
-    
-    def __init__(self, space: LegalSpace, objective: ObjectiveFunction, car, track):
-        ...
-    
-    def layer1_platform_skeletons(self, n_sobol=50000) -> list[LegalCandidate]:
-        """Sobol sequence over platform params (wing, pushrods, heave, third, rear_spring).
-        Physics-filter to top N by platform stability + lap gain."""
-    
-    def layer2_balance_grid(self, skeletons: list[LegalCandidate], 
-                            camber_levels=3, bias_levels=3, diff_levels=3
-                            ) -> list[LegalCandidate]:
-        """For each skeleton: exhaustive grid over torsion_OD × ARB_F × ARB_R,
-        crossed with coarse camber/bias/diff levels.
-        Score every single combination."""
-    
-    def layer3_damper_coordinate_descent(self, candidates: list[LegalCandidate],
-                                          top_n=500) -> list[LegalCandidate]:
-        """For each top candidate: sweep each damper axis independently,
-        then cross-refine the top survivors."""
-    
-    def layer4_neighborhood_polish(self, candidates: list[LegalCandidate],
-                                    top_n=50) -> list[LegalCandidate]:
-        """Full ±1 step neighborhood for every dimension.
-        Guaranteed local optimality."""
-    
-    def run(self, budget: str = "standard") -> GridSearchResult:
-        """Execute the full hierarchical search."""
-```
+# IOptimal Enhancement Plan - Evidence-Driven GTP Expansion
 
-**Key design decisions:**
+## Purpose
 
-- Layer 2 is where “every combo between extremes” lives — torsion OD and ARB blades are fully enumerated (14 × 5 × 5 = 350 combos per skeleton)
-- Camber/bias/diff get 3 levels (low/mid/high) in Layer 2, then refined in Layer 4
-- Perch offsets (heave_perch, third_perch, spring_perch) are computed from physics in each layer, not searched independently — they’re dependent variables
+This document is the current roadmap for improving IOptimal from a BMW/Sebring-focused prototype into a broader, evidence-backed GTP setup system. The priority is not "support every car/track on paper". The priority is:
 
-### 2. MODIFY: `solver/legal_space.py` — Add Grid Generation
+1. make the objective trustworthy on the one path that already has meaningful data,
+2. generalize the tooling so new cars and tracks can be onboarded without copy-paste heuristics,
+3. promote each new car/track only when the evidence says it is ready.
 
-Add to `LegalSpace`:
+## Current State
 
-```python
-def sobol_sample(self, keys: list[str], n: int) -> list[dict[str, float]]:
-    """Quasi-random Sobol sequence over specified dimensions.
-    Much better space coverage than random sampling."""
+### What the codebase already does
 
-def exhaustive_grid(self, keys: list[str], 
-                    coarse_keys: dict[str, int] | None = None
-                    ) -> list[dict[str, float]]:
-    """Full Cartesian product of specified dimensions.
-    coarse_keys: {dim_name: n_levels} for dimensions to coarsen."""
+- `pipeline/produce.py`, `pipeline/reason.py`, and `solver/solve.py` run a full physics solve and optional legal-manifold search.
+- `solver/scenario_profiles.py` provides `single_lap_safe`, `quali`, `sprint`, and `race`.
+- `solver/legal_search.py` now treats free optimization as a search over the full legal setup manifold from a pinned baseline seed.
+- `validation/run_validation.py` and `validation/objective_calibration.py` produce reproducible BMW/Sebring evidence from canonical setup mappings.
+- The webapp uses the same scenario-profile path as the CLI.
 
-def neighborhood(self, params: dict[str, float], 
-                 steps: int = 1) -> list[dict[str, float]]:
-    """All ±steps neighbors in every dimension. 
-    For 26 dims at ±1: 52 neighbors."""
-```
+### What is still weak
 
-### 3. MODIFY: `solver/objective.py` — Batch Evaluation
+- BMW/Sebring is the only calibrated path, and even there the objective is still not strong enough to justify "optimal" claims.
+- Ferrari, Cadillac, Porsche, and Acura do not have equivalent setup-schema confidence, telemetry truth, garage-truth fixtures, or observation volume.
+- Several validation signals still use fallbacks or proxies instead of direct telemetry on some rows.
+- The optimizer is better constrained than before, but the score model remains the limiting factor.
 
-The current `evaluate()` does one candidate at a time. For 57M candidates, we need vectorized scoring.
+### Current support tiers
 
-```python
-def evaluate_batch(self, param_batch: list[dict[str, float]], 
-                   **kwargs) -> list[CandidateEvaluation]:
-    """Batch evaluation with shared precomputation.
-    Pre-computes aero surface lookups, track profile constants,
-    and reuses them across the batch."""
-```
+- BMW/Sebring: calibrated
+- Ferrari/Sebring: partial
+- Cadillac/Silverstone: exploratory
+- Porsche/Sebring: unsupported
+- Acura: unsupported
 
-Also add **per-layer objective profiles**:
+## Improvement Goals
 
-- Layer 1: platform_risk + lap_gain only (fast — skip driver/telemetry terms)
-- Layer 2: add LLTD + balance scoring
-- Layer 3: add damping ratio scoring
-- Layer 4: full objective
+### Goal 1: Trust the score before widening scope
 
-### 4. MODIFY: `solver/legal_search.py` — Dispatch to Grid Engine
+The program should not claim an "optimal" setup until the ranking objective is materially predictive on holdout data. Current BMW/Sebring validation is useful, but still too weak to serve as a final authority.
 
-Replace the current `_generate_family_seeds()` random approach with a dispatch:
+### Goal 2: Make onboarding repeatable
 
-```python
-def run_legal_search(..., mode="standard"):
-    if mode in ("exhaustive", "maximum"):
-        from solver.grid_search import GridSearchEngine
-        engine = GridSearchEngine(space, objective, car, track)
-        return engine.run(budget=mode)
-    else:
-        # Current random sampling path (quick/standard)
-        ...
-```
+Every new car and every new track should follow the same onboarding pipeline:
 
------
+- legal setup schema
+- telemetry extraction and signal quality
+- garage-truth correlation
+- canonical observation storage
+- calibration report
+- support-tier promotion
 
-## What NOT to Change
+### Goal 3: Learn from data without violating garage/legal constraints
 
-- `objective.py` scoring formula and weights — those are already well-calibrated
-- `legality_engine.py` hard/soft distinction — correct as-is
-- `pipeline/produce.py` integration — just add a `--search-mode` flag
-- `explorer.py` — leave as legacy, it’s superseded
+The system should become more data-aware over time, but learning must only bias choices inside the legal setup manifold and must never bypass iRacing garage limits or validated parameter relationships.
 
------
+## Workstream A: BMW/Sebring Objective Hardening
 
-## Perch Offset Strategy
+This remains the highest-value work because every later expansion depends on it.
 
-**Critical insight:** `front_heave_perch_mm`, `rear_third_perch_mm`, and `rear_spring_perch_mm` are NOT independent search dimensions. They’re **dependent variables** computed from the target ride height + spring rate + pushrod offset.
+### What to improve
 
-Currently they’re in Tier A (401 × 36 × 41 = 591,876 combos just for perches), massively inflating the search space. They should be **computed** in each layer, not searched.
+- Simplify or remove lap-gain terms that do not improve holdout stability.
+- Strengthen the relationship between raw lap-gain terms and real lap time.
+- Reduce fallback dependence in signal extraction for braking pitch, lock proxies, rear power slip, front excursion, and hot pressures.
+- Add validation gates that fail when correlation, holdout stability, or signal quality regresses.
 
-```python
-# Instead of searching perch offsets:
-perch = compute_perch_for_target_rh(
-    spring_rate=candidate["front_heave_spring_nmm"],
-    pushrod_offset=candidate["front_pushrod_offset_mm"],
-    target_front_rh_mm=car.front_rh_mm,  # from rake solver
-)
-```
+### Files to extend
 
-This alone reduces the search space by ~600,000× and makes exhaustive Layer 2 grid search practical.
+- `solver/objective.py`
+- `validation/objective_calibration.py`
+- `validation/run_validation.py`
+- `analyzer/extract.py`
+- `analyzer/telemetry_truth.py`
+- `tests/test_objective_calibration.py`
+- `tests/test_validation_reporting.py`
 
------
+### Implementation steps
 
-## New CLI Interface
+1. Keep term-by-term ablation and holdout reporting in `validation/objective_calibration.py`.
+2. For every harmful term, test reduction, reshape, or deletion against both in-sample and holdout BMW/Sebring evidence.
+3. Move weak heuristics out of raw lap gain into confidence or envelope penalties when they are better treated as uncertainty than pace.
+4. Add hard regression thresholds in validation tests so future edits cannot silently flip the sign or worsen stability.
 
-```bash
-# Quick exploration (current behavior, improved)
-python -m pipeline.produce --car bmw --track sebring --explore-legal-space
+### Exit criteria
 
-# Standard: structured grid search (~4 min)  
-python -m pipeline.produce --car bmw --track sebring --explore-legal-space --search-mode standard
+- Non-vetoed BMW/Sebring score correlation is materially negative and stable on holdout.
+- Worst-fold holdout no longer flips strongly positive.
+- Runtime auto-apply can be reconsidered only after validation stays stable across multiple updates.
 
-# Exhaustive: every combo between extremes (~80 min)
-python -m pipeline.produce --car bmw --track sebring --explore-legal-space --search-mode exhaustive
+## Workstream B: General Car-Onboarding Framework
 
-# Maximum: full pipeline with fine-tuning (~7 hours, run overnight)
-python -m pipeline.produce --car bmw --track sebring --explore-legal-space --search-mode maximum
-```
+Every GTP car needs the same six layers of implementation before it should influence solver authority.
 
------
+### Layer 1: Setup schema and garage legality
 
-## Implementation Order
+Objective: make the solver understand every legal garage control for that car.
 
-### Sprint 1: Foundation (the perch fix + Sobol)
+Implementation:
 
-1. Remove perch offsets from search dimensions → compute them
-1. Add `sobol_sample()` to `LegalSpace` (use `scipy.stats.qmc.Sobol`)
-1. Add `evaluate_batch()` to `ObjectiveFunction`
-1. **Deliverable:** Same pipeline, 100× better space coverage at same budget
+- expand `car_model/setup_registry.py`
+- confirm canonical parameter names in `validation/observation_mapping.py`
+- add setup-schema tests and garage-range tests
+- verify `.sto` round-trip behavior in the output layer
 
-### Sprint 2: Layer 1-2 Grid Engine
+Required evidence:
 
-1. Create `solver/grid_search.py` with `GridSearchEngine`
-1. Implement `layer1_platform_skeletons()` with Sobol + physics filter
-1. Implement `layer2_balance_grid()` with full enumeration of torsion × ARB × (coarse others)
-1. Wire into `legal_search.py` dispatch
-1. **Deliverable:** Can find setups that random sampling misses
+- official iRacing manual or garage output confirmation for each control
+- at least one garage-truth fixture or validated setup JSON per major subsystem
 
-### Sprint 3: Layer 3-4 Refinement
+### Layer 2: Physical model parity
 
-1. Implement `layer3_damper_coordinate_descent()`
-1. Implement `layer4_neighborhood_polish()`
-1. Add progress reporting (% complete, ETA, current best)
-1. **Deliverable:** Guaranteed locally-optimal results
+Objective: encode the suspension, aero, diff, and hybrid details that make the car different.
 
-### Sprint 4: Output + Analysis
+Implementation:
 
-1. Add heatmap/sensitivity output: “how does score change as param X varies?”
-1. Add Pareto frontier visualization: lap_gain vs platform_risk
-1. Add “setup landscape” report: clusters of high-scoring regions
-1. **Deliverable:** You can see WHY certain regions of the space are fast
+- extend `car_model/cars.py`
+- add or validate aero maps in `aero_model/`
+- confirm motion ratios, spring conventions, ARB labels, damper ranges, and diff options
+- add car-specific quirks only when supported by telemetry or official docs
 
------
+Required evidence:
 
-## Dispatch Prompts (for Cowork/Claude Code)
+- official iRacing manual and release notes
+- repo-local telemetry and setup observations
 
-### Sprint 1
+### Layer 3: Telemetry extraction parity
 
-> “In IOptimal codextwo, refactor `solver/legal_space.py`: remove `front_heave_perch_mm`, `rear_third_perch_mm`, and `rear_spring_perch_mm` from `TIER_A_KEYS`. These are dependent variables computed from spring rate + pushrod offset + target ride height — they should not be searched independently. Add a `compute_perch_offsets(params, car)` helper that calculates them from the other parameters. Also add `sobol_sample(keys, n)` using `scipy.stats.qmc.Sobol` for quasi-random sampling with much better space coverage than random. Run the existing tests to make sure nothing breaks.”
+Objective: ensure the analyzer sees the same class of signals for every car.
 
-### Sprint 2
+Implementation:
 
-> “In IOptimal codextwo, create `solver/grid_search.py` with a `GridSearchEngine` class. It takes a `LegalSpace`, `ObjectiveFunction`, car, and track. Implement `layer1_platform_skeletons(n_sobol=50000)` that generates Sobol samples over wing, front_pushrod, rear_pushrod, front_heave_spring, rear_third_spring, rear_spring_rate — then physics-filters to top 2,000 by `objective.evaluate()` using platform_risk + lap_gain only. Then implement `layer2_balance_grid(skeletons, top_n=2000)` that for EACH skeleton does a full Cartesian product of front_torsion_od × front_arb_blade × rear_arb_blade (all legal values) crossed with front_camber × rear_camber × brake_bias × diff_preload at 3 levels (lo/mid/hi). Score every single combination with the full objective. Return all candidates ranked by score.”
+- validate channel coverage in `analyzer/extract.py`
+- add fallback/proxy accounting in `validation/run_validation.py`
+- add car-specific telemetry truth tests where the raw channels differ
 
-### Sprint 3
+Required evidence:
 
-> “In IOptimal codextwo, add `layer3_damper_coordinate_descent(candidates, top_n=500)` to `GridSearchEngine`. For each of the top 500 candidates from Layer 2, sweep each damper dimension independently (front_ls_comp, front_ls_rbd, front_hs_comp, front_hs_rbd, front_hs_slope, and same for rear — 10 axes × 12 clicks = 120 evals per candidate). Keep the best value for each axis. Then for the top 50, do a cross-refinement pass: for each pair of correlated axes (e.g., ls_comp + ls_rbd), enumerate all combinations. Also add `layer4_neighborhood_polish(candidates, top_n=50)` that generates all ±1 step neighbors across all 26 dimensions and evaluates them. Wire the full `run(budget)` method with progress logging.”
+- multiple IBT files with stable signal extraction
+- no silent `None` handling failures in diagnosis or state inference
 
-### Sprint 4
+### Layer 4: Garage-truth correlation
 
-> “In IOptimal codextwo, enhance the `GridSearchResult.summary()` output to include: (1) parameter sensitivity analysis — for each Tier A dimension, show how the score changes across its range while holding others at the best values, (2) Pareto frontier — show the tradeoff between lap_gain_ms and platform_risk_ms for the top 100 candidates, (3) setup landscape clusters — group the top 200 candidates by similarity and identify distinct ‘fast regions’ in the manifold, (4) for each of the top 5 candidates, show a full diff from the physics baseline. Add `--search-mode quick|standard|exhaustive|maximum` CLI flag to `pipeline/produce.py`.”
+Objective: prove the program can reproduce legal garage states and setup relationships for the car.
+
+Implementation:
+
+- add fixture-backed tests for ride heights, spring/perch interactions, brake controls, diff controls, and TC mappings
+- compare solver output against actual garage screenshots, `.sto` files, or setup JSONs
+
+Required evidence:
+
+- at least 5 good garage-truth fixtures before moving out of unsupported
+
+### Layer 5: Observation learning
+
+Objective: store the car's sessions in canonical form and let the calibration/reporting pipeline reason about them.
+
+Implementation:
+
+- ingest observations into `data/learnings/observations/`
+- ensure deltas and prediction-feedback corrections work for that car
+- add support-tier rows to `validation/objective_validation.json`
+
+Required evidence:
+
+- enough sessions to distinguish exploratory from partial from calibrated
+
+### Layer 6: Scenario unlock
+
+Objective: allow `quali`, `sprint`, `race`, and `single_lap_safe` to drive candidate ranking for that car.
+
+Implementation:
+
+- only after the base objective is directionally correct for the car/track pair
+- add scenario sanity checks in `solver/scenario_profiles.py`
+- add legal-search regressions showing the scenario profiles produce distinct legal outputs
+
+Required evidence:
+
+- scenario differences are visible in legal setups and not just weight changes on a noisy score
+
+## Workstream C: Car-by-Car Expansion Order
+
+### Ferrari 499P
+
+Why next:
+
+- already has repo-local research and partial Sebring evidence
+- closest to being promotable after BMW
+
+Main blockers:
+
+- rear torsion bar is calibrated (C=0.001282, MR=0.612) but needs garage-truth validation against more observations
+- validating Ferrari-specific garage schema against actual garage states
+
+Implementation order:
+
+1. finish Ferrari setup-schema parity
+2. add Ferrari garage-truth fixtures
+3. build Ferrari/Sebring calibration report
+4. unlock Ferrari scenario search only after base ranking is credible
+
+### Cadillac V-Series.R
+
+Why next:
+
+- exploratory Silverstone data already exists
+- good candidate for proving the track/car onboarding process outside Sebring
+
+Main blockers:
+
+- low observation count
+- not enough track-specific garage truth
+
+Implementation order:
+
+1. increase Cadillac observation coverage on Silverstone
+2. validate setup schema and garage ranges
+3. add track-aware calibration report for Cadillac/Silverstone
+4. hold Cadillac at exploratory or partial until correlation and fixtures improve
+
+### Porsche 963
+
+Why later:
+
+- unsupported today
+- likely needs explicit roll-spring / setup-schema cleanup before calibration is meaningful
+
+Implementation order:
+
+1. confirm Porsche setup schema and roll-spring mapping
+2. add Porsche telemetry truth fixtures
+3. collect enough observations on one track before widening further
+
+### Acura ARX-06
+
+Why last:
+
+- unsupported and lacking current repo-local evidence
+
+Implementation order:
+
+1. build complete setup registry and garage-output fixtures
+2. confirm aero/hybrid/control mappings
+3. collect observation baseline on one track
+4. only then wire into calibration and scenario search
+
+## Workstream D: Track-Onboarding Framework
+
+Cars are only half the problem. Each track changes the target operating window.
+
+### What a new track needs
+
+- a canonical track profile in `data/tracks/`
+- validated alias mapping so the same venue/config is not split across names
+- enough IBT sessions to characterize surface severity, speed bands, braking demands, and aero platform needs
+- track-specific validation rows in the evidence report
+
+### Implementation steps
+
+1. Normalize the track/config identity in `track_model/` and validation mapping.
+2. Generate or refresh the track profile from IBT telemetry.
+3. Verify that analyzer outputs for the track are stable enough to drive solver modifiers.
+4. Run the solver against real setups from that track and compare to garage truth.
+5. Promote the track only when at least one car/track pair has reproducible evidence.
+
+### Promotion rule
+
+A track should not be treated as broadly "supported". Support belongs to a car/track pair, not a track in isolation.
+
+## Workstream E: Learning System Improvements
+
+The current learner stores useful observations, but it needs stronger structure to scale across all GTP cars and tracks.
+
+### Improvements
+
+- partition empirical models by car/track pair and keep global priors separate from local evidence
+- store signal-authority metadata on every learned observation
+- down-rank or exclude corrections learned from fallback-only signals
+- make prediction-feedback corrections visible in reports so users can see where physics and measurement disagree
+
+### Files to extend
+
+- `learner/knowledge_store.py`
+- `learner/observation.py`
+- `learner/empirical_models.py`
+- `learner/recall.py`
+- `validation/run_validation.py`
+
+### Implementation rule
+
+Learnings may bias target selection, priors, and uncertainty. They may not emit illegal parameter values or bypass garage validation.
+
+## Workstream F: Optimizer and Search Improvements
+
+Search quality matters, but it should follow evidence quality rather than race ahead of it.
+
+### Near-term improvements
+
+- batch evaluation and caching in `solver/objective.py`
+- better candidate family coverage in `solver/legal_search.py`
+- scenario-specific acceptance summaries in reports
+- Pareto output: lap gain vs platform risk vs uncertainty
+
+### Later improvements
+
+- structured grid or Sobol search for the most sensitive subspaces
+- local-neighborhood polish on accepted candidates
+- sensitivity heatmaps and cluster reports for high-scoring regions
+
+### Constraint
+
+Search improvements should stay inside the legal-manifold framework already in place. Do not reintroduce out-of-range or garage-incoherent candidates in the name of exploration.
+
+## Workstream G: User-Facing Confidence and Reporting
+
+The UI and output files should make the program's authority obvious.
+
+### Improvements
+
+- show support tier per car/track pair in the webapp and reports
+- show scenario profile, signal quality, and fallback usage on every run
+- mark unsupported or exploratory outputs clearly instead of presenting them like calibrated setups
+- expose the decision trace and accepted legal-search family in report output by default
+
+### Files to extend
+
+- `pipeline/report.py`
+- `webapp/services.py`
+- `webapp/templates/`
+- `output/report.py`
+
+## Evidence Thresholds for Promotion
+
+These thresholds are intentionally conservative.
+
+### Unsupported
+
+- missing setup-schema confidence
+- missing garage-truth fixtures
+- fewer than 5 useful observations
+
+### Exploratory
+
+- legal schema mostly mapped
+- at least 5 observations
+- some telemetry truth exists
+- no reliable ranking claim yet
+
+### Partial
+
+- at least 10 observations
+- garage-truth coverage for the core setup controls
+- directionally correct but still weak objective evidence
+
+### Calibrated
+
+- reproducible canonical mapping
+- strong garage-truth coverage
+- enough observations for stable holdout validation
+- score is directionally and practically useful, not just negative in-sample
+
+## Recommended Phase Order
+
+### Phase 1
+
+- BMW/Sebring objective hardening
+- validation gates
+- signal-quality reduction of fallback dependence
+
+### Phase 2
+
+- Ferrari/Sebring schema and garage-truth parity
+- Ferrari calibration report
+
+### Phase 3
+
+- Cadillac/Silverstone evidence expansion
+- Cadillac legality and garage-truth parity
+
+### Phase 4
+
+- Porsche setup-schema and telemetry truth foundation
+
+### Phase 5
+
+- Acura setup registry, telemetry truth, and first supported car/track pairing
+
+### Phase 6
+
+- track-onboarding pipeline generalization
+- multi-track support tier reporting
+
+### Phase 7
+
+- optimizer speed and search improvements
+- UI/reporting confidence surfacing
+
+## Data Policy
+
+Use only:
+
+- official iRacing manuals and release notes
+- repo-local telemetry, setups, observations, and garage outputs
+
+Do not promote a new car or track on anecdotal setup lore alone.
+
+## Definition of Success
+
+The program is "working" when:
+
+- every promoted car/track pair has explicit evidence behind it,
+- the UI reports confidence honestly,
+- legal-manifold search never emits illegal or garage-incoherent candidates,
+- the objective ranking is good enough that setup recommendations beat or at least match known good baselines often enough to be trusted.

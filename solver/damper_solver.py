@@ -495,7 +495,14 @@ class DamperSolver:
         # LS reference velocity: 25 mm/s (body motions — roll, pitch, heave)
         # This is independent of track surface because LS events are driven by
         # driver inputs (steering, braking, throttle), not road bumps.
-        v_ls_ref = 0.025  # 25 mm/s
+        #
+        # NOTE: iRacing's official Shock Tuning User Guide (2021) defines the
+        # LS↔HS transition at ~1.5 in/s = 38.1 mm/s. Our v_ls_ref of 25 mm/s
+        # represents a typical LS operating point well below the transition,
+        # ensuring the target damping coefficient is calibrated for the LS regime.
+        # The HS reference velocities (from track p95) are always >50 mm/s,
+        # well above the 38.1 mm/s transition.
+        v_ls_ref = 0.025  # 25 mm/s  (LS/HS knee at ~38 mm/s per iRacing guide)
 
         # HS reference velocity: track-measured p95 shock velocity per axle.
         # p95 is the correct reference because dampers should be optimized for

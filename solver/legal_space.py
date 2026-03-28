@@ -22,10 +22,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from itertools import product as cart_product
 from typing import Sequence
-
-import numpy as np
 
 from car_model.cars import CarModel
 from car_model.setup_registry import (
@@ -34,6 +31,110 @@ from car_model.setup_registry import (
     get_field,
     get_car_spec,
 )
+
+
+# ─── Perch offset computation ────────────────────────────────────────────────
+#
+# Perch offsets (front_heave_perch_mm, rear_third_perch_mm, rear_spring_perch_mm)
+# are DEPENDENT variables — they are derived from the chosen spring rates and the
+# target ride heights set by the rake solver. They are NOT independent search dims.
+#
+# Front static RH empirical model (BMW, 62 sessions, LOO RMSE = 0.066mm):
+#   front_static_rh = 30.1458 + 0.001614 * heave_nmm + 0.074486 * camber_deg
+#   Units: RH in mm, heave in N/mm, camber in degrees (negative = more negative)
+#   R² = 0.71 on held-out data.
+#
+# Back-derivation of front heave perch:
+#   The perch offset controls where the spring sits on the slider. Higher spring
+#   rate → spring pushes harder → needs less perch to achieve same RH.
+#   Empirically: Δperch ≈ -k_rh_per_nmm * Δheave_nmm
+#   where k_rh_per_nmm = 0.001614 mm_RH / (N/mm)  (from the model coefficient)
+#   Perch reference measured at heave = 50 N/mm, perch ≈ 0 mm (arbitrary zero).
+#   front_heave_perch_mm ≈ perch_ref + (heave_ref - heave_nmm) * k_heave_to_perch
+#
+# Rear static RH empirical model (4-feature regression, R²=0.97, LOO RMSE=0.845mm):
+#   rear_static_rh = f(pushrod, third_nmm, rear_spring, heave_perch)
+#   The main lever is the spring perch — stiffer spring → more perch offset needed.
+#
+# For the search engine, we only need approximate perch values to:
+#   1. Keep the setup physically consistent for scoring
+#   2. Avoid perch being at an extreme that causes slider exhaustion
+# Exact perch values are refined by the full solver after a candidate is selected.
+
+FRONT_HEAVE_PERCH_K = 0.001614   # mm_RH / (N/mm)  — from front RH empirical model
+REAR_SPRING_PERCH_K = 0.8        # mm_perch / (N/mm) — rough empirical, rear spring dominant
+REAR_THIRD_PERCH_K = 0.3         # mm_perch / (N/mm) — rear third spring contribution
+
+# Reference values (perch = 0 at these spring rates)
+FRONT_HEAVE_SPRING_REF = 50.0    # N/mm
+REAR_THIRD_SPRING_REF = 450.0    # N/mm
+REAR_SPRING_REF = 160.0          # N/mm
+
+
+def compute_perch_offsets(params: dict, car: CarModel) -> dict:
+    """Compute dependent perch offsets from spring rates.
+
+    Perch offsets are NOT independent search dimensions — they're derived from
+    the spring rate + target ride height relationship. This function computes
+    them from the chosen spring rates so every evaluated candidate has physically
+    consistent perch values.
+
+    Physics basis:
+      Front: front_static_rh = 30.1458 + 0.001614*heave_nmm + 0.074486*camber_deg
+             Δheave → ΔRHS → ΔPerch needed to maintain target RH.
+             k_heave_to_rh = 0.001614 mm_RH per N/mm heave.
+             Inverse: Δperch ≈ -Δheave_nmm / k_heave_to_rh * perch_sensitivity
+      Rear:  Dominated by spring perch; third spring has secondary effect.
+             Empirical: stiffer spring needs less negative perch to hold RH.
+
+    Args:
+        params: Dict with (at minimum) front_heave_spring_nmm, rear_third_spring_nmm,
+                rear_spring_rate_nmm, front_camber_deg
+        car:    CarModel for range clamping
+
+    Returns:
+        Dict with front_heave_perch_mm, rear_third_perch_mm, rear_spring_perch_mm
+    """
+    gr = car.garage_ranges
+
+    heave_nmm = float(params.get("front_heave_spring_nmm", FRONT_HEAVE_SPRING_REF))
+    third_nmm = float(params.get("rear_third_spring_nmm", REAR_THIRD_SPRING_REF))
+    rear_nmm = float(params.get("rear_spring_rate_nmm", REAR_SPRING_REF))
+
+    # Front heave perch:
+    # Stiffer heave spring raises front RH (model coeff +0.001614).
+    # To compensate and keep the same RH, perch must be reduced (more negative).
+    # Δperch_front ≈ -(heave - ref) * k  where k≈0.08 mm_perch / (N/mm)
+    # (the 0.08 factor maps spring-rate-induced RH change back to perch units)
+    front_perch_ref = float(getattr(gr, "front_heave_perch_ref_mm", 0.0))
+    delta_heave = heave_nmm - FRONT_HEAVE_SPRING_REF
+    front_heave_perch = front_perch_ref - delta_heave * 0.08
+    # Clamp to legal range
+    if hasattr(gr, "front_heave_perch_mm"):
+        lo, hi = gr.front_heave_perch_mm
+        front_heave_perch = max(lo, min(hi, front_heave_perch))
+
+    # Rear third perch: third spring rate drives third perch offset
+    rear_third_perch_ref = float(getattr(gr, "rear_third_perch_ref_mm", 0.0))
+    delta_third = third_nmm - REAR_THIRD_SPRING_REF
+    rear_third_perch = rear_third_perch_ref - delta_third * REAR_THIRD_PERCH_K * 0.01
+    if hasattr(gr, "rear_third_perch_mm"):
+        lo, hi = gr.rear_third_perch_mm
+        rear_third_perch = max(lo, min(hi, rear_third_perch))
+
+    # Rear spring perch: stiffer rear spring → less perch offset needed
+    rear_spring_perch_ref = float(getattr(gr, "rear_spring_perch_ref_mm", 0.0))
+    delta_rear = rear_nmm - REAR_SPRING_REF
+    rear_spring_perch = rear_spring_perch_ref - delta_rear * REAR_SPRING_PERCH_K * 0.01
+    if hasattr(gr, "rear_spring_perch_mm"):
+        lo, hi = gr.rear_spring_perch_mm
+        rear_spring_perch = max(lo, min(hi, rear_spring_perch))
+
+    return {
+        "front_heave_perch_mm": round(front_heave_perch, 2),
+        "rear_third_perch_mm": round(rear_third_perch, 2),
+        "rear_spring_perch_mm": round(rear_spring_perch, 2),
+    }
 
 
 # ─── Tier classification ────────────────────────────────────────────────────
@@ -45,20 +146,28 @@ TIER_A_KEYS: list[str] = [
     "wing_angle_deg",
     "front_pushrod_offset_mm",
     "rear_pushrod_offset_mm",
-    # Step 2 — perch offsets are DEPENDENT variables, computed from
-    # spring rate + pushrod offset + target ride height. They are NOT
-    # searched independently. See compute_perch_offsets().
+    # Step 2
     "front_heave_spring_nmm",
+    # NOTE: front_heave_perch_mm REMOVED — it's a dependent variable computed
+    # from spring rate + target RH via compute_perch_offsets(). Keeping it here
+    # inflated the search space by ~600,000×. See compute_perch_offsets() below.
     "rear_third_spring_nmm",
+    # NOTE: rear_third_perch_mm REMOVED — same reason as front_heave_perch_mm.
     # Step 3
     "front_torsion_od_mm",
     "rear_spring_rate_nmm",
+    # NOTE: rear_spring_perch_mm REMOVED — same reason. Dependent on rear spring
+    # rate and target rear RH via the rear static RH model.
     # Step 4
     "front_arb_blade",
     "rear_arb_blade",
+    "front_arb_size",
+    "rear_arb_size",
     # Step 5
     "front_camber_deg",
     "rear_camber_deg",
+    "front_toe_mm",
+    "rear_toe_mm",
     # Step 6
     "front_ls_comp",
     "front_ls_rbd",
@@ -73,27 +182,24 @@ TIER_A_KEYS: list[str] = [
     # Supporting
     "brake_bias_pct",
     "diff_preload_nm",
+    "diff_ramp_option_idx",
+    "diff_clutch_plates",
+    "tc_gain",
+    "tc_slip",
 ]
 
-# Perch offset keys — removed from Tier A because they are dependent
-# variables computed from other parameters. Kept here for reference
-# and for the compute_perch_offsets() helper.
-DEPENDENT_PERCH_KEYS: list[str] = [
+# Keys that ARE searchable but are perch offsets — kept for reference / Tier B use
+PERCH_KEYS: list[str] = [
     "front_heave_perch_mm",
     "rear_third_perch_mm",
     "rear_spring_perch_mm",
 ]
 
 TIER_B_KEYS: list[str] = [
-    "front_toe_mm",
-    "rear_toe_mm",
-    "front_arb_size",
-    "rear_arb_size",
-    "tc_gain",
-    "tc_slip",
-    "diff_clutch_plates",
     "fuel_l",
 ]
+
+LOCAL_REFINE_KEYS: list[str] = list(PERCH_KEYS)
 
 
 @dataclass
@@ -176,103 +282,6 @@ class SearchBounds:
     """Narrowed search bounds around a seed point."""
     center: dict[str, float]
     radius: dict[str, float]  # max deviation per dimension
-
-
-def compute_perch_offsets(
-    params: dict[str, float],
-    car: CarModel,
-) -> dict[str, float]:
-    """Compute dependent perch offsets from independent parameters.
-
-    Perch offsets (front_heave_perch_mm, rear_third_perch_mm,
-    rear_spring_perch_mm) are NOT independent search dimensions — they
-    are determined by the spring rates, pushrod offsets, and target ride
-    heights. This collapses the search space by ~600,000×.
-
-    The computation uses the car's heave spring model baselines as
-    targets: the perch is set to maintain the same preload / travel
-    budget relationship that the baseline setup achieves.
-
-    Args:
-        params: Candidate parameter dict with at least the spring rate
-                and pushrod keys populated.
-        car: CarModel with heave_spring and corner_spring attributes.
-
-    Returns:
-        Dict with the three computed perch offset values.
-    """
-    hsm = car.heave_spring
-    gr = car.garage_ranges
-
-    # --- Front heave perch ---
-    # The front heave perch controls preload on the heave spring.
-    # Use the baseline perch as starting point, then adjust based on
-    # how far the heave spring rate deviates from baseline.
-    # A stiffer heave spring needs less preload (less negative perch)
-    # to maintain the same travel budget.
-    front_heave_nmm = params.get("front_heave_spring_nmm", 50.0)
-    baseline_heave_nmm = 0.5 * sum(hsm.front_spring_range_nmm)
-    baseline_perch = hsm.perch_offset_front_baseline_mm
-
-    # Use the slider/perch model if available (BMW has calibrated coefficients)
-    if hsm.slider_perch_coeff > 0:
-        # Target: place slider at safe distance below max
-        target_slider = hsm.max_slider_mm - 3.0
-        front_perch = (
-            (target_slider - hsm.slider_intercept
-             - hsm.slider_heave_coeff * front_heave_nmm)
-            / hsm.slider_perch_coeff
-        )
-    else:
-        # Fallback: scale baseline perch proportionally to spring rate change
-        rate_ratio = front_heave_nmm / max(baseline_heave_nmm, 1.0)
-        front_perch = baseline_perch * (2.0 - rate_ratio)
-
-    # Snap to 0.5mm resolution, clamp to legal range
-    front_perch = round(front_perch * 2) / 2
-    perch_lo, perch_hi = gr.front_heave_perch_mm
-    front_perch = max(perch_lo, min(perch_hi, front_perch))
-
-    # --- Rear third perch ---
-    # The rear third perch controls preload on the rear third spring.
-    # Use baseline as anchor, adjust for spring rate difference.
-    rear_third_nmm = params.get("rear_third_spring_nmm", 450.0)
-    baseline_third_nmm = 0.5 * sum(hsm.rear_spring_range_nmm)
-    rear_third_baseline_perch = hsm.perch_offset_rear_baseline_mm
-
-    # Simple proportional scaling: stiffer spring → less preload needed
-    rate_ratio_rear = rear_third_nmm / max(baseline_third_nmm, 1.0)
-    rear_third_perch = rear_third_baseline_perch
-    # Small correction: move perch toward center of range as spring stiffens
-    perch_lo_r, perch_hi_r = gr.rear_third_perch_mm
-    perch_mid_r = 0.5 * (perch_lo_r + perch_hi_r)
-    rear_third_perch = rear_third_baseline_perch + (
-        (rate_ratio_rear - 1.0) * (perch_mid_r - rear_third_baseline_perch) * 0.3
-    )
-    rear_third_perch = round(rear_third_perch)
-    rear_third_perch = max(perch_lo_r, min(perch_hi_r, rear_third_perch))
-
-    # --- Rear spring perch ---
-    # Controls preload on the rear coil springs.
-    rear_spring_nmm = params.get("rear_spring_rate_nmm", 160.0)
-    lo_rs, hi_rs = car.corner_spring.rear_spring_range_nmm
-    baseline_rear_spring = 0.5 * (lo_rs + hi_rs)
-    perch_lo_s, perch_hi_s = gr.rear_spring_perch_mm
-    rear_spring_baseline_perch = 0.5 * (perch_lo_s + perch_hi_s)
-
-    rate_ratio_spring = rear_spring_nmm / max(baseline_rear_spring, 1.0)
-    rear_spring_perch = rear_spring_baseline_perch + (
-        (rate_ratio_spring - 1.0)
-        * (rear_spring_baseline_perch - perch_lo_s) * 0.3
-    )
-    rear_spring_perch = round(rear_spring_perch * 2) / 2
-    rear_spring_perch = max(perch_lo_s, min(perch_hi_s, rear_spring_perch))
-
-    return {
-        "front_heave_perch_mm": front_perch,
-        "rear_third_perch_mm": rear_third_perch,
-        "rear_spring_perch_mm": rear_spring_perch,
-    }
 
 
 class LegalSpace:
@@ -448,6 +457,161 @@ class LegalSpace:
 
         return candidates
 
+    def sobol_sample(
+        self,
+        keys: list[str],
+        n: int,
+        seed: int = 0,
+    ) -> list[dict[str, float]]:
+        """Quasi-random Sobol sequence over specified dimensions.
+
+        Sobol sequences have much better space coverage than random sampling —
+        they're designed to cover the unit hypercube evenly, unlike uniform random
+        which tends to cluster. For N samples in D dimensions, Sobol achieves
+        O(log(N)^D / N) discrepancy vs O(N^{-1/D}) for random.
+
+        Args:
+            keys: Canonical parameter keys to sample
+            n:    Number of samples (internally rounded up to next power of 2)
+            seed: Random seed for scrambling
+
+        Returns:
+            List of dicts, each containing the requested keys snapped to legal values.
+            Falls back to uniform random sampling if scipy is unavailable.
+        """
+        try:
+            from scipy.stats.qmc import Sobol
+            dims = [self._dim_map[k] for k in keys if k in self._dim_map]
+            if not dims:
+                return []
+            n_pow2 = 2 ** math.ceil(math.log2(max(n, 2)))
+            sampler = Sobol(d=len(dims), scramble=True, seed=seed)
+            raw = sampler.random(n_pow2)[:n]
+            result: list[dict[str, float]] = []
+            for row in raw:
+                params: dict[str, float] = {}
+                for dim, u in zip(dims, row):
+                    # Map [0, 1] → [lo, hi] → snap to legal value
+                    raw_val = dim.lo + float(u) * (dim.hi - dim.lo)
+                    params[dim.name] = dim.snap(raw_val)
+                result.append(params)
+            return result
+        except ImportError:
+            # Fallback: uniform random (no scipy)
+            rng = random.Random(seed)
+            dims = [self._dim_map[k] for k in keys if k in self._dim_map]
+            return [
+                {dim.name: dim.sample(1, rng)[0] for dim in dims}
+                for _ in range(n)
+            ]
+
+    def neighborhood(
+        self,
+        params: dict[str, float],
+        steps: int = 1,
+        keys: list[str] | None = None,
+    ) -> list[dict[str, float]]:
+        """All ±steps neighbors in every dimension (or specified keys).
+
+        For 23 Tier A dims at ±1: 46 neighbors per candidate.
+        Used in Layer 4 neighborhood polish for guaranteed local optimality.
+
+        Args:
+            params: Base parameter set
+            steps:  Number of steps to take in each direction
+            keys:   Dimensions to vary (default: all Tier A)
+
+        Returns:
+            List of neighbor dicts (each differs in exactly one dimension)
+        """
+        if keys is None:
+            dims = self.tier_a()
+        else:
+            dims = [self._dim_map[k] for k in keys if k in self._dim_map]
+
+        neighbors: list[dict[str, float]] = []
+        for dim in dims:
+            current = params.get(dim.name, (dim.lo + dim.hi) / 2)
+            # Up direction
+            vals = dim.legal_values()
+            if vals:
+                try:
+                    idx = min(range(len(vals)), key=lambda i: abs(vals[i] - current))
+                    # step up
+                    up_idx = min(idx + steps, len(vals) - 1)
+                    if up_idx != idx:
+                        nb = dict(params)
+                        nb[dim.name] = vals[up_idx]
+                        neighbors.append(nb)
+                    # step down
+                    dn_idx = max(idx - steps, 0)
+                    if dn_idx != idx:
+                        nb = dict(params)
+                        nb[dim.name] = vals[dn_idx]
+                        neighbors.append(nb)
+                except Exception:
+                    pass
+            else:
+                # Continuous: step by resolution
+                res = dim.resolution if dim.resolution > 0 else (dim.hi - dim.lo) * 0.05
+                for direction in (+1, -1):
+                    nb = dict(params)
+                    nb[dim.name] = dim.snap(current + direction * steps * res)
+                    if abs(nb[dim.name] - current) > 1e-9:
+                        neighbors.append(nb)
+
+        return neighbors
+
+    def exhaustive_grid(
+        self,
+        keys: list[str],
+        coarse_keys: dict[str, int] | None = None,
+    ) -> list[dict[str, float]]:
+        """Full Cartesian product of specified dimensions.
+
+        Args:
+            keys:        Dimension keys to enumerate fully
+            coarse_keys: {dim_name: n_levels} for dimensions to coarsen to N levels
+                         instead of full enumeration (e.g., camber at 3 levels).
+
+        Returns:
+            List of dicts — one per combination. Empty if cardinality > 1M.
+        """
+        from itertools import product as cart_product
+
+        if coarse_keys is None:
+            coarse_keys = {}
+
+        dims = [self._dim_map[k] for k in keys if k in self._dim_map]
+        if not dims:
+            return []
+
+        value_lists: list[list[float]] = []
+        for dim in dims:
+            if dim.name in coarse_keys:
+                n_levels = coarse_keys[dim.name]
+                if n_levels <= 1:
+                    value_lists.append([(dim.lo + dim.hi) / 2])
+                else:
+                    step = (dim.hi - dim.lo) / (n_levels - 1)
+                    value_lists.append([
+                        dim.snap(dim.lo + i * step) for i in range(n_levels)
+                    ])
+            else:
+                value_lists.append(dim.legal_values() or [dim.snap((dim.lo + dim.hi) / 2)])
+
+        # Guard against explosion
+        card = 1
+        for vl in value_lists:
+            card *= len(vl)
+        if card > 1_000_000:
+            return []  # caller must coarsen
+
+        result: list[dict[str, float]] = []
+        for combo in cart_product(*value_lists):
+            result.append({dim.name: val for dim, val in zip(dims, combo)})
+        return result
+
     def mutate_candidate(
         self,
         candidate: LegalCandidate,
@@ -468,193 +632,6 @@ class LegalSpace:
             mutated[dim.name] = dim.snap(new_val)
 
         return LegalCandidate(params=mutated, family="mutated")
-
-    def sobol_sample(
-        self,
-        keys: list[str],
-        n: int,
-        seed: int = 0,
-    ) -> list[dict[str, float]]:
-        """Quasi-random Sobol sequence over specified dimensions.
-
-        Sobol sequences provide much better space coverage than random
-        sampling — they fill the space quasi-uniformly, avoiding the
-        clumping and gaps of pseudorandom sampling. For N samples in
-        D dimensions, Sobol achieves O(log(N)^D / N) discrepancy vs
-        O(1/sqrt(N)) for random.
-
-        Args:
-            keys: List of dimension names to sample over.
-            n: Number of samples to generate. Rounded up to next
-               power of 2 internally (Sobol requirement), but only
-               the first n are returned.
-            seed: Random seed for scrambled Sobol.
-
-        Returns:
-            List of n parameter dicts with values snapped to legal
-            garage increments.
-        """
-        from scipy.stats.qmc import Sobol as SobolEngine
-
-        dims = [self._dim_map[k] for k in keys if k in self._dim_map]
-        if not dims:
-            return []
-
-        d = len(dims)
-        # Sobol requires 2^m samples; we generate enough and truncate
-        sampler = SobolEngine(d=d, scramble=True, seed=seed)
-        # Sobol.random(n) handles non-power-of-2 n internally
-        unit_samples = sampler.random(n)  # shape (n, d), values in [0, 1)
-
-        results: list[dict[str, float]] = []
-        for row in unit_samples:
-            params: dict[str, float] = {}
-            for i, dim in enumerate(dims):
-                u = float(row[i])
-                if dim.discrete_values is not None:
-                    # Map [0,1) to index into discrete values
-                    idx = int(u * len(dim.discrete_values))
-                    idx = min(idx, len(dim.discrete_values) - 1)
-                    params[dim.name] = dim.discrete_values[idx]
-                elif dim.resolution > 0:
-                    # Map [0,1) to legal value range, snap to resolution
-                    raw = dim.lo + u * (dim.hi - dim.lo)
-                    params[dim.name] = dim.snap(raw)
-                else:
-                    params[dim.name] = dim.lo + u * (dim.hi - dim.lo)
-            results.append(params)
-
-        return results
-
-    def exhaustive_grid(
-        self,
-        keys: list[str],
-        coarse_keys: dict[str, int] | None = None,
-    ) -> list[dict[str, float]]:
-        """Full Cartesian product of specified dimensions.
-
-        For dimensions in `keys`, enumerates every legal value.
-        For dimensions in `coarse_keys`, uses n evenly-spaced levels
-        instead of the full resolution (for high-cardinality dims
-        like camber or brake bias).
-
-        Args:
-            keys: Dimension names to enumerate at full resolution.
-            coarse_keys: {dim_name: n_levels} for coarsened dimensions.
-                         These are ALSO included in the grid.
-
-        Returns:
-            List of parameter dicts (Cartesian product).
-            Returns empty list if total cardinality exceeds 100M.
-        """
-        if coarse_keys is None:
-            coarse_keys = {}
-
-        all_keys = list(keys) + [k for k in coarse_keys if k not in keys]
-        value_lists: list[list[float]] = []
-        dim_names: list[str] = []
-
-        for key in all_keys:
-            if key not in self._dim_map:
-                continue
-            dim = self._dim_map[key]
-            dim_names.append(key)
-
-            if key in coarse_keys:
-                n_levels = coarse_keys[key]
-                if dim.discrete_values is not None:
-                    # Evenly sample from discrete values
-                    vals = dim.discrete_values
-                    if len(vals) <= n_levels:
-                        value_lists.append(list(vals))
-                    else:
-                        indices = np.linspace(0, len(vals) - 1, n_levels, dtype=int)
-                        value_lists.append([vals[i] for i in indices])
-                else:
-                    # Evenly space n_levels across range, snap to resolution
-                    raw = np.linspace(dim.lo, dim.hi, n_levels)
-                    value_lists.append([dim.snap(float(v)) for v in raw])
-            else:
-                vals = dim.legal_values()
-                if not vals:
-                    # Continuous dim without resolution — use 10 levels
-                    raw = np.linspace(dim.lo, dim.hi, 10)
-                    value_lists.append([float(v) for v in raw])
-                else:
-                    value_lists.append(vals)
-
-        if not value_lists:
-            return []
-
-        # Safety check: don't blow up memory
-        cardinality = 1
-        for vl in value_lists:
-            cardinality *= len(vl)
-            if cardinality > 100_000_000:
-                return []
-
-        results: list[dict[str, float]] = []
-        for combo in cart_product(*value_lists):
-            params: dict[str, float] = {}
-            for name, val in zip(dim_names, combo):
-                params[name] = val
-            results.append(params)
-
-        return results
-
-    def neighborhood(
-        self,
-        params: dict[str, float],
-        steps: int = 1,
-    ) -> list[dict[str, float]]:
-        """All ±steps neighbors in every dimension.
-
-        For 23 Tier A dims at ±1 step: 46 neighbors.
-        Each neighbor differs from `params` in exactly one dimension.
-
-        Args:
-            params: Center point in parameter space.
-            steps: Number of resolution steps to perturb (default 1).
-
-        Returns:
-            List of neighbor parameter dicts.
-        """
-        neighbors: list[dict[str, float]] = []
-
-        for dim in self.dimensions:
-            if dim.name not in params:
-                continue
-
-            center_val = params[dim.name]
-
-            if dim.discrete_values is not None:
-                # Find index of current value
-                try:
-                    idx = min(
-                        range(len(dim.discrete_values)),
-                        key=lambda i: abs(dim.discrete_values[i] - center_val),
-                    )
-                except ValueError:
-                    continue
-                for delta in range(-steps, steps + 1):
-                    if delta == 0:
-                        continue
-                    new_idx = idx + delta
-                    if 0 <= new_idx < len(dim.discrete_values):
-                        neighbor = dict(params)
-                        neighbor[dim.name] = dim.discrete_values[new_idx]
-                        neighbors.append(neighbor)
-            elif dim.resolution > 0:
-                for delta in range(-steps, steps + 1):
-                    if delta == 0:
-                        continue
-                    new_val = center_val + delta * dim.resolution
-                    if dim.lo - 1e-9 <= new_val <= dim.hi + 1e-9:
-                        neighbor = dict(params)
-                        neighbor[dim.name] = dim.snap(new_val)
-                        neighbors.append(neighbor)
-
-        return neighbors
 
     @classmethod
     def from_car(
@@ -719,12 +696,21 @@ def _build_dimension(
         "rear_spring_perch_mm": gr.rear_spring_perch_mm,
         "front_arb_blade": gr.arb_blade,
         "rear_arb_blade": gr.arb_blade,
+        "front_arb_size": (0.0, float(max(0, len(car.arb.front_size_labels) - 1))),
+        "rear_arb_size": (0.0, float(max(0, len(car.arb.rear_size_labels) - 1))),
+        "tc_gain": (1.0, 10.0),
+        "tc_slip": (1.0, 10.0),
+        "diff_ramp_option_idx": (0.0, float(max(0, len(car.garage_ranges.diff_coast_drive_ramp_options) - 1))),
         "front_camber_deg": gr.camber_front_deg,
         "rear_camber_deg": gr.camber_rear_deg,
         "front_toe_mm": gr.toe_front_mm,
         "rear_toe_mm": gr.toe_rear_mm,
         "brake_bias_pct": (40.0, 60.0),  # broad legal range; car.brake_bias_pct is default
         "diff_preload_nm": gr.diff_preload_nm,
+        "diff_clutch_plates": (
+            float(min(gr.diff_clutch_plates_options or [2, 4, 6])),
+            float(max(gr.diff_clutch_plates_options or [2, 4, 6])),
+        ),
     }
 
     # Damper ranges from car.damper
@@ -775,6 +761,12 @@ def _build_dimension(
         resolution_map[dk] = 1.0
     resolution_map["front_arb_blade"] = 1.0
     resolution_map["rear_arb_blade"] = 1.0
+    resolution_map["front_arb_size"] = 1.0
+    resolution_map["rear_arb_size"] = 1.0
+    resolution_map["tc_gain"] = 1.0
+    resolution_map["tc_slip"] = 1.0
+    resolution_map["diff_ramp_option_idx"] = 1.0
+    resolution_map["diff_clutch_plates"] = 1.0
 
     resolution = resolution_map.get(key, spec.resolution if spec and spec.resolution else 1.0)
 
@@ -785,6 +777,18 @@ def _build_dimension(
     if key == "wing_angle_deg" and car.wing_angles:
         discrete_values = sorted(car.wing_angles)
         kind = "discrete"
+    elif key == "front_arb_size":
+        discrete_values = list(range(len(car.arb.front_size_labels)))
+        kind = "ordinal"
+    elif key == "rear_arb_size":
+        discrete_values = list(range(len(car.arb.rear_size_labels)))
+        kind = "ordinal"
+    elif key in ("tc_gain", "tc_slip"):
+        discrete_values = list(range(1, 11))
+        kind = "ordinal"
+    elif key == "diff_ramp_option_idx":
+        discrete_values = list(range(len(car.garage_ranges.diff_coast_drive_ramp_options)))
+        kind = "ordinal"
     elif key == "front_torsion_od_mm" and car.corner_spring.front_torsion_od_options:
         discrete_values = sorted(car.corner_spring.front_torsion_od_options)
         kind = "discrete"

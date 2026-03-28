@@ -27,6 +27,18 @@ from analyzer.telemetry_truth import get_signal
 from car_model.cars import CarModel
 
 
+def _coalesce_float(value: object, default: float = 0.0) -> float:
+    try:
+        return default if value is None else float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _positive_or_zero(value: object) -> float:
+    numeric = _coalesce_float(value, 0.0)
+    return numeric if numeric > 0.0 else 0.0
+
+
 @dataclass
 class Problem:
     """A single diagnosed handling problem."""
@@ -85,9 +97,9 @@ def diagnose(
         lap_time_s=measured.lap_time_s,
         lap_number=measured.lap_number,
         lltd_pct=(
-            measured.roll_distribution_proxy * 100
-            if measured.roll_distribution_proxy > 0
-            else measured.lltd_measured * 100 if measured.lltd_measured > 0 else 0.0
+            _positive_or_zero(measured.roll_distribution_proxy) * 100
+            if _positive_or_zero(measured.roll_distribution_proxy) > 0.0
+            else _positive_or_zero(measured.lltd_measured) * 100
         ),
         weight_dist_front_pct=car.weight_dist_front * 100,
     )
@@ -674,8 +686,10 @@ def _check_balance(
             ))
 
     # Ride-height-based roll distribution proxy check
-    roll_proxy = (m.roll_distribution_proxy if (m.roll_distribution_proxy or 0) > 0 else m.lltd_measured)
-    if roll_proxy is not None and roll_proxy > 0:
+    roll_proxy = _positive_or_zero(m.roll_distribution_proxy)
+    if roll_proxy <= 0.0:
+        roll_proxy = _positive_or_zero(m.lltd_measured)
+    if roll_proxy > 0:
         target_lltd = car.weight_dist_front + 0.05  # 5% above front weight dist (OptimumG baseline)
         lltd_delta = roll_proxy - target_lltd
 
@@ -1119,7 +1133,9 @@ def _check_brake_system(
 
     # Hydraulic split is advisory only, and only trustworthy when ABS is not
     # dominating the brake event.
-    hydraulic_split = m.hydraulic_brake_split_pct or m.measured_brake_bias_pct
+    hydraulic_split = _positive_or_zero(m.hydraulic_brake_split_pct)
+    if hydraulic_split <= 0.0:
+        hydraulic_split = _positive_or_zero(m.measured_brake_bias_pct)
     if hydraulic_split > 0 and s.brake_bias_pct > 0 and m.abs_active_pct < 10.0:
         bias_delta = abs(hydraulic_split - s.brake_bias_pct)
         if bias_delta > 4.0 and m.hydraulic_brake_split_confidence > 0.4:
@@ -1228,8 +1244,12 @@ def _check_speed_dependent_balance(
     m: MeasuredState, car: CarModel, problems: list[Problem],
 ) -> None:
     """Check for speed-dependent roll-distribution proxy shift."""
-    low_speed_proxy = m.roll_distribution_proxy_low_speed or m.lltd_low_speed
-    high_speed_proxy = m.roll_distribution_proxy_high_speed or m.lltd_high_speed
+    low_speed_proxy = _positive_or_zero(m.roll_distribution_proxy_low_speed)
+    if low_speed_proxy <= 0.0:
+        low_speed_proxy = _positive_or_zero(m.lltd_low_speed)
+    high_speed_proxy = _positive_or_zero(m.roll_distribution_proxy_high_speed)
+    if high_speed_proxy <= 0.0:
+        high_speed_proxy = _positive_or_zero(m.lltd_high_speed)
     if low_speed_proxy > 0 and high_speed_proxy > 0:
         lltd_shift = (high_speed_proxy - low_speed_proxy) * 100  # in %
         if abs(lltd_shift) > 5.0:  # >5% LLTD shift between speed ranges

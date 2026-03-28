@@ -10,8 +10,15 @@ them from:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from car_model.setup_registry import (
+    diff_ramp_option_index,
+    diff_ramp_string_for_option,
+    get_numeric_resolution,
+    snap_to_resolution,
+)
 
 if TYPE_CHECKING:
     from analyzer.diagnose import Diagnosis
@@ -30,6 +37,7 @@ class SupportingSolution:
     brake_bias_reasoning: str = ""
     brake_bias_target: float = 0.0
     brake_bias_migration: float = 0.0
+    brake_bias_migration_gain: float = 0.0
     front_master_cyl_mm: float = 0.0
     rear_master_cyl_mm: float = 0.0
     pad_compound: str = ""
@@ -44,6 +52,8 @@ class SupportingSolution:
     diff_preload_nm: float = 10.0
     diff_ramp_coast: int = 40  # coast ramp angle (degrees)
     diff_ramp_drive: int = 65  # drive ramp angle (degrees)
+    diff_ramp_option_idx: int = 0
+    diff_ramp_angles: str = ""
     diff_clutch_plates: int = 6
     diff_reasoning: str = ""
 
@@ -59,6 +69,17 @@ class SupportingSolution:
     tyre_cold_rr_kpa: float = 152.0
     pressure_reasoning: str = ""
 
+    # Deterministic / export context
+    fuel_l: float = 0.0
+    fuel_low_warning_l: float = 0.0
+    fuel_target_l: float = 0.0
+    gear_stack: str = ""
+    hybrid_rear_drive_enabled: str = ""
+    hybrid_rear_drive_corner_pct: float = 0.0
+    roof_light_color: str = ""
+    parameter_search_status: dict[str, str] = field(default_factory=dict)
+    parameter_search_evidence: dict[str, list[str]] = field(default_factory=dict)
+
     def summary(self) -> str:
         lines = [
             f"Brake bias: {self.brake_bias_pct:.1f}% [{self.brake_bias_status}]",
@@ -70,13 +91,18 @@ class SupportingSolution:
             f"  Brake hardware status: {self.brake_hardware_status}",
             f"Diff: preload={self.diff_preload_nm:.0f} Nm, "
             f"coast={self.diff_ramp_coast}°, drive={self.diff_ramp_drive}°, "
-            f"plates={self.diff_clutch_plates}",
+            f"plates={self.diff_clutch_plates}, option={self.diff_ramp_option_idx}",
             f"  {self.diff_reasoning}",
             f"TC: gain={self.tc_gain}, slip={self.tc_slip}",
             f"  {self.tc_reasoning}",
             f"Tyres (cold kPa): FL={self.tyre_cold_fl_kpa:.0f} FR={self.tyre_cold_fr_kpa:.0f} "
             f"RL={self.tyre_cold_rl_kpa:.0f} RR={self.tyre_cold_rr_kpa:.0f}",
             f"  {self.pressure_reasoning}",
+            f"Fuel/context: level={self.fuel_l:.1f}L warning={self.fuel_low_warning_l:.1f}L "
+            f"target={self.fuel_target_l:.1f}L gear={self.gear_stack or 'unknown'} "
+            f"hybrid={self.hybrid_rear_drive_enabled or 'unknown'} "
+            f"hybrid-corner={self.hybrid_rear_drive_corner_pct:.1f}% "
+            f"roof={self.roof_light_color or 'unknown'}",
         ]
         return "\n".join(lines)
 
@@ -116,7 +142,24 @@ class SupportingSolver:
         self._solve_diff(sol)
         self._solve_tc(sol)
         self._solve_pressures(sol)
+        self._solve_context(sol)
         return sol
+
+    def _option_step(self, options: list[float], value: float, delta: int) -> float:
+        if not options:
+            return value
+        ordered = sorted(float(x) for x in options)
+        nearest_idx = min(range(len(ordered)), key=lambda idx: abs(ordered[idx] - float(value)))
+        target_idx = max(0, min(len(ordered) - 1, nearest_idx + int(delta)))
+        return ordered[target_idx]
+
+    def _pad_step(self, current: str, delta: int) -> str:
+        options = list(getattr(self.car.garage_ranges, "brake_pad_compound_options", []) or ["Low", "Medium", "High"])
+        normalized = current or "Medium"
+        if normalized not in options:
+            normalized = options[min(len(options) - 1, 1)]
+        idx = max(0, min(len(options) - 1, options.index(normalized) + int(delta)))
+        return options[idx]
 
     def _solve_brake_bias(self, sol: SupportingSolution) -> None:
         brake_solution = BrakeSolver(
@@ -130,20 +173,83 @@ class SupportingSolver:
         sol.brake_bias_pct = brake_solution.brake_bias_pct
         sol.brake_bias_reasoning = brake_solution.reasoning
         sol._brake_solution = brake_solution
-        sol.brake_bias_target = getattr(self.current_setup, "brake_bias_target", 0.0) or 0.0
-        sol.brake_bias_migration = getattr(self.current_setup, "brake_bias_migration", 0.0) or 0.0
-        sol.front_master_cyl_mm = getattr(self.current_setup, "front_master_cyl_mm", 0.0) or 0.0
-        sol.rear_master_cyl_mm = getattr(self.current_setup, "rear_master_cyl_mm", 0.0) or 0.0
-        sol.pad_compound = getattr(self.current_setup, "pad_compound", "") or ""
-        sol.brake_bias_status = "solved"
-        sol.brake_bias_target_status = "pass-through"
-        sol.brake_bias_migration_status = "pass-through"
-        sol.master_cylinder_status = "pass-through"
-        sol.pad_compound_status = "pass-through"
-        sol.brake_hardware_status = (
-            "Static brake bias is solved from telemetry; brake target, migration, "
-            "master cylinders, and pad compound are pass-through hardware context."
+        target_limits = getattr(self.car.garage_ranges, "brake_bias_target", (-5.0, 5.0))
+        migration_limits = getattr(self.car.garage_ranges, "brake_bias_migration", (-5.0, 5.0))
+        target_step = get_numeric_resolution(self.car, "brake_bias_target", default=0.5) or 0.5
+        migration_step = get_numeric_resolution(self.car, "brake_bias_migration", default=0.5) or 0.5
+        current_target = snap_to_resolution(
+            float(getattr(self.current_setup, "brake_bias_target", 0.0) or 0.0),
+            target_step,
+            lo=float(target_limits[0]),
+            hi=float(target_limits[1]),
         )
+        current_migration = snap_to_resolution(
+            float(getattr(self.current_setup, "brake_bias_migration", 0.0) or 0.0),
+            migration_step,
+            lo=float(migration_limits[0]),
+            hi=float(migration_limits[1]),
+        )
+        current_front_mc = float(getattr(self.current_setup, "front_master_cyl_mm", 19.1) or 19.1)
+        current_rear_mc = float(getattr(self.current_setup, "rear_master_cyl_mm", 20.6) or 20.6)
+        current_pad = getattr(self.current_setup, "pad_compound", "") or "Medium"
+
+        front_lock = float(getattr(self.measured, "front_braking_lock_ratio_p95", 0.0) or 0.0)
+        braking_pitch = float(getattr(self.measured, "pitch_range_braking_deg", 0.0) or 0.0)
+        hydraulic_split = float(getattr(self.measured, "hydraulic_brake_split_pct", 0.0) or 0.0)
+        abs_activity = float(getattr(self.measured, "abs_active_pct", 0.0) or 0.0)
+
+        front_mc = current_front_mc
+        rear_mc = current_rear_mc
+        target = current_target
+        migration = current_migration
+        pad = current_pad
+        hardware_reasons: list[str] = []
+
+        if front_lock >= 0.075 or hydraulic_split >= sol.brake_bias_pct + 0.5:
+            front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, -1)
+            rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, +1)
+            target = _clamp(current_target - target_step, *target_limits)
+            migration = _clamp(current_migration - migration_step, *migration_limits)
+            pad = self._pad_step(current_pad, -1)
+            hardware_reasons.append("front-lock evidence shifted brake hardware and migration rearward")
+        elif front_lock <= 0.03 and braking_pitch <= 0.8 and abs_activity < 8.0:
+            front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, +1)
+            rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, -1)
+            target = _clamp(current_target + target_step, *target_limits)
+            migration = _clamp(current_migration + migration_step, *migration_limits)
+            pad = self._pad_step(current_pad, +1)
+            hardware_reasons.append("stable braking allowed a slightly more aggressive brake hardware seed")
+
+        sol.brake_bias_target = snap_to_resolution(target, target_step, lo=float(target_limits[0]), hi=float(target_limits[1]))
+        sol.brake_bias_migration = snap_to_resolution(
+            migration,
+            migration_step,
+            lo=float(migration_limits[0]),
+            hi=float(migration_limits[1]),
+        )
+        sol.front_master_cyl_mm = round(front_mc, 1)
+        sol.rear_master_cyl_mm = round(rear_mc, 1)
+        sol.pad_compound = pad
+        sol.brake_bias_status = "solved"
+        if hardware_reasons:
+            sol.brake_bias_target_status = "seeded_from_telemetry"
+            sol.brake_bias_migration_status = "seeded_from_telemetry"
+            sol.master_cylinder_status = "seeded_from_telemetry"
+            sol.pad_compound_status = "seeded_from_telemetry"
+            sol.brake_hardware_status = (
+                "Static brake bias is solved from telemetry; brake target, master cylinders, "
+                "pad compound, and migration were conservatively seeded from braking evidence."
+            )
+            sol.brake_bias_reasoning = f"{sol.brake_bias_reasoning} | {'; '.join(hardware_reasons)}"
+        else:
+            sol.brake_bias_target_status = "seeded_from_setup"
+            sol.brake_bias_migration_status = "seeded_from_setup"
+            sol.master_cylinder_status = "seeded_from_setup"
+            sol.pad_compound_status = "seeded_from_setup"
+            sol.brake_hardware_status = (
+                "Static brake bias is solved from telemetry; brake target, migration, "
+                "master cylinders, and pad compound are preserved as legal seeded context."
+            )
         if getattr(self.car, "canonical_name", "") == "ferrari":
             live_bias = getattr(self.measured, "live_brake_bias_pct", None)
             setup_bias = getattr(self.current_setup, "brake_bias_pct", 0.0) or 0.0
@@ -186,6 +292,17 @@ class SupportingSolver:
             sol.diff_ramp_coast = diff_sol.coast_ramp_deg
             sol.diff_ramp_drive = diff_sol.drive_ramp_deg
             sol.diff_clutch_plates = diff_sol.clutch_plates
+            sol.diff_ramp_option_idx = diff_ramp_option_index(
+                self.car,
+                coast=sol.diff_ramp_coast,
+                drive=sol.diff_ramp_drive,
+                default=1,
+            ) or 1
+            sol.diff_ramp_angles = diff_ramp_string_for_option(
+                self.car,
+                sol.diff_ramp_option_idx,
+                ferrari_label=getattr(self.car, "canonical_name", "") == "ferrari",
+            )
             # Store diff solution for reporting (optional attribute)
             sol._diff_solution = diff_sol
             sol.diff_reasoning = (
@@ -253,6 +370,12 @@ class SupportingSolver:
 
         sol.diff_ramp_coast = coast
         sol.diff_ramp_drive = drive
+        sol.diff_ramp_option_idx = diff_ramp_option_index(self.car, coast=coast, drive=drive, default=1) or 1
+        sol.diff_ramp_angles = diff_ramp_string_for_option(
+            self.car,
+            sol.diff_ramp_option_idx,
+            ferrari_label=getattr(self.car, "canonical_name", "") == "ferrari",
+        )
         sol.diff_clutch_plates = self.car.garage_ranges.diff_clutch_plates_options[-1]  # highest available
         sol.diff_reasoning = "; ".join(reasons)
 
@@ -424,3 +547,22 @@ class SupportingSolver:
             reasons.append("No rear pressure data — using minimum 152 kPa")
 
         sol.pressure_reasoning = "; ".join(reasons)
+
+    def _solve_context(self, sol: SupportingSolution) -> None:
+        current_setup = self.current_setup
+        measured = self.measured
+        current_fuel = float(getattr(current_setup, "fuel_l", 0.0) or 0.0)
+        measured_fuel = float(getattr(measured, "fuel_level_at_measurement_l", 0.0) or 0.0)
+        fuel_burn_per_lap = float(getattr(measured, "fuel_used_per_lap_l", 0.0) or 0.0)
+
+        sol.fuel_l = round(measured_fuel or current_fuel, 1)
+        sol.fuel_target_l = round(float(getattr(current_setup, "fuel_target_l", 0.0) or sol.fuel_l), 1)
+        if fuel_burn_per_lap > 0.0:
+            sol.fuel_low_warning_l = round(max(5.0, fuel_burn_per_lap * 1.5), 1)
+        else:
+            sol.fuel_low_warning_l = round(float(getattr(current_setup, "fuel_low_warning_l", 0.0) or 8.0), 1)
+        sol.brake_bias_migration_gain = round(float(getattr(current_setup, "brake_bias_migration_gain", 0.0) or 0.0), 1)
+        sol.gear_stack = str(getattr(current_setup, "gear_stack", "") or "Short")
+        sol.hybrid_rear_drive_enabled = str(getattr(current_setup, "hybrid_rear_drive_enabled", "") or "Off")
+        sol.hybrid_rear_drive_corner_pct = round(float(getattr(current_setup, "hybrid_rear_drive_corner_pct", 0.0) or 0.0), 1)
+        sol.roof_light_color = str(getattr(current_setup, "roof_light_color", "") or "Orange")

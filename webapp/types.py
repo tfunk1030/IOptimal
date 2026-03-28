@@ -24,6 +24,7 @@ class RunCreateRequest:
     fuel: float | None = None
     balance: float = 50.14
     tolerance: float = 0.1
+    scenario_profile: str = "single_lap_safe"
     free_opt: bool = False
     use_learning: bool = True
     synthesize: bool = True
@@ -98,6 +99,8 @@ class SessionResultView:
     assessment: str
     confidence_label: str
     confidence_value: float | None
+    support_tier: str = "unknown"
+    observation_count: int = 0
     overview_badges: list[str] = field(default_factory=list)
     problems: list[ProblemView] = field(default_factory=list)
     top_changes: list[ChangeView] = field(default_factory=list)

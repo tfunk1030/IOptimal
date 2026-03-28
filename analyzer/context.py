@@ -127,7 +127,7 @@ def build_session_context(
     if getattr(measured, "brake_bias_adjustments", 0) > 8 or getattr(measured, "tc_adjustments", 0) > 8:
         traffic_confidence = 0.55
         notes.append("heavy in-car adjustment activity reduces comparability confidence")
-    elif getattr(measured, "yaw_rate_correlation", 0.0) > 0.85:
+    elif (getattr(measured, "yaw_rate_correlation", 0.0) or 0.0) > 0.85:
         traffic_confidence = 0.8
 
     # Comparability requires: reasonable thermal window, pace, weather,
