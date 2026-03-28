@@ -1,10 +1,10 @@
 {
   "session_id": "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-20_19-52-42",
-  "ibt_path": "ibtfiles\\ferrari499p_sebring international 2026-03-20 19-52-42.ibt",
+  "ibt_path": "C:\\Users\\VYRAL\\Documents\\iRacing\\Telemetry\\ferrari499p_sebring international 2026-03-20 19-52-42.ibt",
   "car": "ferrari",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-21T01:07:10.891433+00:00",
+  "timestamp": "2026-03-28T00:13:05.232222+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -160,6 +160,12 @@
     "tc_intervention_pct": 0.0,
     "pitch_mean_at_speed_deg": 0.003,
     "pitch_range_deg": 1.67,
+    "pitch_range_braking_deg": 1.36,
+    "front_rh_excursion_measured_mm": 13.609955787658691,
+    "front_braking_lock_ratio_p95": 0.09670649468898773,
+    "rear_power_slip_ratio_p95": 0.09112359583377838,
+    "front_pressure_mean_kpa": 180.9,
+    "rear_pressure_mean_kpa": 182.4,
     "understeer_left_turn_deg": 0.16098542511463165,
     "understeer_right_turn_deg": 0.0065703378058969975,
     "lf_shock_vel_p95_mps": 0.09417650103569031,
@@ -415,23 +421,7 @@
   "conditions": {
     "telemetry_source": "ferrari499p_sebring international 2026-03-20 19-52-42.ibt \u2014 best lap 109.227s"
   },
-  "solver_predictions": {
-    "front_rh_std_mm": 0.0,
-    "rear_rh_std_mm": 0.0,
-    "lltd_predicted": 0.5381,
-    "body_roll_predicted_deg_per_g": 0.0,
-    "front_bottoming_predicted": 0,
-    "front_heave_travel_used_pct": 59.568,
-    "front_excursion_mm": 13.882,
-    "braking_pitch_deg": 1.387,
-    "front_lock_p95": 0.0983,
-    "rear_power_slip_p95": 0.0929,
-    "body_slip_p95_deg": 3.447,
-    "understeer_low_deg": 0.058,
-    "understeer_high_deg": 0.288,
-    "front_pressure_hot_kpa": 182.1,
-    "rear_pressure_hot_kpa": 182.4
-  },
+  "solver_predictions": {},
   "solver_comparison": {},
   "corner_performance": [
     {

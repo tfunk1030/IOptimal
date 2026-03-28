@@ -19,6 +19,7 @@
         <a class="nav-link {% if active_nav == 'sessions' %}is-active{% endif %}" href="/sessions">Sessions</a>
         <a class="nav-link {% if active_nav == 'compare' %}is-active{% endif %}" href="/compare">Compare</a>
         <a class="nav-link {% if active_nav == 'knowledge' %}is-active{% endif %}" href="/knowledge">Knowledge</a>
+        <a class="nav-link {% if active_nav == 'telemetry' %}is-active{% endif %}" href="/telemetry">Telemetry</a>
         <a class="nav-link {% if active_nav == 'team' %}is-active{% endif %}" href="/team">Team</a>
         <a class="nav-link {% if active_nav == 'settings' %}is-active{% endif %}" href="/settings">Settings</a>
       </nav>
@@ -64,5 +65,6 @@
       });
     });
   </script>
+  {% block extra_scripts %}{% endblock %}
 </body>
 </html>

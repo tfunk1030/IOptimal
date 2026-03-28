@@ -13,6 +13,7 @@ from typing import Optional
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -68,7 +69,7 @@ class Team(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     invite_code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # relationships
@@ -105,7 +106,7 @@ class Member(Base):
     )  # 'admin' | 'engineer' | 'member'
     primary_class: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # relationships
@@ -136,7 +137,7 @@ class Division(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     car_class: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # relationships
@@ -198,10 +199,10 @@ class CarDefinition(Base):
     observation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     car_model_json: Mapped[Optional[dict]] = mapped_column(_JsonType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     # relationships
@@ -239,7 +240,7 @@ class Observation(Base):
     lap_count: Mapped[int] = mapped_column(Integer, nullable=False)
     observation_json: Mapped[dict] = mapped_column(_JsonType, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # relationships
@@ -268,7 +269,7 @@ class Delta(Base):
     setup_changes_count: Mapped[int] = mapped_column(Integer, nullable=False)
     delta_json: Mapped[dict] = mapped_column(_JsonType, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # relationships
@@ -300,7 +301,7 @@ class EmpiricalModel(Base):
         String(16), nullable=False, default="unsupported"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     # relationships
@@ -330,7 +331,7 @@ class GlobalCarModel(Base):
     )
     total_sessions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     # relationships
@@ -364,7 +365,7 @@ class SharedSetup(Base):
     rating_sum: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     rating_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # relationships
@@ -393,7 +394,7 @@ class SetupRating(Base):
     )
     rating: Mapped[int] = mapped_column(Integer, nullable=False)  # -1 or +1
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 
@@ -419,7 +420,7 @@ class ActivityLog(Base):
     track: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # relationships
@@ -454,7 +455,7 @@ class Leaderboard(Base):
     best_lap_time_s: Mapped[float] = mapped_column(Float, nullable=False)
     session_date: Mapped[datetime] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     # relationships

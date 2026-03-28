@@ -55,6 +55,14 @@
   <div class="panel">
     <div class="panel-head">
       <h2>Telemetry</h2>
+      <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <span class="badge">{{ obs_count }} sessions ingested</span>
+        {% if config.auto_ingest %}
+          <span class="badge" style="background: var(--green, #22c55e); color: #000;">Auto-ingest: Active</span>
+        {% else %}
+          <span class="badge" style="background: var(--text-muted); color: #000;">Auto-ingest: Off</span>
+        {% endif %}
+      </div>
     </div>
     <div class="stack-md">
       <div class="field">
@@ -66,7 +74,7 @@
       </div>
       <div class="checkbox">
         <input type="checkbox" id="auto-ingest" name="auto_ingest" {% if config.auto_ingest %}checked{% endif %}>
-        <label for="auto-ingest">Auto-ingest new IBT files</label>
+        <label for="auto-ingest">Auto-ingest new IBT files (scans every 30 seconds)</label>
       </div>
     </div>
   </div>
@@ -111,9 +119,97 @@
     </div>
   </div>
 
+  <!-- Bulk Import -->
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Bulk Import</h2>
+    </div>
+    <div class="stack-md">
+      <p style="color: var(--text-muted); font-size: 0.9rem;">Import all existing .ibt files from your telemetry directory into the knowledge base.</p>
+      <div class="actions">
+        <button type="button" class="button button-secondary" id="bulk-import">Bulk Import</button>
+        <span id="bulk-import-status" style="margin-left: 0.75rem; font-size: 0.9rem;"></span>
+      </div>
+    </div>
+  </div>
+
   <div class="actions">
     <button type="submit" class="button button-primary">Save Settings</button>
   </div>
 
 </form>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function postAction(url, body) {
+  const opts = { method: 'POST' };
+  if (body) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(body);
+  }
+  const resp = await fetch(url, opts);
+  return resp.json();
+}
+
+function setStatus(el, ok, msg) {
+  el.textContent = msg;
+  el.style.color = ok ? 'var(--green, #22c55e)' : 'var(--red, #ef4444)';
+}
+
+document.getElementById('test-connection')?.addEventListener('click', async function () {
+  const btn = this;
+  const status = document.createElement('span');
+  status.style.marginLeft = '0.75rem';
+  status.style.fontSize = '0.9rem';
+  btn.parentNode.querySelector('span')?.remove();
+  btn.parentNode.appendChild(status);
+  btn.disabled = true;
+  status.textContent = 'Testing…';
+  try {
+    const data = await postAction('/settings/test-connection');
+    setStatus(status, data.ok, data.message);
+  } catch (e) {
+    setStatus(status, false, 'Request failed');
+  }
+  btn.disabled = false;
+});
+
+document.getElementById('join-team')?.addEventListener('click', async function () {
+  const btn = this;
+  const status = document.createElement('span');
+  status.style.marginLeft = '0.75rem';
+  status.style.fontSize = '0.9rem';
+  btn.parentNode.querySelector('span')?.remove();
+  btn.parentNode.appendChild(status);
+  btn.disabled = true;
+  status.textContent = 'Joining…';
+  try {
+    const invite_code = document.getElementById('invite-code').value;
+    const iracing_name = document.getElementById('iracing-name').value;
+    const data = await postAction('/settings/join-team', { invite_code, iracing_name });
+    setStatus(status, data.ok, data.message);
+    if (data.ok) setTimeout(() => location.reload(), 1500);
+  } catch (e) {
+    setStatus(status, false, 'Request failed');
+  }
+  btn.disabled = false;
+});
+
+document.getElementById('bulk-import')?.addEventListener('click', async function () {
+  const btn = this;
+  const status = document.getElementById('bulk-import-status');
+  btn.disabled = true;
+  status.textContent = 'Importing… this may take a while';
+  status.style.color = 'var(--text-muted)';
+  try {
+    const data = await postAction('/settings/bulk-import');
+    setStatus(status, data.ok, data.message);
+  } catch (e) {
+    setStatus(status, false, 'Request failed');
+  }
+  btn.disabled = false;
+});
+</script>
 {% endblock %}

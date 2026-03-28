@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,7 @@ class ObservationCreateRequest(BaseModel):
 
 
 class ObservationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     member_id: str
     session_id: str
@@ -138,8 +139,8 @@ async def list_observations(
     result = await db.execute(stmt)
     return [
         ObservationOut(
-            id=o.id,
-            member_id=o.member_id,
+            id=str(o.id),
+            member_id=str(o.member_id),
             session_id=o.session_id,
             car=o.car,
             car_class=o.car_class,

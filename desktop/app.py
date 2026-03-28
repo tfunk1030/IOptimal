@@ -209,7 +209,7 @@ def main():
         logger.info("Bulk import complete: %d sessions", len(results))
 
     # Open browser
-    if config.open_browser_on_start:
+    if config.browser_open_on_start:
         webbrowser.open(f"http://localhost:{config.webapp_port}")
 
     if args.no_tray:

@@ -8,11 +8,12 @@ IOptimal is a private team telemetry tool for iRacing. It runs on your PC, autom
 
 ## Installation
 
-1. **Download** the IOptimal installer from your team admin
-2. **Run** `IOptimal.exe` — it installs to your system tray
+1. **Download** the IOptimal zip from your team admin (or find it in `dist/IOptimal/`)
+2. **Extract** and run `IOptimal.exe` — it installs to your system tray
 3. **First Run Setup:**
    - The app auto-detects your iRacing telemetry directory (`Documents/iRacing/Telemetry/`)
-   - Enter the **invite code** your team admin gave you
+   - Set the **Server URL** to: `https://ioptimal-server-27191526338.us-central1.run.app`
+   - Enter the **invite code**: `5a1c520b`
    - Enter your **iRacing display name**
    - Click "Join Team" — you'll get an API key automatically
    - Click "Save Settings"

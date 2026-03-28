@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,7 @@ class SetupShareRequest(BaseModel):
 
 
 class SetupOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     member_id: str
     car: str
@@ -138,8 +139,8 @@ async def list_setups(
     result = await db.execute(stmt)
     return [
         SetupOut(
-            id=s.id,
-            member_id=s.member_id,
+            id=str(s.id),
+            member_id=str(s.member_id),
             car=s.car,
             car_class=s.car_class,
             track=s.track,

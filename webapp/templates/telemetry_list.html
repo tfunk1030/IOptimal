@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Ingested Sessions</p>
+    <h1>Telemetry Library</h1>
+    <p class="lede">{{ observations|length }} sessions from the knowledge base. Click any row to see setup, tyre data, and driver profile.</p>
+  </div>
+</section>
+
+<!-- Import controls -->
+<section class="panel" style="margin-bottom: 1.5rem;">
+  <div class="panel-head">
+    <h2>Import</h2>
+  </div>
+  <div style="display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap;">
+    <!-- Upload IBT files -->
+    <div style="flex: 1; min-width: 250px;">
+      <label style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Upload .ibt files</label>
+      <div id="drop-zone" style="border: 2px dashed var(--border, #444); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: border-color 0.2s;">
+        <p style="margin: 0; color: var(--text-muted);">Drag &amp; drop .ibt files here or click to browse</p>
+        <input type="file" id="ibt-upload" multiple accept=".ibt" style="display: none;">
+      </div>
+      <span id="upload-status" style="font-size: 0.85rem; margin-top: 0.5rem; display: block;"></span>
+    </div>
+    <!-- Pick from telemetry directory -->
+    <div style="flex: 1; min-width: 250px;">
+      <label style="font-weight: 600; display: block; margin-bottom: 0.5rem;">From telemetry folder</label>
+      <button type="button" class="button button-secondary" id="browse-telemetry" style="margin-bottom: 0.5rem;">Browse Telemetry Directory</button>
+      <div id="file-browser" style="display: none; max-height: 250px; overflow-y: auto; border: 1px solid var(--border, #444); border-radius: 8px; padding: 0.5rem;">
+        <div id="file-list"></div>
+      </div>
+      <span id="browse-status" style="font-size: 0.85rem; margin-top: 0.5rem; display: block;"></span>
+    </div>
+  </div>
+</section>
+
+{% if cars|length > 1 %}
+<section class="panel" style="margin-bottom: 1.5rem;">
+  <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+    <label style="font-weight: 600;">Filter:</label>
+    {% for c in cars %}
+      <a href="/telemetry?car={{ c }}" class="button button-secondary {% if car_filter == c %}is-active{% endif %}" style="text-transform: uppercase; font-size: 0.85rem;">{{ c }}</a>
+    {% endfor %}
+    {% if car_filter %}
+      <a href="/telemetry" class="button button-secondary" style="font-size: 0.85rem;">All</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Car</th>
+          <th>Track</th>
+          <th>Best Lap</th>
+          <th>Consistency</th>
+          <th>Top Speed</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for obs in observations %}
+          <tr>
+            <td><a href="/telemetry/{{ obs.session_id }}">{{ obs.car|upper }}</a></td>
+            <td>{{ obs.track }}</td>
+            <td>{% if obs.best_lap %}{{ "%.3f"|format(obs.best_lap) }}s{% else %}-{% endif %}</td>
+            <td>{% if obs.consistency is not none %}{{ "%.2f"|format(obs.consistency) }}%{% else %}-{% endif %}</td>
+            <td>{% if obs.max_speed %}{{ "%.1f"|format(obs.max_speed) }} kph{% else %}-{% endif %}</td>
+            <td>{{ obs.timestamp }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('ibt-upload');
+const uploadStatus = document.getElementById('upload-status');
+
+// Click to open file picker
+dropZone.addEventListener('click', () => fileInput.click());
+
+// Drag and drop
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.style.borderColor = 'var(--accent, #f97316)';
+});
+dropZone.addEventListener('dragleave', () => {
+  dropZone.style.borderColor = 'var(--border, #444)';
+});
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.style.borderColor = 'var(--border, #444)';
+  if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+});
+
+// File input change
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) uploadFiles(fileInput.files);
+});
+
+async function uploadFiles(files) {
+  uploadStatus.textContent = `Uploading ${files.length} file(s)...`;
+  uploadStatus.style.color = 'var(--text-muted)';
+  const formData = new FormData();
+  for (const f of files) formData.append('ibt_files', f);
+  try {
+    const resp = await fetch('/telemetry/upload', { method: 'POST', body: formData });
+    const data = await resp.json();
+    uploadStatus.textContent = data.message;
+    uploadStatus.style.color = data.ok ? 'var(--green, #22c55e)' : 'var(--red, #ef4444)';
+    if (data.ingested > 0) setTimeout(() => location.reload(), 1500);
+  } catch (e) {
+    uploadStatus.textContent = 'Upload failed';
+    uploadStatus.style.color = 'var(--red, #ef4444)';
+  }
+}
+
+// Browse telemetry directory
+document.getElementById('browse-telemetry').addEventListener('click', async function () {
+  const btn = this;
+  const browser = document.getElementById('file-browser');
+  const fileList = document.getElementById('file-list');
+  const status = document.getElementById('browse-status');
+  btn.disabled = true;
+  status.textContent = 'Loading...';
+  status.style.color = 'var(--text-muted)';
+  try {
+    const resp = await fetch('/telemetry/browse-dir');
+    const data = await resp.json();
+    if (!data.ok) {
+      status.textContent = data.message;
+      status.style.color = 'var(--red, #ef4444)';
+      btn.disabled = false;
+      return;
+    }
+    status.textContent = data.message;
+    status.style.color = 'var(--green, #22c55e)';
+    browser.style.display = 'block';
+    fileList.innerHTML = '';
+    const notIngested = data.files.filter(f => !f.ingested);
+    if (notIngested.length === 0) {
+      fileList.innerHTML = '<p style="color: var(--text-muted); padding: 0.5rem;">All files already ingested.</p>';
+      btn.disabled = false;
+      return;
+    }
+    for (const f of notIngested) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border, #333);';
+      row.innerHTML = `
+        <span style="font-size: 0.85rem;">${f.name} <small style="color: var(--text-muted);">(${f.size_mb} MB)</small></span>
+        <button class="button button-secondary ingest-btn" data-path="${f.path}" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">Ingest</button>
+      `;
+      fileList.appendChild(row);
+    }
+    // Ingest all button
+    if (notIngested.length > 1) {
+      const allBtn = document.createElement('button');
+      allBtn.className = 'button button-primary';
+      allBtn.style.cssText = 'margin-top: 0.5rem; width: 100%; font-size: 0.85rem;';
+      allBtn.textContent = `Ingest All (${notIngested.length} files)`;
+      allBtn.addEventListener('click', async () => {
+        allBtn.disabled = true;
+        allBtn.textContent = 'Ingesting...';
+        let done = 0;
+        for (const f of notIngested) {
+          try {
+            await fetch('/telemetry/ingest-file', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path: f.path }),
+            });
+            done++;
+            allBtn.textContent = `Ingested ${done}/${notIngested.length}...`;
+          } catch (e) {}
+        }
+        allBtn.textContent = `Done! Ingested ${done} files.`;
+        setTimeout(() => location.reload(), 1500);
+      });
+      fileList.appendChild(allBtn);
+    }
+    // Individual ingest buttons
+    fileList.querySelectorAll('.ingest-btn').forEach(btn => {
+      btn.addEventListener('click', async function () {
+        this.disabled = true;
+        this.textContent = '...';
+        try {
+          const resp = await fetch('/telemetry/ingest-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: this.dataset.path }),
+          });
+          const data = await resp.json();
+          this.textContent = data.ok ? 'Done' : 'Error';
+          this.style.color = data.ok ? 'var(--green, #22c55e)' : 'var(--red, #ef4444)';
+          if (data.ok) setTimeout(() => location.reload(), 1000);
+        } catch (e) {
+          this.textContent = 'Error';
+        }
+      });
+    });
+  } catch (e) {
+    status.textContent = 'Failed to load files';
+    status.style.color = 'var(--red, #ef4444)';
+  }
+  btn.disabled = false;
+});
+</script>
+{% endblock %}

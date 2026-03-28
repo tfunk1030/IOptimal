@@ -1,0 +1,453 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero hero-compact">
+  <div>
+    <p class="eyebrow">{{ obs.car|upper }} — {{ obs.track }}</p>
+    <h1>Session Telemetry</h1>
+    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.5rem;">
+      <span class="badge">Lap {{ obs.lap_number or '?' }}</span>
+      {% if obs.best_lap %}<span class="badge">{{ "%.3f"|format(obs.best_lap) }}s</span>{% endif %}
+      {% if obs.driver_class %}<span class="badge">{{ obs.driver_class }}</span>{% endif %}
+      <span class="badge">{{ obs.timestamp }}</span>
+    </div>
+  </div>
+</section>
+
+<div data-tab-root>
+  <div class="tab-bar">
+    <button class="tab-trigger is-active" data-tab-trigger="overview">Overview</button>
+    <button class="tab-trigger" data-tab-trigger="setup">Setup</button>
+    <button class="tab-trigger" data-tab-trigger="tyres">Tyres</button>
+    <button class="tab-trigger" data-tab-trigger="corners">Corners</button>
+    <button class="tab-trigger" data-tab-trigger="telemetry">Telemetry</button>
+    <button class="tab-trigger" data-tab-trigger="driver">Driver</button>
+  </div>
+
+  <!-- Overview -->
+  <div class="tab-panel" data-tab-panel="overview">
+    <div class="stack-lg">
+      <div class="panel panel-soft">
+        <div class="panel-head"><h2>Performance</h2></div>
+        <div class="grid-two" style="gap: 1rem;">
+          <div class="stat-card"><span class="stat-label">Best Lap</span><span class="stat-value">{% if obs.best_lap %}{{ "%.3f"|format(obs.best_lap) }}s{% else %}-{% endif %}</span></div>
+          <div class="stat-card"><span class="stat-label">Median Speed</span><span class="stat-value">{% if obs.median_speed %}{{ "%.1f"|format(obs.median_speed) }} kph{% else %}-{% endif %}</span></div>
+          <div class="stat-card"><span class="stat-label">Max Speed</span><span class="stat-value">{% if obs.max_speed %}{{ "%.1f"|format(obs.max_speed) }} kph{% else %}-{% endif %}</span></div>
+          <div class="stat-card"><span class="stat-label">Consistency</span><span class="stat-value">{% if obs.consistency is not none %}{{ "%.2f"|format(obs.consistency) }}%{% else %}-{% endif %}</span></div>
+        </div>
+      </div>
+      {% if obs.diagnosis %}
+      <div class="panel panel-soft">
+        <div class="panel-head"><h2>Diagnosis</h2></div>
+        <p>{{ obs.diagnosis }}</p>
+        {% if obs.problems %}
+        <div class="stack-md" style="margin-top: 1rem;">
+          {% for p in obs.problems %}
+          <div style="padding: 0.5rem 0; border-bottom: 1px solid var(--line);">
+            <strong>{{ p.severity }}</strong> — {{ p.symptom }}
+            {% if p.cause %}<br><small style="color: var(--muted);">{{ p.cause }}{% if p.speed_context and p.speed_context != 'all' %} ({{ p.speed_context }}){% endif %}</small>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Setup -->
+  <div class="tab-panel" data-tab-panel="setup" hidden>
+    <div class="stack-lg">
+      {% for group in obs.setup_groups %}
+      <section class="panel panel-soft">
+        <div class="panel-head"><h2>{{ group.name }}</h2></div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+            <tbody>
+              {% for param in group.params %}
+              <tr><td>{{ param.label }}</td><td>{{ param.value }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Tyres -->
+  <div class="tab-panel" data-tab-panel="tyres" hidden>
+    <div class="stack-lg">
+      <section class="panel panel-soft">
+        <div class="panel-head"><h2>Tyre Overview</h2></div>
+        <div class="tyre-grid">
+          {% for t in obs.tyre_pressures %}
+          <div class="tyre-cell">
+            <div class="tyre-label">{{ t.corner }}</div>
+            <div class="tyre-pressure">{{ t.hot }} kPa</div>
+            <div class="tyre-sub">Cold: {{ t.cold }} kPa &middot; Buildup: {{ t.buildup }}</div>
+            {% set wear = obs.tyre_wear[loop.index0] %}
+            <div class="tyre-wear-bar-wrap">
+              <div class="tyre-wear-bar" style="width: {{ wear.wear if wear.wear != '-' else '0' }}%"></div>
+            </div>
+            <div class="tyre-sub">Wear: {{ wear.wear }}% &middot; Temp: {{ wear.temp }} C</div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% if obs.air_temp or obs.track_temp %}
+      <section class="panel panel-soft">
+        <div class="panel-head"><h2>Conditions</h2></div>
+        <div class="grid-two">
+          <div class="stat-card"><span class="stat-label">Air Temp</span><span class="stat-value">{% if obs.air_temp %}{{ "%.1f"|format(obs.air_temp) }} C{% else %}-{% endif %}</span></div>
+          <div class="stat-card"><span class="stat-label">Track Temp</span><span class="stat-value">{% if obs.track_temp %}{{ "%.1f"|format(obs.track_temp) }} C{% else %}-{% endif %}</span></div>
+        </div>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Corners -->
+  <div class="tab-panel" data-tab-panel="corners" hidden>
+    <div class="stack-lg">
+      <section class="panel panel-soft">
+        <div class="panel-head">
+          <h2>Corner Severity</h2>
+          <p style="color: var(--muted); font-size: 0.85rem;">Corners ranked by total physics severity. Higher = more setup attention needed.</p>
+        </div>
+        <div id="severity-chart" style="height: 450px;"></div>
+      </section>
+      <section class="panel panel-soft">
+        <div class="panel-head">
+          <h2>Corner Phase Timing</h2>
+          <p style="color: var(--muted); font-size: 0.85rem;">Time spent in each driving phase per corner.</p>
+        </div>
+        <div id="phase-chart" style="height: 380px;"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Telemetry -->
+  <div class="tab-panel" data-tab-panel="telemetry" hidden>
+    <div class="stack-lg">
+      <section class="panel panel-soft">
+        <div class="panel-head">
+          <h2>Lap Traces</h2>
+          <p style="color: var(--muted); font-size: 0.85rem;">Speed, driver inputs, and ride heights from the IBT file.</p>
+        </div>
+        <div style="text-align: center; margin-bottom: 1rem;">
+          <button type="button" class="button button-primary" id="load-traces">Load Lap Traces</button>
+          <span id="traces-status" style="margin-left: 0.75rem; font-size: 0.85rem;"></span>
+        </div>
+        <div id="speed-chart" style="height: 280px; display: none;"></div>
+        <div id="inputs-chart" style="height: 320px; display: none;"></div>
+        <div id="rh-chart" style="height: 240px; display: none;"></div>
+      </section>
+      <section class="panel panel-soft">
+        <div class="panel-head"><h2>Key Metrics</h2></div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+            <tbody>
+              {% for m in obs.telemetry_metrics %}
+              <tr><td>{{ m.label }}</td><td>{{ m.value }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Driver -->
+  <div class="tab-panel" data-tab-panel="driver" hidden>
+    <div class="stack-lg">
+      <section class="panel panel-soft">
+        <div class="panel-head"><h2>Driver Profile</h2></div>
+        {% if obs.driver_class %}
+        <div style="margin-bottom: 1rem;"><span class="badge" style="font-size: 1rem;">{{ obs.driver_class }}</span></div>
+        {% endif %}
+        <div id="driver-radar" style="height: 350px;"></div>
+      </section>
+      <section class="panel panel-soft">
+        <div class="panel-head"><h2>Attributes</h2></div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
+            <tbody>
+              {% for attr in obs.driver_attrs %}
+              <tr><td>{{ attr.label }}</td><td>{{ attr.value }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script>
+// ── IOptimal ECharts Theme ──────────────────────────────────
+echarts.registerTheme('ioptimal', {
+  color: ['#1c5a4f', '#a43e2f', '#c97a2e', '#4a7c6f', '#7a5c3e', '#2a7a9b'],
+  backgroundColor: 'transparent',
+  textStyle: { color: '#655d52', fontFamily: '"Segoe UI Variable", sans-serif' },
+  title: { textStyle: { color: '#1e1c17' } },
+  legend: { textStyle: { color: '#655d52' } },
+  categoryAxis: { axisLine: { lineStyle: { color: '#d7ccbd' } }, splitLine: { lineStyle: { color: '#f0ebe3' } }, axisLabel: { color: '#655d52' } },
+  valueAxis: { axisLine: { lineStyle: { color: '#d7ccbd' } }, splitLine: { lineStyle: { color: '#f0ebe3' } }, axisLabel: { color: '#655d52' } },
+  tooltip: { backgroundColor: '#fffaf2', borderColor: '#d7ccbd', textStyle: { color: '#1e1c17' } },
+});
+
+// ── Embedded Data ───────────────────────────────────────────
+const cornerData = {{ obs.corner_performance | tojson }};
+const driverData = {{ obs.driver_profile_raw | tojson }};
+const sessionId = {{ obs.session_id | tojson }};
+
+// ── Chart instances (lazy init) ─────────────────────────────
+const charts = {};
+
+// ── V1: Corner Severity Heatmap ─────────────────────────────
+function initSeverityChart() {
+  if (charts.severity) return;
+  const el = document.getElementById('severity-chart');
+  if (!el || !cornerData.length) return;
+  const chart = echarts.init(el, 'ioptimal');
+  charts.severity = chart;
+
+  const sorted = [...cornerData]
+    .map((c, i) => ({...c, idx: i}))
+    .sort((a, b) => {
+      const ta = (a.entry_pitch_severity||0) + (a.aero_collapse_severity||0) + (a.exit_slip_severity||0);
+      const tb = (b.entry_pitch_severity||0) + (b.aero_collapse_severity||0) + (b.exit_slip_severity||0);
+      return ta - tb;
+    });
+
+  const labels = sorted.map(c => `T${c.corner_id+1} (${c.speed_class||'?'}) ${c.direction||''}`);
+
+  chart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { data: ['Entry Pitch', 'Aero Collapse', 'Exit Slip'], bottom: 0 },
+    grid: { left: 120, right: 30, top: 10, bottom: 40 },
+    xAxis: { type: 'value', name: 'Severity', max: 3 },
+    yAxis: { type: 'category', data: labels, axisLabel: { fontSize: 11 } },
+    series: [
+      { name: 'Entry Pitch', type: 'bar', stack: 'sev', data: sorted.map(c => +(c.entry_pitch_severity||0).toFixed(2)), itemStyle: { color: '#c97a2e' } },
+      { name: 'Aero Collapse', type: 'bar', stack: 'sev', data: sorted.map(c => +(c.aero_collapse_severity||0).toFixed(2)), itemStyle: { color: '#a43e2f' } },
+      { name: 'Exit Slip', type: 'bar', stack: 'sev', data: sorted.map(c => +(c.exit_slip_severity||0).toFixed(2)), itemStyle: { color: '#4a7c6f' } },
+    ],
+  });
+}
+
+// ── V3: Corner Phase Timing ─────────────────────────────────
+function initPhaseChart() {
+  if (charts.phase) return;
+  const el = document.getElementById('phase-chart');
+  if (!el || !cornerData.length) return;
+  const chart = echarts.init(el, 'ioptimal');
+  charts.phase = chart;
+
+  const labels = cornerData.map((c, i) => `T${c.corner_id+1}`);
+  const phases = [
+    { key: 'braking_phase_s', name: 'Braking', color: '#a43e2f' },
+    { key: 'release_phase_s', name: 'Release', color: '#c97a2e' },
+    { key: 'turn_in_phase_s', name: 'Turn-in', color: '#7a5c3e' },
+    { key: 'apex_phase_s', name: 'Apex', color: '#1c5a4f' },
+    { key: 'throttle_pickup_phase_s', name: 'Throttle', color: '#4a7c6f' },
+    { key: 'exit_phase_s', name: 'Exit', color: '#2a7a9b' },
+  ];
+
+  chart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: params => {
+      let html = `<strong>${params[0].axisValue}</strong><br>`;
+      params.forEach(p => { if (p.value > 0) html += `${p.marker} ${p.seriesName}: ${p.value.toFixed(2)}s<br>`; });
+      return html;
+    }},
+    legend: { data: phases.map(p => p.name), bottom: 0 },
+    grid: { left: 50, right: 20, top: 10, bottom: 40 },
+    xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 11 } },
+    yAxis: { type: 'value', name: 'Time (s)' },
+    series: phases.map(p => ({
+      name: p.name, type: 'bar', stack: 'phase',
+      data: cornerData.map(c => +(c[p.key]||0).toFixed(3)),
+      itemStyle: { color: p.color },
+    })),
+  });
+}
+
+// ── V2: Driver Profile Radar ────────────────────────────────
+function initDriverRadar() {
+  if (charts.radar) return;
+  const el = document.getElementById('driver-radar');
+  if (!el || !driverData) return;
+  const chart = echarts.init(el, 'ioptimal');
+  charts.radar = chart;
+
+  function toNum(v, invert) {
+    if (typeof v === 'number') { return invert ? Math.max(0, 1 - v) : Math.min(v, 1); }
+    const map = {'very_low':0.1,'low':0.25,'moderate':0.5,'high':0.75,'very_high':0.9,
+                 'smooth':0.8,'erratic':0.2,'aggressive':0.8,'conservative':0.3,
+                 'smooth-consistent':0.85,'aggressive-erratic':0.3,'aggressive-consistent':0.7};
+    const s = String(v).toLowerCase().replace(/ /g, '_');
+    const n = map[s] !== undefined ? map[s] : 0.5;
+    return invert ? 1 - n : n;
+  }
+
+  const axes = [
+    { name: 'Trail Braking', key: 'trail_braking_depth' },
+    { name: 'Throttle', key: 'throttle_progressiveness' },
+    { name: 'Smoothness', key: 'steering_smoothness' },
+    { name: 'Consistency', key: 'consistency' },
+    { name: 'Aggression', key: 'cornering_aggression' },
+    { name: 'Precision', key: 'apex_speed_cv', invert: true },
+  ];
+
+  chart.setOption({
+    radar: {
+      indicator: axes.map(a => ({ name: a.name, max: 1 })),
+      shape: 'polygon',
+      splitArea: { areaStyle: { color: ['#fffaf2', '#f4efe6'] } },
+      axisLine: { lineStyle: { color: '#d7ccbd' } },
+      splitLine: { lineStyle: { color: '#d7ccbd' } },
+    },
+    series: [{
+      type: 'radar',
+      data: [{
+        value: axes.map(a => toNum(driverData[a.key], a.invert)),
+        name: 'Driver',
+        areaStyle: { color: 'rgba(28, 90, 79, 0.25)' },
+        lineStyle: { color: '#1c5a4f', width: 2 },
+        itemStyle: { color: '#1c5a4f' },
+      }],
+    }],
+    tooltip: {},
+  });
+}
+
+// ── V5/V6/V7: IBT Traces (loaded on demand) ────────────────
+document.getElementById('load-traces')?.addEventListener('click', async function () {
+  const btn = this;
+  const status = document.getElementById('traces-status');
+  btn.disabled = true;
+  status.textContent = 'Loading IBT data...';
+  status.style.color = 'var(--muted)';
+  try {
+    const resp = await fetch(`/telemetry/${sessionId}/traces`);
+    const data = await resp.json();
+    if (!data.ok) {
+      status.textContent = data.message;
+      status.style.color = 'var(--alert)';
+      btn.disabled = false;
+      return;
+    }
+    status.textContent = `${data.sample_count} samples loaded`;
+    status.style.color = 'var(--accent)';
+    btn.style.display = 'none';
+    initSpeedTrace(data.channels);
+    initInputsOverlay(data.channels);
+    initRideHeightTrace(data.channels);
+    echarts.connect('traces');
+  } catch (e) {
+    status.textContent = 'Failed to load traces';
+    status.style.color = 'var(--alert)';
+    btn.disabled = false;
+  }
+});
+
+function initSpeedTrace(ch) {
+  const el = document.getElementById('speed-chart');
+  el.style.display = 'block';
+  const chart = echarts.init(el, 'ioptimal');
+  charts.speed = chart;
+  chart.group = 'traces';
+  const xData = ch.lap_dist_pct;
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 60, right: 30, top: 10, bottom: 40 },
+    xAxis: { type: 'category', data: xData.map(v => v.toFixed(1)), axisLabel: { formatter: v => v + '%' }, name: 'Lap Distance %' },
+    yAxis: { type: 'value', name: 'Speed (kph)', min: 'dataMin' },
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 20 }],
+    series: [{ type: 'line', data: ch.speed.map(v => +v.toFixed(1)), smooth: true, symbol: 'none', lineStyle: { color: '#1c5a4f', width: 2 }, areaStyle: { color: 'rgba(28, 90, 79, 0.08)' } }],
+  });
+}
+
+function initInputsOverlay(ch) {
+  const el = document.getElementById('inputs-chart');
+  el.style.display = 'block';
+  const chart = echarts.init(el, 'ioptimal');
+  charts.inputs = chart;
+  chart.group = 'traces';
+  const xData = ch.lap_dist_pct;
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['Throttle', 'Brake', 'Steering'], bottom: 0 },
+    grid: [
+      { left: 60, right: 30, top: 10, height: '25%' },
+      { left: 60, right: 30, top: '40%', height: '25%' },
+      { left: 60, right: 30, top: '70%', height: '22%' },
+    ],
+    xAxis: [
+      { type: 'category', data: xData.map(v => v.toFixed(1)), gridIndex: 0, show: false },
+      { type: 'category', data: xData.map(v => v.toFixed(1)), gridIndex: 1, show: false },
+      { type: 'category', data: xData.map(v => v.toFixed(1)), gridIndex: 2, axisLabel: { formatter: v => v + '%' } },
+    ],
+    yAxis: [
+      { type: 'value', name: 'Throttle %', gridIndex: 0, max: 100 },
+      { type: 'value', name: 'Brake %', gridIndex: 1, max: 100 },
+      { type: 'value', name: 'Steer (rad)', gridIndex: 2 },
+    ],
+    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1, 2] }, { type: 'slider', xAxisIndex: [0, 1, 2], height: 15, bottom: 25 }],
+    series: [
+      { name: 'Throttle', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: ch.throttle.map(v => +v.toFixed(1)), symbol: 'none', lineStyle: { width: 1.5 }, areaStyle: { color: 'rgba(28, 90, 79, 0.15)' }, itemStyle: { color: '#1c5a4f' } },
+      { name: 'Brake', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: ch.brake.map(v => +v.toFixed(1)), symbol: 'none', lineStyle: { width: 1.5 }, areaStyle: { color: 'rgba(164, 62, 47, 0.15)' }, itemStyle: { color: '#a43e2f' } },
+      { name: 'Steering', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ch.steering.map(v => +v.toFixed(3)), symbol: 'none', lineStyle: { width: 1.5, color: '#2a7a9b' }, itemStyle: { color: '#2a7a9b' } },
+    ],
+  });
+}
+
+function initRideHeightTrace(ch) {
+  const el = document.getElementById('rh-chart');
+  el.style.display = 'block';
+  const chart = echarts.init(el, 'ioptimal');
+  charts.rh = chart;
+  chart.group = 'traces';
+  const xData = ch.lap_dist_pct;
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['Front RH', 'Rear RH', 'Lat G'], bottom: 0 },
+    grid: { left: 60, right: 60, top: 10, bottom: 40 },
+    xAxis: { type: 'category', data: xData.map(v => v.toFixed(1)), axisLabel: { formatter: v => v + '%' } },
+    yAxis: [
+      { type: 'value', name: 'Ride Height (mm)' },
+      { type: 'value', name: 'Lat G', position: 'right' },
+    ],
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 15, bottom: 25 }],
+    series: [
+      { name: 'Front RH', type: 'line', data: ch.front_rh.map(v => +v.toFixed(1)), symbol: 'none', lineStyle: { width: 1.5, color: '#1c5a4f' } },
+      { name: 'Rear RH', type: 'line', data: ch.rear_rh.map(v => +v.toFixed(1)), symbol: 'none', lineStyle: { width: 1.5, color: '#c97a2e' } },
+      { name: 'Lat G', type: 'line', yAxisIndex: 1, data: ch.lat_g.map(v => +v.toFixed(2)), symbol: 'none', lineStyle: { width: 1, color: '#a43e2f', type: 'dashed' }, areaStyle: { color: 'rgba(164, 62, 47, 0.06)' } },
+    ],
+  });
+}
+
+// ── Tab visibility: init charts when their tab is shown ─────
+document.addEventListener('click', function (e) {
+  const trigger = e.target.closest('[data-tab-trigger]');
+  if (!trigger) return;
+  const tab = trigger.dataset.tabTrigger;
+  requestAnimationFrame(() => {
+    if (tab === 'corners') { initSeverityChart(); initPhaseChart(); }
+    if (tab === 'driver') { initDriverRadar(); }
+    // Resize visible charts
+    Object.values(charts).forEach(c => c.resize());
+  });
+});
+
+// ── Window resize ───────────────────────────────────────────
+window.addEventListener('resize', () => Object.values(charts).forEach(c => c.resize()));
+</script>
+{% endblock %}

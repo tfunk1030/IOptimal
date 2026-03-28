@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,7 @@ class TeamCreateRequest(BaseModel):
 
 
 class TeamCreateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     team_id: str
     invite_code: str
     admin_api_key: str
@@ -45,6 +46,7 @@ class TeamJoinResponse(BaseModel):
 
 
 class MemberOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     iracing_name: str
     iracing_member_id: Optional[int] = None
@@ -54,6 +56,7 @@ class MemberOut(BaseModel):
 
 
 class ActivityOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     member_id: str
     event_type: str
@@ -133,7 +136,7 @@ async def list_members(
     )
     return [
         MemberOut(
-            id=m.id,
+            id=str(m.id),
             iracing_name=m.iracing_name,
             iracing_member_id=m.iracing_member_id,
             primary_class=m.primary_class,
@@ -164,8 +167,8 @@ async def team_activity(
     result = await db.execute(stmt)
     return [
         ActivityOut(
-            id=a.id,
-            member_id=a.member_id,
+            id=str(a.id),
+            member_id=str(a.member_id),
             event_type=a.event_type,
             summary=a.summary,
             created_at=a.created_at,

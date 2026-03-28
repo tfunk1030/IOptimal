@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,7 @@ router = APIRouter(tags=["knowledge"])
 # ---------------------------------------------------------------------------
 
 class EmpiricalModelOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     car: str
     track: str
@@ -43,9 +44,10 @@ class KnowledgeResponse(BaseModel):
 
 
 class CarStat(BaseModel):
-    name: str
+    car_name: str
     car_class: Optional[str] = None
     support_tier: str
+    tracks: list[str] = []
 
 
 class StatsResponse(BaseModel):
@@ -77,7 +79,7 @@ async def get_knowledge(
     )
     models = [
         EmpiricalModelOut(
-            id=m.id,
+            id=str(m.id),
             car=m.car,
             track=m.track,
             model_json=m.model_json,
@@ -116,9 +118,26 @@ async def get_stats(
     cars_result = await db.execute(
         select(CarDefinition).where(CarDefinition.team_id == team_id)
     )
+    car_rows = cars_result.scalars().all()
+
+    # Fetch distinct tracks per car from observations.
+    car_tracks_result = await db.execute(
+        select(Observation.car, Observation.track)
+        .where(Observation.team_id == team_id)
+        .distinct()
+    )
+    car_tracks_map: dict[str, list[str]] = {}
+    for row in car_tracks_result.all():
+        car_tracks_map.setdefault(row[0], []).append(row[1])
+
     cars = [
-        CarStat(name=c.car_name, car_class=c.car_class, support_tier=c.support_tier)
-        for c in cars_result.scalars().all()
+        CarStat(
+            car_name=c.car_name,
+            car_class=c.car_class,
+            support_tier=c.support_tier,
+            tracks=car_tracks_map.get(c.car_name, []),
+        )
+        for c in car_rows
     ]
 
     tracks_result = await db.execute(

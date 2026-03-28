@@ -488,3 +488,54 @@ small,
     align-items: stretch;
   }
 }
+
+/* ── Tyre Dashboard ────────────────────────────────────────── */
+.tyre-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.tyre-cell {
+  background: var(--panel-strong);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem;
+  text-align: center;
+  border: 1px solid var(--line);
+}
+
+.tyre-label {
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+  color: var(--accent);
+}
+
+.tyre-pressure {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.tyre-sub {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.tyre-wear-bar-wrap {
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  margin: 0.5rem 0;
+  overflow: hidden;
+}
+
+.tyre-wear-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}

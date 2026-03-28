@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 import shutil
 from contextlib import asynccontextmanager
@@ -11,7 +13,7 @@ from urllib.parse import quote_plus
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -37,7 +39,21 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         app.state.repository = repository
         app.state.service = service
         app.state.jobs = job_manager
+        # Start auto-ingest background task if configured
+        ingest_task = None
+        try:
+            from desktop.config import AppConfig
+            config = AppConfig.load()
+            if config.auto_ingest and config.telemetry_dir:
+                ingest_task = asyncio.create_task(_auto_ingest_loop(config.telemetry_dir))
+                logging.getLogger("webapp").info(
+                    "Auto-ingest started — monitoring %s every 30s", config.telemetry_dir
+                )
+        except Exception:
+            pass
         yield
+        if ingest_task:
+            ingest_task.cancel()
         job_manager.shutdown()
 
     app = FastAPI(title=resolved_settings.title, lifespan=lifespan)
@@ -172,6 +188,149 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             _page_context(request, "knowledge", summary=summary),
         )
 
+    # ── Telemetry browser ────────────────────────────────────────
+
+    @app.get("/telemetry", response_class=HTMLResponse)
+    async def telemetry_list(request: Request, car: str = "") -> HTMLResponse:
+        observations, cars = _load_observation_list(car_filter=car)
+        return templates.TemplateResponse(
+            request,
+            "telemetry_list.html",
+            _page_context(request, "telemetry", observations=observations, cars=cars, car_filter=car),
+        )
+
+    @app.post("/telemetry/upload")
+    async def telemetry_upload(request: Request, ibt_files: list[UploadFile] = File(...)):
+        """Upload IBT files and ingest them into the knowledge base."""
+        settings_local: AppSettings = request.app.state.settings
+        upload_dir = settings_local.base_dir / "uploads" / "telemetry"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        ingested = 0
+        errors = []
+        for upload in ibt_files:
+            if not upload.filename or not upload.filename.lower().endswith(".ibt"):
+                errors.append(f"{upload.filename or 'unknown'}: not an .ibt file")
+                continue
+            dest = upload_dir / upload.filename
+            content = await upload.read()
+            dest.write_bytes(content)
+            try:
+                from watcher.service import WatcherService
+                svc = WatcherService(telemetry_dir=str(upload_dir), auto_ingest=True)
+                svc._handle_new_ibt(dest)
+                ingested += 1
+            except Exception as exc:
+                errors.append(f"{upload.filename}: {exc}")
+        msg = f"Ingested {ingested} file(s)"
+        if errors:
+            msg += f", {len(errors)} error(s): {'; '.join(errors[:3])}"
+        return JSONResponse({"ok": ingested > 0 or not errors, "message": msg, "ingested": ingested})
+
+    @app.get("/telemetry/browse-dir")
+    async def telemetry_browse_dir(request: Request):
+        """List .ibt files in the telemetry directory that haven't been ingested yet."""
+        from desktop.config import AppConfig
+        from learner.knowledge_store import KnowledgeStore
+        config = AppConfig.load()
+        if not config.telemetry_dir:
+            return JSONResponse({"ok": False, "message": "No telemetry directory configured", "files": []})
+        tdir = Path(config.telemetry_dir)
+        if not tdir.exists():
+            return JSONResponse({"ok": False, "message": f"Directory not found: {config.telemetry_dir}", "files": []})
+        store = KnowledgeStore()
+        index = store.load_index()
+        known_sessions = set(index.get("sessions", []))
+        ibt_files = sorted(tdir.glob("*.ibt"), key=lambda f: f.stat().st_mtime, reverse=True)
+        file_list = []
+        for f in ibt_files[:200]:
+            # Check if any session ID contains this filename stem
+            stem = f.stem.lower()
+            already = any(stem in sid for sid in known_sessions)
+            file_list.append({
+                "name": f.name,
+                "path": str(f),
+                "size_mb": round(f.stat().st_size / 1048576, 1),
+                "modified": f.stat().st_mtime,
+                "ingested": already,
+            })
+        return JSONResponse({
+            "ok": True,
+            "message": f"{len(file_list)} files found, {sum(1 for f in file_list if f['ingested'])} already ingested",
+            "files": file_list,
+        })
+
+    @app.post("/telemetry/ingest-file")
+    async def telemetry_ingest_file(request: Request):
+        """Ingest a specific .ibt file from the telemetry directory."""
+        body = await request.json()
+        file_path = body.get("path", "").strip()
+        if not file_path:
+            return JSONResponse({"ok": False, "message": "No file path provided"})
+        p = Path(file_path)
+        if not p.exists() or not p.suffix.lower() == ".ibt":
+            return JSONResponse({"ok": False, "message": "File not found or not an .ibt file"})
+        try:
+            from watcher.service import WatcherService
+            svc = WatcherService(telemetry_dir=str(p.parent), auto_ingest=True)
+            svc._handle_new_ibt(p)
+            return JSONResponse({"ok": True, "message": f"Ingested {p.name}"})
+        except Exception as exc:
+            return JSONResponse({"ok": False, "message": f"Error: {exc}"})
+
+    @app.get("/telemetry/{session_id}/traces")
+    async def telemetry_traces(request: Request, session_id: str):
+        """Serve decimated IBT time-series for chart visualization."""
+        from learner.knowledge_store import KnowledgeStore
+        store = KnowledgeStore()
+        obs = store.load_observation(session_id)
+        if obs is None:
+            return JSONResponse({"ok": False, "message": "Session not found"})
+        ibt_path = Path(obs.get("ibt_path", ""))
+        if not ibt_path.exists():
+            return JSONResponse({"ok": False, "message": "IBT file not found on disk"})
+        try:
+            import numpy as np
+            from track_model.ibt_parser import IBTFile
+            ibt = IBTFile(str(ibt_path))
+            indices = ibt.best_lap_indices()
+            if indices is None:
+                return JSONResponse({"ok": False, "message": "No valid lap found in IBT"})
+            start, end = indices
+            step = 10  # decimate 60Hz → ~6Hz (~660 points)
+
+            def _ch(name: str, scale: float = 1.0) -> list:
+                arr = ibt.channel(name)
+                if arr is None:
+                    return []
+                return (arr[start:end:step] * scale).tolist()
+
+            channels = {
+                "speed": _ch("Speed", 3.6),
+                "throttle": _ch("Throttle", 100),
+                "brake": _ch("Brake", 100),
+                "steering": _ch("SteeringWheelAngle"),
+                "lat_g": _ch("LatAccel"),
+                "long_g": _ch("LongAccel"),
+                "front_rh": _ch("LFrideHeight", 1000),
+                "rear_rh": _ch("RRrideHeight", 1000),
+                "lap_dist_pct": _ch("LapDistPct", 100),
+            }
+            return JSONResponse({"ok": True, "channels": channels, "sample_count": len(channels["speed"])})
+        except Exception as exc:
+            return JSONResponse({"ok": False, "message": f"Error reading IBT: {exc}"})
+
+    # NOTE: {session_id} wildcard MUST come after all /telemetry/specific-path routes
+    @app.get("/telemetry/{session_id}", response_class=HTMLResponse)
+    async def telemetry_detail(request: Request, session_id: str) -> HTMLResponse:
+        detail = _load_observation_detail(session_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return templates.TemplateResponse(
+            request,
+            "telemetry_detail.html",
+            _page_context(request, "telemetry", obs=detail),
+        )
+
     @app.get("/artifacts/{artifact_id}/download")
     async def download_artifact(request: Request, artifact_id: str) -> FileResponse:
         artifact = request.app.state.repository.get_artifact(artifact_id)
@@ -233,11 +392,13 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request) -> HTMLResponse:
         from desktop.config import AppConfig
+        from learner.knowledge_store import KnowledgeStore
         config = AppConfig.load()
+        obs_count = KnowledgeStore().session_count()
         return templates.TemplateResponse(
             request,
             "settings.html",
-            _page_context(request, "settings", config=config),
+            _page_context(request, "settings", config=config, obs_count=obs_count),
         )
 
     @app.post("/settings", response_class=HTMLResponse)
@@ -273,7 +434,138 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         config.save()
         return RedirectResponse(url="/settings", status_code=302)
 
+    # ── Settings action endpoints ─────────────────────────────────
+
+    @app.post("/settings/test-connection")
+    async def test_connection(request: Request):
+        import httpx
+        from desktop.config import AppConfig
+        config = AppConfig.load()
+        if not config.team_server_url:
+            return JSONResponse({"ok": False, "message": "No server URL configured"})
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                headers = {}
+                if config.api_key:
+                    headers["Authorization"] = f"Bearer {config.api_key}"
+                resp = await client.get(f"{config.team_server_url.rstrip('/')}/api/health", headers=headers)
+                if resp.status_code == 200:
+                    # Also test auth if we have a key
+                    if config.api_key:
+                        stats_resp = await client.get(
+                            f"{config.team_server_url.rstrip('/')}/api/stats",
+                            headers=headers,
+                        )
+                        if stats_resp.status_code == 200:
+                            data = stats_resp.json()
+                            return JSONResponse({
+                                "ok": True,
+                                "message": f"Connected! {data.get('total_members', 0)} members, {data.get('total_observations', 0)} observations",
+                            })
+                        elif stats_resp.status_code == 401:
+                            return JSONResponse({"ok": False, "message": "Server reachable but API key is invalid"})
+                    return JSONResponse({"ok": True, "message": "Server is reachable"})
+                return JSONResponse({"ok": False, "message": f"Server returned {resp.status_code}"})
+        except httpx.ConnectError:
+            return JSONResponse({"ok": False, "message": "Cannot reach server — check URL"})
+        except Exception as e:
+            return JSONResponse({"ok": False, "message": str(e)})
+
+    @app.post("/settings/join-team")
+    async def join_team_action(request: Request):
+        import httpx
+        from desktop.config import AppConfig
+        body = await request.json()
+        invite_code = body.get("invite_code", "").strip()
+        iracing_name = body.get("iracing_name", "").strip()
+        config = AppConfig.load()
+        if not config.team_server_url:
+            return JSONResponse({"ok": False, "message": "Set the server URL first"})
+        if not invite_code or not iracing_name:
+            return JSONResponse({"ok": False, "message": "Invite code and iRacing name are required"})
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{config.team_server_url.rstrip('/')}/api/team/join",
+                    json={"invite_code": invite_code, "iracing_name": iracing_name},
+                )
+                if resp.status_code == 201:
+                    data = resp.json()
+                    config.api_key = data["api_key"]
+                    config.invite_code = invite_code
+                    config.iracing_name = iracing_name
+                    config.save()
+                    return JSONResponse({"ok": True, "message": f"Joined! Your member ID: {data['member_id'][:8]}…"})
+                elif resp.status_code == 404:
+                    return JSONResponse({"ok": False, "message": "Invalid invite code"})
+                return JSONResponse({"ok": False, "message": f"Server returned {resp.status_code}: {resp.text}"})
+        except Exception as e:
+            return JSONResponse({"ok": False, "message": str(e)})
+
+    @app.post("/settings/bulk-import")
+    async def bulk_import_action(request: Request):
+        from desktop.config import AppConfig
+        config = AppConfig.load()
+        telemetry_dir = config.telemetry_dir
+        if not telemetry_dir:
+            return JSONResponse({"ok": False, "message": "No telemetry directory configured"})
+
+        from pathlib import Path
+        tdir = Path(telemetry_dir)
+        if not tdir.exists():
+            return JSONResponse({"ok": False, "message": f"Directory not found: {telemetry_dir}"})
+
+        ibt_files = list(tdir.glob("*.ibt"))
+        if not ibt_files:
+            return JSONResponse({"ok": False, "message": "No .ibt files found in telemetry directory"})
+
+        # Run bulk import in background via watcher service
+        try:
+            from watcher.service import WatcherService
+            svc = WatcherService(telemetry_dir=str(tdir), auto_ingest=True)
+            results = svc.bulk_import(limit=500)
+            success = sum(1 for r in results if r.fully_ingested)
+            return JSONResponse({
+                "ok": True,
+                "message": f"Imported {success}/{len(results)} sessions ({len(ibt_files)} .ibt files found)",
+            })
+        except Exception as e:
+            return JSONResponse({"ok": False, "message": f"Import error: {e}"})
+
     return app
+
+
+async def _auto_ingest_loop(telemetry_dir: str, interval: int = 30) -> None:
+    """Periodically scan for new IBT files and ingest them."""
+    logger = logging.getLogger("webapp.autoingest")
+    from learner.knowledge_store import KnowledgeStore
+    known_files: set[str] = set()
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            tdir = Path(telemetry_dir)
+            if not tdir.exists():
+                continue
+            ibt_files = list(tdir.glob("*.ibt"))
+            new_files = [f for f in ibt_files if str(f) not in known_files]
+            if not new_files:
+                continue
+            # Mark all as known to avoid reprocessing
+            for f in new_files:
+                known_files.add(str(f))
+            try:
+                from watcher.service import WatcherService
+                svc = WatcherService(telemetry_dir=telemetry_dir, auto_ingest=True)
+                results = svc.bulk_import(limit=10)
+                ingested = sum(1 for r in results if r.fully_ingested)
+                if ingested:
+                    logger.info("Auto-ingested %d new session(s)", ingested)
+            except Exception as exc:
+                logger.warning("Auto-ingest error: %s", exc)
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.warning("Auto-ingest loop error: %s", exc)
 
 
 def _page_context(request: Request, active_nav: str, **extra: Any) -> dict[str, Any]:
@@ -338,6 +630,218 @@ def _fetch_team_setups(config) -> list:
     except Exception:
         pass
     return []
+
+
+def _load_observation_list(car_filter: str = "") -> tuple[list[dict], list[str]]:
+    """Load lightweight observation summaries from the knowledge store."""
+    from learner.knowledge_store import KnowledgeStore
+    store = KnowledgeStore()
+    all_obs = store.list_observations(car=car_filter)
+    cars: set[str] = set()
+    items: list[dict] = []
+    for obs in all_obs:
+        cars.add(obs.get("car", "unknown"))
+        perf = obs.get("performance", {})
+        items.append({
+            "session_id": obs.get("session_id", ""),
+            "car": obs.get("car", "unknown"),
+            "track": obs.get("track", "Unknown"),
+            "best_lap": perf.get("best_lap_time_s"),
+            "consistency": perf.get("consistency_cv"),
+            "max_speed": perf.get("max_speed_kph"),
+            "timestamp": obs.get("timestamp", obs.get("ibt_date", "")),
+        })
+    # Sort newest first
+    items.sort(key=lambda x: x["timestamp"] or "", reverse=True)
+    return items, sorted(cars)
+
+
+def _load_observation_detail(session_id: str) -> dict | None:
+    """Load full observation detail for the telemetry detail page."""
+    from learner.knowledge_store import KnowledgeStore
+    store = KnowledgeStore()
+    obs = store.load_observation(session_id)
+    if obs is None:
+        return None
+
+    perf = obs.get("performance", {})
+    tel = obs.get("telemetry", {})
+    dp = obs.get("driver_profile", {})
+    diag = obs.get("diagnosis", {})
+    setup = obs.get("setup", {})
+
+    # Setup groups for display
+    setup_groups = _build_obs_setup_groups(setup)
+
+    # Tyre pressure data (per corner)
+    corners = [("LF", "lf"), ("RF", "rf"), ("LR", "lr"), ("RR", "rr")]
+    tyre_pressures = []
+    for label, prefix in corners:
+        hot = tel.get(f"{prefix}_pressure_kpa")
+        cold = tel.get(f"{prefix}_cold_pressure_kpa")
+        buildup = ""
+        if hot is not None and cold is not None:
+            try:
+                buildup = f"+{hot - cold:.1f}"
+            except (TypeError, ValueError):
+                pass
+        tyre_pressures.append({
+            "corner": label,
+            "hot": f"{hot:.1f}" if hot is not None else "-",
+            "cold": f"{cold:.1f}" if cold is not None else "-",
+            "buildup": buildup or "-",
+        })
+
+    tyre_wear = []
+    for label, prefix in corners:
+        temp = tel.get(f"{prefix}_temp_middle_c")
+        wear = tel.get(f"{prefix}_wear_pct")
+        tyre_wear.append({
+            "corner": label,
+            "temp": f"{temp:.1f}" if temp is not None else "-",
+            "wear": f"{wear:.1f}" if wear is not None else "-",
+        })
+
+    # Key telemetry metrics
+    metric_specs = [
+        ("Front heave travel used", "front_heave_travel_used_pct", "%", 1),
+        ("Front ride height std", "front_rh_std_mm", "mm", 2),
+        ("Rear ride height std", "rear_rh_std_mm", "mm", 2),
+        ("Front excursion", "front_excursion_mm", "mm", 1),
+        ("Braking pitch", "braking_pitch_deg", "deg", 2),
+        ("Body slip p95", "body_slip_p95_deg", "deg", 2),
+        ("Understeer mean", "understeer_mean_deg", "deg", 2),
+        ("Peak lateral g", "peak_lat_g", "g", 2),
+        ("Front bottoming events", "bottoming_event_count_front", "", 0),
+        ("Rear bottoming events", "bottoming_event_count_rear", "", 0),
+        ("Front brake pressure peak", "front_brake_pressure_peak_bar", "bar", 1),
+        ("Front pressure mean", "front_pressure_mean_kpa", "kPa", 1),
+        ("Rear pressure mean", "rear_pressure_mean_kpa", "kPa", 1),
+    ]
+    telemetry_metrics = []
+    for label, key, units, digits in metric_specs:
+        val = tel.get(key)
+        if val is not None:
+            try:
+                telemetry_metrics.append({"label": label, "value": f"{val:.{digits}f} {units}".strip()})
+            except (TypeError, ValueError):
+                telemetry_metrics.append({"label": label, "value": str(val)})
+
+    # Driver profile attributes
+    driver_attr_specs = [
+        ("Trail braking depth", "trail_braking_depth"),
+        ("Trail braking class", "trail_braking_class"),
+        ("Throttle progressiveness", "throttle_progressiveness"),
+        ("Throttle classification", "throttle_classification"),
+        ("Steering smoothness", "steering_smoothness"),
+        ("Apex speed consistency", "apex_speed_cv"),
+        ("Cornering aggression", "cornering_aggression"),
+        ("Consistency", "consistency"),
+        ("Driver noise index", "driver_noise_index"),
+    ]
+    driver_attrs = []
+    for label, key in driver_attr_specs:
+        val = dp.get(key)
+        if val is not None:
+            if isinstance(val, float):
+                driver_attrs.append({"label": label, "value": f"{val:.3f}"})
+            else:
+                driver_attrs.append({"label": label, "value": str(val)})
+
+    # Problems
+    problems = []
+    for p in (diag.get("problems") or [])[:8]:
+        problems.append({
+            "severity": str(p.get("severity", "note")).title(),
+            "symptom": str(p.get("symptom", "")),
+            "cause": str(p.get("cause", "")),
+            "speed_context": str(p.get("speed_context", "all")),
+        })
+
+    return {
+        "session_id": session_id,
+        "car": obs.get("car", "unknown"),
+        "track": obs.get("track", "Unknown"),
+        "timestamp": obs.get("timestamp", obs.get("ibt_date", "")),
+        "lap_number": perf.get("lap_number"),
+        "best_lap": perf.get("best_lap_time_s"),
+        "median_speed": perf.get("median_speed_kph"),
+        "max_speed": perf.get("max_speed_kph"),
+        "consistency": perf.get("consistency_cv"),
+        "driver_class": dp.get("style") or dp.get("classification", ""),
+        "diagnosis": diag.get("assessment", ""),
+        "problems": problems,
+        "setup_groups": setup_groups,
+        "tyre_pressures": tyre_pressures,
+        "tyre_wear": tyre_wear,
+        "air_temp": tel.get("air_temp_c"),
+        "track_temp": tel.get("track_temp_c"),
+        "telemetry_metrics": telemetry_metrics,
+        "driver_attrs": driver_attrs,
+        # Raw data for chart visualizations
+        "corner_performance": obs.get("corner_performance", []),
+        "driver_profile_raw": dp,
+        "ibt_path": obs.get("ibt_path", ""),
+    }
+
+
+def _build_obs_setup_groups(setup: dict) -> list[dict]:
+    """Build setup display groups from a raw observation setup dict."""
+    groups = [
+        {
+            "name": "Platform",
+            "params": [
+                ("Wing angle", setup.get("wing"), "deg"),
+                ("Front pushrod", setup.get("front_pushrod"), "mm"),
+                ("Rear pushrod", setup.get("rear_pushrod"), "mm"),
+                ("Front ride height", setup.get("front_rh_static"), "mm"),
+                ("Rear ride height", setup.get("rear_rh_static"), "mm"),
+                ("Front heave", setup.get("front_heave_nmm"), "N/mm"),
+                ("Rear third", setup.get("rear_third_nmm"), "N/mm"),
+                ("Front torsion OD", setup.get("torsion_bar_od_mm"), "mm"),
+                ("Rear spring", setup.get("rear_spring_nmm"), "N/mm"),
+            ],
+        },
+        {
+            "name": "Balance",
+            "params": [
+                ("Front ARB blade", setup.get("front_arb_blade"), ""),
+                ("Rear ARB blade", setup.get("rear_arb_blade"), ""),
+                ("Brake bias", setup.get("brake_bias_pct"), "%"),
+                ("Diff preload", setup.get("diff_preload_nm"), "Nm"),
+            ],
+        },
+        {
+            "name": "Geometry",
+            "params": [
+                ("Front camber", setup.get("front_camber_deg"), "deg"),
+                ("Rear camber", setup.get("rear_camber_deg"), "deg"),
+                ("Front toe", setup.get("front_toe_mm"), "mm"),
+                ("Rear toe", setup.get("rear_toe_mm"), "mm"),
+            ],
+        },
+        {
+            "name": "Driver Aids",
+            "params": [
+                ("TC gain", setup.get("tc_gain"), ""),
+                ("TC slip", setup.get("tc_slip"), ""),
+            ],
+        },
+    ]
+    # Format values
+    for group in groups:
+        formatted = []
+        for item in group["params"]:
+            label, val, units = item
+            if val is not None:
+                if isinstance(val, float):
+                    formatted.append({"label": label, "value": f"{val:.2f} {units}".strip()})
+                else:
+                    formatted.append({"label": label, "value": f"{val} {units}".strip()})
+            else:
+                formatted.append({"label": label, "value": "-"})
+        group["params"] = formatted
+    return groups
 
 
 async def _persist_uploads(run_id: str, settings: AppSettings, uploads: list[UploadFile]) -> list[Path]:

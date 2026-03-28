@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 # ---------------------------------------------------------------------------
 
 class LeaderboardEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     member_id: str
     car: str
@@ -53,8 +54,8 @@ async def get_leaderboard(
     result = await db.execute(stmt)
     return [
         LeaderboardEntry(
-            id=e.id,
-            member_id=e.member_id,
+            id=str(e.id),
+            member_id=str(e.member_id),
             car=e.car,
             track=e.track,
             best_lap_time_s=e.best_lap_time_s,
