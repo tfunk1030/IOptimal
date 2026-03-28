@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "created": "2026-03-27T19:18:52.613329+00:00",
+  "sessions": [
+    "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-20_19-52-42",
+    "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-20_20-11-14",
+    "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-20_20-35-17",
+    "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-20_21-09-50",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-21_19-01-49",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_14-25-03",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_14-52-24",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_15-15-48",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_15-41-46",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_18-54-07",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_19-18-50",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-23_19-58-17",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-23_20-28-46",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-24_09-35-32",
+    "bmw_sebring_international_raceway_fullracebmw",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-24_15-34-43",
+    "bmw_sebring_international_raceway_2ndracebmw",
+    "bmw_sebring_international_raceway_bmwrace3",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-24_20-02-54",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-25_09-58-22",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-25_17-49-13",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-25_17-58-43",
+    "bmw_sebring_international_raceway_badbmw",
+    "bmw_sebring_international_raceway_bmwbadquaili1",
+    "bmw_sebring_international_raceway_badbmw2"
+  ],
+  "total_observations": 25,
+  "total_deltas": 50,
+  "cars_seen": [
+    "ferrari",
+    "bmw"
+  ],
+  "tracks_seen": [
+    "Sebring International Raceway_International"
+  ],
+  "last_updated": "2026-03-27T19:20:04.644224+00:00"
+}tional Raceway_International"
+  ],
+  "last_updated": "2026-03-27T19:20:04.643974+00:00"
+}

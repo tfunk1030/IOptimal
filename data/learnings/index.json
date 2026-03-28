@@ -117,10 +117,11 @@
     "bmw_sebring_international_raceway_bmwjj",
     "bmw_sebring_international_raceway_01_bmwjj",
     "bmw_sebring_international_raceway_01_bmwjj1",
-    "bmw_sebring_international_raceway_bmwjj1"
+    "bmw_sebring_international_raceway_bmwjj1",
+    "bmw_sebring_international_raceway_bmwbest"
   ],
-  "total_observations": 116,
-  "total_deltas": 257,
+  "total_observations": 117,
+  "total_deltas": 270,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -131,5 +132,5 @@
     "Sebring International Raceway_International",
     "Silverstone Circuit_Arena Grand Prix"
   ],
-  "last_updated": "2026-03-28T00:13:07.428952+00:00"
+  "last_updated": "2026-03-28T02:02:44.715038+00:00"
 }

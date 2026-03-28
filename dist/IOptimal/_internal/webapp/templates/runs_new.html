@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">Session-centered workflow</p>
+    <h1>Run the solver without touching the CLI.</h1>
+    <p class="lede">Upload telemetry, compare multiple sessions, or solve from a saved track profile. The UI keeps the first step obvious and moves the engineering detail deeper into the flow.</p>
+  </div>
+</section>
+
+{% if error %}
+  <div class="banner banner-error">{{ error }}</div>
+{% endif %}
+
+<form class="stack-xl" action="/runs" method="post" enctype="multipart/form-data">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Choose a workflow</h2>
+      <p>One app, three starting points. The defaults stay light and racer-focused.</p>
+    </div>
+    <div class="mode-grid">
+      <label class="mode-card" data-mode-card="single_session">
+        <input type="radio" name="mode" value="single_session" {% if selected_mode == 'single_session' %}checked{% endif %}>
+        <strong>Single Session</strong>
+        <span>Upload one IBT, diagnose the setup, and export a refined `.sto`.</span>
+      </label>
+      <label class="mode-card" data-mode-card="comparison">
+        <input type="radio" name="mode" value="comparison" {% if selected_mode == 'comparison' %}checked{% endif %}>
+        <strong>Multi-Session Compare</strong>
+        <span>Rank sessions, inspect deltas, and optionally synthesize a best setup.</span>
+      </label>
+      <label class="mode-card" data-mode-card="track_solve">
+        <input type="radio" name="mode" value="track_solve" {% if selected_mode == 'track_solve' %}checked{% endif %}>
+        <strong>Track-Only Solve</strong>
+        <span>Use a saved track profile when you want a baseline before collecting telemetry.</span>
+      </label>
+    </div>
+  </section>
+
+  <section class="grid-two">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Core Inputs</h2>
+        <p>Only the essentials stay exposed up front.</p>
+      </div>
+      <div class="field">
+        <label for="car">Car</label>
+        <select id="car" name="car">
+          <option value="bmw">BMW M Hybrid V8</option>
+          <option value="cadillac">Cadillac V-Series.R</option>
+          <option value="ferrari">Ferrari 499P</option>
+          <option value="porsche">Porsche 963</option>
+          <option value="acura">Acura ARX-06</option>
+        </select>
+      </div>
+      <div class="field" data-mode-panel="single_session">
+        <label for="single-files">IBT file</label>
+        <input id="single-files" type="file" name="ibt_files" accept=".ibt">
+        <small>Upload one telemetry file for a diagnosis-driven solve.</small>
+      </div>
+      <div class="field" data-mode-panel="comparison" hidden>
+        <label for="compare-files">IBT files</label>
+        <input id="compare-files" type="file" name="ibt_files" accept=".ibt" multiple>
+        <small>Select two or more sessions to rank and synthesize.</small>
+      </div>
+      <div class="field" data-mode-panel="track_solve" hidden>
+        <label for="track">Track</label>
+        <input id="track" name="track" placeholder="sebring">
+        <small>Use the same partial track-name matching as the existing solver.</small>
+      </div>
+      <div class="field" data-mode-panel="comparison" hidden>
+        <label class="checkbox">
+          <input type="checkbox" name="synthesize" checked>
+          <span>Synthesize best setup after ranking sessions</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <details open>
+        <summary>Advanced Inputs</summary>
+        <div class="detail-grid">
+          <div class="field">
+            <label for="wing">Wing angle</label>
+            <input id="wing" name="wing" type="number" step="0.1" placeholder="Auto when telemetry is present">
+          </div>
+          <div class="field">
+            <label for="lap">Lap</label>
+            <input id="lap" name="lap" type="number" min="1" placeholder="Best lap by default">
+          </div>
+          <div class="field">
+            <label for="fuel">Fuel override (L)</label>
+            <input id="fuel" name="fuel" type="number" step="0.1" placeholder="Auto unless overridden">
+          </div>
+          <div class="field">
+            <label for="balance">Target balance (%)</label>
+            <input id="balance" name="balance" type="number" step="0.01" value="50.14">
+          </div>
+          <div class="field">
+            <label for="tolerance">Tolerance (%)</label>
+            <input id="tolerance" name="tolerance" type="number" step="0.01" value="0.1">
+          </div>
+          <div class="field">
+            <label for="scenario_profile">Scenario</label>
+            <select id="scenario_profile" name="scenario_profile">
+              <option value="single_lap_safe">Single Lap Safe</option>
+              <option value="quali">Qualifying</option>
+              <option value="sprint">Sprint</option>
+              <option value="race">Race</option>
+            </select>
+          </div>
+          <div class="field field-checks">
+            <label class="checkbox">
+              <input type="checkbox" name="free_opt">
+              <span>Search the legal setup manifold</span>
+            </label>
+            <label class="checkbox">
+              <input type="checkbox" name="use_learning" checked>
+              <span>Use learning and allow session ingest</span>
+            </label>
+          </div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="button button-primary" type="submit">Start Run</button>
+  </div>
+</form>
+{% endblock %}

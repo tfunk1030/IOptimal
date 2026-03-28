@@ -1,0 +1,115 @@
+{
+  "car": "ferrari",
+  "track": "Sebring International Raceway",
+  "relationships": {
+    "lltd_vs_rear_arb": {
+      "name": "LLTD vs rear ARB blade",
+      "x_param": "rear_arb_blade",
+      "y_param": "lltd_measured",
+      "fit_type": "linear",
+      "coefficients": [
+        0.0003653085888724963,
+        0.510669087700308
+      ],
+      "r_squared": 0.2930892170193591,
+      "sample_count": 4,
+      "residual_std": 0.0006948449339723138,
+      "x_values": [
+        2.0,
+        5.0,
+        2.0,
+        3.0
+      ],
+      "y_values": [
+        0.5124586506531672,
+        0.5126721162498492,
+        0.5106937303132959,
+        0.5112355566513904
+      ],
+      "x_min": 2.0,
+      "x_max": 5.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    },
+    "front_rh_var_vs_heave": {
+      "name": "Front RH variance vs heave spring",
+      "x_param": "front_heave_nmm",
+      "y_param": "front_rh_std_mm",
+      "fit_type": "linear",
+      "coefficients": [
+        -0.10684132575988628,
+        4.489782094955442
+      ],
+      "r_squared": 0.1844664938714492,
+      "sample_count": 4,
+      "residual_std": 0.0,
+      "x_values": [
+        1.0,
+        3.0,
+        1.0,
+        1.0
+      ],
+      "y_values": [
+        4.1714067459106445,
+        4.169258117675781,
+        4.283428192138672,
+        4.6939873695373535
+      ],
+      "x_min": 1.0,
+      "x_max": 3.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    },
+    "rear_rh_var_vs_third": {
+      "name": "Rear RH variance vs third spring",
+      "x_param": "rear_third_nmm",
+      "y_param": "rear_rh_std_mm",
+      "fit_type": "linear",
+      "coefficients": [
+        -0.09286859456230591,
+        5.7287877868203525
+      ],
+      "r_squared": 0.7881790645777712,
+      "sample_count": 4,
+      "residual_std": 0.0,
+      "x_values": [
+        2.0,
+        3.0,
+        7.0,
+        6.0
+      ],
+      "y_values": [
+        5.42249059677124,
+        5.591253757476807,
+        5.019682884216309,
+        5.210089206695557
+      ],
+      "x_min": 2.0,
+      "x_max": 7.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    }
+  },
+  "last_updated": "2026-03-27T19:19:11.667631+00:00",
+  "observation_count": 4,
+  "most_sensitive_parameters": [],
+  "corrections": {
+    "aero_compression_front_mean_mm": 7.890869617462159,
+    "aero_compression_front_std_mm": 0.17986950889919387,
+    "aero_compression_rear_mean_mm": 16.919112300872804,
+    "aero_compression_rear_std_mm": 1.263727829127852,
+    "lap_time_surrogate_regularized": 1.0,
+    "lap_time_surrogate_sample_weight": 0.0,
+    "m_eff_front_values": [
+      3.1,
+      8.5,
+      3.8,
+      4.0
+    ],
+    "m_eff_front_empirical_mean": 4.85,
+    "m_eff_front_empirical_std": 2.133658829335187
+  }
+}

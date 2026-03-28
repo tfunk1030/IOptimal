@@ -6,7 +6,7 @@
   <Layers>
     <Details>
       <String Id="Event" Value="GTP Setup Builder" Unit="" />
-      <String Id="Session" Value="Generated 2026-03-26 02:12 UTC" Unit="" />
+      <String Id="Session" Value="Generated 2026-03-26 14:36 UTC" Unit="" />
       <String Id="Venue" Value="Sebring International Raceway — International" Unit="" />
       <String Id="Vehicle Type" Value="Car" Unit="" />
       <Numeric Id="CarSetup_TiresAero_AeroSettings_RearWingAngle" Value="17.0" Unit="deg" />
@@ -75,8 +75,8 @@
       <Numeric Id="CarSetup_BrakesDriveUnit_RearDiffSpec_Preload" Value="20.0" Unit="Nm" />
       <Numeric Id="CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain" Value="6" Unit="" />
       <Numeric Id="CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip" Value="5" Unit="" />
-      <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration" Value="-0.5" Unit="" />
-      <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget" Value="-1.5" Unit="" />
+      <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration" Value="-1.0" Unit="" />
+      <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget" Value="-2.0" Unit="" />
       <String Id="CarSetup_BrakesDriveUnit_BrakeSpec_PadCompound" Value="Low" Unit="" />
       <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_FrontMasterCyl" Value="19.1" Unit="mm" />
       <Numeric Id="CarSetup_BrakesDriveUnit_BrakeSpec_RearMasterCyl" Value="23.8" Unit="mm" />

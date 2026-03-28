@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ app_title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <p class="eyebrow">Local-first setup engineering</p>
+        <a class="brand" href="/runs/new">IOptimal</a>
+      </div>
+      <nav class="nav">
+        <a class="nav-link {% if active_nav == 'new_run' %}is-active{% endif %}" href="/runs/new">New Run</a>
+        <a class="nav-link {% if active_nav == 'sessions' %}is-active{% endif %}" href="/sessions">Sessions</a>
+        <a class="nav-link {% if active_nav == 'compare' %}is-active{% endif %}" href="/compare">Compare</a>
+        <a class="nav-link {% if active_nav == 'knowledge' %}is-active{% endif %}" href="/knowledge">Knowledge</a>
+        <a class="nav-link {% if active_nav == 'team' %}is-active{% endif %}" href="/team">Team</a>
+        <a class="nav-link {% if active_nav == 'settings' %}is-active{% endif %}" href="/settings">Settings</a>
+      </nav>
+    </header>
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    document.addEventListener("click", function (event) {
+      const trigger = event.target.closest("[data-tab-trigger]");
+      if (!trigger) return;
+      const wrapper = trigger.closest("[data-tab-root]");
+      const target = trigger.getAttribute("data-tab-trigger");
+      wrapper.querySelectorAll("[data-tab-trigger]").forEach((button) => {
+        button.classList.toggle("is-active", button === trigger);
+      });
+      wrapper.querySelectorAll("[data-tab-panel]").forEach((panel) => {
+        panel.hidden = panel.getAttribute("data-tab-panel") !== target;
+      });
+    });
+
+    document.addEventListener("change", function (event) {
+      if (!event.target.matches("[name='mode']")) return;
+      const mode = event.target.value;
+      document.querySelectorAll("[data-mode-panel]").forEach((panel) => {
+        panel.hidden = panel.getAttribute("data-mode-panel") !== mode;
+      });
+      document.querySelectorAll("[data-mode-card]").forEach((card) => {
+        card.classList.toggle("is-selected", card.getAttribute("data-mode-card") === mode);
+      });
+    });
+
+    window.addEventListener("DOMContentLoaded", function () {
+      const checked = document.querySelector("[name='mode']:checked");
+      if (checked) {
+        checked.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      document.querySelectorAll("[data-tab-root]").forEach((root) => {
+        const active = root.querySelector("[data-tab-trigger].is-active");
+        if (!active) return;
+        active.click();
+      });
+    });
+  </script>
+</body>
+</html>

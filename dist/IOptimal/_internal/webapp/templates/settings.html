@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Configuration</p>
+    <h1>Settings</h1>
+  </div>
+</div>
+
+<form method="post" action="/settings" class="stack-xl">
+
+  <!-- Team Connection -->
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Team Connection</h2>
+    </div>
+    <div class="stack-md">
+      <div class="field">
+        <label for="server-url">Server URL</label>
+        <input type="url" id="server-url" name="team_server_url" value="{{ config.team_server_url or '' }}" placeholder="https://team.ioptimal.app">
+      </div>
+      <div class="field">
+        <label for="api-key">API Key</label>
+        <input type="password" id="api-key" name="api_key" value="{{ config.api_key or '' }}" placeholder="Enter your API key">
+      </div>
+      <div class="actions">
+        <button type="button" class="button button-secondary" id="test-connection">Test Connection</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Join Team -->
+  {% if not config.team_connected %}
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Join Team</h2>
+    </div>
+    <div class="stack-md">
+      <div class="field">
+        <label for="invite-code">Invite Code</label>
+        <input type="text" id="invite-code" name="invite_code" value="{{ config.invite_code or '' }}" placeholder="Enter team invite code">
+      </div>
+      <div class="field">
+        <label for="iracing-name">iRacing Name</label>
+        <input type="text" id="iracing-name" name="iracing_name" value="{{ config.iracing_name or '' }}" placeholder="Your iRacing display name">
+      </div>
+      <div class="actions">
+        <button type="button" class="button button-secondary" id="join-team">Join Team</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Telemetry -->
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Telemetry</h2>
+    </div>
+    <div class="stack-md">
+      <div class="field">
+        <label for="telemetry-dir">Telemetry Directory</label>
+        <div style="display: flex; gap: 0.75rem;">
+          <input type="text" id="telemetry-dir" name="telemetry_dir" value="{{ config.telemetry_dir or '' }}" placeholder="C:\Users\You\Documents\iRacing\telemetry" style="flex: 1;">
+          <button type="button" class="button button-secondary" id="browse-dir">Browse</button>
+        </div>
+      </div>
+      <div class="checkbox">
+        <input type="checkbox" id="auto-ingest" name="auto_ingest" {% if config.auto_ingest %}checked{% endif %}>
+        <label for="auto-ingest">Auto-ingest new IBT files</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sync -->
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Sync</h2>
+    </div>
+    <div class="stack-md">
+      <div class="checkbox">
+        <input type="checkbox" id="auto-sync" name="auto_sync" {% if config.auto_sync %}checked{% endif %}>
+        <label for="auto-sync">Auto-sync with team server</label>
+      </div>
+      <div class="grid-two">
+        <div class="field">
+          <label for="push-interval">Push Interval (minutes)</label>
+          <input type="number" id="push-interval" name="push_interval" value="{{ config.push_interval or 5 }}" min="1" max="60">
+        </div>
+        <div class="field">
+          <label for="pull-interval">Pull Interval (minutes)</label>
+          <input type="number" id="pull-interval" name="pull_interval" value="{{ config.pull_interval or 5 }}" min="1" max="60">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notifications -->
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Notifications</h2>
+    </div>
+    <div class="stack-md">
+      <div class="checkbox">
+        <input type="checkbox" id="sound" name="sound_enabled" {% if config.sound_enabled %}checked{% endif %}>
+        <label for="sound">Enable sound notifications</label>
+      </div>
+      <div class="checkbox">
+        <input type="checkbox" id="browser-open" name="browser_open_on_start" {% if config.browser_open_on_start %}checked{% endif %}>
+        <label for="browser-open">Open browser on start</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button type="submit" class="button button-primary">Save Settings</button>
+  </div>
+
+</form>
+{% endblock %}

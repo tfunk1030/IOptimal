@@ -2230,8 +2230,8 @@
         },
         "supporting": {
           "brake_bias_pct": 46.2,
-          "brake_bias_target": -1.5,
-          "brake_bias_migration": -0.5,
+          "brake_bias_target": -2.0,
+          "brake_bias_migration": -1.0,
           "front_master_cyl_mm": 17.8,
           "rear_master_cyl_mm": 23.8,
           "pad_compound": "Low",
@@ -2251,19 +2251,19 @@
         }
       },
       "score": {
-        "total": 0.499,
+        "total": 0.49,
         "safety": 0.551,
         "performance": 0.719,
         "stability": 0.487,
         "confidence": 0.258,
-        "disruption_cost": 0.272,
+        "disruption_cost": 0.304,
         "notes": [
           "Authority session: S1",
           "Best session: S1",
           "Authority score: 0.101",
           "Overhaul classification: moderate_rework",
           "front static RH 29.98mm < floor 30.0mm",
-          "Disruption cost: 0.272",
+          "Disruption cost: 0.304",
           "Envelope distance: 0.860",
           "Setup distance: 1.071",
           "Predicted safety score from travel/pitch/lock = 0.55",
@@ -2424,8 +2424,8 @@
         },
         "supporting": {
           "brake_bias_pct": 46.2,
-          "brake_bias_target": -1.5,
-          "brake_bias_migration": -0.5,
+          "brake_bias_target": -2.0,
+          "brake_bias_migration": -1.0,
           "front_master_cyl_mm": 19.1,
           "rear_master_cyl_mm": 23.8,
           "pad_compound": "Low",
@@ -2445,12 +2445,12 @@
         }
       },
       "score": {
-        "total": 0.635,
+        "total": 0.623,
         "safety": 0.77,
         "performance": 0.729,
         "stability": 0.47,
         "confidence": 0.368,
-        "disruption_cost": 0.47,
+        "disruption_cost": 0.517,
         "notes": [
           "Authority session: S1",
           "Best session: S1",
@@ -2458,7 +2458,7 @@
           "Overhaul classification: moderate_rework",
           "Materialized candidate through shared solve chain.",
           "Applied family-specific supporting overrides on top of fresh supporting solve.",
-          "Disruption cost: 0.470",
+          "Disruption cost: 0.517",
           "Envelope distance: 0.860",
           "Setup distance: 1.071",
           "Predicted safety score from travel/pitch/lock = 0.77",
@@ -2636,8 +2636,8 @@
         },
         "supporting": {
           "brake_bias_pct": 45.7,
-          "brake_bias_target": -1.5,
-          "brake_bias_migration": -0.5,
+          "brake_bias_target": -2.0,
+          "brake_bias_migration": -1.0,
           "front_master_cyl_mm": 17.8,
           "rear_master_cyl_mm": 23.8,
           "pad_compound": "Low",
@@ -2657,12 +2657,12 @@
         }
       },
       "score": {
-        "total": 0.423,
+        "total": 0.405,
         "safety": 0.719,
         "performance": 0.656,
         "stability": 0.607,
         "confidence": 0.367,
-        "disruption_cost": 0.834,
+        "disruption_cost": 0.906,
         "notes": [
           "Authority session: S1",
           "Best session: S1",
@@ -2672,7 +2672,7 @@
           "Materialized for legality/reporting, but baseline_reset remains non-selectable without overhaul justification.",
           "Materialized candidate through shared solve chain.",
           "Applied family-specific supporting overrides on top of fresh supporting solve.",
-          "Disruption cost: 0.834",
+          "Disruption cost: 0.906",
           "Envelope distance: 0.860",
           "Setup distance: 1.071",
           "Predicted safety score from travel/pitch/lock = 0.72",
@@ -3089,7 +3089,7 @@
       "solver_step": "supporting",
       "kind": "settable",
       "current_value": -1.0,
-      "proposed_value": -1.5,
+      "proposed_value": -2.0,
       "changed": true,
       "search_status": "not_searched",
       "search_evidence": []
@@ -3100,7 +3100,7 @@
       "solver_step": "supporting",
       "kind": "settable",
       "current_value": 0.0,
-      "proposed_value": -0.5,
+      "proposed_value": -1.0,
       "changed": true,
       "search_status": "not_searched",
       "search_evidence": []
@@ -5344,7 +5344,7 @@
   "scenario_profile": "single_lap_safe",
   "fallback_mode": null,
   "selected_candidate_family": "compromise",
-  "selected_candidate_score": 0.635,
+  "selected_candidate_score": 0.623,
   "selected_candidate_applied": true,
   "legal_validation": {
     "valid": true,
@@ -5593,7 +5593,7 @@
     {
       "parameter": "brake_bias_target",
       "current_value": -1.0,
-      "proposed_value": -1.5,
+      "proposed_value": -2.0,
       "unit": "",
       "confidence": 0.78,
       "legality_status": "validated",
@@ -5611,7 +5611,7 @@
         "physics_rationale": "Brake hardware is conservatively seeded from braking telemetry instead of being left as silent pass-through context.",
         "legality": "garage validated",
         "expected_gain_ms": 46.9,
-        "expected_cost_ms": 0.2,
+        "expected_cost_ms": 0.5,
         "confidence": 0.78,
         "source_tier": "seeded_from_telemetry"
       }
@@ -5619,7 +5619,7 @@
     {
       "parameter": "brake_bias_migration",
       "current_value": 0.0,
-      "proposed_value": -0.5,
+      "proposed_value": -1.0,
       "unit": "",
       "confidence": 0.78,
       "legality_status": "validated",
@@ -5637,7 +5637,7 @@
         "physics_rationale": "Brake hardware is conservatively seeded from braking telemetry instead of being left as silent pass-through context.",
         "legality": "garage validated",
         "expected_gain_ms": 46.9,
-        "expected_cost_ms": 0.2,
+        "expected_cost_ms": 0.5,
         "confidence": 0.78,
         "source_tier": "seeded_from_telemetry"
       }
@@ -5862,7 +5862,7 @@
     "Base rotation score 19.284: pred_exit=3.22; pred_entry=0.05; pred_instability=0.06; pred_traction=0.13.",
     "Selected rotation profile 'free_exit_rotation' at 13.864: diff 20Nm / 50/75 / 6 plates; springs FTB 14.34 / R 150; toe F-0.6 R+0.2; camber F-2.6 R-1.8; RARB Medium/2 | pred_exit=0.96; pred_entry=0.00; pred_instability=0.94; pred_traction=0.88",
     "Materialized 12 BMW/Sebring rotation candidates and selected the lowest-penalty combination.",
-    "Candidate family selected: compromise (score 0.635)",
+    "Candidate family selected: compromise (score 0.623)",
     "Applied rematerialized compromise candidate result to final report/JSON/export payloads.",
     "Preserved BMW/Sebring second-stage rotation controls after candidate-family rematerialization."
   ],
@@ -6328,8 +6328,8 @@
   "supporting": {
     "brake_bias_pct": 46.2,
     "brake_bias_reasoning": "Calibrated base: 46.0% | Fuel correction: -0.02% at 40L | Result: 46.0%; +0.7% from trail brake depth p95=0.79; +0.2% for high braking decel p95=2.33g; -0.5% for front braking lock proxy p95=0.083; -0.2% for front brake wheel decel asymmetry p95=23.3 m/s^2; Note: measured hydraulic split 71.8% vs recommended 46.2% (delta +25.6%); Current target -1.0 retained as hardware context only; MC: F/R = 20.6/22.2 mm (ratio 0.93); differs from nominal 1.00 \u2014 effective bias may need decrease; Pad: Medium \u2014 low brake temps, softer compound may improve initial bite | front-lock evidence shifted brake hardware and migration rearward",
-    "brake_bias_target": -1.5,
-    "brake_bias_migration": -0.5,
+    "brake_bias_target": -2.0,
+    "brake_bias_migration": -1.0,
     "brake_bias_migration_gain": 0.0,
     "front_master_cyl_mm": 19.1,
     "rear_master_cyl_mm": 23.8,

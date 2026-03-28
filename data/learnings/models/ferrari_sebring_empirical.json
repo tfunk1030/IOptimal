@@ -141,7 +141,7 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-03-28T00:13:06.436584+00:00",
+  "last_updated": "2026-03-28T01:13:06.434867+00:00",
   "observation_count": 12,
   "most_sensitive_parameters": [],
   "corrections": {
@@ -151,7 +151,7 @@
     "aero_compression_rear_std_mm": 1.0702120085003186,
     "lap_time_surrogate_regularized": 1.0,
     "lap_time_surrogate_sample_weight": 0.0,
-    "lltd_measured_mean": 0.5108335136752832,
+    "lltd_measured_mean": 0.510834398086597,
     "lltd_measured_std": 0.0010772031325128183,
     "m_eff_front_values": [
       2.4,

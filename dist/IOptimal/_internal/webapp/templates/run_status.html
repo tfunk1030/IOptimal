@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">Run status</p>
+    <h1>Working on your run.</h1>
+    <p class="lede">The job queue is serialized to keep large telemetry runs stable on a local machine.</p>
+  </div>
+</section>
+
+<div
+  id="status-card"
+  hx-get="/runs/{{ run_id }}/status"
+  hx-trigger="load, every 2s"
+  hx-swap="outerHTML">
+  {% include "partials/status_card.html" %}
+</div>
+{% endblock %}

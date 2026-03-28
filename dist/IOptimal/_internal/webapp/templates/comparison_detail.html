@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Comparison result</p>
+    <h1>{{ summary.title }}</h1>
+    <p class="lede">{{ summary.subtitle }}</p>
+  </div>
+  <div class="hero-meta">
+    <span class="status-pill">Winner: {{ summary.winner_label }}</span>
+    <span class="status-pill">{{ summary.sessions_count }} sessions</span>
+  </div>
+</section>
+
+<section class="badge-row">
+  {% for badge in summary.overview_badges %}
+    <span class="badge">{{ badge }}</span>
+  {% endfor %}
+</section>
+
+<section class="grid-two">
+  <section class="panel panel-soft">
+    <div class="panel-head">
+      <h2>Rankings</h2>
+      <p>The fastest and most convincing session stays pinned at the top.</p>
+    </div>
+    <div class="stack-md">
+      {% for row in summary.rankings %}
+        <article class="change-card">
+          <h3>{{ row.label }}</h3>
+          <p><strong>{{ row.lap_time }}</strong> · {{ row.overall_score }}</p>
+          {% if row.strengths %}<small>Strengths: {{ row.strengths|join(', ') }}</small>{% endif %}
+          {% if row.weaknesses %}<small>Weaknesses: {{ row.weaknesses|join(', ') }}</small>{% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="panel panel-soft">
+    <div class="panel-head">
+      <h2>Corner Highlights</h2>
+      <p>Where session-to-session variance was largest.</p>
+    </div>
+    <div class="stack-md">
+      {% for corner in summary.corner_highlights %}
+        <article class="issue-card">
+          <h3>{{ corner.corner_label }}</h3>
+          <p>{{ corner.summary }}</p>
+          <small>{{ corner.spread }}</small>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+
+<section class="panel" data-tab-root>
+  <div class="tab-bar">
+    <button class="tab-button is-active" data-tab-trigger="setup" type="button">Setup Deltas</button>
+    <button class="tab-button" data-tab-trigger="telemetry" type="button">Telemetry Deltas</button>
+    <button class="tab-button" data-tab-trigger="synthesis" type="button">Synthesized Setup</button>
+    <button class="tab-button" data-tab-trigger="engineering" type="button">Engineering Detail</button>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="setup">
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            {% for ranking in summary.rankings %}
+              <th>{{ ranking.label }}</th>
+            {% endfor %}
+            <th>Delta</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in summary.setup_rows %}
+            <tr>
+              <td>{{ row.label }}</td>
+              {% for value in row.values %}<td>{{ value }}</td>{% endfor %}
+              <td>{{ row.delta }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="telemetry" hidden>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            {% for ranking in summary.rankings %}
+              <th>{{ ranking.label }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in summary.telemetry_rows %}
+            <tr>
+              <td>{{ row.label }}</td>
+              {% for value in row.values %}<td>{{ value }}</td>{% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="synthesis" hidden>
+    {% if summary.synthesis_groups %}
+      <div class="stack-lg">
+        {% for group in summary.synthesis_groups %}
+          <section class="panel panel-soft">
+            <div class="panel-head">
+              <h2>{{ group.name }}</h2>
+              <p>{{ group.help_text }}</p>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Parameter</th>
+                    <th>Current</th>
+                    <th>Recommended</th>
+                    <th>Delta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in group.rows %}
+                    <tr>
+                      <td>{{ row.label }}</td>
+                      <td>{{ row.current }}</td>
+                      <td>{{ row.recommended }}</td>
+                      <td>{{ row.delta }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty-copy">Synthesis was not requested for this comparison run.</p>
+    {% endif %}
+  </div>
+
+  <div class="tab-panel" data-tab-panel="engineering" hidden>
+    <div class="grid-two">
+      <section class="panel panel-soft">
+        <div class="panel-head">
+          <h2>Solver Notes</h2>
+          <p>Reasoning and artifacts from the comparison engine.</p>
+        </div>
+        <div class="stack-md">
+          {% for note in summary.engineering_notes %}
+            <p>{{ note }}</p>
+          {% endfor %}
+          <div class="download-row">
+            {% for artifact in summary.artifact_links %}
+              <a class="button button-secondary" href="/artifacts/{{ artifact.id }}/download">{{ artifact.label }}</a>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+      <section class="panel panel-soft">
+        <div class="panel-head">
+          <h2>Full Report</h2>
+          <p>The full comparison report from the existing engine.</p>
+        </div>
+        <pre class="report-block">{{ summary.report_text }}</pre>
+      </section>
+    </div>
+  </div>
+</section>
+{% endblock %}

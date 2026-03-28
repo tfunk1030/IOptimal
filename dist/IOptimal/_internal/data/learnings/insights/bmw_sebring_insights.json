@@ -1,0 +1,15 @@
+{
+  "car": "bmw",
+  "track": "Sebring International Raceway",
+  "session_count": 17,
+  "key_insights": [
+    "Lap time range: 108.017s \u2013 123.315s (15.298s window across 17 sessions)",
+    "No setup changes detected between sessions."
+  ],
+  "setup_trends": [
+    "rear_third_nmm: trending decreasing (440.0 -> 430.0 over 17 sessions)",
+    "front_camber_deg: trending increasing (-2.3 -> -2.1 over 17 sessions)",
+    "rear_camber_deg: trending increasing (-1.8 -> -1.7 over 17 sessions)"
+  ],
+  "unresolved_questions": []
+}

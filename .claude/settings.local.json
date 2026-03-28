@@ -71,7 +71,20 @@
       "Bash(ls -la /c/Users/VYRAL/IOptimal/analyzer/*.py)",
       "Bash(ls -1 /c/Users/VYRAL/IOptimal/analyzer/*.py)",
       "Bash(xargs -I {} basename {})",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(pip install:*)",
+      "Bash(gcloud --version)",
+      "mcp__Windows-MCP__PowerShell",
+      "Bash(pyinstaller --name IOptimal --windowed --noconfirm --add-data \"data/aeromaps_parsed;data/aeromaps_parsed\" --add-data \"data/cars;data/cars\" --add-data \"data/tracks;data/tracks\" --add-data \"webapp/templates;webapp/templates\" --add-data \"webapp/static;webapp/static\" --add-data \"skill;skill\" --hidden-import pystray._win32 --hidden-import PIL --hidden-import uvicorn.logging --hidden-import \"uvicorn.protocols.http\" --hidden-import \"uvicorn.protocols.http.auto\" --hidden-import \"uvicorn.protocols.http.h11_impl\" --hidden-import \"uvicorn.protocols.http.httptools_impl\" --hidden-import \"uvicorn.protocols.websockets\" --hidden-import \"uvicorn.protocols.websockets.auto\" --hidden-import \"uvicorn.lifespan\" --hidden-import \"uvicorn.lifespan.on\" --hidden-import \"uvicorn.lifespan.off\" --hidden-import aiosqlite --hidden-import \"sqlalchemy.dialects.sqlite\" --hidden-import \"sqlalchemy.dialects.sqlite.aiosqlite\" --collect-submodules watchdog --collect-submodules pystray desktop/app.py)",
+      "Bash(export PATH=\"$PATH:/c/Users/VYRAL/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin\")",
+      "Bash(gcloud config:*)",
+      "Read(//c/Users/VYRAL/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin/**)",
+      "Read(//c/Program Files \\(x86\\)/Google/Cloud SDK/google-cloud-sdk/bin/**)",
+      "Read(//c/Program Files/Google/Cloud SDK/google-cloud-sdk/bin/**)",
+      "Read(//c/Users/VYRAL/AppData/Local//**)",
+      "Bash(export PATH=\"$PATH:/c/Program Files \\(x86\\)/Google/Cloud SDK/google-cloud-sdk/bin\")",
+      "Bash(gcloud billing:*)",
+      "Bash(gcloud services:*)"
     ]
   }
 }

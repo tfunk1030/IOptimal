@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Comparison workflow</p>
+    <h1>Review prior comparison runs.</h1>
+    <p class="lede">Start a new comparison from the main workflow or reopen a previous ranking and synthesis result.</p>
+  </div>
+  <div class="hero-meta">
+    <a class="button button-primary" href="/runs/new?mode=comparison">New comparison</a>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="stack-md">
+    {% for run in runs %}
+      <article class="change-card">
+        <h2><a href="/runs/{{ run.id }}">{{ run.mode.replace('_', ' ')|title }}</a></h2>
+        <p>{{ run.car or '-' }} · {{ run.track or 'Telemetry-derived track' }}</p>
+        <small>{{ run.state|title }} · {{ run.created_at }}</small>
+      </article>
+    {% else %}
+      <p class="empty-copy">No comparison runs have been created yet.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

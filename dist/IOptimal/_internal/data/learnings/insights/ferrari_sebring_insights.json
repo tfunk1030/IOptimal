@@ -1,0 +1,19 @@
+{
+  "car": "ferrari",
+  "track": "Sebring International Raceway",
+  "session_count": 4,
+  "key_insights": [
+    "Lap time range: 109.032s \u2013 109.573s (0.541s window across 4 sessions)"
+  ],
+  "setup_trends": [
+    "rear_third_nmm: trending increasing (2.0 -> 6.0 over 4 sessions)",
+    "rear_arb_blade: trending increasing (2.0 -> 3.0 over 4 sessions)",
+    "front_camber_deg: trending increasing (-2.9 -> -1.2 over 4 sessions)",
+    "rear_camber_deg: trending increasing (-1.9 -> -1.0 over 4 sessions)"
+  ],
+  "unresolved_questions": [
+    "thermal:Front hot pressure 181 kPa (target <175) appears in 3/4 sessions \u2014 may need attention",
+    "thermal:Rear hot pressure 182 kPa (target <175) appears in 3/4 sessions \u2014 may need attention",
+    "safety:1 rear bottoming events on kerbs only appears in 2/4 sessions \u2014 may need attention"
+  ]
+}

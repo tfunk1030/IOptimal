@@ -73,6 +73,7 @@ class SyncClient:
         self._pull_interval = pull_interval
         self._queue: queue.Queue = queue.Queue()
         self._status = SyncStatus()
+        self._last_push_failed = False
         self._stop_event = threading.Event()
         self._push_thread: threading.Thread | None = None
         self._pull_thread: threading.Thread | None = None
@@ -136,6 +137,7 @@ class SyncClient:
                 "INSERT INTO sync_queue (payload_type, payload_json) VALUES (?, ?)",
                 ("setup", payload),
             )
+        self._status.queued_observations += 1
 
     # ── Push logic ────────────────────────────────────────────────────
 
@@ -150,10 +152,13 @@ class SyncClient:
             return 0
 
         pushed = 0
+        failed = False
         with httpx.Client(timeout=30) as client:
             for row_id, payload_type, payload_json in rows:
                 endpoint = self._endpoint_for_type(payload_type)
                 if not endpoint:
+                    failed = True
+                    self._status.last_error = f"Unknown payload_type: {payload_type}"
                     continue
 
                 try:
@@ -169,21 +174,33 @@ class SyncClient:
                         pushed += 1
                     else:
                         logger.warning("Push failed (HTTP %d): %s", resp.status_code, resp.text[:200])
+                        self._status.last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                        failed = True
                         break  # Stop on first failure to preserve order
                 except httpx.RequestError as e:
                     logger.warning("Push failed (network): %s", e)
                     self._status.connected = False
+                    self._status.last_error = str(e)
+                    failed = True
                     break
 
+        self._last_push_failed = failed
         if pushed > 0:
             self._status.total_pushed += pushed
-            self._status.queued_observations = max(0, self._status.queued_observations - pushed)
+            self._status.queued_observations = self._count_pending_queue_items()
             self._status.connected = True
+            self._status.last_error = None
             from datetime import datetime, timezone
             self._status.last_push = datetime.now(timezone.utc).isoformat()
             logger.info("Pushed %d/%d items to team server", pushed, len(rows))
 
         return pushed
+
+    def _count_pending_queue_items(self) -> int:
+        """Count unsynced rows in the local queue."""
+        with sqlite3.connect(str(self._db_path)) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM sync_queue WHERE synced = 0").fetchone()
+        return int(row[0] if row else 0)
 
     def _endpoint_for_type(self, payload_type: str) -> str | None:
         return {
@@ -286,9 +303,10 @@ class SyncClient:
                 pushed = self._push_pending()
                 if pushed > 0:
                     backoff = self._push_interval  # Reset on success
+                elif self._last_push_failed:
+                    backoff = min(backoff * 2, _MAX_RETRY_BACKOFF_S)
                 else:
-                    # Nothing to push — just wait
-                    pass
+                    backoff = self._push_interval
             except Exception:
                 logger.exception("Push loop error")
                 backoff = min(backoff * 2, _MAX_RETRY_BACKOFF_S)
