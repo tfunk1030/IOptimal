@@ -52,9 +52,10 @@
 
 <section class="panel">
   <div class="table-wrap">
-    <table class="data-table">
+    <table class="data-table" id="sessions-table">
       <thead>
         <tr>
+          <th style="width: 40px;"><input type="checkbox" id="select-all" title="Select all"></th>
           <th>Car</th>
           <th>Track</th>
           <th>Best Lap</th>
@@ -66,6 +67,7 @@
       <tbody>
         {% for obs in observations %}
           <tr>
+            <td><input type="checkbox" class="session-check" data-sid="{{ obs.session_id }}" data-car="{{ obs.car }}"></td>
             <td><a href="/telemetry/{{ obs.session_id }}">{{ obs.car|upper }}</a></td>
             <td>{{ obs.track }}</td>
             <td>{% if obs.best_lap %}{{ "%.3f"|format(obs.best_lap) }}s{% else %}-{% endif %}</td>
@@ -78,6 +80,27 @@
     </table>
   </div>
 </section>
+
+<!-- Sticky compare bar -->
+<div id="compare-bar" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel-strong, #fff); border-top: 2px solid var(--accent); padding: 0.75rem 2rem; z-index: 100; box-shadow: 0 -4px 20px rgba(0,0,0,0.1);">
+  <div style="max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+    <div>
+      <strong id="compare-count">0</strong> sessions selected
+      <span id="compare-warning" style="color: var(--alert); font-size: 0.85rem; margin-left: 0.75rem;"></span>
+    </div>
+    <div style="display: flex; gap: 0.75rem; align-items: center;">
+      <select id="compare-scenario" style="padding: 0.5rem 0.75rem; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font-size: 0.85rem;">
+        <option value="single_lap_safe">Single Lap Safe</option>
+        <option value="quali">Qualifying</option>
+        <option value="sprint">Sprint</option>
+        <option value="race">Race</option>
+      </select>
+      <button class="button button-primary" id="compare-btn" disabled>Compare Sessions</button>
+      <button class="button button-secondary" id="analyze-one-btn" style="display: none;">Analyze Setup</button>
+      <span id="compare-status" style="font-size: 0.85rem;"></span>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -214,5 +237,91 @@ document.getElementById('browse-telemetry').addEventListener('click', async func
   }
   btn.disabled = false;
 });
+
+// ── Session selection + Compare ─────────────────────────────
+const compareBar = document.getElementById('compare-bar');
+const compareCount = document.getElementById('compare-count');
+const compareWarning = document.getElementById('compare-warning');
+const compareBtn = document.getElementById('compare-btn');
+const analyzeOneBtn = document.getElementById('analyze-one-btn');
+const compareStatus = document.getElementById('compare-status');
+const selectAll = document.getElementById('select-all');
+
+function getSelected() {
+  return Array.from(document.querySelectorAll('.session-check:checked'));
+}
+
+function updateCompareBar() {
+  const checked = getSelected();
+  const count = checked.length;
+  compareCount.textContent = count;
+
+  if (count === 0) {
+    compareBar.style.display = 'none';
+    return;
+  }
+  compareBar.style.display = 'block';
+
+  // Check mixed cars
+  const cars = new Set(checked.map(c => c.dataset.car));
+  if (cars.size > 1) {
+    compareWarning.textContent = 'Mixed cars selected — all must be the same car for comparison';
+  } else {
+    compareWarning.textContent = '';
+  }
+
+  // Buttons
+  if (count === 1) {
+    analyzeOneBtn.style.display = 'inline-flex';
+    compareBtn.disabled = true;
+    compareBtn.textContent = 'Compare Sessions (need 2+)';
+  } else {
+    analyzeOneBtn.style.display = 'none';
+    compareBtn.disabled = cars.size > 1;
+    compareBtn.textContent = `Compare ${count} Sessions`;
+  }
+}
+
+document.querySelectorAll('.session-check').forEach(cb => {
+  cb.addEventListener('change', updateCompareBar);
+});
+selectAll?.addEventListener('change', function () {
+  document.querySelectorAll('.session-check').forEach(cb => { cb.checked = this.checked; });
+  updateCompareBar();
+});
+
+async function runFromSessions(mode) {
+  const checked = getSelected();
+  const sessionIds = checked.map(c => c.dataset.sid);
+  const scenario = document.getElementById('compare-scenario').value;
+  compareStatus.textContent = mode === 'comparison' ? 'Starting comparison...' : 'Starting analysis...';
+  compareStatus.style.color = 'var(--muted)';
+  compareBtn.disabled = true;
+  analyzeOneBtn.disabled = true;
+  try {
+    const resp = await fetch('/runs/from-sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, session_ids: sessionIds, scenario_profile: scenario, use_learning: true, synthesize: true }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      window.location.href = '/runs/' + data.run_id;
+    } else {
+      compareStatus.textContent = data.message;
+      compareStatus.style.color = 'var(--alert)';
+      compareBtn.disabled = false;
+      analyzeOneBtn.disabled = false;
+    }
+  } catch (e) {
+    compareStatus.textContent = 'Request failed';
+    compareStatus.style.color = 'var(--alert)';
+    compareBtn.disabled = false;
+    analyzeOneBtn.disabled = false;
+  }
+}
+
+compareBtn?.addEventListener('click', () => runFromSessions('comparison'));
+analyzeOneBtn?.addEventListener('click', () => runFromSessions('single_session'));
 </script>
 {% endblock %}

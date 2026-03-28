@@ -121,6 +121,68 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         request.app.state.jobs.submit(run_id, run_request)
         return RedirectResponse(url=f"/runs/{run_id}", status_code=303)
 
+    @app.post("/runs/from-sessions")
+    async def create_run_from_sessions(request: Request):
+        """Create a run from already-ingested session IDs (no file upload needed)."""
+        from learner.knowledge_store import KnowledgeStore
+        body = await request.json()
+        session_ids = body.get("session_ids", [])
+        mode = body.get("mode", "single_session")
+        scenario_profile = body.get("scenario_profile", "single_lap_safe")
+        free_opt = body.get("free_opt", False)
+        use_learning = body.get("use_learning", True)
+        synthesize = body.get("synthesize", True)
+
+        if not session_ids:
+            return JSONResponse({"ok": False, "message": "No sessions selected"})
+        if mode == "single_session" and len(session_ids) != 1:
+            return JSONResponse({"ok": False, "message": "Single session mode requires exactly 1 session"})
+        if mode == "comparison" and len(session_ids) < 2:
+            return JSONResponse({"ok": False, "message": "Comparison mode requires at least 2 sessions"})
+
+        store = KnowledgeStore()
+        ibt_paths: list[Path] = []
+        car = None
+        errors = []
+        for sid in session_ids:
+            obs = store.load_observation(sid)
+            if obs is None:
+                errors.append(f"Session not found: {sid[:30]}...")
+                continue
+            ibt_p = Path(obs.get("ibt_path", ""))
+            if not ibt_p.exists():
+                errors.append(f"IBT file missing for {obs.get('car', '?')} {obs.get('track', '?')}: {ibt_p.name}")
+                continue
+            ibt_paths.append(ibt_p)
+            if car is None:
+                car = obs.get("car", "bmw")
+
+        if errors:
+            return JSONResponse({"ok": False, "message": "; ".join(errors)})
+        if not ibt_paths:
+            return JSONResponse({"ok": False, "message": "No valid IBT files found"})
+
+        run_id = uuid4().hex
+        run_request = RunCreateRequest(
+            mode=mode if mode in {"single_session", "comparison"} else "single_session",
+            car=car or "bmw",
+            ibt_paths=ibt_paths,
+            track=None,
+            wing=None,
+            lap=None,
+            fuel=None,
+            balance=50.14,
+            tolerance=0.1,
+            scenario_profile=scenario_profile,
+            free_opt=free_opt,
+            use_learning=use_learning,
+            synthesize=synthesize,
+        )
+
+        request.app.state.repository.create_run(run_id, run_request)
+        request.app.state.jobs.submit(run_id, run_request)
+        return JSONResponse({"ok": True, "run_id": run_id})
+
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     async def run_detail(request: Request, run_id: str) -> HTMLResponse:
         payload = request.app.state.repository.get_run(run_id)

@@ -11,6 +11,17 @@
       {% if obs.driver_class %}<span class="badge">{{ obs.driver_class }}</span>{% endif %}
       <span class="badge">{{ obs.timestamp }}</span>
     </div>
+    <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 1rem; flex-wrap: wrap;">
+      <button class="button button-primary" id="analyze-setup">Analyze Setup</button>
+      <select id="scenario-select" style="padding: 0.6rem 1rem; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 0.85rem;">
+        <option value="single_lap_safe">Single Lap Safe</option>
+        <option value="quali">Qualifying</option>
+        <option value="sprint">Sprint</option>
+        <option value="race">Race</option>
+      </select>
+      <a href="/telemetry?select=true&car={{ obs.car }}" class="button button-secondary">Compare With...</a>
+      <span id="analyze-status" style="font-size: 0.85rem;"></span>
+    </div>
   </div>
 </section>
 
@@ -189,6 +200,43 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script>
+// ── Analyze Setup button ────────────────────────────────────
+document.getElementById('analyze-setup')?.addEventListener('click', async function () {
+  const btn = this;
+  const status = document.getElementById('analyze-status');
+  const scenario = document.getElementById('scenario-select').value;
+  btn.disabled = true;
+  btn.textContent = 'Analyzing...';
+  status.textContent = '';
+  try {
+    const resp = await fetch('/runs/from-sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'single_session',
+        session_ids: [{{ obs.session_id | tojson }}],
+        scenario_profile: scenario,
+        use_learning: true,
+      }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      window.location.href = '/runs/' + data.run_id;
+    } else {
+      status.textContent = data.message;
+      status.style.color = 'var(--alert)';
+      btn.disabled = false;
+      btn.textContent = 'Analyze Setup';
+    }
+  } catch (e) {
+    status.textContent = 'Request failed';
+    status.style.color = 'var(--alert)';
+    btn.disabled = false;
+    btn.textContent = 'Analyze Setup';
+  }
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 <script>
 // ── IOptimal ECharts Theme ──────────────────────────────────
