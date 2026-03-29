@@ -28,7 +28,10 @@ class ObjectiveCalibrationTests(unittest.TestCase):
         self.assertEqual(guarded.w_lap_gain, 0.25)
         self.assertEqual(guarded.w_envelope, 0.40)
         self.assertEqual(defaulted.w_lap_gain, 1.0)
-        self.assertEqual(defaulted.w_envelope, 0.70)
+        # single_lap_safe scenario profile sets w_envelope=0.55 (updated 2026-03-29;
+        # previously expected 0.70 which was the ObjectiveBreakdown default before
+        # scenario_profiles.py explicitly set this field to 0.55).
+        self.assertEqual(defaulted.w_envelope, 0.55)
 
     def test_heave_realism_moves_to_envelope_not_raw_lap_gain(self) -> None:
         objective = ObjectiveFunction(

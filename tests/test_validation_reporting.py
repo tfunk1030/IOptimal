@@ -103,6 +103,15 @@ class ValidationReportingTests(unittest.TestCase):
         self.assertIn("track_aware_holdout_mean_spearman_r", bmw["objective_recalibration"])
         self.assertIn("track_aware_holdout_worst_spearman_r", bmw["objective_recalibration"])
         self.assertLess(float(bmw["objective_recalibration"]["track_aware_spearman_r"]), 0.0)
+        self.assertLess(float(bmw["objective_recalibration"]["track_aware_holdout_mean_spearman_r"]), 0.0)
+        # Regression gate: worst holdout fold must not exceed +0.30.
+        # As of 2026-03-29 worst fold is +0.248; this gate catches further regression
+        # without blocking the current known-bad state. Target is eventually < 0.0.
+        self.assertLess(
+            float(bmw["objective_recalibration"]["track_aware_holdout_worst_spearman_r"]),
+            0.30,
+            "Worst holdout Spearman regressed above +0.30 — objective hardening is needed",
+        )
         self.assertFalse(bmw["objective_recalibration"]["recommended_runtime_profile"]["auto_apply"])
         self.assertTrue(all("error" not in row for row in bmw["rows"]))
 
