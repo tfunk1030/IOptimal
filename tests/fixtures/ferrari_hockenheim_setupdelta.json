@@ -1,0 +1,19 @@
+{
+  "carName": "ferrari499p",
+  "rows": [
+    {"row_id": "b24b2553", "label": "Rear wing angle", "section": "Aero Settings", "metric_value": "17 deg", "range_metric": {"min": "12 deg", "max": "17 deg"}},
+    {"row_id": "9cbf723e", "label": "Brake pressure bias", "section": "Brake Spec", "metric_value": "49.00%", "range_metric": {"min": "42.00%", "max": "65.00%"}},
+    {"row_id": "36a2d575", "label": "Traction control slip", "section": "Traction Control", "metric_value": "4 (TC1)", "range_metric": {"min": "1 (TC1)", "max": "12 (TC1)"}},
+    {"row_id": "a704cff6", "label": "Traction control gain", "section": "Traction Control", "metric_value": "3 (TC2)", "range_metric": {"min": "1 (TC2)", "max": "12 (TC2)"}},
+    {"row_id": "9698e41d", "label": "Fuel target", "section": "Fuel", "metric_value": "3.15 L", "range_metric": {"min": "0.13 L", "max": "13.33 L"}},
+    {"row_id": "5865ced9", "label": "Fuel level", "section": "Rear", "metric_value": "58.0 L", "range_metric": {"min": "3.0 L", "max": "89.0 L"}},
+    {"row_id": "e78ee6bc", "label": "Front RH at speed", "section": "Aero Calculator", "metric_value": "15.0 mm", "range_metric": {"min": "5.0 mm", "max": "50.0 mm"}},
+    {"row_id": "eefd5645", "label": "Rear RH at speed", "section": "Aero Calculator", "metric_value": "40.0 mm", "range_metric": {"min": "25.0 mm", "max": "75.0 mm"}},
+    {"row_id": "5a339ead", "label": "ARB blades", "section": "Front", "metric_value": "1", "range_metric": {"min": "1", "max": "5"}},
+    {"row_id": "952847dd", "label": "ARB blades", "section": "Rear", "metric_value": "1", "range_metric": {"min": "1", "max": "5"}},
+    {"row_id": "e24d9023", "label": "Toe-in", "section": "Front", "metric_value": "0.0004"},
+    {"row_id": "8fe49a89", "label": "Toe-in", "section": "Left Rear", "metric_value": "0.0005"},
+    {"row_id": "b10b1fd3", "label": "Toe-in", "section": "Right Rear", "metric_value": "0.0005"},
+    {"row_id": "0d51122b", "label": "Hybrid rear drive enabled", "section": "Hybrid Config", "metric_value": "On"}
+  ]
+}
