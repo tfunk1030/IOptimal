@@ -73,13 +73,49 @@ class ValidationReportingTests(unittest.TestCase):
 
         self.assertEqual(resolved["front_heave_travel_used_pct"]["source"], "direct")
         self.assertEqual(resolved["front_excursion_mm"]["source"], "fallback")
+        # front_rh_std_mm is not present → falls through to front_heave_defl_p99_mm
         self.assertEqual(resolved["front_excursion_mm"]["value"], 79.5)
+        self.assertIn("front_heave_defl_p99_mm", resolved["front_excursion_mm"]["fields"])
         self.assertEqual(resolved["braking_pitch_deg"]["source"], "fallback")
         self.assertEqual(resolved["front_lock_p95"]["source"], "fallback")
         self.assertEqual(resolved["rear_power_slip_p95"]["source"], "fallback")
         self.assertEqual(resolved["front_pressure_hot_kpa"]["source"], "fallback")
         self.assertEqual(resolved["front_pressure_hot_kpa"]["value"], 184.0)
         self.assertEqual(resolved["rear_pressure_hot_kpa"]["source"], "missing")
+
+    def test_resolve_validation_signals_front_rh_std_preferred_over_heave_defl(self) -> None:
+        """front_rh_std_mm is tier-1 fallback for front_excursion_mm (before heave_defl)."""
+        resolved_with_std = resolve_validation_signals(
+            {
+                "front_rh_std_mm": 5.5,
+                "front_heave_defl_p99_mm": 79.5,
+            }
+        )
+        resolved_with_heave_only = resolve_validation_signals(
+            {
+                "front_heave_defl_p99_mm": 79.5,
+            }
+        )
+        resolved_with_direct = resolve_validation_signals(
+            {
+                "front_rh_excursion_measured_mm": 22.3,
+                "front_rh_std_mm": 5.5,
+                "front_heave_defl_p99_mm": 79.5,
+            }
+        )
+
+        # When both std and heave are present, std is chosen (tier-1 fallback)
+        self.assertEqual(resolved_with_std["front_excursion_mm"]["source"], "fallback")
+        self.assertEqual(resolved_with_std["front_excursion_mm"]["value"], 5.5)
+        self.assertIn("front_rh_std_mm", resolved_with_std["front_excursion_mm"]["fields"])
+
+        # When only heave is present, heave is used (tier-2 fallback)
+        self.assertEqual(resolved_with_heave_only["front_excursion_mm"]["source"], "fallback")
+        self.assertEqual(resolved_with_heave_only["front_excursion_mm"]["value"], 79.5)
+
+        # Direct always wins even when std and heave are present
+        self.assertEqual(resolved_with_direct["front_excursion_mm"]["source"], "direct")
+        self.assertEqual(resolved_with_direct["front_excursion_mm"]["value"], 22.3)
 
     def test_build_validation_report_recomputes_current_bmw_sebring_evidence(self) -> None:
         report = build_validation_report()
@@ -115,6 +151,70 @@ class ValidationReportingTests(unittest.TestCase):
         self.assertFalse(bmw["objective_recalibration"]["recommended_runtime_profile"]["auto_apply"])
         self.assertTrue(all("error" not in row for row in bmw["rows"]))
 
+    def test_bmw_signal_quality_gates(self) -> None:
+        """Regression gates on per-signal fallback and missing rates for BMW/Sebring.
 
-if __name__ == "__main__":
-    unittest.main()
+        These gates do NOT require perfect direct coverage — the corpus contains older
+        observations extracted before newer signals were added. Gates catch *regressions*
+        where coverage degrades further compared to current known-good baseline.
+
+        Current baseline (2026-03-30):
+          front_excursion_mm: ~3% missing (after front_rh_std_mm added as tier-1 fallback)
+          braking_pitch_deg / front_lock_p95 / rear_power_slip_p95: ~24% missing
+          front_pressure_hot_kpa / rear_pressure_hot_kpa: ~24% missing
+
+        Gate thresholds are set 10pp above current baseline to allow headroom while
+        still catching meaningful regressions.
+        """
+        report = build_validation_report()
+        bmw = report["bmw_sebring"]
+        total = bmw["samples"]
+        signal_usage = bmw["signal_usage"]
+
+        # Signals that must not regress past 15% missing
+        # front_excursion_mm: improved to ~3% missing via front_rh_std_mm fallback
+        low_missing_signals = ["front_excursion_mm"]
+        for sig in low_missing_signals:
+            counts = signal_usage.get(sig, {})
+            missing = counts.get("missing", 0)
+            missing_rate = missing / total if total > 0 else 0.0
+            self.assertLess(
+                missing_rate,
+                0.15,
+                f"{sig}: missing rate {missing_rate:.1%} regressed past 15% gate "
+                f"({missing}/{total} samples missing — front_rh_std_mm fallback may be broken)",
+            )
+
+        # Signals with structural ~24% missing (old corpus, no backfill possible without IBT)
+        # Gate: must not exceed 35% missing (10pp headroom above current ~24%)
+        moderate_missing_signals = [
+            "braking_pitch_deg",
+            "front_lock_p95",
+            "rear_power_slip_p95",
+            "front_pressure_hot_kpa",
+            "rear_pressure_hot_kpa",
+        ]
+        for sig in moderate_missing_signals:
+            counts = signal_usage.get(sig, {})
+            missing = counts.get("missing", 0)
+            missing_rate = missing / total if total > 0 else 0.0
+            self.assertLess(
+                missing_rate,
+                0.35,
+                f"{sig}: missing rate {missing_rate:.1%} regressed past 35% gate "
+                f"({missing}/{total} — extractor may have broken {sig} extraction)",
+            )
+
+        # All key signals must have at least 50% non-missing (direct + fallback)
+        key_signals = list(signal_usage.keys())
+        for sig in key_signals:
+            counts = signal_usage.get(sig, {})
+            missing = counts.get("missing", 0)
+            non_missing = total - missing
+            coverage = non_missing / total if total > 0 else 0.0
+            self.assertGreaterEqual(
+                coverage,
+                0.50,
+                f"{sig}: coverage {coverage:.1%} dropped below 50% — "
+                f"signal extraction may be broken for this metric",
+            )
