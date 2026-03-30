@@ -334,9 +334,75 @@ _CADILLAC_PARAM_IDS: dict[str, str] = {
 }
 
 _ACURA_PARAM_IDS: dict[str, str] = {
-    **_BMW_PARAM_IDS,  # Similar to BMW
+    **_BMW_PARAM_IDS,  # Base — then override Acura-specific mappings below
+
+    # ARB blades use indexed format (like Ferrari)
     "front_arb_blades":         "CarSetup_Chassis_Front_ArbBlades[0]",
     "rear_arb_blades":          "CarSetup_Chassis_Rear_ArbBlades[0]",
+
+    # Rear uses torsion bars, NOT coil springs (ORECA chassis)
+    "lr_spring_rate":           "CarSetup_Chassis_LeftRear_TorsionBarOD",
+    "rr_spring_rate":           "CarSetup_Chassis_RightRear_TorsionBarOD",
+    "lr_torsion_turns":         "CarSetup_Chassis_LeftRear_TorsionBarTurns",
+    "rr_torsion_turns":         "CarSetup_Chassis_RightRear_TorsionBarTurns",
+    # No rear coil spring perch — torsion bars don't use spring perch
+    "lr_spring_perch":          "",  # suppress
+    "rr_spring_perch":          "",  # suppress
+
+    # Rear toe is single value under Chassis.Rear, not per-corner
+    "rear_toe":                 "CarSetup_Chassis_Rear_ToeIn",
+    "lr_toe":                   "",  # suppress per-corner
+    "rr_toe":                   "",  # suppress per-corner
+
+    # Dampers: ORECA heave+roll layout (NOT per-corner)
+    # Front heave damper
+    "lf_ls_comp":               "CarSetup_Dampers_FrontHeave_LsCompDamping",
+    "lf_ls_rbd":                "CarSetup_Dampers_FrontHeave_LsRbdDamping",
+    "lf_hs_comp":               "CarSetup_Dampers_FrontHeave_HsCompDamping",
+    "lf_hs_rbd":                "CarSetup_Dampers_FrontHeave_HsRbdDamping",
+    "lf_hs_slope":              "CarSetup_Dampers_FrontHeave_HsCompDampSlope",
+    # RF = same as LF (heave is single unit, not per-corner)
+    "rf_ls_comp":               "",  # suppress — heave is single
+    "rf_ls_rbd":                "",
+    "rf_hs_comp":               "",
+    "rf_hs_rbd":                "",
+    "rf_hs_slope":              "",
+    # Rear heave damper
+    "lr_ls_comp":               "CarSetup_Dampers_RearHeave_LsCompDamping",
+    "lr_ls_rbd":                "CarSetup_Dampers_RearHeave_LsRbdDamping",
+    "lr_hs_comp":               "CarSetup_Dampers_RearHeave_HsCompDamping",
+    "lr_hs_rbd":                "CarSetup_Dampers_RearHeave_HsRbdDamping",
+    "lr_hs_slope":              "CarSetup_Dampers_RearHeave_HsCompDampSlope",
+    # RR = same as LR (heave is single unit)
+    "rr_ls_comp":               "",
+    "rr_ls_rbd":                "",
+    "rr_hs_comp":               "",
+    "rr_hs_rbd":                "",
+    "rr_hs_slope":              "",
+
+    # Roll dampers (Acura-specific, no BMW equivalent)
+    "front_roll_ls":            "CarSetup_Dampers_FrontRoll_LsDamping",
+    "front_roll_hs":            "CarSetup_Dampers_FrontRoll_HsDamping",
+    "rear_roll_ls":             "CarSetup_Dampers_RearRoll_LsDamping",
+    "rear_roll_hs":             "CarSetup_Dampers_RearRoll_HsDamping",
+
+    # Diff: Acura uses "DiffRampAngles" (not "CoastDriveRampAngles" like BMW)
+    "diff_coast_drive_ramp":    "CarSetup_Systems_RearDiffSpec_DiffRampAngles",
+    "diff_clutch_plates":       "CarSetup_Systems_RearDiffSpec_ClutchFrictionPlates",
+    "diff_preload":             "CarSetup_Systems_RearDiffSpec_Preload",
+
+    # Brakes/TC/Fuel under Systems (not BrakesDriveUnit like BMW)
+    "brake_bias":               "CarSetup_Systems_BrakeSpec_BrakePressureBias",
+    "brake_bias_migration":     "CarSetup_Systems_BrakeSpec_BrakeBiasMigration",
+    "pad_compound":             "CarSetup_Systems_BrakeSpec_PadCompound",
+    "front_master_cyl":         "CarSetup_Systems_BrakeSpec_FrontMasterCyl",
+    "rear_master_cyl":          "CarSetup_Systems_BrakeSpec_RearMasterCyl",
+    "tc_gain":                  "CarSetup_Systems_TractionControl_TractionControlGain",
+    "tc_slip":                  "CarSetup_Systems_TractionControl_TractionControlSlip",
+    "fuel_level":               "CarSetup_Systems_Fuel_FuelLevel",
+    "fuel_low_warning":         "CarSetup_Systems_Fuel_FuelLowWarning",
+    "gear_stack":               "CarSetup_Systems_GearRatios_GearStack",
+    "roof_light_color":         "CarSetup_Systems_Lighting_RoofIdLightColor",
 }
 
 # Master dispatch table
@@ -608,7 +674,10 @@ def write_sto(
         if value is None:
             return
         if param in ids:
-            _numeric(details, ids[param], value, unit)
+            pid = ids[param]
+            if not pid:  # empty string = suppressed for this car
+                return
+            _numeric(details, pid, value, unit)
         else:
             _comment(details, f"TODO: {car_canonical} {param} not mapped")
 
@@ -617,9 +686,14 @@ def write_sto(
         if value is None:
             return
         if param in ids:
-            _string(details, ids[param], value, unit)
+            pid = ids[param]
+            if not pid:
+                return
+            _string(details, pid, value, unit)
         else:
             _comment(details, f"TODO: {car_canonical} {param} not mapped")
+
+    is_acura = car_canonical.lower() == "acura"
 
     # Build XML tree
     root = Element("LDXFile", Version="1.6", Locale="English")
@@ -694,11 +768,17 @@ def write_sto(
     if "lf_roll_spring" in ids:
         _numeric(details, ids["lf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
         _numeric(details, ids["rf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
-    # Rear spring
-    _w_num("lr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
-    _w_num("rr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
-    # Ferrari has no rear coil spring perch — skip if unmapped
-    if "lr_spring_perch" in ids:
+    # Rear spring / torsion bar
+    if is_acura:
+        # Acura rear uses torsion bar OD (mapped via lr_spring_rate -> TorsionBarOD)
+        _rear_od = step3.rear_torsion_od_mm if hasattr(step3, 'rear_torsion_od_mm') and step3.rear_torsion_od_mm else 13.9
+        _w_num("lr_spring_rate", _rear_od, "mm")
+        _w_num("rr_spring_rate", _rear_od, "mm")
+    else:
+        _w_num("lr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
+        _w_num("rr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
+    # Ferrari/Acura have no rear coil spring perch — skip if unmapped or suppressed
+    if ids.get("lr_spring_perch"):
         _w_num("lr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
         _w_num("rr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
     # Shock deflection maxes (computed by iRacing)
@@ -817,8 +897,11 @@ def write_sto(
     _w_num("lr_camber",  step5.rear_camber_deg,  "deg")
     _w_num("rr_camber",  step5.rear_camber_deg,  "deg")
     _w_num("front_toe",  step5.front_toe_mm,     "mm")
-    _w_num("lr_toe",     step5.rear_toe_mm,      "mm")
-    _w_num("rr_toe",     step5.rear_toe_mm,      "mm")
+    if is_acura:
+        _w_num("rear_toe", step5.rear_toe_mm, "mm")
+    else:
+        _w_num("lr_toe",     step5.rear_toe_mm,      "mm")
+        _w_num("rr_toe",     step5.rear_toe_mm,      "mm")
 
     # === Dampers ===
     _w_num("lf_ls_comp",  step6.lf.ls_comp,  "clicks")
@@ -841,6 +924,18 @@ def write_sto(
     _w_num("rr_hs_comp",  step6.rr.hs_comp,  "clicks")
     _w_num("rr_hs_rbd",   step6.rr.hs_rbd,   "clicks")
     _w_num("rr_hs_slope", step6.rr.hs_slope, "clicks")
+
+    # === Roll dampers (Acura ORECA only) ===
+    if is_acura:
+        _roll_ls_f = getattr(step6, 'front_roll_ls', None)
+        _roll_hs_f = getattr(step6, 'front_roll_hs', None)
+        _roll_ls_r = getattr(step6, 'rear_roll_ls', None)
+        _roll_hs_r = getattr(step6, 'rear_roll_hs', None)
+        if _roll_ls_f is not None:
+            _w_num("front_roll_ls", _roll_ls_f, "clicks")
+            _w_num("front_roll_hs", _roll_hs_f, "clicks")
+            _w_num("rear_roll_ls",  _roll_ls_r,  "clicks")
+            _w_num("rear_roll_hs",  _roll_hs_r,  "clicks")
 
     # === Tyres ===
     _w_num("lf_pressure", tyre_pressure_kpa, "kPa")
