@@ -68,6 +68,13 @@ class AcuraRegistryTests(unittest.TestCase):
 
     def test_acura_oreca_platform_consistency(self):
         """Acura keeps the ORECA heave+roll + rear torsion-bar layout encoded in the car model."""
+    def test_acura_dallara_platform_consistency(self):
+        """Acura shares Dallara platform values with BMW (torsion_c, CG height).
+
+        Note: rear_motion_ratio intentionally differs — Acura ORECA rear torsion geometry
+        bakes the motion ratio into the spring constant (ratio=1.0), while BMW uses
+        a pushrod geometry (ratio=0.60). This is correct and by design.
+        """
         acura = get_car("acura")
         bmw = get_car("bmw")
         self.assertEqual(
