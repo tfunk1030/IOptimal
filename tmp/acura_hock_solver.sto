@@ -6,7 +6,7 @@
   <Layers>
     <Details>
       <String Id="Event" Value="GTP Setup Builder" Unit="" />
-      <String Id="Session" Value="Generated 2026-03-30 07:24 UTC" Unit="" />
+      <String Id="Session" Value="Generated 2026-03-30 07:26 UTC" Unit="" />
       <String Id="Venue" Value="Hockenheim Grand Prix — Grand Prix" Unit="" />
       <String Id="Vehicle Type" Value="Car" Unit="" />
       <Numeric Id="CarSetup_TiresAero_AeroSettings_RearWingAngle" Value="10.0" Unit="deg" />
