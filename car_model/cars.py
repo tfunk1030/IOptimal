@@ -1829,28 +1829,36 @@ ACURA_ARX06 = CarModel(
         rear_compression_mm=8.0,      # ESTIMATE
     ),
     pushrod=PushrodGeometry(
-        front_pinned_rh_mm=30.0,         # IBT: front RH = 30.2mm (near-pinned at min OD)
+        # Front RH dominated by CAMBER: front_rh = 37.55 + 2.388*camber (R²=0.988, RMSE=0.18mm)
+        # At camber=-2.8: RH≈30.9mm. At camber=-1.4: RH≈34.3mm.
+        front_pinned_rh_mm=30.2,         # CALIBRATED: typical at camber=-2.8 (most common)
         front_pushrod_default_mm=-37.5,  # IBT: PushrodLengthDelta = -37.5mm
-        # Rear RH is multi-variable (pushrod + heave + torsion OD + camber).
-        # Single-variable pushrod model limited accuracy. Using weak sensitivity
-        # to keep pushrod near baseline; aero compression handles dynamic targeting.
-        # Formula: rh = base_at_zero + pushrod * ratio
-        # IBT: pushrod=-35.0 → RH=43.7 → base_at_zero = 43.7 - (-35.0 * -0.09) = 40.55
-        rear_base_rh_mm=40.55,
-        rear_pushrod_to_rh=-0.09,
+        # CALIBRATED from 15 unique garage data points (2026-03-30), deduplicated:
+        # Full model: rear_rh = 78.54 + 0.7644*pushrod + 0.0406*heave - 0.4089*perch
+        # R²=0.908, RMSE=1.21mm, N=13 (with heave+perch), pushrod dominant
+        # Front RH model: front_rh = 37.55 + 2.388*camber (R²=0.988, camber dominant)
+        # Front damper defl: defl = 25.46 + 0.714*pushrod (R²=0.998, bottoms at pushrod<-35.6mm)
+        # PushrodGeometry can only model pushrod; base_rh at typical operating point
+        # (heave=150, perch=85): base = 78.54 + 0.0406*150 - 0.4089*85 = 49.87
+        rear_base_rh_mm=49.87,           # CALIBRATED: 13-point regression, R²=0.91
+        rear_pushrod_to_rh=0.7644,       # CALIBRATED: positive (less negative pushrod = higher RH)
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
-        front_m_eff_kg=600.0,     # CALIBRATED from Hockenheim IBT (heave=180, σ=7.7mm, v_p99=312mm/s)
-        rear_m_eff_kg=186.0,      # CALIBRATED from Hockenheim IBT (heave=120, σ=6.2mm, v_p99=368mm/s)
-        front_spring_range_nmm=(180.0, 300.0),   # Floor 180 — damper bottoms below 180 at baseline OD
-        # Hard clamp: solver must not exceed baseline+10 until garage defl model is calibrated
-        front_heave_hard_range_nmm=(180.0, 250.0),
-        rear_spring_range_nmm=(60.0, 300.0),     # Acura baseline 120 N/mm (rear heave, not third)
-        perch_offset_front_baseline_mm=34.5,     # IBT: HeavePerchOffset = 34.5mm
-        perch_offset_rear_baseline_mm=35.0,      # IBT: HeavePerchOffset = 35.0mm
-        # Disable BMW slider/defl models — not calibrated for ORECA chassis.
-        # Without calibration, perch stays at baseline to avoid bottoming.
+        # m_eff varies with spring rate (nonlinear sim model):
+        #   Front: 641kg at 90 N/mm, 319kg at 190 N/mm
+        #   Rear:  187kg at 60 N/mm, 254kg at 70 N/mm
+        # Using mid-range values; solver should ideally use rate-dependent m_eff.
+        front_m_eff_kg=450.0,     # CALIBRATED: midpoint of 319-641kg range (garage screenshots)
+        rear_m_eff_kg=220.0,      # CALIBRATED: midpoint of 187-254kg range (garage screenshots)
+        front_spring_range_nmm=(90.0, 400.0),    # EXPANDED: garage shows 90-380 N/mm range
+        front_heave_hard_range_nmm=(90.0, 400.0),  # EXPANDED: setups use up to 380 N/mm
+        rear_spring_range_nmm=(60.0, 300.0),     # Garage shows 60-190 N/mm; cap at 300
+        perch_offset_front_baseline_mm=68.0,     # CALIBRATED: typical operating point from setups
+        perch_offset_rear_baseline_mm=85.0,      # CALIBRATED: typical operating point from setups
+        # Front heave damper defl model: defl = -11.58 + 0.544 * perch (R²=0.78)
+        # Bottoming threshold: perch < 21.3mm (only 3 of 16 setups bottom)
+        # Old IBT baseline (34.5mm) was near bottoming — real setups use 49-100mm
         slider_perch_coeff=0.0,
         slider_intercept=0.0,
         slider_heave_coeff=0.0,
@@ -1863,13 +1871,16 @@ ACURA_ARX06 = CarModel(
         # ORECA chassis: torsion bars at ALL 4 corners (front AND rear)
         # Same torsion bar hardware as BMW — identical discrete OD options
         front_torsion_c=0.0008036,        # ESTIMATE — same as BMW until calibrated
+        # NOTE: garage torsion bar deflection is NOT purely weight/(C*OD^4);
+        # it includes preload from torsion bar turns. C constant calibration
+        # deferred until turns-corrected model is built.
         front_torsion_od_ref_mm=13.9,     # IBT: TorsionBarOD = 13.90mm (front)
-        # Range capped at 14.76 until garage travel model calibrated — stiffer ODs
-        # cause front heave damper bottoming (defl goes negative at OD >= 15.14).
-        # At baseline OD=13.90 damper defl=0.0; at 15.86 damper defl=-2.2.
-        front_torsion_od_range_mm=(13.9, 14.76),
-        front_torsion_od_options=[         # CONFIRMED from garage dropdown (same as BMW)
-            13.90, 14.34, 14.76,           # Capped — full range extends to 18.20
+        # EXPANDED: front heave damper is ALWAYS bottomed (-1.7 to -2.5mm) across
+        # ALL tested ODs (13.90, 14.76, 15.86) and spring rates (90, 190).
+        # This is a normal Acura characteristic, not an error to prevent.
+        front_torsion_od_range_mm=(13.9, 15.86),
+        front_torsion_od_options=[         # CONFIRMED from garage dropdown
+            13.90, 14.34, 14.76, 15.14, 15.51, 15.86,  # EXPANDED: full usable range
         ],
         # Rear also uses torsion bars (ORECA, not Dallara) — same discrete options
         rear_torsion_c=0.0008036,         # ESTIMATE — same C constant, needs calibration
@@ -1906,6 +1917,8 @@ ACURA_ARX06 = CarModel(
         rear_camber_baseline_deg=-1.8,    # IBT: Camber = -1.8 deg
         front_roll_gain=0.60,             # ESTIMATE — ORECA platform
         rear_roll_gain=0.50,              # ESTIMATE — ORECA platform
+        # CALIBRATED: front camber strongly affects front static RH
+        # ~2.9mm RH per degree camber (camber=-1.6→RH=33.7, camber=-2.8→RH=30.2)
     ),
     damper=DamperModel(
         # ORECA heave+roll architecture: heave dampers have full LS/HS comp+rbd+slope;
