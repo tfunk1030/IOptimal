@@ -396,6 +396,7 @@ No verified setup file available from your data, but the Dallara architecture me
 | Imola | Technical, kerb-heavy, elevation | Medium wing, compliant over kerbs, strong braking |
 | Suzuka | Fast flowing, high commitment | Aero platform critical, high wing, confidence setup |
 | Bathurst | Extreme elevation, bumpy, tight sections | Very compliant for mountain section, strong heave for straight, dual-personality setup |
+| Hockenheim GP | Smooth, mixed speed, tight stadium section | Smooth modern tarmac allows softer heave/third springs for mechanical grip. Parabolika + back straight reward lower wing angles for top speed. Stadium section (Motodrom) is tight and technical — diff preload critical for traction out of slow corners (especially important for Acura ARX-06). Stadium kerbs can be aggressive — tune HS comp/slope for compliance. Balance aero platform stability through fast sections vs mechanical grip in stadium. |
 
 ---
 

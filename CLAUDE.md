@@ -9,7 +9,7 @@ Build a physics-first setup solver for iRacing's GTP/Hypercar class that searche
 - Scenario engine: `solver/scenario_profiles.py` defines `single_lap_safe`, `quali`, `sprint`, and `race`, and those profiles now drive `pipeline/produce.py`, `pipeline/reason.py`, `solver/solve.py`, preset comparison, and the webapp.
 - Legal-manifold search: `--free`, `--explore-legal-space`, and `--legal-search` now mean "start from the pinned physics solve and search the full legal setup manifold". Accepted candidates must pass setup-registry legality, garage-output validation, and telemetry sanity checks.
 - Current BMW/Sebring evidence: `73` observations, `72` non-vetoed. Previous non-vetoed Spearman was `-0.120522` with hardcoded damper zeta targets and equal penalty weights. Damper targets updated to IBT-calibrated values (0.68/0.23/0.47/0.20), penalty scaling halved, and `single_lap_safe` weights set to calibration-searched values (lap_gain=1.25, envelope=0.20, rest=0). Pending re-validation to confirm improvement.
-- Current support tiers from `validation/objective_validation.json`: BMW/Sebring = `calibrated`, Ferrari/Sebring = `partial`, Cadillac/Silverstone = `exploratory`, Porsche/Sebring = `unsupported`.
+- Current support tiers from `validation/objective_validation.json`: BMW/Sebring = `calibrated`, Ferrari/Sebring = `partial`, Cadillac/Silverstone = `exploratory`, Porsche/Sebring = `unsupported`, Acura/Hockenheim = `unsupported` (generic track profile, no observations yet).
 - Current source-of-truth reports: `docs/repo_audit.md`, `validation/objective_validation.md`, and `validation/calibration_report.md`.
 - Current roadmap for improving the score model and onboarding the rest of the GTP field: `enhancementplan.md`.
 - **Team tool deployed (2026-03-27):** Server live at `https://ioptimal-server-27191526338.us-central1.run.app`, team "SOELPEC Precision Racing" created (invite code `5a1c520b`), desktop app packaged at `dist/IOptimal/IOptimal.exe`. All 18 bugs fixed (12 original + 6 deployment). See `docs/team_tool_next_steps.md` for full deployment reference.
@@ -208,7 +208,7 @@ Key features:
 - All evidence uses canonical registry-backed setup mappings (`validation/observation_mapping.py`) instead of stale aliases.
 - Current authority is BMW/Sebring only: `73` observations, `72` non-vetoed, with objective correlation still weak enough that "optimal" claims are not yet allowed.
 - Validation reports now track score correlation, top parameter correlations, signal usage, claim audit status, and scenario-aware recalibration metrics including holdout performance.
-- Support tiers are explicit and enforced in documentation: BMW/Sebring `calibrated`, Ferrari/Sebring `partial`, Cadillac/Silverstone `exploratory`, Porsche/Acura `unsupported`.
+- Support tiers are explicit and enforced in documentation: BMW/Sebring `calibrated`, Ferrari/Sebring `partial`, Cadillac/Silverstone `exploratory`, Porsche/Sebring `unsupported`, Acura/Hockenheim `unsupported`.
 
 ### Tech Stack
 - Python 3.11+

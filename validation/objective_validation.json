@@ -36,6 +36,13 @@
       "track_config": "International",
       "samples": 2,
       "confidence_tier": "unsupported"
+    },
+    {
+      "car": "acura",
+      "track": "Hockenheim Grand Prix",
+      "track_config": "Grand Prix",
+      "samples": 0,
+      "confidence_tier": "unsupported"
     }
   ],
   "sample_counts_by_car_track": {
@@ -50,6 +57,9 @@
     },
     "porsche": {
       "Sebring International Raceway (International)": 2
+    },
+    "acura": {
+      "Hockenheim Grand Prix (Grand Prix)": 0
     }
   },
   "bmw_sebring": {
