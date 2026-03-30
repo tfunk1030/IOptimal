@@ -1831,15 +1831,17 @@ ACURA_ARX06 = CarModel(
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=30.0,         # IBT: front RH = 30.2mm (near-pinned at min OD)
         front_pushrod_default_mm=-37.5,  # IBT: PushrodLengthDelta = -37.5mm
-        # CALIBRATED from 4 garage screenshots (2026-03-30):
-        # Full model: rear_rh = 84.59 + 0.7766*pushrod - 0.2771*heave  (RMSE=0.004mm)
-        # Pushrod sensitivity: 0.78 mm RH per mm pushrod (very consistent)
-        # Heave spring also affects rear RH: -0.28 mm per N/mm heave
-        # PushrodGeometry can't model heave dependency, so base_rh is set at
-        # typical operating heave=65 N/mm (midpoint of 60-70 range from setups):
-        # base = 84.59 - 0.2771*65 = 66.58
-        rear_base_rh_mm=66.58,           # CALIBRATED: at heave=65 midpoint
-        rear_pushrod_to_rh=0.7766,       # CALIBRATED: positive (less negative pushrod = higher RH)
+        # CALIBRATED from 17 garage data points (SetupDelta + screenshots, 2026-03-30):
+        # Full model: rear_rh = 80.65 + 0.7886*pushrod + 0.0381*heave - 0.4194*perch
+        #                      + 0.0225*rear_od - 0.0182*fuel
+        # R²=0.91, RMSE=1.15mm, N=15
+        # Pushrod is dominant: 0.79 mm RH per mm pushrod
+        # Perch also matters: -0.42 mm RH per mm perch offset
+        # PushrodGeometry can only model pushrod; using intercept at typical operating point
+        # (heave=150, perch=85, rear_od=14.3, fuel=58):
+        # base = 80.65 + 0.0381*150 - 0.4194*85 + 0.0225*14.3 - 0.0182*58 = 50.89
+        rear_base_rh_mm=50.89,           # CALIBRATED: 15-point regression, R²=0.91
+        rear_pushrod_to_rh=0.7886,       # CALIBRATED: positive (less negative pushrod = higher RH)
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
@@ -1849,13 +1851,14 @@ ACURA_ARX06 = CarModel(
         # Using mid-range values; solver should ideally use rate-dependent m_eff.
         front_m_eff_kg=450.0,     # CALIBRATED: midpoint of 319-641kg range (garage screenshots)
         rear_m_eff_kg=220.0,      # CALIBRATED: midpoint of 187-254kg range (garage screenshots)
-        front_spring_range_nmm=(90.0, 300.0),    # EXPANDED: garage shows 90 N/mm works
-        front_heave_hard_range_nmm=(90.0, 250.0),  # EXPANDED from (180,250)
-        rear_spring_range_nmm=(60.0, 300.0),     # Acura baseline 120 N/mm (rear heave, not third)
-        perch_offset_front_baseline_mm=34.5,     # IBT: HeavePerchOffset = 34.5mm
-        perch_offset_rear_baseline_mm=35.0,      # IBT: HeavePerchOffset = 35.0mm
-        # Disable BMW slider/defl models — not calibrated for ORECA chassis.
-        # Without calibration, perch stays at baseline to avoid bottoming.
+        front_spring_range_nmm=(90.0, 400.0),    # EXPANDED: garage shows 90-380 N/mm range
+        front_heave_hard_range_nmm=(90.0, 400.0),  # EXPANDED: setups use up to 380 N/mm
+        rear_spring_range_nmm=(60.0, 300.0),     # Garage shows 60-190 N/mm; cap at 300
+        perch_offset_front_baseline_mm=68.0,     # CALIBRATED: typical operating point from setups
+        perch_offset_rear_baseline_mm=85.0,      # CALIBRATED: typical operating point from setups
+        # Front heave damper defl model: defl = -11.58 + 0.544 * perch (R²=0.78)
+        # Bottoming threshold: perch < 21.3mm (only 3 of 16 setups bottom)
+        # Old IBT baseline (34.5mm) was near bottoming — real setups use 49-100mm
         slider_perch_coeff=0.0,
         slider_intercept=0.0,
         slider_heave_coeff=0.0,
