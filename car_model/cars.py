@@ -1831,21 +1831,26 @@ ACURA_ARX06 = CarModel(
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=30.0,         # IBT: front RH = 30.2mm (near-pinned at min OD)
         front_pushrod_default_mm=-37.5,  # IBT: PushrodLengthDelta = -37.5mm
-        # Rear RH is multi-variable (pushrod + heave + torsion OD + camber).
-        # Single-variable pushrod model limited accuracy. Using weak sensitivity
-        # to keep pushrod near baseline; aero compression handles dynamic targeting.
-        # Formula: rh = base_at_zero + pushrod * ratio
-        # IBT: pushrod=-35.0 → RH=43.7 → base_at_zero = 43.7 - (-35.0 * -0.09) = 40.55
-        rear_base_rh_mm=40.55,
-        rear_pushrod_to_rh=-0.09,
+        # CALIBRATED from 4 garage screenshots (2026-03-30):
+        # Full model: rear_rh = 84.59 + 0.7766*pushrod - 0.2771*heave  (RMSE=0.004mm)
+        # Pushrod sensitivity: 0.78 mm RH per mm pushrod (very consistent)
+        # Heave spring also affects rear RH: -0.28 mm per N/mm heave
+        # PushrodGeometry can't model heave dependency, so base_rh is set at
+        # typical operating heave=65 N/mm (midpoint of 60-70 range from setups):
+        # base = 84.59 - 0.2771*65 = 66.58
+        rear_base_rh_mm=66.58,           # CALIBRATED: at heave=65 midpoint
+        rear_pushrod_to_rh=0.7766,       # CALIBRATED: positive (less negative pushrod = higher RH)
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
-        front_m_eff_kg=600.0,     # CALIBRATED from Hockenheim IBT (heave=180, σ=7.7mm, v_p99=312mm/s)
-        rear_m_eff_kg=186.0,      # CALIBRATED from Hockenheim IBT (heave=120, σ=6.2mm, v_p99=368mm/s)
-        front_spring_range_nmm=(180.0, 300.0),   # Floor 180 — damper bottoms below 180 at baseline OD
-        # Hard clamp: solver must not exceed baseline+10 until garage defl model is calibrated
-        front_heave_hard_range_nmm=(180.0, 250.0),
+        # m_eff varies with spring rate (nonlinear sim model):
+        #   Front: 641kg at 90 N/mm, 319kg at 190 N/mm
+        #   Rear:  187kg at 60 N/mm, 254kg at 70 N/mm
+        # Using mid-range values; solver should ideally use rate-dependent m_eff.
+        front_m_eff_kg=450.0,     # CALIBRATED: midpoint of 319-641kg range (garage screenshots)
+        rear_m_eff_kg=220.0,      # CALIBRATED: midpoint of 187-254kg range (garage screenshots)
+        front_spring_range_nmm=(90.0, 300.0),    # EXPANDED: garage shows 90 N/mm works
+        front_heave_hard_range_nmm=(90.0, 250.0),  # EXPANDED from (180,250)
         rear_spring_range_nmm=(60.0, 300.0),     # Acura baseline 120 N/mm (rear heave, not third)
         perch_offset_front_baseline_mm=34.5,     # IBT: HeavePerchOffset = 34.5mm
         perch_offset_rear_baseline_mm=35.0,      # IBT: HeavePerchOffset = 35.0mm
@@ -1863,13 +1868,16 @@ ACURA_ARX06 = CarModel(
         # ORECA chassis: torsion bars at ALL 4 corners (front AND rear)
         # Same torsion bar hardware as BMW — identical discrete OD options
         front_torsion_c=0.0008036,        # ESTIMATE — same as BMW until calibrated
+        # NOTE: garage torsion bar deflection is NOT purely weight/(C*OD^4);
+        # it includes preload from torsion bar turns. C constant calibration
+        # deferred until turns-corrected model is built.
         front_torsion_od_ref_mm=13.9,     # IBT: TorsionBarOD = 13.90mm (front)
-        # Range capped at 14.76 until garage travel model calibrated — stiffer ODs
-        # cause front heave damper bottoming (defl goes negative at OD >= 15.14).
-        # At baseline OD=13.90 damper defl=0.0; at 15.86 damper defl=-2.2.
-        front_torsion_od_range_mm=(13.9, 14.76),
-        front_torsion_od_options=[         # CONFIRMED from garage dropdown (same as BMW)
-            13.90, 14.34, 14.76,           # Capped — full range extends to 18.20
+        # EXPANDED: front heave damper is ALWAYS bottomed (-1.7 to -2.5mm) across
+        # ALL tested ODs (13.90, 14.76, 15.86) and spring rates (90, 190).
+        # This is a normal Acura characteristic, not an error to prevent.
+        front_torsion_od_range_mm=(13.9, 15.86),
+        front_torsion_od_options=[         # CONFIRMED from garage dropdown
+            13.90, 14.34, 14.76, 15.14, 15.51, 15.86,  # EXPANDED: full usable range
         ],
         # Rear also uses torsion bars (ORECA, not Dallara) — same discrete options
         rear_torsion_c=0.0008036,         # ESTIMATE — same C constant, needs calibration
@@ -1906,6 +1914,8 @@ ACURA_ARX06 = CarModel(
         rear_camber_baseline_deg=-1.8,    # IBT: Camber = -1.8 deg
         front_roll_gain=0.60,             # ESTIMATE — ORECA platform
         rear_roll_gain=0.50,              # ESTIMATE — ORECA platform
+        # CALIBRATED: front camber strongly affects front static RH
+        # ~2.9mm RH per degree camber (camber=-1.6→RH=33.7, camber=-2.8→RH=30.2)
     ),
     damper=DamperModel(
         # ORECA heave+roll architecture: heave dampers have full LS/HS comp+rbd+slope;
