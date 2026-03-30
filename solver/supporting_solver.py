@@ -132,7 +132,7 @@ class SupportingSolver:
         self.current_setup = current_setup
         self._fuel_load_l = (
             measured.fuel_level_at_measurement_l
-            if getattr(measured, "fuel_level_at_measurement_l", 0.0) > 0
+            if (getattr(measured, "fuel_level_at_measurement_l", 0.0) or 0.0) > 0
             else None
         )
 

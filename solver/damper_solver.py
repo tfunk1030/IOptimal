@@ -476,7 +476,7 @@ class DamperSolver:
         # If measured rear shock oscillation frequency exceeds 1.5× natural
         # frequency, the rear is underdamped. Bump ζ_hs_rear to reduce oscillation.
         if measured is not None:
-            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0)
+            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
             rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
             if rear_osc_hz > 1.5 * rear_nat_freq_hz and rear_nat_freq_hz > 0:
                 # Underdamped evidence — increase HS ζ by 50% (capped at 0.25)
@@ -555,10 +555,10 @@ class DamperSolver:
         rr_hs_comp_adj = 0
 
         if measured is not None:
-            lf_sv = measured.lf_shock_vel_p95_mps
-            rf_sv = measured.rf_shock_vel_p95_mps
-            lr_sv = measured.lr_shock_vel_p95_mps
-            rr_sv = measured.rr_shock_vel_p95_mps
+            lf_sv = measured.lf_shock_vel_p95_mps or 0.0
+            rf_sv = measured.rf_shock_vel_p95_mps or 0.0
+            lr_sv = measured.lr_shock_vel_p95_mps or 0.0
+            rr_sv = measured.rr_shock_vel_p95_mps or 0.0
 
             # Front asymmetry: >15% difference triggers adjustment
             if lf_sv > 0 and rf_sv > 0:
@@ -648,7 +648,7 @@ class DamperSolver:
 
         # Add oscillation validation constraint if telemetry is available
         if measured is not None:
-            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0)
+            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
             rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
             if rear_osc_hz > 0 and rear_nat_freq_hz > 0:
                 osc_ratio = rear_osc_hz / rear_nat_freq_hz
