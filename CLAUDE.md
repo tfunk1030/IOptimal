@@ -152,6 +152,7 @@ IBT → analyzer pipeline → Observation (structured snapshot)
 - `empirical_models.py` — Fits lightweight regressions from accumulated data
 - `recall.py` — Query interface: "what do we know about X?", corrections for solver
 - `ingest.py` — CLI entry point: `python -m learner.ingest --car bmw --ibt session.ibt`
+  - `--all-laps`: ingest every valid lap as a separate observation (1 IBT → N observations)
 
 Key features:
 - **Controlled experiment detection**: if only one solver step changed between sessions,
