@@ -493,7 +493,14 @@ def sto_param_id_to_canonical(sto_param_id: str, car: str = "bmw") -> str | None
 
 
 def detect_car_adapter(yaml_keys: set[str]) -> str:
-    """Detect car adapter from YAML keys (Systems.* = Ferrari, else BMW-like)."""
+    """Detect car adapter from YAML keys.
+
+    Acura (ORECA): Dampers.FrontHeave / Dampers.FrontRoll
+    Ferrari:       Dampers.LeftFrontDamper or Systems.*
+    BMW/Cadillac:  Chassis.LeftFront.LsCompDamping (no Dampers section)
+    """
+    if any("FrontHeave" in k or "RearHeave" in k or "FrontRoll" in k for k in yaml_keys):
+        return "acura"
     if any("Systems." in k or "Dampers." in k for k in yaml_keys):
         return "ferrari"
     return "bmw"
