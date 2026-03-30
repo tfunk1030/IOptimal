@@ -132,7 +132,10 @@ class CurrentSetup:
     front_toe_mm: float = 0.0
     rear_toe_mm: float = 0.0
 
-    # --- Dampers (front = LF values, rear = LR values) ---
+    # --- Corner springs (rear torsion bar for ORECA cars) ---
+    rear_torsion_od_mm: float = 0.0       # ORECA: rear also uses torsion bars
+
+    # --- Dampers (front = LF or FrontHeave, rear = LR or RearHeave) ---
     front_ls_comp: int = 0
     front_ls_rbd: int = 0
     front_hs_comp: int = 0
@@ -143,6 +146,11 @@ class CurrentSetup:
     rear_hs_comp: int = 0
     rear_hs_rbd: int = 0
     rear_hs_slope: int = 0
+    # Roll dampers (ORECA heave+roll architecture)
+    front_roll_ls: int = 0
+    front_roll_hs: int = 0
+    rear_roll_ls: int = 0
+    rear_roll_hs: int = 0
 
     # --- Brakes / Diff / TC ---
     brake_bias_pct: float = 0.0
@@ -246,12 +254,28 @@ class CurrentSetup:
         hybrid_config = systems.get("HybridConfig") or brakes.get("HybridConfig") or {}
         lighting = systems.get("Lighting", {}) or brakes.get("Lighting", {})
 
-        # Ferrari puts dampers under "Dampers.LeftFrontDamper"; BMW under "Chassis.LeftFront"
+        # Damper layout varies by chassis:
+        #   BMW/Cadillac (Dallara): per-corner under Chassis.LeftFront etc.
+        #   Ferrari: per-corner under Dampers.LeftFrontDamper etc.
+        #   Acura (ORECA): heave+roll under Dampers.FrontHeave/FrontRoll etc.
         dampers = cs.get("Dampers", {})
-        lf_damp = dampers.get("LeftFrontDamper", lf)
-        rf_damp = dampers.get("RightFrontDamper", rf)
-        lr_damp = dampers.get("LeftRearDamper", lr)
-        rr_damp = dampers.get("RightRearDamper", rr)
+        front_heave_damp = dampers.get("FrontHeave", {})
+        rear_heave_damp = dampers.get("RearHeave", {})
+        front_roll_damp = dampers.get("FrontRoll", {})
+        rear_roll_damp = dampers.get("RearRoll", {})
+        is_heave_roll_layout = bool(front_heave_damp)
+
+        if is_heave_roll_layout:
+            # ORECA: heave dampers carry the primary LS/HS comp+rbd+slope
+            lf_damp = front_heave_damp
+            rf_damp = front_heave_damp
+            lr_damp = rear_heave_damp
+            rr_damp = rear_heave_damp
+        else:
+            lf_damp = dampers.get("LeftFrontDamper", lf)
+            rf_damp = dampers.get("RightFrontDamper", rf)
+            lr_damp = dampers.get("LeftRearDamper", lr)
+            rr_damp = dampers.get("RightRearDamper", rr)
 
         # Average left/right for symmetric parameters
         def avg_f(key: str) -> float:
@@ -298,10 +322,11 @@ class CurrentSetup:
             rear_third_perch_mm=_parse_float(rear.get("ThirdPerchOffset") or rear.get("HeavePerchOffset")),
 
             # Corner springs (use LF/LR as representative)
-            # Ferrari rear uses TorsionBarOD (indexed) instead of coil SpringRate
+            # Ferrari/Acura rear uses TorsionBarOD instead of coil SpringRate
             front_torsion_od_mm=_parse_float(lf.get("TorsionBarOD")),
-            rear_spring_nmm=_parse_float(lr.get("SpringRate") or lr.get("TorsionBarOD")),
+            rear_spring_nmm=_parse_float(lr.get("SpringRate")) if lr.get("SpringRate") else 0.0,
             rear_spring_perch_mm=_parse_float(lr.get("SpringPerchOffset")),
+            rear_torsion_od_mm=_parse_float(lr.get("TorsionBarOD")) if lr.get("TorsionBarOD") and not lr.get("SpringRate") else 0.0,
 
             # ARBs
             front_arb_size=str(front.get("ArbSize", "")),
@@ -327,6 +352,11 @@ class CurrentSetup:
             rear_hs_comp=_parse_int(lr_damp.get("HsCompDamping")),
             rear_hs_rbd=_parse_int(lr_damp.get("HsRbdDamping")),
             rear_hs_slope=_parse_int(lr_damp.get("HsCompDampSlope")),
+            # Roll dampers (ORECA heave+roll layout)
+            front_roll_ls=_parse_int(front_roll_damp.get("LsDamping")),
+            front_roll_hs=_parse_int(front_roll_damp.get("HsDamping")),
+            rear_roll_ls=_parse_int(rear_roll_damp.get("LsDamping")),
+            rear_roll_hs=_parse_int(rear_roll_damp.get("HsDamping")),
 
             # Brakes / Diff / TC
             brake_bias_pct=_parse_float(brake_spec.get("BrakePressureBias")),
@@ -340,7 +370,7 @@ class CurrentSetup:
             pad_compound=str(brake_spec.get("PadCompound", "") or ""),
             front_diff_preload_nm=_parse_float(front_diff_spec.get("Preload")),
             diff_preload_nm=_parse_float(diff_spec.get("Preload")),
-            diff_ramp_angles=str(diff_spec.get("CoastDriveRampAngles", "") or diff_spec.get("CoastDriveRampOptions", "")),
+            diff_ramp_angles=str(diff_spec.get("CoastDriveRampAngles", "") or diff_spec.get("CoastDriveRampOptions", "") or diff_spec.get("DiffRampAngles", "")),
             diff_clutch_plates=_parse_int(diff_spec.get("ClutchFrictionPlates")),
             tc_gain=_parse_int(tc.get("TractionControlGain")),
             tc_slip=_parse_int(tc.get("TractionControlSlip")),
@@ -382,7 +412,7 @@ class CurrentSetup:
             rf_corner_weight_n=_parse_float(rf.get("CornerWeight")),
             lr_corner_weight_n=_parse_float(lr.get("CornerWeight")),
             rr_corner_weight_n=_parse_float(rr.get("CornerWeight")),
-            adapter_name="ferrari" if is_ferrari_layout else "bmw",
+            adapter_name="acura" if is_heave_roll_layout else ("ferrari" if is_ferrari_layout else "bmw"),
             extraction_attempts=attempts,
         )
         if is_ferrari_layout:

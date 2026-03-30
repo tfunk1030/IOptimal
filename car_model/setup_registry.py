@@ -132,6 +132,13 @@ _FIELD_DEFS: list[FieldDefinition] = [
     FieldDefinition("rear_hs_comp", "settable", 6, "clicks", "discrete", True, True, "rear_hs_comp"),
     FieldDefinition("rear_hs_rbd", "settable", 6, "clicks", "discrete", True, True, "rear_hs_rbd"),
     FieldDefinition("rear_hs_slope", "settable", 6, "clicks", "discrete", True, True, "rear_hs_slope"),
+    # Roll dampers (ORECA heave+roll architecture — Acura ARX-06)
+    FieldDefinition("front_roll_ls", "settable", 6, "clicks", "discrete", True, False, "front_roll_ls"),
+    FieldDefinition("front_roll_hs", "settable", 6, "clicks", "discrete", True, False, "front_roll_hs"),
+    FieldDefinition("rear_roll_ls", "settable", 6, "clicks", "discrete", True, False, "rear_roll_ls"),
+    FieldDefinition("rear_roll_hs", "settable", 6, "clicks", "discrete", True, False, "rear_roll_hs"),
+    # Rear torsion bar OD (ORECA: rear also uses torsion bars)
+    FieldDefinition("rear_torsion_od_mm", "settable", 3, "mm", "continuous", True, False, "rear_torsion_od_mm"),
 
     # ── Supporting Parameters ──
     FieldDefinition("brake_bias_pct", "settable", "supporting", "%", "continuous", True, False, "brake_bias_pct"),
@@ -395,13 +402,37 @@ _CADILLAC_SPECS: dict[str, CarFieldSpec] = {
     "brake_bias_migration":     _S("BrakesDriveUnit.BrakeSpec.BrakeBiasMigration",   "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration", range_min=-5.0, range_max=5.0, resolution=0.5),
 }
 
-# Acura — same as Cadillac
+# Acura (ORECA chassis) — heave+roll dampers, torsion bars all 4 corners
 _ACURA_SPECS: dict[str, CarFieldSpec] = {
     **_BMW_SPECS,
+    # ARB blades (1-5)
     "front_arb_blade":          _S("Chassis.Front.ArbBlades",                        "CarSetup_Chassis_Front_ArbBlades[0]",               range_min=1, range_max=5, parse_fn="int"),
     "rear_arb_blade":           _S("Chassis.Rear.ArbBlades",                         "CarSetup_Chassis_Rear_ArbBlades[0]",                range_min=1, range_max=5, parse_fn="int"),
-    "brake_bias_target":        _S("BrakesDriveUnit.BrakeSpec.BrakeBiasTarget",      "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget", range_min=-5.0, range_max=5.0, resolution=0.5),
-    "brake_bias_migration":     _S("BrakesDriveUnit.BrakeSpec.BrakeBiasMigration",   "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration", range_min=-5.0, range_max=5.0, resolution=0.5),
+    # Rear torsion bar (ORECA: rear also uses TorsionBarOD, not coil SpringRate)
+    "rear_torsion_od_mm":       _S("Chassis.LeftRear.TorsionBarOD",                  "CarSetup_Chassis_LeftRear_TorsionBarOD",            range_min=13.9, range_max=18.2, resolution=0.1),
+    # Heave dampers (map to Dampers.FrontHeave / Dampers.RearHeave) — max 10 clicks
+    "front_ls_comp":            _S("Dampers.FrontHeave.LsCompDamping",               "CarSetup_Dampers_FrontHeave_LsCompDamping",         range_min=1, range_max=10, parse_fn="int"),
+    "front_ls_rbd":             _S("Dampers.FrontHeave.LsRbdDamping",                "CarSetup_Dampers_FrontHeave_LsRbdDamping",          range_min=1, range_max=10, parse_fn="int"),
+    "front_hs_comp":            _S("Dampers.FrontHeave.HsCompDamping",               "CarSetup_Dampers_FrontHeave_HsCompDamping",         range_min=1, range_max=10, parse_fn="int"),
+    "front_hs_rbd":             _S("Dampers.FrontHeave.HsRbdDamping",                "CarSetup_Dampers_FrontHeave_HsRbdDamping",          range_min=1, range_max=10, parse_fn="int"),
+    "front_hs_slope":           _S("Dampers.FrontHeave.HsCompDampSlope",             "CarSetup_Dampers_FrontHeave_HsCompDampSlope",       range_min=1, range_max=10, parse_fn="int"),
+    "rear_ls_comp":             _S("Dampers.RearHeave.LsCompDamping",                "CarSetup_Dampers_RearHeave_LsCompDamping",          range_min=1, range_max=10, parse_fn="int"),
+    "rear_ls_rbd":              _S("Dampers.RearHeave.LsRbdDamping",                 "CarSetup_Dampers_RearHeave_LsRbdDamping",           range_min=1, range_max=10, parse_fn="int"),
+    "rear_hs_comp":             _S("Dampers.RearHeave.HsCompDamping",                "CarSetup_Dampers_RearHeave_HsCompDamping",          range_min=1, range_max=10, parse_fn="int"),
+    "rear_hs_rbd":              _S("Dampers.RearHeave.HsRbdDamping",                 "CarSetup_Dampers_RearHeave_HsRbdDamping",           range_min=1, range_max=10, parse_fn="int"),
+    "rear_hs_slope":            _S("Dampers.RearHeave.HsCompDampSlope",              "CarSetup_Dampers_RearHeave_HsCompDampSlope",        range_min=1, range_max=10, parse_fn="int"),
+    # Roll dampers (Dampers.FrontRoll / Dampers.RearRoll — LS+HS only, no comp/rbd split)
+    "front_roll_ls":            _S("Dampers.FrontRoll.LsDamping",                    "CarSetup_Dampers_FrontRoll_LsDamping",              range_min=1, range_max=10, parse_fn="int"),
+    "front_roll_hs":            _S("Dampers.FrontRoll.HsDamping",                    "CarSetup_Dampers_FrontRoll_HsDamping",              range_min=1, range_max=10, parse_fn="int"),
+    "rear_roll_ls":             _S("Dampers.RearRoll.LsDamping",                     "CarSetup_Dampers_RearRoll_LsDamping",               range_min=1, range_max=10, parse_fn="int"),
+    "rear_roll_hs":             _S("Dampers.RearRoll.HsDamping",                     "CarSetup_Dampers_RearRoll_HsDamping",               range_min=1, range_max=10, parse_fn="int"),
+    # Diff ramp angles (Acura uses "DiffRampAngles" key, not "CoastDriveRampAngles")
+    "diff_ramp_angles":         _S("Systems.RearDiffSpec.DiffRampAngles",             "CarSetup_Systems_RearDiffSpec_DiffRampAngles",      parse_fn="string"),
+    # Brakes
+    "brake_bias_pct":           _S("Systems.BrakeSpec.BrakePressureBias",             "CarSetup_Systems_BrakeSpec_BrakePressureBias",      range_min=40.0, range_max=60.0, resolution=0.25),
+    "pad_compound":             _S("Systems.BrakeSpec.PadCompound",                   "CarSetup_Systems_BrakeSpec_PadCompound",            parse_fn="string"),
+    "front_master_cyl_mm":      _S("Systems.BrakeSpec.FrontMasterCyl",                "CarSetup_Systems_BrakeSpec_FrontMasterCyl"),
+    "rear_master_cyl_mm":       _S("Systems.BrakeSpec.RearMasterCyl",                 "CarSetup_Systems_BrakeSpec_RearMasterCyl"),
 }
 
 CAR_FIELD_SPECS: dict[str, dict[str, CarFieldSpec]] = {

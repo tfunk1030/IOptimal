@@ -186,7 +186,7 @@ def build_observation(
         "hybrid_rear_drive_corner_pct": getattr(s, "hybrid_rear_drive_corner_pct", 0.0),
         "roof_light_color": getattr(s, "roof_light_color", ""),
     }
-    # Dampers
+    # Dampers (heave clicks for ORECA, per-corner for Dallara/Ferrari)
     setup["dampers"] = {
         "lf": {"ls_comp": s.front_ls_comp, "ls_rbd": s.front_ls_rbd,
                 "hs_comp": s.front_hs_comp, "hs_rbd": s.front_hs_rbd,
@@ -201,6 +201,15 @@ def build_observation(
                 "hs_comp": s.rear_hs_comp, "hs_rbd": s.rear_hs_rbd,
                 "hs_slope": s.rear_hs_slope},
     }
+    # Roll dampers (ORECA heave+roll architecture)
+    if getattr(s, "front_roll_ls", 0) or getattr(s, "rear_roll_ls", 0):
+        setup["roll_dampers"] = {
+            "front": {"ls": s.front_roll_ls, "hs": s.front_roll_hs},
+            "rear": {"ls": s.rear_roll_ls, "hs": s.rear_roll_hs},
+        }
+    # Rear torsion bar OD (ORECA: rear also uses torsion bars)
+    if getattr(s, "rear_torsion_od_mm", 0.0) > 0:
+        setup["rear_torsion_od_mm"] = s.rear_torsion_od_mm
 
     # ── Performance ──
     performance = {

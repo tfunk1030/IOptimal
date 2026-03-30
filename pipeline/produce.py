@@ -1218,7 +1218,7 @@ def produce(
                         # Map canonical param keys to step overrides
                         _step1_keys = {"front_pushrod_offset_mm", "rear_pushrod_offset_mm"}
                         _step2_keys = {"front_heave_spring_nmm", "rear_third_spring_nmm"}
-                        _step3_keys = {"front_torsion_od_mm", "rear_spring_rate_nmm"}
+                        _step3_keys = {"front_torsion_od_mm", "rear_spring_rate_nmm", "rear_torsion_od_mm"}
                         _step4_keys = {"front_arb_blade", "rear_arb_blade"}
                         _step5_keys = {"front_camber_deg", "rear_camber_deg", "front_toe_deg", "rear_toe_deg"}
                         for k, v in _gs_params.items():

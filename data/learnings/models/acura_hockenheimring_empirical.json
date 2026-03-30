@@ -1,0 +1,175 @@
+{
+  "car": "acura",
+  "track": "Hockenheimring Baden-W\u00fcrttemberg",
+  "relationships": {
+    "roll_gradient": {
+      "name": "Roll gradient (measured)",
+      "x_param": "peak_lat_g",
+      "y_param": "roll_gradient_deg_per_g",
+      "fit_type": "linear",
+      "coefficients": [
+        0.0,
+        0.325
+      ],
+      "r_squared": 0.8690240631163708,
+      "sample_count": 6,
+      "residual_std": 0.1176194428371999,
+      "x_values": [
+        5.529379844665527,
+        3.7409722805023193,
+        4.142077922821045,
+        3.953946352005005,
+        5.529379844665527,
+        3.454631805419922
+      ],
+      "y_values": [
+        0.248,
+        0.195,
+        0.547,
+        0.395,
+        0.248,
+        0.317
+      ],
+      "x_min": 3.454631805419922,
+      "x_max": 5.529379844665527,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    },
+    "lltd_vs_rear_arb": {
+      "name": "LLTD vs rear ARB blade",
+      "x_param": "rear_arb_blade",
+      "y_param": "lltd_measured",
+      "fit_type": "linear",
+      "coefficients": [
+        0.12698253775501195,
+        0.25396507551002395
+      ],
+      "r_squared": 1.1102230246251565e-16,
+      "sample_count": 7,
+      "residual_std": 0.0034628042099768288,
+      "x_values": [
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0
+      ],
+      "y_values": [
+        0.5106514465567432,
+        0.5038802295984214,
+        0.5018381181386742,
+        0.5117278489234058,
+        0.5090064652919432,
+        0.5106514465567432,
+        0.5077555020744042
+      ],
+      "x_min": 2.0,
+      "x_max": 2.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    },
+    "front_rh_var_vs_heave": {
+      "name": "Front RH variance vs heave spring",
+      "x_param": "front_heave_nmm",
+      "y_param": "front_rh_std_mm",
+      "fit_type": "linear",
+      "coefficients": [
+        0.01678542106870621,
+        3.0213757923671185
+      ],
+      "r_squared": 0.0,
+      "sample_count": 7,
+      "residual_std": 0.0,
+      "x_values": [
+        180.0,
+        180.0,
+        180.0,
+        180.0,
+        180.0,
+        180.0,
+        180.0
+      ],
+      "y_values": [
+        6.124549865722656,
+        5.2034711837768555,
+        6.389772891998291,
+        6.4369964599609375,
+        6.260156631469727,
+        6.124549865722656,
+        5.759764194488525
+      ],
+      "x_min": 180.0,
+      "x_max": 180.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    },
+    "rear_rh_var_vs_third": {
+      "name": "Rear RH variance vs third spring",
+      "x_param": "rear_third_nmm",
+      "y_param": "rear_rh_std_mm",
+      "fit_type": "linear",
+      "coefficients": [
+        0.02415219971111842,
+        2.89826396533421
+      ],
+      "r_squared": 0.0,
+      "sample_count": 7,
+      "residual_std": 0.0,
+      "x_values": [
+        120.0,
+        120.0,
+        120.0,
+        120.0,
+        120.0,
+        120.0,
+        120.0
+      ],
+      "y_values": [
+        5.807539463043213,
+        4.828405857086182,
+        6.4112324714660645,
+        5.928908824920654,
+        6.126246929168701,
+        5.807539463043213,
+        5.665822505950928
+      ],
+      "x_min": 120.0,
+      "x_max": 120.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    }
+  },
+  "last_updated": "2026-03-30T03:54:03.990684+00:00",
+  "observation_count": 7,
+  "most_sensitive_parameters": [],
+  "corrections": {
+    "aero_compression_front_mean_mm": 10.892822320120676,
+    "aero_compression_front_std_mm": 0.3718039829643977,
+    "aero_compression_rear_mean_mm": 15.097743225097659,
+    "aero_compression_rear_std_mm": 0.4029158552410714,
+    "lap_time_surrogate_regularized": 1.0,
+    "lap_time_surrogate_sample_weight": 0.0,
+    "roll_gradient_measured_mean": 0.3249843576695058,
+    "roll_gradient_measured_std": 0.1176194428371999,
+    "roll_gradient_sample_count": 6,
+    "lltd_measured_mean": 0.507930521086332,
+    "lltd_measured_std": 0.003462804209976829,
+    "m_eff_front_values": [
+      249.3,
+      223.5,
+      473.7,
+      324.6,
+      318.3,
+      249.3,
+      237.2
+    ],
+    "m_eff_front_empirical_mean": 296.5571428571428,
+    "m_eff_front_empirical_std": 81.03424068420277
+  }
+}

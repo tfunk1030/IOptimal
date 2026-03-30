@@ -214,6 +214,11 @@ def print_full_setup_report(
     diff_solution = getattr(supporting, "_diff_solution", None) if supporting is not None else None
 
     _is_ferrari = car is not None and getattr(car, "canonical_name", "") == "ferrari"
+    _is_acura = car is not None and getattr(car, "canonical_name", "") == "acura"
+    _has_rear_torsion = (car is not None and hasattr(car, "corner_spring")
+                         and getattr(car.corner_spring, "rear_is_torsion_bar", False))
+    _has_roll_dampers = (car is not None and hasattr(car, "damper")
+                         and getattr(car.damper, "has_roll_dampers", False))
 
     brake_bias_str = f"{brake_bias_val:.1f}%" if brake_bias_val is not None else "(pipeline)"
     diff_preload_str = f"{diff_preload_val:.0f} Nm" if diff_preload_val is not None else "(pipeline)"
@@ -243,9 +248,19 @@ def print_full_setup_report(
         _tb_turns = round(
             0.1089 - 0.1642 / max(step2.front_heave_nmm, 1) + 0.000368 * step2.perch_offset_front_mm, 3
         )
-    # Rear torsion bar turns (Ferrari only — passed through from IBT)
+    # Rear torsion bar turns (Ferrari/Acura — passed through from IBT or computed)
     if rear_tb_turns_override is not None:
         _rear_tb_turns = round(rear_tb_turns_override, 3)
+    elif garage_outputs is not None and getattr(garage_outputs, "rear_torsion_bar_turns", 0) != 0:
+        _rear_tb_turns = round(float(garage_outputs.rear_torsion_bar_turns), 3)
+    elif _has_rear_torsion:
+        # Compute from same formula as front turns, but rear bars preload in the
+        # opposite direction (negative turns). The formula is BMW-calibrated and
+        # gives magnitude only — negate for rear.
+        hsm = car.heave_spring
+        _rear_tb_turns = -round(
+            hsm.torsion_bar_turns_intercept + hsm.torsion_bar_turns_heave_coeff / max(step2.rear_third_nmm, 1), 3
+        )
     else:
         _rear_tb_turns = None
     df_ok = abs(step1.df_balance_pct - target_balance) < 0.2
@@ -302,12 +317,19 @@ def print_full_setup_report(
     else:
         a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} N/mm"))
         a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
-        a(_setting("Rear third spring", f"{step2.rear_third_nmm:.0f} N/mm"))
-        a(_setting("Rear third perch", f"{step2.perch_offset_rear_mm:+.1f} mm"))
+        _rear_heave_label = "Rear heave spring" if _is_acura else "Rear third spring"
+        _rear_perch_label = "Rear heave perch" if _is_acura else "Rear third perch"
+        a(_setting(_rear_heave_label, f"{step2.rear_third_nmm:.0f} N/mm"))
+        a(_setting(_rear_perch_label, f"{step2.perch_offset_rear_mm:+.1f} mm"))
         a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm"))
         a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
-        a(_setting("Rear coil spring", f"{step3.rear_spring_rate_nmm:.0f} N/mm"))
-        a(_setting("Rear spring perch", f"{step3.rear_spring_perch_mm:.1f} mm"))
+        if _has_rear_torsion and step3.rear_torsion_od_mm is not None:
+            a(_setting("Rear torsion bar OD", f"{step3.rear_torsion_od_mm:.2f} mm"))
+            if _rear_tb_turns is not None:
+                a(_setting("Rear torsion bar turns", f"{_rear_tb_turns:.3f} turns"))
+        else:
+            a(_setting("Rear coil spring", f"{step3.rear_spring_rate_nmm:.0f} N/mm"))
+            a(_setting("Rear spring perch", f"{step3.rear_spring_perch_mm:.1f} mm"))
     if garage_outputs is not None:
         a(_setting(
             "Heave slider static",
@@ -388,14 +410,23 @@ def print_full_setup_report(
     a(_setting("Tyre cold RL / RR", f"{tyre_rl:.0f} / {tyre_rr:.0f} kPa"))
     a(_blank())
     a(_full("  DAMPERS"))
-    for corner_name, corner in (
-        ("LF", step6.lf),
-        ("RF", step6.rf),
-        ("LR", step6.lr),
-        ("RR", step6.rr),
-    ):
-        a(_setting(f"{corner_name} LS comp / rbd", f"{corner.ls_comp} / {corner.ls_rbd} clicks"))
-        a(_setting(f"{corner_name} HS comp / rbd / slope", f"{corner.hs_comp} / {corner.hs_rbd} / {corner.hs_slope}"))
+    if _has_roll_dampers:
+        # ORECA heave+roll architecture: front/rear heave + roll dampers
+        a(_setting("Front Heave LS comp / rbd", f"{step6.lf.ls_comp} / {step6.lf.ls_rbd} clicks"))
+        a(_setting("Front Heave HS comp / rbd / slope", f"{step6.lf.hs_comp} / {step6.lf.hs_rbd} / {step6.lf.hs_slope}"))
+        a(_setting("Front Roll LS / HS", f"{step6.front_roll_ls or '-'} / {step6.front_roll_hs or '-'} clicks"))
+        a(_setting("Rear Heave LS comp / rbd", f"{step6.lr.ls_comp} / {step6.lr.ls_rbd} clicks"))
+        a(_setting("Rear Heave HS comp / rbd / slope", f"{step6.lr.hs_comp} / {step6.lr.hs_rbd} / {step6.lr.hs_slope}"))
+        a(_setting("Rear Roll LS / HS", f"{step6.rear_roll_ls or '-'} / {step6.rear_roll_hs or '-'} clicks"))
+    else:
+        for corner_name, corner in (
+            ("LF", step6.lf),
+            ("RF", step6.rf),
+            ("LR", step6.lr),
+            ("RR", step6.rr),
+        ):
+            a(_setting(f"{corner_name} LS comp / rbd", f"{corner.ls_comp} / {corner.ls_rbd} clicks"))
+            a(_setting(f"{corner_name} HS comp / rbd / slope", f"{corner.hs_comp} / {corner.hs_rbd} / {corner.hs_slope}"))
     a(_blank())
     a(_full("  TARGETS / LIMITS"))
     a(_setting("DF balance", f"{step1.df_balance_pct:.2f}% (target {target_balance:.2f}%)", _ok(df_ok)))
@@ -550,19 +581,34 @@ def print_full_setup_report(
     a(_blank())
 
     # Dampers
-    a(_full("  DAMPERS (clicks)                     AERO STATUS"))
-    a(_row(f"            LF   RF   LR   RR",
-           f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
-    a(_row(f"  LS Comp: {step6.lf.ls_comp:3d}  {step6.rf.ls_comp:3d}  {step6.lr.ls_comp:3d}  {step6.rr.ls_comp:3d}",
-           f"  L/D:    {step1.ld_ratio:.3f}"))
-    a(_row(f"  LS Rbd:  {step6.lf.ls_rbd:3d}  {step6.rf.ls_rbd:3d}  {step6.lr.ls_rbd:3d}  {step6.rr.ls_rbd:3d}",
-           f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
-    a(_row(f"  HS Comp: {step6.lf.hs_comp:3d}  {step6.rf.hs_comp:3d}  {step6.lr.hs_comp:3d}  {step6.rr.hs_comp:3d}",
-           f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})"))
-    a(_row(f"  HS Rbd:  {step6.lf.hs_rbd:3d}  {step6.rf.hs_rbd:3d}  {step6.lr.hs_rbd:3d}  {step6.rr.hs_rbd:3d}",
-           f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
-    a(_row(f"  HS Slope:{step6.lf.hs_slope:3d}  {step6.rf.hs_slope:3d}  {step6.lr.hs_slope:3d}  {step6.rr.hs_slope:3d}",
-           f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{step5.camber_confidence}]"))
+    if _has_roll_dampers:
+        a(_full("  DAMPERS (clicks)                     AERO STATUS"))
+        a(_row(f"           FH   FR   RH   RR",
+               f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
+        a(_row(f"  LS Comp: {step6.lf.ls_comp:3d}    -  {step6.lr.ls_comp:3d}    -",
+               f"  L/D:    {step1.ld_ratio:.3f}"))
+        a(_row(f"  LS Rbd:  {step6.lf.ls_rbd:3d}    -  {step6.lr.ls_rbd:3d}    -",
+               f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
+        a(_row(f"  HS Comp: {step6.lf.hs_comp:3d}    -  {step6.lr.hs_comp:3d}    -",
+               f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})"))
+        a(_row(f"  Roll LS: {step6.front_roll_ls or '-':>3}    -  {step6.rear_roll_ls or '-':>3}    -",
+               f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
+        a(_row(f"  Roll HS: {step6.front_roll_hs or '-':>3}    -  {step6.rear_roll_hs or '-':>3}    -",
+               f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{step5.camber_confidence}]"))
+    else:
+        a(_full("  DAMPERS (clicks)                     AERO STATUS"))
+        a(_row(f"            LF   RF   LR   RR",
+               f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
+        a(_row(f"  LS Comp: {step6.lf.ls_comp:3d}  {step6.rf.ls_comp:3d}  {step6.lr.ls_comp:3d}  {step6.rr.ls_comp:3d}",
+               f"  L/D:    {step1.ld_ratio:.3f}"))
+        a(_row(f"  LS Rbd:  {step6.lf.ls_rbd:3d}  {step6.rf.ls_rbd:3d}  {step6.lr.ls_rbd:3d}  {step6.rr.ls_rbd:3d}",
+               f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
+        a(_row(f"  HS Comp: {step6.lf.hs_comp:3d}  {step6.rf.hs_comp:3d}  {step6.lr.hs_comp:3d}  {step6.rr.hs_comp:3d}",
+               f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})"))
+        a(_row(f"  HS Rbd:  {step6.lf.hs_rbd:3d}  {step6.rf.hs_rbd:3d}  {step6.lr.hs_rbd:3d}  {step6.rr.hs_rbd:3d}",
+               f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
+        a(_row(f"  HS Slope:{step6.lf.hs_slope:3d}  {step6.rf.hs_slope:3d}  {step6.lr.hs_slope:3d}  {step6.rr.hs_slope:3d}",
+               f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{step5.camber_confidence}]"))
     a(_blank())
     a(_box_bot())
     a("")
@@ -830,8 +876,8 @@ def print_comparison_table(
     _is_ferrari = hasattr(current_setup, "source") and getattr(current_setup, "_car_name", "") == "ferrari"
     _heave_unit = "idx" if _is_ferrari else "N/mm"
     _tb_unit = "idx" if _is_ferrari else "mm"
-    _rear_spring_label = "Rear torsion bar OD" if _is_ferrari else "Rear coil spring"
-    _rear_heave_label = "Rear heave spring" if _is_ferrari else "Rear third spring"
+    _rear_spring_label = "Rear torsion bar OD" if (_is_ferrari or _has_rear_torsion) else "Rear coil spring"
+    _rear_heave_label = "Rear heave spring" if (_is_ferrari or _is_acura) else "Rear third spring"
 
     param_map = {
         "front_rh_mm":          ("Front static RH",    current_setup.front_rh_static_mm,    "mm"),

@@ -8,6 +8,7 @@ from typing import Iterable
 
 _TRACK_LAP_BOUNDS: dict[tuple[str, str], tuple[float, float]] = {
     ("bmw", "sebring"): (105.0, 130.0),
+    ("acura", "hockenheim"): (82.0, 105.0),
 }
 
 
@@ -49,7 +50,7 @@ def select_valid_lap(
     car: str,
     track: str,
     lap: int | None = None,
-    min_time: float = 108.0,
+    min_time: float = 60.0,
     outlier_pct: float | None = 0.115,
 ) -> tuple[int, int, int, float]:
     """Select a valid lap using the same rules as best_lap_indices plus sanity bounds.
@@ -86,7 +87,7 @@ def select_all_valid_laps(
     *,
     car: str,
     track: str,
-    min_time: float = 108.0,
+    min_time: float = 60.0,
     outlier_pct: float | None = 0.115,
 ) -> list[tuple[int, int, int, float]]:
     """Return all valid laps sorted by lap time (fastest first).

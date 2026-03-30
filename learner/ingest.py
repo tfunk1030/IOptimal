@@ -312,7 +312,7 @@ def ingest_all_laps(
     base_session_id = store.session_id_from_ibt(ibt_path, car_name, track.track_name)
     results: list[dict] = []
 
-    for lap_num, _start, _end, lap_time in valid_laps:
+    for lap_num, lap_time, _start, _end in valid_laps:
         if verbose:
             print(f"\n{'─'*40}")
             print(f"  Lap {lap_num} ({lap_time:.3f}s)")

@@ -688,6 +688,7 @@ def materialize_overrides(
             "front_torsion_od_mm": overrides.step3.get("front_torsion_od_mm", step3.front_torsion_od_mm),
             "rear_spring_rate_nmm": overrides.step3.get("rear_spring_rate_nmm", step3.rear_spring_rate_nmm),
             "rear_spring_perch_mm": overrides.step3.get("rear_spring_perch_mm", step3.rear_spring_perch_mm),
+            "rear_torsion_od_mm": overrides.step3.get("rear_torsion_od_mm", step3.rear_torsion_od_mm),
         }
 
         explicit_step2 = bool(overrides.step2 or overrides.step3)
@@ -728,6 +729,7 @@ def materialize_overrides(
                 rear_spring_rate_nmm=step3_targets["rear_spring_rate_nmm"],
                 fuel_load_l=inputs.fuel_load_l,
                 rear_spring_perch_mm=step3_targets["rear_spring_perch_mm"],
+                rear_torsion_od_mm=step3_targets["rear_torsion_od_mm"],
             )
         else:
             step3 = corner_solver.solve(
@@ -815,6 +817,7 @@ def materialize_overrides(
                 rear_spring_rate_nmm=step3_targets["rear_spring_rate_nmm"],
                 fuel_load_l=inputs.fuel_load_l,
                 rear_spring_perch_mm=step3_targets["rear_spring_perch_mm"],
+                rear_torsion_od_mm=step3_targets["rear_torsion_od_mm"],
             )
         else:
             step3 = corner_solver.solve(

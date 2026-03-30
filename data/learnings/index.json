@@ -117,19 +117,28 @@
     "bmw_sebring_international_raceway_bmwjj",
     "bmw_sebring_international_raceway_01_bmwjj",
     "bmw_sebring_international_raceway_01_bmwjj1",
-    "bmw_sebring_international_raceway_bmwjj1"
+    "bmw_sebring_international_raceway_bmwjj1",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_7",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_4",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_2",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_3",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_1",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-51-12"
   ],
-  "total_observations": 116,
-  "total_deltas": 257,
+  "total_observations": 123,
+  "total_deltas": 269,
   "cars_seen": [
     "bmw",
     "ferrari",
     "porsche",
-    "cadillac"
+    "cadillac",
+    "acura"
   ],
   "tracks_seen": [
     "Sebring International Raceway_International",
-    "Silverstone Circuit_Arena Grand Prix"
+    "Silverstone Circuit_Arena Grand Prix",
+    "Hockenheimring Baden-W\u00fcrttemberg_Grand Prix"
   ],
-  "last_updated": "2026-03-28T00:13:07.428952+00:00"
+  "last_updated": "2026-03-30T03:54:03.935212+00:00"
 }

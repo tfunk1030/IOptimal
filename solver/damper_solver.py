@@ -133,6 +133,12 @@ class DamperSolution:
 
     # Constraint checks
     constraints: list[DamperConstraintCheck]
+
+    # Roll dampers (ORECA heave+roll architecture — None for per-corner cars)
+    front_roll_ls: int | None = None
+    front_roll_hs: int | None = None
+    rear_roll_ls: int | None = None
+    rear_roll_hs: int | None = None
     notes: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -682,6 +688,20 @@ class DamperSolver:
             "NOT from empirical baseline matching.",
         ]
 
+        # Roll dampers (ORECA heave+roll architecture)
+        roll_damper_kwargs: dict = {}
+        if self.car.damper.has_roll_dampers:
+            # Roll dampers control weight transfer rate in roll.
+            # Use car baselines for now — physics-based roll damper tuning
+            # requires lateral g spectrum data and is not yet implemented.
+            dm = self.car.damper
+            roll_damper_kwargs = dict(
+                front_roll_ls=dm.front_roll_ls_baseline,
+                front_roll_hs=dm.front_roll_hs_baseline,
+                rear_roll_ls=dm.rear_roll_ls_baseline,
+                rear_roll_hs=dm.rear_roll_hs_baseline,
+            )
+
         return DamperSolution(
             lf=lf, rf=rf, lr=lr, rr=rr,
             track_shock_vel_p95_front_mps=self.track.shock_vel_p95_front_mps,
@@ -705,6 +725,7 @@ class DamperSolver:
             hs_slope_reasoning=slope_reason,
             constraints=constraints,
             notes=notes,
+            **roll_damper_kwargs,
         )
 
     def solution_from_explicit_settings(
@@ -815,5 +836,10 @@ class DamperSolver:
             hs_rbd_comp_ratio_rear=round((lr.rbd_comp_ratio_hs() + rr.rbd_comp_ratio_hs()) / 2.0, 2),
             hs_slope_reasoning="Explicit click/slope materialization from selected family settings.",
             constraints=constraints,
+            # Propagate roll damper values from base solve
+            front_roll_ls=base.front_roll_ls,
+            front_roll_hs=base.front_roll_hs,
+            rear_roll_ls=base.rear_roll_ls,
+            rear_roll_hs=base.rear_roll_hs,
             notes=notes,
         )
