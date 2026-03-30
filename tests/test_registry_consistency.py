@@ -27,8 +27,20 @@ class RegistryConsistencyTests(unittest.TestCase):
     def test_bmw_covers_all_settable_fields(self):
         settable = iter_fields(kind="settable")
         bmw = CAR_FIELD_SPECS["bmw"]
-        missing = [f.canonical_key for f in settable if f.canonical_key not in bmw
-                   and f.canonical_key != "front_diff_preload_nm"]  # Ferrari-only
+        # Ferrari-only: front_diff_preload_nm
+        # Acura/ORECA-only: roll dampers + rear torsion bar OD
+        #   (BMW uses coil springs rear; Acura ORECA uses rear torsion bar + dedicated roll dampers)
+        _NON_BMW_FIELDS = {
+            "front_diff_preload_nm",   # Ferrari LMH only
+            "front_roll_ls",           # Acura ORECA roll damper
+            "front_roll_hs",           # Acura ORECA roll damper
+            "rear_roll_ls",            # Acura ORECA roll damper
+            "rear_roll_hs",            # Acura ORECA roll damper
+            "rear_torsion_od_mm",      # Acura ORECA rear torsion bar
+        }
+        missing = [f.canonical_key for f in settable
+                   if f.canonical_key not in bmw
+                   and f.canonical_key not in _NON_BMW_FIELDS]
         self.assertEqual(missing, [], f"BMW missing settable fields: {missing}")
 
     def test_get_field_returns_correct_type(self):

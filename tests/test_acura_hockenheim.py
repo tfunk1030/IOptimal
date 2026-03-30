@@ -67,7 +67,12 @@ class AcuraRegistryTests(unittest.TestCase):
         )
 
     def test_acura_dallara_platform_consistency(self):
-        """Acura shares Dallara platform values with BMW (torsion_c, motion ratios, CG)."""
+        """Acura shares Dallara platform values with BMW (torsion_c, CG height).
+
+        Note: rear_motion_ratio intentionally differs — Acura ORECA rear torsion geometry
+        bakes the motion ratio into the spring constant (ratio=1.0), while BMW uses
+        a pushrod geometry (ratio=0.60). This is correct and by design.
+        """
         acura = get_car("acura")
         bmw = get_car("bmw")
         self.assertEqual(
@@ -75,13 +80,13 @@ class AcuraRegistryTests(unittest.TestCase):
             bmw.corner_spring.front_torsion_c,
         )
         self.assertEqual(
-            acura.corner_spring.rear_motion_ratio,
-            bmw.corner_spring.rear_motion_ratio,
-        )
-        self.assertEqual(
             acura.corner_spring.cg_height_mm,
             bmw.corner_spring.cg_height_mm,
         )
+        # rear_motion_ratio: Acura=1.0 (baked into C constant), BMW=0.60 (pushrod geometry)
+        # These are intentionally different — do not assert equality here.
+        self.assertEqual(acura.corner_spring.rear_motion_ratio, 1.0)
+        self.assertAlmostEqual(bmw.corner_spring.rear_motion_ratio, 0.60, places=2)
 
 
 # ── 8b. Track Profile Tests ─────────────────────────────────────────────────
