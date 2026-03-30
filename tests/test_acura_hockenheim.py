@@ -66,22 +66,21 @@ class AcuraRegistryTests(unittest.TestCase):
             [6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0],
         )
 
-    def test_acura_dallara_platform_consistency(self):
-        """Acura shares Dallara platform values with BMW (torsion_c, motion ratios, CG)."""
+    def test_acura_oreca_platform_consistency(self):
+        """Acura keeps the ORECA heave+roll + rear torsion-bar layout encoded in the car model."""
         acura = get_car("acura")
         bmw = get_car("bmw")
         self.assertEqual(
             acura.corner_spring.front_torsion_c,
             bmw.corner_spring.front_torsion_c,
         )
-        self.assertEqual(
-            acura.corner_spring.rear_motion_ratio,
-            bmw.corner_spring.rear_motion_ratio,
-        )
+        self.assertTrue(acura.corner_spring.rear_is_torsion_bar)
+        self.assertEqual(acura.corner_spring.rear_motion_ratio, 1.0)
         self.assertEqual(
             acura.corner_spring.cg_height_mm,
-            bmw.corner_spring.cg_height_mm,
+            350.0,
         )
+        self.assertTrue(acura.damper.has_roll_dampers)
 
 
 # ── 8b. Track Profile Tests ─────────────────────────────────────────────────
@@ -135,7 +134,14 @@ class AcuraSolverSmokeTests(unittest.TestCase):
         ]
         if extra_args:
             cmd.extend(extra_args)
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+        )
         self.assertEqual(result.returncode, 0, f"Solver failed:\n{result.stderr}")
         return result.stdout
 
@@ -179,8 +185,8 @@ class AcuraStoOutputTests(unittest.TestCase):
             result = subprocess.run(
                 [sys.executable, "-m", "solver.solve",
                  "--car", "acura", "--track", "hockenheim",
-                 "--wing", "8", "--sto", str(sto_path)],
-                capture_output=True, text=True, cwd=str(REPO_ROOT),
+                  "--wing", "8", "--sto", str(sto_path)],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT),
             )
             self.assertEqual(result.returncode, 0, f"Solver failed:\n{result.stderr}")
             self.assertTrue(sto_path.exists())
@@ -197,8 +203,8 @@ class AcuraStoOutputTests(unittest.TestCase):
             result = subprocess.run(
                 [sys.executable, "-m", "solver.solve",
                  "--car", "acura", "--track", "hockenheim",
-                 "--wing", "8", "--sto", str(sto_path)],
-                capture_output=True, text=True, cwd=str(REPO_ROOT),
+                  "--wing", "8", "--sto", str(sto_path)],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT),
             )
             self.assertEqual(result.returncode, 0, f"Solver failed:\n{result.stderr}")
             tree = ET.parse(sto_path)

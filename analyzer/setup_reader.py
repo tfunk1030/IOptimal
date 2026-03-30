@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from track_model.ibt_parser import IBTFile
 
@@ -212,6 +213,42 @@ class CurrentSetup:
     conflicted_fields: list[str] = field(default_factory=list)
     decode_warnings: list[str] = field(default_factory=list)
     raw_indexed_fields: dict[str, float] = field(default_factory=dict)
+    sto_car_id: str = ""
+    sto_sha256: str = ""
+    sto_provider_name: str = ""
+    sto_notes_text: str = ""
+    raw_sto_metadata: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_sto(cls, path: str | Path) -> CurrentSetup:
+        """Parse the current setup from a version-3 binary STO file."""
+
+        from analyzer.sto_adapters import build_current_setup_fields
+        from analyzer.sto_binary import decode_sto
+
+        decoded = decode_sto(path)
+        adapted = build_current_setup_fields(decoded)
+        return cls(
+            source="sto",
+            adapter_name=adapted.adapter_name,
+            extraction_attempts=[
+                {
+                    "path": "BinaryStoV3",
+                    "status": "ok",
+                    "source_path": str(decoded.source_path),
+                }
+            ],
+            unresolved_fields=list(adapted.unresolved_fields),
+            conflicted_fields=list(adapted.conflicted_fields),
+            decode_warnings=list(adapted.decode_warnings),
+            raw_indexed_fields=dict(adapted.raw_indexed_fields),
+            sto_car_id=decoded.car_id,
+            sto_sha256=decoded.sha256,
+            sto_provider_name=decoded.provider_name,
+            sto_notes_text=decoded.notes_text,
+            raw_sto_metadata=dict(adapted.raw_sto_metadata),
+            **adapted.values,
+        )
 
     @classmethod
     def from_ibt(cls, ibt: IBTFile) -> CurrentSetup:

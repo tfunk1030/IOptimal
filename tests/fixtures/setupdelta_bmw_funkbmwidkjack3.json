@@ -1,0 +1,1856 @@
+{
+  "carName": "bmwlmdh",
+  "rows": [
+    {
+      "row_id": "333522ee",
+      "label": "wiperSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0",
+      "imperial_value": "0",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "5914f539",
+      "label": "driversteeringRatio",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "12",
+      "imperial_value": "12",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "5865ced9",
+      "label": "Fuel level",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Fuel",
+      "section_index": 3,
+      "description": "Amount of fuel in the fuel tank",
+      "metric_value": "89.0 L",
+      "imperial_value": "23.5 gal",
+      "range_metric": {
+        "min": "3.0 L",
+        "max": "89.0 L"
+      },
+      "range_imperial": {
+        "min": "0.8 gal",
+        "max": "23.5 gal"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "d4f653fb",
+      "label": "Fuel low warning",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Fuel",
+      "section_index": 3,
+      "description": "Sets the trigger point for the low fuel dash warning message.",
+      "metric_value": "10.0 L",
+      "imperial_value": "2.6 gal",
+      "range_metric": {
+        "min": "2.0 L",
+        "max": "15.0 L"
+      },
+      "range_imperial": {
+        "min": "0.5 gal",
+        "max": "4.0 gal"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "06fe30aa",
+      "label": "Roof ID light color",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Lighting",
+      "section_index": 0,
+      "description": "Color of the ID light on the roof of the car.",
+      "metric_value": "Blue",
+      "imperial_value": "Blue",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "b24b2553",
+      "label": "Rear wing angle",
+      "tab": "Tires/Aero",
+      "tab_index": 0,
+      "section": "Aero Settings",
+      "section_index": 5,
+      "description": "Angle of attack of the rear wing. Increasing rear wing angle adds total downforce and shifts the aero balance rearward (more understeer) while increasing drag.",
+      "metric_value": "17 deg",
+      "imperial_value": "17 deg",
+      "range_metric": {
+        "min": "12 deg",
+        "max": "17 deg"
+      },
+      "range_imperial": {
+        "min": "12 deg",
+        "max": "17 deg"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "5ee37c2e",
+      "label": "DPSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "1",
+      "imperial_value": "1",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "e34169a8",
+      "label": "bGurnSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "1",
+      "imperial_value": "1",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "7cdd2cda",
+      "label": "wGurnSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "1",
+      "imperial_value": "1",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "6c5739b0",
+      "label": "aeroPackageSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0",
+      "imperial_value": "0",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "9b1f7fc2",
+      "label": "dCxBoP",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0.19",
+      "imperial_value": "0.19",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "3d83b9ed",
+      "label": "dCzTBoP",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0.17",
+      "imperial_value": "0.17",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "1dc0b620",
+      "label": "dCPxzBoP",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0.04",
+      "imperial_value": "0.04",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "7e4d1e19",
+      "label": "Heave spring",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Front",
+      "section_index": 0,
+      "description": "The Heave spring is a center element that provides linear stiffness in pitch motion but not in roll; stiffer springs control the chassis attitude better (less pitch change) which is good for aerodynamics and camber control, but mechanical grip is often better with softer springs",
+      "metric_value": "50 N/mm",
+      "imperial_value": "286 lbs/in",
+      "range_metric": {
+        "min": "0 N/mm",
+        "max": "900 N/mm"
+      },
+      "range_imperial": {
+        "min": "0 lbs/in",
+        "max": "5143 lbs/in"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "1b799e57",
+      "label": "Third spring",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Rear",
+      "section_index": 5,
+      "description": "The third spring is a center element that provides linear stiffness in pitch motion but not in roll; stiffer springs control the chassis attitude better (less pitch change) which is good for aerodynamics and camber control, but mechanical grip is often better with softer springs",
+      "metric_value": "530 N/mm",
+      "imperial_value": "3029 lbs/in",
+      "range_metric": {
+        "min": "0 N/mm",
+        "max": "900 N/mm"
+      },
+      "range_imperial": {
+        "min": "0 lbs/in",
+        "max": "5143 lbs/in"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "1e3dc812",
+      "label": "Torsion bar O.D.",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Front",
+      "section_index": 1,
+      "description": "How stiff the spring is; to get the same ride heights after a spring change the spring perch must be adjusted; stiffer springs control the chassis attitude better (less roll or pitch change) which is good for aerodynamics and camber control, but mechanical grip is often better with softer springs; front springs can only be changed in axle pairs",
+      "metric_value": " 13.90 mm",
+      "imperial_value": " 13.90 mm",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "b817ad49",
+      "label": "fSideSpringRateNpm",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "92518.421875",
+      "imperial_value": "92518.421875",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "568345bb",
+      "label": "Spring rate",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Rear",
+      "section_index": 3,
+      "description": "How stiff the spring is; to get the same ride heights after a spring change the spring perch must be adjusted; stiffer springs control the chassis attitude better (less roll or pitch change) which is good for aerodynamics and camber control, but mechanical grip is often better with softer springs; as per homologation rules rear springs can only be changed in axle pairs",
+      "metric_value": "170 N/mm",
+      "imperial_value": "971 lbs/in",
+      "range_metric": {
+        "min": "105 N/mm",
+        "max": "280 N/mm"
+      },
+      "range_imperial": {
+        "min": "600 lbs/in",
+        "max": "1600 lbs/in"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "df4ccfe3",
+      "label": "hfPackerThicknessm",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0",
+      "imperial_value": "0",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "afa15837",
+      "label": "trPackerThicknessm",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0",
+      "imperial_value": "0",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "07d8a477",
+      "label": "lfPackerThicknessm",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0",
+      "imperial_value": "0",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "47a6c154",
+      "label": "rfPackerThicknessm",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0",
+      "imperial_value": "0",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "f186e381",
+      "label": "lrPackerThicknessm",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0",
+      "imperial_value": "0",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "f6459b80",
+      "label": "rrPackerThicknessm",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0",
+      "imperial_value": "0",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "7d762d5c",
+      "label": "Pushrod length offset",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Front",
+      "section_index": 0,
+      "description": "Adjusts the lengths of both front pushrods; used to adjust ride height without changing the deflection of the heave spring",
+      "metric_value": "-23.0 mm",
+      "imperial_value": "-0.906\"",
+      "range_metric": {
+        "min": "-40.0 mm",
+        "max": "40.0 mm"
+      },
+      "range_imperial": {
+        "min": "-1.575\"",
+        "max": "1.575\""
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "97997583",
+      "label": "Pushrod length offset",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Rear",
+      "section_index": 5,
+      "description": "Adjusts the lengths of both rear pushrods; used to adjust ride height without changing the deflection of the heave spring",
+      "metric_value": "-29.0 mm",
+      "imperial_value": "-1.142\"",
+      "range_metric": {
+        "min": "-40.0 mm",
+        "max": "40.0 mm"
+      },
+      "range_imperial": {
+        "min": "-1.575\"",
+        "max": "1.575\""
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "64364a10",
+      "label": "Heave perch offset",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Front",
+      "section_index": 0,
+      "description": "Adjusts the static loading of the Heave spring; used to adjust ride height",
+      "metric_value": "-10.0 mm",
+      "imperial_value": "-0.394\"",
+      "range_metric": {
+        "min": "-100.0 mm",
+        "max": "100.0 mm"
+      },
+      "range_imperial": {
+        "min": "-3.937\"",
+        "max": "3.937\""
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "8b3671a6",
+      "label": "Third perch offset",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Rear",
+      "section_index": 5,
+      "description": "Adjusts the static loading of the Third spring; used to adjust ride height",
+      "metric_value": "41.0 mm",
+      "imperial_value": "1.614\"",
+      "range_metric": {
+        "min": "-100.0 mm",
+        "max": "100.0 mm"
+      },
+      "range_imperial": {
+        "min": "-3.937\"",
+        "max": "3.937\""
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "448d88c4",
+      "label": "Spring perch offset",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Rear",
+      "section_index": 3,
+      "description": "Adjusts the height at which the spring is installed in the chassis; used to adjust ride height; make perch offset changes in pairs: same change for both front wheels, both left wheels, or LR/RF, RR/LF diagonals",
+      "metric_value": "30.0 mm",
+      "imperial_value": "1.181\"",
+      "range_metric": {
+        "min": "-100.0 mm",
+        "max": "100.0 mm"
+      },
+      "range_imperial": {
+        "min": "-3.937\"",
+        "max": "3.937\""
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "b07b4ca5",
+      "label": "Spring perch offset",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Rear",
+      "section_index": 4,
+      "description": "Adjusts the height at which the spring is installed in the chassis; used to adjust ride height; make perch offset changes in pairs: same change for both front wheels, both left wheels, or LR/RF, RR/LF diagonals",
+      "metric_value": "30.0 mm",
+      "imperial_value": "1.181\"",
+      "range_metric": {
+        "min": "-100.0 mm",
+        "max": "100.0 mm"
+      },
+      "range_imperial": {
+        "min": "-3.937\"",
+        "max": "3.937\""
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "f63bdc35",
+      "label": "Torsion bar turns",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Front",
+      "section_index": 1,
+      "description": "Adjusts the preload of the torsion bar; used to adjust ride height; make preload changes in pairs: same change for both front wheels, both left wheels, or LR/RF, RR/LF diagonals",
+      "metric_value": "0.102 Turns",
+      "imperial_value": "0.102 Turns",
+      "range_metric": {
+        "min": "-0.250 Turns",
+        "max": "0.250 Turns"
+      },
+      "range_imperial": {
+        "min": "-0.250 Turns",
+        "max": "0.250 Turns"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "6e67bf4c",
+      "label": "Torsion bar turns",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Front",
+      "section_index": 2,
+      "description": "Adjusts the preload of the torsion bar; used to adjust ride height; make preload changes in pairs: same change for both front wheels, both left wheels, or LR/RF, RR/LF diagonals",
+      "metric_value": "0.102 Turns",
+      "imperial_value": "0.102 Turns",
+      "range_metric": {
+        "min": "-0.250 Turns",
+        "max": "0.250 Turns"
+      },
+      "range_imperial": {
+        "min": "-0.250 Turns",
+        "max": "0.250 Turns"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "20171096",
+      "label": "ARB size",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Front",
+      "section_index": 0,
+      "description": "Changing the anti-roll bar size equates to a change to the ARB diameter; more ARB rate = more understeer",
+      "metric_value": " Soft",
+      "imperial_value": " Soft",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "bad746f6",
+      "label": "ARB size",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Rear",
+      "section_index": 5,
+      "description": "Changing the anti-roll bar size equates to a change to the ARB diameter; more ARB rate = more oversteer",
+      "metric_value": " Medium",
+      "imperial_value": " Medium",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "5a339ead",
+      "label": "ARB blades",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Front",
+      "section_index": 0,
+      "description": "Stiffer anti-roll bar blade position = stiffer effective anti-roll bar = more understeer; P1 = softest setting, P5 = stiffest setting",
+      "metric_value": "1",
+      "imperial_value": "1",
+      "range_metric": {
+        "min": "1",
+        "max": "5"
+      },
+      "range_imperial": {
+        "min": "1",
+        "max": "5"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "952847dd",
+      "label": "ARB blades",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Rear",
+      "section_index": 5,
+      "description": "Stiffer anti-roll bar blade position = stiffer effective anti-roll bar = more understeer; P1 = softest setting, P5 = stiffest setting",
+      "metric_value": "1",
+      "imperial_value": "1",
+      "range_metric": {
+        "min": "1",
+        "max": "5"
+      },
+      "range_imperial": {
+        "min": "1",
+        "max": "5"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "b10b1fd3",
+      "label": "Toe-in",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Rear",
+      "section_index": 4,
+      "description": "Toe-in means the left and right wheels are steered toward each other, negative toe-in (toe-out) means the left and right wheels are steered away from each other; stick to toe-in at the rear; less rear toe-in = less temperature buildup; more rear toe-in = more straight line stability",
+      "metric_value": "-0.0027",
+      "imperial_value": "-0.0027",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": true
+    },
+    {
+      "row_id": "8fe49a89",
+      "label": "Toe-in",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Rear",
+      "section_index": 3,
+      "description": "Toe-in means the left and right wheels are steered toward each other, negative toe-in (toe-out) means the left and right wheels are steered away from each other; stick to toe-in at the rear; less rear toe-in = less temperature buildup; more rear toe-in = more straight line stability",
+      "metric_value": "-0.0027",
+      "imperial_value": "-0.0027",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": true
+    },
+    {
+      "row_id": "e24d9023",
+      "label": "Toe-in",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Front",
+      "section_index": 0,
+      "description": "Toe-in means the left and right wheels are steered toward each other, negative toe-in (toe-out) means the left and right wheels are steered away from each other; stick to toe-out at the front; less front toe-out = less temperature buildup, more front toe-out = better turn-in with reduced straight line stability",
+      "metric_value": "0.001",
+      "imperial_value": "0.001",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": true
+    },
+    {
+      "row_id": "9cbf723e",
+      "label": "Brake pressure bias",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Brake Spec",
+      "section_index": 1,
+      "description": "% of braking force acting at the front wheels; more front bias = car more stable under braking, but longer braking distances needed; too little front bias = car wants to spin under braking",
+      "metric_value": "46.00%",
+      "imperial_value": "46.00%",
+      "range_metric": {
+        "min": "42.00%",
+        "max": "65.00%"
+      },
+      "range_imperial": {
+        "min": "42.00%",
+        "max": "65.00%"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "24a830ab",
+      "label": "Brake bias target",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Brake Spec",
+      "section_index": 1,
+      "description": "Offset in brake bias from base pressure bias. +ve values move bias forward 0.5% per click. -ve values move bias rearward 0.5% per click.",
+      "metric_value": "0%",
+      "imperial_value": "0%",
+      "range_metric": {
+        "min": "-5%",
+        "max": "5%"
+      },
+      "range_imperial": {
+        "min": "-5%",
+        "max": "5%"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "934a6f11",
+      "label": "Brake bias migration",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Brake Spec",
+      "section_index": 1,
+      "description": "Offset applied to brake bias at 0% brake pedal input before ramping linearly to the brake pressure bias value at 100% brake pedal input. 1 Click = 1% brake bias. For example, a migration setting of -5 will shift the effective bias rearwards 5% at 0% pedal input, rearwards 2.5% at 50% pedal input and at 100% pedal input the bias will be equal to the brake pressure bias setting.",
+      "metric_value": "0%",
+      "imperial_value": "0%",
+      "range_metric": {
+        "min": "-5%",
+        "max": "5%"
+      },
+      "range_imperial": {
+        "min": "-5%",
+        "max": "5%"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "c4526c6a",
+      "label": "Front master cyl.",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Brake Spec",
+      "section_index": 1,
+      "description": "Brake master cylinders convert foot pedal force into hydraulic brake line pressure; larger front master cylinders reduce front brake line pressure and move the brake balance rearward; smaller front master cylinders increase brake line pressure and move the brake balance forward; Low downforce configurations may require larger master cylinders, whereas higher downforce configurations may require smaller ones.",
+      "metric_value": "19.1 mm",
+      "imperial_value": "0.752 in",
+      "range_metric": {
+        "min": "15.9 mm",
+        "max": "23.8 mm"
+      },
+      "range_imperial": {
+        "min": "0.626 in",
+        "max": "0.937 in"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "4cd6576a",
+      "label": "Rear master cyl.",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Brake Spec",
+      "section_index": 1,
+      "description": "Brake master cylinders convert foot pedal force into hydraulic brake line pressure; larger rear master cylinders reduce rear brake line pressure and move the brake balance forward; smaller rear master cylinders increase brake line pressure and move the brake balance rearward; Low downforce configurations may require larger master cylinders, whereas higher downforce configurations may require smaller ones.",
+      "metric_value": "20.6 mm",
+      "imperial_value": "0.811 in",
+      "range_metric": {
+        "min": "15.9 mm",
+        "max": "23.8 mm"
+      },
+      "range_imperial": {
+        "min": "0.626 in",
+        "max": "0.937 in"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "7d2cd494",
+      "label": "brakeMasterCylDiaFm",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0.0191",
+      "imperial_value": "0.0191",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "14b67934",
+      "label": "brakeMasterCylDiaRm",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0.0206",
+      "imperial_value": "0.0206",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "837d31d8",
+      "label": "Pad compound",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Brake Spec",
+      "section_index": 1,
+      "description": "Depending on the amount of downforce the car is producing, based on downforce trim, the car's braking performance can be altered to suit; with more downforce high levels of braking force can be utilized to slow the car down more effectively",
+      "metric_value": "Medium",
+      "imperial_value": "Medium",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "69979712",
+      "label": "Gear stack",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Gear Ratios",
+      "section_index": 5,
+      "description": "Two sets of gear ratios are available for this car: short and tall. Choose based primarily on the maximum end-of-straight speed at this track.",
+      "metric_value": "Short",
+      "imperial_value": "Short",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "1609391c",
+      "label": "Preload",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Rear Diff Spec",
+      "section_index": 6,
+      "description": "Preload sets an offset amount of static differential locking force that will always be present during both acceleration and deceleration; more preload = more locking, which adds understeer off-throttle under deceleration and adds oversteer under acceleration",
+      "metric_value": "25 Nm",
+      "imperial_value": "18 ft-lbs",
+      "range_metric": {
+        "min": "0 Nm",
+        "max": "150 Nm"
+      },
+      "range_imperial": {
+        "min": "0 ft-lbs",
+        "max": "111 ft-lbs"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "5fff64f3",
+      "label": "Coast/drive ramp angles",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Rear Diff Spec",
+      "section_index": 6,
+      "description": "Coast/drive ramp angles affect how much force is produced to keep both side of the differential locked together during acceleration out of and deceleration into a corner; higher number has less locking force, lower number has more locking force; the more locking force the more understeer",
+      "metric_value": "40/65",
+      "imperial_value": "40/65",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "6920f16c",
+      "label": "Clutch friction plates",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Rear Diff Spec",
+      "section_index": 6,
+      "description": "Clutch plate plates multiply the amount of locking the differential can create; four plates have 2x the locking effort compared to two plates, six plates have 3x the locking effort compared to two plates and 1.5x as much as four plates, and so on",
+      "metric_value": "4",
+      "imperial_value": "4",
+      "range_metric": {
+        "min": "2",
+        "max": "6"
+      },
+      "range_imperial": {
+        "min": "2",
+        "max": "6"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "fa2a389e",
+      "label": "Starting pressure",
+      "tab": "Tires/Aero",
+      "tab_index": 0,
+      "section": "Left Front",
+      "section_index": 1,
+      "description": "Air pressure in tire as measured when the tire is heated with tire warmers (65C); lower pressure = more heat buildup, better grip at lower loads; higher pressure = less heat, better grip at higher loads",
+      "metric_value": "152 kPa",
+      "imperial_value": "22.0 psi",
+      "range_metric": {
+        "min": "152 kPa",
+        "max": "207 kPa"
+      },
+      "range_imperial": {
+        "min": "22.0 psi",
+        "max": "30.0 psi"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "4bedffc4",
+      "label": "Starting pressure",
+      "tab": "Tires/Aero",
+      "tab_index": 0,
+      "section": "Right Front",
+      "section_index": 2,
+      "description": "Air pressure in tire as measured when the tire is heated with tire warmers (65C); lower pressure = more heat buildup, better grip at lower loads; higher pressure = less heat, better grip at higher loads",
+      "metric_value": "152 kPa",
+      "imperial_value": "22.0 psi",
+      "range_metric": {
+        "min": "152 kPa",
+        "max": "207 kPa"
+      },
+      "range_imperial": {
+        "min": "22.0 psi",
+        "max": "30.0 psi"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "060d3e58",
+      "label": "Starting pressure",
+      "tab": "Tires/Aero",
+      "tab_index": 0,
+      "section": "Left Rear Tire",
+      "section_index": 3,
+      "description": "Air pressure in tire as measured when the tire is heated with tire warmers (65C); lower pressure = more heat buildup, better grip at lower loads; higher pressure = less heat, better grip at higher loads",
+      "metric_value": "152 kPa",
+      "imperial_value": "22.0 psi",
+      "range_metric": {
+        "min": "152 kPa",
+        "max": "207 kPa"
+      },
+      "range_imperial": {
+        "min": "22.0 psi",
+        "max": "30.0 psi"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "28febab7",
+      "label": "Starting pressure",
+      "tab": "Tires/Aero",
+      "tab_index": 0,
+      "section": "Right Rear Tire",
+      "section_index": 4,
+      "description": "Air pressure in tire as measured when the tire is heated with tire warmers (65C); lower pressure = more heat buildup, better grip at lower loads; higher pressure = less heat, better grip at higher loads",
+      "metric_value": "152 kPa",
+      "imperial_value": "22.0 psi",
+      "range_metric": {
+        "min": "152 kPa",
+        "max": "207 kPa"
+      },
+      "range_imperial": {
+        "min": "22.0 psi",
+        "max": "30.0 psi"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "2abeefc9",
+      "label": "LS comp damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Front",
+      "section_index": 1,
+      "description": "Low speed compression damping primarily affects how quickly load is transferred onto this tire in transient handling when the shock is compressed. More low speed compression loads the tire more quickly. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "7 clicks",
+      "imperial_value": "7 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "2289f0b3",
+      "label": "LS comp damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Front",
+      "section_index": 2,
+      "description": "Low speed compression damping primarily affects how quickly load is transferred onto this tire in transient handling when the shock is compressed. More low speed compression loads the tire more quickly. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "7 clicks",
+      "imperial_value": "7 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "12daad35",
+      "label": "LS comp damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Rear",
+      "section_index": 3,
+      "description": "Low speed compression damping primarily affects how quickly load is transferred onto this tire in transient handling when the shock is compressed. More low speed compression loads the tire more quickly. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "6 clicks",
+      "imperial_value": "6 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "97fe59db",
+      "label": "LS comp damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Rear",
+      "section_index": 4,
+      "description": "Low speed compression damping primarily affects how quickly load is transferred onto this tire in transient handling when the shock is compressed. More low speed compression loads the tire more quickly. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "6 clicks",
+      "imperial_value": "6 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "587044ff",
+      "label": "HS comp damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Front",
+      "section_index": 1,
+      "description": "High speed compression damping primarily affects how this corner of the car responds over bumps and curb strikes. Must be tuned to find optimum performance. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "5 clicks",
+      "imperial_value": "5 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "36cb9e2d",
+      "label": "HS comp damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Front",
+      "section_index": 2,
+      "description": "High speed compression damping primarily affects how this corner of the car responds over bumps and curb strikes. Must be tuned to find optimum performance. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "5 clicks",
+      "imperial_value": "5 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "744fb153",
+      "label": "HS comp damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Rear",
+      "section_index": 3,
+      "description": "High speed compression damping primarily affects how this corner of the car responds over bumps and curb strikes. Must be tuned to find optimum performance. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "7 clicks",
+      "imperial_value": "7 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "2e187d79",
+      "label": "HS comp damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Rear",
+      "section_index": 4,
+      "description": "High speed compression damping primarily affects how this corner of the car responds over bumps and curb strikes. Must be tuned to find optimum performance. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "7 clicks",
+      "imperial_value": "7 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "650342e7",
+      "label": "HS comp damp slope",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Front",
+      "section_index": 1,
+      "description": "The slope of the high speed compression damping curve is used in conjunction with the high speed damping level to adjust the damping curve shapes. Low slope combined with high level produces very digressive curves that control the aero platform and suit large curb strikes. High slope and low level produces linear curves that typically suit bumpier tracks. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "10 clicks",
+      "imperial_value": "10 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "a48eb6e0",
+      "label": "HS comp damp slope",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Front",
+      "section_index": 2,
+      "description": "The slope of the high speed compression damping curve is used in conjunction with the high speed damping level to adjust the damping curve shapes. Low slope combined with high level produces very digressive curves that control the aero platform and suit large curb strikes. High slope and low level produces linear curves that typically suit bumpier tracks. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "10 clicks",
+      "imperial_value": "10 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "974bf376",
+      "label": "HS comp damp slope",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Rear",
+      "section_index": 3,
+      "description": "The slope of the high speed compression damping curve is used in conjunction with the high speed damping level to adjust the damping curve shapes. Low slope combined with high level produces very digressive curves that control the aero platform and suit large curb strikes. High slope and low level produces linear curves that typically suit bumpier tracks. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "10 clicks",
+      "imperial_value": "10 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "a88fc179",
+      "label": "HS comp damp slope",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Rear",
+      "section_index": 4,
+      "description": "The slope of the high speed compression damping curve is used in conjunction with the high speed damping level to adjust the damping curve shapes. Low slope combined with high level produces very digressive curves that control the aero platform and suit large curb strikes. High slope and low level produces linear curves that typically suit bumpier tracks. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "10 clicks",
+      "imperial_value": "10 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "4ad118e3",
+      "label": "LS rbd damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Front",
+      "section_index": 1,
+      "description": "Low speed rebound damping primarily affects how quickly the shock extends in transient handling. More low speed rebound slows the rate at which the shock extends. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "6 clicks",
+      "imperial_value": "6 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "67a96cb8",
+      "label": "LS rbd damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Front",
+      "section_index": 2,
+      "description": "Low speed rebound damping primarily affects how quickly the shock extends in transient handling. More low speed rebound slows the rate at which the shock extends. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "6 clicks",
+      "imperial_value": "6 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "65754a97",
+      "label": "LS rbd damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Rear",
+      "section_index": 3,
+      "description": "Low speed rebound damping primarily affects how quickly the shock extends in transient handling. More low speed rebound slows the rate at which the shock extends. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "7 clicks",
+      "imperial_value": "7 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "c0c2306f",
+      "label": "LS rbd damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Rear",
+      "section_index": 4,
+      "description": "Low speed rebound damping primarily affects how quickly the shock extends in transient handling. More low speed rebound slows the rate at which the shock extends. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "7 clicks",
+      "imperial_value": "7 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "cdea40ea",
+      "label": "HS rbd damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Front",
+      "section_index": 1,
+      "description": "High speed rebound damping primarily affects how this corner of the car responds over bumps and curb strikes. Must be tuned to find optimum performance. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "8 clicks",
+      "imperial_value": "8 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "1ab08c28",
+      "label": "HS rbd damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Front",
+      "section_index": 2,
+      "description": "High speed rebound damping primarily affects how this corner of the car responds over bumps and curb strikes. Must be tuned to find optimum performance. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "8 clicks",
+      "imperial_value": "8 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "db7462a4",
+      "label": "HS rbd damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Rear",
+      "section_index": 3,
+      "description": "High speed rebound damping primarily affects how this corner of the car responds over bumps and curb strikes. Must be tuned to find optimum performance. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "9 clicks",
+      "imperial_value": "9 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "1ed0c3f3",
+      "label": "HS rbd damping",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Rear",
+      "section_index": 4,
+      "description": "High speed rebound damping primarily affects how this corner of the car responds over bumps and curb strikes. Must be tuned to find optimum performance. Min damping at 0 setting. Max damping at 11 setting.",
+      "metric_value": "9 clicks",
+      "imperial_value": "9 clicks",
+      "range_metric": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "range_imperial": {
+        "min": "0 clicks",
+        "max": "11 clicks"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "c686817f",
+      "label": "lfHSSlopeRbdDampSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "5",
+      "imperial_value": "5",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "34272f8f",
+      "label": "rfHSSlopeRbdDampSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "5",
+      "imperial_value": "5",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "c7acf36b",
+      "label": "lrHSSlopeRbdDampSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "5",
+      "imperial_value": "5",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "ab3aa30c",
+      "label": "rrHSSlopeRbdDampSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "5",
+      "imperial_value": "5",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "034d512f",
+      "label": "Camber",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Front",
+      "section_index": 1,
+      "description": "Inward (negative) or outward (positive) lean of the wheel; more lean = more cornering force in direction of lean, more wear and heat, less braking capability",
+      "metric_value": "4.9",
+      "imperial_value": "4.9",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": true
+    },
+    {
+      "row_id": "e9e72fca",
+      "label": "Camber",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Left Rear",
+      "section_index": 3,
+      "description": "Inward (negative) or outward (positive) lean of the wheel; more lean = more cornering force in direction of lean, more wear and heat, less braking capability",
+      "metric_value": "1.9",
+      "imperial_value": "1.9",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": true
+    },
+    {
+      "row_id": "d13bf116",
+      "label": "Camber",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Front",
+      "section_index": 2,
+      "description": "Inward (negative) or outward (positive) lean of the wheel; more lean = more cornering force in direction of lean, more wear and heat, less braking capability",
+      "metric_value": "-4.9",
+      "imperial_value": "-4.9",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": true
+    },
+    {
+      "row_id": "e12864d0",
+      "label": "Camber",
+      "tab": "Chassis",
+      "tab_index": 1,
+      "section": "Right Rear",
+      "section_index": 4,
+      "description": "Inward (negative) or outward (positive) lean of the wheel; more lean = more cornering force in direction of lean, more wear and heat, less braking capability",
+      "metric_value": "-1.9",
+      "imperial_value": "-1.9",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": true
+    },
+    {
+      "row_id": "b7cfd783",
+      "label": "lfhubDpitch",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "-0.8",
+      "imperial_value": "-0.8",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "11a6fe4b",
+      "label": "rfhubDpitch",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "-0.8",
+      "imperial_value": "-0.8",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "01818262",
+      "label": "mgukDeployThrottleSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "5",
+      "imperial_value": "5",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "488aed96",
+      "label": "deploySettingRequest",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "3",
+      "imperial_value": "3",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "c3032825",
+      "label": "mgukRegenGainSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "9",
+      "imperial_value": "9",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "1faa7b66",
+      "label": "throttleShapeSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "12",
+      "imperial_value": "12",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "eaa1bd37",
+      "label": "multiFunctionKnobSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "1",
+      "imperial_value": "1",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "62084fc0",
+      "label": "fuelMixSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "1",
+      "imperial_value": "1",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "aa5a02b8",
+      "label": "ibsModeSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "1",
+      "imperial_value": "1",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "fcc2da25",
+      "label": "PSSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "8",
+      "imperial_value": "8",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "36a2d575",
+      "label": "Traction control slip",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Traction Control",
+      "section_index": 4,
+      "description": "Setting for how aggressively the TC tries to control slip. Higher = intervention at smaller differences in LR & RR wheel speeds (increased TC activation sensitivity).",
+      "metric_value": "3 (TCLON)",
+      "imperial_value": "3 (TCLON)",
+      "range_metric": {
+        "min": "1 (TCLON)",
+        "max": "12 (TCLON)"
+      },
+      "range_imperial": {
+        "min": "1 (TCLON)",
+        "max": "12 (TCLON)"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "57026f7e",
+      "label": "rTracControlLatSlipSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "3",
+      "imperial_value": "3",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "a704cff6",
+      "label": "Traction control gain",
+      "tab": "Brakes/Drive Unit",
+      "tab_index": 2,
+      "section": "Traction Control",
+      "section_index": 4,
+      "description": "Gain on the magnitude of TC intervention. Higher = more aggressive torque cut (larger reduction in engine torque once TC slip threshold has been reached)",
+      "metric_value": "4 (TCLAT)",
+      "imperial_value": "4 (TCLAT)",
+      "range_metric": {
+        "min": "1 (TCLAT)",
+        "max": "12 (TCLAT)"
+      },
+      "range_imperial": {
+        "min": "1 (TCLAT)",
+        "max": "12 (TCLAT)"
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "44e4286e",
+      "label": "clutchBitePointSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "55",
+      "imperial_value": "55",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "124d3d90",
+      "label": "clutchDisengageDuration",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0.125",
+      "imperial_value": "0.125",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "1733abb1",
+      "label": "tracControlTorqueScale",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "1",
+      "imperial_value": "1",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "70a21e3e",
+      "label": "tyreSetting",
+      "tab": null,
+      "tab_index": null,
+      "section": null,
+      "section_index": null,
+      "description": null,
+      "metric_value": "0",
+      "imperial_value": "0",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": false,
+      "is_derived": false
+    },
+    {
+      "row_id": "e78ee6bc",
+      "label": "Front RH at speed",
+      "tab": "Tires/Aero",
+      "tab_index": 0,
+      "section": "Aero Calculator",
+      "section_index": 6,
+      "description": "As the car travels on the race track its ride heights change; front ride height at speed represents a way to understand how on-track front ride height affect the car aerodynamically using the 'Aero Calculator'; make front ride height changes in conjunction with rear ride height changes; use telemetry to find out the ride heights on different parts of the race track",
+      "metric_value": "15.0 mm",
+      "imperial_value": "0.591\"",
+      "range_metric": {
+        "min": "5.0 mm",
+        "max": "50.0 mm"
+      },
+      "range_imperial": {
+        "min": "0.197\"",
+        "max": "1.969\""
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "eefd5645",
+      "label": "Rear RH at speed",
+      "tab": "Tires/Aero",
+      "tab_index": 0,
+      "section": "Aero Calculator",
+      "section_index": 6,
+      "description": "As the car travels on the race track its ride heights change; rear ride height at speed represents a way to understand how on-track rear ride height affect the car aerodynamically using the 'Aero Calculator'; make rear ride height changes in conjunction with front ride height changes; use telemetry to find out the ride heights on different parts of the race track",
+      "metric_value": "40.0 mm",
+      "imperial_value": "1.575\"",
+      "range_metric": {
+        "min": "25.0 mm",
+        "max": "75.0 mm"
+      },
+      "range_imperial": {
+        "min": "0.984\"",
+        "max": "2.953\""
+      },
+      "is_mapped": true,
+      "is_derived": false
+    },
+    {
+      "row_id": "c108aa22",
+      "label": "Tire type",
+      "tab": "Tires/Aero",
+      "tab_index": 0,
+      "section": "Tire Type",
+      "section_index": 0,
+      "description": "Dry tires are slick (untreaded), and are intended for use on dry track surfaces. Wet tires are treaded, and are intended for use on wet track surfaces. In changeable conditions, you'll have to apply judgment over the crossover point between dries and wets",
+      "metric_value": "Dry",
+      "imperial_value": "Dry",
+      "range_metric": null,
+      "range_imperial": null,
+      "is_mapped": true,
+      "is_derived": false
+    }
+  ]
+}
