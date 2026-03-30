@@ -1268,13 +1268,54 @@ def produce(
                             f"but rematerialization failed: {e} — base solve result retained."
                         )
                         run_trace.add_warning(f"Grid search rematerialization failed: {e}")
-                else:
-                    if _gs_best is not None:
+
+                # ── vetoed / empty candidate fallback notes ─────────────────
+                if _gs_best is None:
+                    solve_notes.append(
+                        "Grid search found no acceptable candidates — base solve result retained."
+                    )
+                elif _gs_best.hard_vetoed and not selected_candidate_applied:
+                    solve_notes.append(
+                        f"Grid search best ({_gs_best.family}) was hard-vetoed — base solve result retained."
+                    )
+
+                # ── --top-n: print ranked comparison table for top N candidates ──
+                # Shows alternative setups from the search pool beyond rank-1.
+                # Rank-1 (best robust/overall) has already been applied to the output.
+                # This table is informational — useful for manual review or
+                # multi-setup export workflows.
+                top_n_req = getattr(args, "top_n", 1)
+                if top_n_req > 1 and gs_result.top_candidates:
+                    top_pool = [
+                        e for e in gs_result.top_candidates if not e.hard_vetoed
+                    ][:top_n_req]
+                    if top_pool:
+                        log()
+                        log(f"  ── TOP-{len(top_pool)} CANDIDATES (--top-n {top_n_req}) ──────────────────────────────────────────────────────────────────────────────────────────────")
+                        log(f"  {'Rank':<5} {'Score':>8}  {'Family':<18}  {'Wing':>5}  {'FH-Spg':>7}  {'R3-Spg':>7}  {'Trsn':>6}  {'FARB':>5}  {'RARB':>5}  Penalties")
+                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        for rank, ev in enumerate(top_pool, start=1):
+                            p = ev.params or {}
+                            penalty_str = "; ".join(ev.soft_penalties[:2]) if ev.soft_penalties else "—"
+                            marker = " ← applied" if rank == 1 else ""
+                            log(
+                                f"  {rank:<5} {ev.score:>+8.1f}  "
+                                f"{(ev.family or ''):<18}  "
+                                f"{p.get('wing_angle_deg', 0):>5.0f}  "
+                                f"{p.get('front_heave_spring_nmm', 0):>7.1f}  "
+                                f"{p.get('rear_third_spring_nmm', 0):>7.1f}  "
+                                f"{p.get('front_torsion_od_mm', 0):>6.2f}  "
+                                f"{int(p.get('front_arb_blade', 0)):>5}  "
+                                f"{int(p.get('rear_arb_blade', 0)):>5}  "
+                                f"{penalty_str}{marker}"
+                            )
+                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        log(f"  Rank 1 applied to setup output. Use --top-n 1 to suppress this table.")
                         solve_notes.append(
-                            f"Grid search best ({_gs_best.family}) was hard-vetoed — base solve result retained."
+                            f"Top-{len(top_pool)} candidates surfaced via --top-n "
+                            f"(best score={top_pool[0].score:+.1f}ms, "
+                            f"worst={top_pool[-1].score:+.1f}ms)."
                         )
-                    else:
-                        solve_notes.append("Grid search found no acceptable candidates — base solve result retained.")
                 run_trace.search_mode = search_mode
             else:
                 # ── Original random family search ───────────────────────────
@@ -1778,13 +1819,14 @@ def main():
     parser.add_argument("--keep-weird", action="store_true",
                         help="Retain unconventional but legal candidates in results")
     parser.add_argument("--search-mode", type=str, default=None,
-                        choices=["quick", "standard", "exhaustive"],
+                        choices=["quick", "standard", "exhaustive", "maximum"],
                         dest="search_mode",
                         help=(
                             "Hierarchical grid search mode (uses GridSearchEngine). "
-                            "quick=~5s, standard=~4min, exhaustive=~80min. "
+                            "quick=~3s, standard=~4min, exhaustive=~80min, maximum=~5h (overnight). "
                             "When set, uses structured Sobol+grid search instead of "
-                            "random family sampling. Implies --explore-legal-space."
+                            "random family sampling. Implies --explore-legal-space. "
+                            "Combine with --top-n to surface multiple ranked alternatives."
                         ))
     parser.add_argument("--top-n", type=int, default=1, dest="top_n",
                         help=(
