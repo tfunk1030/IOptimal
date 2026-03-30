@@ -571,3 +571,28 @@ rear_camber_deg    -1.8     +28.5      low
 3. Front RH (vortex sensitivity)
 4. Brake bias (entry stability)
 5. Torsion bar OD (front wheel rate/LLTD coupling)
+
+---
+
+### 12. Ferrari Hockenheim Calibration Helper (Setup JSON + IBT/ZIP)
+
+Builds a calibration JSON from a setupdelta-style setup export plus one or more telemetry files.
+Useful for week-specific Ferrari tuning when you want channel coverage, aggregate signal stats,
+and a deterministic starting setup recommendation.
+
+```bash
+python -m scripts.ferrari_hockenheim_calibration \
+  --setup-json tests/fixtures/ferrari_hockenheim_setupdelta.json \
+  --telemetry \
+    "ferrari499p_hockenheim_1.zip" \
+    "ferrari499p_hockenheim_2.zip" \
+    "ferrari499p_hockenheim_3.zip" \
+  --output out/ferrari_hockenheim_calibration.json
+```
+
+Notes:
+- Accepts `.ibt` directly, or `.zip` containing one `.ibt`.
+- If a telemetry file is missing, the report still builds and lists missing files.
+- Output is currently exploratory-tier guidance and should be validated with fresh race-week telemetry.
+- Includes setup integrity checks for all provided rows: row-id format/uniqueness, min/max range validation,
+  and Ferrari-only guardrails (`carName` must be `ferrari499p`).
