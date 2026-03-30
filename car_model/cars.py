@@ -1829,19 +1829,19 @@ ACURA_ARX06 = CarModel(
         rear_compression_mm=8.0,      # ESTIMATE
     ),
     pushrod=PushrodGeometry(
-        front_pinned_rh_mm=30.0,         # IBT: front RH = 30.2mm (near-pinned at min OD)
+        # Front RH dominated by CAMBER: front_rh = 37.55 + 2.388*camber (R²=0.988, RMSE=0.18mm)
+        # At camber=-2.8: RH≈30.9mm. At camber=-1.4: RH≈34.3mm.
+        front_pinned_rh_mm=30.2,         # CALIBRATED: typical at camber=-2.8 (most common)
         front_pushrod_default_mm=-37.5,  # IBT: PushrodLengthDelta = -37.5mm
-        # CALIBRATED from 17 garage data points (SetupDelta + screenshots, 2026-03-30):
-        # Full model: rear_rh = 80.65 + 0.7886*pushrod + 0.0381*heave - 0.4194*perch
-        #                      + 0.0225*rear_od - 0.0182*fuel
-        # R²=0.91, RMSE=1.15mm, N=15
-        # Pushrod is dominant: 0.79 mm RH per mm pushrod
-        # Perch also matters: -0.42 mm RH per mm perch offset
-        # PushrodGeometry can only model pushrod; using intercept at typical operating point
-        # (heave=150, perch=85, rear_od=14.3, fuel=58):
-        # base = 80.65 + 0.0381*150 - 0.4194*85 + 0.0225*14.3 - 0.0182*58 = 50.89
-        rear_base_rh_mm=50.89,           # CALIBRATED: 15-point regression, R²=0.91
-        rear_pushrod_to_rh=0.7886,       # CALIBRATED: positive (less negative pushrod = higher RH)
+        # CALIBRATED from 15 unique garage data points (2026-03-30), deduplicated:
+        # Full model: rear_rh = 78.54 + 0.7644*pushrod + 0.0406*heave - 0.4089*perch
+        # R²=0.908, RMSE=1.21mm, N=13 (with heave+perch), pushrod dominant
+        # Front RH model: front_rh = 37.55 + 2.388*camber (R²=0.988, camber dominant)
+        # Front damper defl: defl = 25.46 + 0.714*pushrod (R²=0.998, bottoms at pushrod<-35.6mm)
+        # PushrodGeometry can only model pushrod; base_rh at typical operating point
+        # (heave=150, perch=85): base = 78.54 + 0.0406*150 - 0.4089*85 = 49.87
+        rear_base_rh_mm=49.87,           # CALIBRATED: 13-point regression, R²=0.91
+        rear_pushrod_to_rh=0.7644,       # CALIBRATED: positive (less negative pushrod = higher RH)
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(

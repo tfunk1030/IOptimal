@@ -375,7 +375,10 @@ class CurrentSetup:
             front_camber_deg=avg_f("Camber"),
             rear_camber_deg=avg_r("Camber"),
             front_toe_mm=_parse_float(front.get("ToeIn")),
-            rear_toe_mm=(_parse_float(lr.get("ToeIn")) + _parse_float(rr.get("ToeIn"))) / 2.0,
+            # Acura (ORECA) stores rear toe under Chassis.Rear.ToeIn, not per-corner
+            rear_toe_mm=(
+                _parse_float(lr.get("ToeIn")) + _parse_float(rr.get("ToeIn"))
+            ) / 2.0 or _parse_float(rear.get("ToeIn")),
 
             # Dampers (use LF for front, LR for rear)
             # Ferrari: Dampers.LeftFrontDamper; BMW: Chassis.LeftFront
