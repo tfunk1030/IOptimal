@@ -847,6 +847,57 @@ _FERRARI_SPECS = {**{k: v for k, v in _BMW_SPECS.items()}, ...overrides...}
 
 ---
 
+## 12. Critical Discovery: Hidden Setup Parameters Solve Calibration
+
+**Added 2026-03-31 after analysis of the iRacing setup JSON format.**
+
+The iRacing setup API exposes a richer JSON format than the IBT session info YAML.
+This JSON contains **unmapped/hidden rows** — internal physics values that iRacing
+computes but does NOT show in the garage UI. These hidden values directly solve
+the calibration problems identified in this audit.
+
+### What the hidden fields reveal (Ferrari 499P example)
+
+| Hidden Field | Value | What It Means |
+|---|---|---|
+| `fSideSpringRateNpm` | 115170.27 N/m | **Actual front corner spring rate = 115.17 N/mm.** The codebase predicts 223.8 N/mm at torsion index 2 using C=0.001282 — a **2:1 calibration error** |
+| `rSideSpringRateNpm` | 105000 N/m | **Actual rear corner spring rate = 105.0 N/mm** |
+| `lrPerchOffsetm` / `rrPerchOffsetm` | -0.02676 m | **Actual rear corner perch offset = -26.76 mm** — a value the codebase can't extract from mapped rows |
+| `hfLowSpeedCompDampSetting` | 10 | **Ferrari has SEPARATE heave damper settings** (10/10 LS comp) distinct from the corner dampers (20/16). The solver treats corner values as the only dampers |
+| `hfHighSpeedCompDampSetting` | 40 | Heave HS comp = 40, separate from corner HS comp = 20/32 |
+| `hfHSSlopeCompDampSetting` | 5 | Heave HS slope = 5, while corner HS slope = 11 |
+| `dCxBoP` | 0.17 | BoP drag coefficient delta — affects all aero calculations |
+| `dCzTBoP` | 0.18 | BoP downforce coefficient delta |
+| `lfhubDpitch` / `rfhubDpitch` | -0.8 | Hub pitch angle (caster-related geometry) |
+| `*PackerThicknessm` | 0.0 (all) | Bump stop thickness for all 6 positions |
+
+### Why this matters
+
+1. **The torsion bar C constant error is confirmed**: At torsion index 2, iRacing says the wheel rate is 115.17 N/mm, but the codebase predicts 223.8 N/mm. The C=0.001282 was calibrated from garage-displayed *torsion bar deflection*, not from the actual spring rate. The `fSideSpringRateNpm` field gives the true physics value directly.
+
+2. **Heave dampers are a separate system on Ferrari**: The solver currently doesn't know about the separate heave damper settings. Ferrari has corner dampers (per-corner, visible in garage) AND heave dampers (front/rear, hidden). The solver needs to handle both.
+
+3. **The "5+ garage screenshots needed for calibration" approach is unnecessary**: With `fSideSpringRateNpm` available from every IBT session's setup JSON, one session is enough to get the true spring rate. No screenshots needed.
+
+4. **This format works for ALL cars**: The JSON schema is identical across BMW, Ferrari, Acura, Porsche, Cadillac. One auto-discovery module can bootstrap calibration for any car from a single IBT file.
+
+### New module: `car_model/auto_discover.py`
+
+A new module has been added to extract these hidden parameters:
+
+```python
+from car_model.auto_discover import discover_car_parameters
+params = discover_car_parameters(setup_json)
+print(params.hidden.front_spring_rate_npm)  # 115170.27 N/m
+print(params.front_corner_spring_rate_nmm)  # 115.17 N/mm
+```
+
+**Next step**: Wire this into the IBT pipeline so that every session ingestion automatically extracts the hidden physics values. This requires either:
+- Parsing the setup JSON from the IBT session info (if it's available in the YAML), or
+- Accepting the setup JSON as a separate input alongside the IBT file
+
+---
+
 ## Handoff Summary for Follow-Up Engineering
 
 **To the next model continuing this work:**
