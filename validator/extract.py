@@ -23,7 +23,7 @@ from car_model.cars import CarModel
 
 
 @dataclass
-class MeasuredState:
+class ValidationMeasuredState:  # renamed from MeasuredState to avoid collision with analyzer.extract.MeasuredState
     """All telemetry-derived quantities for solver validation.
 
     IMPORTANT: IBT ride height sensors and the aero model operate in
@@ -128,7 +128,7 @@ def extract_measurements(
     car: CarModel,
     solver_json: dict,
     lap: int | None = None,
-) -> MeasuredState:
+) -> "ValidationMeasuredState":
     """Extract all validation-relevant measurements from an IBT session.
 
     Args:
@@ -138,10 +138,10 @@ def extract_measurements(
         lap: Specific lap number to analyze (None = best lap)
 
     Returns:
-        MeasuredState with all measured quantities
+        ValidationMeasuredState with all measured quantities
     """
     ibt = IBTFile(ibt_path)
-    state = MeasuredState()
+    state = ValidationMeasuredState()
 
     # --- Find lap boundaries ---
     if lap is not None:
@@ -367,7 +367,7 @@ def _extract_handling(
     speed_kph: np.ndarray,
     lat_g: np.ndarray,
     car: CarModel,
-    state: MeasuredState,
+    state: "ValidationMeasuredState",
 ) -> None:
     """Extract handling dynamics: understeer, body slip, wheel slip, yaw correlation."""
 
@@ -476,7 +476,7 @@ def _extract_tyre_data(
     start: int,
     end: int,
     speed_kph: np.ndarray,
-    state: MeasuredState,
+    state: "ValidationMeasuredState",
 ) -> None:
     """Extract tyre temperature, pressure, and wear data."""
 
@@ -726,3 +726,7 @@ def _settle_time(
         return 0.0
 
     return round(float(np.median(settle_times)), 1)
+
+
+# Backward-compat alias — internal validator modules import this name
+MeasuredState = ValidationMeasuredState
