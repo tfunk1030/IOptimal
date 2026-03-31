@@ -484,7 +484,7 @@ class DamperSolver:
                 zeta_hs_r = min(zeta_hs_r * 1.5, 0.25)
                 # Also bump LS slightly if oscillation is severe
                 if rear_osc_hz > 2.0 * rear_nat_freq_hz:
-                    zeta_ls_r = min(zeta_ls_r * 1.15, 0.45)
+                    zeta_ls_r = min(zeta_ls_r * 1.15, 0.35)
 
         c_ls_front = zeta_ls_f * c_crit_front
         c_ls_rear = zeta_ls_r * c_crit_rear
@@ -608,7 +608,7 @@ class DamperSolver:
                 name="Front LS damping ratio",
                 passed=0.3 <= zeta_ls_f <= 1.0,
                 value=zeta_ls_f,
-                target=0.88,
+                target=0.68,
                 units="zeta",
                 note="0.3-1.0 valid range for racing. GTP front uses high \u03b6 due to soft springs.",
             ),
@@ -616,7 +616,7 @@ class DamperSolver:
                 name="Rear HS damping ratio",
                 passed=0.15 <= zeta_hs_r <= 0.40,
                 value=zeta_hs_r,
-                target=0.22,
+                target=0.20,
                 units="zeta",
                 note="Must be low for rear traction over bumps. >0.4 = snap oversteer risk.",
             ),
@@ -757,7 +757,7 @@ class DamperSolver:
                 name="Front LS damping ratio",
                 passed=0.3 <= zeta_ls_front <= 1.0,
                 value=zeta_ls_front,
-                target=0.88,
+                target=0.68,
                 units="zeta",
                 note="Explicit click materialization recomputed from selected clicks.",
             ),
@@ -765,7 +765,7 @@ class DamperSolver:
                 name="Rear HS damping ratio",
                 passed=0.15 <= zeta_hs_rear <= 0.40,
                 value=zeta_hs_rear,
-                target=0.22,
+                target=0.20,
                 units="zeta",
                 note="Explicit click materialization recomputed from selected clicks.",
             ),
