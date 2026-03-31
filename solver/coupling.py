@@ -40,7 +40,9 @@ class CoupledEffect:
 # ─────────────────────────────────────────────────────────────────
 # COUPLING_CHAINS: parameter → list of CoupledEffect objects
 #
-# All gains are calibrated from BMW Sebring data unless noted.
+# IMPORTANT: All gains below are calibrated from BMW Sebring data.
+# For non-BMW cars, these gains are APPROXIMATE — the linearisation
+# points (OD=13.9mm, heave=30 N/mm, rear perch model) differ by chassis.
 # Sources: SKILL.md, per-car-quirks.md, empirical regressions (March 2026).
 # ─────────────────────────────────────────────────────────────────
 

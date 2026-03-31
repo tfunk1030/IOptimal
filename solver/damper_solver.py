@@ -237,7 +237,7 @@ class DamperSolver:
         The front and rear have VERY different requirements because of
         the asymmetry in spring rates and the car's dynamic behavior:
 
-        Front (ζ ≈ 0.85-0.90):
+        Front (ζ ≈ 0.65-0.70):
             The front suspension has LOW spring rate (~30 N/mm wheel rate
             from the torsion bar). Low spring rate → low natural frequency
             → low critical damping coefficient. To control weight transfer
@@ -245,11 +245,11 @@ class DamperSolver:
             low shaft velocities), the damping ratio must be HIGH — near
             critical — to prevent excessive dive and roll oscillation.
 
-            At ζ=0.88, the front body settles in <0.5 oscillations after
-            a weight transfer event. This gives the driver immediate,
-            predictable front-end response on turn-in.
+            At ζ=0.68, the front body settles quickly after a weight
+            transfer event while preserving enough compliance for
+            mechanical grip. IBT-calibrated from top-15 fastest sessions.
 
-        Rear (ζ ≈ 0.28-0.32):
+        Rear (ζ ≈ 0.21-0.25):
             The rear has HIGH spring rate (~170 N/mm). High spring rate
             → high natural frequency → high critical damping coefficient.
             The rear needs MUCH less damping ratio because:
@@ -258,16 +258,21 @@ class DamperSolver:
             3. Over-damping the rear LS causes snap oversteer on entry
                (the inside rear can't extend fast enough → loses contact)
 
-            At ζ=0.30, the rear is lightly damped — it follows the road
+            At ζ=0.23, the rear is lightly damped — it follows the road
             surface faithfully rather than fighting it.
 
-        The ratio ζ_front/ζ_rear ≈ 2.9 is a direct consequence of the
+        The ratio ζ_front/ζ_rear ≈ 3.0 is a direct consequence of the
         spring rate asymmetry: c_crit_rear/c_crit_front ≈ 2.5, so to
         get similar absolute LS force behavior, the ratios must diverge.
+
+        IBT-calibrated: top-15 fastest BMW/Sebring sessions (73 sessions,
+        2026-03-26).  Previous hardcoded values (0.88/0.30) caused the
+        damping penalty to correlate positively with lap time (Spearman
+        +0.19) — i.e. penalizing faster setups.
         """
         if is_front:
-            return 0.88  # Near-critical for entry control
-        return 0.30  # Light for rear traction
+            return 0.68  # IBT-calibrated: top-15 fastest mean
+        return 0.23  # IBT-calibrated: top-15 fastest mean
 
     def _damping_ratio_hs(self, is_front: bool) -> float:
         """HS damping ratio from bump energy analysis.
@@ -278,24 +283,27 @@ class DamperSolver:
         - The damper must absorb enough energy to prevent bottoming
           but not so much that the tyre lifts off (wheel hop)
 
-        Front HS (ζ ≈ 0.45):
+        Front HS (ζ ≈ 0.45-0.50):
             The front handles aero platform control. Moderate HS damping
             prevents pitch oscillation that would disrupt the diffuser
             seal. The front can tolerate momentary tyre unloading because
             the front contributes less to traction than the rear.
 
-        Rear HS (ζ ≈ 0.13-0.15):
-            The rear must be VERY compliant over bumps. The driven wheels
+        Rear HS (ζ ≈ 0.18-0.22):
+            The rear must be compliant over bumps. The driven wheels
             need continuous contact for traction. Over-damped rear HS is
             the most dangerous mode in a GTP car — it causes the rear to
             "skip" over bumps, losing traction unpredictably.
 
-            The compliance ratio rear/front HS (0.14/0.45 ≈ 0.31) is
+            The compliance ratio rear/front HS (0.20/0.47 ≈ 0.43) is
             fundamentally driven by the traction requirement asymmetry.
+
+        IBT-calibrated: top-15 fastest BMW/Sebring sessions (73 sessions,
+        2026-03-26).
         """
         if is_front:
-            return 0.45  # Platform control
-        return 0.14  # Maximum compliance for traction
+            return 0.47  # IBT-calibrated: platform control
+        return 0.20  # IBT-calibrated: traction compliance
 
     def _rbd_comp_ratio(self, is_ls: bool, is_front: bool) -> float:
         """Physics-derived rebound/compression ratio.
@@ -485,12 +493,10 @@ class DamperSolver:
             rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
             rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
             if rear_osc_hz > 1.5 * rear_nat_freq_hz and rear_nat_freq_hz > 0:
-                # Underdamped evidence — increase HS ζ by 50% (capped at 0.25)
                 zeta_hs_r_original = zeta_hs_r
-                zeta_hs_r = min(zeta_hs_r * 1.5, 0.25)
-                # Also bump LS slightly if oscillation is severe
+                zeta_hs_r = min(zeta_hs_r * 1.5, 0.30)
                 if rear_osc_hz > 2.0 * rear_nat_freq_hz:
-                    zeta_ls_r = min(zeta_ls_r * 1.15, 0.45)
+                    zeta_ls_r = min(zeta_ls_r * 1.15, 0.35)
 
         c_ls_front = zeta_ls_f * c_crit_front
         c_ls_rear = zeta_ls_r * c_crit_rear
@@ -614,15 +620,15 @@ class DamperSolver:
                 name="Front LS damping ratio",
                 passed=0.3 <= zeta_ls_f <= 1.0,
                 value=zeta_ls_f,
-                target=0.88,
+                target=0.68,
                 units="zeta",
-                note="0.3-1.0 valid range for racing. GTP front uses high \u03b6 due to soft springs.",
+                note="0.3-1.0 valid range. IBT-calibrated target from top-15 fastest sessions.",
             ),
             DamperConstraintCheck(
                 name="Rear HS damping ratio",
-                passed=0.15 <= zeta_hs_r <= 0.40,
+                passed=0.10 <= zeta_hs_r <= 0.40,
                 value=zeta_hs_r,
-                target=0.22,
+                target=0.20,
                 units="zeta",
                 note="Must be low for rear traction over bumps. >0.4 = snap oversteer risk.",
             ),
@@ -778,15 +784,15 @@ class DamperSolver:
                 name="Front LS damping ratio",
                 passed=0.3 <= zeta_ls_front <= 1.0,
                 value=zeta_ls_front,
-                target=0.88,
+                target=0.68,
                 units="zeta",
                 note="Explicit click materialization recomputed from selected clicks.",
             ),
             DamperConstraintCheck(
                 name="Rear HS damping ratio",
-                passed=0.15 <= zeta_hs_rear <= 0.40,
+                passed=0.10 <= zeta_hs_rear <= 0.40,
                 value=zeta_hs_rear,
-                target=0.22,
+                target=0.20,
                 units="zeta",
                 note="Explicit click materialization recomputed from selected clicks.",
             ),

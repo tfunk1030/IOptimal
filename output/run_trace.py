@@ -79,14 +79,35 @@ _STEP_NAMES: dict[int, str] = {
     7: "Supporting (Brake / Diff / TC / Fuel)",
 }
 
-# Car support tier descriptors
-_SUPPORT_TIERS: dict[str, str] = {
-    "bmw":     "calibrated  — 73 IBT sessions, garage model, k-NN, heave cal",
-    "ferrari": "partial     — 9 sessions, sequential Ferrari solve with raw indexed controls",
-    "cadillac":"exploratory — 4 sessions, sequential solver only",
-    "porsche": "exploratory — 2 sessions, sequential solver only",
-    "acura":   "unsupported — <1 session, all terms at physics defaults",
-}
+def _load_support_tiers() -> dict[str, str]:
+    """Load support tiers from validation data, falling back to defaults."""
+    try:
+        import json
+        from pathlib import Path
+        val_path = Path(__file__).resolve().parent.parent / "validation" / "objective_validation.json"
+        if val_path.exists():
+            data = json.loads(val_path.read_text())
+            tiers = {}
+            for entry in data.get("support_matrix", []):
+                car = entry.get("car", "")
+                tier = entry.get("confidence_tier", "unknown")
+                samples = entry.get("samples", 0)
+                track = entry.get("track", "")
+                tiers[car] = f"{tier:12s} — {samples} sessions at {track}"
+            if tiers:
+                return tiers
+    except Exception:
+        pass
+    return {
+        "bmw":      "calibrated   — 99 sessions, garage model, k-NN, heave cal",
+        "ferrari":  "partial      — 12 sessions, sequential Ferrari solve with raw indexed controls",
+        "cadillac": "exploratory  — 4 sessions, sequential solver only",
+        "porsche":  "unsupported  — 2 sessions, sequential solver only",
+        "acura":    "exploratory  — 7 sessions, ORECA heave+roll architecture",
+    }
+
+
+_SUPPORT_TIERS: dict[str, str] = _load_support_tiers()
 
 
 # ─── Data classes ─────────────────────────────────────────────────────────────

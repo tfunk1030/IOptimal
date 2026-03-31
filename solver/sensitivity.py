@@ -18,6 +18,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from car_model.cars import CarModel
     from solver.rake_solver import RakeSolution
     from solver.heave_solver import HeaveSolution
     from solver.arb_solver import ARBSolution
@@ -456,6 +457,8 @@ def build_sensitivity_report(
     arb_lltd: float = 0.0,
     arb_lltd_target: float = 0.0,
     rarb_sensitivity: float = 0.0,
+    *,
+    car: "CarModel | None" = None,
 ) -> SensitivityReport:
     """Build complete sensitivity report from solver solutions.
 
@@ -494,12 +497,14 @@ def build_sensitivity_report(
             ),
         ))
 
-    # Heave sensitivities
+    m_eff_f = car.heave_spring.front_m_eff_kg if car else 228.0
+    m_eff_r = car.heave_spring.rear_m_eff_kg if car else 2395.3
+
     report.sensitivities.extend(compute_heave_sensitivities(
         v_p99_front_mps=step2.front_shock_vel_p99_mps,
         v_p99_rear_mps=step2.rear_shock_vel_p99_mps,
-        m_eff_front_kg=228.0,   # BMW calibrated default
-        m_eff_rear_kg=2395.3,   # BMW calibrated default
+        m_eff_front_kg=m_eff_f,
+        m_eff_rear_kg=m_eff_r,
         k_front_nmm=step2.front_heave_nmm,
         k_rear_nmm=step2.rear_third_nmm,
     ))
@@ -520,21 +525,21 @@ def build_sensitivity_report(
     # Confidence bands
     report.confidence_bands.append(compute_heave_confidence(
         v_p99_mps=step2.front_shock_vel_p99_mps,
-        m_eff_kg=228.0,
+        m_eff_kg=m_eff_f,
         k_nmm=step2.front_heave_nmm,
         excursion_mm=step2.front_excursion_at_rate_mm,
         axle="front",
     ))
     report.confidence_bands.append(compute_heave_confidence(
         v_p99_mps=step2.rear_shock_vel_p99_mps,
-        m_eff_kg=2395.3,
+        m_eff_kg=m_eff_r,
         k_nmm=step2.rear_third_nmm,
         excursion_mm=step2.rear_excursion_at_rate_mm,
         axle="rear",
     ))
     report.confidence_bands.append(compute_excursion_confidence(
         v_p99_mps=step2.front_shock_vel_p99_mps,
-        m_eff_kg=228.0,
+        m_eff_kg=m_eff_f,
         k_nmm=step2.front_heave_nmm,
         excursion_mm=step2.front_excursion_at_rate_mm,
         axle="front",
