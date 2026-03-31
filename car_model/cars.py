@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from car_model.garage import GarageOutputModel
+from calibration.runtime import load_runtime_garage_model, load_runtime_ride_height_model
 from vertical_dynamics import damped_excursion_mm
 
 
@@ -1183,12 +1184,16 @@ class CarModel:
 
     def active_garage_output_model(self, track_name: str | None = None) -> GarageOutputModel | None:
         """Return the authoritative garage-output model for the given track."""
-        model = self.garage_output_model
+        model = load_runtime_garage_model(self.canonical_name, track_name) or self.garage_output_model
         if model is None:
             return None
         if model.applies_to_track(track_name):
             return model
         return None
+
+    def active_ride_height_model(self, track_name: str | None = None) -> RideHeightModel:
+        """Return calibrated runtime RH model when present, else built-in model."""
+        return load_runtime_ride_height_model(self.canonical_name, track_name) or self.ride_height_model
 
     def to_aero_coords(self, actual_front_rh: float, actual_rear_rh: float) -> tuple[float, float]:
         """Convert actual front/rear RH to aero map query coordinates.

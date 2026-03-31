@@ -245,7 +245,7 @@ class RakeSolver:
         static_rear = max(static_rear, self.car.min_rear_rh_static)
 
         garage_model = self.car.active_garage_output_model(self.track.track_name)
-        rh_model = self.car.ride_height_model
+        rh_model = self.car.active_ride_height_model(self.track.track_name)
         if garage_model is not None:
             baseline = garage_model.default_state(fuel_l=fuel_load_l)
             front_pushrod = garage_model.front_pushrod_for_static_rh(
@@ -838,7 +838,7 @@ def reconcile_ride_heights(
                     pass
         return
 
-    rh_model = car.ride_height_model
+    rh_model = car.active_ride_height_model(track_name)
 
     # Front RH: refine with actual heave spring from step2
     if rh_model.front_is_calibrated:

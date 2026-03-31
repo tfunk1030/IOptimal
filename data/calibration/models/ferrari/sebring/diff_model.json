@@ -1,0 +1,17 @@
+{
+  "car": "ferrari",
+  "metadata": {},
+  "metrics": {
+    "mean_rear_power_slip_ratio_p95": 0.1095,
+    "mean_understeer_low_speed_deg": 1.36,
+    "samples": 6
+  },
+  "model_type": "diff_model",
+  "parameters": {
+    "mean_diff_preload_nm": 23.5,
+    "mean_tc_gain": 5.5,
+    "mean_tc_slip": 6.5
+  },
+  "track": "sebring",
+  "version": 1
+}

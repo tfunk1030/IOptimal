@@ -1,0 +1,37 @@
+{
+  "car": "ferrari",
+  "metadata": {},
+  "metrics": {
+    "front_rmse": 2.161031364628563e-14,
+    "mean_rmse": 1.4048325860203145e-14,
+    "rear_rmse": 6.486338074120659e-15,
+    "samples": 6
+  },
+  "model_type": "ride_height_model",
+  "parameters": {
+    "front": {
+      "coefficients": {
+        "front_camber_deg": -0.00047746889382886665,
+        "front_heave_spring_nmm": -0.009799170926617553
+      },
+      "intercept": 0.00012649239485429398
+    },
+    "rear": {
+      "coefficients": {
+        "front_camber_deg": -0.0006328550965506096,
+        "front_heave_perch_mm": 0.0011279999479741154,
+        "front_heave_spring_nmm": -0.011279999479741171,
+        "front_pushrod_offset_mm": -0.0028615169538181583,
+        "front_torsion_od_mm": 0.0006055170578699244,
+        "fuel_l": 0.005806068075402047,
+        "rear_pushrod_offset_mm": -0.0057230339076363166,
+        "rear_spring_rate_nmm": 0.06370068049389106,
+        "rear_third_perch_mm": -0.014473653104622246,
+        "rear_third_spring_nmm": 0.029445511215838965
+      },
+      "intercept": 0.0001733517005844537
+    }
+  },
+  "track": "sebring",
+  "version": 1
+}

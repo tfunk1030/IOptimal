@@ -1,0 +1,27 @@
+{
+  "car": "ferrari",
+  "metadata": {
+    "targets": [
+      "front_heave_travel_used_pct",
+      "front_rh_excursion_measured_mm",
+      "rear_rh_std_mm",
+      "pitch_range_braking_deg",
+      "front_braking_lock_ratio_p95",
+      "rear_power_slip_ratio_p95",
+      "body_slip_p95_deg",
+      "understeer_low_speed_deg",
+      "understeer_high_speed_deg"
+    ]
+  },
+  "metrics": {
+    "fitted_targets": [],
+    "mean_rmse": null,
+    "samples": 6
+  },
+  "model_type": "telemetry_model",
+  "parameters": {
+    "models": {}
+  },
+  "track": "sebring",
+  "version": 1
+}

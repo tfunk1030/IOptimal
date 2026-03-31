@@ -1,0 +1,16 @@
+{
+  "car": "ferrari",
+  "model_metrics": {
+    "garage_model_rmse": 0.0,
+    "ride_height_model_rmse": 1.4048325860203145e-14,
+    "telemetry_model_rmse": null
+  },
+  "summary": {
+    "car": "ferrari",
+    "support_tier": "partial",
+    "track": "sebring"
+  },
+  "support_tier": "partial",
+  "track": "sebring",
+  "warnings": []
+}
