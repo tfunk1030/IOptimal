@@ -1,5 +1,9 @@
 ## IOptimal usage and calibration guide
 
+If you only want the shortest path to get started, read:
+
+- `docs/quickstart.md`
+
 This guide is for two audiences:
 
 1. **Users / drivers / engineers** who want to run the solver, diagnose a car,
