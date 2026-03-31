@@ -24,12 +24,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from calibration.runtime import load_support_tier as load_runtime_support_tier
 from car_model.garage import GarageSetupState
 from car_model.setup_registry import public_output_value, remap_public_output_keys
 
 
 def _load_support_tier(car_slug: str, track_name: str) -> dict[str, Any] | None:
     """Load support tier for a car/track pair from validation evidence."""
+    runtime_tier = load_runtime_support_tier(car_slug, track_name)
+    if runtime_tier is not None:
+        return {
+            "car": car_slug,
+            "track": track_name,
+            "confidence_tier": runtime_tier,
+            "samples": 0,
+            "source": "runtime_calibration_models",
+        }
     validation_path = Path(__file__).resolve().parent.parent / "validation" / "objective_validation.json"
     if not validation_path.exists():
         return None

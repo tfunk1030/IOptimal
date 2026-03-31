@@ -73,6 +73,41 @@ def load_support_tier(car_name: str, track_name: str | None) -> str | None:
     return str(tier) if tier is not None else None
 
 
+def telemetry_model_corrections(car_name: str, track_name: str | None) -> dict[str, float]:
+    """Extract bounded additive predictor corrections from a published telemetry model."""
+    artifact = load_fitted_model(car_name, track_name, "telemetry_model.json")
+    if artifact is None:
+        return {}
+    models = dict(artifact.parameters.get("models") or {})
+    corrections: dict[str, float] = {}
+    mapping = {
+        "front_heave_travel_used_pct": "front_heave_travel_used_pct",
+        "front_rh_excursion_measured_mm": "front_excursion_mm",
+        "rear_rh_std_mm": "rear_rh_std_mm",
+        "pitch_range_braking_deg": "braking_pitch_deg",
+        "front_braking_lock_ratio_p95": "front_lock_p95",
+        "rear_power_slip_ratio_p95": "rear_power_slip_p95",
+        "body_slip_p95_deg": "body_slip_p95_deg",
+        "understeer_low_speed_deg": "understeer_low_deg",
+        "understeer_high_speed_deg": "understeer_high_deg",
+    }
+    for source_key, predictor_key in mapping.items():
+        model = dict(models.get(source_key) or {})
+        intercept = model.get("intercept")
+        if intercept is None:
+            continue
+        try:
+            corrections[predictor_key] = float(intercept)
+        except (TypeError, ValueError):
+            continue
+    return corrections
+
+
+def load_runtime_telemetry_model(car_name: str, track_name: str | None) -> dict[str, float]:
+    """Public runtime API for published telemetry-model predictor corrections."""
+    return telemetry_model_corrections(car_name, track_name)
+
+
 def load_runtime_ride_height_model(car_name: str, track_name: str | None):
     artifact = load_fitted_model(car_name, track_name, "ride_height_model.json")
     if artifact is None:
@@ -193,3 +228,4 @@ def load_runtime_garage_model(car_name: str, track_name: str | None, *, fallback
 # Backward-compatible aliases for internal callers built during implementation.
 build_runtime_ride_height_model = load_runtime_ride_height_model
 build_runtime_garage_model = load_runtime_garage_model
+build_runtime_telemetry_model = load_runtime_telemetry_model

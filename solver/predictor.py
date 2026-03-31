@@ -6,6 +6,7 @@ from typing import Any
 import math
 
 from analyzer.telemetry_truth import get_signal
+from calibration.runtime import load_runtime_telemetry_model
 
 
 @dataclass
@@ -72,7 +73,7 @@ def predict_candidate_telemetry(
     - scale a few metrics with spring/support changes
     - allow additive learned corrections
     """
-    corrections = corrections or {}
+    corrections = dict(corrections or {})
     # Clamp learned corrections to sane magnitudes — an unclamped +7.5mm correction
     # on rear_rh_std_mm makes the predictor useless and distorts candidate scoring.
     _MAX_CORRECTIONS = {
@@ -137,6 +138,25 @@ def predict_candidate_telemetry(
     baseline_us_high = _safe_float(getattr(baseline_measured, "understeer_high_speed_deg", None))
     baseline_front_pressure = _safe_float(getattr(baseline_measured, "front_pressure_mean_kpa", None))
     baseline_rear_pressure = _safe_float(getattr(baseline_measured, "rear_pressure_mean_kpa", None))
+
+    # Blend in published per-car/per-track telemetry corrections when available.
+    car_name = str(
+        getattr(getattr(current_setup, "__class__", object), "__name__", "") or ""
+    )
+    car_name = str(getattr(current_setup, "adapter_name", "") or getattr(current_setup, "canonical_name", "") or car_name).lower()
+    track_name = str(
+        getattr(getattr(baseline_measured, "measured_track_profile", None), "track_name", "")
+        or getattr(baseline_measured, "track_name", "")
+        or ""
+    )
+    runtime_corrections = load_runtime_telemetry_model(car_name, track_name) if car_name else {}
+    if runtime_corrections:
+        for metric_name, value in dict(runtime_corrections).items():
+            try:
+                corrections.setdefault(metric_name, 0.0)
+                corrections[metric_name] += float(value)
+            except (TypeError, ValueError):
+                continue
 
     heave_ratio = _sqrt_ratio(current_heave, target_heave)
     third_ratio = _sqrt_ratio(current_third, target_third)
