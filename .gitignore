@@ -39,11 +39,9 @@ tmp_*.bin
 # Parsed aero map cache (regenerated from xlsx)
 data/aeromaps_parsed/
 
-# Audit/documentation artifacts (generated, not source)
-AUDIT_REPORT.md
-ENGINEERING_AUDIT.md
-deep_audit_report_*.md
-CLI_GUIDE.md
+# (Audit/documentation files are tracked — removed from ignore list)
+# These are source-controlled documentation, not generated artifacts:
+# AUDIT_REPORT.md, ENGINEERING_AUDIT.md, CLI_GUIDE.md, deep_audit_report_*.md
 
 # IDE / editor artifacts
 .vscode/
