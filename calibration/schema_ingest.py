@@ -11,6 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from calibration.ferrari_aliases import flatten_ferrari_carsetup_rows, resolve_ferrari_canonical_key
 from calibration.models import SetupFieldSchema, SetupSchemaFile
 from calibration.normalize import _normalize_key
 from car_model.cars import get_car
@@ -114,11 +115,17 @@ def bootstrap_schema_from_rows(
     display_name = _car_display_name(car_name)
     observed: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for payload in row_payloads:
-        for row in list(payload.get("rows") or []):
+        source_rows = flatten_ferrari_carsetup_rows(payload) if car_name == "ferrari" else list(payload.get("rows") or [])
+        for row in source_rows:
             label = str(row.get("label") or "").strip()
             if not label:
                 continue
-            observed[label].append(row)
+            if car_name == "ferrari":
+                resolved_key = resolve_ferrari_canonical_key(row)
+                observed_key = resolved_key or label
+            else:
+                observed_key = label
+            observed[observed_key].append(row)
 
     car_specs = CAR_FIELD_SPECS.get(car_name, {})
     field_schemas: list[SetupFieldSchema] = []
@@ -148,7 +155,11 @@ def bootstrap_schema_from_rows(
 
     # Augment with observed labels and values from row dumps.
     for label, rows in sorted(observed.items()):
-        key = _normalize_key(label)
+        exemplar = rows[0]
+        resolved_key = None
+        if car_name == "ferrari":
+            resolved_key = label if label in by_key else resolve_ferrari_canonical_key(exemplar)
+        key = resolved_key or _normalize_key(label)
         target = by_key.get(key)
         if target is None:
             target = SetupFieldSchema(
@@ -167,7 +178,6 @@ def bootstrap_schema_from_rows(
         if not target.ui_label or target.ui_label == target.canonical_key:
             target.ui_label = label
 
-        exemplar = rows[0]
         target.tab = exemplar.get("tab")
         target.section = exemplar.get("section")
         target.location = exemplar.get("section") or exemplar.get("tab")
@@ -180,6 +190,9 @@ def bootstrap_schema_from_rows(
             }
             for row in rows[:5]
         )
+        exemplar_metric = str(exemplar.get("metric_value") or "").strip().lower()
+        if exemplar_metric in {"on", "off", "true", "false", "enabled", "disabled"}:
+            target.value_type = "bool"
         if exemplar.get("is_derived"):
             target.field_role = "derived_output"
             target.is_solver_relevant = False
@@ -208,7 +221,8 @@ def validate_schema_coverage(
 ) -> dict[str, Any]:
     observed_labels: set[str] = set()
     for payload in row_payloads:
-        for row in list(payload.get("rows") or []):
+        source_rows = flatten_ferrari_carsetup_rows(payload) if schema.car_name == "ferrari" else list(payload.get("rows") or [])
+        for row in source_rows:
             label = str(row.get("label") or "").strip()
             if label:
                 observed_labels.add(_normalize_key(label))

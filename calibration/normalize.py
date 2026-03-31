@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from calibration.ferrari_aliases import flatten_ferrari_carsetup_payload, resolve_ferrari_canonical_key
 from calibration.models import (
     NormalizedGarageSample,
     NormalizedTelemetrySample,
@@ -86,15 +87,25 @@ def normalize_rows_to_inputs(
     schema: SetupSchemaFile,
 ) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
     rows = list(rows_payload.get("rows") or [])
+    if not rows and schema.car_name == "ferrari":
+        rows = flatten_ferrari_carsetup_payload(rows_payload)
     lookup = raw_key_lookup(schema)
     canonical_inputs: dict[str, Any] = {}
     raw_fields: dict[str, Any] = {}
     warnings: list[str] = []
+    car_name = str(rows_payload.get("carName") or schema.car_name or "").strip().lower()
 
+    schema_index = schema_field_index(schema)
     for row in rows:
         label = str(row.get("label") or "")
         raw_key = _normalize_key(label)
-        field = lookup.get(raw_key)
+        field = None
+        if car_name == "ferrari":
+            ferrari_key = resolve_ferrari_canonical_key(row)
+            if ferrari_key is not None:
+                field = schema_index.get(ferrari_key)
+        if field is None:
+            field = lookup.get(raw_key)
         if field is None:
             if label:
                 raw_fields[label] = row.get("metric_value")
@@ -120,10 +131,33 @@ def build_normalized_garage_sample(
         rows_payload=rows_payload,
         schema=schema,
     )
+    garage_output_keys = {
+        "front_rh_at_speed_mm",
+        "rear_rh_at_speed_mm",
+        "static_front_rh_mm",
+        "static_rear_rh_mm",
+        "torsion_bar_turns",
+        "rear_torsion_bar_turns",
+        "torsion_bar_defl_mm",
+        "rear_torsion_bar_defl_mm",
+        "front_shock_defl_static_mm",
+        "front_shock_defl_max_mm",
+        "rear_shock_defl_static_mm",
+        "rear_shock_defl_max_mm",
+        "heave_spring_defl_static_mm",
+        "heave_spring_defl_max_mm",
+        "heave_slider_defl_static_mm",
+        "heave_slider_defl_max_mm",
+        "third_spring_defl_static_mm",
+        "third_spring_defl_max_mm",
+        "third_slider_defl_static_mm",
+        "third_slider_defl_max_mm",
+    }
     garage_outputs = {
         key: value
         for key, value in raw_fields.items()
-        if key.endswith("_rh_at_speed_mm")
+        if key in garage_output_keys
+        or key.endswith("_rh_at_speed_mm")
         or key.startswith("static_")
         or key.endswith("_defl_static_mm")
         or key.endswith("_defl_max_mm")

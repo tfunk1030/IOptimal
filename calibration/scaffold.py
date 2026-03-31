@@ -24,12 +24,15 @@ def generate_registry_seed_schema(car: str) -> SetupSchemaFile:
             else "derived_output" if field_def.kind == "computed"
             else "context_only"
         )
-        value_type = (
-            "string" if field_def.value_type == "string"
-            else "indexed_option" if field_def.value_type == "indexed"
-            else "int" if field_def.value_type == "discrete"
-            else "float"
-        )
+        if canonical_key in {"hybrid_rear_drive_enabled"}:
+            value_type = "bool"
+        else:
+            value_type = (
+                "string" if field_def.value_type == "string"
+                else "indexed_option" if field_def.value_type == "indexed"
+                else "int" if field_def.value_type == "discrete"
+                else "float"
+            )
         range_payload = None
         if spec.range_min is not None or spec.range_max is not None:
             range_payload = {}
