@@ -139,6 +139,7 @@ class LapGainBreakdown:
     diff_ramp_ms: float = 0.0
     diff_clutch_ms: float = 0.0
     tc_ms: float = 0.0
+    carcass_ms: float = 0.0   # penalty for tyre carcass temp outside optimal window
 
     @property
     def total_penalty_ms(self) -> float:
@@ -153,6 +154,7 @@ class LapGainBreakdown:
             + self.diff_ramp_ms
             + self.diff_clutch_ms
             + self.tc_ms
+            + self.carcass_ms
         )
 
     def as_dict(self) -> dict[str, float]:
@@ -167,6 +169,7 @@ class LapGainBreakdown:
             "diff_ramp_ms": self.diff_ramp_ms,
             "diff_clutch_ms": self.diff_clutch_ms,
             "tc_ms": self.tc_ms,
+            "carcass_ms": self.carcass_ms,
         }
 
 
@@ -186,14 +189,13 @@ class ObjectiveBreakdown:
     # Platform risk weight raised to 1.0 — platform collapse = catastrophic.
     # For ground-effect GTP cars, an unstable platform is the DOMINANT risk.
     # Source: Taylor Funk (2026 calibration) — "rake/ride height dwarfs ARBs"
-    # NOTE (2026-03-26): 73-session IBT calibration found best Spearman
-    # ρ=-0.30 at lap_gain×0.5, all penalties×0. However, reducing penalty
-    # weights WORSENED total_score correlation because lap_gain_ms itself
-    # is positively correlated with lap time (wrong direction). The
-    # penalties accidentally correct this by counteracting the broken
-    # lap_gain signal. Penalty weights are kept at original values until
-    # lap_gain_ms is fundamentally fixed. See:
-    # validation/calibration_weights.json, validation/calibration_report.md
+    # NOTE (2026-03-27): Damper zeta targets updated from hardcoded (0.88/0.30/
+    # 0.45/0.14) to IBT-calibrated values (0.68/0.23/0.47/0.20) and penalty
+    # scaling halved. Previous targets caused damping_ms and rebound_ratio_ms
+    # to correlate positively with lap time (wrong direction: Spearman +0.19
+    # and +0.33 respectively). Weight search recommends lap_gain=1.25 with
+    # penalties near zero — applied in scenario_profiles.py single_lap_safe.
+    # See: validation/calibration_report.md
     w_platform: float = 1.0   # raised from 0.9 — platform is primary risk
     w_driver: float = 0.5     # lowered from 0.6 — secondary to physics
     w_uncertainty: float = 0.6  # lowered from 0.7 — less aggressive no-data penalty
@@ -529,9 +531,14 @@ class ObjectiveFunction:
         od_ref = self.car.corner_spring.front_torsion_od_ref_mm
         if od_ref <= 0:
             return 1.0
+        # Use car-specific coupling — defaults to 0.0 for uncalibrated cars.
+        # Only BMW/Sebring (γ=0.25) has IBT validation for this term.
+        coupling = getattr(self.car, "torsion_arb_coupling", self.TORSION_ARB_COUPLING)
+        if coupling == 0.0:
+            return 1.0  # no coupling for this car — standard parallel-element model
         # Relative stiffness ratio: (OD/OD_ref)^4 (same OD^4 law as wheel rate)
         stiffness_ratio = (front_torsion_od / od_ref) ** 4
-        return 1.0 + self.TORSION_ARB_COUPLING * (stiffness_ratio - 1.0)
+        return 1.0 + coupling * (stiffness_ratio - 1.0)
 
     def _compute_vortex_threshold_mm(self, wing_deg: float) -> float:
         """Compute wing-specific minimum safe front RH from aero map gradient.
@@ -1219,21 +1226,21 @@ class ObjectiveFunction:
         # setups near the empirical optimum.
         # ═══════════════════════════════════════════════════════════════
 
-        # Front LS near ζ=0.68 (IBT-calibrated)
+        # Front LS near ζ=0.68 (IBT-calibrated from top-15 fastest BMW/Sebring sessions)
         zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
-        gain -= min(8.0, zeta_ls_front_err * 10.0)
+        gain -= min(4.0, zeta_ls_front_err * 5.0)
 
-        # Rear LS near ζ=0.23 (IBT-calibrated): traction compliance
+        # Rear LS near ζ=0.23 (IBT-calibrated): traction compliance over kerbs
         zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
-        gain -= min(6.0, zeta_ls_rear_err * 8.0)
+        gain -= min(3.0, zeta_ls_rear_err * 4.0)
 
         # Front HS near ζ=0.47 (IBT-calibrated)
         zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
-        gain -= min(5.0, zeta_hs_front_err * 7.0)
+        gain -= min(2.5, zeta_hs_front_err * 3.5)
 
         # Rear HS near ζ=0.20 (IBT-calibrated)
         zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
-        gain -= min(5.0, zeta_hs_rear_err * 7.0)
+        gain -= min(2.5, zeta_hs_rear_err * 3.5)
 
         # ── REBOUND : COMPRESSION RATIO (previously invisible — pinning bug) ──
         # Rebound clicks had ZERO gradient in the objective because ζ was computed
@@ -1272,7 +1279,7 @@ class ObjectiveFunction:
         # This gives the coord descent a gradient on rbd without destabilizing comp.
         LS_RBD_COMP_TARGET = 0.95   # [ratio] LS rebound / LS comp target
         HS_RBD_COMP_TARGET = 0.60   # [ratio] HS rebound / HS comp target (GTP kerb rule)
-        RBD_PENALTY_MS_PER_UNIT = 8.0   # weak — max 5ms, never overpowers ζ
+        RBD_PENALTY_MS_PER_UNIT = 4.0   # halved from 8.0 — was wrong-direction correlated (+0.33 Spearman)
 
         def _rbd_penalty(rbd: float, comp: float, target: float) -> float:
             if comp < 1.0:
@@ -1339,17 +1346,15 @@ class ObjectiveFunction:
         )
         f_arb_blade = int(round(params.get("front_arb_blade", 1)))
         r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
-        # Penalty for extreme blade + wrong size (should have sized up/down)
-        # e.g., blade 5 + Soft = should be Medium; blade 1 + Stiff = should be Soft
-        max_blade = 5
-        if f_arb_blade >= max_blade and f_arb_size_idx == 0:
-            gain -= 15.0  # at max blade on Soft → too small, needs Medium
-        if r_arb_blade >= max_blade and r_arb_size_idx == 0:
-            gain -= 20.0
-        if f_arb_blade <= 1 and f_arb_size_idx >= 2:
-            gain -= 10.0  # at min blade on Stiff → too large, needs Medium
-        if r_arb_blade <= 1 and r_arb_size_idx >= 2:
-            gain -= 15.0
+        # ARB extreme-combo penalty ZEROED OUT (2026-03-28, calibration evidence):
+        # Removing this term improved BMW/Sebring in-sample Spearman by +0.048 and
+        # holdout mean by +0.062.  The heuristic (max blade + Soft = wrong size) does
+        # not hold in the 75-session dataset — fast BMW setups use a range of ARB
+        # size/blade combos including those this term would penalise.  The physics
+        # reasoning (blade maxed → size up) is sound in principle but the lap-time
+        # signal is absent, so applying it adds noise that hurts ranking quality.
+        # See validation/calibration_report.md — ablation: arb_extreme_ms removed.
+        # gain -= ...  (placeholder — do NOT restore without corroborating IBT evidence)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: DIFF RAMP ANGLES (corner-entry rotation + exit traction)
@@ -1379,7 +1384,14 @@ class ObjectiveFunction:
             coast_target_idx = 1  # 45° middle
 
         coast_mismatch = abs(ramp_idx - coast_target_idx)
-        gain -= min(12.0, coast_mismatch * 6.0)  # ~6ms per step mismatch
+        # diff_ramp penalty reduced from min(12.0, 6ms/step) to min(4.0, 2ms/step)
+        # (2026-03-28, calibration evidence): removing this term improved trackless
+        # Spearman by +0.069 in-sample and +0.049 holdout mean.  The trail-brake→ramp
+        # mapping is directionally correct but the 6ms-per-step magnitude was too
+        # aggressive, causing correlated noise with driver-profile fallbacks.  Reduced
+        # to 2ms/step max 4ms to keep directional signal while cutting noise floor.
+        # See validation/calibration_report.md — ablation: diff_ramp_ms removed.
+        gain -= min(4.0, coast_mismatch * 2.0)  # reduced from 6ms → 2ms per step mismatch
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: DIFF CLUTCH PLATES (lock authority, exit traction)
@@ -1435,14 +1447,15 @@ class ObjectiveFunction:
         lltd_penalty = physics.lltd_error * 100.0 * lltd_ms_per_pct
         detail.lltd_balance_ms += min(10.0, lltd_penalty)
 
+        # IBT-calibrated zeta targets (top-15 fastest BMW/Sebring sessions, 2026-03-26)
         zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
         zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
         zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
         zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
-        detail.damping_ms += min(8.0, zeta_ls_front_err * 10.0)
-        detail.damping_ms += min(6.0, zeta_ls_rear_err * 8.0)
-        detail.damping_ms += min(5.0, zeta_hs_front_err * 7.0)
-        detail.damping_ms += min(5.0, zeta_hs_rear_err * 7.0)
+        detail.damping_ms += min(4.0, zeta_ls_front_err * 5.0)
+        detail.damping_ms += min(3.0, zeta_ls_rear_err * 4.0)
+        detail.damping_ms += min(2.5, zeta_hs_front_err * 3.5)
+        detail.damping_ms += min(2.5, zeta_hs_rear_err * 3.5)
 
         f_ls_comp = params.get("front_ls_comp", 7)
         f_ls_rbd = params.get("front_ls_rbd", 6)
@@ -1454,7 +1467,7 @@ class ObjectiveFunction:
         r_hs_rbd = params.get("rear_hs_rbd", 3)
         ls_rbd_comp_target = 0.95
         hs_rbd_comp_target = 0.60
-        rbd_penalty_ms_per_unit = 8.0
+        rbd_penalty_ms_per_unit = 4.0  # halved from 8.0 — was wrong-direction correlated
 
         def _rbd_penalty(rbd: float, comp: float, target: float) -> float:
             if comp < 1.0:
@@ -1493,14 +1506,8 @@ class ObjectiveFunction:
         f_arb_blade = int(round(params.get("front_arb_blade", 1)))
         r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
         max_blade = 5
-        if f_arb_blade >= max_blade and f_arb_size_idx == 0:
-            detail.arb_extreme_ms += 15.0
-        if r_arb_blade >= max_blade and r_arb_size_idx == 0:
-            detail.arb_extreme_ms += 20.0
-        if f_arb_blade <= 1 and f_arb_size_idx >= 2:
-            detail.arb_extreme_ms += 10.0
-        if r_arb_blade <= 1 and r_arb_size_idx >= 2:
-            detail.arb_extreme_ms += 15.0
+        # arb_extreme_ms zeroed out — see _estimate_lap_gain() comment (2026-03-28)
+        # detail.arb_extreme_ms += ...  (kept at 0.0 — calibration shows it adds noise)
 
         ramp_options = getattr(
             getattr(self.car, "garage_ranges", None), "diff_coast_drive_ramp_options",
@@ -1516,7 +1523,7 @@ class ObjectiveFunction:
         else:
             coast_target_idx = 1
         coast_mismatch = abs(ramp_idx - coast_target_idx)
-        detail.diff_ramp_ms += min(12.0, coast_mismatch * 6.0)
+        detail.diff_ramp_ms += min(4.0, coast_mismatch * 2.0)  # reduced — see _estimate_lap_gain() comment
 
         clutch_plates = int(round(params.get("diff_clutch_plates", 4)))
         rear_slip_p95 = getattr(self._measured, "rear_power_slip_p95", None) if self._measured else None
@@ -1542,6 +1549,22 @@ class ObjectiveFunction:
             detail.tc_ms += min(8.0, (5 - tc_gain) * 3.0)
         elif rear_slip_p95 < 0.04 and tc_gain > 6:
             detail.tc_ms += min(5.0, (tc_gain - 6) * 2.0)
+
+        # ── Tyre carcass temperature — thermal window penalty ────────────────
+        # GTP/LMDh Michelin compound optimal window: ~82-104°C (180-220°F)
+        # Source: Ken Payne (Michelin NA), Sportscar365; iRacing GTP data
+        CARCASS_OPTIMAL_MIN_C = 82.0
+        CARCASS_OPTIMAL_MAX_C = 104.0
+        CARCASS_MS_PER_DEG_COLD = 1.2   # ms penalty per °C below min (cold = low grip)
+        CARCASS_MS_PER_DEG_HOT = 1.8    # ms penalty per °C above max (hot = graining)
+        if self._measured is not None:
+            for attr in ("front_carcass_mean_c", "rear_carcass_mean_c"):
+                carcass_temp = getattr(self._measured, attr, None)
+                if carcass_temp is not None and float(carcass_temp) > 20.0:
+                    temp = float(carcass_temp)
+                    cold_pen = max(0.0, CARCASS_OPTIMAL_MIN_C - temp) * CARCASS_MS_PER_DEG_COLD
+                    hot_pen = max(0.0, temp - CARCASS_OPTIMAL_MAX_C) * CARCASS_MS_PER_DEG_HOT
+                    detail.carcass_ms += min(15.0, cold_pen + hot_pen)
 
         return detail
 

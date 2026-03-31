@@ -18,6 +18,7 @@ from comparison.report import format_comparison_report, save_comparison_json
 from comparison.score import score_sessions
 from comparison.synthesize import SynthesisResult, synthesize_setup
 from learner.knowledge_store import KnowledgeStore
+from output.report import _load_support_tier
 from output.setup_writer import write_sto
 from solver.predictor import predict_candidate_telemetry
 from solver.solve import run_solver
@@ -123,6 +124,53 @@ SETUP_GROUP_SPECS: tuple[GroupSpec, ...] = (
         ),
     ),
 )
+
+
+# Plain-English explanations for each setup parameter.
+PARAM_EXPLANATIONS: dict[str, str] = {
+    "Wing angle": "Rear wing angle. Higher adds downforce and drag — more grip in corners but lower top speed.",
+    "Front pushrod": "Front pushrod length. Adjusts front ride height — affects aero balance at speed.",
+    "Rear pushrod": "Rear pushrod length. Adjusts rear ride height and rake angle.",
+    "Rear ride height": "Static rear ride height. Controls rake — more rake means more front downforce bias.",
+    "Front heave": "Front heave spring rate. Stiffer keeps the front stable under braking and at high speed, but harsher over bumps.",
+    "Rear third": "Rear third/heave spring rate. Stiffer prevents rear bottoming at speed, softer gives more rear grip over bumps.",
+    "Front torsion": "Front torsion bar (corner spring). Stiffer reduces body roll but makes the front less compliant over kerbs.",
+    "Rear spring": "Rear corner spring rate. Stiffer reduces roll and improves rear platform control, softer adds mechanical grip.",
+    "Front ARB blade": "Front anti-roll bar stiffness. Stiffer adds understeer in corners by increasing front load transfer.",
+    "Rear ARB blade": "Rear anti-roll bar stiffness. Stiffer adds oversteer by increasing rear load transfer in corners.",
+    "Brake bias": "Front-to-rear brake balance. Higher means more front braking — more stable but less rotation on turn-in.",
+    "Diff preload": "Differential preload torque. Higher locks the diff more — better traction but less mid-corner rotation.",
+    "Front camber": "Front wheel camber. More negative keeps the outer tyre flat in corners for better grip.",
+    "Rear camber": "Rear wheel camber. More negative improves rear corner grip but can reduce straight-line traction.",
+    "Front toe": "Front toe angle. Toe-out sharpens turn-in response, toe-in adds straight-line stability.",
+    "Rear toe": "Rear toe angle. Toe-in stabilises the rear, toe-out adds rotation but can feel nervous.",
+    "Front LS comp": "Front low-speed compression damping. Higher slows weight transfer onto the front — calmer turn-in.",
+    "Front LS rebound": "Front low-speed rebound damping. Higher slows weight coming off the front — more consistent on exit.",
+    "Front HS comp": "Front high-speed compression damping. Controls front end over big bumps and kerbs.",
+    "Front HS rebound": "Front high-speed rebound damping. Controls front recovery after bumps — too high causes skipping.",
+    "Rear LS comp": "Rear low-speed compression damping. Higher slows rear squat under throttle — more composed traction.",
+    "Rear LS rebound": "Rear low-speed rebound damping. Higher slows rear unloading on turn-in — less oversteer snap.",
+    "Rear HS comp": "Rear high-speed compression damping. Controls rear over kerbs and big bumps.",
+    "Rear HS rebound": "Rear high-speed rebound damping. Controls rear recovery — too high causes oscillation.",
+    "TC gain": "Traction control gain. Higher intervenes earlier to prevent wheelspin.",
+    "TC slip": "Traction control slip target. Higher allows more wheelspin before TC activates.",
+}
+
+
+def _change_reason(label: str, current: Any, recommended: Any) -> str:
+    """Build a plain-English reason for a setup change."""
+    base = PARAM_EXPLANATIONS.get(label, "")
+    # Add directional prefix when both values are numeric
+    try:
+        c_val = float(current)
+        r_val = float(recommended)
+        diff = r_val - c_val
+        if abs(diff) < 1e-6:
+            return base or "No change."
+        direction = "Increasing" if diff > 0 else "Decreasing"
+        return f"{direction}. {base}"
+    except (TypeError, ValueError):
+        return base
 
 
 class IOptimalWebService:
@@ -301,6 +349,8 @@ class IOptimalWebService:
                 "Legality check passed." if not issues else f"Legality check flagged {len(issues)} issue(s)."
             )
 
+        _car_slug = getattr(result["car"], "canonical_name", "bmw")
+        _tier_info = _load_support_tier(_car_slug, track_name) or {}
         summary = SessionResultView(
             result_kind="single_session",
             title="Single Session Analysis",
@@ -311,6 +361,8 @@ class IOptimalWebService:
             assessment=str(getattr(result["diagnosis"], "assessment", "unknown")).replace("_", " ").title(),
             confidence_label=_score_label(score_value),
             confidence_value=score_value,
+            support_tier=_tier_info.get("confidence_tier", "unknown"),
+            observation_count=_tier_info.get("samples", 0),
             overview_badges=overview_badges,
             problems=problems,
             top_changes=top_changes,
@@ -387,6 +439,7 @@ class IOptimalWebService:
             "supporting": {},
         }
         setup_groups = _build_setup_groups(context)
+        _tier_info_ts = _load_support_tier(getattr(car, "canonical_name", "bmw"), request.track) or {}
         summary = SessionResultView(
             result_kind="track_solve",
             title="Track-Only Solve",
@@ -397,6 +450,8 @@ class IOptimalWebService:
             assessment="Physics-only recommendation",
             confidence_label="Telemetry-free",
             confidence_value=None,
+            support_tier=_tier_info_ts.get("confidence_tier", "unknown"),
+            observation_count=_tier_info_ts.get("samples", 0),
             overview_badges=[
                 f"Wing {request.wing:.0f} deg",
                 f"Fuel {(request.fuel if request.fuel is not None else 89.0):.0f} L",
@@ -577,7 +632,7 @@ def _build_setup_groups(context: dict[str, Any]) -> list[SetupGroupView]:
                     current=_format_value(current_value, row_spec.units, row_spec.digits, row_spec.signed),
                     recommended=_format_value(recommended_value, row_spec.units, row_spec.digits, row_spec.signed),
                     delta=_format_delta(current_value, recommended_value, row_spec.units, row_spec.digits),
-                    reason=group_spec.help_text,
+                    reason=_change_reason(row_spec.label, current_value, recommended_value),
                 )
             )
         groups.append(SetupGroupView(name=group_spec.name, help_text=group_spec.help_text, rows=rows))
@@ -592,6 +647,14 @@ def _pick_top_changes(groups: list[SetupGroupView]) -> list[ChangeView]:
                 changed.append(row)
     if not changed:
         changed = [row for group in groups for row in group.rows]
+    # Sort by absolute delta magnitude so the biggest changes appear first.
+    def _delta_magnitude(cv: ChangeView) -> float:
+        try:
+            # Strip units/signs and parse the numeric part of delta string
+            return abs(float(cv.delta.split()[0].replace("+", "")))
+        except (ValueError, IndexError):
+            return 0.0
+    changed.sort(key=_delta_magnitude, reverse=True)
     return changed[:5]
 
 

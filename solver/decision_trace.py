@@ -348,6 +348,9 @@ def _legacy_build_parameter_decisions(
     if car_name.lower() == "ferrari":
         warnings = list(getattr(current_setup, "decode_warnings", []) or [])
         for warning in warnings[:3]:
+            warning_text = str(warning).lower()
+            if "unsupported" not in warning_text and "blocked" not in warning_text:
+                continue
             decisions.append(
                 ParameterDecision(
                     parameter="ferrari_adapter_warning",

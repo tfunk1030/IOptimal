@@ -236,6 +236,12 @@ def segment_lap(
         rr_sv = ibt.channel("RRshockVel")[start:end + 1]
         front_sv = (np.abs(lf_sv) + np.abs(rf_sv)) / 2.0
         rear_sv = (np.abs(lr_sv) + np.abs(rr_sv)) / 2.0
+    elif ibt.has_channel("HFshockVel") or ibt.has_channel("TRshockVel"):
+        # Synthesise from heave + roll bar shocks (e.g. Acura ARX-06)
+        hf = ibt.channel("HFshockVel")[start:end + 1] if ibt.has_channel("HFshockVel") else np.zeros(n)
+        tr = ibt.channel("TRshockVel")[start:end + 1] if ibt.has_channel("TRshockVel") else np.zeros(n)
+        front_sv = np.abs(hf)
+        rear_sv = np.abs(tr)
     else:
         front_sv = np.zeros(n)
         rear_sv = np.zeros(n)

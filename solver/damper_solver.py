@@ -133,6 +133,12 @@ class DamperSolution:
 
     # Constraint checks
     constraints: list[DamperConstraintCheck]
+
+    # Roll dampers (ORECA heave+roll architecture — None for per-corner cars)
+    front_roll_ls: int | None = None
+    front_roll_hs: int | None = None
+    rear_roll_ls: int | None = None
+    rear_roll_hs: int | None = None
     notes: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -476,7 +482,7 @@ class DamperSolver:
         # If measured rear shock oscillation frequency exceeds 1.5× natural
         # frequency, the rear is underdamped. Bump ζ_hs_rear to reduce oscillation.
         if measured is not None:
-            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0)
+            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
             rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
             if rear_osc_hz > 1.5 * rear_nat_freq_hz and rear_nat_freq_hz > 0:
                 # Underdamped evidence — increase HS ζ by 50% (capped at 0.25)
@@ -555,10 +561,10 @@ class DamperSolver:
         rr_hs_comp_adj = 0
 
         if measured is not None:
-            lf_sv = measured.lf_shock_vel_p95_mps
-            rf_sv = measured.rf_shock_vel_p95_mps
-            lr_sv = measured.lr_shock_vel_p95_mps
-            rr_sv = measured.rr_shock_vel_p95_mps
+            lf_sv = measured.lf_shock_vel_p95_mps or 0.0
+            rf_sv = measured.rf_shock_vel_p95_mps or 0.0
+            lr_sv = measured.lr_shock_vel_p95_mps or 0.0
+            rr_sv = measured.rr_shock_vel_p95_mps or 0.0
 
             # Front asymmetry: >15% difference triggers adjustment
             if lf_sv > 0 and rf_sv > 0:
@@ -648,7 +654,7 @@ class DamperSolver:
 
         # Add oscillation validation constraint if telemetry is available
         if measured is not None:
-            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0)
+            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
             rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
             if rear_osc_hz > 0 and rear_nat_freq_hz > 0:
                 osc_ratio = rear_osc_hz / rear_nat_freq_hz
@@ -682,6 +688,20 @@ class DamperSolver:
             "NOT from empirical baseline matching.",
         ]
 
+        # Roll dampers (ORECA heave+roll architecture)
+        roll_damper_kwargs: dict = {}
+        if self.car.damper.has_roll_dampers:
+            # Roll dampers control weight transfer rate in roll.
+            # Use car baselines for now — physics-based roll damper tuning
+            # requires lateral g spectrum data and is not yet implemented.
+            dm = self.car.damper
+            roll_damper_kwargs = dict(
+                front_roll_ls=dm.front_roll_ls_baseline,
+                front_roll_hs=dm.front_roll_hs_baseline,
+                rear_roll_ls=dm.rear_roll_ls_baseline,
+                rear_roll_hs=dm.rear_roll_hs_baseline,
+            )
+
         return DamperSolution(
             lf=lf, rf=rf, lr=lr, rr=rr,
             track_shock_vel_p95_front_mps=self.track.shock_vel_p95_front_mps,
@@ -705,6 +725,7 @@ class DamperSolver:
             hs_slope_reasoning=slope_reason,
             constraints=constraints,
             notes=notes,
+            **roll_damper_kwargs,
         )
 
     def solution_from_explicit_settings(
@@ -815,5 +836,10 @@ class DamperSolver:
             hs_rbd_comp_ratio_rear=round((lr.rbd_comp_ratio_hs() + rr.rbd_comp_ratio_hs()) / 2.0, 2),
             hs_slope_reasoning="Explicit click/slope materialization from selected family settings.",
             constraints=constraints,
+            # Propagate roll damper values from base solve
+            front_roll_ls=base.front_roll_ls,
+            front_roll_hs=base.front_roll_hs,
+            rear_roll_ls=base.rear_roll_ls,
+            rear_roll_hs=base.rear_roll_hs,
             notes=notes,
         )

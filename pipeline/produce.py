@@ -36,6 +36,7 @@ from analyzer.setup_reader import CurrentSetup
 from analyzer.setup_schema import apply_live_control_overrides, build_setup_schema
 from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
+from output.report import to_public_output_payload
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
 from solver.candidate_search import candidate_to_dict, generate_candidate_families
@@ -268,6 +269,10 @@ def produce(
     car = get_car(args.car)
     log(f"Car: {car.name}")
 
+    # ── Run trace (data provenance) ──
+    from output.run_trace import RunTrace
+    run_trace = RunTrace()
+
     # Resolve DF balance target from car model if not explicitly set
     if getattr(args, "balance", None) is None:
         args.balance = car.default_df_balance_pct
@@ -359,6 +364,8 @@ def produce(
             raise
         log(f"  Track: {track.track_name} — {track.track_config}")
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
+        run_trace.record_car_track(car.canonical_name, track.track_name, wing_angle=getattr(args, "wing", None))
+        run_trace.record_calibration()
 
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")
@@ -384,6 +391,7 @@ def produce(
     log(f"  Lap {measured.lap_number}: {measured.lap_time_s:.3f}s")
     for note in live_override_notes:
         log(f"  Live override: {note}")
+    run_trace.record_signals(measured)
 
     setup_schema = build_setup_schema(
         car=car,
@@ -890,6 +898,23 @@ def produce(
     decision_trace = base_solve_result.decision_trace
     solve_notes = list(base_solve_result.notes)
 
+    # ── Record solver path and steps in RunTrace ──
+    _rt_path = getattr(base_solve_result, "solver_path", "sequential")
+    _rt_reason = (
+        "BMW/Sebring garage model active — constrained SciPy optimizer used"
+        if getattr(base_solve_result, "optimizer_used", False)
+        else "Sequential 6-step physics solver"
+    )
+    run_trace.record_solver_path(_rt_path, reason=_rt_reason)
+    run_trace.record_step(1, step1, physics_override=False)
+    run_trace.record_step(2, step2, physics_override=False)
+    run_trace.record_step(3, step3, physics_override=False)
+    run_trace.record_step(4, step4, physics_override=False)
+    run_trace.record_step(5, step5)
+    run_trace.record_step(6, step6)
+    run_trace.record_step(7, supporting)
+    run_trace.record_legality(legal_validation)
+
     stint_compromise_info: list[str] = []
     stint_solve = None
     if stint_dataset is not None and len(stint_dataset.usable_laps) >= 5:
@@ -971,27 +996,6 @@ def produce(
         log(f"[sensitivity] Skipped: missing data ({e})")
     except (TypeError, NameError) as e:
         raise  # re-raise programming errors — don't hide bugs
-
-    # ── Phase I.8: Ferrari indexed parameter passthrough ──
-    # Only for indexed params where we can't map index → physical stiffness.
-    # Solver computes dampers, geometry, brake/diff/TC from telemetry.
-    if car.canonical_name == "ferrari":
-        _cs = current_setup
-        # Pushrod — keep IBT values
-        step1.front_pushrod_offset_mm = _cs.front_pushrod_mm
-        step1.rear_pushrod_offset_mm = _cs.rear_pushrod_mm
-        # Springs — indexed dropdowns, can't map to physical stiffness
-        step2.front_heave_nmm = _cs.front_heave_nmm
-        step2.perch_offset_front_mm = _cs.front_heave_perch_mm
-        step2.rear_third_nmm = _cs.rear_third_nmm
-        step2.perch_offset_rear_mm = _cs.rear_third_perch_mm
-        step3.front_torsion_od_mm = _cs.front_torsion_od_mm
-        step3.rear_spring_rate_nmm = _cs.rear_spring_nmm
-        step3.rear_spring_perch_mm = 0.0
-        # ARBs — stiffness uncalibrated, pass through size (solver computes blade)
-        step4.front_arb_size = _cs.front_arb_size
-        step4.rear_arb_size = _cs.rear_arb_size
-        # Geometry, dampers, brake/diff/TC — solver computes from telemetry
 
     # ── Phase J: Output ──
     legal_validation = validate_solution_legality(
@@ -1098,6 +1102,14 @@ def produce(
             selected_candidate_score_output = (
                 selected_candidate.score.total if selected_candidate.score is not None else None
             )
+            run_trace.candidate_family = selected_candidate_family_output
+            run_trace.candidate_score = selected_candidate_score_output
+            if selected_candidate.score is not None:
+                run_trace.record_objective(
+                    getattr(selected_candidate.score, "breakdown", None),
+                    float(selected_candidate_score_output or 0.0),
+                    scoring_system="ObjectiveFunction (candidate family)",
+                )
             solve_notes.append(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
@@ -1165,6 +1177,118 @@ def produce(
                 gs_result = engine.run(budget=search_mode, progress=True, family=search_family, explore=explore_mode)
                 log()
                 log(gs_result.summary())
+                # ── Apply grid search best result to final output ────────────
+                # Previously this was silently discarded — now we rematerialize
+                # the best candidate through the solve chain.
+                _gs_best = gs_result.best_robust or gs_result.best_overall
+                if _gs_best is not None and not _gs_best.hard_vetoed:
+                    try:
+                        from solver.solve_chain import SolveChainOverrides, materialize_overrides
+                        # Build overrides from the candidate's params
+                        _gs_overrides = SolveChainOverrides()
+                        _gs_params = _gs_best.params or {}
+                        # Map canonical param keys to step overrides
+                        _step1_keys = {"front_pushrod_offset_mm", "rear_pushrod_offset_mm"}
+                        _step2_keys = {"front_heave_spring_nmm", "rear_third_spring_nmm"}
+                        _step3_keys = {"front_torsion_od_mm", "rear_spring_rate_nmm", "rear_torsion_od_mm"}
+                        _step4_keys = {"front_arb_blade", "rear_arb_blade"}
+                        _step5_keys = {"front_camber_deg", "rear_camber_deg", "front_toe_deg", "rear_toe_deg"}
+                        for k, v in _gs_params.items():
+                            if k in _step1_keys:
+                                _gs_overrides.step1[k] = v
+                            elif k in _step2_keys:
+                                _gs_overrides.step2[k] = v
+                            elif k in _step3_keys:
+                                _gs_overrides.step3[k] = v
+                            elif k in _step4_keys:
+                                _gs_overrides.step4[k] = v
+                            elif k in _step5_keys:
+                                _gs_overrides.step5[k] = v
+                        _gs_materialized = materialize_overrides(
+                            base_solve_result, _gs_overrides, solve_inputs
+                        )
+                        step1 = _gs_materialized.step1
+                        step2 = _gs_materialized.step2
+                        step3 = _gs_materialized.step3
+                        step4 = _gs_materialized.step4
+                        step5 = _gs_materialized.step5
+                        step6 = _gs_materialized.step6
+                        supporting = _gs_materialized.supporting
+                        legal_validation = _gs_materialized.legal_validation
+                        decision_trace = _gs_materialized.decision_trace
+                        selected_candidate_family_output = (
+                            f"{scenario_profile_name}:grid_{_gs_best.family}"
+                        )
+                        selected_candidate_score_output = _gs_best.score
+                        selected_candidate_applied = True
+                        run_trace.record_solver_path("grid_search", reason=f"--search-mode {search_mode}")
+                        run_trace.candidate_family = selected_candidate_family_output
+                        run_trace.candidate_score = selected_candidate_score_output
+                        run_trace.record_objective(
+                            _gs_best.breakdown,
+                            float(_gs_best.score),
+                            scoring_system="ObjectiveFunction (grid search)",
+                        )
+                        solve_notes.append(
+                            f"Applied grid search best candidate "
+                            f"({_gs_best.family}, score={_gs_best.score:+.1f}ms) "
+                            f"from {search_mode} search — rematerialized through solve chain."
+                        )
+                    except Exception as e:
+                        solve_notes.append(
+                            f"Grid search found best={_gs_best.family} ({_gs_best.score:+.1f}ms) "
+                            f"but rematerialization failed: {e} — base solve result retained."
+                        )
+                        run_trace.add_warning(f"Grid search rematerialization failed: {e}")
+
+                # ── vetoed / empty candidate fallback notes ─────────────────
+                if _gs_best is None:
+                    solve_notes.append(
+                        "Grid search found no acceptable candidates — base solve result retained."
+                    )
+                elif _gs_best.hard_vetoed and not selected_candidate_applied:
+                    solve_notes.append(
+                        f"Grid search best ({_gs_best.family}) was hard-vetoed — base solve result retained."
+                    )
+
+                # ── --top-n: print ranked comparison table for top N candidates ──
+                # Shows alternative setups from the search pool beyond rank-1.
+                # Rank-1 (best robust/overall) has already been applied to the output.
+                # This table is informational — useful for manual review or
+                # multi-setup export workflows.
+                top_n_req = getattr(args, "top_n", 1)
+                if top_n_req > 1 and gs_result.top_candidates:
+                    top_pool = [
+                        e for e in gs_result.top_candidates if not e.hard_vetoed
+                    ][:top_n_req]
+                    if top_pool:
+                        log()
+                        log(f"  ── TOP-{len(top_pool)} CANDIDATES (--top-n {top_n_req}) ──────────────────────────────────────────────────────────────────────────────────────────────")
+                        log(f"  {'Rank':<5} {'Score':>8}  {'Family':<18}  {'Wing':>5}  {'FH-Spg':>7}  {'R3-Spg':>7}  {'Trsn':>6}  {'FARB':>5}  {'RARB':>5}  Penalties")
+                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        for rank, ev in enumerate(top_pool, start=1):
+                            p = ev.params or {}
+                            penalty_str = "; ".join(ev.soft_penalties[:2]) if ev.soft_penalties else "—"
+                            marker = " ← applied" if rank == 1 else ""
+                            log(
+                                f"  {rank:<5} {ev.score:>+8.1f}  "
+                                f"{(ev.family or ''):<18}  "
+                                f"{p.get('wing_angle_deg', 0):>5.0f}  "
+                                f"{p.get('front_heave_spring_nmm', 0):>7.1f}  "
+                                f"{p.get('rear_third_spring_nmm', 0):>7.1f}  "
+                                f"{p.get('front_torsion_od_mm', 0):>6.2f}  "
+                                f"{int(p.get('front_arb_blade', 0)):>5}  "
+                                f"{int(p.get('rear_arb_blade', 0)):>5}  "
+                                f"{penalty_str}{marker}"
+                            )
+                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        log(f"  Rank 1 applied to setup output. Use --top-n 1 to suppress this table.")
+                        solve_notes.append(
+                            f"Top-{len(top_pool)} candidates surfaced via --top-n "
+                            f"(best score={top_pool[0].score:+.1f}ms, "
+                            f"worst={top_pool[-1].score:+.1f}ms)."
+                        )
+                run_trace.search_mode = search_mode
             else:
                 # ── Original random family search ───────────────────────────
                 from solver.legal_search import run_legal_search
@@ -1200,6 +1324,9 @@ def produce(
                     selected_candidate_family_output = f"{scenario_profile_name}:{ls_result.accepted_best.family}"
                     selected_candidate_score_output = ls_result.accepted_best.score
                     selected_candidate_applied = True
+                    run_trace.record_solver_path("legal_search", reason=f"scenario={scenario_profile_name}")
+                    run_trace.candidate_family = selected_candidate_family_output
+                    run_trace.candidate_score = float(selected_candidate_score_output or 0.0)
                     solve_notes.append(
                         f"Applied legal-manifold scenario pick {ls_result.accepted_best.family} "
                         f"for {scenario_profile_name} after full legality + prediction sanity checks."
@@ -1211,12 +1338,16 @@ def produce(
         except Exception as e:
             log(f"[legal-search] Skipped: {e}")
 
-    if args.sto and car.canonical_name == "ferrari":
-        solve_notes.append(
-            "Ferrari native .sto export is disabled in read-first mode; no setup file was written."
-        )
-        print("\nFerrari native .sto export is disabled in read-first mode; use --setup-json for setup inspection.")
-    elif args.sto:
+    # ── Update RunTrace with final legality and notes ──
+    run_trace.record_legality(legal_validation)
+    for _n in solve_notes:
+        run_trace.add_note(_n)
+
+    # ── Print RunTrace ──
+    _verbose = getattr(args, "verbose", False)
+    run_trace.print_report(verbose=_verbose)
+
+    if args.sto:
         # Final garage correlation check before writing .sto
         from output.garage_validator import validate_and_fix_garage_correlation
         garage_warnings = validate_and_fix_garage_correlation(
@@ -1228,32 +1359,38 @@ def produce(
 
         _extra_kw = {}
         if car.canonical_name == "ferrari":
-            # Indexed params: pass through from IBT (can't map index → physical)
             _extra_kw["front_tb_turns"] = current_setup.torsion_bar_turns
             _extra_kw["rear_tb_turns"] = current_setup.rear_torsion_bar_turns
-            # Supporting params: solver computes from telemetry
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
             _extra_kw["brake_bias_target"] = supporting.brake_bias_target
             _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration
+            _extra_kw["brake_bias_migration_gain"] = current_setup.brake_bias_migration_gain
             _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
             _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
             _extra_kw["pad_compound"] = supporting.pad_compound
-            # Ferrari diff ramp uses labels ("More Locking"/"Less Locking")
             _extra_kw["diff_coast_drive_ramp"] = (
                 getattr(supporting, "diff_ramp_angles", "")
                 or ("Less Locking" if supporting.diff_ramp_coast >= 45 else "More Locking")
             )
             _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
+            _extra_kw["front_diff_preload_nm"] = current_setup.front_diff_preload_nm
             _extra_kw["tc_gain"] = supporting.tc_gain
             _extra_kw["tc_slip"] = supporting.tc_slip
-            _extra_kw["front_camber_override"] = -2.9  # empirical from 7 IBT sessions
-            _extra_kw["rear_camber_override"] = -1.9   # empirical from 7 IBT sessions
-            _extra_kw["hybrid_enabled"] = current_setup.hybrid_rear_drive_enabled
-            _extra_kw["hybrid_corner_pct"] = current_setup.hybrid_rear_drive_corner_pct
-            _extra_kw["front_diff_preload_nm"] = current_setup.front_diff_preload_nm
-            _extra_kw["bias_migration_gain"] = current_setup.brake_bias_migration_gain
+            _extra_kw["fuel_low_warning_l"] = getattr(supporting, "fuel_low_warning_l", fuel)
+            _extra_kw["fuel_target_l"] = getattr(supporting, "fuel_target_l", None)
+            _extra_kw["gear_stack"] = getattr(supporting, "gear_stack", "")
+            _extra_kw["speed_in_first_kph"] = current_setup.speed_in_first_kph
+            _extra_kw["speed_in_second_kph"] = current_setup.speed_in_second_kph
+            _extra_kw["speed_in_third_kph"] = current_setup.speed_in_third_kph
+            _extra_kw["speed_in_fourth_kph"] = current_setup.speed_in_fourth_kph
+            _extra_kw["speed_in_fifth_kph"] = current_setup.speed_in_fifth_kph
+            _extra_kw["speed_in_sixth_kph"] = current_setup.speed_in_sixth_kph
+            _extra_kw["speed_in_seventh_kph"] = current_setup.speed_in_seventh_kph
+            _extra_kw["roof_light_color"] = getattr(supporting, "roof_light_color", "")
+            _extra_kw["hybrid_rear_drive_enabled"] = current_setup.hybrid_rear_drive_enabled
+            _extra_kw["hybrid_rear_drive_corner_pct"] = current_setup.hybrid_rear_drive_corner_pct
         else:
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
@@ -1288,7 +1425,6 @@ def produce(
         print(f"\niRacing .sto setup saved to: {sto_path}")
 
     if args.json:
-        import dataclasses
         json_path = Path(args.json)
         json_path.parent.mkdir(parents=True, exist_ok=True)
         parameter_coverage = build_parameter_coverage(
@@ -1340,13 +1476,13 @@ def produce(
             "legal_validation": legal_validation.to_dict() if legal_validation is not None else None,
             "decision_trace": [decision.to_dict() for decision in decision_trace],
             "solver_notes": solve_notes,
-            "step1_rake": dataclasses.asdict(step1),
-            "step2_heave": dataclasses.asdict(step2),
-            "step3_corner": dataclasses.asdict(step3),
-            "step4_arb": dataclasses.asdict(step4),
-            "step5_geometry": dataclasses.asdict(step5),
-            "step6_dampers": dataclasses.asdict(step6),
-            "supporting": dataclasses.asdict(supporting),
+            "step1_rake": to_public_output_payload(car.canonical_name, step1),
+            "step2_heave": to_public_output_payload(car.canonical_name, step2),
+            "step3_corner": to_public_output_payload(car.canonical_name, step3),
+            "step4_arb": to_public_output_payload(car.canonical_name, step4),
+            "step5_geometry": to_public_output_payload(car.canonical_name, step5),
+            "step6_dampers": to_public_output_payload(car.canonical_name, step6),
+            "supporting": to_public_output_payload(car.canonical_name, supporting),
         }
         with open(json_path, "w") as f:
             json.dump(output, f, indent=2, default=str)
@@ -1650,13 +1786,14 @@ def main():
     parser.add_argument("--keep-weird", action="store_true",
                         help="Retain unconventional but legal candidates in results")
     parser.add_argument("--search-mode", type=str, default=None,
-                        choices=["quick", "standard", "exhaustive"],
+                        choices=["quick", "standard", "exhaustive", "maximum"],
                         dest="search_mode",
                         help=(
                             "Hierarchical grid search mode (uses GridSearchEngine). "
-                            "quick=~5s, standard=~4min, exhaustive=~80min. "
+                            "quick=~3s, standard=~4min, exhaustive=~80min, maximum=~5h (overnight). "
                             "When set, uses structured Sobol+grid search instead of "
-                            "random family sampling. Implies --explore-legal-space."
+                            "random family sampling. Implies --explore-legal-space. "
+                            "Combine with --top-n to surface multiple ranked alternatives."
                         ))
     parser.add_argument("--top-n", type=int, default=1, dest="top_n",
                         help=(

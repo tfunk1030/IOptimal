@@ -316,7 +316,7 @@ No verified setup file available from your data, but the Dallara architecture me
 
 ## Acura ARX-06 {#acura}
 
-**Dallara LMDh chassis — same architecture as BMW/Cadillac.**
+**ORECA LMDh chassis — NOT Dallara. Different suspension architecture from BMW/Cadillac.**
 
 - **Diff preload is THE setup parameter.** 1-2 click changes create large handling shifts. More sensitive than any other GTP car. Keep preload low to preserve the car's natural rotation advantage — high preload restricts the defining characteristic.
 - **Sharpest front end in class.** Most responsive of any GTP car, requiring minimal steering angle to rotate. Prone to snap oversteer. Tame it with diff preload and softer rear ARB, but preserve the rotation advantage.
@@ -324,6 +324,47 @@ No verified setup file available from your data, but the Dallara architecture me
 - **Lowest top speed.** On high-speed tracks, forced to run lower wing, which makes the rear setup challenge harder. Poorly suited for Le Mans and Daytona.
 - **Highest ceiling at technical tracks.** Excels at high-downforce circuits (Laguna Seca, Barber, tight street circuits) in the hands of experienced drivers.
 - **Power delivery** from the 2.4L twin-turbo V6 is peaky and can overwhelm rear grip in slow corners. Smooth throttle inputs are critical.
+
+### Acura Suspension Architecture (ORECA-specific)
+
+**Heave + Roll damper format** (NOT per-corner like BMW/Cadillac):
+- **Heave dampers:** LS/HS comp + LS/HS rbd + HS slope (5 adjustments per axle)
+- **Roll dampers:** LS + HS only (2 adjustments per axle, no comp/rbd split, no slope)
+- Click range: 1–10 (BMW is 1–11)
+- Telemetry has no per-corner shock channels — corner shocks synthesized from heave ± roll
+
+**Rear corner springs are torsion bars** (not coil springs like BMW/Cadillac):
+- Both front and rear use torsion bars with discrete OD steps
+- Front OD: 13.90, 14.34, 14.76 mm (capped — higher ODs cause heave damper bottoming)
+- Rear OD: 13.90–18.20 mm (14 discrete steps)
+- Rear torsion bar turns can be negative (e.g., -0.097, -0.114)
+
+**Diff ramp angles** (not separate coast/drive ramp like BMW):
+- Single "DiffRampAngles" field in iRacing garage
+
+### Calibration Status (2026-03-30)
+
+**What's calibrated from telemetry (Hockenheim IBT):**
+- Front heave effective mass: 600 kg
+- Rear heave effective mass: 186 kg
+- Heave spring baselines: front 180 N/mm, rear 120 N/mm
+- Heave perch offsets: front 34.5 mm, rear 35.0 mm
+- Roll damper baselines: front LS=2/HS=3, rear LS=9/HS=6
+- Heave damper baselines from garage screenshots
+
+**What's estimated (needs ORECA-specific data):**
+- Torsion bar C constant: using BMW value (0.0008036) — ORECA likely differs
+- Front torsion OD capped at 14.76 mm because higher ODs cause front heave damper deflection to go negative (bottoming). The relationship between torsion OD, heave spring rate, and heave damper travel is not yet modeled.
+- Aero compression: front 15 mm, rear 8 mm (rough estimates)
+- Damper force per click: LS 18 N, HS 80 N (Dallara estimate, ORECA may differ)
+- ARB stiffness values are estimates
+
+**Known issues requiring more garage data:**
+1. **Front heave damper bottoming:** At OD ≥ 14.76 mm, heave damper defl goes to -1.7 mm. The OD-to-heave-travel interaction needs a multi-variable model (heave spring + OD + camber + pushrod).
+2. **Rear ride height misses target:** Solver targets 48.2 mm rear RH (from aero maps), but actual rear RH is 37–44 mm. Pushrod-to-RH model is single-variable but the Acura's RH depends on multiple parameters. Aero map targets themselves may be wrong (calibrated for BMW, not Acura).
+3. **Heave perch offset slider disabled:** Not calibrated for ORECA chassis — perch offset changes don't reliably predict RH changes.
+4. **Roll dampers not physics-tuned:** Using baseline values only. Need lateral g spectrum data for proper roll damping calculation.
+5. **Need 5+ varied garage screenshots** with different spring/pushrod/camber combos to build multi-variable RH regression models (like BMW's front/rear RideHeightModel).
 
 ---
 
@@ -396,6 +437,7 @@ No verified setup file available from your data, but the Dallara architecture me
 | Imola | Technical, kerb-heavy, elevation | Medium wing, compliant over kerbs, strong braking |
 | Suzuka | Fast flowing, high commitment | Aero platform critical, high wing, confidence setup |
 | Bathurst | Extreme elevation, bumpy, tight sections | Very compliant for mountain section, strong heave for straight, dual-personality setup |
+| Hockenheim GP | Smooth, mixed speed, tight stadium section | Smooth modern tarmac allows softer heave/third springs for mechanical grip. Parabolika + back straight reward lower wing angles for top speed. Stadium section (Motodrom) is tight and technical — diff preload critical for traction out of slow corners (especially important for Acura ARX-06). Stadium kerbs can be aggressive — tune HS comp/slope for compliance. Balance aero platform stability through fast sections vs mechanical grip in stadium. |
 
 ---
 

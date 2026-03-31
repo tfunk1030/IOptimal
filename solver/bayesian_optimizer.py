@@ -92,8 +92,19 @@ class _SimpleGP:
     def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         self.X_train = X.copy()
         self.y_train = y.copy()
-        K = self._kernel(X, X) + self.noise * np.eye(len(X))
-        self.K_inv = np.linalg.inv(K)
+        K = self._kernel(X, X)
+        jitter = max(self.noise, 1e-10)
+        ident = np.eye(len(X))
+        # Numerical guard: duplicated/snap-rounded samples can make K singular.
+        # Escalate jitter progressively, then fall back to pseudo-inverse.
+        for _ in range(6):
+            try:
+                self.K_inv = np.linalg.inv(K + jitter * ident)
+                break
+            except np.linalg.LinAlgError:
+                jitter *= 10.0
+        else:
+            self.K_inv = np.linalg.pinv(K + jitter * ident, rcond=1e-8)
         self.alpha = self.K_inv @ y
 
     def predict(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

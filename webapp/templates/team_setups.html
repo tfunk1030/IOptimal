@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Team</p>
+    <h1>Shared Setups</h1>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Filters</h2>
+  </div>
+  <div class="grid-two">
+    <div class="field">
+      <label for="filter-car">Car</label>
+      <select id="filter-car" name="car">
+        <option value="">All Cars</option>
+        {% for car in cars %}
+        <option value="{{ car }}">{{ car }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="filter-track">Track</label>
+      <select id="filter-track" name="track">
+        <option value="">All Tracks</option>
+        {% for track in tracks %}
+        <option value="{{ track }}">{{ track }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</div>
+
+{% if setups %}
+<div class="grid-two">
+  {% for setup in setups %}
+  <div class="panel">
+    <div class="panel-head">
+      <div>
+        <h3>{{ setup.car }} — {{ setup.track }}</h3>
+        <p>{{ setup.scenario }}</p>
+      </div>
+      <span class="badge">{{ setup.rating }}</span>
+    </div>
+    <div class="badge-row" style="margin-bottom: 0.75rem;">
+      <span class="badge">{{ setup.lap_time }}</span>
+      <span class="badge">by {{ setup.shared_by }}</span>
+    </div>
+    {% if setup.notes %}
+    <p style="color: var(--muted); margin: 0 0 0.75rem;">{{ setup.notes[:120] }}{% if setup.notes|length > 120 %}...{% endif %}</p>
+    {% endif %}
+    <a class="button button-primary" href="{{ setup.download_url }}">Download .sto</a>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="panel">
+  <p class="empty-copy">No shared setups yet.</p>
+</div>
+{% endif %}
+{% endblock %}

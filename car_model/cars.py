@@ -262,6 +262,83 @@ class HeaveSpringModel:
     min_static_defl_mm: float = 3.0
     # Maximum allowed slider position (spring nearly unloaded above this)
     max_slider_mm: float = 45.0
+    # Optional indexed-control decode for cars whose garage exposes raw indices
+    # instead of physical spring rates. When unset, the solver treats the setting
+    # value itself as the physical rate.
+    front_setting_index_range: tuple[float, float] | None = None
+    front_setting_anchor_index: float | None = None
+    front_rate_at_anchor_nmm: float | None = None
+    front_rate_per_index_nmm: float | None = None
+    rear_setting_index_range: tuple[float, float] | None = None
+    rear_setting_anchor_index: float | None = None
+    rear_rate_at_anchor_nmm: float | None = None
+    rear_rate_per_index_nmm: float | None = None
+
+    def front_rate_from_setting(self, setting_value: float) -> float:
+        """Decode a garage setting into a physical front heave rate."""
+        if (
+            self.front_setting_index_range is None
+            or self.front_setting_anchor_index is None
+            or self.front_rate_at_anchor_nmm is None
+            or self.front_rate_per_index_nmm is None
+        ):
+            return float(setting_value)
+        return float(
+            self.front_rate_at_anchor_nmm
+            + (float(setting_value) - self.front_setting_anchor_index) * self.front_rate_per_index_nmm
+        )
+
+    def rear_rate_from_setting(self, setting_value: float) -> float:
+        """Decode a garage setting into a physical rear heave/third-spring rate."""
+        if (
+            self.rear_setting_index_range is None
+            or self.rear_setting_anchor_index is None
+            or self.rear_rate_at_anchor_nmm is None
+            or self.rear_rate_per_index_nmm is None
+        ):
+            return float(setting_value)
+        return float(
+            self.rear_rate_at_anchor_nmm
+            + (float(setting_value) - self.rear_setting_anchor_index) * self.rear_rate_per_index_nmm
+        )
+
+    def front_setting_from_rate(self, rate_nmm: float, *, resolution: float = 1.0) -> float:
+        """Encode a physical front heave rate back to the exposed garage setting."""
+        if (
+            self.front_setting_index_range is None
+            or self.front_setting_anchor_index is None
+            or self.front_rate_at_anchor_nmm is None
+            or self.front_rate_per_index_nmm in (None, 0.0)
+        ):
+            return float(rate_nmm)
+        setting = (
+            (float(rate_nmm) - self.front_rate_at_anchor_nmm) / self.front_rate_per_index_nmm
+            + self.front_setting_anchor_index
+        )
+        lo, hi = self.front_setting_index_range
+        setting = max(lo, min(hi, setting))
+        if resolution > 0:
+            setting = round(setting / resolution) * resolution
+        return float(max(lo, min(hi, setting)))
+
+    def rear_setting_from_rate(self, rate_nmm: float, *, resolution: float = 1.0) -> float:
+        """Encode a physical rear heave/third-spring rate back to the exposed garage setting."""
+        if (
+            self.rear_setting_index_range is None
+            or self.rear_setting_anchor_index is None
+            or self.rear_rate_at_anchor_nmm is None
+            or self.rear_rate_per_index_nmm in (None, 0.0)
+        ):
+            return float(rate_nmm)
+        setting = (
+            (float(rate_nmm) - self.rear_rate_at_anchor_nmm) / self.rear_rate_per_index_nmm
+            + self.rear_setting_anchor_index
+        )
+        lo, hi = self.rear_setting_index_range
+        setting = max(lo, min(hi, setting))
+        if resolution > 0:
+            setting = round(setting / resolution) * resolution
+        return float(max(lo, min(hi, setting)))
 
 
 @dataclass
@@ -494,6 +571,42 @@ class CornerSpringModel:
     purposes because L and MR are fixed geometry (not garage-adjustable).
     The C_torsion = 0.0008036 value was derived by running the verified
     Sebring 2024 race-winning setup through ride height telemetry (IBT).
+
+    ## Pushrod vs Pullrod: Why BMW Chose Pushrod Front
+    (Research: iRacing GTP BMW LMDh suspension geometry, March 2026)
+    The BMW M Hybrid V8 uses pushrod actuation at the front (compression
+    loads the torsion bar) and — unlike pure LMP1 designs — also pushrod
+    at the rear. The Dallara-built LMDh platform mandates tight inboard
+    packaging to accommodate the shared hybrid drivetrain; pushrod front
+    keeps the rocker and torsion bar high in the monocoque, away from the
+    crash structure. By contrast, pullrod front places the rocker low and
+    forward (favored by F1 and LMP1 for CG benefits), which conflicts with
+    the LMDh's mandated Dallara rear subframe geometry.
+    Source: coach dave academy BMW M Hybrid V8 guide (2025); iRacing.com
+    BMW announcement (Apr 2023); IMSA LMDh technical regulations.
+
+    ## Natural Frequency Sensitivity per OD Step (BMW, m_corner ≈ 258 kg)
+    Derived from k_wheel = C_torsion * OD^4, f = (1/2π) * sqrt(k/m):
+        OD = 11.0 mm → k=11.8 N/mm → f ≈ 1.07 Hz  (very soft, 1.5× race)
+        OD = 13.9 mm → k=30.0 N/mm → f ≈ 1.71 Hz  ← baseline (calibrated)
+        OD = 15.0 mm → k=40.7 N/mm → f ≈ 1.99 Hz
+        OD = 16.0 mm → k=52.7 N/mm → f ≈ 2.27 Hz
+        OD = 18.2 mm → k=88.2 N/mm → f ≈ 2.94 Hz  (very stiff)
+    Rear coil (k=120–240 N/mm, m_corner ≈ 258 kg): f ≈ 3.43–4.86 Hz.
+    → Front torsion bars operate in 1–3 Hz range; rear coils 3–5 Hz.
+    → Frequency isolation ratio (rear/front) stays 1.7–3.0× across legal
+      range, with softest fronts risking resonance coupling (ratio < 2.0
+      triggers the objective's isolation penalty).
+
+    ## Garage Step Non-Linearity
+    Because k ∝ OD^4, equal OD steps produce unequal stiffness steps:
+        Δk per 0.1mm at OD=11.0 mm: +0.43 N/mm  (small effect at low end)
+        Δk per 0.1mm at OD=13.9 mm: +0.87 N/mm  (baseline sensitivity)
+        Δk per 0.1mm at OD=16.0 mm: +1.32 N/mm  (large effect at high end)
+    This means a single garage click at a stiff bar has ~3× the stiffness
+    effect of the same click at the softest bar. Tuners pushing high-OD
+    setups are operating in the sensitive region — small changes, large
+    handling delta.
     ═══════════════════════════════════════════════════════════════════════
     """
     # Front torsion bar
@@ -505,9 +618,15 @@ class CornerSpringModel:
     # instead of continuous step rounding.
     front_torsion_od_options: list[float] = field(default_factory=list)
 
-    # Rear coil spring
+    # Rear corner spring — either coil (BMW/Cadillac) or torsion bar (Ferrari/Acura)
+    # Coil spring (rear_torsion_c is None):
     rear_spring_range_nmm: tuple[float, float] = (100.0, 300.0)
     rear_spring_step_nmm: float = 10.0      # Garage step size
+    # Rear torsion bar (ORECA/Ferrari — set rear_torsion_c to enable):
+    rear_torsion_c: float | None = None     # k_wheel = C * OD^4 (None = coil spring)
+    rear_torsion_od_range_mm: tuple[float, float] = (11.0, 16.0)
+    rear_torsion_od_step_mm: float = 0.10
+    rear_torsion_od_options: list[float] = field(default_factory=list)
 
     # Calibrated perch offsets
     rear_spring_perch_baseline_mm: float = 30.0
@@ -532,6 +651,10 @@ class CornerSpringModel:
 
     # Frequency isolation: corner freq should be < bump_freq / min_freq_ratio
     min_freq_isolation_ratio: float = 2.5
+    # Optional indexed-control decode for cars whose garage exposes torsion bars
+    # as raw indices instead of direct OD / rate numbers.
+    front_setting_index_range: tuple[float, float] | None = None
+    rear_setting_index_range: tuple[float, float] | None = None
 
     def torsion_bar_rate(self, od_mm: float) -> float:
         """Wheel rate (N/mm) from torsion bar OD."""
@@ -547,12 +670,97 @@ class CornerSpringModel:
             return min(self.front_torsion_od_options,
                        key=lambda x: abs(x - od_mm))
         step = self.front_torsion_od_step_mm
-        return round(round(od_mm / step) * step, 2)
+        lo = self.front_torsion_od_range_mm[0]
+        # Align to steps from range minimum (e.g., 13.90 + N*0.22 for Acura)
+        steps_from_lo = round((od_mm - lo) / step)
+        return round(lo + max(0, steps_from_lo) * step, 2)
 
     def snap_rear_rate(self, k_nmm: float) -> float:
         """Snap rear spring rate to nearest garage step."""
         step = self.rear_spring_step_nmm
         return round(round(k_nmm / step) * step, 0)
+
+    @property
+    def rear_is_torsion_bar(self) -> bool:
+        """True if rear uses torsion bars instead of coil springs."""
+        return self.rear_torsion_c is not None
+
+    def rear_torsion_bar_rate(self, od_mm: float) -> float:
+        """Rear wheel rate (N/mm) from torsion bar OD."""
+        if self.rear_torsion_c is None:
+            raise ValueError("Rear is coil spring, not torsion bar")
+        return self.rear_torsion_c * od_mm ** 4
+
+    def rear_torsion_bar_od_for_rate(self, k_wheel_nmm: float) -> float:
+        """Rear torsion bar OD (mm) needed for a target wheel rate."""
+        if self.rear_torsion_c is None:
+            raise ValueError("Rear is coil spring, not torsion bar")
+        return (k_wheel_nmm / self.rear_torsion_c) ** 0.25
+
+    def snap_rear_torsion_od(self, od_mm: float) -> float:
+        """Snap rear torsion bar OD to nearest discrete garage option."""
+        if self.rear_torsion_od_options:
+            return min(self.rear_torsion_od_options,
+                       key=lambda x: abs(x - od_mm))
+        step = self.rear_torsion_od_step_mm
+        lo = self.rear_torsion_od_range_mm[0]
+        # Align to steps from range minimum (e.g., 13.90 + N*0.22)
+        steps_from_lo = round((od_mm - lo) / step)
+        return round(lo + max(0, steps_from_lo) * step, 2)
+
+    def front_torsion_od_from_setting(self, setting_value: float) -> float:
+        """Decode a garage setting into a physical front torsion-bar OD."""
+        if self.front_setting_index_range is None:
+            return float(setting_value)
+        idx_lo, idx_hi = self.front_setting_index_range
+        od_lo, od_hi = self.front_torsion_od_range_mm
+        if abs(idx_hi - idx_lo) < 1e-9:
+            return float(od_lo)
+        t = (float(setting_value) - idx_lo) / (idx_hi - idx_lo)
+        t = max(0.0, min(1.0, t))
+        return float(od_lo + t * (od_hi - od_lo))
+
+    def front_setting_from_torsion_od(self, od_mm: float, *, resolution: float = 1.0) -> float:
+        """Encode a physical front torsion-bar OD back to the exposed garage setting."""
+        if self.front_setting_index_range is None:
+            return float(od_mm)
+        idx_lo, idx_hi = self.front_setting_index_range
+        od_lo, od_hi = self.front_torsion_od_range_mm
+        if abs(od_hi - od_lo) < 1e-9:
+            return float(idx_lo)
+        t = (float(od_mm) - od_lo) / (od_hi - od_lo)
+        t = max(0.0, min(1.0, t))
+        setting = idx_lo + t * (idx_hi - idx_lo)
+        if resolution > 0:
+            setting = round(setting / resolution) * resolution
+        return float(max(idx_lo, min(idx_hi, setting)))
+
+    def rear_bar_rate_from_setting(self, setting_value: float) -> float:
+        """Decode a garage setting into a physical rear torsion-bar rate."""
+        if self.rear_setting_index_range is None:
+            return float(setting_value)
+        idx_lo, idx_hi = self.rear_setting_index_range
+        rate_lo, rate_hi = self.rear_spring_range_nmm
+        if abs(idx_hi - idx_lo) < 1e-9:
+            return float(rate_lo)
+        t = (float(setting_value) - idx_lo) / (idx_hi - idx_lo)
+        t = max(0.0, min(1.0, t))
+        return float(rate_lo + t * (rate_hi - rate_lo))
+
+    def rear_setting_from_bar_rate(self, rate_nmm: float, *, resolution: float = 1.0) -> float:
+        """Encode a physical rear torsion-bar rate back to the exposed garage setting."""
+        if self.rear_setting_index_range is None:
+            return float(rate_nmm)
+        idx_lo, idx_hi = self.rear_setting_index_range
+        rate_lo, rate_hi = self.rear_spring_range_nmm
+        if abs(rate_hi - rate_lo) < 1e-9:
+            return float(idx_lo)
+        t = (float(rate_nmm) - rate_lo) / (rate_hi - rate_lo)
+        t = max(0.0, min(1.0, t))
+        setting = idx_lo + t * (idx_hi - idx_lo)
+        if resolution > 0:
+            setting = round(setting / resolution) * resolution
+        return float(max(idx_lo, min(idx_hi, setting)))
 
 
 @dataclass
@@ -672,6 +880,19 @@ class DamperModel:
     # iRacing's damper model is suspected to be digressive (n ≈ 0.7-0.9).
     # Default 1.0 means no change to existing behaviour until calibrated per car.
     digressive_exponent: float = 1.0
+
+    # ORECA heave+roll damper architecture (Acura ARX-06)
+    # When True, the car has separate roll dampers (FrontRoll/RearRoll)
+    # instead of per-corner dampers. The main LS/HS fields above apply
+    # to the heave dampers; roll dampers have their own LS/HS clicks.
+    has_roll_dampers: bool = False
+    roll_ls_range: tuple[int, int] = (1, 11)
+    roll_hs_range: tuple[int, int] = (1, 11)
+    # Roll damper baselines (LS and HS for front/rear roll dampers)
+    front_roll_ls_baseline: int = 2
+    front_roll_hs_baseline: int = 3
+    rear_roll_ls_baseline: int = 5
+    rear_roll_hs_baseline: int = 5
 
     def snap_click(self, value: float, param: str) -> int:
         lo, hi = getattr(self, f"{param}_range")
@@ -892,6 +1113,14 @@ class CarModel:
     # where λ_ref = 0.20 is the calibration point (recovers OptimumG +5% rule).
     tyre_load_sensitivity: float = 0.20
 
+    # Torsion-ARB coupling factor — empirical correction for LLTD model.
+    # Standard RCVD parallel-element model gives coupling = 0.0.
+    # BMW/Sebring IBT data (73 sessions) required γ=0.25 to match measured LLTD=50.99%.
+    # May compensate for rocker flex or other non-modelled compliance.
+    # DEFAULT = 0.0 (no coupling) — only set to non-zero for cars with IBT calibration.
+    # Used by ObjectiveFunction._torsion_arb_coupling_factor().
+    torsion_arb_coupling: float = 0.0
+
     # ── Tyre thermal operating window ────────────────────────────────────────
     # Michelin GTP/Hypercar Pilot Sport Endurance compound (Ken Payne, Michelin NA
     # technical director, Sportscar365 / IMSA GTLM Insider):
@@ -1036,14 +1265,20 @@ class CarModel:
         # For all other cars, flag parameters that need IBT calibration
         flags: dict[str, str] = {}
 
-        # Parameters that are confirmed same as BMW for Dallara LMDh platform
-        dallara_confirmed = self.canonical_name in ("cadillac", "acura")
+        # Parameters confirmed same as BMW for Dallara LMDh platform
+        # Acura is ORECA (not Dallara) — different chassis, no shared confirmation
+        dallara_confirmed = self.canonical_name == "cadillac"
 
-        flags["aero_compression"] = (
-            "confirmed_dallara" if dallara_confirmed else "ESTIMATE"
-        )
-        flags["m_eff_front"] = "ESTIMATE — needs IBT calibration"
-        flags["m_eff_rear"] = "ESTIMATE — needs IBT calibration"
+        if self.canonical_name == "acura":
+            flags["aero_compression"] = "ESTIMATE — ORECA chassis"
+            flags["m_eff_front"] = "calibrated_hockenheim"
+            flags["m_eff_rear"] = "calibrated_hockenheim"
+        else:
+            flags["aero_compression"] = (
+                "confirmed_dallara" if dallara_confirmed else "ESTIMATE"
+            )
+            flags["m_eff_front"] = "ESTIMATE — needs IBT calibration"
+            flags["m_eff_rear"] = "ESTIMATE — needs IBT calibration"
         flags["front_roll_gain"] = "ESTIMATE — needs IBT calibration"
         flags["rear_roll_gain"] = "ESTIMATE — needs IBT calibration"
         flags["pushrod_geometry"] = (
@@ -1064,6 +1299,7 @@ BMW_M_HYBRID_V8 = CarModel(
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
     default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
     tyre_load_sensitivity=0.22,    # BMW Michelin GTP compound — moderate sensitivity
+    torsion_arb_coupling=0.25,     # Back-calibrated from 73 IBT sessions at Sebring (LLTD=50.99%)
     # IBT-calibrated LLTD target: 46 BMW Sebring sessions show 38-43% actual balance.
     # Theoretical W_front + λ*0.05 = 0.4727 + 0.055 = 0.528 is ~10-14% too high.
     # This override cuts false LLTD penalty by ~10x for real BMW setups.
@@ -1491,6 +1727,20 @@ FERRARI_499P = CarModel(
         # always negative (-101 to -112.5mm). Default of +43mm (BMW) is wrong.
         # Using -103.5mm from the fastest recent session (Mar20-C, heave idx 7).
         perch_offset_rear_baseline_mm=-103.5,
+        # Ferrari garage exposes raw heave indices, not physical N/mm.
+        # Use the existing anchors from observed Ferrari sessions:
+        #   front idx 1 ≈ 50 N/mm
+        #   rear  idx 2 ≈ 530 N/mm
+        # The per-index slopes are approximate until a full Ferrari sweep is run,
+        # but they keep the sequential solver monotonic and reversible.
+        front_setting_index_range=(0.0, 8.0),
+        front_setting_anchor_index=1.0,
+        front_rate_at_anchor_nmm=50.0,
+        front_rate_per_index_nmm=20.0,
+        rear_setting_index_range=(0.0, 9.0),
+        rear_setting_anchor_index=2.0,
+        rear_rate_at_anchor_nmm=530.0,
+        rear_rate_per_index_nmm=60.0,
     ),
     corner_spring=CornerSpringModel(
         # Ferrari uses torsion bars for BOTH front and rear (indexed 0-18)
@@ -1541,6 +1791,8 @@ FERRARI_499P = CarModel(
         rear_motion_ratio=0.612,   # CALIBRATED: LLTD back-solve → 50.990% ✓ (was 0.536, corrected by 4-pt rear fit)
         track_width_mm=1600.0,     # ESTIMATE — needs Ferrari IBT calibration
         cg_height_mm=340.0,        # ESTIMATE — LMH rules allow lower CoG than LMDh
+        front_setting_index_range=(0.0, 18.0),
+        rear_setting_index_range=(0.0, 18.0),
     ),
     arb=ARBModel(
         # Ferrari uses: Disconnected, A, B, C, D, E (6 sizes)
@@ -1612,9 +1864,12 @@ FERRARI_499P = CarModel(
         camber_rear_deg=(-1.9, 0.0),            # hard garage limit (iRacing GTP legal max)
         toe_front_mm=(-3.0, 3.0),
         toe_rear_mm=(-2.0, 3.0),
+        brake_bias_migration=(-6.0, 6.0),
         diff_clutch_plates_options=[2, 4, 6],
         heave_spring_resolution_nmm=1.0,        # indexed: step by 1
         rear_spring_resolution_nmm=1.0,         # rear torsion bar OD: step by 1
+        front_heave_perch_resolution_mm=0.5,
+        rear_third_perch_resolution_mm=0.5,
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
@@ -1712,11 +1967,11 @@ PORSCHE_963 = CarModel(
 ACURA_ARX06 = CarModel(
     name="Acura ARX-06",
     canonical_name="acura",
-    mass_car_kg=1030.0,
+    mass_car_kg=1030.0,               # PDF: dry weight 1030 kg
     mass_driver_kg=75.0,
-    weight_dist_front=0.475,  # ESTIMATE — Dallara LMDh, twin-turbo V6 mid-rear
-    default_df_balance_pct=49.0,  # Sharp front end — risk of snap oversteer with too much front DF
-    tyre_load_sensitivity=0.20,   # ESTIMATE — Michelin GTP compound (Dallara platform)
+    weight_dist_front=0.470,          # IBT: (2706+2706)/(2706+2706+3048+3048) = 0.470
+    default_df_balance_pct=49.0,      # Sharp front end — risk of snap oversteer
+    tyre_load_sensitivity=0.20,       # ESTIMATE — Michelin GTP compound
     aero_axes_swapped=True,
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
@@ -1727,69 +1982,137 @@ ACURA_ARX06 = CarModel(
     min_rear_rh_dynamic=25.0,
     max_rear_rh_dynamic=75.0,
     vortex_burst_threshold_mm=2.0,
-    front_heave_spring_nmm=50.0,  # ESTIMATE
-    rear_third_spring_nmm=530.0,  # ESTIMATE
+    front_heave_spring_nmm=180.0,     # IBT: "180 N/mm" (Hockenheim baseline)
+    rear_third_spring_nmm=120.0,      # IBT: "120 N/mm" (Acura calls rear heave "HeaveSpring")
     aero_compression=AeroCompression(
         ref_speed_kph=230.0,
-        front_compression_mm=15.0,  # ESTIMATE
-        rear_compression_mm=8.0,    # ESTIMATE
+        front_compression_mm=15.0,    # ESTIMATE — needs aero map calibration
+        rear_compression_mm=8.0,      # ESTIMATE
     ),
     pushrod=PushrodGeometry(
-        front_pinned_rh_mm=30.0,       # ESTIMATE — same Dallara platform
-        front_pushrod_default_mm=-25.5, # ESTIMATE
-        rear_base_rh_mm=46.7,          # ESTIMATE
-        rear_pushrod_to_rh=-0.09,      # ESTIMATE
+        # Front RH dominated by CAMBER: front_rh = 37.55 + 2.388*camber (R²=0.988, RMSE=0.18mm)
+        # At camber=-2.8: RH≈30.9mm. At camber=-1.4: RH≈34.3mm.
+        front_pinned_rh_mm=30.2,         # CALIBRATED: typical at camber=-2.8 (most common)
+        front_pushrod_default_mm=-37.5,  # IBT: PushrodLengthDelta = -37.5mm
+        # CALIBRATED from 15 unique garage data points (2026-03-30), deduplicated:
+        # Full model: rear_rh = 78.54 + 0.7644*pushrod + 0.0406*heave - 0.4089*perch
+        # R²=0.908, RMSE=1.21mm, N=13 (with heave+perch), pushrod dominant
+        # Front RH model: front_rh = 37.55 + 2.388*camber (R²=0.988, camber dominant)
+        # Front damper defl: defl = 25.46 + 0.714*pushrod (R²=0.998, bottoms at pushrod<-35.6mm)
+        # PushrodGeometry can only model pushrod; base_rh at typical operating point
+        # (heave=150, perch=85): base = 78.54 + 0.0406*150 - 0.4089*85 = 49.87
+        rear_base_rh_mm=49.87,           # CALIBRATED: 13-point regression, R²=0.91
+        rear_pushrod_to_rh=0.7644,       # CALIBRATED: positive (less negative pushrod = higher RH)
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
-        front_m_eff_kg=176.0,   # ESTIMATE
-        rear_m_eff_kg=2870.0,   # ESTIMATE
+        # m_eff varies with spring rate (nonlinear sim model):
+        #   Front: 641kg at 90 N/mm, 319kg at 190 N/mm
+        #   Rear:  187kg at 60 N/mm, 254kg at 70 N/mm
+        # Using mid-range values; solver should ideally use rate-dependent m_eff.
+        front_m_eff_kg=450.0,     # CALIBRATED: midpoint of 319-641kg range (garage screenshots)
+        rear_m_eff_kg=220.0,      # CALIBRATED: midpoint of 187-254kg range (garage screenshots)
+        front_spring_range_nmm=(90.0, 400.0),    # EXPANDED: garage shows 90-380 N/mm range
+        front_heave_hard_range_nmm=(90.0, 400.0),  # EXPANDED: setups use up to 380 N/mm
+        rear_spring_range_nmm=(60.0, 300.0),     # Garage shows 60-190 N/mm; cap at 300
+        perch_offset_front_baseline_mm=68.0,     # CALIBRATED: typical operating point from setups
+        perch_offset_rear_baseline_mm=85.0,      # CALIBRATED: typical operating point from setups
+        # Front heave damper defl model: defl = -11.58 + 0.544 * perch (R²=0.78)
+        # Bottoming threshold: perch < 21.3mm (only 3 of 16 setups bottom)
+        # Old IBT baseline (34.5mm) was near bottoming — real setups use 49-100mm
+        slider_perch_coeff=0.0,
+        slider_intercept=0.0,
+        slider_heave_coeff=0.0,
+        heave_spring_defl_max_intercept_mm=0.0,
+        heave_spring_defl_max_slope=0.0,
+        defl_static_intercept=0.0,
+        defl_static_heave_coeff=0.0,
     ),
     corner_spring=CornerSpringModel(
-        # Same Dallara torsion bar front + coil rear as BMW
-        front_torsion_c=0.0008036,  # Dallara platform — same as BMW verified
-        front_torsion_od_ref_mm=13.9,
-        front_torsion_od_range_mm=(11.0, 16.0),
-        rear_spring_range_nmm=(100.0, 300.0),
-        rear_spring_step_nmm=10.0,
-        front_motion_ratio=1.0,
-        rear_motion_ratio=0.60,  # Dallara geometry — same as BMW confirmed
-        track_width_mm=1600.0,   # Dallara LMDh chassis
-        cg_height_mm=350.0,      # Dallara LMDh chassis — same as BMW
+        # ORECA chassis: torsion bars at ALL 4 corners (front AND rear)
+        # Same torsion bar hardware as BMW — identical discrete OD options
+        front_torsion_c=0.0008036,        # ESTIMATE — same as BMW until calibrated
+        # NOTE: garage torsion bar deflection is NOT purely weight/(C*OD^4);
+        # it includes preload from torsion bar turns. C constant calibration
+        # deferred until turns-corrected model is built.
+        front_torsion_od_ref_mm=13.9,     # IBT: TorsionBarOD = 13.90mm (front)
+        # EXPANDED: front heave damper is ALWAYS bottomed (-1.7 to -2.5mm) across
+        # ALL tested ODs (13.90, 14.76, 15.86) and spring rates (90, 190).
+        # This is a normal Acura characteristic, not an error to prevent.
+        front_torsion_od_range_mm=(13.9, 15.86),
+        front_torsion_od_options=[         # CONFIRMED from garage dropdown
+            13.90, 14.34, 14.76, 15.14, 15.51, 15.86,  # EXPANDED: full usable range
+        ],
+        # Rear also uses torsion bars (ORECA, not Dallara) — same discrete options
+        rear_torsion_c=0.0008036,         # ESTIMATE — same C constant, needs calibration
+        rear_torsion_od_range_mm=(13.9, 18.20),
+        rear_torsion_od_options=[          # Same hardware as front
+            13.90, 14.34, 14.76, 15.14, 15.51, 15.86,
+            16.19, 16.51, 16.81, 17.11, 17.39, 17.67, 17.94, 18.20,
+        ],
+        rear_spring_range_nmm=(100.0, 300.0),    # Unused — rear is torsion bar
+        rear_spring_step_nmm=10.0,               # Unused
+        front_motion_ratio=1.0,           # Baked into C constant
+        rear_motion_ratio=1.0,            # Baked into C constant for rear torsion
+        track_width_mm=1600.0,            # ORECA LMDh chassis
+        cg_height_mm=350.0,              # ORECA LMDh chassis
     ),
     arb=ARBModel(
-        # Same Dallara chassis as BMW — identical ARB hardware.
-        # Stiffness values propagated from BMW calibrated model.
+        # ORECA ARB: Size (Disconnected/Soft/Medium/Stiff) + Blades (1-5)
+        # Stiffness values are ESTIMATEs — propagated from BMW until calibrated
         front_size_labels=["Disconnected", "Soft", "Medium", "Stiff"],
-        front_stiffness_nmm_deg=[0.0, 5500.0, 11000.0, 16500.0],  # Dallara — same as BMW
-        front_baseline_size="Soft",
-        front_baseline_blade=1,
+        front_stiffness_nmm_deg=[0.0, 5500.0, 11000.0, 16500.0],
+        front_baseline_size="Medium",     # IBT: ArbSize = Medium
+        front_baseline_blade=1,           # IBT: ArbBlades = 1
         rear_size_labels=["Soft", "Medium", "Stiff"],
-        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],     # Dallara — same as BMW
-        rear_baseline_size="Medium",
-        rear_baseline_blade=3,
-        front_blade_count=5,
-        rear_blade_count=5,
-        track_width_front_mm=1730.0,  # Dallara LMDh — same as BMW
-        track_width_rear_mm=1650.0,   # Dallara LMDh — same as BMW
+        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],
+        rear_baseline_size="Medium",      # IBT: ArbSize = Medium
+        rear_baseline_blade=2,            # IBT: ArbBlades = 2
+        front_blade_count=5,              # PDF: blades 1-5
+        rear_blade_count=5,               # PDF: blades 1-5
+        track_width_front_mm=1730.0,      # ESTIMATE — ORECA LMDh
+        track_width_rear_mm=1650.0,       # ESTIMATE — ORECA LMDh
     ),
     geometry=WheelGeometryModel(
-        front_camber_baseline_deg=-2.9,  # ESTIMATE — needs Acura IBT
-        rear_camber_baseline_deg=-1.8,   # ESTIMATE
-        front_roll_gain=0.60,            # Dallara platform — same as BMW
-        rear_roll_gain=0.50,             # Dallara platform — same as BMW
+        front_camber_baseline_deg=-2.8,   # IBT: Camber = -2.8 deg
+        rear_camber_baseline_deg=-1.8,    # IBT: Camber = -1.8 deg
+        front_roll_gain=0.60,             # ESTIMATE — ORECA platform
+        rear_roll_gain=0.50,              # ESTIMATE — ORECA platform
+        # CALIBRATED: front camber strongly affects front static RH
+        # ~2.9mm RH per degree camber (camber=-1.6→RH=33.7, camber=-2.8→RH=30.2)
     ),
     damper=DamperModel(
-        # Same Dallara damper scale as BMW/Cadillac — all clicks max at 11
-        ls_comp_range=(1, 11),
-        ls_rbd_range=(1, 11),
-        hs_comp_range=(1, 11),
-        hs_rbd_range=(1, 11),
-        hs_slope_range=(1, 11),
-        ls_force_per_click_n=18.0,
-        hs_force_per_click_n=80.0,
+        # ORECA heave+roll architecture: heave dampers have full LS/HS comp+rbd+slope;
+        # roll dampers have LS+HS only (no separate comp/rbd, no slope).
+        # iRacing Acura max is 10 clicks (not 11 like BMW).
+        ls_comp_range=(1, 10),
+        ls_rbd_range=(1, 10),
+        hs_comp_range=(1, 10),
+        hs_rbd_range=(1, 10),
+        hs_slope_range=(1, 10),
+        ls_force_per_click_n=18.0,        # ESTIMATE — same as Dallara
+        hs_force_per_click_n=80.0,        # ESTIMATE — same as Dallara
+        # Baselines from IBT (Hockenheim)
+        front_ls_comp_baseline=2,         # IBT: FrontHeave LsCompDamping = 2
+        front_ls_rbd_baseline=2,          # IBT: FrontHeave LsRbdDamping = 2
+        front_hs_comp_baseline=2,         # IBT: FrontHeave HsCompDamping = 2
+        front_hs_rbd_baseline=3,          # IBT: FrontHeave HsRbdDamping = 3
+        front_hs_slope_baseline=10,       # IBT: FrontHeave HsCompDampSlope = 10
+        rear_ls_comp_baseline=9,          # IBT: RearHeave LsCompDamping = 9
+        rear_ls_rbd_baseline=5,           # IBT: RearHeave LsRbdDamping = 5
+        rear_hs_comp_baseline=8,          # IBT: RearHeave HsCompDamping = 8
+        rear_hs_rbd_baseline=3,           # IBT: RearHeave HsRbdDamping = 3
+        rear_hs_slope_baseline=10,        # IBT: RearHeave HsCompDampSlope = 10
+        # Roll dampers
+        has_roll_dampers=True,
+        roll_ls_range=(1, 10),
+        roll_hs_range=(1, 10),
+        front_roll_ls_baseline=2,         # IBT: FrontRoll LsDamping = 2
+        front_roll_hs_baseline=3,         # IBT: FrontRoll HsDamping = 3
+        rear_roll_ls_baseline=9,          # IBT: RearRoll LsDamping = 9
+        rear_roll_hs_baseline=6,          # IBT: RearRoll HsDamping = 6
     ),
-    # Acura has narrower, lower wing range than other GTP cars
+    # Acura wing range from aero maps
     wing_angles=[6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0],
 )
 

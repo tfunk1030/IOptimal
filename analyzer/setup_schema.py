@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from car_model.setup_registry import CAR_FIELD_SPECS, get_field
+
 
 _COMPUTED_TOKENS = (
     "AeroCalculator",
@@ -106,6 +108,7 @@ _KNOWN_FIELD_MAP: dict[str, tuple[str, str | None]] = {
     "CarSetup_Dampers_LeftRearDamper_HsRbdDamping": ("rear_hs_rbd", "rear_hs_rbd"),
     "CarSetup_Dampers_LeftRearDamper_HsCompDampSlope": ("rear_hs_slope", "rear_hs_slope"),
     "CarSetup_Systems_BrakeSpec_BrakePressureBias": ("brake_bias_pct", "brake_bias_pct"),
+    "CarSetup_Systems_BrakeSpec_BrakeBiasTarget": ("brake_bias_target", "brake_bias_target"),
     "CarSetup_Systems_BrakeSpec_BiasMigration": ("brake_bias_migration", "brake_bias_migration"),
     "CarSetup_Systems_BrakeSpec_BiasMigrationGain": ("brake_bias_migration_gain", "brake_bias_migration_gain"),
     "CarSetup_Systems_BrakeSpec_FrontMasterCyl": ("front_master_cyl_mm", "front_master_cyl_mm"),
@@ -121,6 +124,13 @@ _KNOWN_FIELD_MAP: dict[str, tuple[str, str | None]] = {
     "CarSetup_Systems_Fuel_FuelLowWarning": ("fuel_low_warning_l", "fuel_low_warning_l"),
     "CarSetup_Systems_Fuel_FuelTarget": ("fuel_target_l", "fuel_target_l"),
     "CarSetup_Systems_GearRatios_GearStack": ("gear_stack", "gear_stack"),
+    "CarSetup_Systems_GearRatios_SpeedInFirst": ("speed_in_first_kph", "speed_in_first_kph"),
+    "CarSetup_Systems_GearRatios_SpeedInSecond": ("speed_in_second_kph", "speed_in_second_kph"),
+    "CarSetup_Systems_GearRatios_SpeedInThird": ("speed_in_third_kph", "speed_in_third_kph"),
+    "CarSetup_Systems_GearRatios_SpeedInFourth": ("speed_in_fourth_kph", "speed_in_fourth_kph"),
+    "CarSetup_Systems_GearRatios_SpeedInFifth": ("speed_in_fifth_kph", "speed_in_fifth_kph"),
+    "CarSetup_Systems_GearRatios_SpeedInSixth": ("speed_in_sixth_kph", "speed_in_sixth_kph"),
+    "CarSetup_Systems_GearRatios_SpeedInSeventh": ("speed_in_seventh_kph", "speed_in_seventh_kph"),
     "CarSetup_Systems_HybridConfig_HybridRearDriveEnabled": ("hybrid_rear_drive_enabled", "hybrid_rear_drive_enabled"),
     "CarSetup_Systems_HybridConfig_HybridRearDriveCornerPct": ("hybrid_rear_drive_corner_pct", "hybrid_rear_drive_corner_pct"),
     "CarSetup_Systems_Lighting_RoofIdLightColor": ("roof_light_color", "roof_light_color"),
@@ -131,7 +141,9 @@ _TELEMETRY_CORRELATION = {
     "CarSetup_Systems_TractionControl_TractionControlGain": ("dcTractionControl2", "live_tc_gain"),
     "CarSetup_Systems_TractionControl_TractionControlSlip": ("dcTractionControl", "live_tc_slip"),
     "CarSetup_Chassis_Front_ArbBlades": ("dcAntiRollFront", "live_front_arb_blade"),
+    "CarSetup_Chassis_Front_ArbBlades[0]": ("dcAntiRollFront", "live_front_arb_blade"),
     "CarSetup_Chassis_Rear_ArbBlades": ("dcAntiRollRear", "live_rear_arb_blade"),
+    "CarSetup_Chassis_Rear_ArbBlades[0]": ("dcAntiRollRear", "live_rear_arb_blade"),
 }
 
 _FORMULA_NOTES = {
@@ -387,6 +399,65 @@ def _build_ldx_field(field_id: str, entry: dict[str, Any], *, car: Any, current_
     )
 
 
+_FERRARI_PUBLIC_ALIASES = {
+    "front_heave_spring_nmm": ("front_heave_index", "idx"),
+    "rear_third_spring_nmm": ("rear_heave_index", "idx"),
+    "front_torsion_od_mm": ("front_torsion_bar_index", "idx"),
+    "rear_spring_rate_nmm": ("rear_torsion_bar_index", "idx"),
+    "diff_ramp_angles": ("rear_diff_ramp_label", ""),
+}
+
+
+def _registry_backed_fields(car: Any, current_setup: Any, measured: Any, *, seen_ids: set[str]) -> list[SetupField]:
+    if current_setup is None:
+        return []
+    fields: list[SetupField] = []
+    for canonical_key, spec in sorted(CAR_FIELD_SPECS.get("ferrari", {}).items()):
+        if not spec.sto_param_id or spec.sto_param_id in seen_ids:
+            continue
+        field_def = get_field(canonical_key)
+        if field_def is None or not field_def.current_setup_attr:
+            continue
+        value = getattr(current_setup, field_def.current_setup_attr, None)
+        if value is None:
+            continue
+        public_key, unit_override = _FERRARI_PUBLIC_ALIASES.get(canonical_key, (canonical_key, field_def.unit))
+        telemetry_channel = None
+        telemetry_value = None
+        if spec.sto_param_id in _TELEMETRY_CORRELATION and measured is not None:
+            telemetry_channel, measured_attr = _TELEMETRY_CORRELATION[spec.sto_param_id]
+            telemetry_value = getattr(measured, measured_attr, None)
+        allowed_range = None
+        if spec.range_min is not None and spec.range_max is not None:
+            allowed_range = {
+                "min": spec.range_min,
+                "max": spec.range_max,
+                "source": "setup_registry",
+            }
+        manual_range, manual_options, manual_resolution = _manual_constraints(car, spec.sto_param_id)
+        fields.append(
+            SetupField(
+                canonical_key=public_key,
+                kind=field_def.kind,
+                authoritative_source="telemetry" if telemetry_value is not None else "ibt",
+                raw_value=value,
+                raw_unit=unit_override,
+                raw_path=f"CurrentSetup.{field_def.current_setup_attr}",
+                decoded_value=value,
+                decoded_unit=unit_override,
+                ldx_id=spec.sto_param_id,
+                telemetry_channel=telemetry_channel,
+                telemetry_value=telemetry_value,
+                allowed_range=manual_range or allowed_range,
+                allowed_options=manual_options or list(spec.options) if spec.options else manual_options,
+                resolution=manual_resolution if manual_resolution is not None else spec.resolution,
+                provenance="Ferrari registry-backed CurrentSetup fallback",
+                formula_note=field_def.formula_note,
+            )
+        )
+    return fields
+
+
 def _synthetic_fields(current_setup: Any, measured: Any) -> list[SetupField]:
     if current_setup is None:
         return []
@@ -488,6 +559,7 @@ def build_setup_schema(
                 ldx_path=ldx_path,
             )
         )
+    schema.fields.extend(_registry_backed_fields(car, current_setup, measured, seen_ids=set(entries)))
     schema.fields.extend(_synthetic_fields(current_setup, measured))
     schema.fields.sort(key=lambda field: field.canonical_key)
     return schema

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Team</p>
+    <h1>Team Knowledge</h1>
+    <p class="lede">Aggregated empirical models built from all team members' sessions.</p>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Car / Track Knowledge</h2>
+  </div>
+  {% if knowledge %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Car</th>
+          <th>Track</th>
+          <th>Observations</th>
+          <th>Support Tier</th>
+          <th>Relationships</th>
+          <th>Last Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for k in knowledge %}
+        <tr>
+          <td>{{ k.car }}</td>
+          <td>{{ k.track }}</td>
+          <td>{{ k.observation_count }}</td>
+          <td>
+            {% if k.support_tier == 'calibrated' %}
+              <span class="badge" style="background: #1c5a4f; color: white;">Calibrated</span>
+            {% elif k.support_tier == 'partial' %}
+              <span class="badge" style="background: #2563eb; color: white;">Partial</span>
+            {% elif k.support_tier == 'exploratory' %}
+              <span class="badge" style="background: #d97706; color: white;">Exploratory</span>
+            {% else %}
+              <span class="badge" style="background: #6b7280; color: white;">Unsupported</span>
+            {% endif %}
+          </td>
+          <td>{{ k.relationships_count }}</td>
+          <td>{{ k.updated_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-copy">No team knowledge yet. Models will build automatically as observations accumulate.</p>
+  {% endif %}
+</div>
+{% endblock %}

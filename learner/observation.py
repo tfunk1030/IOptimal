@@ -186,7 +186,7 @@ def build_observation(
         "hybrid_rear_drive_corner_pct": getattr(s, "hybrid_rear_drive_corner_pct", 0.0),
         "roof_light_color": getattr(s, "roof_light_color", ""),
     }
-    # Dampers
+    # Dampers (heave clicks for ORECA, per-corner for Dallara/Ferrari)
     setup["dampers"] = {
         "lf": {"ls_comp": s.front_ls_comp, "ls_rbd": s.front_ls_rbd,
                 "hs_comp": s.front_hs_comp, "hs_rbd": s.front_hs_rbd,
@@ -201,6 +201,15 @@ def build_observation(
                 "hs_comp": s.rear_hs_comp, "hs_rbd": s.rear_hs_rbd,
                 "hs_slope": s.rear_hs_slope},
     }
+    # Roll dampers (ORECA heave+roll architecture)
+    if getattr(s, "front_roll_ls", 0) or getattr(s, "rear_roll_ls", 0):
+        setup["roll_dampers"] = {
+            "front": {"ls": s.front_roll_ls, "hs": s.front_roll_hs},
+            "rear": {"ls": s.rear_roll_ls, "hs": s.rear_roll_hs},
+        }
+    # Rear torsion bar OD (ORECA: rear also uses torsion bars)
+    if getattr(s, "rear_torsion_od_mm", 0.0) > 0:
+        setup["rear_torsion_od_mm"] = s.rear_torsion_od_mm
 
     # ── Performance ──
     performance = {
@@ -286,6 +295,13 @@ def build_observation(
         # Pitch dynamics
         "pitch_mean_at_speed_deg": getattr(m, "pitch_mean_at_speed_deg", 0.0),
         "pitch_range_deg": getattr(m, "pitch_range_deg", 0.0),
+        "pitch_range_braking_deg": getattr(m, "pitch_range_braking_deg", None),
+        # Validation-primary signals (previously missing → forced fallback resolution)
+        "front_rh_excursion_measured_mm": getattr(m, "front_rh_excursion_measured_mm", None),
+        "front_braking_lock_ratio_p95": getattr(m, "front_braking_lock_ratio_p95", None),
+        "rear_power_slip_ratio_p95": getattr(m, "rear_power_slip_ratio_p95", None),
+        "front_pressure_mean_kpa": getattr(m, "front_pressure_mean_kpa", None),
+        "rear_pressure_mean_kpa": getattr(m, "rear_pressure_mean_kpa", None),
         # New Phase 4: Directional understeer & per-corner shock vel
         "understeer_left_turn_deg": getattr(m, "understeer_left_turn_deg", 0.0),
         "understeer_right_turn_deg": getattr(m, "understeer_right_turn_deg", 0.0),

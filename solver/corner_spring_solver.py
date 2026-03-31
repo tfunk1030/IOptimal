@@ -64,8 +64,8 @@ class CornerSpringSolution:
     front_heave_corner_ratio: float   # heave_spring / corner_wheel_rate
     front_mass_per_corner_kg: float
 
-    # Rear coil spring
-    rear_spring_rate_nmm: float
+    # Rear corner spring (coil rate in N/mm, or torsion bar OD in mm)
+    rear_spring_rate_nmm: float       # Wheel rate for coil; raw rate for torsion
     rear_natural_freq_hz: float
     rear_third_corner_ratio: float    # third_spring / corner_rate
     rear_mass_per_corner_kg: float
@@ -90,6 +90,9 @@ class CornerSpringSolution:
     # Constraint checks
     constraints: list[CornerSpringCheck]
 
+    # ORECA: rear torsion bar OD (None = coil spring car)
+    rear_torsion_od_mm: float | None = None
+
     def summary(self) -> str:
         """Human-readable summary of the solution."""
         lines = [
@@ -106,8 +109,13 @@ class CornerSpringSolution:
             f"    Freq isolation:      {self.front_freq_isolation_ratio:6.1f}x "
             f"(target: >2.5x)",
             "",
-            "  REAR COIL SPRING",
-            f"    Spring rate:         {self.rear_spring_rate_nmm:6.0f} N/mm",
+            f"  REAR {'TORSION BAR' if self.rear_torsion_od_mm else 'COIL SPRING'}",
+            *(
+                [f"    Torsion bar OD:      {self.rear_torsion_od_mm:6.2f} mm"]
+                if self.rear_torsion_od_mm else []
+            ),
+            f"    {'Wheel rate' if self.rear_torsion_od_mm else 'Spring rate'}:"
+            f"         {self.rear_spring_rate_nmm:6.0f} N/mm",
             f"    Natural frequency:   {self.rear_natural_freq_hz:6.2f} Hz",
             f"    Third/corner ratio:  {self.rear_third_corner_ratio:6.1f}x "
             f"(guideline: 1.5-3.5x)",
@@ -242,9 +250,18 @@ class CornerSpringSolver:
         rear_target_rate = rear_third_nmm / rear_target_ratio
 
         # Clamp to valid range and snap
-        rear_rate = max(rear_target_rate, csm.rear_spring_range_nmm[0])
-        rear_rate = min(rear_rate, csm.rear_spring_range_nmm[1])
-        rear_rate = csm.snap_rear_rate(rear_rate)
+        if csm.rear_is_torsion_bar:
+            # Rear torsion bar: convert target rate to OD, snap, reconvert
+            rear_od = csm.rear_torsion_bar_od_for_rate(rear_target_rate)
+            rear_od = csm.snap_rear_torsion_od(rear_od)
+            rear_od = max(rear_od, csm.rear_torsion_od_range_mm[0])
+            rear_od = min(rear_od, csm.rear_torsion_od_range_mm[1])
+            rear_rate = csm.rear_torsion_bar_rate(rear_od)
+        else:
+            rear_od = None
+            rear_rate = max(rear_target_rate, csm.rear_spring_range_nmm[0])
+            rear_rate = min(rear_rate, csm.rear_spring_range_nmm[1])
+            rear_rate = csm.snap_rear_rate(rear_rate)
 
         rear_freq = self.natural_freq(rear_rate, m_r_corner)
 
@@ -255,6 +272,7 @@ class CornerSpringSolver:
             rear_spring_rate_nmm=rear_rate,
             fuel_load_l=fuel_load_l,
             rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
+            rear_torsion_od_mm=rear_od,
         )
 
     def solution_from_explicit_rates(
@@ -265,13 +283,18 @@ class CornerSpringSolver:
         rear_spring_rate_nmm: float,
         fuel_load_l: float = 89.0,
         rear_spring_perch_mm: float | None = None,
+        rear_torsion_od_mm: float | None = None,
     ) -> CornerSpringSolution:
         """Build a corner-spring solution from explicit garage selections."""
         csm = self.car.corner_spring
         # Snap torsion OD to discrete garage option
         front_torsion_od_mm = csm.snap_torsion_od(front_torsion_od_mm)
-        # Snap rear spring to garage step
-        rear_spring_rate_nmm = csm.snap_rear_rate(rear_spring_rate_nmm)
+        # Snap rear spring/torsion to garage step
+        if csm.rear_is_torsion_bar and rear_torsion_od_mm is not None:
+            rear_torsion_od_mm = csm.snap_rear_torsion_od(rear_torsion_od_mm)
+            rear_spring_rate_nmm = csm.rear_torsion_bar_rate(rear_torsion_od_mm)
+        else:
+            rear_spring_rate_nmm = csm.snap_rear_rate(rear_spring_rate_nmm)
         total_mass = self.car.total_mass(fuel_load_l)
         m_f_corner = total_mass * self.car.weight_dist_front / 2
         m_r_corner = total_mass * (1 - self.car.weight_dist_front) / 2
@@ -338,6 +361,7 @@ class CornerSpringSolver:
                 if rear_spring_perch_mm is None
                 else rear_spring_perch_mm
             ),
+            rear_torsion_od_mm=rear_torsion_od_mm,
             constraints=constraints,
         )
 

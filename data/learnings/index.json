@@ -76,33 +76,80 @@
     "bmw_sebring_international_raceway_bmwtry",
     "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-16_20-25-12",
     "ferrari_sebring_international_raceway_ferrari499p_sebring%20international%202026-03-20%2020-35-17",
-<<<<<<< HEAD
     "bmw_sebring_international_raceway_bmwlmdh_sebring%20international%202026-03-22%2015-41-46",
-    "bmw_sebring_international_raceway_bmwlmdh_sebring%20international%202026-03-21%2019-01-49"
-  ],
-  "total_observations": 76,
-  "total_deltas": 112,
-=======
+    "bmw_sebring_international_raceway_bmwlmdh_sebring%20international%202026-03-21%2019-01-49",
     "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_14-52-24",
     "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_15-15-48",
-    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_15-41-46"
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_15-41-46",
+    "bmw_sebring_international_raceway_01_bmwlmdh_sebring_international_2026-03-27_09-58-33",
+    "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-20_19-52-42",
+    "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-20_20-11-14",
+    "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-20_20-35-17",
+    "ferrari_sebring_international_raceway_ferrari499p_sebring_international_2026-03-20_21-09-50",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-21_19-01-49",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_14-25-03",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_18-54-07",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_19-18-50",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-23_19-58-17",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-23_20-28-46",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-24_09-35-32",
+    "bmw_sebring_international_raceway_fullracebmw",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-24_15-34-43",
+    "bmw_sebring_international_raceway_2ndracebmw",
+    "bmw_sebring_international_raceway_bmwrace3",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-24_20-02-54",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-25_09-58-22",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-25_17-49-13",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-25_17-58-43",
+    "bmw_sebring_international_raceway_badbmw",
+    "bmw_sebring_international_raceway_bmwbadquaili1",
+    "bmw_sebring_international_raceway_badbmw2",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-26_09-50-22",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-26_09-58-16",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-26_19-10-33",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-26_19-11-17",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-26_19-54-39",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-27_09-32-23",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-27_09-49-57",
+    "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-27_09-58-33",
+    "bmw_sebring_international_raceway_bmwtf11",
+    "bmw_sebring_international_raceway_bmwtf12",
+    "bmw_sebring_international_raceway_bmwjj",
+    "bmw_sebring_international_raceway_01_bmwjj",
+    "bmw_sebring_international_raceway_01_bmwjj1",
+    "bmw_sebring_international_raceway_bmwjj1",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_7",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_4",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_2",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_3",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_1",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-51-12",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_5",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_4",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_3",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_2",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_1",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_10",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_9",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_8",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_7",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27"
   ],
-  "total_observations": 77,
-  "total_deltas": 100,
->>>>>>> origin/claw-research
+  "total_observations": 134,
+  "total_deltas": 276,
   "cars_seen": [
     "bmw",
     "ferrari",
     "porsche",
-    "cadillac"
+    "cadillac",
+    "acura"
   ],
   "tracks_seen": [
     "Sebring International Raceway_International",
-    "Silverstone Circuit_Arena Grand Prix"
+    "Silverstone Circuit_Arena Grand Prix",
+    "Hockenheimring Baden-W\u00fcrttemberg_Grand Prix"
   ],
-<<<<<<< HEAD
-  "last_updated": "2026-03-22T23:06:17.683760+00:00"
-=======
-  "last_updated": "2026-03-22T20:55:31.554858+00:00"
->>>>>>> origin/claw-research
+  "last_updated": "2026-03-31T01:43:20.608336+00:00"
 }

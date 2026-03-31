@@ -1,10 +1,10 @@
 {
   "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_15-41-46",
-  "ibt_path": "ibtfiles\\bmwlmdh_sebring international 2026-03-22 15-41-46.ibt",
+  "ibt_path": "C:\\Users\\VYRAL\\Documents\\iRacing\\Telemetry\\bmwlmdh_sebring international 2026-03-22 15-41-46.ibt",
   "car": "bmw",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-22T20:55:31.526553+00:00",
+  "timestamp": "2026-03-27T20:18:25.367213+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -32,7 +32,7 @@
     "rear_camber_deg": -1.7,
     "front_toe_mm": -0.4,
     "rear_toe_mm": -0.0,
-    "brake_bias_pct": 46.5,
+    "brake_bias_pct": 46.2,
     "brake_bias_target": 0.0,
     "brake_bias_migration": 0.0,
     "brake_bias_migration_gain": 0.0,
@@ -160,6 +160,12 @@
     "tc_intervention_pct": 0.0,
     "pitch_mean_at_speed_deg": 0.106,
     "pitch_range_deg": 1.78,
+    "pitch_range_braking_deg": 1.35,
+    "front_rh_excursion_measured_mm": 13.890644073486328,
+    "front_braking_lock_ratio_p95": 0.12747761607170105,
+    "rear_power_slip_ratio_p95": 0.09237261861562729,
+    "front_pressure_mean_kpa": 183.9,
+    "rear_pressure_mean_kpa": 179.2,
     "understeer_left_turn_deg": 0.1924380362033844,
     "understeer_right_turn_deg": -0.23826287686824799,
     "lf_shock_vel_p95_mps": 0.12997956573963165,
@@ -466,9 +472,9 @@
       {
         "category": "grip",
         "severity": "minor",
-        "symptom": "Hydraulic brake split 74.0% differs from setup 46.5% (delta 27.5%)",
+        "symptom": "Hydraulic brake split 74.0% differs from setup 46.2% (delta 27.8%)",
         "measured": 74.0,
-        "threshold": 46.5,
+        "threshold": 46.2,
         "speed_context": "braking"
       }
     ]

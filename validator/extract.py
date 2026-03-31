@@ -176,11 +176,25 @@ def extract_measurements(
     state.speed_max_kph = float(np.max(speed_kph))
     state.peak_lat_g_measured = float(np.percentile(np.abs(lat_g), 99.9))
 
-    # Shock velocities
-    lf_sv = np.abs(ibt.channel("LFshockVel")[start:end + 1])
-    rf_sv = np.abs(ibt.channel("RFshockVel")[start:end + 1])
-    lr_sv = np.abs(ibt.channel("LRshockVel")[start:end + 1])
-    rr_sv = np.abs(ibt.channel("RRshockVel")[start:end + 1])
+    # Shock velocities — synthesise from heave+roll if corner channels missing
+    n_samples = end - start + 1
+    has_corner_shocks = all(
+        ibt.has_channel(c) for c in ["LFshockVel", "RFshockVel", "LRshockVel", "RRshockVel"]
+    )
+    if has_corner_shocks:
+        lf_sv = np.abs(ibt.channel("LFshockVel")[start:end + 1])
+        rf_sv = np.abs(ibt.channel("RFshockVel")[start:end + 1])
+        lr_sv = np.abs(ibt.channel("LRshockVel")[start:end + 1])
+        rr_sv = np.abs(ibt.channel("RRshockVel")[start:end + 1])
+    else:
+        hf = ibt.channel("HFshockVel")[start:end + 1] if ibt.has_channel("HFshockVel") else np.zeros(n_samples)
+        tr = ibt.channel("TRshockVel")[start:end + 1] if ibt.has_channel("TRshockVel") else np.zeros(n_samples)
+        froll = ibt.channel("FROLLshockVel")[start:end + 1] if ibt.has_channel("FROLLshockVel") else np.zeros(n_samples)
+        rroll = ibt.channel("RROLLshockVel")[start:end + 1] if ibt.has_channel("RROLLshockVel") else np.zeros(n_samples)
+        lf_sv = np.abs(hf + froll)
+        rf_sv = np.abs(hf - froll)
+        lr_sv = np.abs(tr + rroll)
+        rr_sv = np.abs(tr - rroll)
 
     front_sv = np.concatenate([lf_sv, rf_sv])
     rear_sv = np.concatenate([lr_sv, rr_sv])

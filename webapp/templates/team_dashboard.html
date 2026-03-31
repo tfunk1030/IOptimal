@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero hero-compact">
+  <div>
+    <p class="eyebrow">Team</p>
+    <h1>Team Dashboard</h1>
+    <p class="lede">{{ team_name }}</p>
+  </div>
+  <div class="hero-meta">
+    <a class="button button-secondary" href="/team/setups">Shared Setups</a>
+    <a class="button button-secondary" href="/team/leaderboard">Leaderboard</a>
+    <a class="button button-secondary" href="/team/cars">Car Registry</a>
+  </div>
+</div>
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <span>Total Members</span>
+    <strong>{{ total_members }}</strong>
+  </div>
+  <div class="summary-card">
+    <span>Total Sessions</span>
+    <strong>{{ total_sessions }}</strong>
+  </div>
+  <div class="summary-card">
+    <span>Cars Tracked</span>
+    <strong>{{ cars_tracked }}</strong>
+  </div>
+  <div class="summary-card">
+    <span>Tracks Covered</span>
+    <strong>{{ tracks_covered }}</strong>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Activity Feed</h2>
+  </div>
+  {% if activity %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Member</th>
+          <th>Car</th>
+          <th>Track</th>
+          <th>Event</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in activity %}
+        <tr>
+          <td>{{ item.time }}</td>
+          <td>{{ item.member }}</td>
+          <td>{{ item.car }}</td>
+          <td>{{ item.track }}</td>
+          <td>{{ item.event }}</td>
+          <td>{{ item.details }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-copy">No team activity yet.</p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Recent Sessions</h2>
+  </div>
+  {% if recent_sessions %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>Car</th>
+          <th>Track</th>
+          <th>Lap Time</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in recent_sessions %}
+        <tr>
+          <td>{{ s.member }}</td>
+          <td>{{ s.car }}</td>
+          <td>{{ s.track }}</td>
+          <td>{{ s.lap_time }}</td>
+          <td>{{ s.date }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-copy">No recent sessions.</p>
+  {% endif %}
+</div>
+{% endblock %}

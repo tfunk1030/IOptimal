@@ -1,9 +1,0 @@
-STDOUT:
-
-
-STDERR:
-Error getting Git version: executable file not found in %PATH%
-error: failed to push some refs to 'https://github.com/tfunk1030/IOptimal.git'
-
-
-Exit: 1

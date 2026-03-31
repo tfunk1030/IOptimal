@@ -191,7 +191,7 @@ Why next:
 
 Main blockers:
 
-- rear suspension indexing and corner-spring fidelity
+- rear torsion bar is calibrated (C=0.001282, MR=0.612) but needs garage-truth validation against more observations
 - validating Ferrari-specific garage schema against actual garage states
 
 Implementation order:

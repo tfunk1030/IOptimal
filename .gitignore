@@ -1,10 +1,30 @@
 __pycache__/
-ibtfiles/cadillac/cadillacvseriesrgtp_silverstone 2019 gp 2026-03-17 19-58-55.ibt
+*.pyc
+
+# IBT telemetry files (binary, too large for GitHub)
+ibtfiles/
+*.ibt
+
 # Large telemetry (MoTeC .ld); use Git LFS if you need to track these
 data/Ferraridata/
 *.ld
 
-# IBT telemetry files (binary, too large for GitHub)
-ibtfiles/*.ibt
-ibtfiles/*.zip
-ibtfiles/
+# Generated solver output — keep data/ JSON (aero maps, track profiles)
+/*.json
+!data/**/*.json
+!validation/*.json
+
+# npm artifacts (should never be here — Python project)
+node_modules/
+package.json
+package-lock.json
+
+# Scratch/debug artifacts
+_git_push*.py
+_git_push_result*.txt
+_test_*.txt
+_test_*.py
+_syntax_check*.py
+_commit_msg*.txt
+_fix_*.py
+_git_*.py

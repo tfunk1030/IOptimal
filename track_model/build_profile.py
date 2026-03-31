@@ -47,10 +47,28 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
     steering = ibt.channel("SteeringWheelAngle")[start:end + 1]
 
     # Shock velocities (absolute values for spectrum analysis)
-    lf_sv = ibt.channel("LFshockVel")[start:end + 1]
-    rf_sv = ibt.channel("RFshockVel")[start:end + 1]
-    lr_sv = ibt.channel("LRshockVel")[start:end + 1]
-    rr_sv = ibt.channel("RRshockVel")[start:end + 1]
+    # Some cars (e.g. Acura ARX-06) lack corner shock channels but have
+    # heave (HFshockVel/TRshockVel) and roll-bar (FROLLshockVel/RROLLshockVel).
+    # Synthesise approximate corner velocities: corner ≈ heave ± roll.
+    has_corner_shocks = all(
+        ibt.has_channel(c) for c in ["LFshockVel", "RFshockVel", "LRshockVel", "RRshockVel"]
+    )
+    if has_corner_shocks:
+        lf_sv = ibt.channel("LFshockVel")[start:end + 1]
+        rf_sv = ibt.channel("RFshockVel")[start:end + 1]
+        lr_sv = ibt.channel("LRshockVel")[start:end + 1]
+        rr_sv = ibt.channel("RRshockVel")[start:end + 1]
+    else:
+        # Synthesise from heave + roll bar shocks
+        n_samples = end - start + 1
+        hf = ibt.channel("HFshockVel")[start:end + 1] if ibt.has_channel("HFshockVel") else np.zeros(n_samples)
+        tr = ibt.channel("TRshockVel")[start:end + 1] if ibt.has_channel("TRshockVel") else np.zeros(n_samples)
+        froll = ibt.channel("FROLLshockVel")[start:end + 1] if ibt.has_channel("FROLLshockVel") else np.zeros(n_samples)
+        rroll = ibt.channel("RROLLshockVel")[start:end + 1] if ibt.has_channel("RROLLshockVel") else np.zeros(n_samples)
+        lf_sv = hf + froll
+        rf_sv = hf - froll
+        lr_sv = tr + rroll
+        rr_sv = tr - rroll
 
     # Rumble strip channels for kerb detection
     rumble_lf = ibt.channel("TireLF_RumblePitch")[start:end + 1] if ibt.has_channel("TireLF_RumblePitch") else None
