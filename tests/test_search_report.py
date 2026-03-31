@@ -25,7 +25,7 @@ from output.search_report import (
     SensitivityRow,
     SensitivityMatrix,
     ParetoPoint,
-    SetupCluster,
+    CandidateCluster,
     compute_sensitivity,
     extract_pareto_frontier,
     cluster_candidates,
@@ -338,7 +338,7 @@ class TestFormatFunctions:
             assert "PARETO" in result
 
     def test_format_clusters_output(self):
-        cluster = SetupCluster(
+        cluster = CandidateCluster(
             cluster_id=0,
             label="Soft-Mechanical",
             members=[_make_eval()],
