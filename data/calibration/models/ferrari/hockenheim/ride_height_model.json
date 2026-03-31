@@ -1,0 +1,23 @@
+{
+  "car": "ferrari",
+  "metadata": {},
+  "metrics": {
+    "front_rmse": null,
+    "mean_rmse": null,
+    "rear_rmse": null,
+    "samples": 1
+  },
+  "model_type": "ride_height_model",
+  "parameters": {
+    "front": {
+      "coefficients": {},
+      "intercept": 0.0
+    },
+    "rear": {
+      "coefficients": {},
+      "intercept": 0.0
+    }
+  },
+  "track": "hockenheim",
+  "version": 1
+}

@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "car": "acura",
+    "copied_model_types": [
+      "garage_model",
+      "ride_height_model",
+      "telemetry_model",
+      "damper_model",
+      "diff_model"
+    ],
+    "track": "hockenheim"
+  },
+  "support_tier": "unsupported"
+}

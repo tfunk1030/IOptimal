@@ -1,0 +1,12 @@
+{
+  "lap_number": 16,
+  "lap_time_s": 92.01343536376953,
+  "front_rh_excursion_measured_mm": 23.643447875976562,
+  "rear_rh_std_mm": 4.939639091491699,
+  "pitch_range_braking_deg": 2.4,
+  "front_braking_lock_ratio_p95": 0.13070738315582275,
+  "rear_power_slip_ratio_p95": 0.05799918621778488,
+  "body_slip_p95_deg": 1.3211723566055298,
+  "understeer_low_speed_deg": 0.1438765525817871,
+  "understeer_high_speed_deg": -0.018447494134306908
+}

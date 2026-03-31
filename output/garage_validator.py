@@ -92,6 +92,13 @@ def validate_and_fix_garage_correlation(
     """
     warnings: list[str] = []
     gr = car.garage_ranges
+    garage_model = car.active_garage_output_model(track_name)
+
+    # If no garage model is active, skip correlation/clamping adjustments here.
+    # Step-level clamping is handled by setup_writer, and forcing Ferrari indexed
+    # garage ranges at this stage can collapse physically-meaningful solver values.
+    if garage_model is None:
+        return warnings
 
     # --- Phase 1: Range-clamp and quantise individual parameters ---
     warnings.extend(_clamp_step1(step1, gr))
@@ -101,9 +108,6 @@ def validate_and_fix_garage_correlation(
         warnings.extend(_clamp_step5(step5, gr))
 
     # --- Phase 2: Garage-model correlation check (BMW/Sebring only) ---
-    garage_model = car.active_garage_output_model(track_name)
-    if garage_model is None:
-        return warnings
 
     state = GarageSetupState.from_solver_steps(
         step1=step1, step2=step2, step3=step3,

@@ -1,0 +1,41 @@
+{
+  "car": "ferrari",
+  "metadata": {
+    "description": "Linear/interpretable garage-output regressions from normalized garage samples.",
+    "feature_names": [
+      "brake_bias_migration",
+      "brake_bias_migration_gain",
+      "brake_bias_pct",
+      "brake_bias_target",
+      "diff_clutch_plates",
+      "diff_preload_nm",
+      "front_arb_blade",
+      "front_camber_deg",
+      "front_diff_preload_nm",
+      "front_master_cyl_mm",
+      "front_toe_mm",
+      "fuel_l",
+      "fuel_low_warning_l",
+      "fuel_target_l",
+      "hybrid_rear_drive_corner_pct",
+      "hybrid_rear_drive_enabled",
+      "rear_arb_blade",
+      "rear_camber_deg",
+      "rear_master_cyl_mm",
+      "rear_toe_mm",
+      "tc_gain",
+      "tc_slip"
+    ]
+  },
+  "metrics": {
+    "mean_rmse": null,
+    "samples": 1,
+    "targets": {}
+  },
+  "model_type": "garage_model",
+  "parameters": {
+    "models": {}
+  },
+  "track": "hockenheim",
+  "version": 1
+}

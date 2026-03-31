@@ -1,0 +1,36 @@
+{
+  "sample_id": "bmw_sebring_bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026_03_13_13_07_51_obs",
+  "car": "bmw",
+  "track": "sebring",
+  "track_config": "international",
+  "sample_type": "telemetry",
+  "source_confidence": 1.0,
+  "artifacts": {
+    "setup_rows_json": "setup_rows.json",
+    "ibt": "session.ibt",
+    "sto": "setup.sto",
+    "screenshots": [
+      "screenshots/tires_aero.png",
+      "screenshots/chassis_front.png",
+      "screenshots/chassis_rear.png",
+      "screenshots/dampers.png",
+      "screenshots/systems.png"
+    ],
+    "measured_json": "measured.json"
+  },
+  "setup_context": {
+    "fuel_l": null,
+    "wing_deg": null,
+    "tire_type": null
+  },
+  "change_protocol": {
+    "baseline_sample_id": "",
+    "intended_changes": [],
+    "notes": ""
+  },
+  "driver_context": {
+    "driver_name": "",
+    "session_type": "test",
+    "weather_locked": true
+  }
+}

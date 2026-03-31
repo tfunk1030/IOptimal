@@ -1,0 +1,23 @@
+{
+  "car": "bmw",
+  "metadata": {},
+  "metrics": {
+    "front_rmse": null,
+    "mean_rmse": null,
+    "rear_rmse": null,
+    "samples": 0
+  },
+  "model_type": "ride_height_model",
+  "parameters": {
+    "front": {
+      "coefficients": {},
+      "intercept": 0.0
+    },
+    "rear": {
+      "coefficients": {},
+      "intercept": 0.0
+    }
+  },
+  "track": "sebring",
+  "version": 1
+}

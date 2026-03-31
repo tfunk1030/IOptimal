@@ -1,0 +1,17 @@
+{
+  "car": "bmw",
+  "metadata": {},
+  "metrics": {
+    "mean_rear_power_slip_ratio_p95": 0.080074,
+    "mean_understeer_low_speed_deg": 0.010055,
+    "samples": 115
+  },
+  "model_type": "diff_model",
+  "parameters": {
+    "mean_diff_preload_nm": 23.7838,
+    "mean_tc_gain": 4.3784,
+    "mean_tc_slip": 4.2568
+  },
+  "track": "sebring",
+  "version": 1
+}

@@ -1,0 +1,201 @@
+{
+  "carName": "bmw",
+  "rows": [
+    {
+      "label": "wing",
+      "metric_value": 17.0
+    },
+    {
+      "label": "adapter_name",
+      "metric_value": "bmw"
+    },
+    {
+      "label": "fuel_l",
+      "metric_value": 88.0
+    },
+    {
+      "label": "fuel_low_warning_l",
+      "metric_value": 8.0
+    },
+    {
+      "label": "fuel_target_l",
+      "metric_value": 0.0
+    },
+    {
+      "label": "front_rh_static",
+      "metric_value": 30.0
+    },
+    {
+      "label": "rear_rh_static",
+      "metric_value": 49.2
+    },
+    {
+      "label": "front_pushrod",
+      "metric_value": -25.0
+    },
+    {
+      "label": "rear_pushrod",
+      "metric_value": -22.0
+    },
+    {
+      "label": "front_heave_nmm",
+      "metric_value": 40.0
+    },
+    {
+      "label": "rear_third_nmm",
+      "metric_value": 400.0
+    },
+    {
+      "label": "torsion_bar_od_mm",
+      "metric_value": 13.9
+    },
+    {
+      "label": "rear_spring_nmm",
+      "metric_value": 150.0
+    },
+    {
+      "label": "front_heave_index",
+      "metric_value": 40.0
+    },
+    {
+      "label": "rear_heave_index",
+      "metric_value": 400.0
+    },
+    {
+      "label": "front_torsion_bar_index",
+      "metric_value": 13.9
+    },
+    {
+      "label": "rear_torsion_bar_index",
+      "metric_value": 150.0
+    },
+    {
+      "label": "front_arb_size",
+      "metric_value": "Soft"
+    },
+    {
+      "label": "front_arb_blade",
+      "metric_value": 1
+    },
+    {
+      "label": "rear_arb_size",
+      "metric_value": "Medium"
+    },
+    {
+      "label": "rear_arb_blade",
+      "metric_value": 3
+    },
+    {
+      "label": "front_camber_deg",
+      "metric_value": -2.3
+    },
+    {
+      "label": "rear_camber_deg",
+      "metric_value": -1.8
+    },
+    {
+      "label": "front_toe_mm",
+      "metric_value": -0.4
+    },
+    {
+      "label": "rear_toe_mm",
+      "metric_value": 0.3
+    },
+    {
+      "label": "brake_bias_pct",
+      "metric_value": 46.2
+    },
+    {
+      "label": "brake_bias_target",
+      "metric_value": 0.0
+    },
+    {
+      "label": "brake_bias_migration",
+      "metric_value": 0.0
+    },
+    {
+      "label": "brake_bias_migration_gain",
+      "metric_value": 0.0
+    },
+    {
+      "label": "front_master_cyl_mm",
+      "metric_value": 20.6
+    },
+    {
+      "label": "rear_master_cyl_mm",
+      "metric_value": 22.2
+    },
+    {
+      "label": "pad_compound",
+      "metric_value": "Medium"
+    },
+    {
+      "label": "front_diff_preload_nm",
+      "metric_value": 0.0
+    },
+    {
+      "label": "diff_preload_nm",
+      "metric_value": 30.0
+    },
+    {
+      "label": "diff_ramp_label",
+      "metric_value": "45/70"
+    },
+    {
+      "label": "diff_clutch_plates",
+      "metric_value": 6
+    },
+    {
+      "label": "tc_gain",
+      "metric_value": 4
+    },
+    {
+      "label": "tc_slip",
+      "metric_value": 3
+    },
+    {
+      "label": "gear_stack",
+      "metric_value": "Short"
+    },
+    {
+      "label": "speed_in_first_kph",
+      "metric_value": 115.8
+    },
+    {
+      "label": "speed_in_second_kph",
+      "metric_value": 151.4
+    },
+    {
+      "label": "speed_in_third_kph",
+      "metric_value": 184.2
+    },
+    {
+      "label": "speed_in_fourth_kph",
+      "metric_value": 219.7
+    },
+    {
+      "label": "speed_in_fifth_kph",
+      "metric_value": 257.0
+    },
+    {
+      "label": "speed_in_sixth_kph",
+      "metric_value": 288.3
+    },
+    {
+      "label": "speed_in_seventh_kph",
+      "metric_value": 315.8
+    },
+    {
+      "label": "hybrid_rear_drive_enabled",
+      "metric_value": ""
+    },
+    {
+      "label": "hybrid_rear_drive_corner_pct",
+      "metric_value": 0.0
+    },
+    {
+      "label": "roof_light_color",
+      "metric_value": "Orange"
+    }
+  ]
+}

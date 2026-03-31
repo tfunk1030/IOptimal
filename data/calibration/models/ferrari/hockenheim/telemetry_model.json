@@ -1,0 +1,227 @@
+{
+  "car": "ferrari",
+  "metadata": {
+    "targets": [
+      "front_heave_travel_used_pct",
+      "front_rh_excursion_measured_mm",
+      "rear_rh_std_mm",
+      "pitch_range_braking_deg",
+      "front_braking_lock_ratio_p95",
+      "rear_power_slip_ratio_p95",
+      "body_slip_p95_deg",
+      "understeer_low_speed_deg",
+      "understeer_high_speed_deg"
+    ]
+  },
+  "metrics": {
+    "fitted_targets": [
+      "body_slip_p95_deg",
+      "front_braking_lock_ratio_p95",
+      "front_heave_travel_used_pct",
+      "front_rh_excursion_measured_mm",
+      "pitch_range_braking_deg",
+      "rear_power_slip_ratio_p95",
+      "rear_rh_std_mm",
+      "understeer_high_speed_deg",
+      "understeer_low_speed_deg"
+    ],
+    "mean_rmse": 0.079304,
+    "samples": 14
+  },
+  "model_type": "telemetry_model",
+  "parameters": {
+    "models": {
+      "body_slip_p95_deg": {
+        "coefficients": {
+          "body_roll_max_deg": -0.24906835911013386,
+          "front_braking_lock_ratio_p95": -3.0139421228748016,
+          "front_rh_excursion_measured_mm": -0.03273248831675305,
+          "heave_bottoming_events_rear": 0.0005944025447244886,
+          "lap_number": 0.033364530215172265,
+          "lap_time_s": 0.0064153525295646135,
+          "rear_power_slip_ratio_p95": 7.971112801500559,
+          "rear_rh_std_mm": 0.33145151506754883,
+          "roll_gradient_deg_per_g": 1.8174871546704918,
+          "rpm_at_braking_pct_at_limiter": -0.13757863697334127,
+          "understeer_left_turn_deg": 0.8741243673953297,
+          "understeer_right_turn_deg": 1.0649400507029776
+        },
+        "intercept": -0.39874627985225825,
+        "r_squared": 1.0,
+        "rmse": 2.3304514421901603e-15,
+        "samples": 13,
+        "target": "body_slip_p95_deg"
+      },
+      "front_braking_lock_ratio_p95": {
+        "coefficients": {
+          "body_slip_p95_deg": -0.0044218948978953735,
+          "brake_bias_migration": 0.0003255689365705354,
+          "brake_bias_migration_gain": -7.778713757482848e-07,
+          "brake_bias_pct": 0.01576541089040264,
+          "diff_clutch_plates": 0.0019285217353994773,
+          "diff_preload_nm": 0.006437480950715276,
+          "front_camber_deg": -0.0009327929939686587,
+          "front_diff_preload_nm": 0.0015656149727931471,
+          "front_master_cyl_mm": 0.0057269077513029225,
+          "front_toe_mm": -0.00016099536412106388,
+          "lap_number": 0.005573019988618191,
+          "lap_time_s": -0.010976052276369708
+        },
+        "intercept": 0.0003216795796918332,
+        "r_squared": 0.8944288414423051,
+        "rmse": 0.007753034781444912,
+        "samples": 13,
+        "target": "front_braking_lock_ratio_p95"
+      },
+      "front_heave_travel_used_pct": {
+        "coefficients": {
+          "brake_bias_migration": 0.09744329302879341,
+          "brake_bias_migration_gain": -0.0035259392047998113,
+          "diff_preload_nm": 1.6139016361198837,
+          "front_camber_deg": -0.2311068373934233,
+          "front_diff_preload_nm": 0.20514132875998126,
+          "front_master_cyl_mm": 1.4252657476515775,
+          "front_toe_mm": -0.040611986343357075,
+          "fuel_low_warning_l": 0.30226619434797874,
+          "fuel_target_l": 0.2501787518434219,
+          "rear_arb_blade": 0.08686547541439385,
+          "rear_camber_deg": -0.14401706852910934,
+          "rear_toe_mm": 0.0010577817614399413
+        },
+        "intercept": 0.07981359700479422,
+        "r_squared": 0.8332181805866028,
+        "rmse": 0.2633956897469828,
+        "samples": 13,
+        "target": "front_heave_travel_used_pct"
+      },
+      "front_rh_excursion_measured_mm": {
+        "coefficients": {
+          "body_roll_max_deg": 2.0027736449022684,
+          "body_slip_p95_deg": -5.863013384580755,
+          "front_bottoming_events": -0.9203961983444977,
+          "front_braking_lock_ratio_p95": -64.61204404627568,
+          "heave_bottoming_events_rear": -0.5749273918945916,
+          "lap_time_s": 0.7011403483195053,
+          "lf_temp_middle_c": -9.559123386028528,
+          "lr_temp_middle_c": 4.7216485128826,
+          "peak_lat_g": -3.927448930370259,
+          "rf_temp_middle_c": 13.334337780063334,
+          "rr_temp_middle_c": -7.208249754178945,
+          "understeer_left_turn_deg": -115.0389327397363
+        },
+        "intercept": -17.394584930599276,
+        "r_squared": 1.0,
+        "rmse": 1.405145505460862e-13,
+        "samples": 13,
+        "target": "front_rh_excursion_measured_mm"
+      },
+      "pitch_range_braking_deg": {
+        "coefficients": {
+          "brake_bias_migration_gain": 2.0095865264478045e-05,
+          "brake_bias_pct": 0.03971814228791531,
+          "diff_clutch_plates": 0.004913480597750168,
+          "front_camber_deg": -0.0023574325390167006,
+          "front_diff_preload_nm": 0.005166346645563971,
+          "front_master_cyl_mm": 0.014431299014579131,
+          "fuel_low_warning_l": 0.002712128714993269,
+          "fuel_target_l": 0.002565510208133703,
+          "heave_bottoming_events_rear": -0.0039111957796014,
+          "rear_arb_blade": 0.0007720230806745789,
+          "rear_camber_deg": -0.0014599770736399163,
+          "rear_toe_mm": -6.028759579342069e-06
+        },
+        "intercept": 0.0008122148112035348,
+        "r_squared": 0.5408054370406515,
+        "rmse": 0.0884670238817032,
+        "samples": 13,
+        "target": "pitch_range_braking_deg"
+      },
+      "rear_power_slip_ratio_p95": {
+        "coefficients": {
+          "body_slip_p95_deg": 0.05020801961671449,
+          "front_heave_travel_used_pct": -0.017859939219158075,
+          "heave_bottoming_events_rear": 0.0015162902750999125,
+          "lap_time_s": 0.012643302950831518,
+          "pitch_mean_at_speed_deg": 0.23335602398563865,
+          "rear_dominant_freq_hz": -0.01432452154503235,
+          "rpm_at_braking_pct_at_limiter": 0.001971174679122763,
+          "splitter_rh_min_mm": -0.0007580960964634286,
+          "understeer_left_turn_deg": 0.05044471290778935,
+          "understeer_low_speed_deg": 0.0033251032891388325,
+          "understeer_mean_deg": -0.010533839311352865,
+          "understeer_right_turn_deg": -0.03889586214520373
+        },
+        "intercept": -0.012401012769393881,
+        "r_squared": 1.0,
+        "rmse": 6.561059154298178e-16,
+        "samples": 13,
+        "target": "rear_power_slip_ratio_p95"
+      },
+      "rear_rh_std_mm": {
+        "coefficients": {
+          "brake_bias_migration": -0.008633429872589726,
+          "brake_bias_pct": -0.5422321799170098,
+          "diff_clutch_plates": -0.06762718387096384,
+          "diff_preload_nm": -0.21965382996292188,
+          "front_braking_lock_ratio_p95": 7.823036102593248,
+          "front_camber_deg": 0.032257834995366434,
+          "front_diff_preload_nm": -0.08273366095194803,
+          "fuel_low_warning_l": -0.03565739989725042,
+          "lap_number": 0.2709501952978275,
+          "lap_time_s": 0.3961873537911722,
+          "rear_arb_blade": -0.01011717405714054,
+          "rear_toe_mm": 0.00014837441838613796
+        },
+        "intercept": -0.011106336846878928,
+        "r_squared": 0.4228203146449985,
+        "rmse": 0.2795584660947941,
+        "samples": 13,
+        "target": "rear_rh_std_mm"
+      },
+      "understeer_high_speed_deg": {
+        "coefficients": {
+          "arb_rear_adjustments": 0.000981079089794933,
+          "body_roll_max_deg": 0.0006042903010405353,
+          "front_bottoming_events": -0.01478405379293907,
+          "heave_bottoming_events_rear": 0.001392415011812649,
+          "pitch_range_braking_deg": -0.08903728812815268,
+          "rear_bottoming_events": 0.020939561302537747,
+          "rear_dominant_freq_hz": -0.02416554598516068,
+          "rear_power_slip_ratio_p95": 0.00418968803821222,
+          "roll_gradient_deg_per_g": 0.12897207699441432,
+          "rpm_at_braking_pct_at_limiter": 0.02367857355211923,
+          "understeer_left_turn_deg": 0.08584070647551843,
+          "understeer_low_speed_deg": 0.1499788974723076
+        },
+        "intercept": -0.11148814560754451,
+        "r_squared": 1.0,
+        "rmse": 5.00548370209167e-16,
+        "samples": 13,
+        "target": "understeer_high_speed_deg"
+      },
+      "understeer_low_speed_deg": {
+        "coefficients": {
+          "brake_bias_migration": -0.014182898770268121,
+          "brake_bias_migration_gain": 0.000473083050452779,
+          "diff_preload_nm": -0.23871508561233393,
+          "front_camber_deg": 0.03422339389716492,
+          "front_diff_preload_nm": -0.0330678498151092,
+          "front_heave_travel_used_pct": 0.15177603846429363,
+          "front_master_cyl_mm": -0.21096621458605327,
+          "front_toe_mm": 0.006003358369092251,
+          "fuel_low_warning_l": -0.044436232140956995,
+          "fuel_target_l": -0.03705949401405412,
+          "rear_arb_blade": -0.01276364961891003,
+          "rear_camber_deg": 0.021318778637451997
+        },
+        "intercept": -0.011817483518003236,
+        "r_squared": 0.5825535088090897,
+        "rmse": 0.07456594246840555,
+        "samples": 13,
+        "target": "understeer_low_speed_deg"
+      }
+    }
+  },
+  "track": "hockenheim",
+  "version": 1
+}

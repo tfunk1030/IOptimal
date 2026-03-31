@@ -1,0 +1,16 @@
+{
+  "car": "acura",
+  "model_metrics": {
+    "garage_model_rmse": null,
+    "ride_height_model_rmse": null,
+    "telemetry_model_rmse": 0.200668
+  },
+  "summary": {
+    "car": "acura",
+    "support_tier": "unsupported",
+    "track": "hockenheim"
+  },
+  "support_tier": "unsupported",
+  "track": "hockenheim",
+  "warnings": []
+}

@@ -1,18 +1,12 @@
 __pycache__/
 *.pyc
 
-# IBT telemetry files (binary, too large for GitHub)
-ibtfiles/
-*.ibt
+# IBT telemetry (binary; GitHub hard limit 100 MB — keep local or use Git LFS)
+data/calibration/raw/**/*.ibt
+data/ibt/**/*.ibt
+data/telemetry/**/*.ibt
 
 # Large telemetry (MoTeC .ld); use Git LFS if you need to track these
-data/Ferraridata/
-*.ld
-
-# Generated solver output — keep data/ JSON (aero maps, track profiles)
-/*.json
-!data/**/*.json
-!validation/*.json
 
 # npm artifacts (should never be here — Python project)
 node_modules/

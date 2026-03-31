@@ -1,0 +1,81 @@
+{
+  "carName": "bmw",
+  "rows": [
+    {
+      "label": "wing",
+      "metric_value": 17.0
+    },
+    {
+      "label": "fuel_l",
+      "metric_value": 89.0
+    },
+    {
+      "label": "front_rh_static",
+      "metric_value": 30.2
+    },
+    {
+      "label": "rear_rh_static",
+      "metric_value": 49.1
+    },
+    {
+      "label": "front_pushrod",
+      "metric_value": -26.0
+    },
+    {
+      "label": "rear_pushrod",
+      "metric_value": -17.5
+    },
+    {
+      "label": "front_heave_nmm",
+      "metric_value": 30.0
+    },
+    {
+      "label": "rear_third_nmm",
+      "metric_value": 360.0
+    },
+    {
+      "label": "torsion_bar_od_mm",
+      "metric_value": 13.9
+    },
+    {
+      "label": "rear_spring_nmm",
+      "metric_value": 130.0
+    },
+    {
+      "label": "front_arb_size",
+      "metric_value": "Soft"
+    },
+    {
+      "label": "front_arb_blade",
+      "metric_value": 1
+    },
+    {
+      "label": "rear_arb_size",
+      "metric_value": "Soft"
+    },
+    {
+      "label": "rear_arb_blade",
+      "metric_value": 3
+    },
+    {
+      "label": "front_camber_deg",
+      "metric_value": -2.0
+    },
+    {
+      "label": "rear_camber_deg",
+      "metric_value": -1.7
+    },
+    {
+      "label": "front_toe_mm",
+      "metric_value": -0.4
+    },
+    {
+      "label": "rear_toe_mm",
+      "metric_value": -0.0
+    },
+    {
+      "label": "brake_bias_pct",
+      "metric_value": 45.5
+    }
+  ]
+}

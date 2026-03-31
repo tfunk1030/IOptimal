@@ -2,7 +2,7 @@
   "car": "ferrari",
   "model_metrics": {
     "garage_model_rmse": 0.0,
-    "ride_height_model_rmse": 1.4048325860203145e-14,
+    "ride_height_model_rmse": 1.8178073219192924e-14,
     "telemetry_model_rmse": null
   },
   "summary": {

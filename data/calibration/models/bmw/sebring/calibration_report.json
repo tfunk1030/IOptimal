@@ -1,0 +1,16 @@
+{
+  "car": "bmw",
+  "model_metrics": {
+    "garage_model_rmse": null,
+    "ride_height_model_rmse": null,
+    "telemetry_model_rmse": 0.31771
+  },
+  "summary": {
+    "car": "bmw",
+    "support_tier": "unsupported",
+    "track": "sebring"
+  },
+  "support_tier": "unsupported",
+  "track": "sebring",
+  "warnings": []
+}

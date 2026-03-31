@@ -21,47 +21,47 @@
     "targets": {
       "front_rh_at_speed_mm": {
         "r_squared": 1.0,
-        "rmse": 5.617333549722722e-15,
+        "rmse": 6.526751786450488e-15,
         "samples": 6
       },
       "front_shock_defl_static_mm": {
         "r_squared": 1.0,
-        "rmse": 1.6215845185301648e-15,
+        "rmse": 9.086662831487287e-15,
         "samples": 6
       },
       "heave_slider_defl_static_mm": {
         "r_squared": 1.0,
-        "rmse": 2.0305450002290407e-14,
+        "rmse": 9.620794122416925e-15,
         "samples": 6
       },
       "heave_spring_defl_static_mm": {
         "r_squared": 1.0,
-        "rmse": 4.810397061208462e-15,
+        "rmse": 7.179060695831972e-15,
         "samples": 6
       },
       "rear_rh_at_speed_mm": {
         "r_squared": 1.0,
-        "rmse": 1.3911645316576381e-14,
+        "rmse": 1.5349477418661813e-14,
         "samples": 6
       },
       "rear_shock_defl_static_mm": {
         "r_squared": 1.0,
-        "rmse": 6.153480596427404e-15,
+        "rmse": 7.810585338954537e-15,
         "samples": 6
       },
       "static_front_rh_mm": {
         "r_squared": 1.0,
-        "rmse": 2.161031364628563e-14,
+        "rmse": 2.5121479338940402e-14,
         "samples": 6
       },
       "static_rear_rh_mm": {
         "r_squared": 1.0,
-        "rmse": 6.486338074120659e-15,
+        "rmse": 1.1234667099445444e-14,
         "samples": 6
       },
       "torsion_bar_turns": {
         "r_squared": 1.0,
-        "rmse": 3.84258544563017e-17,
+        "rmse": 2.5962963631595152e-17,
         "samples": 6
       }
     }
@@ -71,172 +71,172 @@
     "models": {
       "front_rh_at_speed_mm": {
         "coefficients": {
-          "front_camber_deg": -0.0003904578293108266,
-          "front_heave_perch_mm": 0.0011856850691729164,
-          "front_heave_spring_nmm": -0.011856850691729176,
-          "front_pushrod_offset_mm": -0.0020919828104847436,
-          "front_torsion_od_mm": -0.00027938732786109106,
-          "fuel_l": 0.002439505896074387,
-          "rear_pushrod_offset_mm": -0.004183965620969487,
-          "rear_spring_rate_nmm": 0.030323484306608466,
-          "rear_third_perch_mm": -0.006970994602633513,
-          "rear_third_spring_nmm": 0.0034752308558964862
+          "front_camber_deg": -0.000390457829310837,
+          "front_heave_perch_mm": 0.0011856850691729169,
+          "front_heave_spring_nmm": -0.01185685069172918,
+          "front_pushrod_offset_mm": -0.0020919828104847445,
+          "front_torsion_od_mm": -0.00027938732786109133,
+          "fuel_l": 0.0024395058960743872,
+          "rear_pushrod_offset_mm": -0.004183965620969489,
+          "rear_spring_rate_nmm": 0.03032348430660847,
+          "rear_third_perch_mm": -0.0069709946026335155,
+          "rear_third_spring_nmm": 0.003475230855896485
         },
-        "intercept": 9.062977413122619e-05,
+        "intercept": 9.062977413121232e-05,
         "r_squared": 1.0,
-        "rmse": 5.617333549722722e-15,
+        "rmse": 6.526751786450488e-15,
         "samples": 6,
         "target": "front_rh_at_speed_mm"
       },
       "front_shock_defl_static_mm": {
         "coefficients": {
-          "front_camber_deg": -0.000289308907713231,
-          "front_heave_perch_mm": 0.0007218673872782181,
-          "front_heave_spring_nmm": -0.007218673872782188,
-          "front_pushrod_offset_mm": -0.0014456079505629404,
-          "front_torsion_od_mm": 1.873176006503032e-06,
-          "fuel_l": 0.0021730948658606674,
-          "rear_pushrod_offset_mm": -0.002891215901125881,
-          "rear_spring_rate_nmm": 0.025340285594997777,
-          "rear_third_perch_mm": -0.005791797682284272,
-          "rear_third_spring_nmm": 0.007274869152977309
+          "front_camber_deg": -0.00028930890771323796,
+          "front_heave_perch_mm": 0.0007218673872782288,
+          "front_heave_spring_nmm": -0.007218673872782296,
+          "front_pushrod_offset_mm": -0.001445607950562956,
+          "front_torsion_od_mm": 1.8731760064969209e-06,
+          "fuel_l": 0.0021730948658606757,
+          "rear_pushrod_offset_mm": -0.002891215901125912,
+          "rear_spring_rate_nmm": 0.02534028559499791,
+          "rear_third_perch_mm": -0.005791797682284304,
+          "rear_third_spring_nmm": 0.007274869152977235
         },
-        "intercept": 7.237405632850094e-05,
+        "intercept": 7.237405632849053e-05,
         "r_squared": 1.0,
-        "rmse": 1.6215845185301648e-15,
+        "rmse": 9.086662831487287e-15,
         "samples": 6,
         "target": "front_shock_defl_static_mm"
       },
       "heave_slider_defl_static_mm": {
         "coefficients": {
-          "front_camber_deg": -0.0009063556493654148,
-          "front_heave_perch_mm": 0.0025434032752681838,
-          "front_heave_spring_nmm": -0.025434032752681864,
-          "front_pushrod_offset_mm": -0.004716787681396919,
-          "front_torsion_od_mm": -0.00037001886913945307,
-          "fuel_l": 0.006150134349246743,
-          "rear_pushrod_offset_mm": -0.009433575362793838,
-          "rear_spring_rate_nmm": 0.07421835986880838,
-          "rear_third_perch_mm": -0.017017056379890396,
-          "rear_third_spring_nmm": 0.014333466678498368
+          "front_camber_deg": -0.0009063556493654355,
+          "front_heave_perch_mm": 0.0025434032752681894,
+          "front_heave_spring_nmm": -0.02543403275268192,
+          "front_pushrod_offset_mm": -0.004716787681396926,
+          "front_torsion_od_mm": -0.0003700188691394561,
+          "fuel_l": 0.006150134349246746,
+          "rear_pushrod_offset_mm": -0.009433575362793852,
+          "rear_spring_rate_nmm": 0.07421835986880843,
+          "rear_third_perch_mm": -0.01701705637989041,
+          "rear_third_spring_nmm": 0.01433346667849833
         },
-        "intercept": 0.00021733844061297414,
+        "intercept": 0.0002173384406129325,
         "r_squared": 1.0,
-        "rmse": 2.0305450002290407e-14,
+        "rmse": 9.620794122416925e-15,
         "samples": 6,
         "target": "heave_slider_defl_static_mm"
       },
       "heave_spring_defl_static_mm": {
         "coefficients": {
-          "front_camber_deg": -2.4291069146159828e-05,
-          "front_heave_perch_mm": -0.0002917845449723419,
-          "front_heave_spring_nmm": 0.002917845449723419,
-          "front_pushrod_offset_mm": 0.00011355279949436383,
-          "front_torsion_od_mm": 0.00047001629045032,
-          "fuel_l": 0.0010047115268842543,
-          "rear_pushrod_offset_mm": 0.00022710559898872767,
-          "rear_spring_rate_nmm": 0.008588192543980834,
-          "rear_third_perch_mm": -0.001895870254274145,
-          "rear_third_spring_nmm": 0.01118264326378618
+          "front_camber_deg": -2.4291069146160506e-05,
+          "front_heave_perch_mm": -0.0002917845449723371,
+          "front_heave_spring_nmm": 0.0029178454497233723,
+          "front_pushrod_offset_mm": 0.00011355279949435706,
+          "front_torsion_od_mm": 0.0004700162904503173,
+          "fuel_l": 0.0010047115268842577,
+          "rear_pushrod_offset_mm": 0.0002271055989887141,
+          "rear_spring_rate_nmm": 0.008588192543980891,
+          "rear_third_perch_mm": -0.0018958702542741586,
+          "rear_third_spring_nmm": 0.011182643263786146
         },
         "intercept": 1.7823174547798235e-05,
         "r_squared": 1.0,
-        "rmse": 4.810397061208462e-15,
+        "rmse": 7.179060695831972e-15,
         "samples": 6,
         "target": "heave_spring_defl_static_mm"
       },
       "rear_rh_at_speed_mm": {
         "coefficients": {
-          "front_camber_deg": -0.001209802414158198,
-          "front_heave_perch_mm": 0.003934856320952263,
-          "front_heave_spring_nmm": -0.03934856320952266,
-          "front_pushrod_offset_mm": -0.006655912261162305,
-          "front_torsion_od_mm": -0.0012138003807422258,
-          "fuel_l": 0.006949367439887888,
-          "rear_pushrod_offset_mm": -0.01331182452232461,
-          "rear_spring_rate_nmm": 0.08916795600364023,
-          "rear_third_perch_mm": -0.02055464714093807,
-          "rear_third_spring_nmm": 0.0029345517872560113
+          "front_camber_deg": -0.0012098024141582117,
+          "front_heave_perch_mm": 0.003934856320952269,
+          "front_heave_spring_nmm": -0.03934856320952272,
+          "front_pushrod_offset_mm": -0.006655912261162314,
+          "front_torsion_od_mm": -0.0012138003807422295,
+          "fuel_l": 0.006949367439887893,
+          "rear_pushrod_offset_mm": -0.013311824522324628,
+          "rear_spring_rate_nmm": 0.0891679560036403,
+          "rear_third_perch_mm": -0.020554647140938083,
+          "rear_third_spring_nmm": 0.0029345517872559693
         },
-        "intercept": 0.0002721055940211395,
+        "intercept": 0.0002721055940210909,
         "r_squared": 1.0,
-        "rmse": 1.3911645316576381e-14,
+        "rmse": 1.5349477418661813e-14,
         "samples": 6,
         "target": "rear_rh_at_speed_mm"
       },
       "rear_shock_defl_static_mm": {
         "coefficients": {
-          "front_camber_deg": -0.000354856474501016,
-          "front_heave_perch_mm": 0.0009418010874205654,
-          "front_heave_spring_nmm": -0.009418010874205664,
-          "front_pushrod_offset_mm": -0.0018107223066171452,
-          "front_torsion_od_mm": -7.287986822398743e-05,
-          "fuel_l": 0.0025338837893657483,
-          "rear_pushrod_offset_mm": -0.0036214446132342903,
-          "rear_spring_rate_nmm": 0.03004784333076032,
-          "rear_third_perch_mm": -0.006878489885348638,
-          "rear_third_spring_nmm": 0.007231614827486079
+          "front_camber_deg": -0.0003548564745010299,
+          "front_heave_perch_mm": 0.0009418010874205694,
+          "front_heave_spring_nmm": -0.009418010874205705,
+          "front_pushrod_offset_mm": -0.0018107223066171508,
+          "front_torsion_od_mm": -7.287986822398964e-05,
+          "fuel_l": 0.002533883789365751,
+          "rear_pushrod_offset_mm": -0.0036214446132343016,
+          "rear_spring_rate_nmm": 0.030047843330760368,
+          "rear_third_perch_mm": -0.006878489885348649,
+          "rear_third_spring_nmm": 0.007231614827486049
         },
-        "intercept": 8.689212191969817e-05,
+        "intercept": 8.689212191968429e-05,
         "r_squared": 1.0,
-        "rmse": 6.153480596427404e-15,
+        "rmse": 7.810585338954537e-15,
         "samples": 6,
         "target": "rear_shock_defl_static_mm"
       },
       "static_front_rh_mm": {
         "coefficients": {
-          "front_camber_deg": -0.00047746889382886665,
-          "front_heave_perch_mm": 0.000979917092661754,
-          "front_heave_spring_nmm": -0.009799170926617553,
-          "front_pushrod_offset_mm": -0.002244841041204102,
-          "front_torsion_od_mm": 0.0002850068558805914,
-          "fuel_l": 0.00407977870150763,
-          "rear_pushrod_offset_mm": -0.004489682082408204,
-          "rear_spring_rate_nmm": 0.04569737247838508,
-          "rear_third_perch_mm": -0.010404398444219356,
-          "rear_third_spring_nmm": 0.01834937660303534
+          "front_camber_deg": -0.00047746889382887354,
+          "front_heave_perch_mm": 0.000979917092661759,
+          "front_heave_spring_nmm": -0.009799170926617602,
+          "front_pushrod_offset_mm": -0.0022448410412041083,
+          "front_torsion_od_mm": 0.0002850068558805888,
+          "fuel_l": 0.004079778701507632,
+          "rear_pushrod_offset_mm": -0.004489682082408217,
+          "rear_spring_rate_nmm": 0.04569737247838514,
+          "rear_third_perch_mm": -0.010404398444219368,
+          "rear_third_spring_nmm": 0.01834937660303531
         },
-        "intercept": 0.00012649239485429398,
+        "intercept": 0.00012649239485427316,
         "r_squared": 1.0,
-        "rmse": 2.161031364628563e-14,
+        "rmse": 2.5121479338940402e-14,
         "samples": 6,
         "target": "static_front_rh_mm"
       },
       "static_rear_rh_mm": {
         "coefficients": {
-          "front_camber_deg": -0.0006328550965506096,
-          "front_heave_perch_mm": 0.0011279999479741154,
-          "front_heave_spring_nmm": -0.011279999479741171,
-          "front_pushrod_offset_mm": -0.0028615169538181583,
-          "front_torsion_od_mm": 0.0006055170578699244,
-          "fuel_l": 0.005806068075402047,
-          "rear_pushrod_offset_mm": -0.0057230339076363166,
-          "rear_spring_rate_nmm": 0.06370068049389106,
-          "rear_third_perch_mm": -0.014473653104622246,
-          "rear_third_spring_nmm": 0.029445511215838965
+          "front_camber_deg": -0.0006328550965506235,
+          "front_heave_perch_mm": 0.0011279999479741187,
+          "front_heave_spring_nmm": -0.011279999479741204,
+          "front_pushrod_offset_mm": -0.0028615169538181635,
+          "front_torsion_od_mm": 0.0006055170578699227,
+          "fuel_l": 0.00580606807540205,
+          "rear_pushrod_offset_mm": -0.005723033907636327,
+          "rear_spring_rate_nmm": 0.0637006804938911,
+          "rear_third_perch_mm": -0.014473653104622257,
+          "rear_third_spring_nmm": 0.029445511215838945
         },
-        "intercept": 0.0001733517005844537,
+        "intercept": 0.00017335170058443983,
         "r_squared": 1.0,
-        "rmse": 6.486338074120659e-15,
+        "rmse": 1.1234667099445444e-14,
         "samples": 6,
         "target": "static_rear_rh_mm"
       },
       "torsion_bar_turns": {
         "coefficients": {
-          "front_camber_deg": 2.4355434083682435e-06,
-          "front_heave_perch_mm": -1.4393536089040734e-05,
-          "front_heave_spring_nmm": 0.00014393536089040744,
-          "front_pushrod_offset_mm": 1.7714168753921566e-05,
-          "front_torsion_od_mm": 1.1072903424159919e-05,
-          "fuel_l": 1.1110054295174526e-06,
-          "rear_pushrod_offset_mm": 3.542833750784313e-05,
-          "rear_spring_rate_nmm": -6.085762615002925e-05,
-          "rear_third_perch_mm": 1.5492157894886625e-05,
-          "rear_third_spring_nmm": 0.00018825174183438974
+          "front_camber_deg": 2.4355434083682973e-06,
+          "front_heave_perch_mm": -1.4393536089040727e-05,
+          "front_heave_spring_nmm": 0.00014393536089040739,
+          "front_pushrod_offset_mm": 1.7714168753921556e-05,
+          "front_torsion_od_mm": 1.1072903424159912e-05,
+          "fuel_l": 1.1110054295174551e-06,
+          "rear_pushrod_offset_mm": 3.542833750784311e-05,
+          "rear_spring_rate_nmm": -6.085762615002917e-05,
+          "rear_third_perch_mm": 1.5492157894886605e-05,
+          "rear_third_spring_nmm": 0.00018825174183438966
         },
-        "intercept": -3.32063266488412e-07,
+        "intercept": -3.320632664882765e-07,
         "r_squared": 1.0,
-        "rmse": 3.84258544563017e-17,
+        "rmse": 2.5962963631595152e-17,
         "samples": 6,
         "target": "torsion_bar_turns"
       }

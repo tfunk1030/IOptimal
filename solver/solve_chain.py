@@ -358,6 +358,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
 
     heave_solver = HeaveSolver(car, track)
     _k_current = getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None
+
     step2 = heave_solver.solve(
         dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
         dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,

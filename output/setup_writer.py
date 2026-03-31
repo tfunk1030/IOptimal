@@ -481,16 +481,48 @@ def _validate_setup_values(
     _clamp_field(step1, "rear_pushrod_offset_mm", *gr.rear_pushrod_mm, "rear_pushrod", "mm")
 
     # Heave / third spring
-    _clamp_field(step2, "front_heave_nmm", *gr.front_heave_nmm, "front_heave", " N/mm")
-    _clamp_field(step2, "rear_third_nmm", *gr.rear_third_nmm, "rear_third", " N/mm")
+    if car is not None and getattr(car, "canonical_name", "").lower() == "ferrari":
+        _clamp_field(
+            step2,
+            "front_heave_nmm",
+            *car.heave_spring.front_spring_range_nmm,
+            "front_heave",
+            " N/mm",
+        )
+        _clamp_field(
+            step2,
+            "rear_third_nmm",
+            *car.heave_spring.rear_spring_range_nmm,
+            "rear_third",
+            " N/mm",
+        )
+    else:
+        _clamp_field(step2, "front_heave_nmm", *gr.front_heave_nmm, "front_heave", " N/mm")
+        _clamp_field(step2, "rear_third_nmm", *gr.rear_third_nmm, "rear_third", " N/mm")
 
     # Perch offsets
     _clamp_field(step2, "perch_offset_front_mm", *gr.front_heave_perch_mm, "front_heave_perch", "mm")
     _clamp_field(step2, "perch_offset_rear_mm", *gr.rear_third_perch_mm, "rear_third_perch", "mm")
 
     # Corner springs
-    _clamp_field(step3, "front_torsion_od_mm", *gr.front_torsion_od_mm, "front_torsion_od", "mm")
-    _clamp_field(step3, "rear_spring_rate_nmm", *gr.rear_spring_nmm, "rear_spring_rate", " N/mm")
+    if car is not None and getattr(car, "canonical_name", "").lower() == "ferrari":
+        _clamp_field(
+            step3,
+            "front_torsion_od_mm",
+            *car.corner_spring.front_torsion_od_range_mm,
+            "front_torsion_od",
+            "mm",
+        )
+        _clamp_field(
+            step3,
+            "rear_spring_rate_nmm",
+            *car.corner_spring.rear_spring_range_nmm,
+            "rear_spring_rate",
+            " N/mm",
+        )
+    else:
+        _clamp_field(step3, "front_torsion_od_mm", *gr.front_torsion_od_mm, "front_torsion_od", "mm")
+        _clamp_field(step3, "rear_spring_rate_nmm", *gr.rear_spring_nmm, "rear_spring_rate", " N/mm")
     _clamp_field(step3, "rear_spring_perch_mm", *gr.rear_spring_perch_mm, "rear_spring_perch", "mm")
 
     # ARB blades
@@ -621,10 +653,6 @@ def write_sto(
         if getattr(_car, "canonical_name", "") == "ferrari":
             step2 = copy.deepcopy(step2)
             step3 = copy.deepcopy(step3)
-            step2.front_heave_nmm = float(public_output_value(_car, "front_heave_nmm", step2.front_heave_nmm))
-            step2.rear_third_nmm = float(public_output_value(_car, "rear_third_nmm", step2.rear_third_nmm))
-            step3.front_torsion_od_mm = float(public_output_value(_car, "front_torsion_od_mm", step3.front_torsion_od_mm))
-            step3.rear_spring_rate_nmm = float(public_output_value(_car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
             step3.rear_spring_perch_mm = 0.0
 
     # ── Pre-write validation: garage correlation fix + range clamping ─────
@@ -767,16 +795,26 @@ def write_sto(
     _w_num("rear_pushrod_offset",  round(step1.rear_pushrod_offset_mm * 2) / 2,  "mm")
 
     # === Heave / Third springs ===
-    _w_num("front_heave_spring",   int(round(step2.front_heave_nmm)),      "N/mm")
+    _front_heave_write = (
+        float(public_output_value(_car, "front_heave_nmm", step2.front_heave_nmm))
+        if (_car is not None and getattr(_car, "canonical_name", "").lower() == "ferrari")
+        else step2.front_heave_nmm
+    )
+    _rear_third_write = (
+        float(public_output_value(_car, "rear_third_nmm", step2.rear_third_nmm))
+        if (_car is not None and getattr(_car, "canonical_name", "").lower() == "ferrari")
+        else step2.rear_third_nmm
+    )
+    _w_num("front_heave_spring",   int(round(_front_heave_write)),      "N/mm")
     _w_num("front_heave_perch",    _snap_to_step(step2.perch_offset_front_mm, front_perch_step), "mm")
-    _w_num("rear_third_spring",    int(round(step2.rear_third_nmm)),        "N/mm")
+    _w_num("rear_third_spring",    int(round(_rear_third_write)),        "N/mm")
     _w_num("rear_third_perch",     _snap_to_step(step2.perch_offset_rear_mm, rear_third_perch_step),  "mm")
 
     # === Corner springs ===
     # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
     _front_torsion_value = (
-        int(round(step3.front_torsion_od_mm))
-        if car_canonical.lower() == "ferrari"
+        int(round(float(public_output_value(_car, "front_torsion_od_mm", step3.front_torsion_od_mm))))
+        if (_car is not None and getattr(_car, "canonical_name", "").lower() == "ferrari")
         else step3.front_torsion_od_mm
     )
     _w_num("lf_torsion_od", _front_torsion_value, "mm")
@@ -815,8 +853,13 @@ def write_sto(
         _w_num("lr_spring_rate", _rear_od, "mm")
         _w_num("rr_spring_rate", _rear_od, "mm")
     else:
-        _w_num("lr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
-        _w_num("rr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
+        _rear_spring_write = (
+            int(round(float(public_output_value(_car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))))
+            if (_car is not None and getattr(_car, "canonical_name", "").lower() == "ferrari")
+            else int(round(step3.rear_spring_rate_nmm))
+        )
+        _w_num("lr_spring_rate",   _rear_spring_write, "N/mm")
+        _w_num("rr_spring_rate",   _rear_spring_write, "N/mm")
     # Ferrari/Acura have no rear coil spring perch — skip if unmapped or suppressed
     if ids.get("lr_spring_perch"):
         _w_num("lr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")

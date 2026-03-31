@@ -18,6 +18,12 @@ from car_model.garage import GarageOutputModel
 RUNTIME_ROOT = Path(__file__).resolve().parent.parent / "data" / "calibration" / "models"
 SCHEMA_ROOT = Path(__file__).resolve().parent.parent / "data" / "setup_schema"
 
+TRACK_ALIAS_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "hockenheimring_baden_württemberg": ("hockenheim",),
+    "sebring_international_raceway": ("sebring",),
+    "silverstone_circuit": ("silverstone",),
+}
+
 
 def _track_slug(track_name: str | None) -> str:
     if not track_name:
@@ -30,6 +36,36 @@ def _track_slug(track_name: str | None) -> str:
         .replace(" ", "_")
         .replace(".", "")
     )
+
+
+def _candidate_track_slugs(track_name: str | None) -> list[str]:
+    primary = _track_slug(track_name)
+    if primary == "global":
+        return ["global"]
+    seen: set[str] = {primary}
+    candidates: list[str] = [primary]
+
+    for alias in TRACK_ALIAS_FALLBACKS.get(primary, ()):
+        alias_slug = _track_slug(alias)
+        if alias_slug not in seen:
+            candidates.append(alias_slug)
+            seen.add(alias_slug)
+
+    # Generic fallback: first token of slug (e.g. "hockenheimring_..." -> "hockenheimring").
+    # Helps absorb verbose track names while keeping deterministic order.
+    first_token = primary.split("_", 1)[0]
+    if first_token and first_token not in seen:
+        candidates.append(first_token)
+        seen.add(first_token)
+
+    # Additional generic fallback for common long-form names ending in "ring".
+    if first_token.endswith("ring") and len(first_token) > 4:
+        ring_base = first_token[:-4]
+        if ring_base and ring_base not in seen:
+            candidates.append(ring_base)
+            seen.add(ring_base)
+
+    return candidates
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -53,28 +89,41 @@ def load_setup_schema(car_name: str) -> SetupSchemaFile | None:
 
 @lru_cache(maxsize=256)
 def load_fitted_model(car_name: str, track_name: str | None, model_filename: str) -> FittedModelArtifact | None:
-    track_slug = _track_slug(track_name)
-    path = RUNTIME_ROOT / car_name / track_slug / model_filename
-    payload = _load_json(path)
-    if payload is None:
-        return None
-    try:
-        return FittedModelArtifact.from_dict(payload)
-    except Exception:
-        return None
+    for track_slug in _candidate_track_slugs(track_name):
+        path = RUNTIME_ROOT / car_name / track_slug / model_filename
+        payload = _load_json(path)
+        if payload is None:
+            continue
+        try:
+            return FittedModelArtifact.from_dict(payload)
+        except Exception:
+            continue
+    return None
 
 
 def load_support_tier(car_name: str, track_name: str | None) -> str | None:
-    track_slug = _track_slug(track_name)
-    payload = _load_json(RUNTIME_ROOT / car_name / track_slug / "support_tier.json")
-    if payload is None:
-        return None
-    tier = payload.get("support_tier")
-    return str(tier) if tier is not None else None
+    for track_slug in _candidate_track_slugs(track_name):
+        payload = _load_json(RUNTIME_ROOT / car_name / track_slug / "support_tier.json")
+        if payload is None:
+            continue
+        tier = payload.get("support_tier")
+        if tier is not None:
+            return str(tier)
+    return None
+
+
+def _allows_runtime_model_override(car_name: str, track_name: str | None) -> bool:
+    """Gate runtime model overrides by published support tier."""
+    tier = (load_support_tier(car_name, track_name) or "").strip().lower()
+    # Unsupported tiers should not override built-in car models, because sparse
+    # artifacts can produce degenerate intercept-only (or zero) models.
+    return tier in {"partial", "calibrated"}
 
 
 def telemetry_model_corrections(car_name: str, track_name: str | None) -> dict[str, float]:
     """Extract bounded additive predictor corrections from a published telemetry model."""
+    if not _allows_runtime_model_override(car_name, track_name):
+        return {}
     artifact = load_fitted_model(car_name, track_name, "telemetry_model.json")
     if artifact is None:
         return {}
@@ -109,6 +158,8 @@ def load_runtime_telemetry_model(car_name: str, track_name: str | None) -> dict[
 
 
 def load_runtime_ride_height_model(car_name: str, track_name: str | None):
+    if not _allows_runtime_model_override(car_name, track_name):
+        return None
     artifact = load_fitted_model(car_name, track_name, "ride_height_model.json")
     if artifact is None:
         return None
@@ -157,6 +208,8 @@ def load_runtime_ride_height_model(car_name: str, track_name: str | None):
 
 
 def load_runtime_garage_model(car_name: str, track_name: str | None, *, fallback_name: str | None = None) -> GarageOutputModel | None:
+    if not _allows_runtime_model_override(car_name, track_name):
+        return None
     artifact = load_fitted_model(car_name, track_name, "garage_model.json")
     if artifact is None:
         return None

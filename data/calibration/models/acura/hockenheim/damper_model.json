@@ -1,0 +1,13 @@
+{
+  "car": "acura",
+  "metadata": {
+    "fit_method": "manual_or_physics_default"
+  },
+  "metrics": {
+    "samples": 31
+  },
+  "model_type": "damper_model",
+  "parameters": {},
+  "track": "hockenheim",
+  "version": 1
+}

@@ -1,0 +1,17 @@
+{
+  "car": "acura",
+  "metadata": {},
+  "metrics": {
+    "mean_rear_power_slip_ratio_p95": 0.08076,
+    "mean_understeer_low_speed_deg": 0.228315,
+    "samples": 31
+  },
+  "model_type": "diff_model",
+  "parameters": {
+    "mean_diff_preload_nm": 47.6786,
+    "mean_tc_gain": 5.0714,
+    "mean_tc_slip": 4.2143
+  },
+  "track": "hockenheim",
+  "version": 1
+}

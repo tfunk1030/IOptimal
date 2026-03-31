@@ -1,0 +1,18 @@
+{
+  "car": "bmw",
+  "metadata": {
+    "description": "Linear/interpretable garage-output regressions from normalized garage samples.",
+    "feature_names": []
+  },
+  "metrics": {
+    "mean_rmse": null,
+    "samples": 0,
+    "targets": {}
+  },
+  "model_type": "garage_model",
+  "parameters": {
+    "models": {}
+  },
+  "track": "sebring",
+  "version": 1
+}

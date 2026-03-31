@@ -1,0 +1,9 @@
+{
+  "lap_number": 5,
+  "lap_time_s": 109.56253051757812,
+  "front_heave_travel_used_pct": 92.9,
+  "rear_rh_std_mm": 6.495598316192627,
+  "body_slip_p95_deg": 3.4083175659179688,
+  "understeer_low_speed_deg": -0.06628333032131195,
+  "understeer_high_speed_deg": 0.11342989653348923
+}

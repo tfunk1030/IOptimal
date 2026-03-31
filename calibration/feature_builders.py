@@ -85,7 +85,13 @@ def feature_matrix_from_samples(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {"rows": rows, "feature_names": numeric_keys, "matrix": matrix}
 
 
-def fit_linear_model(*, matrix: dict[str, Any], target: str) -> LinearMetricModel | None:
+def fit_linear_model(
+    *,
+    matrix: dict[str, Any],
+    target: str,
+    min_samples: int = 3,
+    max_features: int = 24,
+) -> LinearMetricModel | None:
     """Fit an ordinary least-squares model against a target key."""
     rows = list(matrix.get("rows") or [])
     feature_names = list(matrix.get("feature_names") or [])
@@ -98,11 +104,53 @@ def fit_linear_model(*, matrix: dict[str, Any], target: str) -> LinearMetricMode
             continue
         filtered_indices.append(idx)
         y_values.append(float(value))
-    if len(filtered_indices) < max(3, len(feature_names) + 1):
+    if len(filtered_indices) < max(1, min_samples):
         return None
-    filtered_x = x[filtered_indices, :] if feature_names else np.zeros((len(filtered_indices), 0), dtype=float)
+    if feature_names:
+        candidate_feature_indices = [
+            idx for idx, feature_name in enumerate(feature_names)
+            if feature_name != target
+        ]
+        filtered_x_all = (
+            x[filtered_indices, :][:, candidate_feature_indices]
+            if candidate_feature_indices
+            else np.zeros((len(filtered_indices), 0), dtype=float)
+        )
+        candidate_feature_names = [feature_names[idx] for idx in candidate_feature_indices]
+    else:
+        filtered_x_all = np.zeros((len(filtered_indices), 0), dtype=float)
+        candidate_feature_names = []
+
     y = np.asarray(y_values, dtype=float)
-    design = np.column_stack([np.ones(len(filtered_indices)), filtered_x])
+    selected_x = filtered_x_all
+    selected_feature_names = candidate_feature_names
+    if selected_x.shape[1] > 0:
+        variances = np.var(selected_x, axis=0)
+        non_constant_indices = [
+            idx for idx, variance in enumerate(variances)
+            if float(variance) > 1e-12
+        ]
+        selected_x = selected_x[:, non_constant_indices]
+        selected_feature_names = [selected_feature_names[idx] for idx in non_constant_indices]
+
+    if selected_x.shape[1] > 0 and selected_x.shape[1] > max_features:
+        target_limit = max(1, min(max_features, len(filtered_indices) - 1))
+        centered_y = y - np.mean(y)
+        y_std = float(np.std(centered_y))
+        corr_scores: list[float] = []
+        for col_idx in range(selected_x.shape[1]):
+            centered_col = selected_x[:, col_idx] - np.mean(selected_x[:, col_idx])
+            col_std = float(np.std(centered_col))
+            if col_std <= 1e-12 or y_std <= 1e-12:
+                corr_scores.append(0.0)
+                continue
+            corr = float(np.dot(centered_col, centered_y) / (len(centered_y) * col_std * y_std))
+            corr_scores.append(abs(corr))
+        top_indices = list(np.argsort(corr_scores)[-target_limit:])
+        selected_x = selected_x[:, top_indices]
+        selected_feature_names = [selected_feature_names[idx] for idx in top_indices]
+
+    design = np.column_stack([np.ones(len(filtered_indices)), selected_x])
     coeffs, _, _, _ = np.linalg.lstsq(design, y, rcond=None)
     y_hat = design @ coeffs
     residual = y - y_hat
@@ -114,8 +162,8 @@ def fit_linear_model(*, matrix: dict[str, Any], target: str) -> LinearMetricMode
         target=target,
         intercept=float(coeffs[0]),
         coefficients={
-            feature_names[idx]: float(coeffs[idx + 1])
-            for idx in range(len(feature_names))
+            selected_feature_names[idx]: float(coeffs[idx + 1])
+            for idx in range(len(selected_feature_names))
         },
         r_squared=r_squared,
         rmse=rmse,

@@ -1,0 +1,17 @@
+{
+  "car": "ferrari",
+  "metadata": {},
+  "metrics": {
+    "mean_rear_power_slip_ratio_p95": 0.096959,
+    "mean_understeer_low_speed_deg": 0.307931,
+    "samples": 14
+  },
+  "model_type": "diff_model",
+  "parameters": {
+    "mean_diff_preload_nm": 22.6923,
+    "mean_tc_gain": 3.0,
+    "mean_tc_slip": 4.0
+  },
+  "track": "hockenheim",
+  "version": 1
+}

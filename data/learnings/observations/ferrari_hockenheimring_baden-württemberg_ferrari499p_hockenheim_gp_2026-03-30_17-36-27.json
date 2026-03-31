@@ -1,10 +1,10 @@
 {
   "session_id": "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27",
-  "ibt_path": "ibtfiles\\ferrari499p_hockenheim gp 2026-03-30 17-36-27.ibt",
+  "ibt_path": "data/ibt/ferrari499p_hockenheim gp 2026-03-30 17-36-27.ibt",
   "car": "ferrari",
   "track": "Hockenheimring Baden-W\u00fcrttemberg",
   "track_config": "Grand Prix",
-  "timestamp": "2026-03-31T01:43:20.573260+00:00",
+  "timestamp": "2026-03-31T07:40:04.066977+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
