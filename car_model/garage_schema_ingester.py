@@ -751,10 +751,12 @@ def derive_physics_from_schema(
         })
 
     # ── 2. Torsion bar C constant (from corner spring rate + OD index) ──
-    # Physics: k_wheel = C * OD^4  (front torsion bar, MR=1.0 for Ferrari)
-    # We know k_wheel = front_corner_spring_rate_nmm and OD index = front_torsion_index
-    # But we need physical OD, not index. For Ferrari, index maps to OD range (20-24mm).
-    # With C already calibrated (0.001282), we can cross-check: OD = (k/C)^(1/4)
+    # IMPORTANT: fSideSpringRateNpm is the SERIES combination of heave + torsion springs.
+    # It is NOT the pure torsion rate. Direct C derivation requires heave_defl ≈ 0.
+    # At Ferrari heave_idx=18: heave_defl=0 → confirmed pure-torsion anchor (C=0.001282).
+    # At other heave indices, C cannot be derived from fSideSpringRateNpm alone.
+    # The code below cross-validates the index→OD mapping using the calibrated C, rather
+    # than rederiving C from fSideSpringRateNpm (which would give C/2 due to series effect).
     if result.front_corner_spring_rate_nmm is not None and params.front_torsion_index > 0:
         # For Ferrari: use calibrated C=0.001282 to compute OD at this index
         # This gives us the physical OD → validates/refines the index mapping

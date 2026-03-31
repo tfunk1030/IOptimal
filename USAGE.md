@@ -328,12 +328,17 @@ python track_model/build_profile.py session.ibt
 **Example:**
 
 ```bash
-# Auto-named output based on track metadata in the IBT
-python track_model/build_profile.py session.ibt
+# Always use -m (module form) — works from any working directory
+python -m track_model.build_profile session.ibt
 
 # Explicit output path
-python track_model/build_profile.py session.ibt -o data/tracks/sebring.json
+python -m track_model.build_profile session.ibt -o data/tracks/sebring.json
+
+# Windows — quote paths that contain spaces
+python -m track_model.build_profile "data\ibt\ferrari499p_hockenheim gp 2026-03-30.ibt"
 ```
+
+> **Important:** Do not run as a plain script (`python track_model/build_profile.py ...`). Python won't find the `track_model` package that way because it doesn't know the project root. Always use `python -m track_model.build_profile`.
 
 ---
 

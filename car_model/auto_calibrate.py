@@ -332,9 +332,17 @@ def _derive_torsion_c(
 
     Physics: k_torsion = C * OD^4  [N/mm]
     iRacing shows: TorsionBarDefl = CornerWeight / k_torsion  [mm]
-    Therefore: C = CornerWeight / (TorsionBarDefl * OD^4)
+    Therefore: C = CornerWeight / (TorsionBarDefl_corrected * OD^4)
 
-    This is exact — no estimation. Every IBT with a garage screen gives us C.
+    IMPORTANT for Ferrari: TorsionBarDefl in iRacing is NOT pure torsion deflection.
+    When heave spring is loaded, the total deflection is the series combination:
+        1/k_total = 1/k_torsion + 1/k_heave
+    The calibrated C=0.001282 (from 9-pt sweep at heave_idx=18, heave_defl=0) is correct.
+    Do NOT use fSideSpringRateNpm / OD^4 to derive C — that gives 1/2 the correct value
+    because fSideSpringRateNpm is the SERIES rate, not the pure torsion rate.
+
+    This function uses TorsionBarDefl from the garage YAML which has the same issue unless
+    heave_defl is near zero. When heave_defl > 1mm, apply series correction.
     """
     lf_weight = float(getattr(setup, "lf_corner_weight_n", 0.0) or 0.0)
     tb_defl = float(getattr(setup, "torsion_bar_defl_mm", 0.0) or 0.0)

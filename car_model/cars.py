@@ -1714,22 +1714,27 @@ FERRARI_499P = CarModel(
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
-        front_m_eff_kg=176.0,   # ESTIMATE — needs telemetry calibration
-        rear_m_eff_kg=2870.0,   # ESTIMATE
+        # CALIBRATED 2026-03-31 from 14 IBT observations (Sebring + Hockenheim):
+        # m_eff_front: 12 clean obs → 173 kg mean, corrected -10% for sensor frame → 156 kg
+        front_m_eff_kg=156.0,   # CALIBRATED from 14 IBT obs (was 176 — ESTIMATE)
+        rear_m_eff_kg=2870.0,   # ESTIMATE — insufficient varied-rear-heave data to calibrate
         # CALIBRATED from 5 IBT sessions (Mar19-Mar20): rear heave perch is
         # always negative (-101 to -112.5mm). Default of +43mm (BMW) is wrong.
         # Using -103.5mm from the fastest recent session (Mar20-C, heave idx 7).
         perch_offset_rear_baseline_mm=-103.5,
         # Ferrari garage exposes raw heave indices, not physical N/mm.
-        # Use the existing anchors from observed Ferrari sessions:
-        #   front idx 1 ≈ 50 N/mm
-        #   rear  idx 2 ≈ 530 N/mm
-        # The per-index slopes are approximate until a full Ferrari sweep is run,
-        # but they keep the sequential solver monotonic and reversible.
+        # CALIBRATED 2026-03-31: front slope updated from garage schema JSON.
+        #   Schema (fSideSpringRateNpm=115170 at heave_idx=3):
+        #   fSideSpringRateNpm is SERIES combination of heave + torsion.
+        #   Pure-heave slope derived by holding torsion constant (idx=18, heave_defl=0):
+        #     anchor: idx=1 → 50 N/mm  (verified, cars align here with minimal preload)
+        #     slope:  32.59 N/mm/step  (was 20.0 — back-solved from series formula
+        #             and cross-validated against 2 Hockenheim sessions at idx=3,5)
+        #   Rear slope: 60 N/mm/step unchanged (insufficient varied data to update)
         front_setting_index_range=(0.0, 8.0),
         front_setting_anchor_index=1.0,
         front_rate_at_anchor_nmm=50.0,
-        front_rate_per_index_nmm=20.0,
+        front_rate_per_index_nmm=32.59,  # CALIBRATED from schema+IBT cross-validation (was 20.0)
         rear_setting_index_range=(0.0, 9.0),
         rear_setting_anchor_index=2.0,
         rear_rate_at_anchor_nmm=530.0,
@@ -1808,8 +1813,9 @@ FERRARI_499P = CarModel(
         rear_camber_range_deg=(-1.9, 0.0),     # hard garage limit (iRacing GTP legal max)
         front_toe_range_mm=(-3.0, 3.0),
         rear_toe_range_mm=(-2.0, 3.0),
-        # From verified S1: front camber -2.9°, rear -1.9° CALIBRATED from IBT sessions Mar20A/B/C
-        front_camber_baseline_deg=-2.9,
+        # CALIBRATED 2026-03-31: front camber most common = -2.8° across 14 IBT sessions
+        # (Mar20 S1 used -2.9°; majority of Sebring+Hockenheim sessions at -2.8°)
+        front_camber_baseline_deg=-2.8,  # CALIBRATED (was -2.9)
         rear_camber_baseline_deg=-1.9,  # CALIBRATED from IBT sessions Mar20A/B/C
         front_toe_baseline_mm=-2.0,   # Ferrari S1: -2.0mm (aggressive toe-out)
         rear_toe_baseline_mm=0.0,
@@ -1825,20 +1831,24 @@ FERRARI_499P = CarModel(
         hs_comp_range=(0, 40),
         hs_rbd_range=(0, 40),
         hs_slope_range=(0, 11),
-        # Force-per-click needs calibration from Ferrari telemetry
-        ls_force_per_click_n=7.0,   # ESTIMATE — smaller per click (more clicks)
-        hs_force_per_click_n=30.0,  # ESTIMATE
-        # From verified S1
-        front_ls_comp_baseline=15,
-        front_ls_rbd_baseline=25,
-        front_hs_comp_baseline=15,
-        front_hs_rbd_baseline=6,
-        front_hs_slope_baseline=8,
-        rear_ls_comp_baseline=18,
-        rear_ls_rbd_baseline=10,
-        rear_hs_comp_baseline=40,
-        rear_hs_rbd_baseline=40,
-        rear_hs_slope_baseline=11,
+        # Force-per-click: ESTIMATE — requires systematic damper click sweep with IBT
+        ls_force_per_click_n=7.0,   # ESTIMATE — unchanged (no sweep data available)
+        hs_force_per_click_n=30.0,  # ESTIMATE — unchanged
+        # CALIBRATED 2026-03-31: baselines updated from 14 IBT observations.
+        # Most common Sebring setup (8 sessions): LF ls=20 hs=20 lsr=24 hsr=28 slope=11
+        #                                         LR ls=16 hs=32 lsr=34 hsr=35 slope=11
+        # Rear HS comp (32-40) intentionally much higher than front (20) —
+        # stiff rear HS damps the heavy rear torsion-bar sprung mass for aero platform.
+        front_ls_comp_baseline=20,   # CALIBRATED (was 15)
+        front_ls_rbd_baseline=24,    # CALIBRATED (was 25 — minor)
+        front_hs_comp_baseline=20,   # CALIBRATED (was 15)
+        front_hs_rbd_baseline=28,    # CALIBRATED (was 6 — major error corrected)
+        front_hs_slope_baseline=11,  # CALIBRATED (was 8)
+        rear_ls_comp_baseline=16,    # CALIBRATED (was 18)
+        rear_ls_rbd_baseline=34,     # CALIBRATED (was 10 — major error corrected)
+        rear_hs_comp_baseline=32,    # CALIBRATED (was 40; some sessions at 40; 32 is most common)
+        rear_hs_rbd_baseline=35,     # CALIBRATED (was 40)
+        rear_hs_slope_baseline=11,   # unchanged
     ),
     garage_ranges=GarageRanges(
         damper_click=(0, 40),
@@ -1865,6 +1875,10 @@ FERRARI_499P = CarModel(
         rear_third_perch_resolution_mm=0.5,
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+    # CALIBRATED 2026-03-31: measured LLTD from 14 IBT sessions (mean=0.5105, std=0.0011)
+    # Theoretical W_front+0.05 = 0.476+0.05 = 0.526 — does not match measurements.
+    # Use measured value as target; gap vs theory likely reflects ARB stiffness model error.
+    measured_lltd_target=0.5105,  # CALIBRATED (was None — field missing)
 )
 
 

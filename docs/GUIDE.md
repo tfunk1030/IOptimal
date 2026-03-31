@@ -118,7 +118,7 @@ The solver runs for all cars, but confidence in the output depends on how much r
 
 ### Step 1: Drive any session in iRacing
 
-Use the default setup or your current setup. At least one clean lap at reasonable pace. Save the IBT.
+Use the default setup or your current setup. At least one complete timed lap at reasonable pace. Save the IBT.
 
 ### Step 2: Produce a setup
 
@@ -337,10 +337,17 @@ python3 -m validator --car bmw --track sebring --wing 17 \
 ### Track profile builder
 
 ```bash
-python3 track_model/build_profile.py session.ibt [-o data/tracks/sebring.json]
+# Always use -m (module form) — works from any working directory
+python -m track_model.build_profile session.ibt
+python -m track_model.build_profile session.ibt -o data/tracks/hockenheim.json
+
+# Windows — quote paths that contain spaces
+python -m track_model.build_profile "data\ibt\ferrari499p_hockenheim gp 2026-03-30 17-46-42.ibt"
 ```
 
-Run this once per track before using `solver.solve`. The pipeline runs it automatically.
+Run this once per track before using `solver.solve`. The pipeline (`pipeline.produce`) builds and saves the track profile automatically, so you only need this command if you want the track profile without running the full solve.
+
+> **Do not run as a plain script** (`python track_model/build_profile.py ...`). Python won't find the `track_model` package that way. Always use `python -m track_model.build_profile`.
 
 ---
 

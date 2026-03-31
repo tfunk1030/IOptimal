@@ -1,18 +1,33 @@
 """Build a TrackProfile from an IBT telemetry file.
 
-Usage:
-    python -m track_model.build_profile path/to/file.ibt [--output path/to/output.json]
+Usage (recommended — works from any working directory):
+    python -m track_model.build_profile path/to/file.ibt
+    python -m track_model.build_profile path/to/file.ibt -o data/tracks/hockenheim.json
+
+Usage (direct script — must be run from the project root):
+    cd C:\\Users\\tfunk\\IOptimal
+    python track_model/build_profile.py path/to/file.ibt
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-import numpy as np
+# Allow running as a direct script (python track_model/build_profile.py ...)
+# by adding the project root to sys.path if the package isn't importable yet.
+try:
+    from track_model.ibt_parser import IBTFile
+    from track_model.profile import TrackProfile, BrakingZone, Corner, KerbEvent
+except ModuleNotFoundError:
+    _project_root = Path(__file__).resolve().parent.parent
+    if str(_project_root) not in sys.path:
+        sys.path.insert(0, str(_project_root))
+    from track_model.ibt_parser import IBTFile
+    from track_model.profile import TrackProfile, BrakingZone, Corner, KerbEvent
 
-from track_model.ibt_parser import IBTFile
-from track_model.profile import TrackProfile, BrakingZone, Corner, KerbEvent
+import numpy as np
 
 
 def build_profile(ibt_path: str | Path) -> TrackProfile:
