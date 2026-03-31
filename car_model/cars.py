@@ -1500,8 +1500,12 @@ BMW_M_HYBRID_V8 = CarModel(
         max_torsion_bar_defl_mm=25.0,
         torsion_bar_defl_safety_margin_mm=0.2,
         torsion_bar_rate_c=0.0008036,
-        heave_spring_defl_max_intercept_mm=96.019667,
-        heave_spring_defl_max_slope=-0.082843,
+        # Aligned with HeaveSpringModel (R²=0.985, 31 unique setups):
+        #   Heave 30→97.7mm, 50→90.2mm, 70→84.8mm, 90→80.4mm
+        # Previous values (96.02 / -0.083) were from a different fit that
+        # disagreed with the HeaveSpringModel by ~4mm at heave=30 N/mm.
+        heave_spring_defl_max_intercept_mm=106.43,
+        heave_spring_defl_max_slope=-0.310,
         # Front RH: R²=0.896, RMSE=0.174mm (N=38, 2026-03-16)
         front_intercept=31.637911,
         front_coeff_pushrod=0.028537,
