@@ -115,7 +115,7 @@ def _write_artifact(path: str | Path, artifact: FittedModelArtifact) -> None:
 
 
 def cmd_fit_garage_model(args: argparse.Namespace) -> int:
-    samples = load_jsonl(args.samples)
+    samples = load_jsonl(args.samples, sample_type="garage")
     artifact = fit_garage_model(
         car=args.car,
         track=args.track,
@@ -127,7 +127,7 @@ def cmd_fit_garage_model(args: argparse.Namespace) -> int:
 
 
 def cmd_fit_ride_height_model(args: argparse.Namespace) -> int:
-    samples = load_jsonl(args.samples)
+    samples = load_jsonl(args.samples, sample_type="garage")
     artifact = fit_ride_height_model(
         car=args.car,
         track=args.track,
@@ -139,7 +139,7 @@ def cmd_fit_ride_height_model(args: argparse.Namespace) -> int:
 
 
 def cmd_fit_telemetry_model(args: argparse.Namespace) -> int:
-    samples = load_jsonl(args.samples)
+    samples = load_jsonl(args.samples, sample_type="telemetry")
     artifact = fit_telemetry_model(
         car=args.car,
         track=args.track,
@@ -151,7 +151,7 @@ def cmd_fit_telemetry_model(args: argparse.Namespace) -> int:
 
 
 def cmd_fit_damper_model(args: argparse.Namespace) -> int:
-    samples = load_jsonl(args.samples)
+    samples = load_jsonl(args.samples, sample_type="telemetry")
     artifact = fit_damper_model(
         car=args.car,
         track=args.track,
@@ -163,7 +163,7 @@ def cmd_fit_damper_model(args: argparse.Namespace) -> int:
 
 
 def cmd_fit_diff_model(args: argparse.Namespace) -> int:
-    samples = load_jsonl(args.samples)
+    samples = load_jsonl(args.samples, sample_type="telemetry")
     artifact = fit_diff_model(
         car=args.car,
         track=args.track,
