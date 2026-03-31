@@ -964,7 +964,18 @@ class GarageRanges:
     brake_pad_compound_options: list[str] = field(
         default_factory=lambda: ["Low", "Medium", "High"]
     )
+    # Brake Bias Target (BBT): Offset from base Brake Pressure Bias.
+    # Each click = 0.5% shift. Positive = more forward, negative = more rearward.
+    # In-car adjustable (dc parameter). NOT available on BMW M Hybrid V8.
+    # Formula: Effective_Bias = BBM + (BBT × 0.5%)
     brake_bias_target: tuple[float, float] = (-5.0, 5.0)
+    # Brake Bias Migration (MIG): Dynamic bias shift as function of brake pedal travel.
+    # Each click = 1% shift. Positive = bias migrates forward as pedal releases
+    # (compensates for downforce loss during deceleration, prevents rear lockup
+    # in trail-braking). At full pedal: base bias applies. At zero pedal: full
+    # migration offset applies. Linear interpolation between.
+    # NOT available on BMW M Hybrid V8. Present on Cadillac, Porsche, Acura, Ferrari.
+    # Source: Cadillac V-Series.R GTP User Manual V2, iRacing official.
     brake_bias_migration: tuple[float, float] = (-5.0, 5.0)
 
     # Fuel

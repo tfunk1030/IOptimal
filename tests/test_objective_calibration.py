@@ -85,6 +85,93 @@ class ObjectiveCalibrationTests(unittest.TestCase):
         self.assertLess(track_aware["score_correlation"]["spearman_r"], 0.0)
         self.assertFalse(report["recommended_runtime_profile"]["auto_apply"])
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # Regression threshold gates (Phase 1 — BMW/Sebring objective hardening)
+    #
+    # These tests lock the current holdout stability baseline so that future
+    # objective edits cannot silently flip the sign or worsen holdout performance.
+    #
+    # Thresholds are set at current measured values + a small regression buffer.
+    # They are NOT "this is good enough" claims — they are "don't make it worse"
+    # guards. Tighten them as the objective improves.
+    #
+    # Current baselines (measured 2026-03-31):
+    #   in-sample spearman_r    : -0.181
+    #   mean holdout spearman_r : -0.172  (5-fold CV, non-vetoed BMW/Sebring)
+    #   worst-fold holdout      : +0.248  (fold 1 flips positive — known weakness)
+    #   best-fold holdout       : -0.543
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def test_insample_correlation_stays_negative(self) -> None:
+        """In-sample Spearman correlation must remain negative.
+
+        A positive in-sample correlation means the objective ranks worse setups
+        higher than better ones. This gate fires if that regression occurs.
+        """
+        report = build_calibration_report(include_search=False)
+        track_aware = report["modes"]["track_aware"]
+        r = track_aware["score_correlation"]["spearman_r"]
+        self.assertLess(
+            r,
+            0.0,
+            f"In-sample Spearman r={r:.4f} flipped positive — objective regression detected.",
+        )
+
+    def test_holdout_mean_spearman_stays_negative(self) -> None:
+        """Mean 5-fold holdout Spearman must remain negative.
+
+        The current mean is -0.172. If it drifts to ≥ 0.0 the objective has
+        lost predictive directionality on out-of-sample BMW/Sebring data.
+        """
+        report = build_calibration_report(include_search=False)
+        hv = report["modes"]["track_aware"]["holdout_validation"]
+        mean_r = hv["current_runtime"]["mean_spearman_r"]
+        self.assertLess(
+            mean_r,
+            0.0,
+            f"Mean holdout Spearman r={mean_r:.4f} is no longer negative — "
+            f"holdout directionality lost.",
+        )
+
+    def test_holdout_worst_fold_regression_gate(self) -> None:
+        """Worst-fold holdout Spearman must not worsen beyond +0.40.
+
+        Fold 1 currently sits at +0.248 (a known weakness — not a calibrated
+        signal). This gate prevents the worst fold from silently sliding further
+        positive. Threshold is set at current (+0.248) + 0.15 regression buffer.
+
+        Exit criterion from enhancementplan.md Phase 1:
+            'Worst-fold holdout no longer flips strongly positive.'
+        Tighten this threshold as the objective improves.
+        """
+        report = build_calibration_report(include_search=False)
+        hv = report["modes"]["track_aware"]["holdout_validation"]
+        worst_r = hv["current_runtime"]["worst_spearman_r"]
+        threshold = 0.40
+        self.assertLess(
+            worst_r,
+            threshold,
+            f"Worst-fold holdout Spearman r={worst_r:.4f} exceeds regression "
+            f"threshold of {threshold:.2f} — objective has gotten worse on fold 1.",
+        )
+
+    def test_holdout_best_fold_stays_meaningful(self) -> None:
+        """Best-fold holdout Spearman must remain below -0.30.
+
+        The best fold sits at -0.543. If it rises above -0.30 the objective
+        has lost its strongest predictive signal on at least one data split.
+        """
+        report = build_calibration_report(include_search=False)
+        hv = report["modes"]["track_aware"]["holdout_validation"]
+        best_r = hv["current_runtime"]["best_spearman_r"]
+        threshold = -0.30
+        self.assertLess(
+            best_r,
+            threshold,
+            f"Best-fold holdout Spearman r={best_r:.4f} is weaker than threshold "
+            f"{threshold:.2f} — the objective's strongest fold has regressed.",
+        )
+
     def test_search_weight_profiles_ignores_vetoed_rows(self) -> None:
         scored = [
             ScoredObservation(

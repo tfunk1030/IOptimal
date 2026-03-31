@@ -930,3 +930,54 @@ The BMW M Hybrid V8 runs a **Dallara-built LMDh spec chassis** with a torsion ba
 - `front_heave_spring_nmm` (front third spring rate) controls heave stiffness at the front — its primary effect is on the minimum dynamic ride height and vortex burst margin, not roll balance.
 - The pushrod offset parameters affect the ride height–spring force coupling via a cam function that should be verified against actual YAML session data.
 
+
+## 2026-03-31 — Topic F (supplemental): GTP Brake Migration & Bias Target Physics
+
+### Source Documents
+- **Cadillac V-Series.R GTP User Manual V2** (official iRacing): https://s100.iracing.com/wp-content/uploads/2023/07/Cadillac-V-Series.R-GTP-Manual-V2.pdf
+- **BMW M Hybrid V8 User Manual V2** (official iRacing): https://s100.iracing.com/wp-content/uploads/2023/07/BMW-M-Hybrid-V8-Manual-V2.pdf
+- **OverTake.gg Guide — Brake Migration in LMU/iRacing Hypercars**: https://www.overtake.gg/news/guide-to-brake-migration-in-le-mans-ultimate-hypercars.3592/
+- **Coach Dave Academy — Cadillac V-Series.R Guide**: https://coachdaveacademy.com/tutorials/under-the-hood-tips-and-tricks-to-driving-the-cadillac-v-series-r-gtp/
+
+### Key Findings
+
+**1. Brake Bias Target (BBT)** — Cadillac-only feature (NOT present on BMW):
+- Sets an *offset* from the base Brake Pressure Bias (BBM).
+- **0.5% per click.** E.g., if BBM = 50% and Target = "2", actual bias = 51%.
+- Positive → higher (more forward) bias; negative → more rearward.
+- This is an *in-car adjustable* (dc parameter) allowing the driver to fine-tune bias without going to garage.
+- The BMW M Hybrid V8 does NOT have BBT/Migration — only base Brake Pressure Bias.
+
+**2. Brake Bias Migration (MIG)** — Cadillac-only feature:
+- Controls how bias shifts *during a braking event* as a function of brake pedal travel.
+- **1% per click.** Positive values migrate bias forward; negative values migrate rearward.
+- Physics: At full brake pressure, the base bias (BBM + BBT offset) applies. As the driver releases the brake (trail-braking toward apex), migration shifts the bias.
+- **Positive migration** = bias moves *forward* as pedal releases → prevents rear lockup during trail-braking when downforce is decreasing.
+- **Negative migration** = bias moves *rearward* as pedal releases → prevents front lockup at low speed.
+
+**3. Why Migration Exists — The Downforce-Speed Coupling Problem:**
+- At high speed (start of braking zone): high downforce loads rear axle, rear tires can handle more braking force → lower bias OK.
+- As car decelerates: downforce decreases, rear loses load, front/rear balance shifts forward → rear lockup risk increases.
+- Migration compensates by progressively shifting bias forward as speed/pressure drops.
+- This is analogous to real-world "brake magic" systems on F1 cars (Mercedes W11+).
+
+**4. Practical Recommendations from Literature:**
+- Coach Dave setups: ~2.5% forward migration (max positive) works well for LMDh cars (BMW analogue in LMU, Cadillac, Lamborghini).
+- Most competitive setups run slight positive migration (+2 to +5 clicks = +2% to +5% forward).
+- The system interacts with: front/rear master cylinder sizes (mechanical bias), pad compound, and TC settings.
+
+### Formula
+```
+Effective_Bias(t) = BBM + (BBT × 0.5%) + Migration_shift(pedal_position)
+where Migration_shift = MIG × 1% × (1 - normalized_pedal_position)
+```
+At full pedal: shift = 0 (base bias applies).
+At zero pedal: shift = MIG × 1% (maximum migration effect).
+This is a LINEAR interpolation between base bias and migrated bias.
+
+### iOptimal Application
+- **File:** `car_model/cars.py` — `brake_bias_target` and `brake_bias_migration` are defined as range tuples `(-5.0, 5.0)` but have NO physics comments explaining what they do.
+- **File:** `solver/objective.py` — brake migration is NOT modeled in the objective function at all. The static `brake_bias_pct` is scored but migration's dynamic effect during trail-braking is ignored.
+- **Immediate action:** Add physics documentation comments to `cars.py` explaining the BBT/Migration system.
+- **Future action:** For cars that support migration (Cadillac, Porsche, Acura, Ferrari — NOT BMW), the objective function could model the effective bias range and penalize setups where migration+bias leads to front or rear lockup at either end of the braking zone.
+- **Note:** BMW does NOT have BBT or Migration in iRacing. The `brake_bias_target` and `brake_bias_migration` fields in GTPSetupRange should only be populated for cars that support them.
