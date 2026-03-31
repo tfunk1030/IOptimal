@@ -11,6 +11,11 @@ This guide is for two audiences:
 2. **Future coders** who need to understand how the runtime and calibration
    pipeline fit together so they can extend the system safely.
 
+> Windows / PowerShell note:
+> The command examples in this guide are written as single-line commands so they
+> paste cleanly into PowerShell. Do not use Bash-style trailing `\` line
+> continuations in PowerShell; they cause parser errors there.
+
 The implementation truth in this repo is:
 
 ```text
@@ -29,6 +34,10 @@ Authoritative telemetry-backed runtime entrypoint:
 Authoritative calibration CLI:
 
 - `python3 -m calibration.cli`
+
+> Windows / PowerShell note: examples below use **single-line commands** so you
+> can paste them directly into PowerShell. If you prefer multi-line formatting
+> in PowerShell, use the backtick character (`` ` ``), not a trailing backslash.
 
 ---
 
@@ -66,12 +75,7 @@ authoritative.
 ### A. Diagnose one IBT and get a setup recommendation
 
 ```bash
-python3 -m pipeline.produce \
-  --car bmw \
-  --ibt "path/to/session.ibt" \
-  --wing 17 \
-  --scenario-profile single_lap_safe \
-  --sto output.sto
+python3 -m pipeline.produce --car bmw --ibt "path/to/session.ibt" --wing 17 --scenario-profile single_lap_safe --sto output.sto
 ```
 
 What this does:
@@ -102,11 +106,7 @@ export.
 ### C. Track-only solve when no IBT exists
 
 ```bash
-python3 -m solver.solve \
-  --car cadillac \
-  --track silverstone \
-  --wing 15 \
-  --scenario-profile single_lap_safe
+python3 -m solver.solve --car cadillac --track silverstone --wing 15 --scenario-profile single_lap_safe
 ```
 
 Use this only when you do **not** have telemetry yet. It is weaker because:
@@ -117,11 +117,7 @@ Use this only when you do **not** have telemetry yet. It is weaker because:
 ### D. Multi-IBT reasoning path
 
 ```bash
-python3 -m pipeline.produce \
-  --car bmw \
-  --ibt run1.ibt run2.ibt run3.ibt \
-  --wing 17 \
-  --scenario-profile sprint
+python3 -m pipeline.produce --car bmw --ibt run1.ibt run2.ibt run3.ibt --wing 17 --scenario-profile sprint
 ```
 
 This routes into `pipeline/reason.py::reason_and_solve`.
@@ -170,12 +166,7 @@ Calibration quality depends more on **dataset quality** than on fitting code.
 Create one sample pack:
 
 ```bash
-python3 -m calibration.cli create-sample-pack \
-  --root-dir data/calibration/raw \
-  --car ferrari \
-  --track sebring \
-  --sample-id ferrari_sebring_pushrod_01 \
-  --sample-type garage_static
+python3 -m calibration.cli create-sample-pack --root-dir data/calibration/raw --car ferrari --track sebring --sample-id ferrari_sebring_pushrod_01 --sample-type garage_static
 ```
 
 This creates a structured folder with placeholders and a valid manifest.
@@ -183,9 +174,7 @@ This creates a structured folder with placeholders and a valid manifest.
 ### Validate raw trees before ingest
 
 ```bash
-python3 -m calibration.cli validate-raw-dataset \
-  --raw-root data/calibration/raw/ferrari/sebring \
-  --schema data/setup_schema/ferrari.json
+python3 -m calibration.cli validate-raw-dataset --raw-root data/calibration/raw/ferrari/sebring --schema data/setup_schema/ferrari.json
 ```
 
 Use this before fitting so you catch:
@@ -234,10 +223,7 @@ These are **seed schemas**, not proof of final calibration.
 If you have exported setup-row JSON files:
 
 ```bash
-python3 -m calibration.cli bootstrap-schema \
-  --car ferrari \
-  --input-glob "data/calibration/raw/ferrari/**/*.json" \
-  --output data/setup_schema/ferrari.json
+python3 -m calibration.cli bootstrap-schema --car ferrari --input-glob "data/calibration/raw/ferrari/**/*.json" --output data/setup_schema/ferrari.json
 ```
 
 This refines the schema with observed labels/sections/ranges.
@@ -245,9 +231,7 @@ This refines the schema with observed labels/sections/ranges.
 ### Validate schema coverage
 
 ```bash
-python3 -m calibration.cli validate-schema \
-  --schema data/setup_schema/ferrari.json \
-  --input-glob "data/calibration/raw/ferrari/**/*.json"
+python3 -m calibration.cli validate-schema --schema data/setup_schema/ferrari.json --input-glob "data/calibration/raw/ferrari/**/*.json"
 ```
 
 Use this to spot:
@@ -262,12 +246,7 @@ Use this to spot:
 ### Step 1 — Ingest raw samples
 
 ```bash
-python3 -m calibration.cli ingest-samples \
-  --car ferrari \
-  --track sebring \
-  --raw-root data/calibration/raw/ferrari/sebring \
-  --schema data/setup_schema/ferrari.json \
-  --out-root data/calibration/normalized/ferrari/sebring
+python3 -m calibration.cli ingest-samples --car ferrari --track sebring --raw-root data/calibration/raw/ferrari/sebring --schema data/setup_schema/ferrari.json --out-root data/calibration/normalized/ferrari/sebring
 ```
 
 Outputs:
@@ -279,73 +258,43 @@ Outputs:
 Garage:
 
 ```bash
-python3 -m calibration.cli fit-garage-model \
-  --car ferrari \
-  --track sebring \
-  --samples data/calibration/normalized/ferrari/sebring/garage_samples.jsonl \
-  --out data/calibration/models/ferrari/sebring/garage_model.json
+python3 -m calibration.cli fit-garage-model --car ferrari --track sebring --samples data/calibration/normalized/ferrari/sebring/garage_samples.jsonl --out data/calibration/models/ferrari/sebring/garage_model.json
 ```
 
 Ride height:
 
 ```bash
-python3 -m calibration.cli fit-ride-height-model \
-  --car ferrari \
-  --track sebring \
-  --samples data/calibration/normalized/ferrari/sebring/garage_samples.jsonl \
-  --out data/calibration/models/ferrari/sebring/ride_height_model.json
+python3 -m calibration.cli fit-ride-height-model --car ferrari --track sebring --samples data/calibration/normalized/ferrari/sebring/garage_samples.jsonl --out data/calibration/models/ferrari/sebring/ride_height_model.json
 ```
 
 Telemetry:
 
 ```bash
-python3 -m calibration.cli fit-telemetry-model \
-  --car ferrari \
-  --track sebring \
-  --samples data/calibration/normalized/ferrari/sebring/telemetry_samples.jsonl \
-  --out data/calibration/models/ferrari/sebring/telemetry_model.json
+python3 -m calibration.cli fit-telemetry-model --car ferrari --track sebring --samples data/calibration/normalized/ferrari/sebring/telemetry_samples.jsonl --out data/calibration/models/ferrari/sebring/telemetry_model.json
 ```
 
 Damper:
 
 ```bash
-python3 -m calibration.cli fit-damper-model \
-  --car ferrari \
-  --track sebring \
-  --samples data/calibration/normalized/ferrari/sebring/telemetry_samples.jsonl \
-  --out data/calibration/models/ferrari/sebring/damper_model.json
+python3 -m calibration.cli fit-damper-model --car ferrari --track sebring --samples data/calibration/normalized/ferrari/sebring/telemetry_samples.jsonl --out data/calibration/models/ferrari/sebring/damper_model.json
 ```
 
 Diff:
 
 ```bash
-python3 -m calibration.cli fit-diff-model \
-  --car ferrari \
-  --track sebring \
-  --samples data/calibration/normalized/ferrari/sebring/telemetry_samples.jsonl \
-  --out data/calibration/models/ferrari/sebring/diff_model.json
+python3 -m calibration.cli fit-diff-model --car ferrari --track sebring --samples data/calibration/normalized/ferrari/sebring/telemetry_samples.jsonl --out data/calibration/models/ferrari/sebring/diff_model.json
 ```
 
 ### Step 3 — Validate
 
 ```bash
-python3 -m calibration.cli validate-models \
-  --car ferrari \
-  --track sebring \
-  --garage-model data/calibration/models/ferrari/sebring/garage_model.json \
-  --rh-model data/calibration/models/ferrari/sebring/ride_height_model.json \
-  --telemetry-model data/calibration/models/ferrari/sebring/telemetry_model.json \
-  --validation-samples data/calibration/normalized/ferrari/sebring/telemetry_samples.jsonl \
-  --report-dir data/calibration/models/ferrari/sebring
+python3 -m calibration.cli validate-models --car ferrari --track sebring --garage-model data/calibration/models/ferrari/sebring/garage_model.json --rh-model data/calibration/models/ferrari/sebring/ride_height_model.json --telemetry-model data/calibration/models/ferrari/sebring/telemetry_model.json --validation-samples data/calibration/normalized/ferrari/sebring/telemetry_samples.jsonl --report-dir data/calibration/models/ferrari/sebring
 ```
 
 ### Step 4 — Publish to runtime
 
 ```bash
-python3 -m calibration.cli publish-models \
-  --car ferrari \
-  --track sebring \
-  --model-root data/calibration/models/ferrari/sebring
+python3 -m calibration.cli publish-models --car ferrari --track sebring --model-root data/calibration/models/ferrari/sebring
 ```
 
 This populates runtime artifacts the solver can consume automatically.

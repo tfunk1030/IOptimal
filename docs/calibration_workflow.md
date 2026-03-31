@@ -3,6 +3,12 @@
 This document describes the easiest path for collecting and publishing setup
 calibration data for a car/track pair.
 
+> **Shell note for Windows / PowerShell users:** examples in this document use
+> single-line commands so they can be pasted directly into PowerShell. If you
+> prefer multiline PowerShell commands, use the backtick (`` ` ``) as the line
+> continuation character. Do **not** use the Bash backslash (`\`) continuation
+> style in PowerShell.
+
 ### 1. Seed baseline schema files
 
 Generate editable schema seed files from the current setup registry:

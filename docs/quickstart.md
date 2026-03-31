@@ -27,15 +27,13 @@ python3 -m pip install -r requirements-dev.txt
 
 ## 2. Pick the right command
 
+If you are on **PowerShell**, prefer the commands exactly as one-line examples
+below. The Bash line continuation character `\` will not work in PowerShell.
+
 ### Best normal workflow: one IBT -> one recommended setup
 
 ```bash
-python3 -m pipeline.produce \
-  --car bmw \
-  --ibt "path/to/session.ibt" \
-  --wing 17 \
-  --scenario-profile single_lap_safe \
-  --sto output.sto
+python3 -m pipeline.produce --car bmw --ibt "path/to/session.ibt" --wing 17 --scenario-profile single_lap_safe --sto output.sto
 ```
 
 Use this when you have:
@@ -50,9 +48,7 @@ This is the **main telemetry-backed workflow**.
 ### Analyze only, no setup export
 
 ```bash
-python3 -m analyzer \
-  --car ferrari \
-  --ibt "path/to/session.ibt"
+python3 -m analyzer --car ferrari --ibt "path/to/session.ibt"
 ```
 
 Use this when you want:
@@ -65,11 +61,7 @@ Use this when you want:
 ### Track-only solve when no telemetry exists
 
 ```bash
-python3 -m solver.solve \
-  --car cadillac \
-  --track silverstone \
-  --wing 15 \
-  --scenario-profile single_lap_safe
+python3 -m solver.solve --car cadillac --track silverstone --wing 15 --scenario-profile single_lap_safe
 ```
 
 Use this only when:
@@ -180,12 +172,7 @@ If the path is not well calibrated yet, the solver may still:
 Use the calibration scaffold:
 
 ```bash
-python3 -m calibration.cli create-sample-pack \
-  --root-dir data/calibration/raw \
-  --car ferrari \
-  --track sebring \
-  --sample-id ferrari_sebring_001 \
-  --sample-type garage_static
+python3 -m calibration.cli create-sample-pack --root-dir data/calibration/raw --car ferrari --track sebring --sample-id ferrari_sebring_001 --sample-type garage_static
 ```
 
 Then see:
@@ -200,32 +187,19 @@ Then see:
 ### BMW / Sebring / one telemetry session
 
 ```bash
-python3 -m pipeline.produce \
-  --car bmw \
-  --ibt "bmw_sebring.ibt" \
-  --wing 17 \
-  --scenario-profile single_lap_safe \
-  --json bmw_sebring.json \
-  --sto bmw_sebring.sto
+python3 -m pipeline.produce --car bmw --ibt "bmw_sebring.ibt" --wing 17 --scenario-profile single_lap_safe --json bmw_sebring.json --sto bmw_sebring.sto
 ```
 
 ### Ferrari / analyze only
 
 ```bash
-python3 -m analyzer \
-  --car ferrari \
-  --ibt "ferrari_session.ibt"
+python3 -m analyzer --car ferrari --ibt "ferrari_session.ibt"
 ```
 
 ### Acura / exploratory telemetry-backed solve
 
 ```bash
-python3 -m pipeline.produce \
-  --car acura \
-  --ibt "acura_session.ibt" \
-  --wing 8 \
-  --scenario-profile single_lap_safe \
-  --json acura.json
+python3 -m pipeline.produce --car acura --ibt "acura_session.ibt" --wing 8 --scenario-profile single_lap_safe --json acura.json
 ```
 
 ---
