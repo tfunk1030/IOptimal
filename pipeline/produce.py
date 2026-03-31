@@ -312,13 +312,11 @@ def produce(
                 car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
             if learned.heave_m_eff_rear_kg is not None:
                 car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
-            # NOTE: aero_compression_{front,rear}_mm are intentionally NOT applied here.
-            # The IBT LFrideHeight/LRrideHeight sensor channels are in a different
-            # coordinate frame than the aero maps (AeroCalc reference). Applying the
-            # sensor-measured compression to the aero map solver produces inflated
-            # static RH recommendations (+10-15mm error). The car-model values in
-            # cars.py are calibrated directly from AeroCalculator IBT fields and
-            # are the correct reference for the aero solver.
+            # NOTE: aero_compression from the learner path (LFrideHeight sensor frame)
+            # is intentionally NOT applied here — sensor frame differs from aero-map frame.
+            # Aero compression calibration now uses AeroCalcFrontRhAtSpeed (correct frame)
+            # via auto_calibrate_and_apply() below. The learner path retains its m_eff
+            # corrections which are frame-independent.
             if learned.calibrated_front_roll_gain is not None:
                 car.geometry.front_roll_gain = learned.calibrated_front_roll_gain
             if learned.calibrated_rear_roll_gain is not None:
@@ -326,6 +324,34 @@ def produce(
             log(f"[learn] Applied {n_corrections} corrections from {n_sessions} sessions ({car_track_label})")
         else:
             log(f"[learn] Physics-only ({n_sessions} sessions for {car_track_label})")
+
+    # ── Auto-calibrate physics constants from this IBT (runs instantly) ──
+    # The IBT contains the complete garage setup AND the car's telemetry response.
+    # From these two sources we can directly derive physics constants that are
+    # marked as ESTIMATE in cars.py: aero_compression, m_eff, torsion_c, weight_dist.
+    # This replaces manual calibration for non-BMW cars and continuously refines BMW.
+    auto_cal_applied: list[str] = []
+    if not getattr(args, "no_learn", False):
+        try:
+            from car_model.auto_calibrate import auto_calibrate_and_apply
+            _track_info = ibt.track_info()
+            _track_name_for_cal = _track_info.get("track_name", "")
+            auto_cal_applied = auto_calibrate_and_apply(
+                car=car,
+                ibt_path=ibt_path,
+                car_name=car.canonical_name,
+                track_name=_track_name_for_cal,
+                min_confidence=0.65,
+                save=True,
+                verbose=False,
+            )
+            if auto_cal_applied:
+                log(f"[auto_cal] Calibrated {len(auto_cal_applied)} physics constants from IBT: "
+                    f"{', '.join(auto_cal_applied)}")
+            else:
+                log("[auto_cal] No new physics constants derived from this IBT (all below confidence threshold)")
+        except Exception as _ac_exc:
+            log(f"[auto_cal] Skipped: {_ac_exc}")
 
     # ── Load aero surfaces ──
     surfaces = load_car_surfaces(car.canonical_name)
@@ -565,9 +591,19 @@ def produce(
 
     # ── Phase F: Compute aero gradients ──
     log("Computing aero gradients...")
-    # Use measured ride heights if available, otherwise solver defaults
-    front_rh_for_grad = measured.mean_front_rh_at_speed_mm or 15.0
-    rear_rh_for_grad = measured.mean_rear_rh_at_speed_mm or 40.0
+    # Prefer AeroCalc channels (correct aero-map frame) over sensor channels (offset frame).
+    # AeroCalcFrontRhAtSpeed matches the aero map coordinate system exactly.
+    # LFrideHeight (mean_front_rh_at_speed_mm) is ~10-15mm higher due to sensor offset.
+    _aerocalc_front = getattr(measured, "aerocalc_front_rh_at_speed_mm", None)
+    _aerocalc_rear = getattr(measured, "aerocalc_rear_rh_at_speed_mm", None)
+    if _aerocalc_front is not None and _aerocalc_rear is not None:
+        front_rh_for_grad = _aerocalc_front
+        rear_rh_for_grad = _aerocalc_rear
+        log(f"  Using AeroCalc RH: F={_aerocalc_front:.1f}mm R={_aerocalc_rear:.1f}mm (aero-map frame)")
+    else:
+        front_rh_for_grad = measured.mean_front_rh_at_speed_mm or 15.0
+        rear_rh_for_grad = measured.mean_rear_rh_at_speed_mm or 40.0
+        log(f"  Using sensor RH: F={front_rh_for_grad:.1f}mm R={rear_rh_for_grad:.1f}mm (sensor frame — offset from aero map)")
     aero_grad = compute_gradients(
         surface, car,
         front_rh=front_rh_for_grad,

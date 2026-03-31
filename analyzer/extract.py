@@ -276,6 +276,20 @@ class MeasuredState:
     wind_speed_ms: float | None = None
     wind_dir_deg: float | None = None
 
+    # --- AeroCalc channels (iRacing-internal aero model, exact aero-map frame) ---
+    # These are the CORRECT reference frame for aero map calibration.
+    # AeroCalcFrontRhAtSpeed / AeroCalcRearRhAtSpeed match what iRacing's
+    # AeroCalculator uses — the same coordinate system as the aero spreadsheets.
+    # Unlike LFrideHeight (sensor frame, ~10-15mm offset), these channels can
+    # be directly compared to the aero map grid to calibrate aero compression.
+    aerocalc_front_rh_at_speed_mm: float | None = None   # Median at >150kph
+    aerocalc_rear_rh_at_speed_mm: float | None = None
+    aerocalc_df_balance_pct: float | None = None          # DF balance at speed
+    aerocalc_ld_ratio: float | None = None                # L/D at speed
+    aerocalc_front_compression_mm: float | None = None    # static_rh - dynamic_rh
+    aerocalc_rear_compression_mm: float | None = None
+    aerocalc_ref_speed_kph: float | None = None           # Speed at which compression was measured
+
     # --- Full rebuilt track profile ---
     measured_track_profile: TrackProfile | None = None
 
@@ -783,6 +797,9 @@ def extract_measurements(
 
     # --- Wind ---
     _extract_wind(ibt, state)
+
+    # --- AeroCalc channels (iRacing internal aero values at speed) ---
+    _extract_aerocalc(ibt, start, end, speed_kph, state)
 
     # --- Per-corner shock velocities ---
     state.lf_shock_vel_p95_mps = float(np.percentile(lf_sv, 95))
@@ -1862,6 +1879,83 @@ def _extract_extended_adjustments(
             ch_data = ibt.channel(ch_name)[start:end + 1]
             changes = int(np.sum(np.abs(np.diff(ch_data)) > 0.001))
             setattr(state, attr_name, changes)
+
+
+def _extract_aerocalc(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    speed_kph: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract iRacing AeroCalculator channels at speed.
+
+    AeroCalcFrontRhAtSpeed and AeroCalcRearRhAtSpeed are iRacing's internal
+    aerodynamic ride height values — in the SAME coordinate frame as the aero
+    maps. They are NOT the same as LFrideHeight (sensor frame, ~10-15mm offset).
+
+    These are the ground-truth values for:
+    - Calibrating aero compression models
+    - Validating solver DF balance predictions
+    - Measuring actual dynamic operating ride heights for aero map lookup
+    """
+    front_rh_ch = ibt.channel("AeroCalcFrontRhAtSpeed") if ibt.has_channel("AeroCalcFrontRhAtSpeed") else None
+    rear_rh_ch = ibt.channel("AeroCalcRearRhAtSpeed") if ibt.has_channel("AeroCalcRearRhAtSpeed") else None
+    balance_ch = ibt.channel("AeroCalcDownforceBalance") if ibt.has_channel("AeroCalcDownforceBalance") else None
+    ld_ch = ibt.channel("AeroCalcLD") if ibt.has_channel("AeroCalcLD") else None
+
+    # At-speed mask (not braking, above 150kph) for aerodynamic regime
+    at_speed = speed_kph > 150.0
+    if ibt.has_channel("Brake"):
+        brake_ch = ibt.channel("Brake")[start:end + 1]
+        at_speed = at_speed & (brake_ch < 0.05)
+
+    n_valid = int(np.sum(at_speed))
+
+    if front_rh_ch is not None and n_valid >= 30:
+        front_rh_slice = front_rh_ch[start:end + 1][at_speed] * 1000.0  # m -> mm
+        state.aerocalc_front_rh_at_speed_mm = round(float(np.median(front_rh_slice)), 2)
+
+        # Derive aero compression: static_rh (from session YAML) - dynamic_rh (measured)
+        # state.static_front_rh_sensor_mm uses the sensor frame — not usable here.
+        # The AeroCalc static RH is stored in the session YAML as AeroCalculator.FrontRhAtSpeed
+        # at the moment of garage setup. We cannot easily recover it from channels alone,
+        # but we can estimate by looking at very-low-speed samples (pit lane):
+        pit_mask = speed_kph < 5.0
+        if np.sum(pit_mask) > 10:
+            pit_rh = front_rh_ch[start:end + 1][pit_mask] * 1000.0
+            static_rh_aero = float(np.median(pit_rh))
+            comp_front = max(0.0, static_rh_aero - state.aerocalc_front_rh_at_speed_mm)
+            if 1.0 < comp_front < 30.0:  # Sanity: 1-30mm compression is realistic
+                state.aerocalc_front_compression_mm = round(comp_front, 2)
+                state.aerocalc_ref_speed_kph = round(float(np.median(speed_kph[at_speed])), 0)
+
+    if rear_rh_ch is not None and n_valid >= 30:
+        rear_rh_slice = rear_rh_ch[start:end + 1][at_speed] * 1000.0
+        state.aerocalc_rear_rh_at_speed_mm = round(float(np.median(rear_rh_slice)), 2)
+
+        pit_mask = speed_kph < 5.0
+        if np.sum(pit_mask) > 10:
+            pit_rh = rear_rh_ch[start:end + 1][pit_mask] * 1000.0
+            static_rh_aero = float(np.median(pit_rh))
+            comp_rear = max(0.0, static_rh_aero - state.aerocalc_rear_rh_at_speed_mm)
+            if 1.0 < comp_rear < 30.0:
+                state.aerocalc_rear_compression_mm = round(comp_rear, 2)
+
+    if balance_ch is not None and n_valid >= 30:
+        balance_slice = balance_ch[start:end + 1][at_speed]
+        # Channel may be in fraction (0-1) or percent (0-100) — detect
+        raw_median = float(np.median(balance_slice))
+        if 0.0 < raw_median < 1.0:
+            state.aerocalc_df_balance_pct = round(raw_median * 100.0, 2)
+        elif 30.0 < raw_median < 70.0:
+            state.aerocalc_df_balance_pct = round(raw_median, 2)
+
+    if ld_ch is not None and n_valid >= 30:
+        ld_slice = ld_ch[start:end + 1][at_speed]
+        ld_median = float(np.median(ld_slice))
+        if 0.5 < ld_median < 15.0:  # Sanity: L/D between 0.5 and 15
+            state.aerocalc_ld_ratio = round(ld_median, 3)
 
 
 def _extract_wind(
