@@ -931,7 +931,7 @@
       "section": null,
       "location": null,
       "field_role": "input",
-      "value_type": "string",
+      "value_type": "bool",
       "public_unit": "",
       "internal_unit": "",
       "range": null,

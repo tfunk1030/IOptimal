@@ -2181,7 +2181,5 @@
       "notes": []
     }
   ],
-  "warnings": [
-    "seeded_from_setup_registry_only"
-  ]
+  "warnings": []
 }
