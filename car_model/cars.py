@@ -262,6 +262,83 @@ class HeaveSpringModel:
     min_static_defl_mm: float = 3.0
     # Maximum allowed slider position (spring nearly unloaded above this)
     max_slider_mm: float = 45.0
+    # Optional indexed-control decode for cars whose garage exposes raw indices
+    # instead of physical spring rates. When unset, the solver treats the setting
+    # value itself as the physical rate.
+    front_setting_index_range: tuple[float, float] | None = None
+    front_setting_anchor_index: float | None = None
+    front_rate_at_anchor_nmm: float | None = None
+    front_rate_per_index_nmm: float | None = None
+    rear_setting_index_range: tuple[float, float] | None = None
+    rear_setting_anchor_index: float | None = None
+    rear_rate_at_anchor_nmm: float | None = None
+    rear_rate_per_index_nmm: float | None = None
+
+    def front_rate_from_setting(self, setting_value: float) -> float:
+        """Decode a garage setting into a physical front heave rate."""
+        if (
+            self.front_setting_index_range is None
+            or self.front_setting_anchor_index is None
+            or self.front_rate_at_anchor_nmm is None
+            or self.front_rate_per_index_nmm is None
+        ):
+            return float(setting_value)
+        return float(
+            self.front_rate_at_anchor_nmm
+            + (float(setting_value) - self.front_setting_anchor_index) * self.front_rate_per_index_nmm
+        )
+
+    def rear_rate_from_setting(self, setting_value: float) -> float:
+        """Decode a garage setting into a physical rear heave/third-spring rate."""
+        if (
+            self.rear_setting_index_range is None
+            or self.rear_setting_anchor_index is None
+            or self.rear_rate_at_anchor_nmm is None
+            or self.rear_rate_per_index_nmm is None
+        ):
+            return float(setting_value)
+        return float(
+            self.rear_rate_at_anchor_nmm
+            + (float(setting_value) - self.rear_setting_anchor_index) * self.rear_rate_per_index_nmm
+        )
+
+    def front_setting_from_rate(self, rate_nmm: float, *, resolution: float = 1.0) -> float:
+        """Encode a physical front heave rate back to the exposed garage setting."""
+        if (
+            self.front_setting_index_range is None
+            or self.front_setting_anchor_index is None
+            or self.front_rate_at_anchor_nmm is None
+            or self.front_rate_per_index_nmm in (None, 0.0)
+        ):
+            return float(rate_nmm)
+        setting = (
+            (float(rate_nmm) - self.front_rate_at_anchor_nmm) / self.front_rate_per_index_nmm
+            + self.front_setting_anchor_index
+        )
+        lo, hi = self.front_setting_index_range
+        setting = max(lo, min(hi, setting))
+        if resolution > 0:
+            setting = round(setting / resolution) * resolution
+        return float(max(lo, min(hi, setting)))
+
+    def rear_setting_from_rate(self, rate_nmm: float, *, resolution: float = 1.0) -> float:
+        """Encode a physical rear heave/third-spring rate back to the exposed garage setting."""
+        if (
+            self.rear_setting_index_range is None
+            or self.rear_setting_anchor_index is None
+            or self.rear_rate_at_anchor_nmm is None
+            or self.rear_rate_per_index_nmm in (None, 0.0)
+        ):
+            return float(rate_nmm)
+        setting = (
+            (float(rate_nmm) - self.rear_rate_at_anchor_nmm) / self.rear_rate_per_index_nmm
+            + self.rear_setting_anchor_index
+        )
+        lo, hi = self.rear_setting_index_range
+        setting = max(lo, min(hi, setting))
+        if resolution > 0:
+            setting = round(setting / resolution) * resolution
+        return float(max(lo, min(hi, setting)))
 
 
 @dataclass
@@ -574,6 +651,10 @@ class CornerSpringModel:
 
     # Frequency isolation: corner freq should be < bump_freq / min_freq_ratio
     min_freq_isolation_ratio: float = 2.5
+    # Optional indexed-control decode for cars whose garage exposes torsion bars
+    # as raw indices instead of direct OD / rate numbers.
+    front_setting_index_range: tuple[float, float] | None = None
+    rear_setting_index_range: tuple[float, float] | None = None
 
     def torsion_bar_rate(self, od_mm: float) -> float:
         """Wheel rate (N/mm) from torsion bar OD."""
@@ -626,6 +707,60 @@ class CornerSpringModel:
         # Align to steps from range minimum (e.g., 13.90 + N*0.22)
         steps_from_lo = round((od_mm - lo) / step)
         return round(lo + max(0, steps_from_lo) * step, 2)
+
+    def front_torsion_od_from_setting(self, setting_value: float) -> float:
+        """Decode a garage setting into a physical front torsion-bar OD."""
+        if self.front_setting_index_range is None:
+            return float(setting_value)
+        idx_lo, idx_hi = self.front_setting_index_range
+        od_lo, od_hi = self.front_torsion_od_range_mm
+        if abs(idx_hi - idx_lo) < 1e-9:
+            return float(od_lo)
+        t = (float(setting_value) - idx_lo) / (idx_hi - idx_lo)
+        t = max(0.0, min(1.0, t))
+        return float(od_lo + t * (od_hi - od_lo))
+
+    def front_setting_from_torsion_od(self, od_mm: float, *, resolution: float = 1.0) -> float:
+        """Encode a physical front torsion-bar OD back to the exposed garage setting."""
+        if self.front_setting_index_range is None:
+            return float(od_mm)
+        idx_lo, idx_hi = self.front_setting_index_range
+        od_lo, od_hi = self.front_torsion_od_range_mm
+        if abs(od_hi - od_lo) < 1e-9:
+            return float(idx_lo)
+        t = (float(od_mm) - od_lo) / (od_hi - od_lo)
+        t = max(0.0, min(1.0, t))
+        setting = idx_lo + t * (idx_hi - idx_lo)
+        if resolution > 0:
+            setting = round(setting / resolution) * resolution
+        return float(max(idx_lo, min(idx_hi, setting)))
+
+    def rear_bar_rate_from_setting(self, setting_value: float) -> float:
+        """Decode a garage setting into a physical rear torsion-bar rate."""
+        if self.rear_setting_index_range is None:
+            return float(setting_value)
+        idx_lo, idx_hi = self.rear_setting_index_range
+        rate_lo, rate_hi = self.rear_spring_range_nmm
+        if abs(idx_hi - idx_lo) < 1e-9:
+            return float(rate_lo)
+        t = (float(setting_value) - idx_lo) / (idx_hi - idx_lo)
+        t = max(0.0, min(1.0, t))
+        return float(rate_lo + t * (rate_hi - rate_lo))
+
+    def rear_setting_from_bar_rate(self, rate_nmm: float, *, resolution: float = 1.0) -> float:
+        """Encode a physical rear torsion-bar rate back to the exposed garage setting."""
+        if self.rear_setting_index_range is None:
+            return float(rate_nmm)
+        idx_lo, idx_hi = self.rear_setting_index_range
+        rate_lo, rate_hi = self.rear_spring_range_nmm
+        if abs(rate_hi - rate_lo) < 1e-9:
+            return float(idx_lo)
+        t = (float(rate_nmm) - rate_lo) / (rate_hi - rate_lo)
+        t = max(0.0, min(1.0, t))
+        setting = idx_lo + t * (idx_hi - idx_lo)
+        if resolution > 0:
+            setting = round(setting / resolution) * resolution
+        return float(max(idx_lo, min(idx_hi, setting)))
 
 
 @dataclass
@@ -1585,6 +1720,20 @@ FERRARI_499P = CarModel(
         # always negative (-101 to -112.5mm). Default of +43mm (BMW) is wrong.
         # Using -103.5mm from the fastest recent session (Mar20-C, heave idx 7).
         perch_offset_rear_baseline_mm=-103.5,
+        # Ferrari garage exposes raw heave indices, not physical N/mm.
+        # Use the existing anchors from observed Ferrari sessions:
+        #   front idx 1 ≈ 50 N/mm
+        #   rear  idx 2 ≈ 530 N/mm
+        # The per-index slopes are approximate until a full Ferrari sweep is run,
+        # but they keep the sequential solver monotonic and reversible.
+        front_setting_index_range=(0.0, 8.0),
+        front_setting_anchor_index=1.0,
+        front_rate_at_anchor_nmm=50.0,
+        front_rate_per_index_nmm=20.0,
+        rear_setting_index_range=(0.0, 9.0),
+        rear_setting_anchor_index=2.0,
+        rear_rate_at_anchor_nmm=530.0,
+        rear_rate_per_index_nmm=60.0,
     ),
     corner_spring=CornerSpringModel(
         # Ferrari uses torsion bars for BOTH front and rear (indexed 0-18)
@@ -1635,6 +1784,8 @@ FERRARI_499P = CarModel(
         rear_motion_ratio=0.612,   # CALIBRATED: LLTD back-solve → 50.990% ✓ (was 0.536, corrected by 4-pt rear fit)
         track_width_mm=1600.0,     # ESTIMATE — needs Ferrari IBT calibration
         cg_height_mm=340.0,        # ESTIMATE — LMH rules allow lower CoG than LMDh
+        front_setting_index_range=(0.0, 18.0),
+        rear_setting_index_range=(0.0, 18.0),
     ),
     arb=ARBModel(
         # Ferrari uses: Disconnected, A, B, C, D, E (6 sizes)
@@ -1706,9 +1857,12 @@ FERRARI_499P = CarModel(
         camber_rear_deg=(-1.9, 0.0),            # hard garage limit (iRacing GTP legal max)
         toe_front_mm=(-3.0, 3.0),
         toe_rear_mm=(-2.0, 3.0),
+        brake_bias_migration=(-6.0, 6.0),
         diff_clutch_plates_options=[2, 4, 6],
         heave_spring_resolution_nmm=1.0,        # indexed: step by 1
         rear_spring_resolution_nmm=1.0,         # rear torsion bar OD: step by 1
+        front_heave_perch_resolution_mm=0.5,
+        rear_third_perch_resolution_mm=0.5,
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )

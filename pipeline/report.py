@@ -234,8 +234,6 @@ def generate_report(
         else None
     )
     _is_ferrari_pipeline = current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
-    _front_camber_override = -2.9 if _is_ferrari_pipeline else None
-    _rear_camber_override = -1.9 if _is_ferrari_pipeline else None
     _hybrid_enabled = getattr(current_setup, "hybrid_rear_drive_enabled", None) if _is_ferrari_pipeline else None
     _hybrid_corner_pct = getattr(current_setup, "hybrid_rear_drive_corner_pct", None) if _is_ferrari_pipeline else None
     _front_diff_preload_nm = getattr(current_setup, "front_diff_preload_nm", None) if _is_ferrari_pipeline else None
@@ -276,8 +274,6 @@ def generate_report(
             compact=True,
             front_tb_turns_override=_ferrari_tb,
             rear_tb_turns_override=_ferrari_rear_tb,
-            front_camber_override=_front_camber_override,
-            rear_camber_override=_rear_camber_override,
             hybrid_enabled=_hybrid_enabled,
             hybrid_corner_pct=_hybrid_corner_pct,
             front_diff_preload_nm=_front_diff_preload_nm,
@@ -428,8 +424,6 @@ def generate_report(
         garage_outputs=garage_outputs,
         front_tb_turns_override=_ferrari_tb,
         rear_tb_turns_override=_ferrari_rear_tb,
-        front_camber_override=_front_camber_override,
-        rear_camber_override=_rear_camber_override,
         hybrid_enabled=_hybrid_enabled,
         hybrid_corner_pct=_hybrid_corner_pct,
         front_diff_preload_nm=_front_diff_preload_nm,

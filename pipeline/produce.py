@@ -36,6 +36,7 @@ from analyzer.setup_reader import CurrentSetup
 from analyzer.setup_schema import apply_live_control_overrides, build_setup_schema
 from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
+from output.report import to_public_output_payload
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
 from solver.candidate_search import candidate_to_dict, generate_candidate_families
@@ -905,12 +906,10 @@ def produce(
         else "Sequential 6-step physics solver"
     )
     run_trace.record_solver_path(_rt_path, reason=_rt_reason)
-    _is_ferrari_pt = getattr(base_solve_result, "ferrari_passthrough", False)
     run_trace.record_step(1, step1, physics_override=False)
-    run_trace.record_step(2, step2, physics_override=_is_ferrari_pt,
-                          notes=["springs/perch passed through from IBT (not solved)"] if _is_ferrari_pt else [])
-    run_trace.record_step(3, step3, physics_override=_is_ferrari_pt)
-    run_trace.record_step(4, step4, physics_override=_is_ferrari_pt)
+    run_trace.record_step(2, step2, physics_override=False)
+    run_trace.record_step(3, step3, physics_override=False)
+    run_trace.record_step(4, step4, physics_override=False)
     run_trace.record_step(5, step5)
     run_trace.record_step(6, step6)
     run_trace.record_step(7, supporting)
@@ -997,33 +996,6 @@ def produce(
         log(f"[sensitivity] Skipped: missing data ({e})")
     except (TypeError, NameError) as e:
         raise  # re-raise programming errors — don't hide bugs
-
-    # ── Phase I.8: Ferrari indexed parameter passthrough ──
-    # Only for indexed params where we can't map index → physical stiffness.
-    # Solver computes dampers, geometry, brake/diff/TC from telemetry.
-    if car.canonical_name == "ferrari":
-        _cs = current_setup
-        # Pushrod — keep IBT values
-        step1.front_pushrod_offset_mm = _cs.front_pushrod_mm
-        step1.rear_pushrod_offset_mm = _cs.rear_pushrod_mm
-        # Springs — indexed dropdowns, can't map to physical stiffness
-        step2.front_heave_nmm = _cs.front_heave_nmm
-        step2.perch_offset_front_mm = _cs.front_heave_perch_mm
-        step2.rear_third_nmm = _cs.rear_third_nmm
-        step2.perch_offset_rear_mm = _cs.rear_third_perch_mm
-        step3.front_torsion_od_mm = _cs.front_torsion_od_mm
-        step3.rear_spring_rate_nmm = _cs.rear_spring_nmm
-        step3.rear_spring_perch_mm = 0.0
-        # ARBs — stiffness uncalibrated, pass through size (solver computes blade)
-        step4.front_arb_size = _cs.front_arb_size
-        step4.rear_arb_size = _cs.rear_arb_size
-        # Geometry, dampers, brake/diff/TC — solver computes from telemetry
-        solve_notes.append(
-            "⚠️  Ferrari indexed spring parameters passed through from IBT "
-            "(front/rear heave springs, torsion OD, ARB sizes are NOT solver-optimized — "
-            "they reflect the current garage setup). Only dampers, geometry, brake/diff/TC "
-            "are solver-computed for Ferrari."
-        )
 
     # ── Phase J: Output ──
     legal_validation = validate_solution_legality(
@@ -1370,22 +1342,12 @@ def produce(
     run_trace.record_legality(legal_validation)
     for _n in solve_notes:
         run_trace.add_note(_n)
-    if getattr(base_solve_result, "ferrari_passthrough", False):
-        run_trace.add_warning(
-            "Ferrari spring/ARB parameters were NOT solver-optimized — "
-            "they were passed through from the current IBT garage setup."
-        )
 
     # ── Print RunTrace ──
     _verbose = getattr(args, "verbose", False)
     run_trace.print_report(verbose=_verbose)
 
-    if args.sto and car.canonical_name == "ferrari":
-        solve_notes.append(
-            "Ferrari native .sto export is disabled in read-first mode; no setup file was written."
-        )
-        print("\nFerrari native .sto export is disabled in read-first mode; use --setup-json for setup inspection.")
-    elif args.sto:
+    if args.sto:
         # Final garage correlation check before writing .sto
         from output.garage_validator import validate_and_fix_garage_correlation
         garage_warnings = validate_and_fix_garage_correlation(
@@ -1397,32 +1359,38 @@ def produce(
 
         _extra_kw = {}
         if car.canonical_name == "ferrari":
-            # Indexed params: pass through from IBT (can't map index → physical)
             _extra_kw["front_tb_turns"] = current_setup.torsion_bar_turns
             _extra_kw["rear_tb_turns"] = current_setup.rear_torsion_bar_turns
-            # Supporting params: solver computes from telemetry
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
             _extra_kw["brake_bias_target"] = supporting.brake_bias_target
             _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration
+            _extra_kw["brake_bias_migration_gain"] = current_setup.brake_bias_migration_gain
             _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
             _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
             _extra_kw["pad_compound"] = supporting.pad_compound
-            # Ferrari diff ramp uses labels ("More Locking"/"Less Locking")
             _extra_kw["diff_coast_drive_ramp"] = (
                 getattr(supporting, "diff_ramp_angles", "")
                 or ("Less Locking" if supporting.diff_ramp_coast >= 45 else "More Locking")
             )
             _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
+            _extra_kw["front_diff_preload_nm"] = current_setup.front_diff_preload_nm
             _extra_kw["tc_gain"] = supporting.tc_gain
             _extra_kw["tc_slip"] = supporting.tc_slip
-            _extra_kw["front_camber_override"] = -2.9  # empirical from 7 IBT sessions
-            _extra_kw["rear_camber_override"] = -1.9   # empirical from 7 IBT sessions
-            _extra_kw["hybrid_enabled"] = current_setup.hybrid_rear_drive_enabled
-            _extra_kw["hybrid_corner_pct"] = current_setup.hybrid_rear_drive_corner_pct
-            _extra_kw["front_diff_preload_nm"] = current_setup.front_diff_preload_nm
-            _extra_kw["bias_migration_gain"] = current_setup.brake_bias_migration_gain
+            _extra_kw["fuel_low_warning_l"] = getattr(supporting, "fuel_low_warning_l", fuel)
+            _extra_kw["fuel_target_l"] = getattr(supporting, "fuel_target_l", None)
+            _extra_kw["gear_stack"] = getattr(supporting, "gear_stack", "")
+            _extra_kw["speed_in_first_kph"] = current_setup.speed_in_first_kph
+            _extra_kw["speed_in_second_kph"] = current_setup.speed_in_second_kph
+            _extra_kw["speed_in_third_kph"] = current_setup.speed_in_third_kph
+            _extra_kw["speed_in_fourth_kph"] = current_setup.speed_in_fourth_kph
+            _extra_kw["speed_in_fifth_kph"] = current_setup.speed_in_fifth_kph
+            _extra_kw["speed_in_sixth_kph"] = current_setup.speed_in_sixth_kph
+            _extra_kw["speed_in_seventh_kph"] = current_setup.speed_in_seventh_kph
+            _extra_kw["roof_light_color"] = getattr(supporting, "roof_light_color", "")
+            _extra_kw["hybrid_rear_drive_enabled"] = current_setup.hybrid_rear_drive_enabled
+            _extra_kw["hybrid_rear_drive_corner_pct"] = current_setup.hybrid_rear_drive_corner_pct
         else:
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
@@ -1457,7 +1425,6 @@ def produce(
         print(f"\niRacing .sto setup saved to: {sto_path}")
 
     if args.json:
-        import dataclasses
         json_path = Path(args.json)
         json_path.parent.mkdir(parents=True, exist_ok=True)
         parameter_coverage = build_parameter_coverage(
@@ -1509,13 +1476,13 @@ def produce(
             "legal_validation": legal_validation.to_dict() if legal_validation is not None else None,
             "decision_trace": [decision.to_dict() for decision in decision_trace],
             "solver_notes": solve_notes,
-            "step1_rake": dataclasses.asdict(step1),
-            "step2_heave": dataclasses.asdict(step2),
-            "step3_corner": dataclasses.asdict(step3),
-            "step4_arb": dataclasses.asdict(step4),
-            "step5_geometry": dataclasses.asdict(step5),
-            "step6_dampers": dataclasses.asdict(step6),
-            "supporting": dataclasses.asdict(supporting),
+            "step1_rake": to_public_output_payload(car.canonical_name, step1),
+            "step2_heave": to_public_output_payload(car.canonical_name, step2),
+            "step3_corner": to_public_output_payload(car.canonical_name, step3),
+            "step4_arb": to_public_output_payload(car.canonical_name, step4),
+            "step5_geometry": to_public_output_payload(car.canonical_name, step5),
+            "step6_dampers": to_public_output_payload(car.canonical_name, step6),
+            "supporting": to_public_output_payload(car.canonical_name, supporting),
         }
         with open(json_path, "w") as f:
             json.dump(output, f, indent=2, default=str)

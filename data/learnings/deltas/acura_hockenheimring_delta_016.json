@@ -1,0 +1,16 @@
+{
+  "session_before": "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_15-35-40__lap_14",
+  "session_after": "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_15-35-40",
+  "car": "acura",
+  "track": "Hockenheimring Baden-W\u00fcrttemberg",
+  "setup_changes": [],
+  "telemetry_effects": [],
+  "hypotheses": [],
+  "num_setup_changes": 0,
+  "controlled_experiment": true,
+  "changed_steps": [],
+  "lap_time_delta_s": 0.0,
+  "driver_style_changed": false,
+  "key_finding": "No setup changes detected between sessions.",
+  "confidence_level": "high"
+}

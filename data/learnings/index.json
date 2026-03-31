@@ -124,10 +124,21 @@
     "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_3",
     "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_1",
     "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37",
-    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-51-12"
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-51-12",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_5",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_4",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_3",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_2",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_1",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_10",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_9",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_8",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_7",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27"
   ],
-  "total_observations": 123,
-  "total_deltas": 269,
+  "total_observations": 134,
+  "total_deltas": 276,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -140,5 +151,5 @@
     "Silverstone Circuit_Arena Grand Prix",
     "Hockenheimring Baden-W\u00fcrttemberg_Grand Prix"
   ],
-  "last_updated": "2026-03-30T03:54:03.935212+00:00"
+  "last_updated": "2026-03-31T01:43:20.608336+00:00"
 }

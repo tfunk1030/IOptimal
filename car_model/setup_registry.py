@@ -16,6 +16,8 @@ from dataclasses import dataclass, field as dc_field
 from decimal import Decimal, ROUND_HALF_UP
 import re
 
+from car_model.cars import get_car
+
 
 @dataclass(frozen=True)
 class FieldDefinition:
@@ -50,6 +52,19 @@ DEFAULT_DIFF_RAMP_OPTIONS: tuple[tuple[int, int], ...] = (
     (45, 70),
     (50, 75),
 )
+
+_FERRARI_PUBLIC_OUTPUT_ALIASES: dict[str, str] = {
+    "front_heave_nmm": "front_heave_index",
+    "rear_third_nmm": "rear_heave_index",
+    "front_torsion_od_mm": "front_torsion_bar_index",
+    "rear_spring_rate_nmm": "rear_torsion_bar_index",
+    "rear_spring_nmm": "rear_torsion_bar_index",
+    "diff_ramp_angles": "rear_diff_ramp_label",
+}
+
+_FERRARI_SUPPRESSED_PUBLIC_OUTPUT_KEYS: set[str] = {
+    "rear_spring_perch_mm",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -319,57 +334,66 @@ _BMW_SPECS: dict[str, CarFieldSpec] = {
     "rear_shock_defl_max_mm":   _S("Chassis.LeftRear.ShockDefl",                      "CarSetup_Chassis_LeftRear_ShockDeflMax",           parse_fn="defl"),
 }
 
-# Ferrari 499P — overrides from BMW for different YAML paths and STO IDs
+# Ferrari 499P — explicit mapping; do not silently inherit BMW writer/export IDs.
 _FERRARI_SPECS: dict[str, CarFieldSpec] = {
-    **{k: v for k, v in _BMW_SPECS.items()},  # Start from BMW as base
+    **{k: v for k, v in _BMW_SPECS.items()},
 }
-# Override Ferrari-specific paths
 _FERRARI_SPECS.update({
-    "front_pushrod_offset_mm":  _S("Chassis.Front.PushrodLengthDelta",               "CarSetup_Chassis_Front_PushrodLengthDelta",         range_min=-40.0, range_max=40.0, resolution=0.5),
-    "rear_pushrod_offset_mm":   _S("Chassis.Rear.PushrodLengthDelta",                "CarSetup_Chassis_Rear_PushrodLengthDelta",          range_min=-40.0, range_max=40.0, resolution=0.5),
-    "rear_third_spring_nmm":    _S("Chassis.Rear.HeaveSpring",                       "CarSetup_Chassis_Rear_HeaveSpring",                 range_min=0.0, range_max=900.0, resolution=10.0),
-    "rear_third_perch_mm":      _S("Chassis.Rear.HeavePerchOffset",                  "CarSetup_Chassis_Rear_HeavePerchOffset",            resolution=1.0),
-    "rear_spring_rate_nmm":     _S("Chassis.LeftRear.TorsionBarOD",                  "CarSetup_Chassis_LeftRear_TorsionBarOD",            index_map=None),
-    "front_arb_blade":          _S("Chassis.Front.ArbBlades",                        "CarSetup_Chassis_Front_ArbBlades[0]",               range_min=1, range_max=5, parse_fn="int"),
-    "rear_arb_blade":           _S("Chassis.Rear.ArbBlades",                         "CarSetup_Chassis_Rear_ArbBlades[0]",                range_min=1, range_max=5, parse_fn="int"),
-    # Ferrari dampers (same Chassis.* paths for .sto, but Dampers.* paths for IBT YAML)
-    "front_ls_comp":            _S("Dampers.LeftFrontDamper.LsCompDamping",          "CarSetup_Chassis_LeftFront_LsCompDamping",          range_min=0, range_max=40, parse_fn="int"),
-    "front_ls_rbd":             _S("Dampers.LeftFrontDamper.LsRbdDamping",           "CarSetup_Chassis_LeftFront_LsRbdDamping",           range_min=0, range_max=40, parse_fn="int"),
-    "front_hs_comp":            _S("Dampers.LeftFrontDamper.HsCompDamping",          "CarSetup_Chassis_LeftFront_HsCompDamping",          range_min=0, range_max=40, parse_fn="int"),
-    "front_hs_rbd":             _S("Dampers.LeftFrontDamper.HsRbdDamping",           "CarSetup_Chassis_LeftFront_HsRbdDamping",           range_min=0, range_max=40, parse_fn="int"),
-    "front_hs_slope":           _S("Dampers.LeftFrontDamper.HsCompDampSlope",        "CarSetup_Chassis_LeftFront_HsCompDampSlope",        range_min=0, range_max=40, parse_fn="int"),
-    "rear_ls_comp":             _S("Dampers.LeftRearDamper.LsCompDamping",           "CarSetup_Chassis_LeftRear_LsCompDamping",           range_min=0, range_max=40, parse_fn="int"),
-    "rear_ls_rbd":              _S("Dampers.LeftRearDamper.LsRbdDamping",            "CarSetup_Chassis_LeftRear_LsRbdDamping",            range_min=0, range_max=40, parse_fn="int"),
-    "rear_hs_comp":             _S("Dampers.LeftRearDamper.HsCompDamping",           "CarSetup_Chassis_LeftRear_HsCompDamping",           range_min=0, range_max=40, parse_fn="int"),
-    "rear_hs_rbd":              _S("Dampers.LeftRearDamper.HsRbdDamping",            "CarSetup_Chassis_LeftRear_HsRbdDamping",            range_min=0, range_max=40, parse_fn="int"),
-    "rear_hs_slope":            _S("Dampers.LeftRearDamper.HsCompDampSlope",         "CarSetup_Chassis_LeftRear_HsCompDampSlope",         range_min=0, range_max=40, parse_fn="int"),
-    # Ferrari brakes/diff/TC under Systems.* YAML path (same STO IDs as BMW)
-    "brake_bias_pct":           _S("Systems.BrakeSpec.BrakePressureBias",             "CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias"),
-    "brake_bias_target":        _S("Systems.BrakeSpec.BrakeBiasTarget",               "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget"),
-    "brake_bias_migration":     _S("Systems.BrakeSpec.BiasMigration",                 "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration"),
-    "brake_bias_migration_gain": _S("Systems.BrakeSpec.BiasMigrationGain",            "CarSetup_BrakesDriveUnit_BrakeSpec_BiasMigrationGain"),
-    "front_master_cyl_mm":      _S("Systems.BrakeSpec.FrontMasterCyl",                "CarSetup_BrakesDriveUnit_BrakeSpec_FrontMasterCyl"),
-    "rear_master_cyl_mm":       _S("Systems.BrakeSpec.RearMasterCyl",                 "CarSetup_BrakesDriveUnit_BrakeSpec_RearMasterCyl"),
-    "pad_compound":             _S("Systems.BrakeSpec.PadCompound",                   "CarSetup_BrakesDriveUnit_BrakeSpec_PadCompound",   parse_fn="string"),
-    "front_diff_preload_nm":    _S("Systems.FrontDiffSpec.Preload",                   "CarSetup_BrakesDriveUnit_FrontDiffSpec_Preload"),
-    "diff_preload_nm":          _S("Systems.RearDiffSpec.Preload",                    "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload",    range_min=0.0, range_max=150.0, resolution=5.0),
-    "diff_ramp_angles":         _S("Systems.RearDiffSpec.CoastDriveRampOptions",      "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles", parse_fn="string"),
-    "diff_ramp_option_idx":     _S("Systems.RearDiffSpec.CoastDriveRampOptions",      "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles", range_min=0.0, range_max=2.0, resolution=1.0, options=(0, 1, 2), parse_fn="string"),
-    "diff_clutch_plates":       _S("Systems.RearDiffSpec.ClutchFrictionPlates",       "CarSetup_BrakesDriveUnit_RearDiffSpec_ClutchFrictionPlates", parse_fn="int"),
-    "tc_gain":                  _S("Systems.TractionControl.TractionControlGain",     "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain", range_min=1, range_max=10, parse_fn="int"),
-    "tc_slip":                  _S("Systems.TractionControl.TractionControlSlip",     "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip", range_min=1, range_max=10, parse_fn="int"),
-    "fuel_l":                   _S("Systems.Fuel.FuelLevel",                          "CarSetup_BrakesDriveUnit_Fuel_FuelLevel"),
-    "fuel_low_warning_l":       _S("Systems.Fuel.FuelLowWarning",                     "CarSetup_BrakesDriveUnit_Fuel_FuelLowWarning"),
-    "fuel_target_l":            _S("Systems.Fuel.FuelTarget",                         "CarSetup_BrakesDriveUnit_Fuel_FuelTarget"),
-    "gear_stack":               _S("Systems.GearRatios.GearStack",                    "CarSetup_BrakesDriveUnit_GearRatios_GearStack",    parse_fn="string"),
-    "hybrid_rear_drive_enabled": _S("Systems.HybridConfig.HybridRearDriveEnabled",    "CarSetup_BrakesDriveUnit_HybridConfig_HybridRearDriveEnabled", parse_fn="string"),
-    "hybrid_rear_drive_corner_pct": _S("Systems.HybridConfig.HybridRearDriveCornerPct", "CarSetup_BrakesDriveUnit_HybridConfig_HybridRearDriveCornerPct"),
-    "roof_light_color":         _S("Systems.Lighting.RoofIdLightColor",               "CarSetup_BrakesDriveUnit_Lighting_RoofIdLightColor", parse_fn="string"),
-    # Ferrari third spring deflection uses HeaveSpringDefl / HeaveSliderDefl
-    "third_spring_defl_static_mm": _S("Chassis.Rear.HeaveSpringDefl",                "CarSetup_Chassis_Rear_HeaveSpringDeflStatic",       parse_fn="defl"),
-    "third_spring_defl_max_mm": _S("Chassis.Rear.HeaveSpringDefl",                   "CarSetup_Chassis_Rear_HeaveSpringDeflMax",          parse_fn="defl"),
-    "third_slider_defl_static_mm": _S("Chassis.Rear.HeaveSliderDefl",                "CarSetup_Chassis_Rear_HeaveSliderDeflStatic",       parse_fn="defl"),
-    "third_slider_defl_max_mm": _S("Chassis.Rear.HeaveSliderDefl",                   "CarSetup_Chassis_Rear_HeaveSliderDeflMax",          parse_fn="defl"),
+    "front_pushrod_offset_mm":  _S("Chassis.Front.PushrodLengthDelta",                "CarSetup_Chassis_Front_PushrodLengthDelta",              range_min=-40.0, range_max=40.0, resolution=0.5),
+    "rear_pushrod_offset_mm":   _S("Chassis.Rear.PushrodLengthDelta",                 "CarSetup_Chassis_Rear_PushrodLengthDelta",               range_min=-40.0, range_max=40.0, resolution=0.5),
+    "front_heave_spring_nmm":   _S("Chassis.Front.HeaveSpring",                       "CarSetup_Chassis_Front_HeaveSpring",                     range_min=0.0, range_max=8.0, resolution=1.0, index_map=None),
+    "front_heave_perch_mm":     _S("Chassis.Front.HeavePerchOffset",                  "CarSetup_Chassis_Front_HeavePerchOffset",                resolution=0.5),
+    "rear_third_spring_nmm":    _S("Chassis.Rear.HeaveSpring",                        "CarSetup_Chassis_Rear_HeaveSpring",                      range_min=0.0, range_max=9.0, resolution=1.0, index_map=None),
+    "rear_third_perch_mm":      _S("Chassis.Rear.HeavePerchOffset",                   "CarSetup_Chassis_Rear_HeavePerchOffset",                 resolution=0.5),
+    "front_torsion_od_mm":      _S("Chassis.LeftFront.TorsionBarOD",                  "CarSetup_Chassis_LeftFront_TorsionBarOD",                range_min=0.0, range_max=18.0, resolution=1.0, index_map=None),
+    "rear_spring_rate_nmm":     _S("Chassis.LeftRear.TorsionBarOD",                   "CarSetup_Chassis_LeftRear_TorsionBarOD",                 range_min=0.0, range_max=18.0, resolution=1.0, index_map=None),
+    "rear_spring_perch_mm":     _S("Chassis.LeftRear.SpringPerchOffset",              "",                                                       range_min=0.0, range_max=0.0, resolution=0.0),
+    "front_arb_size":           _S("Chassis.Front.ArbSize",                           "CarSetup_Chassis_Front_ArbSize",                         options=("Disconnected", "A", "B", "C", "D", "E"), parse_fn="string"),
+    "front_arb_blade":          _S("Chassis.Front.ArbBlades",                         "CarSetup_Chassis_Front_ArbBlades[0]",                    range_min=1, range_max=5, parse_fn="int"),
+    "rear_arb_size":            _S("Chassis.Rear.ArbSize",                            "CarSetup_Chassis_Rear_ArbSize",                          options=("Disconnected", "A", "B", "C", "D", "E"), parse_fn="string"),
+    "rear_arb_blade":           _S("Chassis.Rear.ArbBlades",                          "CarSetup_Chassis_Rear_ArbBlades[0]",                     range_min=1, range_max=5, parse_fn="int"),
+    "front_ls_comp":            _S("Dampers.LeftFrontDamper.LsCompDamping",           "CarSetup_Dampers_LeftFrontDamper_LsCompDamping",         range_min=0, range_max=40, parse_fn="int"),
+    "front_ls_rbd":             _S("Dampers.LeftFrontDamper.LsRbdDamping",            "CarSetup_Dampers_LeftFrontDamper_LsRbdDamping",          range_min=0, range_max=40, parse_fn="int"),
+    "front_hs_comp":            _S("Dampers.LeftFrontDamper.HsCompDamping",           "CarSetup_Dampers_LeftFrontDamper_HsCompDamping",         range_min=0, range_max=40, parse_fn="int"),
+    "front_hs_rbd":             _S("Dampers.LeftFrontDamper.HsRbdDamping",            "CarSetup_Dampers_LeftFrontDamper_HsRbdDamping",          range_min=0, range_max=40, parse_fn="int"),
+    "front_hs_slope":           _S("Dampers.LeftFrontDamper.HsCompDampSlope",         "CarSetup_Dampers_LeftFrontDamper_HsCompDampSlope",       range_min=0, range_max=11, parse_fn="int"),
+    "rear_ls_comp":             _S("Dampers.LeftRearDamper.LsCompDamping",            "CarSetup_Dampers_LeftRearDamper_LsCompDamping",          range_min=0, range_max=40, parse_fn="int"),
+    "rear_ls_rbd":              _S("Dampers.LeftRearDamper.LsRbdDamping",             "CarSetup_Dampers_LeftRearDamper_LsRbdDamping",           range_min=0, range_max=40, parse_fn="int"),
+    "rear_hs_comp":             _S("Dampers.LeftRearDamper.HsCompDamping",            "CarSetup_Dampers_LeftRearDamper_HsCompDamping",          range_min=0, range_max=40, parse_fn="int"),
+    "rear_hs_rbd":              _S("Dampers.LeftRearDamper.HsRbdDamping",             "CarSetup_Dampers_LeftRearDamper_HsRbdDamping",           range_min=0, range_max=40, parse_fn="int"),
+    "rear_hs_slope":            _S("Dampers.LeftRearDamper.HsCompDampSlope",          "CarSetup_Dampers_LeftRearDamper_HsCompDampSlope",        range_min=0, range_max=11, parse_fn="int"),
+    "brake_bias_pct":           _S("Systems.BrakeSpec.BrakePressureBias",             "CarSetup_Systems_BrakeSpec_BrakePressureBias"),
+    "brake_bias_target":        _S("Systems.BrakeSpec.BrakeBiasTarget",               "CarSetup_Systems_BrakeSpec_BrakeBiasTarget"),
+    "brake_bias_migration":     _S("Systems.BrakeSpec.BiasMigration",                 "CarSetup_Systems_BrakeSpec_BiasMigration",             range_min=-6.0, range_max=6.0, resolution=1.0),
+    "brake_bias_migration_gain": _S("Systems.BrakeSpec.BiasMigrationGain",            "CarSetup_Systems_BrakeSpec_BiasMigrationGain"),
+    "front_master_cyl_mm":      _S("Systems.BrakeSpec.FrontMasterCyl",                "CarSetup_Systems_BrakeSpec_FrontMasterCyl"),
+    "rear_master_cyl_mm":       _S("Systems.BrakeSpec.RearMasterCyl",                 "CarSetup_Systems_BrakeSpec_RearMasterCyl"),
+    "pad_compound":             _S("Systems.BrakeSpec.PadCompound",                   "CarSetup_Systems_BrakeSpec_PadCompound",                parse_fn="string"),
+    "front_diff_preload_nm":    _S("Systems.FrontDiffSpec.Preload",                   "CarSetup_Systems_FrontDiffSpec_Preload"),
+    "diff_preload_nm":          _S("Systems.RearDiffSpec.Preload",                    "CarSetup_Systems_RearDiffSpec_Preload",                 range_min=0.0, range_max=150.0, resolution=5.0),
+    "diff_ramp_angles":         _S("Systems.RearDiffSpec.CoastDriveRampOptions",      "CarSetup_Systems_RearDiffSpec_CoastDriveRampOptions",   parse_fn="string"),
+    "diff_ramp_option_idx":     _S("Systems.RearDiffSpec.CoastDriveRampOptions",      "CarSetup_Systems_RearDiffSpec_CoastDriveRampOptions",   range_min=0.0, range_max=2.0, resolution=1.0, options=(0, 1, 2), parse_fn="string"),
+    "diff_clutch_plates":       _S("Systems.RearDiffSpec.ClutchFrictionPlates",       "CarSetup_Systems_RearDiffSpec_ClutchFrictionPlates",    parse_fn="int"),
+    "tc_gain":                  _S("Systems.TractionControl.TractionControlGain",     "CarSetup_Systems_TractionControl_TractionControlGain",  range_min=1, range_max=10, parse_fn="int"),
+    "tc_slip":                  _S("Systems.TractionControl.TractionControlSlip",     "CarSetup_Systems_TractionControl_TractionControlSlip",  range_min=1, range_max=10, parse_fn="int"),
+    "fuel_l":                   _S("Systems.Fuel.FuelLevel",                          "CarSetup_Systems_Fuel_FuelLevel"),
+    "fuel_low_warning_l":       _S("Systems.Fuel.FuelLowWarning",                     "CarSetup_Systems_Fuel_FuelLowWarning"),
+    "fuel_target_l":            _S("Systems.Fuel.FuelTarget",                         "CarSetup_Systems_Fuel_FuelTarget"),
+    "gear_stack":               _S("Systems.GearRatios.GearStack",                    "CarSetup_Systems_GearRatios_GearStack",               parse_fn="string"),
+    "speed_in_first_kph":       _S("Systems.GearRatios.SpeedInFirst",                 "CarSetup_Systems_GearRatios_SpeedInFirst"),
+    "speed_in_second_kph":      _S("Systems.GearRatios.SpeedInSecond",                "CarSetup_Systems_GearRatios_SpeedInSecond"),
+    "speed_in_third_kph":       _S("Systems.GearRatios.SpeedInThird",                 "CarSetup_Systems_GearRatios_SpeedInThird"),
+    "speed_in_fourth_kph":      _S("Systems.GearRatios.SpeedInFourth",                "CarSetup_Systems_GearRatios_SpeedInFourth"),
+    "speed_in_fifth_kph":       _S("Systems.GearRatios.SpeedInFifth",                 "CarSetup_Systems_GearRatios_SpeedInFifth"),
+    "speed_in_sixth_kph":       _S("Systems.GearRatios.SpeedInSixth",                 "CarSetup_Systems_GearRatios_SpeedInSixth"),
+    "speed_in_seventh_kph":     _S("Systems.GearRatios.SpeedInSeventh",               "CarSetup_Systems_GearRatios_SpeedInSeventh"),
+    "hybrid_rear_drive_enabled": _S("Systems.HybridConfig.HybridRearDriveEnabled",    "CarSetup_Systems_HybridConfig_HybridRearDriveEnabled", parse_fn="string"),
+    "hybrid_rear_drive_corner_pct": _S("Systems.HybridConfig.HybridRearDriveCornerPct", "CarSetup_Systems_HybridConfig_HybridRearDriveCornerPct"),
+    "roof_light_color":         _S("Systems.Lighting.RoofIdLightColor",               "CarSetup_Systems_Lighting_RoofIdLightColor",          parse_fn="string"),
+    "third_spring_defl_static_mm": _S("Chassis.Rear.HeaveSpringDefl",                 "CarSetup_Chassis_Rear_HeaveSpringDeflStatic",         parse_fn="defl"),
+    "third_spring_defl_max_mm": _S("Chassis.Rear.HeaveSpringDefl",                    "CarSetup_Chassis_Rear_HeaveSpringDeflMax",            parse_fn="defl"),
+    "third_slider_defl_static_mm": _S("Chassis.Rear.HeaveSliderDefl",                 "CarSetup_Chassis_Rear_HeaveSliderDeflStatic",         parse_fn="defl"),
+    "third_slider_defl_max_mm": _S("Chassis.Rear.HeaveSliderDefl",                    "CarSetup_Chassis_Rear_HeaveSliderDeflMax",            parse_fn="defl"),
 })
 
 # Porsche 963 GTP — minimal mapping
@@ -521,10 +545,118 @@ def get_writer_param_ids(car: str) -> dict[str, str]:
 
 def _car_name(car_or_name: object | str | None) -> str:
     if isinstance(car_or_name, str):
-        return car_or_name.lower()
+        text = car_or_name.lower()
+        for canonical_name in ("bmw", "ferrari", "cadillac", "porsche", "acura"):
+            if canonical_name in text:
+                return canonical_name
+        return text
     if car_or_name is None:
         return "bmw"
     return str(getattr(car_or_name, "canonical_name", "bmw")).lower()
+
+
+def _ferrari_public_numeric_value(key: str, value: object) -> object:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return value
+    ferrari = get_car("ferrari")
+    heave = ferrari.heave_spring
+    corner = ferrari.corner_spring
+    gr = ferrari.garage_ranges
+    numeric = float(value)
+    if key in {"front_heave_nmm", "front_heave_index"}:
+        if gr.front_heave_nmm[0] <= numeric <= gr.front_heave_nmm[1]:
+            return round(numeric, 3)
+        return round(
+            heave.front_setting_from_rate(numeric, resolution=gr.heave_spring_resolution_nmm),
+            3,
+        )
+    if key in {"rear_third_nmm", "rear_heave_index"}:
+        if gr.rear_third_nmm[0] <= numeric <= gr.rear_third_nmm[1]:
+            return round(numeric, 3)
+        return round(
+            heave.rear_setting_from_rate(numeric, resolution=gr.heave_spring_resolution_nmm),
+            3,
+        )
+    if key in {"front_torsion_od_mm", "front_torsion_bar_index"}:
+        if gr.front_torsion_od_mm[0] <= numeric <= gr.front_torsion_od_mm[1]:
+            return round(numeric, 3)
+        return round(
+            corner.front_setting_from_torsion_od(numeric, resolution=gr.rear_spring_resolution_nmm),
+            3,
+        )
+    if key in {"rear_spring_rate_nmm", "rear_spring_nmm", "rear_torsion_bar_index"}:
+        if gr.rear_spring_nmm[0] <= numeric <= gr.rear_spring_nmm[1]:
+            return round(numeric, 3)
+        return round(
+            corner.rear_setting_from_bar_rate(numeric, resolution=gr.rear_spring_resolution_nmm),
+            3,
+        )
+    return value
+
+
+def public_output_value(car_or_name: object | str | None, key: str, value: object) -> object:
+    """Map an internal solver/output value to the public per-car value surface."""
+    if _car_name(car_or_name) == "ferrari":
+        return _ferrari_public_numeric_value(key, value)
+    return value
+
+
+def internal_solver_value(car_or_name: object | str | None, key: str, value: object) -> object:
+    """Decode a public per-car value back onto the solver's internal scale."""
+    if _car_name(car_or_name) != "ferrari":
+        return value
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return value
+    ferrari = get_car("ferrari")
+    heave = ferrari.heave_spring
+    corner = ferrari.corner_spring
+    gr = ferrari.garage_ranges
+    numeric = float(value)
+    if key in {"front_heave_nmm", "front_heave_index"}:
+        if gr.front_heave_nmm[0] <= numeric <= gr.front_heave_nmm[1]:
+            return heave.front_rate_from_setting(numeric)
+        return value
+    if key in {"rear_third_nmm", "rear_heave_index"}:
+        if gr.rear_third_nmm[0] <= numeric <= gr.rear_third_nmm[1]:
+            return heave.rear_rate_from_setting(numeric)
+        return value
+    if key in {"front_torsion_od_mm", "front_torsion_bar_index"}:
+        if gr.front_torsion_od_mm[0] <= numeric <= gr.front_torsion_od_mm[1]:
+            return corner.front_torsion_od_from_setting(numeric)
+        return value
+    if key in {"rear_spring_rate_nmm", "rear_spring_nmm", "rear_torsion_bar_index"}:
+        if gr.rear_spring_nmm[0] <= numeric <= gr.rear_spring_nmm[1]:
+            return corner.rear_bar_rate_from_setting(numeric)
+        return value
+    return value
+
+
+def public_output_key(car_or_name: object | str | None, key: str) -> str:
+    """Map an internal solver/output key to the public per-car output key."""
+    if _car_name(car_or_name) == "ferrari":
+        return _FERRARI_PUBLIC_OUTPUT_ALIASES.get(key, key)
+    return key
+
+
+def remap_public_output_keys(car_or_name: object | str | None, payload: object) -> object:
+    """Recursively remap output payload keys to the public per-car naming surface."""
+    car_name = _car_name(car_or_name)
+    if isinstance(payload, list):
+        return [remap_public_output_keys(car_name, item) for item in payload]
+    if isinstance(payload, dict):
+        result: dict[object, object] = {}
+        for key, value in payload.items():
+            mapped_key = key
+            if isinstance(key, str):
+                if car_name == "ferrari" and key in _FERRARI_SUPPRESSED_PUBLIC_OUTPUT_KEYS:
+                    continue
+                mapped_key = public_output_key(car_name, key)
+            mapped_value = remap_public_output_keys(car_name, value)
+            if isinstance(key, str):
+                mapped_value = public_output_value(car_name, key, mapped_value)
+            result[mapped_key] = mapped_value
+        return result
+    return payload
 
 
 def get_numeric_resolution(

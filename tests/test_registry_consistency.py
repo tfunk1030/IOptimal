@@ -130,6 +130,37 @@ class RegistryConsistencyTests(unittest.TestCase):
         for sto_id in critical_ids:
             self.assertIn(sto_id, bmw_sto_ids, f"BMW registry missing STO ID: {sto_id}")
 
+    def test_writer_param_ids_cover_ferrari_native_map(self):
+        """Verify Ferrari registry uses Ferrari-native Systems and Dampers IDs."""
+        ferrari_specs = CAR_FIELD_SPECS["ferrari"]
+        ferrari_sto_ids = {spec.sto_param_id for spec in ferrari_specs.values() if spec.sto_param_id}
+
+        critical_ids = [
+            "CarSetup_Chassis_Front_HeaveSpring",
+            "CarSetup_Chassis_Rear_HeaveSpring",
+            "CarSetup_Chassis_LeftFront_TorsionBarOD",
+            "CarSetup_Chassis_LeftRear_TorsionBarOD",
+            "CarSetup_Dampers_LeftFrontDamper_LsCompDamping",
+            "CarSetup_Dampers_LeftRearDamper_HsRbdDamping",
+            "CarSetup_Systems_BrakeSpec_BrakePressureBias",
+            "CarSetup_Systems_BrakeSpec_BiasMigrationGain",
+            "CarSetup_Systems_FrontDiffSpec_Preload",
+            "CarSetup_Systems_RearDiffSpec_CoastDriveRampOptions",
+            "CarSetup_Systems_GearRatios_SpeedInFirst",
+            "CarSetup_Systems_HybridConfig_HybridRearDriveEnabled",
+            "CarSetup_Systems_Lighting_RoofIdLightColor",
+        ]
+        legacy_ids = [
+            "CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias",
+            "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload",
+            "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain",
+            "CarSetup_Chassis_LeftFront_LsCompDamping",
+        ]
+        for sto_id in critical_ids:
+            self.assertIn(sto_id, ferrari_sto_ids, f"Ferrari registry missing STO ID: {sto_id}")
+        for sto_id in legacy_ids:
+            self.assertNotIn(sto_id, ferrari_sto_ids, f"Ferrari registry should not use legacy STO ID: {sto_id}")
+
 
 if __name__ == "__main__":
     unittest.main()

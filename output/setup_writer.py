@@ -14,11 +14,13 @@ Usage:
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, ElementTree, indent
 
 from car_model.garage import GarageSetupState
+from car_model.setup_registry import public_output_value
 from solver.rake_solver import RakeSolution
 from solver.heave_solver import HeaveSolution
 from solver.corner_spring_solver import CornerSpringSolution
@@ -243,44 +245,61 @@ _FERRARI_PARAM_IDS: dict[str, str] = {
     "front_toe":                "CarSetup_Chassis_Front_ToeIn",
     "lr_toe":                   "CarSetup_Chassis_LeftRear_ToeIn",
     "rr_toe":                   "CarSetup_Chassis_RightRear_ToeIn",
-    # Dampers (same naming as BMW)
-    "lf_ls_comp":               "CarSetup_Chassis_LeftFront_LsCompDamping",
-    "lf_ls_rbd":                "CarSetup_Chassis_LeftFront_LsRbdDamping",
-    "lf_hs_comp":               "CarSetup_Chassis_LeftFront_HsCompDamping",
-    "lf_hs_rbd":                "CarSetup_Chassis_LeftFront_HsRbdDamping",
-    "lf_hs_slope":              "CarSetup_Chassis_LeftFront_HsCompDampSlope",
-    "rf_ls_comp":               "CarSetup_Chassis_RightFront_LsCompDamping",
-    "rf_ls_rbd":                "CarSetup_Chassis_RightFront_LsRbdDamping",
-    "rf_hs_comp":               "CarSetup_Chassis_RightFront_HsCompDamping",
-    "rf_hs_rbd":                "CarSetup_Chassis_RightFront_HsRbdDamping",
-    "rf_hs_slope":              "CarSetup_Chassis_RightFront_HsCompDampSlope",
-    "lr_ls_comp":               "CarSetup_Chassis_LeftRear_LsCompDamping",
-    "lr_ls_rbd":                "CarSetup_Chassis_LeftRear_LsRbdDamping",
-    "lr_hs_comp":               "CarSetup_Chassis_LeftRear_HsCompDamping",
-    "lr_hs_rbd":                "CarSetup_Chassis_LeftRear_HsRbdDamping",
-    "lr_hs_slope":              "CarSetup_Chassis_LeftRear_HsCompDampSlope",
-    "rr_ls_comp":               "CarSetup_Chassis_RightRear_LsCompDamping",
-    "rr_ls_rbd":                "CarSetup_Chassis_RightRear_LsRbdDamping",
-    "rr_hs_comp":               "CarSetup_Chassis_RightRear_HsCompDamping",
-    "rr_hs_rbd":                "CarSetup_Chassis_RightRear_HsRbdDamping",
-    "rr_hs_slope":              "CarSetup_Chassis_RightRear_HsCompDampSlope",
+    # Dampers
+    "lf_ls_comp":               "CarSetup_Dampers_LeftFrontDamper_LsCompDamping",
+    "lf_ls_rbd":                "CarSetup_Dampers_LeftFrontDamper_LsRbdDamping",
+    "lf_hs_comp":               "CarSetup_Dampers_LeftFrontDamper_HsCompDamping",
+    "lf_hs_rbd":                "CarSetup_Dampers_LeftFrontDamper_HsRbdDamping",
+    "lf_hs_slope":              "CarSetup_Dampers_LeftFrontDamper_HsCompDampSlope",
+    "rf_ls_comp":               "CarSetup_Dampers_RightFrontDamper_LsCompDamping",
+    "rf_ls_rbd":                "CarSetup_Dampers_RightFrontDamper_LsRbdDamping",
+    "rf_hs_comp":               "CarSetup_Dampers_RightFrontDamper_HsCompDamping",
+    "rf_hs_rbd":                "CarSetup_Dampers_RightFrontDamper_HsRbdDamping",
+    "rf_hs_slope":              "CarSetup_Dampers_RightFrontDamper_HsCompDampSlope",
+    "lr_ls_comp":               "CarSetup_Dampers_LeftRearDamper_LsCompDamping",
+    "lr_ls_rbd":                "CarSetup_Dampers_LeftRearDamper_LsRbdDamping",
+    "lr_hs_comp":               "CarSetup_Dampers_LeftRearDamper_HsCompDamping",
+    "lr_hs_rbd":                "CarSetup_Dampers_LeftRearDamper_HsRbdDamping",
+    "lr_hs_slope":              "CarSetup_Dampers_LeftRearDamper_HsCompDampSlope",
+    "rr_ls_comp":               "CarSetup_Dampers_RightRearDamper_LsCompDamping",
+    "rr_ls_rbd":                "CarSetup_Dampers_RightRearDamper_LsRbdDamping",
+    "rr_hs_comp":               "CarSetup_Dampers_RightRearDamper_HsCompDamping",
+    "rr_hs_rbd":                "CarSetup_Dampers_RightRearDamper_HsRbdDamping",
+    "rr_hs_slope":              "CarSetup_Dampers_RightRearDamper_HsCompDampSlope",
     # Tyres
     "lf_pressure":              "CarSetup_TiresAero_LeftFront_StartingPressure",
     "rf_pressure":              "CarSetup_TiresAero_RightFront_StartingPressure",
     "lr_pressure":              "CarSetup_TiresAero_LeftRearTire_StartingPressure",
     "rr_pressure":              "CarSetup_TiresAero_RightRearTire_StartingPressure",
     "tyre_type":                "CarSetup_TiresAero_TireType_TireType",
-    # Fuel / brakes / diff / TC
-    "fuel_level":               "CarSetup_BrakesDriveUnit_Fuel_FuelLevel",
-    "brake_bias":               "CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias",
-    "tc_gain":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain",
-    "tc_slip":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip",
-    # Ferrari front diff (preload only)
-    "front_diff_preload":       "CarSetup_BrakesDriveUnit_FrontDiffSpec_Preload",
-    # Ferrari rear diff
-    "diff_preload":             "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload",
-    "diff_coast_drive_ramp":    "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles",
-    "diff_clutch_plates":       "CarSetup_BrakesDriveUnit_RearDiffSpec_ClutchFrictionPlates",
+    # Fuel / brakes / diff / TC / hybrid
+    "fuel_level":               "CarSetup_Systems_Fuel_FuelLevel",
+    "fuel_low_warning":         "CarSetup_Systems_Fuel_FuelLowWarning",
+    "fuel_target":              "CarSetup_Systems_Fuel_FuelTarget",
+    "brake_bias":               "CarSetup_Systems_BrakeSpec_BrakePressureBias",
+    "brake_bias_target":        "CarSetup_Systems_BrakeSpec_BrakeBiasTarget",
+    "brake_bias_migration":     "CarSetup_Systems_BrakeSpec_BiasMigration",
+    "brake_bias_migration_gain":"CarSetup_Systems_BrakeSpec_BiasMigrationGain",
+    "pad_compound":             "CarSetup_Systems_BrakeSpec_PadCompound",
+    "front_master_cyl":         "CarSetup_Systems_BrakeSpec_FrontMasterCyl",
+    "rear_master_cyl":          "CarSetup_Systems_BrakeSpec_RearMasterCyl",
+    "tc_gain":                  "CarSetup_Systems_TractionControl_TractionControlGain",
+    "tc_slip":                  "CarSetup_Systems_TractionControl_TractionControlSlip",
+    "front_diff_preload":       "CarSetup_Systems_FrontDiffSpec_Preload",
+    "diff_preload":             "CarSetup_Systems_RearDiffSpec_Preload",
+    "diff_coast_drive_ramp":    "CarSetup_Systems_RearDiffSpec_CoastDriveRampOptions",
+    "diff_clutch_plates":       "CarSetup_Systems_RearDiffSpec_ClutchFrictionPlates",
+    "gear_stack":               "CarSetup_Systems_GearRatios_GearStack",
+    "speed_in_first":           "CarSetup_Systems_GearRatios_SpeedInFirst",
+    "speed_in_second":          "CarSetup_Systems_GearRatios_SpeedInSecond",
+    "speed_in_third":           "CarSetup_Systems_GearRatios_SpeedInThird",
+    "speed_in_fourth":          "CarSetup_Systems_GearRatios_SpeedInFourth",
+    "speed_in_fifth":           "CarSetup_Systems_GearRatios_SpeedInFifth",
+    "speed_in_sixth":           "CarSetup_Systems_GearRatios_SpeedInSixth",
+    "speed_in_seventh":         "CarSetup_Systems_GearRatios_SpeedInSeventh",
+    "roof_light_color":         "CarSetup_Systems_Lighting_RoofIdLightColor",
+    "hybrid_rear_drive_enabled":"CarSetup_Systems_HybridConfig_HybridRearDriveEnabled",
+    "hybrid_rear_drive_corner_pct":"CarSetup_Systems_HybridConfig_HybridRearDriveCornerPct",
 }
 
 
@@ -525,17 +544,29 @@ def write_sto(
     brake_bias_pct: float | None = None,  # None = compute from car physics
     brake_bias_migration: float | None = None,
     brake_bias_target: float | None = None,
+    brake_bias_migration_gain: float | None = None,
     pad_compound: str | None = None,
     front_master_cyl_mm: float | None = None,
     rear_master_cyl_mm: float | None = None,
     diff_coast_drive_ramp: str | None = None,
     diff_clutch_plates: int | None = None,
     diff_preload_nm: float | None = None,
+    front_diff_preload_nm: float | None = None,
     tc_gain: int | None = None,
     tc_slip: int | None = None,
     gear_stack: str = "Short",
+    speed_in_first_kph: float | None = None,
+    speed_in_second_kph: float | None = None,
+    speed_in_third_kph: float | None = None,
+    speed_in_fourth_kph: float | None = None,
+    speed_in_fifth_kph: float | None = None,
+    speed_in_sixth_kph: float | None = None,
+    speed_in_seventh_kph: float | None = None,
     fuel_low_warning_l: float = 8.0,
+    fuel_target_l: float | None = None,
     roof_light_color: str = "Orange",
+    hybrid_rear_drive_enabled: str | None = None,
+    hybrid_rear_drive_corner_pct: float | None = None,
     include_computed: bool = False,
     front_tb_turns: float | None = None,
     rear_tb_turns: float | None = None,
@@ -565,10 +596,6 @@ def write_sto(
     Returns:
         Path to the written file
     """
-    if car_canonical.lower() == "ferrari":
-        raise NotImplementedError(
-            "Ferrari native .sto export is disabled in read-first mode; use --setup-json instead."
-        )
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -591,6 +618,14 @@ def write_sto(
             or getattr(_car.garage_ranges, "perch_resolution_mm", 1.0)
             or 1.0
         )
+        if getattr(_car, "canonical_name", "") == "ferrari":
+            step2 = copy.deepcopy(step2)
+            step3 = copy.deepcopy(step3)
+            step2.front_heave_nmm = float(public_output_value(_car, "front_heave_nmm", step2.front_heave_nmm))
+            step2.rear_third_nmm = float(public_output_value(_car, "rear_third_nmm", step2.rear_third_nmm))
+            step3.front_torsion_od_mm = float(public_output_value(_car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+            step3.rear_spring_rate_nmm = float(public_output_value(_car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+            step3.rear_spring_perch_mm = 0.0
 
     # ── Pre-write validation: garage correlation fix + range clamping ─────
     from output.garage_validator import validate_and_fix_garage_correlation
@@ -739,8 +774,13 @@ def write_sto(
 
     # === Corner springs ===
     # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
-    _w_num("lf_torsion_od", step3.front_torsion_od_mm, "mm")
-    _w_num("rf_torsion_od", step3.front_torsion_od_mm, "mm")
+    _front_torsion_value = (
+        int(round(step3.front_torsion_od_mm))
+        if car_canonical.lower() == "ferrari"
+        else step3.front_torsion_od_mm
+    )
+    _w_num("lf_torsion_od", _front_torsion_value, "mm")
+    _w_num("rf_torsion_od", _front_torsion_value, "mm")
     # Torsion bar turns — adjustable parameter on both BMW and Ferrari
     if front_tb_turns is not None:
         _tb_turns = round(front_tb_turns, 3)
@@ -842,8 +882,8 @@ def write_sto(
         # HeaveSpringDeflMax retains its linear model (well-calibrated from 19 sessions)
         if garage_outputs is not None:
             _heave_defl_max = garage_outputs.heave_spring_defl_max_mm
-        elif step2.defl_max_front_mm > 0:
-            _heave_defl_max = step2.defl_max_front_mm
+        elif getattr(step2, "defl_max_front_mm", 0) > 0:
+            _heave_defl_max = getattr(step2, "defl_max_front_mm")
         elif _car is not None:
             _fh = step2.front_heave_nmm
             _heave_defl_max = (_car.heave_spring.heave_spring_defl_max_intercept_mm
@@ -951,28 +991,33 @@ def write_sto(
     _w_num("brake_bias",           brake_bias_pct,       "%")
     _w_str("diff_coast_drive_ramp", diff_coast_drive_ramp)
     _w_num("diff_clutch_plates",    diff_clutch_plates,   "")
-    _w_num("diff_preload",          diff_preload_nm,       "Nm")
+    _w_num("diff_preload",          None if diff_preload_nm is None else int(round(diff_preload_nm)), "Nm")
     _w_num("tc_gain", tc_gain, "")
     _w_num("tc_slip", tc_slip, "")
     _w_num("brake_bias_migration", brake_bias_migration,  "")
     _w_num("brake_bias_target",    brake_bias_target,     "")
+    _w_num("brake_bias_migration_gain", brake_bias_migration_gain, "")
     _w_str("pad_compound",         pad_compound)
     _w_num("front_master_cyl",     front_master_cyl_mm,  "mm")
     _w_num("rear_master_cyl",      rear_master_cyl_mm,   "mm")
+    _w_num("front_diff_preload",   None if front_diff_preload_nm is None else int(round(front_diff_preload_nm)), "Nm")
     _w_num("fuel_low_warning", fuel_low_warning_l, "L")
+    _w_num("fuel_target", fuel_target_l, "L")
     _w_str("gear_stack", gear_stack)
     _w_str("roof_light_color", roof_light_color)
+    _w_str("hybrid_rear_drive_enabled", hybrid_rear_drive_enabled)
+    _w_num("hybrid_rear_drive_corner_pct", hybrid_rear_drive_corner_pct, "%")
 
     # === Computed / display-only brake & drive parameters ===
     # These may cause iRacing to reject the .sto if unexpected.
     if include_computed:
-        _w_num("speed_in_first",   116, "Km/h")
-        _w_num("speed_in_second",  151, "Km/h")
-        _w_num("speed_in_third",   184, "Km/h")
-        _w_num("speed_in_fourth",  220, "Km/h")
-        _w_num("speed_in_fifth",   257, "Km/h")
-        _w_num("speed_in_sixth",   288, "Km/h")
-        _w_num("speed_in_seventh", 316, "Km/h")
+        _w_num("speed_in_first",   116 if speed_in_first_kph is None else speed_in_first_kph, "Km/h")
+        _w_num("speed_in_second",  151 if speed_in_second_kph is None else speed_in_second_kph, "Km/h")
+        _w_num("speed_in_third",   184 if speed_in_third_kph is None else speed_in_third_kph, "Km/h")
+        _w_num("speed_in_fourth",  220 if speed_in_fourth_kph is None else speed_in_fourth_kph, "Km/h")
+        _w_num("speed_in_fifth",   257 if speed_in_fifth_kph is None else speed_in_fifth_kph, "Km/h")
+        _w_num("speed_in_sixth",   288 if speed_in_sixth_kph is None else speed_in_sixth_kph, "Km/h")
+        _w_num("speed_in_seventh", 316 if speed_in_seventh_kph is None else speed_in_seventh_kph, "Km/h")
 
     # Write XML
     tree = ElementTree(root)

@@ -26,6 +26,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
+from car_model.setup_registry import remap_public_output_keys
+
 
 # ─── Signal → step mapping ────────────────────────────────────────────────────
 
@@ -80,7 +82,7 @@ _STEP_NAMES: dict[int, str] = {
 # Car support tier descriptors
 _SUPPORT_TIERS: dict[str, str] = {
     "bmw":     "calibrated  — 73 IBT sessions, garage model, k-NN, heave cal",
-    "ferrari": "partial     — 9 sessions, spring passthrough (springs NOT solved)",
+    "ferrari": "partial     — 9 sessions, sequential Ferrari solve with raw indexed controls",
     "cadillac":"exploratory — 4 sessions, sequential solver only",
     "porsche": "exploratory — 2 sessions, sequential solver only",
     "acura":   "unsupported — <1 session, all terms at physics defaults",
@@ -188,12 +190,12 @@ class RunTrace:
         physics_override: bool = False,
         notes: list[str] | None = None,
     ) -> None:
-        key_outputs = _extract_step_key_outputs(step, step_obj)
+        key_outputs = remap_public_output_keys(self.car_name, _extract_step_key_outputs(step, step_obj))
         self.solver_steps.append(SolverStepRecord(
             step=step,
             name=_STEP_NAMES.get(step, f"Step {step}"),
             key_outputs=key_outputs,
-            driven_by_signals=_STEP_SIGNAL_DRIVERS.get(step, []),
+            driven_by_signals=_step_signal_drivers(step, self.car_name),
             physics_override=physics_override,
             notes=list(notes or []),
         ))
@@ -429,6 +431,18 @@ def _pt(label: str, value: Any, *, neg: bool = False, indent: int = 5) -> None:
         return
     pad = " " * indent
     print(f"{pad}{label:<32s}  {v:+.1f} ms")
+
+
+def _step_signal_drivers(step: int, car_name: str) -> list[str]:
+    drivers = list(_STEP_SIGNAL_DRIVERS.get(step, []))
+    if car_name.lower() != "ferrari":
+        return drivers
+    return [
+        "front_heave_index (step2)" if driver == "front_heave_spring_nmm (step2)"
+        else "rear_heave_index (step2)" if driver == "rear_third_nmm (step2)"
+        else driver
+        for driver in drivers
+    ]
 
 
 def _extract_step_key_outputs(step: int, obj: Any) -> dict[str, Any]:

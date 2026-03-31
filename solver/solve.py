@@ -26,7 +26,7 @@ from solver.arb_solver import ARBSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
 from solver.damper_solver import DamperSolver
 from solver.full_setup_optimizer import optimize_if_supported
-from output.report import print_full_setup_report, save_json_summary
+from output.report import print_full_setup_report, save_json_summary, to_public_output_payload
 from output.setup_writer import write_sto
 from solver.scenario_profiles import resolve_scenario_name, should_run_legal_manifold_search
 from solver.supporting_solver import compute_brake_bias
@@ -747,7 +747,6 @@ def run_solver(args: "argparse.Namespace") -> None:
     # Compute supporting params for standalone report (brake bias, diff defaults)
     _supporting = None
     try:
-        from solver.supporting_solver import compute_brake_bias
         from solver.diff_solver import DiffSolver
         from analyzer.driver_style import DriverProfile
         from analyzer.extract import MeasuredState
@@ -847,14 +846,13 @@ def run_solver(args: "argparse.Namespace") -> None:
         print(f"\niRacing .sto setup saved to: {sto_path}")
 
     if args.json:
-        import dataclasses
         output = {
-            "step1_rake": dataclasses.asdict(step1),
-            "step2_heave": dataclasses.asdict(step2),
-            "step3_corner": dataclasses.asdict(step3),
-            "step4_arb": dataclasses.asdict(step4),
-            "step5_geometry": dataclasses.asdict(step5),
-            "step6_dampers": dataclasses.asdict(step6),
+            "step1_rake": to_public_output_payload(car.canonical_name, step1),
+            "step2_heave": to_public_output_payload(car.canonical_name, step2),
+            "step3_corner": to_public_output_payload(car.canonical_name, step3),
+            "step4_arb": to_public_output_payload(car.canonical_name, step4),
+            "step5_geometry": to_public_output_payload(car.canonical_name, step5),
+            "step6_dampers": to_public_output_payload(car.canonical_name, step6),
         }
         print(json.dumps(output, indent=2))
 

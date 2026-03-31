@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from car_model.garage import GarageSetupState
+from car_model.setup_registry import public_output_value
 from output.garage_validator import validate_and_fix_garage_correlation
 
 
@@ -44,11 +46,33 @@ def validate_solution_legality(
     step5: Any,
     fuel_l: float,
 ) -> LegalValidation:
+    validation_step1 = step1
+    validation_step2 = step2
+    validation_step3 = step3
+    is_ferrari = getattr(car, "canonical_name", "") == "ferrari"
+    if is_ferrari:
+        validation_step1 = copy.deepcopy(step1)
+        validation_step2 = copy.deepcopy(step2)
+        validation_step3 = copy.deepcopy(step3)
+        validation_step2.front_heave_nmm = float(
+            public_output_value(car, "front_heave_nmm", validation_step2.front_heave_nmm)
+        )
+        validation_step2.rear_third_nmm = float(
+            public_output_value(car, "rear_third_nmm", validation_step2.rear_third_nmm)
+        )
+        validation_step3.front_torsion_od_mm = float(
+            public_output_value(car, "front_torsion_od_mm", validation_step3.front_torsion_od_mm)
+        )
+        validation_step3.rear_spring_rate_nmm = float(
+            public_output_value(car, "rear_spring_rate_nmm", validation_step3.rear_spring_rate_nmm)
+        )
+        validation_step3.rear_spring_perch_mm = 0.0
+
     warnings = validate_and_fix_garage_correlation(
         car=car,
-        step1=step1,
-        step2=step2,
-        step3=step3,
+        step1=validation_step1,
+        step2=validation_step2,
+        step3=validation_step3,
         step5=step5,
         fuel_l=fuel_l,
         track_name=track_name,
@@ -72,18 +96,20 @@ def validate_solution_legality(
         )
 
     state = GarageSetupState.from_solver_steps(
-        step1=step1,
-        step2=step2,
-        step3=step3,
+        step1=validation_step1,
+        step2=validation_step2,
+        step3=validation_step3,
         step5=step5,
         fuel_l=fuel_l,
     )
     constraint = garage_model.validate(
         state,
-        front_excursion_p99_mm=getattr(step2, "front_excursion_at_rate_mm", 0.0),
-        front_bottoming_margin_mm=getattr(step2, "front_bottoming_margin_mm", 0.0),
-        vortex_burst_margin_mm=getattr(step1, "vortex_burst_margin_mm", 0.0),
+        front_excursion_p99_mm=getattr(validation_step2, "front_excursion_at_rate_mm", 0.0),
+        front_bottoming_margin_mm=getattr(validation_step2, "front_bottoming_margin_mm", 0.0),
+        vortex_burst_margin_mm=getattr(validation_step1, "vortex_burst_margin_mm", 0.0),
     )
+    setattr(step2, "garage_constraints_ok", bool(constraint.valid))
+    setattr(step2, "garage_constraint_notes", list(getattr(constraint, "messages", [])))
     return LegalValidation(
         valid=bool(constraint.valid),
         warnings=warnings,

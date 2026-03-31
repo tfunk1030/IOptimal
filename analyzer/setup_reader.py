@@ -321,7 +321,7 @@ class CurrentSetup:
         def avg_r(key: str) -> float:
             return (_parse_float(lr.get(key)) + _parse_float(rr.get(key))) / 2.0
 
-        is_ferrari_layout = bool(systems) or bool(dampers)
+        is_ferrari_layout = (not is_heave_roll_layout) and (bool(systems) or bool(dampers))
         attempts = [
             {"path": "CarSetup.TiresAero", "status": "ok" if tires_aero else "missing"},
             {"path": "CarSetup.Chassis", "status": "ok" if chassis else "missing"},
@@ -455,6 +455,10 @@ class CurrentSetup:
             adapter_name="acura" if is_heave_roll_layout else ("ferrari" if is_ferrari_layout else "bmw"),
             extraction_attempts=attempts,
         )
+        if is_ferrari_layout and setup.rear_spring_nmm in (0.0,) and setup.rear_torsion_od_mm not in (0.0,):
+            # Ferrari's rear raw index is exposed via torsion-bar OD, but the legacy
+            # compatibility alias still expects it on rear_spring_nmm.
+            setup.rear_spring_nmm = setup.rear_torsion_od_mm
         if is_ferrari_layout:
             setup.raw_indexed_fields = {
                 "front_heave_index": setup.front_heave_nmm,
@@ -464,8 +468,8 @@ class CurrentSetup:
             }
             setup.decode_warnings.extend(
                 [
-                    "Ferrari indexed springs/torsion bars are preserved as legal raw indices; engineering-unit decode remains partial.",
-                    "Ferrari supporting outputs must use Ferrari session values, not BMW defaults.",
+                    "Ferrari indexed springs/torsion bars are preserved as authoritative raw indices.",
+                    "Ferrari supporting outputs are sourced from Ferrari session values and Ferrari-only registry paths.",
                 ]
             )
             if setup.rear_spring_perch_mm not in (0.0,):

@@ -1,0 +1,216 @@
+{
+  "car": "ferrari",
+  "track": "Hockenheimring Baden-W\u00fcrttemberg",
+  "relationships": {
+    "roll_gradient": {
+      "name": "Roll gradient (measured)",
+      "x_param": "peak_lat_g",
+      "y_param": "roll_gradient_deg_per_g",
+      "fit_type": "linear",
+      "coefficients": [
+        0.0,
+        0.3719
+      ],
+      "r_squared": 0.9205413853744508,
+      "sample_count": 10,
+      "residual_std": 0.10483267620355782,
+      "x_values": [
+        4.114037036895752,
+        3.2460989952087402,
+        4.202368259429932,
+        4.270266056060791,
+        4.114037036895752,
+        4.53680944442749,
+        4.53680944442749,
+        4.023980140686035,
+        4.131742477416992,
+        4.056412220001221
+      ],
+      "y_values": [
+        0.528,
+        0.296,
+        0.469,
+        0.28,
+        0.528,
+        0.375,
+        0.375,
+        0.28,
+        0.202,
+        0.386
+      ],
+      "x_min": 3.2460989952087402,
+      "x_max": 4.53680944442749,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    },
+    "lltd_vs_rear_arb": {
+      "name": "LLTD vs rear ARB blade",
+      "x_param": "rear_arb_blade",
+      "y_param": "lltd_measured",
+      "fit_type": "linear",
+      "coefficients": [
+        -0.00040054017352717197,
+        0.5110312293912107
+      ],
+      "r_squared": 0.07299227108665185,
+      "sample_count": 11,
+      "residual_std": 0.0014215012920670094,
+      "x_values": [
+        3.0,
+        3.0,
+        3.0,
+        3.0,
+        3.0,
+        3.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "y_values": [
+        0.5088001986396394,
+        0.5114961749131205,
+        0.5103112490111329,
+        0.5101644178930547,
+        0.5094054141271882,
+        0.5088001986396394,
+        0.5108390319071103,
+        0.5108390319071103,
+        0.5117396319609144,
+        0.5125442681121896,
+        0.5071914822010926
+      ],
+      "x_min": 1.0,
+      "x_max": 3.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    },
+    "front_rh_var_vs_heave": {
+      "name": "Front RH variance vs heave spring",
+      "x_param": "front_heave_nmm",
+      "y_param": "front_rh_std_mm",
+      "fit_type": "linear",
+      "coefficients": [
+        0.2198760112126672,
+        3.788674314816789
+      ],
+      "r_squared": 0.35979206836638844,
+      "sample_count": 11,
+      "residual_std": 0.0,
+      "x_values": [
+        3.0,
+        3.0,
+        3.0,
+        3.0,
+        3.0,
+        3.0,
+        5.0,
+        5.0,
+        5.0,
+        5.0,
+        5.0
+      ],
+      "y_values": [
+        4.931285858154297,
+        4.1175031661987305,
+        4.506780624389648,
+        4.098897457122803,
+        4.104061126708984,
+        4.931285858154297,
+        4.947655200958252,
+        4.947655200958252,
+        4.678249359130859,
+        5.1111884117126465,
+        4.755523681640625
+      ],
+      "x_min": 3.0,
+      "x_max": 5.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    },
+    "rear_rh_var_vs_third": {
+      "name": "Rear RH variance vs third spring",
+      "x_param": "rear_third_nmm",
+      "y_param": "rear_rh_std_mm",
+      "fit_type": "linear",
+      "coefficients": [
+        0.09320827060275563,
+        5.343434863620334
+      ],
+      "r_squared": 0.1422359885004716,
+      "sample_count": 11,
+      "residual_std": 0.0,
+      "x_values": [
+        5.0,
+        5.0,
+        5.0,
+        5.0,
+        5.0,
+        5.0,
+        8.0,
+        8.0,
+        8.0,
+        8.0,
+        8.0
+      ],
+      "y_values": [
+        6.177455902099609,
+        5.495537281036377,
+        6.16934871673584,
+        5.395376205444336,
+        5.441683292388916,
+        6.177455902099609,
+        6.19917631149292,
+        6.19917631149292,
+        5.760182857513428,
+        6.5570197105407715,
+        5.729949951171875
+      ],
+      "x_min": 5.0,
+      "x_max": 8.0,
+      "physics_prediction_at_mean": 0.0,
+      "empirical_prediction_at_mean": 0.0,
+      "correction_factor": 1.0
+    }
+  },
+  "last_updated": "2026-03-31T01:43:20.664098+00:00",
+  "observation_count": 11,
+  "most_sensitive_parameters": [
+    [
+      "rear_torsion_bar_index",
+      -0.0595
+    ]
+  ],
+  "corrections": {
+    "aero_compression_front_mean_mm": 7.536386108398437,
+    "aero_compression_front_std_mm": 0.38210411727146576,
+    "aero_compression_rear_mean_mm": 17.784885025024415,
+    "aero_compression_rear_std_mm": 1.3715879155557118,
+    "lap_time_surrogate_regularized": 1.0,
+    "lap_time_surrogate_sample_weight": 1.0,
+    "roll_gradient_measured_mean": 0.371993989421568,
+    "roll_gradient_measured_std": 0.10483267620355782,
+    "roll_gradient_sample_count": 10,
+    "lltd_measured_mean": 0.5101933259628347,
+    "lltd_measured_std": 0.0014764052513117946,
+    "m_eff_front_values": [
+      13.3,
+      7.2,
+      10.7,
+      9.6,
+      9.4,
+      13.3,
+      16.4,
+      16.4,
+      20.5,
+      20.0,
+      14.3
+    ],
+    "m_eff_front_empirical_mean": 13.736363636363638,
+    "m_eff_front_empirical_std": 4.131095546368195
+  }
+}

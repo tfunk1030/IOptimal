@@ -76,22 +76,37 @@ class RunTraceBasicTests(unittest.TestCase):
         self.assertEqual(trace.legality_tier, "full")
         self.assertTrue(trace.legality_valid)
 
-    def test_verbose_print_with_steps(self):
+    def test_verbose_print_with_solved_ferrari_steps(self):
         from output.run_trace import RunTrace
         from types import SimpleNamespace
         trace = RunTrace()
         trace.record_car_track("ferrari", "Sebring")
-        trace.record_solver_path("sequential", reason="No optimizer for Ferrari")
+        trace.record_solver_path("sequential", reason="Sequential Ferrari raw-index solve")
         step2 = SimpleNamespace(
-            front_heave_nmm=45.0,
-            rear_third_nmm=400.0,
+            front_heave_nmm=3.0,
+            rear_third_nmm=5.0,
             front_bottoming_margin_mm=5.0,
             rear_bottoming_margin_mm=12.0,
             front_excursion_at_rate_mm=8.0,
-            perch_offset_front_mm=2.0,
+            perch_offset_front_mm=-16.5,
         )
-        trace.record_step(2, step2, physics_override=True, notes=["springs from IBT"])
-        trace.add_warning("Ferrari springs not solver-optimized")
+        step3 = SimpleNamespace(
+            front_torsion_od_mm=2.0,
+            rear_spring_rate_nmm=2.0,
+            rear_spring_perch_mm=0.0,
+            front_wheel_rate_nmm=0.0,
+        )
+        supporting = SimpleNamespace(
+            brake_bias_pct=53.0,
+            diff_preload_nm=25.0,
+            diff_ramp_angles="Less Locking",
+            tc_gain=3,
+            tc_slip=4,
+            tyre_cold_fl_kpa=152.0,
+        )
+        trace.record_step(2, step2, physics_override=False, notes=["raw indexed controls solved on the Ferrari manifold"])
+        trace.record_step(3, step3, physics_override=False)
+        trace.record_step(7, supporting, physics_override=False)
 
         old_stdout = sys.stdout
         sys.stdout = io.StringIO()
@@ -100,9 +115,18 @@ class RunTraceBasicTests(unittest.TestCase):
             output = sys.stdout.getvalue()
         finally:
             sys.stdout = old_stdout
-        self.assertIn("PASSTHROUGH", output)
         self.assertIn("Ferrari", output)
-        self.assertIn("springs from IBT", output)
+        self.assertIn("raw indexed controls solved on the Ferrari manifold", output)
+        self.assertIn("front_heave_index", output)
+        self.assertIn("rear_heave_index", output)
+        self.assertIn("front_torsion_bar_index", output)
+        self.assertIn("rear_torsion_bar_index", output)
+        self.assertIn("rear_diff_ramp_label", output)
+        self.assertNotIn("front_heave_nmm", output)
+        self.assertNotIn("rear_third_nmm", output)
+        self.assertNotIn("front_torsion_od_mm", output)
+        self.assertNotIn("rear_spring_rate_nmm", output)
+        self.assertNotIn("PASSTHROUGH", output)
 
 
 class TorsionArbCouplingCarSpecificTests(unittest.TestCase):

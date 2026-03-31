@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from car_model.setup_registry import diff_ramp_option_index, snap_supporting_field_value
+from car_model.setup_registry import (
+    diff_ramp_option_index,
+    internal_solver_value,
+    public_output_value,
+    snap_supporting_field_value,
+)
 from solver.candidate_ranker import CandidateScore, score_from_prediction
 from solver.solve_chain import (
     SolveChainInputs,
@@ -264,7 +269,7 @@ def _adjust_integer(mapping: dict[str, Any], field: str, delta: int, *, lo: int 
     mapping[field] = value
 
 
-def _extract_target_maps(base_result: SolveChainResult) -> dict[str, Any]:
+def _extract_target_maps(base_result: SolveChainResult, car: Any | None = None) -> dict[str, Any]:
     return {
         "step1": {
             "front_pushrod_offset_mm": base_result.step1.front_pushrod_offset_mm,
@@ -273,15 +278,17 @@ def _extract_target_maps(base_result: SolveChainResult) -> dict[str, Any]:
             "static_rear_rh_mm": base_result.step1.static_rear_rh_mm,
         },
         "step2": {
-            "front_heave_nmm": base_result.step2.front_heave_nmm,
-            "rear_third_nmm": base_result.step2.rear_third_nmm,
+            "front_heave_nmm": public_output_value(car, "front_heave_nmm", base_result.step2.front_heave_nmm),
+            "rear_third_nmm": public_output_value(car, "rear_third_nmm", base_result.step2.rear_third_nmm),
             "perch_offset_front_mm": base_result.step2.perch_offset_front_mm,
             "perch_offset_rear_mm": base_result.step2.perch_offset_rear_mm,
         },
         "step3": {
-            "front_torsion_od_mm": base_result.step3.front_torsion_od_mm,
-            "rear_spring_rate_nmm": base_result.step3.rear_spring_rate_nmm,
-            "rear_spring_perch_mm": base_result.step3.rear_spring_perch_mm,
+            "front_torsion_od_mm": public_output_value(car, "front_torsion_od_mm", base_result.step3.front_torsion_od_mm),
+            "rear_spring_rate_nmm": public_output_value(car, "rear_spring_rate_nmm", base_result.step3.rear_spring_rate_nmm),
+            "rear_spring_perch_mm": (
+                0.0 if getattr(car, "canonical_name", "") == "ferrari" else base_result.step3.rear_spring_perch_mm
+            ),
         },
         "step4": {
             "front_arb_size": base_result.step4.front_arb_size,
@@ -338,7 +345,7 @@ def canonical_params_to_overrides(
     car: Any | None = None,
 ) -> SolveChainOverrides:
     """Convert canonical legal-search params into snapped solve-chain overrides."""
-    targets = _extract_target_maps(base_result)
+    targets = _extract_target_maps(base_result, car)
     explicit_supporting_fields: set[str] = set()
 
     def _set_step6(axle: str, field: str, value: Any) -> None:
@@ -350,11 +357,15 @@ def canonical_params_to_overrides(
         "front_pushrod_offset_mm": ("step1", "front_pushrod_offset_mm"),
         "rear_pushrod_offset_mm": ("step1", "rear_pushrod_offset_mm"),
         "front_heave_spring_nmm": ("step2", "front_heave_nmm"),
+        "front_heave_index": ("step2", "front_heave_nmm"),
         "front_heave_perch_mm": ("step2", "perch_offset_front_mm"),
         "rear_third_spring_nmm": ("step2", "rear_third_nmm"),
+        "rear_heave_index": ("step2", "rear_third_nmm"),
         "rear_third_perch_mm": ("step2", "perch_offset_rear_mm"),
         "front_torsion_od_mm": ("step3", "front_torsion_od_mm"),
+        "front_torsion_bar_index": ("step3", "front_torsion_od_mm"),
         "rear_spring_rate_nmm": ("step3", "rear_spring_rate_nmm"),
+        "rear_torsion_bar_index": ("step3", "rear_spring_rate_nmm"),
         "rear_spring_perch_mm": ("step3", "rear_spring_perch_mm"),
         "front_camber_deg": ("step5", "front_camber_deg"),
         "rear_camber_deg": ("step5", "rear_camber_deg"),
@@ -434,7 +445,7 @@ def canonical_params_to_overrides(
         if key == "rear_hs_slope":
             _set_step6("rear", "hs_slope", value)
             continue
-        if key == "diff_ramp_angles":
+        if key in {"diff_ramp_angles", "rear_diff_ramp_label"}:
             current_idx = targets["supporting"].get("diff_ramp_option_idx", 1)
             targets["supporting"]["diff_ramp_option_idx"] = diff_ramp_option_index(
                 getattr(car, "canonical_name", car),
@@ -444,7 +455,7 @@ def canonical_params_to_overrides(
             explicit_supporting_fields.add("diff_ramp_option_idx")
 
     _snap_targets_to_garage(targets, car)
-    overrides = _target_overrides(base_result, targets)
+    overrides = _target_overrides(base_result, targets, car=car)
     for field_name in explicit_supporting_fields:
         target_value = targets["supporting"].get(field_name)
         if getattr(base_result.supporting, field_name, None) != target_value:
@@ -524,6 +535,7 @@ def _apply_cluster_center(targets: dict[str, Any], setup_cluster: Any, *, car_na
 def _apply_family_state_adjustments(
     targets: dict[str, Any],
     *,
+    car: Any | None = None,
     family: str,
     aggregate_measured: dict[str, float] | None = None,
     overhaul_class: str,
@@ -583,21 +595,51 @@ def _apply_family_state_adjustments(
     )
     front_lock = _clamp(((_safe_float(_get_metric(measured, "front_braking_lock_ratio_p95")) or 0.0) - 0.06) / 0.05, 0.0, 1.0)
 
+    is_ferrari = getattr(car, "canonical_name", "") == "ferrari"
+
     _adjust_numeric(targets["step1"], "front_pushrod_offset_mm", 0.8 * front_support * family_intensity, decimals=3)
 
     if not cluster_seeded:
-        _scale_numeric(targets["step2"], "front_heave_nmm", 1.0 + 0.12 * front_support * family_intensity, decimals=3)
-        _scale_numeric(targets["step2"], "rear_third_nmm", 1.0 + 0.12 * rear_support * family_intensity, decimals=3)
+        if is_ferrari:
+            _adjust_numeric(
+                targets["step2"],
+                "front_heave_nmm",
+                round(1.5 * front_support * family_intensity),
+                decimals=0,
+            )
+            _adjust_numeric(
+                targets["step2"],
+                "rear_third_nmm",
+                round(1.5 * rear_support * family_intensity),
+                decimals=0,
+            )
+        else:
+            _scale_numeric(targets["step2"], "front_heave_nmm", 1.0 + 0.12 * front_support * family_intensity, decimals=3)
+            _scale_numeric(targets["step2"], "rear_third_nmm", 1.0 + 0.12 * rear_support * family_intensity, decimals=3)
     _adjust_numeric(targets["step2"], "perch_offset_front_mm", 1.5 * front_support * family_intensity, decimals=3)
     _adjust_numeric(targets["step2"], "perch_offset_rear_mm", 2.0 * rear_support * family_intensity, decimals=3)
 
-    _adjust_numeric(targets["step3"], "front_torsion_od_mm", -0.12 * entry_push * family_intensity, decimals=4)
-    _adjust_numeric(
-        targets["step3"],
-        "rear_spring_rate_nmm",
-        (8.0 * rear_support - 6.0 * exit_instability) * family_intensity,
-        decimals=3,
-    )
+    if is_ferrari:
+        _adjust_numeric(
+            targets["step3"],
+            "front_torsion_od_mm",
+            -round(max(entry_push, high_speed_push) * 2.0 * family_intensity),
+            decimals=0,
+        )
+        _adjust_numeric(
+            targets["step3"],
+            "rear_spring_rate_nmm",
+            round((1.5 * rear_support - 1.5 * exit_instability) * family_intensity),
+            decimals=0,
+        )
+    else:
+        _adjust_numeric(targets["step3"], "front_torsion_od_mm", -0.12 * entry_push * family_intensity, decimals=4)
+        _adjust_numeric(
+            targets["step3"],
+            "rear_spring_rate_nmm",
+            (8.0 * rear_support - 6.0 * exit_instability) * family_intensity,
+            decimals=3,
+        )
 
     arb_delta = int(round((entry_push + high_speed_push - exit_instability) * family_intensity))
     _adjust_integer(targets["step4"], "rear_arb_blade_start", arb_delta, lo=1, hi=6)
@@ -673,16 +715,18 @@ def _apply_family_state_adjustments(
         )
 
 
-def _target_overrides(base_result: SolveChainResult, targets: dict[str, Any]) -> SolveChainOverrides:
+def _target_overrides(base_result: SolveChainResult, targets: dict[str, Any], *, car: Any | None = None) -> SolveChainOverrides:
     overrides = SolveChainOverrides()
     for field_name, value in targets["step1"].items():
         if getattr(base_result.step1, field_name) != value:
             overrides.step1[field_name] = value
     for field_name, value in targets["step2"].items():
-        if getattr(base_result.step2, field_name) != value:
+        base_value = public_output_value(car, field_name, getattr(base_result.step2, field_name))
+        if base_value != value:
             overrides.step2[field_name] = value
     for field_name, value in targets["step3"].items():
-        if getattr(base_result.step3, field_name) != value:
+        base_value = public_output_value(car, field_name, getattr(base_result.step3, field_name))
+        if base_value != value:
             overrides.step3[field_name] = value
     for field_name, value in targets["step4"].items():
         if getattr(base_result.step4, field_name) != value:
@@ -734,6 +778,9 @@ def _estimate_candidate_disruption(current_session: Any, candidate: SetupCandida
     if setup is None or candidate.step1 is None:
         return 0.5
 
+    car_name = str(getattr(setup, "adapter_name", "") or "").lower()
+    is_ferrari = "ferrari" in car_name
+
     terms: list[float] = []
 
     def _append(current: Any, target: Any, scale: float) -> None:
@@ -746,10 +793,10 @@ def _estimate_candidate_disruption(current_session: Any, candidate: SetupCandida
 
     _append(getattr(setup, "front_pushrod_mm", None), getattr(candidate.step1, "front_pushrod_offset_mm", None), 4.0)
     _append(getattr(setup, "rear_pushrod_mm", None), getattr(candidate.step1, "rear_pushrod_offset_mm", None), 4.0)
-    _append(getattr(setup, "front_heave_nmm", None), getattr(candidate.step2, "front_heave_nmm", None), 25.0)
-    _append(getattr(setup, "rear_third_nmm", None), getattr(candidate.step2, "rear_third_nmm", None), 150.0)
-    _append(getattr(setup, "front_torsion_od_mm", None), getattr(candidate.step3, "front_torsion_od_mm", None), 1.0)
-    _append(getattr(setup, "rear_spring_nmm", None), getattr(candidate.step3, "rear_spring_rate_nmm", None), 35.0)
+    _append(getattr(setup, "front_heave_nmm", None), getattr(candidate.step2, "front_heave_nmm", None), 1.0 if is_ferrari else 25.0)
+    _append(getattr(setup, "rear_third_nmm", None), getattr(candidate.step2, "rear_third_nmm", None), 1.0 if is_ferrari else 150.0)
+    _append(getattr(setup, "front_torsion_od_mm", None), getattr(candidate.step3, "front_torsion_od_mm", None), 1.0 if is_ferrari else 1.0)
+    _append(getattr(setup, "rear_spring_nmm", None), getattr(candidate.step3, "rear_spring_rate_nmm", None), 1.0 if is_ferrari else 35.0)
     _append(getattr(setup, "rear_arb_blade", None), getattr(candidate.step4, "rear_arb_blade_start", None), 2.0)
     _append(getattr(setup, "front_camber_deg", None), getattr(candidate.step5, "front_camber_deg", None), 0.5)
     _append(getattr(setup, "rear_camber_deg", None), getattr(candidate.step5, "rear_camber_deg", None), 0.4)
@@ -862,7 +909,7 @@ def generate_candidate_families(
                 )
                 candidates.append(candidate)
                 continue
-        targets = _extract_target_maps(base_result)
+        targets = _extract_target_maps(base_result, car)
         # No authority blending — solver output IS the physics-optimal starting point.
         # Candidate families differ by aggressiveness of state adjustments, not by
         # how much to anchor back to a historical setup.
@@ -871,6 +918,7 @@ def generate_candidate_families(
             _apply_cluster_center(targets, setup_cluster, car_name=getattr(car, "canonical_name", "bmw"))
         _apply_family_state_adjustments(
             targets,
+            car=car,
             family=family,
             aggregate_measured=aggregate_measured,
             authority_session=authority_session,
@@ -880,7 +928,7 @@ def generate_candidate_families(
             cluster_seeded=cluster_seeded,
         )
         _snap_targets_to_garage(targets, car)
-        overrides = _target_overrides(base_result, targets)
+        overrides = _target_overrides(base_result, targets, car=car)
         candidate = SetupCandidate(
             family=family,
             description=family_descriptions[family],
