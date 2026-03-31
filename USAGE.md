@@ -1,3 +1,7 @@
+> See also: `docs/usage_and_calibration_guide.md` for a practical runbook covering
+> day-to-day solver usage, support tiers, calibration collection, publication,
+> and guidance for future coders extending the system.
+
 # IOptimal Usage Guide
 
 Physics-based setup calculator for iRacing GTP/Hypercar class. Produces optimized setups from first principles using telemetry data.
