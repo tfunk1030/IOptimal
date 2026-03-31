@@ -112,11 +112,11 @@ class PhysicsResult:
     # LLTD
     lltd: float = 0.52
     lltd_error: float = 0.0
-    # Damping
-    zeta_ls_front: float = 0.68   # IBT-calibrated: top-15 fastest mean (73 sessions, 2026-03-26)
-    zeta_ls_rear: float = 0.23    # IBT-calibrated
-    zeta_hs_front: float = 0.47   # IBT-calibrated
-    zeta_hs_rear: float = 0.20    # IBT-calibrated (was 0.14)
+    # Damping (defaults for dataclass; actual targets come from car.damper.zeta_* fields)
+    zeta_ls_front: float = 0.68   # BMW IBT-calibrated default
+    zeta_ls_rear: float = 0.23    # BMW IBT-calibrated default
+    zeta_hs_front: float = 0.47   # BMW IBT-calibrated default
+    zeta_hs_rear: float = 0.20    # BMW IBT-calibrated default
     # Wheel rates
     front_wheel_rate_nmm: float = 30.0
     rear_wheel_rate_nmm: float = 60.0
@@ -1236,20 +1236,20 @@ class ObjectiveFunction:
         # lap_gain_ms) to properly capture the peak at clicks 8-9.
         # ═══════════════════════════════════════════════════════════════
 
-        # Front LS near ζ=0.68 (IBT-calibrated from top-15 fastest BMW/Sebring sessions)
-        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
+        # Damping ratio targets from car model (BMW: IBT-calibrated, others: conservative defaults)
+        zeta_ls_front_err = abs(physics.zeta_ls_front - self.car.damper.zeta_ls_comp)
         gain -= min(4.0, zeta_ls_front_err * 5.0)
 
-        # Rear LS near ζ=0.23 (IBT-calibrated): traction compliance over kerbs
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
+        # Rear LS: traction compliance over kerbs
+        zeta_ls_rear_err = abs(physics.zeta_ls_rear - self.car.damper.zeta_hs_comp)
         gain -= min(3.0, zeta_ls_rear_err * 4.0)
 
-        # Front HS near ζ=0.47 (IBT-calibrated)
-        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
+        # Front HS
+        zeta_hs_front_err = abs(physics.zeta_hs_front - self.car.damper.zeta_ls_rbd)
         gain -= min(2.5, zeta_hs_front_err * 3.5)
 
-        # Rear HS near ζ=0.20 (IBT-calibrated)
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
+        # Rear HS
+        zeta_hs_rear_err = abs(physics.zeta_hs_rear - self.car.damper.zeta_hs_rbd)
         gain -= min(2.5, zeta_hs_rear_err * 3.5)
 
         # ── REBOUND : COMPRESSION RATIO (previously invisible — pinning bug) ──
@@ -1411,7 +1411,7 @@ class ObjectiveFunction:
         # GTP baseline: 4 plates for traction-limited tracks, 6 for rotation-limited.
         clutch_plates = int(round(params.get("diff_clutch_plates", 4)))
         # Rear power slip p95 from measured
-        rear_slip_p95 = getattr(self._measured, "rear_power_slip_p95", None) if self._measured else None
+        rear_slip_p95 = getattr(self._measured, "rear_power_slip_ratio_p95", None) if self._measured else None
         if rear_slip_p95 is None:
             rear_slip_p95 = 0.07  # Sebring BMW baseline
         if rear_slip_p95 > 0.10:
@@ -1457,11 +1457,11 @@ class ObjectiveFunction:
         lltd_penalty = physics.lltd_error * 100.0 * lltd_ms_per_pct
         detail.lltd_balance_ms += min(10.0, lltd_penalty)
 
-        # IBT-calibrated zeta targets (top-15 fastest BMW/Sebring sessions, 2026-03-26)
-        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
-        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
+        # Damping ratio targets from car model (BMW: IBT-calibrated, others: conservative defaults)
+        zeta_ls_front_err = abs(physics.zeta_ls_front - self.car.damper.zeta_ls_comp)
+        zeta_ls_rear_err = abs(physics.zeta_ls_rear - self.car.damper.zeta_hs_comp)
+        zeta_hs_front_err = abs(physics.zeta_hs_front - self.car.damper.zeta_ls_rbd)
+        zeta_hs_rear_err = abs(physics.zeta_hs_rear - self.car.damper.zeta_hs_rbd)
         detail.damping_ms += min(4.0, zeta_ls_front_err * 5.0)
         detail.damping_ms += min(3.0, zeta_ls_rear_err * 4.0)
         detail.damping_ms += min(2.5, zeta_hs_front_err * 3.5)
@@ -1536,7 +1536,7 @@ class ObjectiveFunction:
         detail.diff_ramp_ms += min(4.0, coast_mismatch * 2.0)  # reduced — see _estimate_lap_gain() comment
 
         clutch_plates = int(round(params.get("diff_clutch_plates", 4)))
-        rear_slip_p95 = getattr(self._measured, "rear_power_slip_p95", None) if self._measured else None
+        rear_slip_p95 = getattr(self._measured, "rear_power_slip_ratio_p95", None) if self._measured else None
         if rear_slip_p95 is None:
             rear_slip_p95 = 0.07
         if rear_slip_p95 > 0.10:

@@ -620,6 +620,7 @@ def _build_explicit_corner_settings(base_step6: Any, overrides: dict[str, dict[s
             "hs_comp": base_corner.hs_comp,
             "hs_rbd": base_corner.hs_rbd,
             "hs_slope": base_corner.hs_slope,
+            "hs_slope_rbd": base_corner.hs_slope_rbd,
         }
         merged.update(overrides.get(corner_name, {}))
         result[corner_name] = CornerDamperSettings(**merged)

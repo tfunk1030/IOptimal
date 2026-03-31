@@ -382,19 +382,27 @@ class WheelGeometrySolver:
             representative_lat_g, k_roll_total_nm_deg, fuel_load_l
         )
 
-        # Optimal static camber — optimized for p95 cornering load
-        front_camber = self._optimal_camber(
-            representative_roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg
-        )
-        rear_camber = self._optimal_camber(
-            representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg,
-            is_front=False,
-        )
-        # Clamp both axles to iRacing legal garage limits
-        f_min, f_max = geo.front_camber_range_deg
-        front_camber = max(f_min, min(f_max, front_camber))
-        r_min, r_max = geo.rear_camber_range_deg
-        rear_camber = max(r_min, min(r_max, rear_camber))
+        # Check if camber is derived from geometry (not independently settable)
+        camber_is_derived = getattr(geo, 'camber_is_derived', False)
+
+        if camber_is_derived:
+            # Camber is derived from suspension geometry — use baseline values
+            front_camber = geo.front_camber_baseline_deg
+            rear_camber = geo.rear_camber_baseline_deg
+        else:
+            # Optimal static camber — optimized for p95 cornering load
+            front_camber = self._optimal_camber(
+                representative_roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg
+            )
+            rear_camber = self._optimal_camber(
+                representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg,
+                is_front=False,
+            )
+            # Clamp both axles to iRacing legal garage limits
+            f_min, f_max = geo.front_camber_range_deg
+            front_camber = max(f_min, min(f_max, front_camber))
+            r_min, r_max = geo.rear_camber_range_deg
+            rear_camber = max(r_min, min(r_max, rear_camber))
 
         # Dynamic camber at peak lateral g (what the tyre actually sees)
         front_camber_change = roll_deg * geo.front_roll_gain
@@ -470,19 +478,32 @@ class WheelGeometrySolver:
             ),
         ]
 
-        notes = [
-            f"Representative cornering: {representative_lat_g:.2f}g "
-            f"(p95={p95_lat_g:.2f}g, peak={peak_lat_g:.2f}g, "
-            f"kerb_weight={kerb_weight:.1f}). "
-            f"Roll: {representative_roll_deg:.1f}° at representative, "
-            f"{roll_deg:.1f}° at peak.",
-            "Tyre temperature spread diagnosis: inner hotter = correct camber. "
-            "If outer runs hotter -> reduce negative camber by 0.2-0.3 deg.",
+        notes = []
+
+        if camber_is_derived:
+            notes.append(
+                f"Camber is derived from suspension geometry — not independently settable on {self.car.name}. "
+                f"Using baseline values: front {front_camber:+.1f}°, rear {rear_camber:+.1f}°."
+            )
+        else:
+            notes.append(
+                f"Representative cornering: {representative_lat_g:.2f}g "
+                f"(p95={p95_lat_g:.2f}g, peak={peak_lat_g:.2f}g, "
+                f"kerb_weight={kerb_weight:.1f}). "
+                f"Roll: {representative_roll_deg:.1f}° at representative, "
+                f"{roll_deg:.1f}° at peak."
+            )
+            notes.append(
+                "Tyre temperature spread diagnosis: inner hotter = correct camber. "
+                "If outer runs hotter -> reduce negative camber by 0.2-0.3 deg."
+            )
+
+        notes.extend([
             "BMW Vision tread conditioning (Sebring): fronts +2.4°C/lap, "
             "rears +3.2°C/lap. Full operating temp by lap 13-15 (fronts), 8-9 (rears).",
             "For sprint qualifying: add 0.3° more negative camber + 0.2mm extra "
             "toe-out to accelerate thermal buildup.",
-        ]
+        ])
 
         return WheelGeometrySolution(
             front_camber_deg=round(front_camber, 1),

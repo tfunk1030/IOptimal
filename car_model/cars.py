@@ -136,7 +136,11 @@ class RideHeightModel:
 
     Front model (6 features): R²=0.15, RMSE=0.16mm — front RH nearly constant (~30mm)
     Rear model (6 features): R²=0.52, RMSE=0.68mm, MaxErr=2.1mm
+
+    NOTE: This model is BMW-specific. Non-BMW cars should use uncalibrated().
     """
+    is_calibrated: bool = True  # True for BMW, False for uncalibrated cars
+
     # --- Front static RH regression ---
     front_intercept: float = 30.0   # fallback: acts as pinned value when coeffs are 0
     front_coeff_heave_nmm: float = 0.0     # mm RH per N/mm heave spring rate
@@ -153,6 +157,11 @@ class RideHeightModel:
     rear_coeff_spring_perch: float = 0.0   # mm RH per mm rear spring perch offset
     rear_r_squared: float = 0.0
     rear_loo_rmse_mm: float = 0.0
+
+    @property
+    def front_is_calibrated(self) -> bool:
+        """Whether the front RH model has non-trivial calibration (coefficients non-zero)."""
+        return self.is_calibrated and abs(self.front_coeff_heave_nmm) + abs(self.front_coeff_camber_deg) > 1e-9
 
     def predict_front_static_rh(
         self, heave_nmm: float, camber_deg: float,
@@ -192,16 +201,29 @@ class RideHeightModel:
                  + self.rear_coeff_spring_perch * spring_perch_mm)
         return (target_rh_mm - other) / self.rear_coeff_pushrod
 
-    @property
-    def is_calibrated(self) -> bool:
-        """True if rear model has non-zero coefficients."""
-        return abs(self.rear_coeff_pushrod) > 1e-6
+    @classmethod
+    def uncalibrated(cls) -> RideHeightModel:
+        """Return an uncalibrated RideHeightModel with all coefficients zeroed.
 
-    @property
-    def front_is_calibrated(self) -> bool:
-        """True if front model has non-zero coefficients."""
-        return (abs(self.front_coeff_heave_nmm) > 1e-6
-                or abs(self.front_coeff_camber_deg) > 1e-6)
+        Use this for non-BMW cars where the BMW-specific regression coefficients
+        would produce incorrect results.
+        """
+        return cls(
+            is_calibrated=False,
+            front_intercept=30.0,  # Keep default front RH
+            front_coeff_heave_nmm=0.0,
+            front_coeff_camber_deg=0.0,
+            front_loo_rmse_mm=0.0,
+            rear_intercept=0.0,
+            rear_coeff_pushrod=0.0,
+            rear_coeff_third_nmm=0.0,
+            rear_coeff_rear_spring=0.0,
+            rear_coeff_heave_perch=0.0,
+            rear_coeff_fuel_l=0.0,
+            rear_coeff_spring_perch=0.0,
+            rear_r_squared=0.0,
+            rear_loo_rmse_mm=0.0,
+        )
 
 
 @dataclass
@@ -273,6 +295,8 @@ class HeaveSpringModel:
     rear_setting_anchor_index: float | None = None
     rear_rate_at_anchor_nmm: float | None = None
     rear_rate_per_index_nmm: float | None = None
+    # Validation flags for unverified heave spring index mappings
+    heave_index_unvalidated: bool = False
 
     def front_rate_from_setting(self, setting_value: float) -> float:
         """Decode a garage setting into a physical front heave rate."""
@@ -352,7 +376,11 @@ class DeflectionModel:
     Front parameters use multi-variable regressions (11 data points).
     Rear parameters use physics-based force-balance models (exact on S1/S2).
     Shock deflections use pushrod-offset-based models (exact on S1/S2).
+
+    NOTE: This model is BMW-specific. Non-BMW cars should use uncalibrated().
     """
+    is_calibrated: bool = True  # True for BMW, False for uncalibrated cars
+
     # --- Shock deflection: defl = intercept + coeff * pushrod_offset ---
     # Calibrated from 31 unique setups across 41 BMW sessions (March 2026)
     shock_front_intercept: float = 21.228
@@ -467,6 +495,44 @@ class DeflectionModel:
         return (self.third_spring_defl_max_intercept
                 + self.third_spring_defl_max_rate_coeff * third_rate_nmm
                 + self.third_spring_defl_max_perch_coeff * third_perch_mm)
+
+    @classmethod
+    def uncalibrated(cls) -> DeflectionModel:
+        """Return an uncalibrated DeflectionModel with all coefficients zeroed.
+
+        Use this for non-BMW cars where the BMW-specific regression coefficients
+        would produce incorrect results.
+        """
+        return cls(
+            is_calibrated=False,
+            shock_front_intercept=0.0,
+            shock_front_pushrod_coeff=0.0,
+            shock_rear_intercept=0.0,
+            shock_rear_pushrod_coeff=0.0,
+            tb_load_intercept=0.0,
+            tb_load_heave_coeff=0.0,
+            tb_load_perch_coeff=0.0,
+            heave_defl_intercept=0.0,
+            heave_defl_inv_heave_coeff=0.0,
+            heave_defl_perch_coeff=0.0,
+            heave_defl_inv_od4_coeff=0.0,
+            slider_intercept=0.0,
+            slider_heave_coeff=0.0,
+            slider_perch_coeff=0.0,
+            slider_od_coeff=0.0,
+            rear_spring_eff_load=0.0,
+            rear_spring_perch_coeff=0.0,
+            third_spring_eff_load=0.0,
+            third_spring_perch_coeff=0.0,
+            third_slider_intercept=0.0,
+            third_slider_spring_defl_coeff=0.0,
+            rear_spring_defl_max_intercept=0.0,
+            rear_spring_defl_max_rate_coeff=0.0,
+            rear_spring_defl_max_perch_coeff=0.0,
+            third_spring_defl_max_intercept=0.0,
+            third_spring_defl_max_rate_coeff=0.0,
+            third_spring_defl_max_perch_coeff=0.0,
+        )
 
 
 @dataclass
@@ -655,6 +721,8 @@ class CornerSpringModel:
     # as raw indices instead of direct OD / rate numbers.
     front_setting_index_range: tuple[float, float] | None = None
     rear_setting_index_range: tuple[float, float] | None = None
+    # Validation flag for unverified rear torsion bar model
+    rear_torsion_unvalidated: bool = False
 
     def torsion_bar_rate(self, od_mm: float) -> float:
         """Wheel rate (N/mm) from torsion bar OD."""
@@ -814,6 +882,7 @@ class WheelGeometryModel:
     rear_toe_baseline_mm: float = 0.0
     front_toe_heating_coeff: float = 2.5
     rear_toe_heating_coeff: float = 1.8
+    camber_is_derived: bool = False  # True if camber comes from suspension geometry (not independently settable)
 
 
 @dataclass
@@ -846,6 +915,7 @@ class DamperModel:
     hs_comp_range: tuple[int, int] = (0, 11)
     hs_rbd_range: tuple[int, int] = (0, 11)
     hs_slope_range: tuple[int, int] = (0, 11)
+    hs_slope_rbd_range: tuple[int, int] | None = None  # Ferrari only (lfHSSlopeRbdDampSetting)
     # Force-per-click ESTIMATED by reverse-engineering from physics:
     # c_damping * v_ref / clicks = fpc
     # Front LS: 5060 * 0.025 / 7 = 18.1 N/click
@@ -894,6 +964,25 @@ class DamperModel:
     rear_roll_ls_baseline: int = 5
     rear_roll_hs_baseline: int = 5
 
+    # Ferrari heave damper architecture (separate from corner dampers)
+    # When True, the car has separate heave dampers (FrontHeave/RearHeave)
+    # in addition to per-corner dampers. Each has LS comp, HS comp, LS rbd,
+    # HS rbd, and HS slope.
+    has_heave_dampers: bool = False
+    heave_ls_range: tuple[int, int] = (0, 40)
+    heave_hs_range: tuple[int, int] = (0, 40)
+    heave_hs_slope_range: tuple[int, int] = (0, 11)
+    # Heave damper baselines (5 params each: LS comp, HS comp, LS rbd, HS rbd, HS slope)
+    front_heave_baseline: dict | None = None
+    rear_heave_baseline: dict | None = None
+
+    # Damping ratio targets (ζ) — calibrated from IBT for BMW, conservative defaults otherwise
+    zeta_ls_comp: float = 0.55    # Conservative default for uncalibrated cars
+    zeta_hs_comp: float = 0.20
+    zeta_ls_rbd: float = 0.40
+    zeta_hs_rbd: float = 0.18
+    zeta_is_calibrated: bool = False  # True only when IBT-calibrated
+
     def snap_click(self, value: float, param: str) -> int:
         lo, hi = getattr(self, f"{param}_range")
         return max(lo, min(hi, round(value)))
@@ -936,8 +1025,10 @@ class GarageRanges:
     camber_rear_deg: tuple[float, float] = (-1.9, 0.0)    # iRacing GTP legal max
     toe_front_mm: tuple[float, float] = (-3.0, 3.0)
     toe_rear_mm: tuple[float, float] = (-2.0, 3.0)
+    torsion_bar_turns_range: tuple[float, float] = (0.0, 0.0)  # No torsion bar turns by default
     # Resolution (quantisation step sizes)
     pushrod_resolution_mm: float = 0.5
+    torsion_bar_turns_resolution: float = 0.125  # 1/8 turn steps
     heave_spring_resolution_nmm: float = 10.0  # iRacing garage steps in 10 N/mm
     rear_spring_resolution_nmm: float = 5.0    # iRacing garage steps in 5 N/mm
     # Perch resolutions differ by control on BMW: front heave is 0.5 mm,
@@ -950,6 +1041,8 @@ class GarageRanges:
     # Differential
     diff_preload_nm: tuple[float, float] = (0.0, 150.0)
     diff_preload_step_nm: float = 5.0
+    front_diff_preload_nm: tuple[float, float] = (0.0, 0.0)  # default = no front diff
+    front_diff_preload_step_nm: float = 5.0
     diff_coast_drive_ramp_options: list[tuple[int, int]] = field(
         default_factory=lambda: [(40, 65), (45, 70), (50, 75)]
     )
@@ -1471,6 +1564,12 @@ BMW_M_HYBRID_V8 = CarModel(
         rear_hs_comp_baseline=3,
         rear_hs_rbd_baseline=9,
         rear_hs_slope_baseline=10,
+        # IBT-calibrated damping ratio targets (top-15 fastest BMW/Sebring sessions, 2026-03-26)
+        zeta_ls_comp=0.68,
+        zeta_hs_comp=0.23,
+        zeta_ls_rbd=0.47,
+        zeta_hs_rbd=0.20,
+        zeta_is_calibrated=True,
     ),
     ride_height_model=RideHeightModel(
         # Calibrated from 31 unique BMW Sebring configs (41 sessions, March 2026).
@@ -1661,6 +1760,8 @@ CADILLAC_VSERIES_R = CarModel(
         ls_force_per_click_n=18.0,
         hs_force_per_click_n=80.0,
     ),
+    ride_height_model=RideHeightModel.uncalibrated(),
+    deflection=DeflectionModel.uncalibrated(),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
     # NOTE: Cadillac ride height model is NOT YET CALIBRATED.
     # Front RH depends on: pushrod (payload length), heave perch, torsion bar OD,
@@ -1745,6 +1846,7 @@ FERRARI_499P = CarModel(
         rear_setting_anchor_index=2.0,
         rear_rate_at_anchor_nmm=530.0,
         rear_rate_per_index_nmm=60.0,
+        heave_index_unvalidated=True,
     ),
     corner_spring=CornerSpringModel(
         # Ferrari uses torsion bars for BOTH front and rear (indexed 0-18)
@@ -1797,6 +1899,7 @@ FERRARI_499P = CarModel(
         cg_height_mm=340.0,        # ESTIMATE — LMH rules allow lower CoG than LMDh
         front_setting_index_range=(0.0, 18.0),
         rear_setting_index_range=(0.0, 18.0),
+        rear_torsion_unvalidated=True,
     ),
     arb=ARBModel(
         # Ferrari uses: Disconnected, A, B, C, D, E (6 sizes)
@@ -1828,6 +1931,7 @@ FERRARI_499P = CarModel(
         rear_roll_gain=0.48,          # ESTIMATE
         front_toe_heating_coeff=2.5,
         rear_toe_heating_coeff=1.8,
+        camber_is_derived=True,       # Ferrari camber is derived from suspension geometry — not independently settable
     ),
     damper=DamperModel(
         # Ferrari damper click scale: 0-40 comp/rbd, 0-11 HS slope (BMW is 0-11 all)
@@ -1836,10 +1940,11 @@ FERRARI_499P = CarModel(
         hs_comp_range=(0, 40),
         hs_rbd_range=(0, 40),
         hs_slope_range=(0, 11),
+        hs_slope_rbd_range=(0, 11),  # Ferrari-specific: HS rebound slope
         # Force-per-click needs calibration from Ferrari telemetry
         ls_force_per_click_n=7.0,   # ESTIMATE — smaller per click (more clicks)
         hs_force_per_click_n=30.0,  # ESTIMATE
-        # From verified S1
+        # From verified S1 (per-corner dampers)
         front_ls_comp_baseline=15,
         front_ls_rbd_baseline=25,
         front_hs_comp_baseline=15,
@@ -1850,6 +1955,10 @@ FERRARI_499P = CarModel(
         rear_hs_comp_baseline=40,
         rear_hs_rbd_baseline=40,
         rear_hs_slope_baseline=11,
+        # Ferrari has separate heave dampers
+        has_heave_dampers=True,
+        front_heave_baseline={"ls_comp": 10, "hs_comp": 40, "ls_rbd": 5, "hs_rbd": 10, "hs_slope": 40},
+        rear_heave_baseline={"ls_comp": 10, "hs_comp": 40, "ls_rbd": 5, "hs_rbd": 10, "hs_slope": 40},
     ),
     garage_ranges=GarageRanges(
         damper_click=(0, 40),
@@ -1868,13 +1977,19 @@ FERRARI_499P = CarModel(
         camber_rear_deg=(-1.9, 0.0),            # hard garage limit (iRacing GTP legal max)
         toe_front_mm=(-3.0, 3.0),
         toe_rear_mm=(-2.0, 3.0),
+        torsion_bar_turns_range=(-0.250, 0.250),  # Ferrari has torsion bar turns at all 4 corners
         brake_bias_migration=(-6.0, 6.0),
         diff_clutch_plates_options=[2, 4, 6],
+        front_diff_preload_nm=(-50.0, 50.0),    # Ferrari has front AND rear diffs
+        front_diff_preload_step_nm=5.0,
         heave_spring_resolution_nmm=1.0,        # indexed: step by 1
         rear_spring_resolution_nmm=1.0,         # rear torsion bar OD: step by 1
         front_heave_perch_resolution_mm=0.5,
         rear_third_perch_resolution_mm=0.5,
+        torsion_bar_turns_resolution=0.125,     # 1/8 turn steps
     ),
+    ride_height_model=RideHeightModel.uncalibrated(),
+    deflection=DeflectionModel.uncalibrated(),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
 
@@ -1959,6 +2074,8 @@ PORSCHE_963 = CarModel(
         ls_force_per_click_n=18.0,  # ESTIMATE — DSSV force curve differs from shim stack
         hs_force_per_click_n=80.0,  # ESTIMATE — needs DSSV calibration from telemetry
     ),
+    ride_height_model=RideHeightModel.uncalibrated(),
+    deflection=DeflectionModel.uncalibrated(),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
 
@@ -2116,6 +2233,8 @@ ACURA_ARX06 = CarModel(
         rear_roll_ls_baseline=9,          # IBT: RearRoll LsDamping = 9
         rear_roll_hs_baseline=6,          # IBT: RearRoll HsDamping = 6
     ),
+    ride_height_model=RideHeightModel.uncalibrated(),
+    deflection=DeflectionModel.uncalibrated(),
     # Acura wing range from aero maps
     wing_angles=[6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0],
 )
@@ -2132,10 +2251,40 @@ _CARS = {
 }
 
 
-def get_car(name: str) -> CarModel:
-    """Get car model by canonical name."""
+def get_car(name: str, apply_calibration: bool = True) -> CarModel:
+    """Get car model by canonical name.
+
+    Returns a fresh copy of the car model. If auto-calibration data exists
+    for this car (from ``python -m car_model.auto_calibrate``), the calibrated
+    models replace the BMW ESTIMATE defaults automatically.
+
+    Args:
+        name: Car canonical name ("bmw", "ferrari", "acura", "cadillac", "porsche").
+        apply_calibration: If True (default), load and apply any saved calibration
+            models from data/calibration/{car}/models.json. Set False to get the
+            raw unmodified model (useful for calibration tooling itself).
+    """
+    import copy
+
     key = name.lower().strip()
     if key not in _CARS:
         available = ", ".join(_CARS.keys())
         raise KeyError(f"Unknown car '{name}'. Available: {available}")
-    return _CARS[key]
+
+    # Always return a fresh deep copy so in-place modifications in produce.py
+    # don't contaminate the module-level singleton between sessions.
+    car = copy.deepcopy(_CARS[key])
+
+    if apply_calibration:
+        try:
+            from car_model.auto_calibrate import load_calibrated_models, apply_to_car
+            cal_models = load_calibrated_models(key)
+            if cal_models is not None and cal_models.calibration_complete:
+                applied = apply_to_car(car, cal_models)
+                if applied:
+                    car._auto_calibration_applied = applied
+        except Exception:
+            # Auto-calibration is optional — never fail solver startup
+            pass
+
+    return car

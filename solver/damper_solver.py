@@ -84,6 +84,7 @@ class CornerDamperSettings:
     hs_comp: int
     hs_rbd: int
     hs_slope: int
+    hs_slope_rbd: int | None = None  # Ferrari only (lfHSSlopeRbdDampSetting)
 
     def rbd_comp_ratio_ls(self) -> float:
         return self.ls_rbd / max(self.ls_comp, 1)
@@ -139,6 +140,11 @@ class DamperSolution:
     front_roll_hs: int | None = None
     rear_roll_ls: int | None = None
     rear_roll_hs: int | None = None
+
+    # Heave dampers (Ferrari architecture — separate from corner dampers)
+    front_heave_damper: dict | None = None
+    rear_heave_damper: dict | None = None
+
     notes: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -155,6 +161,14 @@ class DamperSolution:
             f"  HS Comp:  {self.lf.hs_comp:4d}  {self.rf.hs_comp:4d}  {self.lr.hs_comp:4d}  {self.rr.hs_comp:4d}",
             f"  HS Rbd:   {self.lf.hs_rbd:4d}  {self.rf.hs_rbd:4d}  {self.lr.hs_rbd:4d}  {self.rr.hs_rbd:4d}",
             f"  HS Slope: {self.lf.hs_slope:4d}  {self.rf.hs_slope:4d}  {self.lr.hs_slope:4d}  {self.rr.hs_slope:4d}",
+        ]
+        # Ferrari HS rebound slope (optional field)
+        if self.lf.hs_slope_rbd is not None:
+            lines.append(
+                f"  HS Slope Rbd: {self.lf.hs_slope_rbd:4d}  {self.rf.hs_slope_rbd:4d}  "
+                f"{self.lr.hs_slope_rbd:4d}  {self.rr.hs_slope_rbd:4d}"
+            )
+        lines += [
             "",
             "  DAMPING PHYSICS",
             f"    Critical damping:  front {self.c_crit_front:.0f} N*s/m  |  rear {self.c_crit_rear:.0f} N*s/m",
@@ -550,6 +564,18 @@ class DamperSolver:
         # ─── 8. HS slope (separate front/rear) ───────────────────────────────
         front_slope, rear_slope, slope_reason = self._hs_slope_from_surface()
 
+        # ─── 9. HS rebound slope (Ferrari only) ──────────────────────────────
+        # Ferrari has separate HS slope for rebound (lfHSSlopeRbdDampSetting).
+        # Heuristic: rebound slope is typically 2-3 clicks softer than compression
+        # slope to allow more compliance on extension events.
+        front_slope_rbd: int | None = None
+        rear_slope_rbd: int | None = None
+        if d.hs_slope_rbd_range is not None:
+            lo_slope, hi_slope = d.hs_slope_rbd_range
+            # Rebound slope = compression slope - 2 (softer), clamped to range
+            front_slope_rbd = max(lo_slope, min(hi_slope, front_slope - 2))
+            rear_slope_rbd = max(lo_slope, min(hi_slope, rear_slope - 2))
+
         # ─── Build corner settings (asymmetric L/R from per-corner shock data) ─
         # When per-corner shock velocity data is available, the side with higher
         # p95 shock velocity (more kerb/bump exposure) gets softer HS compression
@@ -591,21 +617,25 @@ class DamperSolver:
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, front_hs_comp + lf_hs_comp_adj)),
             hs_rbd=front_hs_rbd, hs_slope=front_slope,
+            hs_slope_rbd=front_slope_rbd,
         )
         rf = CornerDamperSettings(
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, front_hs_comp + rf_hs_comp_adj)),
             hs_rbd=front_hs_rbd, hs_slope=front_slope,
+            hs_slope_rbd=front_slope_rbd,
         )
         lr = CornerDamperSettings(
             ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, rear_hs_comp + lr_hs_comp_adj)),
             hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
+            hs_slope_rbd=rear_slope_rbd,
         )
         rr = CornerDamperSettings(
             ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, rear_hs_comp + rr_hs_comp_adj)),
             hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
+            hs_slope_rbd=rear_slope_rbd,
         )
 
         # ─── Constraint checks ────────────────────────────────────────────────
@@ -702,6 +732,21 @@ class DamperSolver:
                 rear_roll_hs=dm.rear_roll_hs_baseline,
             )
 
+        # Heave dampers (Ferrari architecture)
+        heave_damper_kwargs: dict = {}
+        if self.car.damper.has_heave_dampers:
+            # Heave dampers control pitch/heave motions separately from corner dampers.
+            # Use car baselines for now — physics-based heave damper tuning not yet implemented.
+            dm = self.car.damper
+            heave_damper_kwargs = dict(
+                front_heave_damper=dm.front_heave_baseline,
+                rear_heave_damper=dm.rear_heave_baseline,
+            )
+            notes.append(
+                "Heave damper values are baselines from validated setup — "
+                "physics tuning not yet implemented."
+            )
+
         return DamperSolution(
             lf=lf, rf=rf, lr=lr, rr=rr,
             track_shock_vel_p95_front_mps=self.track.shock_vel_p95_front_mps,
@@ -726,6 +771,7 @@ class DamperSolver:
             constraints=constraints,
             notes=notes,
             **roll_damper_kwargs,
+            **heave_damper_kwargs,
         )
 
     def solution_from_explicit_settings(

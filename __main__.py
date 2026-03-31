@@ -1,31 +1,15 @@
 """IOptimal — unified GTP setup solver.
 
-Routes to the full pipeline (when IBT is provided) or the standalone
-physics solver (when no IBT is available yet).  Pass multiple --ibt files
-to get individual reports for each plus a side-by-side comparison table.
+Canonical CLI entry point with subcommands:
+    python -m ioptimal produce --car bmw --ibt session.ibt --wing 17
+    python -m ioptimal analyze --car bmw --ibt session.ibt
+    python -m ioptimal solve --car bmw --track sebring --wing 17
+    python -m ioptimal ingest --car bmw --ibt session.ibt
+    python -m ioptimal calibrate --car ferrari --ibt s1.ibt s2.ibt s3.ibt
+    python -m ioptimal calibrate --car ferrari --status
 
-Usage:
-    # Single IBT — full pipeline (ingest, calibrate, solve, compare, report)
-    python3 -m ioptimal --car bmw --ibt session.ibt --wing 17
-
-    # Multiple IBT files — individual reports + cross-setup comparison table
-    python3 -m ioptimal --car bmw --ibt s1.ibt s2.ibt s3.ibt --wing 17
-
-    # Export .sto for the best-performing setup (multi-IBT mode)
-    python3 -m ioptimal --car bmw --ibt s1.ibt s2.ibt --wing 17 --sto output.sto
-
-    # Standalone physics (no IBT — new track, no data yet)
-    python3 -m ioptimal --car bmw --track sebring --wing 17
-
-    # Grid search — explore full legal setup space (quick/standard/exhaustive/maximum)
-    python3 -m ioptimal --car bmw --track sebring --wing 17 --search-mode quick
-    python3 -m ioptimal --car bmw --ibt session.ibt --wing 17 --search-mode exhaustive --top-n 10
-
-    # Setup space exploration
-    python3 -m ioptimal --car bmw --ibt session.ibt --wing 17 --space
-
-    # Skip learning (read-only, don't update calibration)
-    python3 -m ioptimal --car bmw --ibt session.ibt --wing 17 --no-learn
+Legacy usage (routes to 'produce' subcommand):
+    python -m ioptimal --car bmw --ibt session.ibt --wing 17
 """
 
 from __future__ import annotations
@@ -33,6 +17,15 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+
+# ── Fix Windows console encoding before ANY output ──────────────────────────
+# Must happen before argparse, imports, or pipeline modules print anything.
+# Without this, Unicode box-drawing characters and emoji render as mojibake
+# on Windows terminals using the legacy OEM code page (CP850/CP437).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 W = 70  # comparison table width
@@ -354,26 +347,305 @@ def run_grid_search(args: argparse.Namespace) -> None:
     print(f"\n{'═' * 72}")
 
 
+def cmd_produce(args: argparse.Namespace) -> None:
+    """Route to pipeline.produce."""
+    from pipeline.produce import produce, produce_result
+
+    if args.ibt and len(args.ibt) > 1:
+        run_multi_ibt(args)
+    elif args.ibt:
+        import copy
+        single_args = copy.copy(args)
+        single_args.ibt = args.ibt[0]
+        produce(single_args)
+    else:
+        # Standalone solver mode
+        from solver.solve import run_solver
+        run_solver(args)
+
+
+def cmd_analyze(args: argparse.Namespace) -> None:
+    """Route to analyzer."""
+    # Import and call analyzer main with converted args
+    from analyzer.__main__ import main as analyzer_main
+
+    # Build args namespace expected by analyzer
+    analyzer_args = argparse.Namespace(
+        car=args.car,
+        ibt=args.ibt,
+        lap=getattr(args, 'lap', None),
+        save=getattr(args, 'save', None),
+    )
+
+    # Temporarily replace sys.argv for analyzer's main
+    old_argv = sys.argv
+    sys.argv = ['analyzer', '--car', args.car, '--ibt', args.ibt]
+    if hasattr(args, 'lap') and args.lap:
+        sys.argv.extend(['--lap', str(args.lap)])
+    if hasattr(args, 'save') and args.save:
+        sys.argv.extend(['--save', args.save])
+
+    try:
+        analyzer_main()
+    finally:
+        sys.argv = old_argv
+
+
+def cmd_solve(args: argparse.Namespace) -> None:
+    """Route to solver.solve."""
+    from solver.solve import run_solver
+    run_solver(args)
+
+
+def cmd_calibrate(args: argparse.Namespace) -> None:
+    """Route to car_model.auto_calibrate."""
+    from car_model.auto_calibrate import main as calibrate_main
+
+    # Build sys.argv expected by auto_calibrate
+    old_argv = sys.argv
+    new_argv = ['car_model.auto_calibrate', '--car', args.car]
+    if getattr(args, 'status', False):
+        new_argv.append('--status')
+    elif getattr(args, 'protocol', False):
+        new_argv.append('--protocol')
+    else:
+        if getattr(args, 'ibt', None):
+            ibts = args.ibt if isinstance(args.ibt, list) else [args.ibt]
+            new_argv.append('--ibt')
+            new_argv.extend(str(p) for p in ibts)
+        if getattr(args, 'ibt_dir', None):
+            new_argv.extend(['--ibt-dir', str(args.ibt_dir)])
+        if getattr(args, 'sto_json', None):
+            new_argv.extend(['--sto-json', str(args.sto_json)])
+        if getattr(args, 'refit', False):
+            new_argv.append('--refit')
+        if getattr(args, 'clear', False):
+            new_argv.append('--clear')
+
+    sys.argv = new_argv
+    try:
+        calibrate_main()
+    finally:
+        sys.argv = old_argv
+
+
+def cmd_ingest(args: argparse.Namespace) -> None:
+    """Route to learner.ingest."""
+    from learner.ingest import main as ingest_main
+
+    # Build sys.argv for ingest
+    old_argv = sys.argv
+    sys.argv = ['learner.ingest', '--car', args.car, '--ibt', args.ibt]
+    if hasattr(args, 'wing') and args.wing:
+        sys.argv.extend(['--wing', str(args.wing)])
+    if hasattr(args, 'lap') and args.lap:
+        sys.argv.extend(['--lap', str(args.lap)])
+    if hasattr(args, 'all_laps') and args.all_laps:
+        sys.argv.append('--all-laps')
+
+    try:
+        ingest_main()
+    finally:
+        sys.argv = old_argv
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ioptimal",
         description="IOptimal — GTP setup solver (pipeline + physics)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
+    )
+
+    # Check if called with legacy args (no subcommand)
+    if len(sys.argv) > 1 and not sys.argv[1].startswith('-') and sys.argv[1] not in ['produce', 'analyze', 'solve', 'ingest', 'calibrate']:
+        # First arg is a subcommand
+        pass
+    elif len(sys.argv) > 1 and sys.argv[1].startswith('--'):
+        # Legacy usage: --car ... (no subcommand)
+        # Route to produce_legacy
+        return main_legacy()
+
+    subparsers = parser.add_subparsers(dest='command', help='Subcommands')
+
+    # ── produce subcommand ──
+    produce_parser = subparsers.add_parser(
+        'produce',
+        help='Full pipeline: IBT → analysis → physics solver → .sto',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    produce_parser.add_argument("--car", required=True,
+                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+    produce_parser.add_argument("--ibt", action="append", default=None, metavar="IBT",
+                        help="IBT telemetry file. Repeat for multiple files: "
+                             "--ibt f1.ibt --ibt f2.ibt → per-file reports + comparison table.")
+    produce_parser.add_argument("--track", default=None,
+                        help="Track name for standalone solver (used when no --ibt)")
+    produce_parser.add_argument("--wing", type=float, default=None,
+                        help="Wing angle in degrees (auto-detected from IBT if not set)")
+
+    produce_parser.add_argument("--lap", type=int, default=None,
+                        help="Lap number to analyze (default: best lap)")
+    produce_parser.add_argument("--fuel", type=float, default=None,
+                        help="Fuel load in liters (auto-detected from IBT if not set)")
+    produce_parser.add_argument("--balance", type=float, default=None,
+                        help="Target DF balance %% (default: car-specific)")
+    produce_parser.add_argument("--tolerance", type=float, default=0.1,
+                        help="Balance tolerance %% (default: 0.1)")
+    produce_parser.add_argument("--free", action="store_true",
+                        help="Free optimization (don't pin front RH at sim floor)")
+    produce_parser.add_argument("--legacy-solver", action="store_true",
+                        help="Force the legacy sequential solver path for BMW/Sebring validation")
+    produce_parser.add_argument("--sto", type=str, default=None,
+                        help="Export iRacing .sto setup file")
+    produce_parser.add_argument("--json", type=str, default=None,
+                        help="Save full JSON summary to file")
+    produce_parser.add_argument("--report-only", action="store_true",
+                        help="Print only the final report (suppress per-step progress)")
+    produce_parser.add_argument("--verbose", action="store_true",
+                        help="Show full step-by-step solver output (default: report only)")
+    produce_parser.add_argument("--space", action="store_true",
+                        help="Run setup space exploration (feasible ranges + flat bottom)")
+    produce_parser.add_argument("--search-mode",
+        choices=["quick", "standard", "exhaustive", "maximum"],
+        default=None, dest="search_mode",
+        help="Run hierarchical legal-space grid search")
+    produce_parser.add_argument("--top-n", type=int, default=5, dest="top_n",
+                        help="Number of top candidates to display when using --search-mode (default: 5)")
+    produce_parser.add_argument("--min-lap-time", type=float, default=108.0, dest="min_lap_time",
+                        help="Absolute floor for valid laps in seconds (default: 108.0)")
+    produce_parser.add_argument("--outlier-pct", type=float, default=0.115, dest="outlier_pct",
+                        help="Max %% above lap-time median to accept (default: 0.115)")
+    produce_parser.add_argument("--no-learn", action="store_true",
+                        help="Skip IBT ingestion / empirical corrections (read-only run)")
+
+    # ── analyze subcommand ──
+    analyze_parser = subparsers.add_parser(
+        'analyze',
+        help='Analyze one IBT session (diagnose setup, driver style, handling)',
+    )
+    analyze_parser.add_argument("--car", required=True,
+                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+    analyze_parser.add_argument("--ibt", required=True,
+                        help="Path to IBT telemetry file")
+    analyze_parser.add_argument("--lap", type=int, default=None,
+                        help="Specific lap number to analyze (default: best lap)")
+    analyze_parser.add_argument("--save", default=None,
+                        help="Save JSON report to this path")
+
+    # ── solve subcommand ──
+    solve_parser = subparsers.add_parser(
+        'solve',
+        help='Standalone physics solver (no IBT required)',
+    )
+    solve_parser.add_argument("--car", required=True,
+                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+    solve_parser.add_argument("--track", required=True,
+                        help="Track name (e.g., sebring)")
+    solve_parser.add_argument("--wing", type=float, required=True,
+                        help="Wing angle in degrees")
+    solve_parser.add_argument("--balance", type=float, default=None,
+                        help="Target DF balance %% (default: car-specific)")
+    solve_parser.add_argument("--tolerance", type=float, default=0.1,
+                        help="Balance tolerance %% (default: 0.1)")
+    solve_parser.add_argument("--fuel", type=float, default=None,
+                        help="Fuel load in liters")
+    solve_parser.add_argument("--free", action="store_true",
+                        help="Free optimization (don't pin front RH at sim floor)")
+    solve_parser.add_argument("--sto", type=str, default=None,
+                        help="Export iRacing .sto setup file")
+    solve_parser.add_argument("--json", type=str, default=None,
+                        help="Save full JSON summary to file")
+    solve_parser.add_argument("--verbose", action="store_true",
+                        help="Show full step-by-step solver output")
+
+    # ── calibrate subcommand ──
+    calibrate_parser = subparsers.add_parser(
+        'calibrate',
+        help='Auto-calibrate car model from IBT sessions (builds per-car physics models)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    calibrate_parser.add_argument("--car", required=True,
+                        choices=["bmw", "cadillac", "ferrari", "acura", "porsche"],
+                        help="Car to calibrate")
+    calibrate_parser.add_argument("--ibt", nargs="+", default=None,
+                        help="One or more IBT files to add to the calibration dataset")
+    calibrate_parser.add_argument("--ibt-dir", default=None, dest="ibt_dir",
+                        help="Directory to scan for IBT files")
+    calibrate_parser.add_argument("--sto-json", default=None, dest="sto_json",
+                        help="Path to a setupdelta.com decrypted .sto JSON (for spring lookup table)")
+    calibrate_parser.add_argument("--status", action="store_true",
+                        help="Print calibration status for the car and exit")
+    calibrate_parser.add_argument("--refit", action="store_true",
+                        help="Re-fit models from all accumulated data points")
+    calibrate_parser.add_argument("--clear", action="store_true",
+                        help="Clear all calibration data for the car")
+    calibrate_parser.add_argument("--protocol", action="store_true",
+                        help="Generate step-by-step iRacing calibration sweep instructions")
+
+    # ── ingest subcommand ──
+    ingest_parser = subparsers.add_parser(
+        'ingest',
+        help='Ingest IBT into knowledge base (learning system)',
+    )
+    ingest_parser.add_argument("--car", required=True,
+                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+    ingest_parser.add_argument("--ibt", required=True,
+                        help="Path to IBT telemetry file")
+    ingest_parser.add_argument("--wing", type=float, default=None,
+                        help="Wing angle override")
+    ingest_parser.add_argument("--lap", type=int, default=None,
+                        help="Specific lap number to analyze")
+    ingest_parser.add_argument("--all-laps", action="store_true",
+                        help="Ingest every valid lap as a separate observation")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+    # Route to subcommand
+    if args.command == 'produce':
+        # Apply defaults
+        if not hasattr(args, 'verbose') or not args.verbose:
+            args.report_only = True
+        if args.search_mode:
+            run_grid_search(args)
+        else:
+            cmd_produce(args)
+    elif args.command == 'analyze':
+        cmd_analyze(args)
+    elif args.command == 'solve':
+        cmd_solve(args)
+    elif args.command == 'ingest':
+        cmd_ingest(args)
+    elif args.command == 'calibrate':
+        cmd_calibrate(args)
+
+
+def main_legacy() -> None:
+    """Legacy entry point for backward compatibility.
+
+    Handles: python -m ioptimal --car bmw --ibt session.ibt --wing 17
+    """
+    parser = argparse.ArgumentParser(
+        prog="ioptimal",
+        description="IOptimal — GTP setup solver (pipeline + physics)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     # ── Car / session ──
     parser.add_argument("--car", required=True,
                         help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
     parser.add_argument("--ibt", action="append", default=None, metavar="IBT",
-                        help="IBT telemetry file. Repeat for multiple files: "
-                             "--ibt f1.ibt --ibt f2.ibt → per-file reports + comparison table.")
+                        help="IBT telemetry file. Repeat for multiple files")
     parser.add_argument("--track", default=None,
                         help="Track name for standalone solver (used when no --ibt)")
     parser.add_argument("--wing", type=float, default=None,
                         help="Wing angle in degrees (auto-detected from IBT if not set)")
-
-    # ── Solver options ──
     parser.add_argument("--lap", type=int, default=None,
                         help="Lap number to analyze (default: best lap)")
     parser.add_argument("--fuel", type=float, default=None,
@@ -386,8 +658,6 @@ def main() -> None:
                         help="Free optimization (don't pin front RH at sim floor)")
     parser.add_argument("--legacy-solver", action="store_true",
                         help="Force the legacy sequential solver path for BMW/Sebring validation")
-
-    # ── Output ──
     parser.add_argument("--sto", type=str, default=None,
                         help="Export iRacing .sto setup file")
     parser.add_argument("--json", type=str, default=None,
@@ -398,36 +668,16 @@ def main() -> None:
                         help="Show full step-by-step solver output (default: report only)")
     parser.add_argument("--space", action="store_true",
                         help="Run setup space exploration (feasible ranges + flat bottom)")
-
-    # ── Grid search ──
-    parser.add_argument(
-        "--search-mode",
+    parser.add_argument("--search-mode",
         choices=["quick", "standard", "exhaustive", "maximum"],
-        default=None,
-        dest="search_mode",
-        help=(
-            "Run hierarchical legal-space grid search instead of the sequential solver. "
-            "quick=~8s/7.7k evals | standard=~4min/500k+ | exhaustive=~80min | maximum=unlimited. "
-            "Example: --search-mode quick --top-n 5"
-        ),
-    )
-    parser.add_argument(
-        "--top-n",
-        type=int,
-        default=5,
-        dest="top_n",
-        help="Number of top candidates to display when using --search-mode (default: 5)",
-    )
-
-    # ── Lap filtering ──
+        default=None, dest="search_mode",
+        help="Run hierarchical legal-space grid search")
+    parser.add_argument("--top-n", type=int, default=5, dest="top_n",
+                        help="Number of top candidates to display when using --search-mode (default: 5)")
     parser.add_argument("--min-lap-time", type=float, default=108.0, dest="min_lap_time",
-                        help="Absolute floor for valid laps in seconds (default: 108.0). "
-                             "Partial laps and pit exits below this are ignored.")
+                        help="Absolute floor for valid laps in seconds (default: 108.0)")
     parser.add_argument("--outlier-pct", type=float, default=0.115, dest="outlier_pct",
-                        help="Max %% above lap-time median to accept (default: 0.115 = 11.5%%). "
-                             "Drops safety-car / off-track laps. Pass 0 to disable.")
-
-    # ── Learning ──
+                        help="Max %% above lap-time median to accept (default: 0.115)")
     parser.add_argument("--no-learn", action="store_true",
                         help="Skip IBT ingestion / empirical corrections (read-only run)")
 

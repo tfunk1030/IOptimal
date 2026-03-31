@@ -784,6 +784,8 @@ def write_sto(
     # Torsion bar turns — adjustable parameter on both BMW and Ferrari
     if front_tb_turns is not None:
         _tb_turns = round(front_tb_turns, 3)
+    elif hasattr(step3, 'front_torsion_bar_turns'):
+        _tb_turns = round(step3.front_torsion_bar_turns, 3)
     elif garage_outputs is not None:
         _tb_turns = round(garage_outputs.torsion_bar_turns, 3)
     else:
@@ -800,6 +802,8 @@ def write_sto(
     if "lr_torsion_turns" in ids:
         if rear_tb_turns is not None:
             _rear_tb_turns = round(rear_tb_turns, 3)
+        elif hasattr(step3, 'rear_torsion_bar_turns'):
+            _rear_tb_turns = round(step3.rear_torsion_bar_turns, 3)
         else:
             _rear_tb_turns = round(_tb_turns * 0.55, 3)
         _w_num("lr_torsion_turns", _rear_tb_turns, "Turns")

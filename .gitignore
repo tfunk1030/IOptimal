@@ -28,3 +28,43 @@ _syntax_check*.py
 _commit_msg*.txt
 _fix_*.py
 _git_*.py
+
+# Generated solver output files
+*.sto
+output_*.sto
+
+# Temporary binary files
+tmp_*.bin
+
+# Parsed aero map cache (regenerated from xlsx)
+data/aeromaps_parsed/
+
+# Audit/documentation artifacts (generated, not source)
+AUDIT_REPORT.md
+ENGINEERING_AUDIT.md
+deep_audit_report_*.md
+CLI_GUIDE.md
+
+# IDE / editor artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / build
+dist/
+build/
+*.egg-info/
+
+# PyInstaller
+*.spec

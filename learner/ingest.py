@@ -253,6 +253,62 @@ def ingest_ibt(
     if delta_result and delta_result.key_finding:
         result["new_learnings"].append(delta_result.key_finding)
 
+    # ── Auto-calibration: add this session to per-car calibration dataset ──
+    # Runs silently (never blocks ingest). Once 5+ unique-setup sessions
+    # accumulate, models are auto-fitted and saved to data/calibration/{car}/.
+    try:
+        from car_model.auto_calibrate import (
+            load_calibration_points,
+            extract_point_from_ibt,
+            save_calibration_points,
+            fit_models_from_points,
+            save_calibrated_models,
+            load_calibrated_models,
+        )
+        cal_points = load_calibration_points(car_name)
+        existing_ids = {pt.session_id for pt in cal_points}
+        if session_id not in existing_ids:
+            pt = extract_point_from_ibt(ibt_path, car_name)
+            if pt is not None:
+                pt.session_id = session_id  # use same ID for consistency
+                pt.assessment = diag.assessment
+                pt.lap_time_s = diag.lap_time_s
+                cal_points.append(pt)
+                save_calibration_points(car_name, cal_points)
+                # Count unique setups to check if we can fit models
+                unique: set[tuple] = set()
+                for p2 in cal_points:
+                    key = (round(p2.front_heave_setting, 1), round(p2.rear_third_setting, 1),
+                           round(p2.front_torsion_od_mm, 3), round(p2.front_pushrod_mm, 1),
+                           round(p2.rear_pushrod_mm, 1))
+                    unique.add(key)
+                n_unique = len(unique)
+                result["cal_point_added"] = True
+                result["cal_unique_setups"] = n_unique
+                if n_unique >= 5:
+                    # Auto-fit models
+                    cal_models = fit_models_from_points(car_name, cal_points)
+                    # Preserve existing spring lookup tables
+                    existing_saved = load_calibrated_models(car_name)
+                    if existing_saved:
+                        if existing_saved.front_torsion_lookup and not cal_models.front_torsion_lookup:
+                            cal_models.front_torsion_lookup = existing_saved.front_torsion_lookup
+                        if existing_saved.rear_torsion_lookup and not cal_models.rear_torsion_lookup:
+                            cal_models.rear_torsion_lookup = existing_saved.rear_torsion_lookup
+                    save_calibrated_models(car_name, cal_models)
+                    if cal_models.calibration_complete:
+                        result["new_learnings"].append(
+                            f"Auto-calibration complete: {n_unique} unique setups, "
+                            f"deflection model fitted. Run 'ioptimal calibrate --car {car_name} "
+                            f"--status' for details."
+                        )
+                    if verbose:
+                        print(f"  [calibrate] {n_unique} unique setups — "
+                              f"models {'fitted' if cal_models.calibration_complete else 'pending'}")
+    except Exception:
+        # Auto-calibration is never allowed to break normal ingest
+        pass
+
     if verbose:
         print(f"\n{'='*60}")
         print(f"  INGEST COMPLETE — {len(all_obs)} sessions in knowledge base")

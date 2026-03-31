@@ -228,7 +228,7 @@ def prediction_passes_sanity(
         ("rear_rh_std_mm", sanity.max_rear_rh_std_mm, "rear RH sigma"),
         ("braking_pitch_deg", sanity.max_braking_pitch_deg, "braking pitch"),
         ("front_lock_p95", sanity.max_front_lock_p95, "front lock"),
-        ("rear_power_slip_p95", sanity.max_rear_power_slip_p95, "rear slip"),
+        ("rear_power_slip_ratio_p95", sanity.max_rear_power_slip_p95, "rear slip"),
         ("body_slip_p95_deg", sanity.max_body_slip_p95_deg, "body slip"),
     )
     for attr, limit, label in numeric_limits:

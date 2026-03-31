@@ -103,6 +103,12 @@ def validate_and_fix_garage_correlation(
     # --- Phase 2: Garage-model correlation check (BMW/Sebring only) ---
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is None:
+        if getattr(car, 'canonical_name', '') != 'bmw':
+            warnings.append(
+                f"WARN: Garage correlation validation skipped — "
+                f"no calibrated GarageOutputModel for {car.canonical_name}. "
+                f"Output values are physics-only estimates."
+            )
         return warnings
 
     state = GarageSetupState.from_solver_steps(

@@ -91,6 +91,17 @@ class Observation:
     # Keys: parameters_exact_match, parameters_within_2, parameters_off,
     #        biggest_disagreement, solver_version
 
+    # ── Veto / Anti-Regression ──
+    validation_failed: bool = False
+    # Set to True when a human or automated test judges this setup as BAD.
+    # Causes produce.py to build a hard-veto fingerprint so the solver
+    # never recommends the same setup cluster again.
+
+    setup_fingerprint: str = ""
+    # Hash key built at ingest time from (wing bucket, RH bucket, spring bucket).
+    # Populated by build_observation() if the fingerprinting module is available.
+    # Used to match and soft/hard-veto clusters in run_base_solve().
+
     # ── Corner-by-Corner Performance ──
     corner_performance: list[dict] = field(default_factory=list)
     # Each: {corner_id, lap_dist_m, direction, speed_class, speed_kph,

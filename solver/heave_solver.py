@@ -1028,6 +1028,13 @@ class HeaveSolver:
         damper_force_braking = damper.front_ls_coefficient_nsm * v_braking_mps
         total_force_limit = spring_force_limit + damper_force_braking
 
+        # Validation warning for unvalidated heave spring index mappings
+        if getattr(hsm, 'heave_index_unvalidated', False):
+            garage_constraint_notes.append(
+                "UNVALIDATED: Heave spring index-to-N/mm mapping is approximate — verify heave spring feel on track"
+            )
+            print("\n⚠  UNVALIDATED: Heave spring index-to-N/mm mapping is approximate — verify heave spring feel on track\n")
+
         return HeaveSolution(
             front_heave_nmm=k_front,
             rear_third_nmm=k_rear,

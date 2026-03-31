@@ -38,6 +38,8 @@ class SupportingSolution:
     brake_bias_target: float = 0.0
     brake_bias_migration: float = 0.0
     brake_bias_migration_gain: float = 0.0
+    brake_migration_type: int = 1  # Ferrari-specific: migration type 1-6
+    brake_migration_gain_pct: float = 0.0  # Ferrari-specific: migration gain -4% to +4%
     front_master_cyl_mm: float = 0.0
     rear_master_cyl_mm: float = 0.0
     pad_compound: str = ""
@@ -50,6 +52,7 @@ class SupportingSolution:
 
     # Differential
     diff_preload_nm: float = 10.0
+    front_diff_preload_nm: float = 0.0  # Ferrari has front diff
     diff_ramp_coast: int = 40  # coast ramp angle (degrees)
     diff_ramp_drive: int = 65  # drive ramp angle (degrees)
     diff_ramp_option_idx: int = 0
@@ -271,6 +274,10 @@ class SupportingSolver:
                 "Ferrari brake bias is sourced from stable live control or setup context; "
                 "hardware fields remain pass-through."
             )
+            # Ferrari brake migration type and gain - held at validated defaults
+            # until brake migration physics model is built
+            sol.brake_migration_type = 1
+            sol.brake_migration_gain_pct = 0.0
 
     def _solve_diff(self, sol: SupportingSolution) -> None:
         """Differential from traction demand × driver style.
@@ -348,7 +355,10 @@ class SupportingSolver:
             preload += 5
             reasons.append(f"+5 Nm for rear power slip p95={rear_power_slip:.3f}")
 
-        sol.diff_preload_nm = round(_clamp(preload, 0.0, 150.0) / 5) * 5  # 5 Nm increments
+        # Clamp to car-specific range and step
+        min_preload, max_preload = self.car.garage_ranges.diff_preload_nm
+        step = self.car.garage_ranges.diff_preload_step_nm
+        sol.diff_preload_nm = round(_clamp(preload, min_preload, max_preload) / step) * step
 
         # ── Ramp angles ── must be a valid garage pair: (40,65), (45,70), (50,75)
         valid_pairs = getattr(self.car.garage_ranges, "diff_coast_drive_ramp_options",

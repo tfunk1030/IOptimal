@@ -594,15 +594,17 @@ def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> Non
     # Effective mass correction (from variance data + spring rates)
     for obs in obs_list:
         heave = obs.get("setup", {}).get("front_heave_nmm", 0)
-        var = obs.get("telemetry", {}).get("front_rh_std_mm", 0)
-        sv_p99 = obs.get("telemetry", {}).get("front_shock_vel_p99_mps", 0)
+        telem = obs.get("telemetry", {})
+
+        # Prefer high-speed filtered stats (>200kph) for m_eff correction to avoid
+        # overestimation from low-speed segments where aero load is negligible.
+        var = telem.get("front_rh_std_hs_mm", 0) or telem.get("front_rh_std_mm", 0)
+        sv_p99 = telem.get("front_heave_vel_p95_hs_mps", 0) or telem.get("front_shock_vel_p99_mps", 0)
+
         if heave > 0 and var > 0 and sv_p99 > 0:
             # excursion_p99 ≈ 2.33 * sigma
             exc = var * 2.33
             # exc = v_p99 * sqrt(m_eff / k) → m_eff = k * (exc/v_p99)^2
-            # NOTE: var and sv_p99 are lap-wide statistics (not filtered to
-            # high-speed straights), which inflates m_eff estimates. Treat
-            # these as rough indicators, not precise calibration values.
             k_nm = heave * 1000
             m_eff = k_nm * (exc / 1000 / sv_p99) ** 2
             m_eff_val = round(m_eff, 1)

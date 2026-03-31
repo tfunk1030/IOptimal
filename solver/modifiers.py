@@ -157,6 +157,28 @@ def compute_modifiers(
                     f"Front bottoming {problem.measured:.0f} events → heave floor raised"
                 )
 
+        # Safety: splitter scrape → heave floor
+        # Splitter scraping means the front is too low at speed. Stiffen heave spring
+        # to reduce aero compression and prevent underbody damage + aero stall.
+        if cat == "safety" and "splitter scrape" in symptom:
+            scrape_count = int(problem.measured)
+            if scrape_count > 20:
+                # Critical: frequent scraping, need significant stiffening
+                scrape_floor = 50.0
+                mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, scrape_floor)
+                mods.reasons.append(
+                    f"Splitter scrape detected ({scrape_count} events) → front heave floor "
+                    f"raised to {scrape_floor:.0f} N/mm to prevent underbody damage"
+                )
+            elif scrape_count > 10:
+                # Significant: moderate scraping, 10-20% stiffer
+                scrape_floor = 42.0
+                mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, scrape_floor)
+                mods.reasons.append(
+                    f"Splitter scrape detected ({scrape_count} events) → front heave floor "
+                    f"raised to {scrape_floor:.0f} N/mm to reduce aero compression"
+                )
+
         # Safety: heave spring travel exhaustion -> perch adjustment
         # Match both "exhausted under braking" and "used at speed" symptom strings
         if cat == "safety" and "travel" in symptom and ("exhausted" in symptom or "used" in symptom):

@@ -265,8 +265,8 @@ class DiffSolver:
         # Peak lateral g from track profile or measured, with fallback
         if track is not None and track.peak_lat_g > 0:
             peak_lat_g = track.peak_lat_g
-        elif measured is not None and hasattr(measured, "peak_lat_g_p99") and measured.peak_lat_g_p99 > 0:
-            peak_lat_g = measured.peak_lat_g_p99
+        elif measured is not None and hasattr(measured, "peak_lat_g_measured") and measured.peak_lat_g_measured > 0:
+            peak_lat_g = measured.peak_lat_g_measured
         else:
             peak_lat_g = 2.0  # GTP typical
 

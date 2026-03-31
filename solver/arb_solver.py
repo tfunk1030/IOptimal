@@ -262,8 +262,13 @@ class ARBSolver:
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )
 
-        # Target LLTD — physics-based from tyre load sensitivity + track speed.
+        # Target LLTD — use measured value if available, otherwise physics-based formula.
         #
+        # Measured LLTD: When IBT telemetry provides a calibrated target (stored in
+        # car.measured_lltd_target), use it directly. This overrides the theoretical
+        # formula below. BMW/Sebring: measured_lltd_target=0.41 from 46 sessions.
+        #
+        # Theoretical LLTD (when measured_lltd_target is None):
         # Base: OptimumG/Milliken RCVD baseline at λ=0.20 → +5% over static front weight.
         # Formula: offset = (λ / 0.20) * 0.05, so λ=0.20 → +5%, λ=0.10 → +2.5%, λ=0.30 → +7.5%.
         #
@@ -281,11 +286,17 @@ class ARBSolver:
         #   pct_above_200kph=0.5 (fast, e.g. Daytona Road):     +5.5%
         #   pct_above_200kph=0.8 (Monza / Le Mans):             +5.8%
         # This matches the empirical +5.5–6.0% recommendation for fast tracks.
-        tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.20)
-        pct_hs = getattr(self.track, "pct_above_200kph", 0.0)
-        hs_correction = 0.01 * pct_hs  # up to +1% at 100% high-speed track
-        lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
-        target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
+
+        # Use measured LLTD target if available (overrides theoretical formula)
+        if getattr(self.car, 'measured_lltd_target', None) is not None:
+            target_lltd = self.car.measured_lltd_target + lltd_offset
+        else:
+            # Theoretical formula (physics-based from tyre load sensitivity + track speed)
+            tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.20)
+            pct_hs = getattr(self.track, "pct_above_200kph", 0.0)
+            hs_correction = 0.01 * pct_hs  # up to +1% at 100% high-speed track
+            lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
+            target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
 
         # ─── BMW ARB strategy ────────────────────────────────────────────────
         # Per SKILL.md and per-car-quirks.md:
@@ -456,11 +467,16 @@ class ARBSolver:
         k_springs_rear = self._corner_spring_roll_stiffness(
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )
-        tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.20)
-        pct_hs = getattr(self.track, "pct_above_200kph", 0.0)
-        hs_correction = 0.01 * pct_hs
-        lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
-        target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
+        # Use measured LLTD target if available (overrides theoretical formula)
+        if getattr(self.car, 'measured_lltd_target', None) is not None:
+            target_lltd = self.car.measured_lltd_target + lltd_offset
+        else:
+            # Theoretical formula (physics-based from tyre load sensitivity + track speed)
+            tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.20)
+            pct_hs = getattr(self.track, "pct_above_200kph", 0.0)
+            hs_correction = 0.01 * pct_hs
+            lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
+            target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
         farb_blade = int(farb_blade_locked if farb_blade_locked is not None else front_arb_blade_start)
         rarb_slow_blade = int(rarb_blade_slow_corner if rarb_blade_slow_corner is not None else 1)
         rarb_fast_blade = int(rarb_blade_fast_corner if rarb_blade_fast_corner is not None else min(4, arb.rear_blade_count))

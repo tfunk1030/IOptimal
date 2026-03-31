@@ -93,6 +93,10 @@ class CornerSpringSolution:
     # ORECA: rear torsion bar OD (None = coil spring car)
     rear_torsion_od_mm: float | None = None
 
+    # Torsion bar preload turns (Ferrari: -0.250 to +0.250 at all 4 corners)
+    front_torsion_bar_turns: float = 0.0
+    rear_torsion_bar_turns: float = 0.0
+
     def summary(self) -> str:
         """Human-readable summary of the solution."""
         lines = [
@@ -257,6 +261,9 @@ class CornerSpringSolver:
             rear_od = max(rear_od, csm.rear_torsion_od_range_mm[0])
             rear_od = min(rear_od, csm.rear_torsion_od_range_mm[1])
             rear_rate = csm.rear_torsion_bar_rate(rear_od)
+            # Validation warning for unvalidated rear torsion bar models
+            if getattr(csm, 'rear_torsion_unvalidated', False):
+                print("\n⚠  UNVALIDATED: Ferrari rear torsion bar model may have 3.5x rate error — verify rear spring rates manually\n")
         else:
             rear_od = None
             rear_rate = max(rear_target_rate, csm.rear_spring_range_nmm[0])

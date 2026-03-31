@@ -134,6 +134,15 @@ def _compute_single_session_authority(
     if session_context and not session_context.comparable_to_baseline:
         score *= 0.82
 
+    # In-car adjustment penalty (frequent changes reduce telemetry authority)
+    total_adjustments = (
+        getattr(measured, "brake_bias_adjustments", 0) +
+        getattr(measured, "tc_adjustments", 0)
+    )
+    if total_adjustments > 5:
+        adjustment_penalty = min(0.5, 0.05 * total_adjustments)
+        score *= max(0.5, 1.0 - adjustment_penalty)
+
     return {"session": "S1", "score": round(max(0.0, min(1.0, score)), 3)}
 
 
@@ -866,6 +875,36 @@ def produce(
             print(step6.summary())
 
     # ── Phase H.5: Multi-solve stint compromise (if --stint) ──
+    # Load known-bad setup fingerprints from learner (if available)
+    # Observations with validation_failed=True contribute hard-veto clusters
+    # that prevent the solver from re-recommending the same setup cluster.
+    failed_clusters = []
+    try:
+        from learner.knowledge_store import KnowledgeStore
+        from solver.setup_fingerprint import ValidationCluster
+
+        ks = KnowledgeStore()
+        obs_list = ks.list_observations(
+            car=car.canonical_name,
+            track=track.track_name.split()[0].lower(),
+        )
+        for obs_data in obs_list:
+            if obs_data.get("validation_failed", False):
+                fp = obs_data.get("setup_fingerprint", "")
+                if fp:
+                    try:
+                        failed_clusters.append(
+                            ValidationCluster(fingerprint=fp, veto_type="hard")
+                        )
+                    except TypeError:
+                        # ValidationCluster constructor differs — try positional
+                        failed_clusters.append(ValidationCluster(fp))
+        if failed_clusters:
+            log(f"[veto] Loaded {len(failed_clusters)} hard-veto clusters from learner store")
+    except Exception:
+        # Learner not available or no data — skip veto mechanism gracefully
+        pass
+
     solve_inputs = SolveChainInputs(
         car=car,
         surface=surface,
@@ -884,6 +923,7 @@ def produce(
         scenario_profile=scenario_profile_name,
         legacy_solver=getattr(args, "legacy_solver", False),
         camber_confidence=_camber_conf,
+        failed_validation_clusters=failed_clusters,
         corners=corners,
     )
     base_solve_result = run_base_solve(solve_inputs)
@@ -1356,6 +1396,29 @@ def produce(
         )
         for w in garage_warnings:
             print(f"[garage] {w}")
+
+        # Print ESTIMATE warnings for uncalibrated models
+        estimate_warnings = []
+        if hasattr(car, 'deflection') and not getattr(car.deflection, 'is_calibrated', True):
+            estimate_warnings.append(
+                "Deflection predictions use uncalibrated model — verify garage display values manually"
+            )
+        if hasattr(car, 'ride_height_model') and not getattr(car.ride_height_model, 'is_calibrated', True):
+            estimate_warnings.append(
+                "Ride height predictions use uncalibrated model"
+            )
+        if hasattr(car, 'damper') and not getattr(car.damper, 'zeta_is_calibrated', True):
+            estimate_warnings.append(
+                "Damper zeta targets are conservative defaults — verify damper feel on track"
+            )
+        garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
+        if garage_model is None:
+            estimate_warnings.append(
+                "No garage output model — .sto display values are physics estimates only"
+            )
+
+        for w in estimate_warnings:
+            print(f"[ESTIMATE] {w}")
 
         _extra_kw = {}
         if car.canonical_name == "ferrari":

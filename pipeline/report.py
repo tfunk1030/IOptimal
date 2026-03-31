@@ -315,6 +315,16 @@ def generate_report(
         _conf = getattr(prediction_confidence, "overall", None)
         if _conf is not None:
             a(f"  Prediction confidence: {_conf:.2f}")
+
+    # In-car adjustment warning
+    _total_adjustments = (
+        getattr(measured, "brake_bias_adjustments", 0) +
+        getattr(measured, "tc_adjustments", 0)
+    )
+    if _total_adjustments > 5:
+        a(f"  ⚠ Driver made {_total_adjustments} in-car adjustments — telemetry reflects "
+          "mixed setup configurations (reduced authority)")
+
     a("")
 
     # Driver profile (one line each)
@@ -609,6 +619,52 @@ def generate_report(
             a("")
     except Exception:
         pass
+
+    # ── ESTIMATE WARNINGS ─────────────────────────────────────────────
+    estimate_warnings = []
+
+    # Check deflection model calibration
+    if hasattr(car, 'deflection') and not getattr(car.deflection, 'is_calibrated', True):
+        estimate_warnings.append(
+            "ESTIMATE: Deflection predictions use uncalibrated model — "
+            "verify garage display values manually"
+        )
+
+    # Check ride height model calibration
+    if hasattr(car, 'ride_height_model') and not getattr(car.ride_height_model, 'is_calibrated', True):
+        estimate_warnings.append(
+            "ESTIMATE: Ride height predictions use uncalibrated model"
+        )
+
+    # Check damper zeta calibration
+    if hasattr(car, 'damper') and not getattr(car.damper, 'zeta_is_calibrated', True):
+        estimate_warnings.append(
+            "ESTIMATE: Damper zeta targets are conservative defaults — "
+            "verify damper feel on track"
+        )
+
+    # Check garage output model
+    garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
+    if garage_model is None:
+        estimate_warnings.append(
+            "ESTIMATE: No garage output model — .sto display values are physics estimates only"
+        )
+
+    if estimate_warnings:
+        a(_hdr("ESTIMATE WARNINGS"))
+        for warning in estimate_warnings:
+            # Wrap long warnings at word boundaries to fit width
+            words = warning.split()
+            current_line = "  • "
+            for word in words:
+                if len(current_line) + len(word) + 1 <= W:
+                    current_line += word + " "
+                else:
+                    a(current_line.rstrip())
+                    current_line = "    " + word + " "
+            if current_line.strip():
+                a(current_line.rstrip())
+        a("")
 
     a("═" * W)
     return "\n".join(lines)

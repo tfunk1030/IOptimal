@@ -2,12 +2,15 @@
 
 Uses the production pipeline so analyzer output stays aligned with the
 candidate-family and prediction-driven solve architecture.
+
+DEPRECATED: Use 'python -m ioptimal analyze' instead.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+import warnings
 from pathlib import Path
 
 from car_model.cars import get_car
@@ -15,6 +18,13 @@ from pipeline.produce import produce_result
 
 
 def main() -> None:
+    warnings.warn(
+        "DeprecationWarning: Use 'python -m ioptimal analyze' instead of 'python -m analyzer'",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    print("⚠️  DEPRECATED: Use 'python -m ioptimal analyze' instead of 'python -m analyzer'", file=sys.stderr)
+    print("", file=sys.stderr)
     parser = argparse.ArgumentParser(
         prog="analyzer",
         description="Analyze one iRacing IBT with the production reasoning pipeline.",
