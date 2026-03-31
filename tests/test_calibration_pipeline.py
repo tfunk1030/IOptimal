@@ -254,6 +254,7 @@ class CalibrationPipelineTests(unittest.TestCase):
         parser = build_parser()
         commands = [
             ["bootstrap-schema", "--car", "ferrari", "--input-glob", "foo/*.json", "--output", "schema.json"],
+            ["create-sample-pack", "--root-dir", "raw", "--car", "ferrari", "--track", "hockenheim", "--sample-id", "sample_001", "--sample-type", "garage_static"],
             ["validate-schema", "--schema", "schema.json", "--input-glob", "foo/*.json"],
             ["ingest-samples", "--car", "ferrari", "--track", "sebring", "--raw-root", "raw", "--schema", "schema.json", "--out-root", "out"],
             ["fit-garage-model", "--car", "ferrari", "--track", "sebring", "--samples", "garage.jsonl", "--out", "garage_model.json"],

@@ -242,6 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--root-dir", required=True)
     p.add_argument("--car", required=True)
     p.add_argument("--track", required=True)
+    p.add_argument("--track-config", default="default")
     p.add_argument("--sample-id", required=True)
     p.add_argument("--sample-type", default="garage_static", choices=["garage_static", "telemetry", "validation"])
     p.set_defaults(func=cmd_create_sample_pack)
