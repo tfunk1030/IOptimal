@@ -402,7 +402,7 @@ def format_pareto(frontiers: dict[str, list[ParetoPoint]]) -> str:
 # ── 3. Setup Landscape Clusters ───────────────────────────────────
 
 @dataclass
-class SetupCluster:
+class CandidateCluster:
     """A cluster of similar setups representing a 'philosophy'."""
     cluster_id: int
     label: str  # auto-generated description
@@ -413,12 +413,16 @@ class SetupCluster:
     distinguishing_features: list[str]  # what makes this cluster unique
 
 
+# Backward-compat alias — avoids collision with learner.setup_clusters.SetupCluster
+SetupCluster = CandidateCluster
+
+
 def cluster_candidates(
     evaluations: list[CandidateEvaluation],
     space: LegalSpace,
     n_clusters: int = 4,
     top_n: int = 200,
-) -> list[SetupCluster]:
+) -> list[CandidateCluster]:
     """Group top candidates by parameter similarity using K-means.
 
     Normalizes all Tier A parameters to [0,1] range before clustering.
@@ -431,7 +435,7 @@ def cluster_candidates(
         top_n: How many top candidates to cluster.
 
     Returns:
-        List of SetupCluster objects, sorted by best_score descending.
+        List of CandidateCluster objects, sorted by best_score descending.
     """
     import numpy as np
 
@@ -442,7 +446,7 @@ def cluster_candidates(
     if len(selected) < n_clusters * 2:
         # Not enough candidates to meaningfully cluster
         if selected:
-            return [SetupCluster(
+            return [CandidateCluster(
                 cluster_id=0,
                 label="All candidates (too few to cluster)",
                 members=selected,
@@ -483,7 +487,7 @@ def cluster_candidates(
     for i, label in enumerate(labels):
         clusters_map[label].append(i)
 
-    clusters: list[SetupCluster] = []
+    clusters: list[CandidateCluster] = []
     # Compute global centroid for distinguishing features
     global_centroid = np.mean(vectors, axis=0)
 
@@ -517,7 +521,7 @@ def cluster_candidates(
         }
 
         scores = [m.score for m in members]
-        clusters.append(SetupCluster(
+        clusters.append(CandidateCluster(
             cluster_id=cid,
             label=label,
             members=members,
@@ -627,7 +631,7 @@ def _kmeans(X, k: int, max_iter: int = 50, seed: int = 42):
     return labels
 
 
-def format_clusters(clusters: list[SetupCluster]) -> str:
+def format_clusters(clusters: list[CandidateCluster]) -> str:
     """Format cluster analysis as a text report section."""
     lines: list[str] = []
     lines.append("")

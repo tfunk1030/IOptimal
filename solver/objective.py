@@ -1210,39 +1210,29 @@ class ObjectiveFunction:
         # 2026-03-26: IBT regression (73 BMW Sebring sessions) found
         # front_ls_comp is the #1 lap-time correlate (r=-0.447).
         #
-        # Zeta targets kept at original values (0.88/0.30/0.45/0.14).
-        # Although 0.88 is unreachable at legal click values, the DIRECTION
-        # is correct: higher ls_comp → higher zeta → lower penalty, and
-        # this correlates with faster laps up to clicks 8-9. The original
-        # targets accidentally act as "always want more damping" which
-        # matches the partial-r direction from IBT data.
-        #
         # IBT-calibrated optimal zeta (top-15 fastest sessions):
         #   LS front=0.68, LS rear=0.23, HS front=0.47, HS rear=0.20
-        # These are stored in PhysicsResult defaults for reference but
-        # NOT used as penalty targets — the monotonic penalty direction
-        # of the original targets is more useful than being centered at
-        # the correct value but pulling the wrong direction near the peak.
         #
-        # Future: replace zeta model with non-monotonic empirical click
-        # scoring as a separate ObjectiveBreakdown component (not inside
-        # lap_gain_ms) to properly capture the peak at clicks 8-9.
+        # Previous targets (0.88/0.30/0.45/0.14) caused damping_ms
+        # component Spearman r=+0.192 with lap time — wrong direction.
+        # Updated to IBT-calibrated values so penalty correctly rewards
+        # setups near the empirical optimum.
         # ═══════════════════════════════════════════════════════════════
 
-        # Front LS near ζ=0.88 (direction correct: more damping → faster)
-        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.88)
+        # Front LS near ζ=0.68 (IBT-calibrated)
+        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
         gain -= min(8.0, zeta_ls_front_err * 10.0)
 
-        # Rear LS near ζ=0.30 (compliant): traction compliance over kerbs
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.30)
+        # Rear LS near ζ=0.23 (IBT-calibrated): traction compliance
+        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
         gain -= min(6.0, zeta_ls_rear_err * 8.0)
 
-        # Front HS near ζ=0.45
-        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.45)
+        # Front HS near ζ=0.47 (IBT-calibrated)
+        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
         gain -= min(5.0, zeta_hs_front_err * 7.0)
 
-        # Rear HS near ζ=0.14
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.14)
+        # Rear HS near ζ=0.20 (IBT-calibrated)
+        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
         gain -= min(5.0, zeta_hs_rear_err * 7.0)
 
         # ── REBOUND : COMPRESSION RATIO (previously invisible — pinning bug) ──
@@ -1445,10 +1435,10 @@ class ObjectiveFunction:
         lltd_penalty = physics.lltd_error * 100.0 * lltd_ms_per_pct
         detail.lltd_balance_ms += min(10.0, lltd_penalty)
 
-        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.88)
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.30)
-        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.45)
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.14)
+        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
+        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
+        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
+        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
         detail.damping_ms += min(8.0, zeta_ls_front_err * 10.0)
         detail.damping_ms += min(6.0, zeta_ls_rear_err * 8.0)
         detail.damping_ms += min(5.0, zeta_hs_front_err * 7.0)

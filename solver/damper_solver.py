@@ -259,9 +259,12 @@ class DamperSolver:
         spring rate asymmetry: c_crit_rear/c_crit_front ≈ 2.5, so to
         get similar absolute LS force behavior, the ratios must diverge.
         """
+        # IBT-calibrated from top-15 fastest of 73 BMW/Sebring sessions (2026-03-26).
+        # Previous values (0.88/0.30) caused damping penalty Spearman r=+0.192
+        # with lap time — wrong direction. Updated to measured optimal zeta.
         if is_front:
-            return 0.88  # Near-critical for entry control
-        return 0.30  # Light for rear traction
+            return 0.68  # IBT-calibrated: entry control without over-damping
+        return 0.23  # IBT-calibrated: rear traction compliance
 
     def _damping_ratio_hs(self, is_front: bool) -> float:
         """HS damping ratio from bump energy analysis.
@@ -272,24 +275,21 @@ class DamperSolver:
         - The damper must absorb enough energy to prevent bottoming
           but not so much that the tyre lifts off (wheel hop)
 
-        Front HS (ζ ≈ 0.45):
+        Front HS (ζ ≈ 0.47):
             The front handles aero platform control. Moderate HS damping
             prevents pitch oscillation that would disrupt the diffuser
-            seal. The front can tolerate momentary tyre unloading because
-            the front contributes less to traction than the rear.
+            seal. IBT-calibrated from 73 BMW/Sebring sessions.
 
-        Rear HS (ζ ≈ 0.13-0.15):
-            The rear must be VERY compliant over bumps. The driven wheels
-            need continuous contact for traction. Over-damped rear HS is
-            the most dangerous mode in a GTP car — it causes the rear to
-            "skip" over bumps, losing traction unpredictably.
-
-            The compliance ratio rear/front HS (0.14/0.45 ≈ 0.31) is
-            fundamentally driven by the traction requirement asymmetry.
+        Rear HS (ζ ≈ 0.20):
+            The rear must be compliant over bumps. The driven wheels
+            need continuous contact for traction. Over-damped rear HS
+            causes the rear to "skip" over bumps, losing traction.
+            IBT-calibrated (was 0.14, increased for better traction).
         """
+        # IBT-calibrated from top-15 fastest of 73 BMW/Sebring sessions (2026-03-26).
         if is_front:
-            return 0.45  # Platform control
-        return 0.14  # Maximum compliance for traction
+            return 0.47  # IBT-calibrated: aero platform control
+        return 0.20  # IBT-calibrated: bump compliance for traction
 
     def _rbd_comp_ratio(self, is_ls: bool, is_front: bool) -> float:
         """Physics-derived rebound/compression ratio.

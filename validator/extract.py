@@ -23,7 +23,7 @@ from car_model.cars import CarModel
 
 
 @dataclass
-class MeasuredState:
+class ValidationMeasuredState:
     """All telemetry-derived quantities for solver validation.
 
     IMPORTANT: IBT ride height sensors and the aero model operate in
@@ -121,6 +121,10 @@ class MeasuredState:
     # Mean speed during the at_speed window (>150 kph, no braking)
     # Used to V^2-scale aero compression to the solver's reference speed
     mean_speed_at_speed_kph: float = 0.0
+
+
+# Backward-compat alias — avoids collision with analyzer.extract.MeasuredState
+MeasuredState = ValidationMeasuredState
 
 
 def extract_measurements(

@@ -1264,8 +1264,10 @@ BMW_M_HYBRID_V8 = CarModel(
         max_torsion_bar_defl_mm=25.0,
         torsion_bar_defl_safety_margin_mm=0.2,
         torsion_bar_rate_c=0.0008036,
-        heave_spring_defl_max_intercept_mm=96.019667,
-        heave_spring_defl_max_slope=-0.082843,
+        # Aligned to HeaveSpringModel (R²=0.985, 31 setups, March 2026).
+        # Previous values (96.02/-0.083) disagreed by ~4mm at heave=30 N/mm.
+        heave_spring_defl_max_intercept_mm=106.43,
+        heave_spring_defl_max_slope=-0.310,
         # Front RH: R²=0.896, RMSE=0.174mm (N=38, 2026-03-16)
         front_intercept=31.637911,
         front_coeff_pushrod=0.028537,
@@ -1451,6 +1453,10 @@ FERRARI_499P = CarModel(
                                     # Provides mild front DF surplus vs BMW 50.14% — consistent with
                                     # Ferrari's known tendency to run front-biased for understeer safety.
     tyre_load_sensitivity=0.25,   # Ferrari bespoke LMH compound — estimated higher sensitivity
+    # CALIBRATED: 14 IBT sessions show LLTD clustering at 0.5105 (std=0.0011).
+    # Theoretical W_front + 0.05 = 0.526 is too high — ARB stiffness model
+    # overestimates ARB contribution. Using measured value corrects LLTD targeting.
+    measured_lltd_target=0.5105,
     aero_axes_swapped=True,       # Ferrari aero map uses same axis convention as Dallara
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
@@ -1478,7 +1484,8 @@ FERRARI_499P = CarModel(
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
-        front_m_eff_kg=176.0,   # ESTIMATE — needs telemetry calibration
+        front_m_eff_kg=156.0,   # CALIBRATED: 14 IBT sessions (8 Sebring + 6 Hockenheim),
+                                # sensor-frame RH correction applied (-10%). Was 176.
         rear_m_eff_kg=2870.0,   # ESTIMATE
         # CALIBRATED from 5 IBT sessions (Mar19-Mar20): rear heave perch is
         # always negative (-101 to -112.5mm). Default of +43mm (BMW) is wrong.
@@ -1576,15 +1583,15 @@ FERRARI_499P = CarModel(
         # Force-per-click needs calibration from Ferrari telemetry
         ls_force_per_click_n=7.0,   # ESTIMATE — smaller per click (more clicks)
         hs_force_per_click_n=30.0,  # ESTIMATE
-        # From verified S1
+        # CALIBRATED: mode of 14 IBT sessions (8 Sebring + 6 Hockenheim)
         front_ls_comp_baseline=15,
         front_ls_rbd_baseline=25,
         front_hs_comp_baseline=15,
-        front_hs_rbd_baseline=6,
+        front_hs_rbd_baseline=28,   # Was 6 (extreme outlier from single S1 session)
         front_hs_slope_baseline=8,
         rear_ls_comp_baseline=18,
-        rear_ls_rbd_baseline=10,
-        rear_hs_comp_baseline=40,
+        rear_ls_rbd_baseline=34,    # Was 10 (order-of-magnitude off)
+        rear_hs_comp_baseline=32,   # Was 40 (32 is mode; 40 is high-DF extreme)
         rear_hs_rbd_baseline=40,
         rear_hs_slope_baseline=11,
     ),
