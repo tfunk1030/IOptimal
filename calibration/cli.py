@@ -13,6 +13,11 @@ from calibration.fit_ride_height_model import fit_ride_height_model
 from calibration.fit_telemetry_model import fit_telemetry_model
 from calibration.models import FittedModelArtifact
 from calibration.publish_models import publish_models
+from calibration.dataset_validation import validate_raw_dataset
+from calibration.scaffold import (
+    build_sample_pack,
+    write_schema_seed_files,
+)
 from calibration.sample_ingest import ingest_sample_tree, load_jsonl, write_jsonl
 from calibration.schema_ingest import (
     bootstrap_schema_from_rows,
@@ -34,6 +39,25 @@ def cmd_bootstrap_schema(args: argparse.Namespace) -> int:
     schema = bootstrap_schema_from_rows(car_name=args.car, row_payloads=row_payloads)
     save_schema(schema, args.output)
     print(f"Wrote schema -> {args.output}")
+    return 0
+
+
+def cmd_seed_schema_files(args: argparse.Namespace) -> int:
+    written = write_schema_seed_files(output_root=args.output_dir)
+    print(json.dumps({"written_files": [str(path) for path in written]}, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_create_sample_pack(args: argparse.Namespace) -> int:
+    target = build_sample_pack(
+        output_root=args.root_dir,
+        car=args.car,
+        track=args.track,
+        track_config=args.track_config,
+        sample_id=args.sample_id,
+        sample_type=args.sample_type,
+    )
+    print(json.dumps(target, indent=2, sort_keys=True))
     return 0
 
 
@@ -74,6 +98,14 @@ def cmd_ingest_samples(args: argparse.Namespace) -> int:
         "garage_path": str(garage_path),
         "telemetry_path": str(telemetry_path),
     }
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_validate_raw_dataset(args: argparse.Namespace) -> int:
+    report = validate_raw_dataset(args.raw_root)
+    if args.output:
+        _write_json(args.output, report)
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
@@ -202,6 +234,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", required=True)
     p.set_defaults(func=cmd_bootstrap_schema)
 
+    p = sub.add_parser("seed-schema-files")
+    p.add_argument("--output-dir", required=True)
+    p.set_defaults(func=cmd_seed_schema_files)
+
+    p = sub.add_parser("create-sample-pack")
+    p.add_argument("--root-dir", required=True)
+    p.add_argument("--car", required=True)
+    p.add_argument("--track", required=True)
+    p.add_argument("--sample-id", required=True)
+    p.add_argument("--sample-type", default="garage_static", choices=["garage_static", "telemetry", "validation"])
+    p.set_defaults(func=cmd_create_sample_pack)
+
     p = sub.add_parser("validate-schema")
     p.add_argument("--schema", required=True)
     p.add_argument("--input-glob", required=True)
@@ -215,6 +259,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--schema", required=True)
     p.add_argument("--out-root", required=True)
     p.set_defaults(func=cmd_ingest_samples)
+
+    p = sub.add_parser("validate-raw-dataset")
+    p.add_argument("--raw-root", required=True)
+    p.add_argument("--schema", required=True)
+    p.add_argument("--output")
+    p.set_defaults(func=cmd_validate_raw_dataset)
 
     p = sub.add_parser("fit-garage-model")
     p.add_argument("--car", required=True)

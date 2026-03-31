@@ -1,0 +1,2302 @@
+{
+  "car_name": "acura",
+  "display_name": "Acura ARX-06",
+  "version": 1,
+  "architecture": {
+    "front_suspension": "front_torsion_plus_heave",
+    "rear_suspension": "rear_torsion_plus_heave",
+    "damper_layout": "heave_and_roll",
+    "diff_layout": "rear_diff",
+    "aero_calc_outputs_present": false
+  },
+  "fields": [
+    {
+      "canonical_key": "brake_bias_migration",
+      "ui_label": "brake_bias_migration",
+      "raw_keys": [
+        "brake_bias_migration",
+        "BrakesDriveUnit.BrakeSpec.BrakeBiasMigration",
+        "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": {
+        "min": -5.0,
+        "max": 5.0,
+        "step": 1.0
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "brake_bias_migration_gain",
+      "ui_label": "brake_bias_migration_gain",
+      "raw_keys": [
+        "brake_bias_migration_gain",
+        "BrakesDriveUnit.BrakeSpec.BiasMigrationGain",
+        "CarSetup_BrakesDriveUnit_BrakeSpec_BiasMigrationGain"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "brake_bias_pct",
+      "ui_label": "brake_bias_pct",
+      "raw_keys": [
+        "brake_bias_pct",
+        "Systems.BrakeSpec.BrakePressureBias",
+        "CarSetup_Systems_BrakeSpec_BrakePressureBias"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "%",
+      "internal_unit": "%",
+      "range": {
+        "min": 40.0,
+        "max": 60.0,
+        "step": 0.25
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "brake_bias_target",
+      "ui_label": "brake_bias_target",
+      "raw_keys": [
+        "brake_bias_target",
+        "BrakesDriveUnit.BrakeSpec.BrakeBiasTarget",
+        "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": {
+        "min": -5.0,
+        "max": 5.0,
+        "step": 1.0
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "df_balance_pct",
+      "ui_label": "df_balance_pct",
+      "raw_keys": [
+        "df_balance_pct",
+        "TiresAero.AeroCalculator.DownforceBalance",
+        "CarSetup_TiresAero_AeroCalculator_DownforceBalance"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "%",
+      "internal_unit": "%",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing aero calculator"
+      ]
+    },
+    {
+      "canonical_key": "diff_clutch_plates",
+      "ui_label": "diff_clutch_plates",
+      "raw_keys": [
+        "diff_clutch_plates",
+        "BrakesDriveUnit.RearDiffSpec.ClutchFrictionPlates",
+        "CarSetup_BrakesDriveUnit_RearDiffSpec_ClutchFrictionPlates"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "diff_preload_nm",
+      "ui_label": "diff_preload_nm",
+      "raw_keys": [
+        "diff_preload_nm",
+        "BrakesDriveUnit.RearDiffSpec.Preload",
+        "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "Nm",
+      "internal_unit": "Nm",
+      "range": {
+        "min": 0.0,
+        "max": 150.0,
+        "step": 5.0
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "diff_ramp_angles",
+      "ui_label": "diff_ramp_angles",
+      "raw_keys": [
+        "diff_ramp_angles",
+        "Systems.RearDiffSpec.DiffRampAngles",
+        "CarSetup_Systems_RearDiffSpec_DiffRampAngles"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "string",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "diff_ramp_option_idx",
+      "ui_label": "diff_ramp_option_idx",
+      "raw_keys": [
+        "diff_ramp_option_idx",
+        "BrakesDriveUnit.RearDiffSpec.CoastDriveRampAngles",
+        "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "indexed_option",
+      "public_unit": "idx",
+      "internal_unit": "idx",
+      "range": {
+        "min": 0.0,
+        "max": 2.0,
+        "step": 1.0
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_arb_blade",
+      "ui_label": "front_arb_blade",
+      "raw_keys": [
+        "front_arb_blade",
+        "Chassis.Front.ArbBlades",
+        "CarSetup_Chassis_Front_ArbBlades[0]"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 5
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_arb_size",
+      "ui_label": "front_arb_size",
+      "raw_keys": [
+        "front_arb_size",
+        "Chassis.Front.ArbSize",
+        "CarSetup_Chassis_Front_ArbSize"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "string",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_camber_deg",
+      "ui_label": "front_camber_deg",
+      "raw_keys": [
+        "front_camber_deg",
+        "Chassis.LeftFront.Camber",
+        "CarSetup_Chassis_LeftFront_Camber"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "deg",
+      "internal_unit": "deg",
+      "range": {
+        "min": -2.9,
+        "max": 0.0,
+        "step": 0.1
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_heave_perch_mm",
+      "ui_label": "front_heave_perch_mm",
+      "raw_keys": [
+        "front_heave_perch_mm",
+        "Chassis.Front.HeavePerchOffset",
+        "CarSetup_Chassis_Front_HeavePerchOffset"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_heave_spring_nmm",
+      "ui_label": "front_heave_spring_nmm",
+      "raw_keys": [
+        "front_heave_spring_nmm",
+        "Chassis.Front.HeaveSpring",
+        "CarSetup_Chassis_Front_HeaveSpring"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "N/mm",
+      "internal_unit": "N/mm",
+      "range": {
+        "min": 0.0,
+        "max": 900.0,
+        "step": 10.0
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_hs_comp",
+      "ui_label": "front_hs_comp",
+      "raw_keys": [
+        "front_hs_comp",
+        "Dampers.FrontHeave.HsCompDamping",
+        "CarSetup_Dampers_FrontHeave_HsCompDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_hs_rbd",
+      "ui_label": "front_hs_rbd",
+      "raw_keys": [
+        "front_hs_rbd",
+        "Dampers.FrontHeave.HsRbdDamping",
+        "CarSetup_Dampers_FrontHeave_HsRbdDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_hs_slope",
+      "ui_label": "front_hs_slope",
+      "raw_keys": [
+        "front_hs_slope",
+        "Dampers.FrontHeave.HsCompDampSlope",
+        "CarSetup_Dampers_FrontHeave_HsCompDampSlope"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_ls_comp",
+      "ui_label": "front_ls_comp",
+      "raw_keys": [
+        "front_ls_comp",
+        "Dampers.FrontHeave.LsCompDamping",
+        "CarSetup_Dampers_FrontHeave_LsCompDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_ls_rbd",
+      "ui_label": "front_ls_rbd",
+      "raw_keys": [
+        "front_ls_rbd",
+        "Dampers.FrontHeave.LsRbdDamping",
+        "CarSetup_Dampers_FrontHeave_LsRbdDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_master_cyl_mm",
+      "ui_label": "front_master_cyl_mm",
+      "raw_keys": [
+        "front_master_cyl_mm",
+        "Systems.BrakeSpec.FrontMasterCyl",
+        "CarSetup_Systems_BrakeSpec_FrontMasterCyl"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_pushrod_offset_mm",
+      "ui_label": "front_pushrod_offset_mm",
+      "raw_keys": [
+        "front_pushrod_offset_mm",
+        "Chassis.Front.PushrodLengthOffset",
+        "CarSetup_Chassis_Front_PushrodLengthOffset"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": {
+        "min": -40.0,
+        "max": 40.0,
+        "step": 0.5
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_rh_at_speed_mm",
+      "ui_label": "front_rh_at_speed_mm",
+      "raw_keys": [
+        "front_rh_at_speed_mm",
+        "TiresAero.AeroCalculator.FrontRhAtSpeed",
+        "CarSetup_TiresAero_AeroCalculator_FrontRhAtSpeed"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing aero calculator"
+      ]
+    },
+    {
+      "canonical_key": "front_roll_hs",
+      "ui_label": "front_roll_hs",
+      "raw_keys": [
+        "front_roll_hs",
+        "Dampers.FrontRoll.HsDamping",
+        "CarSetup_Dampers_FrontRoll_HsDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_roll_ls",
+      "ui_label": "front_roll_ls",
+      "raw_keys": [
+        "front_roll_ls",
+        "Dampers.FrontRoll.LsDamping",
+        "CarSetup_Dampers_FrontRoll_LsDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_shock_defl_max_mm",
+      "ui_label": "front_shock_defl_max_mm",
+      "raw_keys": [
+        "front_shock_defl_max_mm",
+        "Chassis.LeftFront.ShockDefl",
+        "CarSetup_Chassis_LeftFront_ShockDeflMax"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "front_shock_defl_static_mm",
+      "ui_label": "front_shock_defl_static_mm",
+      "raw_keys": [
+        "front_shock_defl_static_mm",
+        "Chassis.LeftFront.ShockDefl",
+        "CarSetup_Chassis_LeftFront_ShockDeflStatic"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "front_toe_mm",
+      "ui_label": "front_toe_mm",
+      "raw_keys": [
+        "front_toe_mm",
+        "Chassis.Front.ToeIn",
+        "CarSetup_Chassis_Front_ToeIn"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": {
+        "min": -3.0,
+        "max": 3.0,
+        "step": 0.1
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "front_torsion_od_mm",
+      "ui_label": "front_torsion_od_mm",
+      "raw_keys": [
+        "front_torsion_od_mm",
+        "Chassis.LeftFront.TorsionBarOD",
+        "CarSetup_Chassis_LeftFront_TorsionBarOD"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": {
+        "min": 13.9,
+        "max": 18.2
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "fuel_l",
+      "ui_label": "fuel_l",
+      "raw_keys": [
+        "fuel_l",
+        "BrakesDriveUnit.Fuel.FuelLevel",
+        "CarSetup_BrakesDriveUnit_Fuel_FuelLevel"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "L",
+      "internal_unit": "L",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "fuel_low_warning_l",
+      "ui_label": "fuel_low_warning_l",
+      "raw_keys": [
+        "fuel_low_warning_l",
+        "BrakesDriveUnit.Fuel.FuelLowWarning",
+        "CarSetup_BrakesDriveUnit_Fuel_FuelLowWarning"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "L",
+      "internal_unit": "L",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "fuel_target_l",
+      "ui_label": "fuel_target_l",
+      "raw_keys": [
+        "fuel_target_l",
+        "BrakesDriveUnit.Fuel.FuelTarget",
+        "CarSetup_BrakesDriveUnit_Fuel_FuelTarget"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "L",
+      "internal_unit": "L",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "gear_stack",
+      "ui_label": "gear_stack",
+      "raw_keys": [
+        "gear_stack",
+        "BrakesDriveUnit.GearRatios.GearStack",
+        "CarSetup_BrakesDriveUnit_GearRatios_GearStack"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "string",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "heave_slider_defl_max_mm",
+      "ui_label": "heave_slider_defl_max_mm",
+      "raw_keys": [
+        "heave_slider_defl_max_mm",
+        "Chassis.Front.HeaveSliderDefl",
+        "CarSetup_Chassis_Front_HeaveSliderDeflMax"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "heave_slider_defl_static_mm",
+      "ui_label": "heave_slider_defl_static_mm",
+      "raw_keys": [
+        "heave_slider_defl_static_mm",
+        "Chassis.Front.HeaveSliderDefl",
+        "CarSetup_Chassis_Front_HeaveSliderDeflStatic"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "heave_spring_defl_max_mm",
+      "ui_label": "heave_spring_defl_max_mm",
+      "raw_keys": [
+        "heave_spring_defl_max_mm",
+        "Chassis.Front.HeaveSpringDefl",
+        "CarSetup_Chassis_Front_HeaveSpringDeflMax"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "heave_spring_defl_static_mm",
+      "ui_label": "heave_spring_defl_static_mm",
+      "raw_keys": [
+        "heave_spring_defl_static_mm",
+        "Chassis.Front.HeaveSpringDefl",
+        "CarSetup_Chassis_Front_HeaveSpringDeflStatic"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "hybrid_rear_drive_corner_pct",
+      "ui_label": "hybrid_rear_drive_corner_pct",
+      "raw_keys": [
+        "hybrid_rear_drive_corner_pct",
+        "BrakesDriveUnit.HybridConfig.HybridRearDriveCornerPct",
+        "CarSetup_BrakesDriveUnit_HybridConfig_HybridRearDriveCornerPct"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "%",
+      "internal_unit": "%",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "hybrid_rear_drive_enabled",
+      "ui_label": "hybrid_rear_drive_enabled",
+      "raw_keys": [
+        "hybrid_rear_drive_enabled",
+        "BrakesDriveUnit.HybridConfig.HybridRearDriveEnabled",
+        "CarSetup_BrakesDriveUnit_HybridConfig_HybridRearDriveEnabled"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "string",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "ld_ratio",
+      "ui_label": "ld_ratio",
+      "raw_keys": [
+        "ld_ratio",
+        "TiresAero.AeroCalculator.LD",
+        "CarSetup_TiresAero_AeroCalculator_LD"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing aero calculator"
+      ]
+    },
+    {
+      "canonical_key": "lf_corner_weight_n",
+      "ui_label": "lf_corner_weight_n",
+      "raw_keys": [
+        "lf_corner_weight_n",
+        "Chassis.LeftFront.CornerWeight",
+        "CarSetup_Chassis_LeftFront_CornerWeight"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "N",
+      "internal_unit": "N",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing physics"
+      ]
+    },
+    {
+      "canonical_key": "lf_ride_height_mm",
+      "ui_label": "lf_ride_height_mm",
+      "raw_keys": [
+        "lf_ride_height_mm",
+        "Chassis.LeftFront.RideHeight",
+        "CarSetup_Chassis_LeftFront_RideHeight"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing physics"
+      ]
+    },
+    {
+      "canonical_key": "lr_corner_weight_n",
+      "ui_label": "lr_corner_weight_n",
+      "raw_keys": [
+        "lr_corner_weight_n",
+        "Chassis.LeftRear.CornerWeight",
+        "CarSetup_Chassis_LeftRear_CornerWeight"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "N",
+      "internal_unit": "N",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing physics"
+      ]
+    },
+    {
+      "canonical_key": "lr_ride_height_mm",
+      "ui_label": "lr_ride_height_mm",
+      "raw_keys": [
+        "lr_ride_height_mm",
+        "Chassis.LeftRear.RideHeight",
+        "CarSetup_Chassis_LeftRear_RideHeight"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing physics"
+      ]
+    },
+    {
+      "canonical_key": "pad_compound",
+      "ui_label": "pad_compound",
+      "raw_keys": [
+        "pad_compound",
+        "Systems.BrakeSpec.PadCompound",
+        "CarSetup_Systems_BrakeSpec_PadCompound"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "string",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_arb_blade",
+      "ui_label": "rear_arb_blade",
+      "raw_keys": [
+        "rear_arb_blade",
+        "Chassis.Rear.ArbBlades",
+        "CarSetup_Chassis_Rear_ArbBlades[0]"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 5
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_arb_size",
+      "ui_label": "rear_arb_size",
+      "raw_keys": [
+        "rear_arb_size",
+        "Chassis.Rear.ArbSize",
+        "CarSetup_Chassis_Rear_ArbSize"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "string",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_camber_deg",
+      "ui_label": "rear_camber_deg",
+      "raw_keys": [
+        "rear_camber_deg",
+        "Chassis.LeftRear.Camber",
+        "CarSetup_Chassis_LeftRear_Camber"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "deg",
+      "internal_unit": "deg",
+      "range": {
+        "min": -1.9,
+        "max": 0.0,
+        "step": 0.1
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_hs_comp",
+      "ui_label": "rear_hs_comp",
+      "raw_keys": [
+        "rear_hs_comp",
+        "Dampers.RearHeave.HsCompDamping",
+        "CarSetup_Dampers_RearHeave_HsCompDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_hs_rbd",
+      "ui_label": "rear_hs_rbd",
+      "raw_keys": [
+        "rear_hs_rbd",
+        "Dampers.RearHeave.HsRbdDamping",
+        "CarSetup_Dampers_RearHeave_HsRbdDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_hs_slope",
+      "ui_label": "rear_hs_slope",
+      "raw_keys": [
+        "rear_hs_slope",
+        "Dampers.RearHeave.HsCompDampSlope",
+        "CarSetup_Dampers_RearHeave_HsCompDampSlope"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_ls_comp",
+      "ui_label": "rear_ls_comp",
+      "raw_keys": [
+        "rear_ls_comp",
+        "Dampers.RearHeave.LsCompDamping",
+        "CarSetup_Dampers_RearHeave_LsCompDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_ls_rbd",
+      "ui_label": "rear_ls_rbd",
+      "raw_keys": [
+        "rear_ls_rbd",
+        "Dampers.RearHeave.LsRbdDamping",
+        "CarSetup_Dampers_RearHeave_LsRbdDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_master_cyl_mm",
+      "ui_label": "rear_master_cyl_mm",
+      "raw_keys": [
+        "rear_master_cyl_mm",
+        "Systems.BrakeSpec.RearMasterCyl",
+        "CarSetup_Systems_BrakeSpec_RearMasterCyl"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_pushrod_offset_mm",
+      "ui_label": "rear_pushrod_offset_mm",
+      "raw_keys": [
+        "rear_pushrod_offset_mm",
+        "Chassis.Rear.PushrodLengthOffset",
+        "CarSetup_Chassis_Rear_PushrodLengthOffset"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": {
+        "min": -40.0,
+        "max": 40.0,
+        "step": 0.5
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_rh_at_speed_mm",
+      "ui_label": "rear_rh_at_speed_mm",
+      "raw_keys": [
+        "rear_rh_at_speed_mm",
+        "TiresAero.AeroCalculator.RearRhAtSpeed",
+        "CarSetup_TiresAero_AeroCalculator_RearRhAtSpeed"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing aero calculator"
+      ]
+    },
+    {
+      "canonical_key": "rear_roll_hs",
+      "ui_label": "rear_roll_hs",
+      "raw_keys": [
+        "rear_roll_hs",
+        "Dampers.RearRoll.HsDamping",
+        "CarSetup_Dampers_RearRoll_HsDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_roll_ls",
+      "ui_label": "rear_roll_ls",
+      "raw_keys": [
+        "rear_roll_ls",
+        "Dampers.RearRoll.LsDamping",
+        "CarSetup_Dampers_RearRoll_LsDamping"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_shock_defl_max_mm",
+      "ui_label": "rear_shock_defl_max_mm",
+      "raw_keys": [
+        "rear_shock_defl_max_mm",
+        "Chassis.LeftRear.ShockDefl",
+        "CarSetup_Chassis_LeftRear_ShockDeflMax"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "rear_shock_defl_static_mm",
+      "ui_label": "rear_shock_defl_static_mm",
+      "raw_keys": [
+        "rear_shock_defl_static_mm",
+        "Chassis.LeftRear.ShockDefl",
+        "CarSetup_Chassis_LeftRear_ShockDeflStatic"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "rear_spring_defl_max_mm",
+      "ui_label": "rear_spring_defl_max_mm",
+      "raw_keys": [
+        "rear_spring_defl_max_mm",
+        "Chassis.LeftRear.SpringDefl",
+        "CarSetup_Chassis_LeftRear_SpringDeflMax"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "rear_spring_defl_static_mm",
+      "ui_label": "rear_spring_defl_static_mm",
+      "raw_keys": [
+        "rear_spring_defl_static_mm",
+        "Chassis.LeftRear.SpringDefl",
+        "CarSetup_Chassis_LeftRear_SpringDeflStatic"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "rear_spring_perch_mm",
+      "ui_label": "rear_spring_perch_mm",
+      "raw_keys": [
+        "rear_spring_perch_mm",
+        "Chassis.LeftRear.SpringPerchOffset",
+        "CarSetup_Chassis_LeftRear_SpringPerchOffset"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_spring_rate_nmm",
+      "ui_label": "rear_spring_rate_nmm",
+      "raw_keys": [
+        "rear_spring_rate_nmm",
+        "Chassis.LeftRear.SpringRate",
+        "CarSetup_Chassis_LeftRear_SpringRate"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "N/mm",
+      "internal_unit": "N/mm",
+      "range": {
+        "min": 100.0,
+        "max": 300.0,
+        "step": 5.0
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_third_perch_mm",
+      "ui_label": "rear_third_perch_mm",
+      "raw_keys": [
+        "rear_third_perch_mm",
+        "Chassis.Rear.ThirdPerchOffset",
+        "CarSetup_Chassis_Rear_ThirdPerchOffset"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_third_spring_nmm",
+      "ui_label": "rear_third_spring_nmm",
+      "raw_keys": [
+        "rear_third_spring_nmm",
+        "Chassis.Rear.ThirdSpring",
+        "CarSetup_Chassis_Rear_ThirdSpring"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "N/mm",
+      "internal_unit": "N/mm",
+      "range": {
+        "min": 0.0,
+        "max": 900.0,
+        "step": 10.0
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_toe_mm",
+      "ui_label": "rear_toe_mm",
+      "raw_keys": [
+        "rear_toe_mm",
+        "Chassis.LeftRear.ToeIn",
+        "CarSetup_Chassis_LeftRear_ToeIn"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": {
+        "min": -2.0,
+        "max": 3.0,
+        "step": 0.1
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rear_torsion_od_mm",
+      "ui_label": "rear_torsion_od_mm",
+      "raw_keys": [
+        "rear_torsion_od_mm",
+        "Chassis.LeftRear.TorsionBarOD",
+        "CarSetup_Chassis_LeftRear_TorsionBarOD"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": {
+        "min": 13.9,
+        "max": 18.2,
+        "step": 0.1
+      },
+      "snap_rule": "nearest_step",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rf_corner_weight_n",
+      "ui_label": "rf_corner_weight_n",
+      "raw_keys": [
+        "rf_corner_weight_n",
+        "Chassis.RightFront.CornerWeight",
+        "CarSetup_Chassis_RightFront_CornerWeight"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "N",
+      "internal_unit": "N",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing physics"
+      ]
+    },
+    {
+      "canonical_key": "rf_ride_height_mm",
+      "ui_label": "rf_ride_height_mm",
+      "raw_keys": [
+        "rf_ride_height_mm",
+        "Chassis.RightFront.RideHeight",
+        "CarSetup_Chassis_RightFront_RideHeight"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing physics"
+      ]
+    },
+    {
+      "canonical_key": "roof_light_color",
+      "ui_label": "roof_light_color",
+      "raw_keys": [
+        "roof_light_color",
+        "BrakesDriveUnit.Lighting.RoofIdLightColor",
+        "CarSetup_BrakesDriveUnit_Lighting_RoofIdLightColor"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "context_only",
+      "value_type": "string",
+      "public_unit": "",
+      "internal_unit": "",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": true,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "rr_corner_weight_n",
+      "ui_label": "rr_corner_weight_n",
+      "raw_keys": [
+        "rr_corner_weight_n",
+        "Chassis.RightRear.CornerWeight",
+        "CarSetup_Chassis_RightRear_CornerWeight"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "N",
+      "internal_unit": "N",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing physics"
+      ]
+    },
+    {
+      "canonical_key": "rr_ride_height_mm",
+      "ui_label": "rr_ride_height_mm",
+      "raw_keys": [
+        "rr_ride_height_mm",
+        "Chassis.RightRear.RideHeight",
+        "CarSetup_Chassis_RightRear_RideHeight"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing physics"
+      ]
+    },
+    {
+      "canonical_key": "speed_in_fifth_kph",
+      "ui_label": "speed_in_fifth_kph",
+      "raw_keys": [
+        "speed_in_fifth_kph",
+        "BrakesDriveUnit.GearRatios.SpeedInFifth",
+        "CarSetup_BrakesDriveUnit_GearRatios_SpeedInFifth"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "km/h",
+      "internal_unit": "km/h",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "speed_in_first_kph",
+      "ui_label": "speed_in_first_kph",
+      "raw_keys": [
+        "speed_in_first_kph",
+        "BrakesDriveUnit.GearRatios.SpeedInFirst",
+        "CarSetup_BrakesDriveUnit_GearRatios_SpeedInFirst"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "km/h",
+      "internal_unit": "km/h",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "speed_in_fourth_kph",
+      "ui_label": "speed_in_fourth_kph",
+      "raw_keys": [
+        "speed_in_fourth_kph",
+        "BrakesDriveUnit.GearRatios.SpeedInFourth",
+        "CarSetup_BrakesDriveUnit_GearRatios_SpeedInFourth"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "km/h",
+      "internal_unit": "km/h",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "speed_in_second_kph",
+      "ui_label": "speed_in_second_kph",
+      "raw_keys": [
+        "speed_in_second_kph",
+        "BrakesDriveUnit.GearRatios.SpeedInSecond",
+        "CarSetup_BrakesDriveUnit_GearRatios_SpeedInSecond"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "km/h",
+      "internal_unit": "km/h",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "speed_in_seventh_kph",
+      "ui_label": "speed_in_seventh_kph",
+      "raw_keys": [
+        "speed_in_seventh_kph",
+        "BrakesDriveUnit.GearRatios.SpeedInSeventh",
+        "CarSetup_BrakesDriveUnit_GearRatios_SpeedInSeventh"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "km/h",
+      "internal_unit": "km/h",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "speed_in_sixth_kph",
+      "ui_label": "speed_in_sixth_kph",
+      "raw_keys": [
+        "speed_in_sixth_kph",
+        "BrakesDriveUnit.GearRatios.SpeedInSixth",
+        "CarSetup_BrakesDriveUnit_GearRatios_SpeedInSixth"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "km/h",
+      "internal_unit": "km/h",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "speed_in_third_kph",
+      "ui_label": "speed_in_third_kph",
+      "raw_keys": [
+        "speed_in_third_kph",
+        "BrakesDriveUnit.GearRatios.SpeedInThird",
+        "CarSetup_BrakesDriveUnit_GearRatios_SpeedInThird"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "km/h",
+      "internal_unit": "km/h",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "tc_gain",
+      "ui_label": "tc_gain",
+      "raw_keys": [
+        "tc_gain",
+        "BrakesDriveUnit.TractionControl.TractionControlGain",
+        "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "tc_slip",
+      "ui_label": "tc_slip",
+      "raw_keys": [
+        "tc_slip",
+        "BrakesDriveUnit.TractionControl.TractionControlSlip",
+        "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "int",
+      "public_unit": "clicks",
+      "internal_unit": "clicks",
+      "range": {
+        "min": 1,
+        "max": 10
+      },
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    },
+    {
+      "canonical_key": "third_slider_defl_max_mm",
+      "ui_label": "third_slider_defl_max_mm",
+      "raw_keys": [
+        "third_slider_defl_max_mm",
+        "Chassis.Rear.ThirdSliderDefl",
+        "CarSetup_Chassis_Rear_ThirdSliderDeflMax"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "third_slider_defl_static_mm",
+      "ui_label": "third_slider_defl_static_mm",
+      "raw_keys": [
+        "third_slider_defl_static_mm",
+        "Chassis.Rear.ThirdSliderDefl",
+        "CarSetup_Chassis_Rear_ThirdSliderDeflStatic"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "third_spring_defl_max_mm",
+      "ui_label": "third_spring_defl_max_mm",
+      "raw_keys": [
+        "third_spring_defl_max_mm",
+        "Chassis.Rear.ThirdSpringDefl",
+        "CarSetup_Chassis_Rear_ThirdSpringDeflMax"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "third_spring_defl_static_mm",
+      "ui_label": "third_spring_defl_static_mm",
+      "raw_keys": [
+        "third_spring_defl_static_mm",
+        "Chassis.Rear.ThirdSpringDefl",
+        "CarSetup_Chassis_Rear_ThirdSpringDeflStatic"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "torsion_bar_defl_mm",
+      "ui_label": "torsion_bar_defl_mm",
+      "raw_keys": [
+        "torsion_bar_defl_mm",
+        "Chassis.LeftFront.TorsionBarDefl",
+        "CarSetup_Chassis_LeftFront_TorsionBarDefl"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "mm",
+      "internal_unit": "mm",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing deflection display"
+      ]
+    },
+    {
+      "canonical_key": "torsion_bar_turns",
+      "ui_label": "torsion_bar_turns",
+      "raw_keys": [
+        "torsion_bar_turns",
+        "Chassis.LeftFront.TorsionBarTurns",
+        "CarSetup_Chassis_LeftFront_TorsionBarTurns"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "derived_output",
+      "value_type": "float",
+      "public_unit": "turns",
+      "internal_unit": "turns",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": false,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": [
+        "iRacing display f(heave, perch, OD, front_RH)"
+      ]
+    },
+    {
+      "canonical_key": "wing_angle_deg",
+      "ui_label": "wing_angle_deg",
+      "raw_keys": [
+        "wing_angle_deg",
+        "TiresAero.AeroSettings.RearWingAngle",
+        "CarSetup_TiresAero_AeroSettings_RearWingAngle"
+      ],
+      "tab": null,
+      "section": null,
+      "location": null,
+      "field_role": "input",
+      "value_type": "float",
+      "public_unit": "deg",
+      "internal_unit": "deg",
+      "range": null,
+      "snap_rule": "none",
+      "link_group": null,
+      "link_rule": null,
+      "is_solver_relevant": true,
+      "is_runtime_context_only": false,
+      "observed_aliases": [],
+      "notes": []
+    }
+  ],
+  "warnings": [
+    "seeded_from_setup_registry_only"
+  ]
+}
