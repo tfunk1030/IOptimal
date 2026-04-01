@@ -349,9 +349,13 @@ def produce(
     saved_profile_path = None
     if track_hint:
         from track_model.profile import TrackProfile
-        _candidate = Path("data/tracks") / f"{track_hint.lower().replace(' ', '_')}.json"
-        if _candidate.exists():
-            saved_profile_path = _candidate
+        # Try both naming conventions: "{slug}.json" (legacy) and "{slug}_{config}.json" (autosave)
+        _hint_slug = track_hint.lower().replace(" ", "_")
+        for _pattern in [f"{_hint_slug}_*.json", f"{_hint_slug}.json"]:
+            _matches = sorted(Path("data/tracks").glob(_pattern))
+            if _matches:
+                saved_profile_path = _matches[0]
+                break
     if saved_profile_path:
         log(f"\nLoading saved track profile: {saved_profile_path}")
         track = TrackProfile.load(saved_profile_path)
@@ -375,6 +379,16 @@ def produce(
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
         run_trace.record_car_track(car.canonical_name, track.track_name, wing_angle=getattr(args, "wing", None))
         run_trace.record_calibration()
+
+        # Auto-save track profile for future runs (avoids rebuilding each time)
+        _track_slug = track.track_name.lower().replace(" ", "_")
+        _config_slug = (track.track_config or "default").lower().replace(" ", "_")
+        _save_path = Path("data/tracks") / f"{_track_slug}_{_config_slug}.json"
+        _save_path.parent.mkdir(parents=True, exist_ok=True)
+        # Only overwrite stubs (<2 KB) or missing files; preserve richer existing profiles
+        if not _save_path.exists() or _save_path.stat().st_size < 2000:
+            track.save(_save_path)
+            log(f"  Track profile saved: {_save_path}")
 
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")

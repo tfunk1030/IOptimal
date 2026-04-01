@@ -778,6 +778,14 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     """Fit all calibration models from accumulated data points."""
     models = CarCalibrationModels(car=car, n_sessions=len(points))
 
+    # Load the car object for index→N/mm decoding (Ferrari/Acura use indices,
+    # BMW uses physical rates). Needed for m_eff and any physics-derived fits.
+    try:
+        from car_model.cars import get_car
+        _car_obj = get_car(car)
+    except Exception:
+        _car_obj = None
+
     # Deduplicate by unique setup configuration (exclude telemetry-only differences)
     seen: set[tuple] = set()
     unique: list[CalibrationPoint] = []
@@ -850,27 +858,29 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         )
 
     # ─── 5. Heave Spring Deflection Static ───
-    # Physics: heave_defl ≈ load / k_heave, where k_heave scales with heave index
-    # and the perch offset determines how much of the corner load routes through
-    # the heave spring vs. the torsion bar.
-    # Model strategy: use polynomial/interaction terms to capture the coupled
-    # dependence on (heave_index, heave_perch, torsion_od). Pure reciprocals
-    # over-constrain the functional form with sparse data.
+    # Physics: heave_defl ≈ A/k_heave + B*perch + C/OD^4 + intercept
+    # DeflectionModel.heave_spring_defl_static() uses this reciprocal form.
+    # Features MUST match DeflectionModel semantics so that apply_to_car()
+    # can map coefficients[1:] directly to (inv_heave, perch, inv_od4).
+    # Previous polynomial fit (heave, perch, heave², perch², heave*perch, od)
+    # was semantically incompatible — its coefficients were wrongly assigned
+    # to reciprocal fields, producing incorrect deflection predictions.
     if np.std(col("heave_spring_defl_static_mm")) > 0.5:
         heave_perch = col("front_heave_perch_mm")
         torsion_od = col("front_torsion_od_mm")
-        X_poly = np.column_stack([
-            heave,                        # heave spring index (stiffness proxy)
-            heave_perch,                  # perch offset (load path)
-            heave ** 2,                   # quadratic heave curvature
-            heave_perch ** 2,             # quadratic perch curvature
-            heave * heave_perch,          # heave×perch interaction
-            torsion_od,                   # torsion OD index (corner load sharing)
+        # Convert heave settings to N/mm for indexed cars before taking reciprocal
+        heave_nmm = heave.copy()
+        if _car_obj is not None and _car_obj.heave_spring.front_setting_index_range is not None:
+            for i in range(len(heave_nmm)):
+                heave_nmm[i] = _car_obj.heave_spring.front_rate_from_setting(heave_nmm[i])
+        X_recip = np.column_stack([
+            1.0 / np.maximum(heave_nmm, 1.0),   # 1/heave_nmm — spring compliance
+            heave_perch,                          # perch offset — load path
+            1.0 / np.maximum(torsion_od ** 4, 1.0),  # 1/OD^4 — torsion bar compliance
         ])
         models.heave_spring_defl_static = _fit(
-            X_poly, col("heave_spring_defl_static_mm"),
-            ["front_heave", "front_heave_perch", "front_heave^2",
-             "front_heave_perch^2", "heave*perch", "torsion_od"],
+            X_recip, col("heave_spring_defl_static_mm"),
+            ["inv_heave_nmm", "front_heave_perch", "inv_od4"],
             "heave_spring_defl_static",
         )
 
@@ -1036,12 +1046,23 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         models.status["arb_stiffness"] = "insufficient controlled data (need sessions with same springs, different ARB)"
 
     # ─── 15. m_eff from telemetry ───
-    # m_eff = k * (sigma_mm / shock_vel_p99)^2
-    # Compute per-session and average
+    # m_eff = k_nmm * (sigma_mm / shock_vel_p99)^2
+    # For indexed cars (Ferrari/Acura), decode setting→N/mm via the car's
+    # HeaveSpringModel. Skip if decoder is unvalidated to avoid garbage m_eff.
+    _heave_model = _car_obj.heave_spring if _car_obj else None
+    _front_uses_index = _heave_model is not None and _heave_model.front_setting_index_range is not None
+    _front_index_unvalidated = _heave_model is not None and getattr(_heave_model, "heave_index_unvalidated", False)
     m_effs_front = []
     for pt in unique:
         if pt.front_shock_vel_p99_mps > 0.01 and pt.front_sigma_mm > 0.1 and pt.front_heave_setting > 0:
-            k = pt.front_heave_setting  # N/mm for BMW; estimate for Ferrari
+            if _front_uses_index:
+                if _front_index_unvalidated:
+                    continue  # skip — index→N/mm mapping not verified for this car
+                k = _heave_model.front_rate_from_setting(pt.front_heave_setting)
+            else:
+                k = pt.front_heave_setting  # already N/mm (BMW)
+            if k <= 0:
+                continue
             m = k * (pt.front_sigma_mm / pt.front_shock_vel_p99_mps) ** 2
             if 50 < m < 3000:  # plausible range
                 m_effs_front.append((pt.front_heave_setting, m))
@@ -1060,6 +1081,27 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         else:
             models.m_eff_front_kg = float(np.mean(masses))
             models.status["m_eff"] = f"constant ({len(m_effs_front)} points, mean {models.m_eff_front_kg:.0f} kg)"
+
+    # ─── 15b. Rear m_eff from telemetry ───
+    _rear_uses_index = _heave_model is not None and _heave_model.rear_setting_index_range is not None
+    m_effs_rear = []
+    for pt in unique:
+        if pt.rear_shock_vel_p99_mps > 0.01 and pt.rear_sigma_mm > 0.1 and pt.rear_third_setting > 0:
+            if _rear_uses_index:
+                if _front_index_unvalidated:
+                    continue  # skip — index→N/mm mapping not verified
+                k = _heave_model.rear_rate_from_setting(pt.rear_third_setting)
+            else:
+                k = pt.rear_third_setting  # already N/mm (BMW)
+            if k <= 0:
+                continue
+            m = k * (pt.rear_sigma_mm / pt.rear_shock_vel_p99_mps) ** 2
+            if 100 < m < 5000:  # plausible range for rear (heavier: aero + third spring)
+                m_effs_rear.append(m)
+
+    if len(m_effs_rear) >= 3:
+        models.m_eff_rear_kg = float(np.mean(m_effs_rear))
+        models.status["m_eff_rear"] = f"constant ({len(m_effs_rear)} points, mean {models.m_eff_rear_kg:.0f} kg)"
 
     # ─── 16. Measured LLTD target ───
     lltds = []
@@ -1125,35 +1167,66 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                 defl.shock_rear_intercept = rs.coefficients[0]
                 defl.shock_rear_pushrod_coeff = rs.coefficients[1]
             hs = models.heave_spring_defl_static
+            # Reciprocal fit: [intercept, 1/heave_nmm, perch, 1/OD^4]
+            # Must have exactly 4 coefficients matching DeflectionModel semantics
             if hs and len(hs.coefficients) >= 4:
                 defl.heave_defl_intercept = hs.coefficients[0]
-                # defl.heave_defl_inv_heave_coeff = hs.coefficients[1]  # 1/heave term
-                # defl.heave_defl_perch_coeff = hs.coefficients[2]
+                defl.heave_defl_inv_heave_coeff = hs.coefficients[1]  # 1/heave_nmm
+                defl.heave_defl_perch_coeff = hs.coefficients[2]      # perch_mm
+                defl.heave_defl_inv_od4_coeff = hs.coefficients[3]    # 1/OD^4
             defl.is_calibrated = True
             applied.append(f"DeflectionModel updated from {models.n_unique_setups} IBT sessions")
         except AttributeError:
             pass
 
     # Apply RideHeightModel coefficients
+    # Map calibration feature names to RideHeightModel attribute names
+    _FRONT_RH_COEFF_MAP = {
+        "front_heave": "front_coeff_heave_nmm",
+        "front_camber": "front_coeff_camber_deg",
+    }
+    _REAR_RH_COEFF_MAP = {
+        "rear_pushrod": "rear_coeff_pushrod",
+        "rear_third": "rear_coeff_third_nmm",
+        "rear_spring": "rear_coeff_rear_spring",
+        "rear_third_perch": "rear_coeff_heave_perch",
+        "fuel": "rear_coeff_fuel_l",
+        "rear_spring_perch": "rear_coeff_spring_perch",
+    }
     if models.front_ride_height and models.rear_ride_height:
         try:
             rh = car_obj.ride_height_model
             fr = models.front_ride_height
-            if len(fr.coefficients) >= 3:
+            if len(fr.coefficients) >= 2:
                 rh.front_intercept = fr.coefficients[0]
+                # Apply mapped coefficients (coefficients[1:] match feature_names order)
+                for i, feat in enumerate(fr.feature_names):
+                    attr = _FRONT_RH_COEFF_MAP.get(feat)
+                    if attr and hasattr(rh, attr) and (i + 1) < len(fr.coefficients):
+                        setattr(rh, attr, fr.coefficients[i + 1])
             rr = models.rear_ride_height
-            if len(rr.coefficients) >= 3:
+            if len(rr.coefficients) >= 2:
                 rh.rear_intercept = rr.coefficients[0]
+                for i, feat in enumerate(rr.feature_names):
+                    attr = _REAR_RH_COEFF_MAP.get(feat)
+                    if attr and hasattr(rh, attr) and (i + 1) < len(rr.coefficients):
+                        setattr(rh, attr, rr.coefficients[i + 1])
             rh.is_calibrated = True
             applied.append(f"RideHeightModel updated (front R²={fr.r_squared:.2f}, rear R²={rr.r_squared:.2f})")
         except AttributeError:
             pass
 
-    # Apply m_eff
+    # Apply m_eff (front and rear)
     if models.m_eff_front_kg is not None:
         try:
             car_obj.heave_spring.front_m_eff_kg = models.m_eff_front_kg
             applied.append(f"m_eff_front updated: {models.m_eff_front_kg:.0f} kg")
+        except AttributeError:
+            pass
+    if models.m_eff_rear_kg is not None:
+        try:
+            car_obj.heave_spring.rear_m_eff_kg = models.m_eff_rear_kg
+            applied.append(f"m_eff_rear updated: {models.m_eff_rear_kg:.0f} kg")
         except AttributeError:
             pass
 

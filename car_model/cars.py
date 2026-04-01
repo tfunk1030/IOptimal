@@ -1092,11 +1092,22 @@ class DamperModel:
     rear_heave_baseline: dict | None = None
 
     # Damping ratio targets (ζ) — calibrated from IBT for BMW, conservative defaults otherwise
+    # LEGACY per-mode fields (kept for backward compatibility with damper solver):
     zeta_ls_comp: float = 0.55    # Conservative default for uncalibrated cars
     zeta_hs_comp: float = 0.20
     zeta_ls_rbd: float = 0.40
     zeta_hs_rbd: float = 0.18
     zeta_is_calibrated: bool = False  # True only when IBT-calibrated
+
+    # Per-axle zeta targets for objective function scoring.
+    # These are the correct targets for comparing physics.zeta_ls_front/rear
+    # and physics.zeta_hs_front/rear in the objective function.
+    # BMW values from IBT calibration (top-15 fastest sessions, 2026-03-26).
+    # Other cars use conservative defaults until IBT-calibrated.
+    zeta_target_ls_front: float = 0.55   # LS compression damping ratio, front axle
+    zeta_target_ls_rear: float = 0.40    # LS compression damping ratio, rear axle
+    zeta_target_hs_front: float = 0.20   # HS compression damping ratio, front axle
+    zeta_target_hs_rear: float = 0.18    # HS compression damping ratio, rear axle
 
     def snap_click(self, value: float, param: str) -> int:
         lo, hi = getattr(self, f"{param}_range")
@@ -1690,6 +1701,11 @@ BMW_M_HYBRID_V8 = CarModel(
         zeta_ls_rbd=0.47,
         zeta_hs_rbd=0.20,
         zeta_is_calibrated=True,
+        # Per-axle targets for objective scoring (from same IBT calibration)
+        zeta_target_ls_front=0.68,
+        zeta_target_ls_rear=0.47,
+        zeta_target_hs_front=0.23,
+        zeta_target_hs_rear=0.20,
     ),
     ride_height_model=RideHeightModel(
         # Calibrated from 31 unique BMW Sebring configs (41 sessions, March 2026).
@@ -2532,8 +2548,9 @@ def get_car(name: str, apply_calibration: bool = True) -> CarModel:
                 applied = apply_to_car(car, cal_models)
                 if applied:
                     car._auto_calibration_applied = applied
-        except Exception:
-            # Auto-calibration is optional — never fail solver startup
-            pass
+        except Exception as e:
+            # Auto-calibration is optional — never fail solver startup, but warn
+            import warnings
+            warnings.warn(f"Auto-calibration failed for {key}: {e}")
 
     return car
