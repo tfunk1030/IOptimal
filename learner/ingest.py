@@ -134,6 +134,22 @@ def ingest_ibt(
         print(f"  Assessment: {diag.assessment}")
         print(f"  Problems: {len(diag.problems)}")
 
+    # ── Auto-update garage model ─────────────────────────────────────
+    # Every IBT analysis automatically builds/updates the per-car-per-track
+    # garage model. New car = first IBT bootstraps the entire model.
+    # No manual intervention needed.
+    try:
+        from car_model.garage_model import GarageModelBuilder
+        obs_dict = obs.to_dict()
+        track_name = getattr(track, "track_name", None) or getattr(track, "name", None) or str(track)
+        GarageModelBuilder.update_from_observation(car_name.lower(), track_name, obs_dict)
+        if verbose:
+            print(f"  Garage model updated: {car_name}/{track_name}")
+    except Exception as _gm_err:
+        # Never block IBT analysis due to garage model failure
+        if verbose:
+            print(f"  [garage_model] Update skipped: {_gm_err}")
+
     # ── 3. Update index ──────────────────────────────────────────────
     idx = store.load_index()
     if session_id not in idx["sessions"]:
