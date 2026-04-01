@@ -1061,6 +1061,19 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             models.m_eff_front_kg = float(np.mean(masses))
             models.status["m_eff"] = f"constant ({len(m_effs_front)} points, mean {models.m_eff_front_kg:.0f} kg)"
 
+    # ─── 15b. Rear m_eff from telemetry ───
+    m_effs_rear = []
+    for pt in unique:
+        if pt.rear_shock_vel_p99_mps > 0.01 and pt.rear_sigma_mm > 0.1 and pt.rear_third_setting > 0:
+            k = pt.rear_third_setting  # N/mm for BMW; estimate for Ferrari indexed springs
+            m = k * (pt.rear_sigma_mm / pt.rear_shock_vel_p99_mps) ** 2
+            if 100 < m < 5000:  # plausible range for rear (heavier: aero + third spring)
+                m_effs_rear.append(m)
+
+    if len(m_effs_rear) >= 3:
+        models.m_eff_rear_kg = float(np.mean(m_effs_rear))
+        models.status["m_eff_rear"] = f"constant ({len(m_effs_rear)} points, mean {models.m_eff_rear_kg:.0f} kg)"
+
     # ─── 16. Measured LLTD target ───
     lltds = []
     for pt in unique:
@@ -1127,33 +1140,61 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             hs = models.heave_spring_defl_static
             if hs and len(hs.coefficients) >= 4:
                 defl.heave_defl_intercept = hs.coefficients[0]
-                # defl.heave_defl_inv_heave_coeff = hs.coefficients[1]  # 1/heave term
-                # defl.heave_defl_perch_coeff = hs.coefficients[2]
+                defl.heave_defl_inv_heave_coeff = hs.coefficients[1]  # 1/heave term
+                defl.heave_defl_perch_coeff = hs.coefficients[2]
             defl.is_calibrated = True
             applied.append(f"DeflectionModel updated from {models.n_unique_setups} IBT sessions")
         except AttributeError:
             pass
 
     # Apply RideHeightModel coefficients
+    # Map calibration feature names to RideHeightModel attribute names
+    _FRONT_RH_COEFF_MAP = {
+        "front_heave": "front_coeff_heave_nmm",
+        "front_camber": "front_coeff_camber_deg",
+    }
+    _REAR_RH_COEFF_MAP = {
+        "rear_pushrod": "rear_coeff_pushrod",
+        "rear_third": "rear_coeff_third_nmm",
+        "rear_spring": "rear_coeff_rear_spring",
+        "rear_third_perch": "rear_coeff_heave_perch",
+        "fuel": "rear_coeff_fuel_l",
+        "rear_spring_perch": "rear_coeff_spring_perch",
+    }
     if models.front_ride_height and models.rear_ride_height:
         try:
             rh = car_obj.ride_height_model
             fr = models.front_ride_height
-            if len(fr.coefficients) >= 3:
+            if len(fr.coefficients) >= 2:
                 rh.front_intercept = fr.coefficients[0]
+                # Apply mapped coefficients (coefficients[1:] match feature_names order)
+                for i, feat in enumerate(fr.feature_names):
+                    attr = _FRONT_RH_COEFF_MAP.get(feat)
+                    if attr and hasattr(rh, attr) and (i + 1) < len(fr.coefficients):
+                        setattr(rh, attr, fr.coefficients[i + 1])
             rr = models.rear_ride_height
-            if len(rr.coefficients) >= 3:
+            if len(rr.coefficients) >= 2:
                 rh.rear_intercept = rr.coefficients[0]
+                for i, feat in enumerate(rr.feature_names):
+                    attr = _REAR_RH_COEFF_MAP.get(feat)
+                    if attr and hasattr(rh, attr) and (i + 1) < len(rr.coefficients):
+                        setattr(rh, attr, rr.coefficients[i + 1])
             rh.is_calibrated = True
             applied.append(f"RideHeightModel updated (front R²={fr.r_squared:.2f}, rear R²={rr.r_squared:.2f})")
         except AttributeError:
             pass
 
-    # Apply m_eff
+    # Apply m_eff (front and rear)
     if models.m_eff_front_kg is not None:
         try:
             car_obj.heave_spring.front_m_eff_kg = models.m_eff_front_kg
             applied.append(f"m_eff_front updated: {models.m_eff_front_kg:.0f} kg")
+        except AttributeError:
+            pass
+    if models.m_eff_rear_kg is not None:
+        try:
+            car_obj.heave_spring.rear_m_eff_kg = models.m_eff_rear_kg
+            applied.append(f"m_eff_rear updated: {models.m_eff_rear_kg:.0f} kg")
         except AttributeError:
             pass
 

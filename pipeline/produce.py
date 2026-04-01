@@ -376,6 +376,16 @@ def produce(
         run_trace.record_car_track(car.canonical_name, track.track_name, wing_angle=getattr(args, "wing", None))
         run_trace.record_calibration()
 
+        # Auto-save track profile for future runs (avoids rebuilding each time)
+        _track_slug = track.track_name.lower().replace(" ", "_")
+        _config_slug = (track.track_config or "default").lower().replace(" ", "_")
+        _save_path = Path("data/tracks") / f"{_track_slug}_{_config_slug}.json"
+        _save_path.parent.mkdir(parents=True, exist_ok=True)
+        # Only overwrite stubs (<2 KB) or missing files; preserve richer existing profiles
+        if not _save_path.exists() or _save_path.stat().st_size < 2000:
+            track.save(_save_path)
+            log(f"  Track profile saved: {_save_path}")
+
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")
     try:

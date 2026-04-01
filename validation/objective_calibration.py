@@ -133,6 +133,10 @@ def load_observations() -> list[ObservationRow]:
             continue
         if slugify(str(payload.get("track") or "")) != "sebring_international_raceway":
             continue
+        # Exclude "dangerous" observations — critical safety issues contaminate calibration
+        assessment = (payload.get("diagnosis", {}) or {}).get("assessment", "")
+        if assessment == "dangerous":
+            continue
         perf = payload.get("performance", {}) or {}
         lap_time = perf.get("best_lap_time_s") or perf.get("lap_time_s")
         try:

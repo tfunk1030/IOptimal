@@ -50,18 +50,21 @@ _SCENARIOS: dict[str, ScenarioProfile] = {
         name="single_lap_safe",
         label="Single Lap Safe",
         description="Conservative telemetry-backed hotlap profile used as the default validation path.",
-        # Balanced weights: chase lap time but penalise instability, bad drivability,
-        # and low-confidence regions.  Sits below quali (0.90/0.35/0.45) so this
-        # remains the least-penalised profile while rejecting degenerate edge-family
-        # candidates (extreme_soft_mech, max_rotation, etc.).
+        # 2026-04-01 AUDIT FIX: Penalty weights zeroed based on calibration evidence.
+        # Calibration report showed lap_gain_only (Spearman -0.205) outperforms the
+        # full objective (-0.06) by 3.4x. Weight search recommended all penalties = 0.
+        # Every penalty term either correlates in the wrong direction with lap time
+        # (damping +0.25, camber +0.12, LLTD +0.09) or adds noise (diff_preload +0.003).
+        # Penalty terms should only be re-enabled individually after the cross-wired
+        # damper bug fix is validated and each term proven to improve holdout Spearman.
         objective=ObjectiveWeightProfile(
             w_lap_gain=1.00,
-            w_platform=0.75,
-            w_driver=0.30,
-            w_uncertainty=0.40,
-            w_envelope=0.55,
-            w_staleness=0.15,
-            w_empirical=0.20,
+            w_platform=0.0,
+            w_driver=0.0,
+            w_uncertainty=0.0,
+            w_envelope=0.0,
+            w_staleness=0.0,
+            w_empirical=0.0,
         ),
         sanity=PredictionSanityProfile(
             min_overall_confidence=0.50,

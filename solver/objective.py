@@ -385,24 +385,6 @@ class ObjectiveFunction:
         except Exception:
             self._session_db = None
 
-    def _is_bmw_sebring_track_aware_single_lap_safe(self) -> bool:
-        return bool(
-            self.track is not None
-            and self._scenario_profile.name == "single_lap_safe"
-            and self._car_slug == "bmw"
-            and self._track_slug == "sebring"
-        )
-
-    def _apply_runtime_calibration_guard(self, breakdown: ObjectiveBreakdown) -> ObjectiveBreakdown:
-        # BMW/Sebring recalibration currently shows that the track-aware
-        # single-lap runtime objective overweights raw lap-gain estimates
-        # relative to the platform/envelope penalties. Keep this guard narrow
-        # until a broader evidence-backed calibration exists.
-        if self._is_bmw_sebring_track_aware_single_lap_safe():
-            breakdown.w_lap_gain = min(breakdown.w_lap_gain, 0.25)
-            breakdown.w_envelope = min(breakdown.w_envelope, 0.40)
-        return breakdown
-
     def _new_breakdown(self) -> ObjectiveBreakdown:
         weights = self._scenario_profile.objective
         breakdown = ObjectiveBreakdown(
@@ -416,7 +398,7 @@ class ObjectiveFunction:
         )
         if self.explore:
             breakdown.w_empirical = 0.0
-        return self._apply_runtime_calibration_guard(breakdown)
+        return breakdown
 
     def _heave_calibration_uncertainty_penalty_ms(self, front_heave: float) -> float:
         cal_uncertainty = self._heave_cal.uncertainty(front_heave)
@@ -440,17 +422,12 @@ class ObjectiveFunction:
 
     def _df_balance_lap_penalty_ms(self, physics: PhysicsResult) -> float:
         ms_per_pct = 20.0
-        if self._is_bmw_sebring_track_aware_single_lap_safe():
-            ms_per_pct = 10.0
         return physics.df_balance_error_pct * ms_per_pct
 
     def _camber_lap_penalty_ms(self, front_camber: float, rear_camber: float) -> float:
-        scale = 1.0
-        if self._is_bmw_sebring_track_aware_single_lap_safe():
-            scale = 0.5
         front_penalty = min(8.0, abs(front_camber - (-3.0)) * 5.0)
         rear_penalty = min(6.0, abs(rear_camber - (-2.0)) * 4.0)
-        return scale * (front_penalty + rear_penalty)
+        return front_penalty + rear_penalty
 
     @staticmethod
     def _arb_size_label(raw: object, labels: list[str] | tuple[str, ...], baseline: str) -> str:
@@ -1236,20 +1213,22 @@ class ObjectiveFunction:
         # lap_gain_ms) to properly capture the peak at clicks 8-9.
         # ═══════════════════════════════════════════════════════════════
 
-        # Damping ratio targets from car model (BMW: IBT-calibrated, others: conservative defaults)
-        zeta_ls_front_err = abs(physics.zeta_ls_front - self.car.damper.zeta_ls_comp)
+        # Damping ratio targets from car model (per-axle targets, IBT-calibrated for BMW)
+        # FIX: Previously cross-wired — LS rear was compared to zeta_hs_comp,
+        # HS front was compared to zeta_ls_rbd. Now uses correct per-axle targets.
+        zeta_ls_front_err = abs(physics.zeta_ls_front - self.car.damper.zeta_target_ls_front)
         gain -= min(4.0, zeta_ls_front_err * 5.0)
 
         # Rear LS: traction compliance over kerbs
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - self.car.damper.zeta_hs_comp)
+        zeta_ls_rear_err = abs(physics.zeta_ls_rear - self.car.damper.zeta_target_ls_rear)
         gain -= min(3.0, zeta_ls_rear_err * 4.0)
 
         # Front HS
-        zeta_hs_front_err = abs(physics.zeta_hs_front - self.car.damper.zeta_ls_rbd)
+        zeta_hs_front_err = abs(physics.zeta_hs_front - self.car.damper.zeta_target_hs_front)
         gain -= min(2.5, zeta_hs_front_err * 3.5)
 
         # Rear HS
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - self.car.damper.zeta_hs_rbd)
+        zeta_hs_rear_err = abs(physics.zeta_hs_rear - self.car.damper.zeta_target_hs_rear)
         gain -= min(2.5, zeta_hs_rear_err * 3.5)
 
         # ── REBOUND : COMPRESSION RATIO (previously invisible — pinning bug) ──
@@ -1456,11 +1435,11 @@ class ObjectiveFunction:
         lltd_penalty = physics.lltd_error * 100.0 * lltd_ms_per_pct
         detail.lltd_balance_ms += min(10.0, lltd_penalty)
 
-        # Damping ratio targets from car model (BMW: IBT-calibrated, others: conservative defaults)
-        zeta_ls_front_err = abs(physics.zeta_ls_front - self.car.damper.zeta_ls_comp)
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - self.car.damper.zeta_hs_comp)
-        zeta_hs_front_err = abs(physics.zeta_hs_front - self.car.damper.zeta_ls_rbd)
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - self.car.damper.zeta_hs_rbd)
+        # Damping ratio targets from car model (per-axle targets, IBT-calibrated for BMW)
+        zeta_ls_front_err = abs(physics.zeta_ls_front - self.car.damper.zeta_target_ls_front)
+        zeta_ls_rear_err = abs(physics.zeta_ls_rear - self.car.damper.zeta_target_ls_rear)
+        zeta_hs_front_err = abs(physics.zeta_hs_front - self.car.damper.zeta_target_hs_front)
+        zeta_hs_rear_err = abs(physics.zeta_hs_rear - self.car.damper.zeta_target_hs_rear)
         detail.damping_ms += min(4.0, zeta_ls_front_err * 5.0)
         detail.damping_ms += min(3.0, zeta_ls_rear_err * 4.0)
         detail.damping_ms += min(2.5, zeta_hs_front_err * 3.5)
