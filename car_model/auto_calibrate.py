@@ -62,6 +62,47 @@ _MIN_SESSIONS_FOR_FIT = 5   # minimum unique-setup sessions before fitting
 _MIN_SESSIONS_FOR_SPRING_LOOKUP = 3  # sessions at different heave indices
 
 
+def _setup_key(pt) -> tuple:
+    """Canonical setup key for uniqueness detection.
+
+    Includes ALL parameters that affect static ride heights, deflections,
+    corner weights, and roll stiffness. Used consistently across fitting,
+    status, CLI, and protocol to avoid counting discrepancies.
+
+    Parameters included:
+    - Springs: front heave, rear third, front torsion OD/index, rear spring
+    - Perches: front heave perch, rear third perch, rear spring perch
+    - Geometry: front/rear pushrod, front/rear camber
+    - ARB: front/rear size (string) and blade (integer) — affect roll stiffness
+      and must be distinguished for accurate regression coverage
+    - Load: fuel level
+    """
+    return (
+        round(pt.front_heave_setting, 1),
+        round(pt.rear_third_setting, 1),
+        round(pt.front_heave_perch_mm, 1),
+        round(pt.rear_third_perch_mm, 1),
+        round(pt.front_torsion_od_mm, 3),
+        round(pt.rear_spring_setting, 1),
+        round(pt.rear_spring_perch_mm, 1),
+        round(pt.front_pushrod_mm, 1),
+        round(pt.rear_pushrod_mm, 1),
+        round(pt.front_camber_deg, 1),
+        round(pt.rear_camber_deg, 1),
+        round(pt.fuel_l, 0),
+        # ARB configuration — affects roll stiffness, LLTD, and lateral load transfer.
+        # Must be part of the fingerprint so sessions with different ARB settings
+        # (same springs/pushrods) count as distinct calibration points.
+        str(pt.front_arb_size or ""),
+        int(pt.front_arb_blade or 0),
+        str(pt.rear_arb_size or ""),
+        int(pt.rear_arb_blade or 0),
+    )
+
+# Alias for backward compatibility
+_setup_fingerprint = _setup_key
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Data structures
 # ─────────────────────────────────────────────────────────────────────────────
@@ -624,13 +665,104 @@ def build_spring_lookup_from_sto_json(
     return front_lookup, rear_lookup
 
 
+# Per-car indexed spring configuration (index → OD in mm).
+# Used for physics-based extrapolation of spring rates across all indices
+# from a single calibrated anchor point (k ∝ OD⁴ for solid torsion bars).
+_INDEXED_SPRING_OD_MAPS: dict[str, dict] = {
+    "ferrari": {
+        "front": {"index_range": (0, 18), "od_range_mm": (20.0, 24.0)},
+        "rear":  {"index_range": (0, 18), "od_range_mm": (20.0, 24.0)},  # ESTIMATE — same hardware
+    },
+    "acura": {
+        "front": {"index_range": (0, 18), "od_range_mm": (13.9, 15.86)},
+        "rear":  {"index_range": (0, 18), "od_range_mm": (13.9, 18.20)},
+    },
+}
+
+
+def _index_to_od(idx: float, index_range: tuple, od_range_mm: tuple) -> float:
+    """Linearly map a garage index to physical torsion bar OD (mm)."""
+    idx_lo, idx_hi = index_range
+    od_lo, od_hi = od_range_mm
+    if abs(idx_hi - idx_lo) < 1e-9:
+        return od_lo
+    return od_lo + (idx - idx_lo) / (idx_hi - idx_lo) * (od_hi - od_lo)
+
+
+def expand_torsion_lookup_from_physics(
+    car: str, lookup: SpringLookupTable, axle: str = "front"
+) -> SpringLookupTable:
+    """Extrapolate spring rates for all indices using k ∝ OD⁴ from anchor point(s).
+
+    Physics basis: for a solid cylindrical torsion bar, k_wheel ∝ d⁴ / L where d
+    is the bar diameter and L is the effective length. With a linear index→OD mapping
+    (as used in iRacing's garage slider), knowing ONE (index, N/mm) pair lets us
+    calibrate the constant C in k = C·OD⁴ and fill in ALL 0–18 indices.
+
+    Only fills entries that don't already have a "decrypted_sto" source.
+    Requires car to be in _INDEXED_SPRING_OD_MAPS.
+    """
+    if not lookup.entries or car not in _INDEXED_SPRING_OD_MAPS:
+        return lookup
+
+    car_map = _INDEXED_SPRING_OD_MAPS[car].get(axle)
+    if car_map is None:
+        return lookup
+
+    index_range = car_map["index_range"]
+    od_range_mm = car_map["od_range_mm"]
+
+    # Collect high-quality anchor points (STO-verified or physics-inferred)
+    anchor_od4: list[float] = []
+    anchor_k: list[float] = []
+    for e in lookup.entries:
+        if e.get("source") in ("decrypted_sto", "physics_inference"):
+            od = _index_to_od(e["setting"], index_range, od_range_mm)
+            anchor_od4.append(od ** 4)
+            anchor_k.append(e["rate_nmm"])
+
+    if not anchor_od4:
+        return lookup
+
+    # Fit C constant: k = C·OD⁴  (no intercept — physics constraint)
+    od4_arr = np.array(anchor_od4)
+    k_arr = np.array(anchor_k)
+    C = float(np.dot(od4_arr, k_arr) / np.dot(od4_arr, od4_arr))
+
+    # Generate entries for all integer indices that don't yet have STO data
+    existing_sto_settings = {e["setting"] for e in lookup.entries if e.get("source") == "decrypted_sto"}
+    idx_lo, idx_hi = int(index_range[0]), int(index_range[1])
+    added_count = 0
+    for idx in range(idx_lo, idx_hi + 1):
+        if float(idx) not in existing_sto_settings:
+            od = _index_to_od(float(idx), index_range, od_range_mm)
+            k_est = C * od ** 4
+            # Remove any stale physics_extrapolated entry at this index first
+            lookup.entries = [e for e in lookup.entries if e["setting"] != float(idx)]
+            lookup.entries.append({
+                "setting": float(idx),
+                "rate_nmm": round(k_est, 4),
+                "source": "physics_extrapolated",
+            })
+            added_count += 1
+
+    lookup.entries.sort(key=lambda e: e["setting"])
+    if added_count > 0:
+        # Update method tag — preserve "decrypted_sto" as primary if anchors exist
+        n_sto = len([e for e in lookup.entries if e.get("source") == "decrypted_sto"])
+        lookup.method = f"decrypted_sto+physics_extrapolated" if n_sto > 0 else "physics_extrapolated"
+
+    return lookup
+
+
 def interpolate_spring_rate(lookup: SpringLookupTable, setting: float) -> float | None:
     """Interpolate spring rate from lookup table. Returns None if insufficient data."""
     entries = lookup.entries
     if not entries:
         return None
     if len(entries) == 1:
-        # Only one data point: use as anchor for linear extrapolation if car model provides slope
+        # Only one data point — return that rate (no extrapolation without OD map context).
+        # Call expand_torsion_lookup_from_physics() first if richer coverage is needed.
         return entries[0]["rate_nmm"]
     # Linear interpolation/extrapolation
     settings = np.array([e["setting"] for e in entries])
@@ -650,17 +782,7 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     seen: set[tuple] = set()
     unique: list[CalibrationPoint] = []
     for pt in points:
-        key = (
-            round(pt.front_heave_setting, 1),
-            round(pt.rear_third_setting, 1),
-            round(pt.front_heave_perch_mm, 1),
-            round(pt.rear_third_perch_mm, 1),
-            round(pt.front_torsion_od_mm, 3),
-            round(pt.rear_spring_setting, 1),
-            round(pt.front_pushrod_mm, 1),
-            round(pt.rear_pushrod_mm, 1),
-            round(pt.fuel_l, 0),
-        )
+        key = _setup_fingerprint(pt)
         if key not in seen:
             seen.add(key)
             unique.append(pt)
@@ -728,15 +850,27 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         )
 
     # ─── 5. Heave Spring Deflection Static ───
+    # Physics: heave_defl ≈ load / k_heave, where k_heave scales with heave index
+    # and the perch offset determines how much of the corner load routes through
+    # the heave spring vs. the torsion bar.
+    # Model strategy: use polynomial/interaction terms to capture the coupled
+    # dependence on (heave_index, heave_perch, torsion_od). Pure reciprocals
+    # over-constrain the functional form with sparse data.
     if np.std(col("heave_spring_defl_static_mm")) > 0.5:
-        X = np.column_stack([
-            1.0 / np.maximum(heave, 1.0),
-            col("front_heave_perch_mm"),
-            1.0 / np.maximum(od4, 1.0),
+        heave_perch = col("front_heave_perch_mm")
+        torsion_od = col("front_torsion_od_mm")
+        X_poly = np.column_stack([
+            heave,                        # heave spring index (stiffness proxy)
+            heave_perch,                  # perch offset (load path)
+            heave ** 2,                   # quadratic heave curvature
+            heave_perch ** 2,             # quadratic perch curvature
+            heave * heave_perch,          # heave×perch interaction
+            torsion_od,                   # torsion OD index (corner load sharing)
         ])
         models.heave_spring_defl_static = _fit(
-            X, col("heave_spring_defl_static_mm"),
-            ["1/front_heave", "front_heave_perch", "1/OD^4"],
+            X_poly, col("heave_spring_defl_static_mm"),
+            ["front_heave", "front_heave_perch", "front_heave^2",
+             "front_heave_perch^2", "heave*perch", "torsion_od"],
             "heave_spring_defl_static",
         )
 
@@ -759,20 +893,36 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         )
 
     # ─── 8. Front Shock Deflection Static ───
+    # Shock deflection depends on pushrod (geometric), heave perch (load path
+    # through heave spring vs. corner shock), heave spring stiffness (how much
+    # heave spring carries), and torsion bar stiffness (corner load sharing).
     if np.std(col("front_shock_defl_static_mm")) > 0.5:
-        X = np.column_stack([col("front_pushrod_mm")])
+        X = np.column_stack([
+            col("front_pushrod_mm"),
+            col("front_heave_perch_mm"),
+            heave,
+            col("front_torsion_od_mm"),
+        ])
         models.front_shock_defl_static = _fit(
             X, col("front_shock_defl_static_mm"),
-            ["front_pushrod"],
+            ["front_pushrod", "front_heave_perch", "front_heave", "torsion_od"],
             "front_shock_defl_static",
         )
 
     # ─── 9. Rear Shock Deflection Static ───
+    # Rear shock deflection depends on rear pushrod (geometric), rear third perch
+    # (load path through third/heave spring vs. corner shock), and rear third
+    # spring stiffness (how much the third spring carries).
     if np.std(col("rear_shock_defl_static_mm")) > 0.5:
-        X = np.column_stack([col("rear_pushrod_mm")])
+        X = np.column_stack([
+            col("rear_pushrod_mm"),
+            col("rear_third_perch_mm"),
+            col("rear_third_setting"),
+            col("rear_spring_setting"),
+        ])
         models.rear_shock_defl_static = _fit(
             X, col("rear_shock_defl_static_mm"),
-            ["rear_pushrod"],
+            ["rear_pushrod", "rear_third_perch", "rear_third", "rear_spring"],
             "rear_shock_defl_static",
         )
 
@@ -1044,6 +1194,45 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
         except AttributeError:
             pass
 
+    # Back-calculate the C constant (k = C·OD⁴) from the calibrated front torsion
+    # lookup so that CornerSpringModel.torsion_bar_rate(od_mm) returns correct calibrated
+    # wheel rates rather than using the initial physics-derived C from cars.py.
+    #
+    # This is needed for indexed torsion bar cars (Ferrari, Acura) where cars.py
+    # stores a C constant derived from garage deflection screenshots, but the STO/telemetry
+    # calibration produces a different (more accurate) C constant. Without this update,
+    # the corner spring solver calls torsion_bar_rate(od_mm) and gets the wrong rate.
+    if (
+        models.front_torsion_lookup
+        and models.front_torsion_lookup.is_calibrated
+        and getattr(car_obj, "canonical_name", "") in _INDEXED_SPRING_OD_MAPS
+    ):
+        try:
+            car_map = _INDEXED_SPRING_OD_MAPS[car_obj.canonical_name].get("front")
+            if car_map:
+                # Use all calibrated entries (STO-verified or physics-extrapolated)
+                entries = [
+                    e for e in models.front_torsion_lookup.entries
+                    if e.get("source") in ("decrypted_sto", "physics_extrapolated")
+                ]
+                if entries:
+                    # Fit C via no-intercept least squares: k = C·OD⁴
+                    od4_arr = np.array([
+                        _index_to_od(e["setting"], car_map["index_range"], car_map["od_range_mm"]) ** 4
+                        for e in entries
+                    ])
+                    k_arr = np.array([e["rate_nmm"] for e in entries])
+                    C_calibrated = float(np.dot(od4_arr, k_arr) / np.dot(od4_arr, od4_arr))
+                    old_C = car_obj.corner_spring.front_torsion_c
+                    car_obj.corner_spring.front_torsion_c = C_calibrated
+                    applied.append(
+                        f"corner_spring.front_torsion_c updated: "
+                        f"{old_C:.7f} → {C_calibrated:.7f} "
+                        f"(from {len(entries)}-entry calibrated lookup)"
+                    )
+        except Exception:
+            pass
+
     return applied
 
 
@@ -1122,9 +1311,7 @@ def generate_protocol(car: str, verbose: bool = True) -> str:
 
     unique: set[tuple] = set()
     for pt in points:
-        key = (round(pt.front_heave_setting, 1), round(pt.front_torsion_od_mm, 3),
-               round(pt.front_pushrod_mm, 1))
-        unique.add(key)
+        unique.add(_setup_key(pt))
     n_unique = len(unique)
 
     # Assess what's calibrated
@@ -1245,15 +1432,7 @@ def calibration_status(car: str) -> dict[str, Any]:
 
     unique: set[tuple] = set()
     for pt in points:
-        key = (
-            round(pt.front_heave_setting, 1),
-            round(pt.rear_third_setting, 1),
-            round(pt.front_heave_perch_mm, 1),
-            round(pt.front_torsion_od_mm, 3),
-            round(pt.front_pushrod_mm, 1),
-            round(pt.rear_pushrod_mm, 1),
-        )
-        unique.add(key)
+        unique.add(_setup_key(pt))
 
     status: dict[str, Any] = {
         "car": car,
@@ -1444,10 +1623,12 @@ Examples:
     # Load existing calibration points
     existing_points = load_calibration_points(car)
     existing_ids = {pt.session_id for pt in existing_points}
+    existing_fingerprints = {_setup_key(pt) for pt in existing_points}
     new_points = list(existing_points)
 
     # Extract data from new IBT files
     added = 0
+    new_unique = 0
     for ibt_path in sorted(ibt_paths):
         print(f"  Processing {ibt_path.name}...", end=" ")
         pt = extract_point_from_ibt(ibt_path, car)
@@ -1460,7 +1641,13 @@ Examples:
         new_points.append(pt)
         existing_ids.add(pt.session_id)
         added += 1
-        print(f"✅ (heave={pt.front_heave_setting:.1f}, pushrod={pt.front_pushrod_mm:.1f}mm, RH={pt.static_front_rh_mm:.1f}/{pt.static_rear_rh_mm:.1f}mm)")
+        fp = _setup_key(pt)
+        is_new_unique = fp not in existing_fingerprints
+        if is_new_unique:
+            new_unique += 1
+            existing_fingerprints.add(fp)
+        unique_tag = " 🆕 NEW unique setup!" if is_new_unique else ""
+        print(f"✅ (heave={pt.front_heave_setting:.1f}, pushrod={pt.front_pushrod_mm:.1f}mm, RH={pt.static_front_rh_mm:.1f}/{pt.static_rear_rh_mm:.1f}mm){unique_tag}")
 
     if added > 0 or args.refit:
         save_calibration_points(car, new_points)
@@ -1494,37 +1681,52 @@ Examples:
                     setting_r = float(input("  Enter the rear torsion bar OD index used for that setup: ").strip())
 
                 lut_f, lut_r = build_spring_lookup_from_sto_json(car, sto_data, setting_f, setting_r)
+
+                # Auto-expand remaining indices using k ∝ OD⁴ from the STO anchor(s)
+                lut_f = expand_torsion_lookup_from_physics(car, lut_f, axle="front")
+                lut_r = expand_torsion_lookup_from_physics(car, lut_r, axle="rear")
+
                 existing_models = load_calibrated_models(car) or CarCalibrationModels(car=car)
                 existing_models.front_torsion_lookup = lut_f
                 existing_models.rear_torsion_lookup = lut_r
                 save_calibrated_models(car, existing_models)
+                n_sto_f = len([e for e in lut_f.entries if e.get("source") == "decrypted_sto"])
+                n_sto_r = len([e for e in lut_r.entries if e.get("source") == "decrypted_sto"])
                 print(f"  Updated spring lookup: front={len(lut_f.entries)} entries "
-                      f"(idx {setting_f:.0f} → {f_npm/1000:.1f} N/mm), "
+                      f"({n_sto_f} STO-verified + {len(lut_f.entries)-n_sto_f} physics-extrapolated), "
                       f"rear={len(lut_r.entries)} entries "
-                      f"(idx {setting_r:.0f} → {r_npm/1000:.1f} N/mm)")
+                      f"({n_sto_r} STO-verified + {len(lut_r.entries)-n_sto_r} physics-extrapolated)")
             else:
                 print(f"  [warn] No fSideSpringRateNpm / rSideSpringRateNpm found in JSON", file=sys.stderr)
 
-    # Fit models if enough data
+    # Fit models if enough data — use the canonical key for consistency
     unique: set[tuple] = set()
     for pt in new_points:
-        key = (round(pt.front_heave_setting, 1), round(pt.rear_third_setting, 1),
-               round(pt.front_torsion_od_mm, 3), round(pt.front_pushrod_mm, 1),
-               round(pt.rear_pushrod_mm, 1))
-        unique.add(key)
+        unique.add(_setup_key(pt))
 
     n_unique = len(unique)
     if n_unique >= _MIN_SESSIONS_FOR_FIT or args.refit:
         print(f"\n  Fitting calibration models from {n_unique} unique setups...")
         models = fit_models_from_points(car, new_points)
 
-        # Preserve existing spring lookup tables
+        # Preserve existing spring lookup tables (and expand if they only have 1 entry)
         existing_saved = load_calibrated_models(car)
         if existing_saved:
             if existing_saved.front_torsion_lookup and not models.front_torsion_lookup:
-                models.front_torsion_lookup = existing_saved.front_torsion_lookup
+                lut_f = existing_saved.front_torsion_lookup
+                # Retroactively expand single-entry lookups with k ∝ OD⁴ extrapolation
+                n_before = len(lut_f.entries)
+                lut_f = expand_torsion_lookup_from_physics(car, lut_f, axle="front")
+                if len(lut_f.entries) > n_before:
+                    print(f"  ↳ Expanded front torsion lookup: {n_before} → {len(lut_f.entries)} entries (k∝OD⁴)")
+                models.front_torsion_lookup = lut_f
             if existing_saved.rear_torsion_lookup and not models.rear_torsion_lookup:
-                models.rear_torsion_lookup = existing_saved.rear_torsion_lookup
+                lut_r = existing_saved.rear_torsion_lookup
+                n_before = len(lut_r.entries)
+                lut_r = expand_torsion_lookup_from_physics(car, lut_r, axle="rear")
+                if len(lut_r.entries) > n_before:
+                    print(f"  ↳ Expanded rear torsion lookup: {n_before} → {len(lut_r.entries)} entries (k∝OD⁴)")
+                models.rear_torsion_lookup = lut_r
 
         save_calibrated_models(car, models)
         print(f"  ✅ Models saved to {_models_path(car)}")

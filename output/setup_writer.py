@@ -788,7 +788,12 @@ def write_sto(
         _tb_turns = round(step3.front_torsion_bar_turns, 3)
     elif garage_outputs is not None:
         _tb_turns = round(garage_outputs.torsion_bar_turns, 3)
+    elif car_canonical.lower() == "ferrari":
+        # Ferrari torsion bar turns are user-settable (+-0.250, 0.125 steps).
+        # Solver outputs neutral (0.0) -- user adjusts in garage.
+        _tb_turns = 0.0
     else:
+        # BMW fallback formula (calibrated for BMW physical units only)
         _tb_turns = round(
             0.0989
             + 0.432 / max(step2.front_heave_nmm, 1)

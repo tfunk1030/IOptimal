@@ -40,6 +40,11 @@ from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 from vertical_dynamics import damped_excursion_mm, legacy_mass_to_shared_model_kg
 
+# Guard so the heave-index UNVALIDATED warning is only printed once per process,
+# regardless of how many times solve() / reconcile_solution() / solution_from_explicit_settings()
+# are called during a single pipeline run.
+_heave_index_warning_shown: bool = False
+
 
 @dataclass
 class HeaveSolution:
@@ -85,6 +90,19 @@ class HeaveSolution:
     safety_checks: list[SpringSafetyCheck] = field(default_factory=list)
     garage_constraints_ok: bool = True
     garage_constraint_notes: list[str] = field(default_factory=list)
+    parameter_search_status: dict = None
+    parameter_search_evidence: dict = None
+
+    def __post_init__(self):
+        if self.parameter_search_status is None:
+            self.parameter_search_status = {
+                "front_heave_nmm": "user_set",
+                "rear_third_nmm": "user_set",
+                "perch_offset_front_mm": "user_set",
+                "perch_offset_rear_mm": "user_set",
+            }
+        if self.parameter_search_evidence is None:
+            self.parameter_search_evidence = {}
 
     def summary(self) -> str:
         """Human-readable summary of the solution."""
@@ -1028,12 +1046,17 @@ class HeaveSolver:
         damper_force_braking = damper.front_ls_coefficient_nsm * v_braking_mps
         total_force_limit = spring_force_limit + damper_force_braking
 
-        # Validation warning for unvalidated heave spring index mappings
+        # Validation warning for unvalidated heave spring index mappings.
+        # Use a module-level flag so this prints only once per pipeline run,
+        # regardless of how many times solve() is called internally.
+        global _heave_index_warning_shown
         if getattr(hsm, 'heave_index_unvalidated', False):
             garage_constraint_notes.append(
                 "UNVALIDATED: Heave spring index-to-N/mm mapping is approximate — verify heave spring feel on track"
             )
-            print("\n⚠  UNVALIDATED: Heave spring index-to-N/mm mapping is approximate — verify heave spring feel on track\n")
+            if not _heave_index_warning_shown:
+                _heave_index_warning_shown = True
+                print("\n⚠  UNVALIDATED: Heave spring index-to-N/mm mapping is approximate — verify heave spring feel on track\n")
 
         return HeaveSolution(
             front_heave_nmm=k_front,

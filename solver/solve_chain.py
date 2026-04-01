@@ -341,12 +341,38 @@ def _finalize_result(
     )
 
 
+def _decode_ferrari_indexed_setup(car: Any, setup: Any) -> None:
+    """Decode Ferrari indexed controls on current_setup to physical values in-place.
+
+    Ferrari garage exposes heave springs as indices (0-8, 0-9) and torsion bars
+    as indices (0-18). The solver needs physical N/mm and mm values. This decoding
+    MUST happen before any solver step reads current_setup values.
+    """
+    if setup is None or getattr(car, "canonical_name", "") != "ferrari":
+        return
+    _indexed_keys = [
+        "front_heave_nmm",
+        "rear_third_nmm",
+        "front_torsion_od_mm",
+        "rear_spring_rate_nmm",
+    ]
+    for key in _indexed_keys:
+        raw = getattr(setup, key, None)
+        if raw is not None:
+            decoded = internal_solver_value(car, key, raw)
+            if decoded is not None and decoded != raw:
+                setattr(setup, key, float(decoded))
+
+
 def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any, Any, Any, float]:
     mods = _default_modifiers(inputs.modifiers)
     car = inputs.car
     track = inputs.track
     measured = inputs.measured
     fuel = inputs.fuel_load_l
+
+    # Decode Ferrari indexed controls BEFORE any solver step reads them
+    _decode_ferrari_indexed_setup(car, inputs.current_setup)
 
     rake_solver = RakeSolver(car, inputs.surface, track)
     step1 = rake_solver.solve(
@@ -508,6 +534,8 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
 
 
 def run_base_solve(inputs: SolveChainInputs) -> SolveChainResult:
+    # Decode Ferrari indexed controls early — before optimizer or sequential solver
+    _decode_ferrari_indexed_setup(inputs.car, inputs.current_setup)
     mods = _default_modifiers(inputs.modifiers)
     notes: list[str] = []
     optimized = optimize_if_supported(

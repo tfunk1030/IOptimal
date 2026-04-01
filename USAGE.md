@@ -79,6 +79,7 @@ python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --scenario-prof
 | `--scenario-profile` | No | `single_lap_safe` | Scenario objective profile: `single_lap_safe`, `quali`, `sprint`, or `race` |
 | `--sto` | No | — | Export iRacing .sto setup file to this path |
 | `--json` | No | — | Save full solver results as JSON |
+| `--bundle-dir` | No | — | Write all artifacts (.sto, .json, report, manifest) to this directory (created automatically) |
 | `--report-only` | No | off | Only print the final report (skip per-step details) |
 | `--learn` | No | off | Apply empirical corrections from the knowledge store |
 | `--auto-learn` | No | off | Ingest this session into the knowledge store after producing |
@@ -100,6 +101,9 @@ python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --scenario-prof
 
 # Concise report only
 python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --report-only
+
+# One-command bundle output (all artifacts in one directory)
+python -m pipeline.produce --car ferrari --ibt session.ibt --wing 13 --bundle-dir ./bundles/ferrari_hockenheim
 ```
 
 The pipeline prints a detailed engineering report covering: driver profile, handling diagnosis, aero analysis, each solver step, supporting parameters, selected scenario profile, decision trace, legal-manifold candidate status, and a comparison of your current setup vs the produced setup.

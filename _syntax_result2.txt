@@ -1,8 +1,0 @@
-OK: laptime_sensitivity.py
-OK: search_report.py
-OK: report.py
-OK: report.py
-OK: produce.py
-OK: solve.py
-
-All 6 files OK!

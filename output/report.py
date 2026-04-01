@@ -29,15 +29,53 @@ from car_model.setup_registry import public_output_value, remap_public_output_ke
 
 
 def _load_support_tier(car_slug: str, track_name: str) -> dict[str, Any] | None:
-    """Load support tier for a car/track pair from validation evidence."""
+    """Load support tier for a car/track pair from validation evidence.
+
+    Primary source: validation/objective_validation.json (explicit benchmark data).
+    Fallback: data/calibration/<car>/calibration_points.json + models.json
+      — synthesises a tier from session count when no benchmark entry exists.
+    """
     validation_path = Path(__file__).resolve().parent.parent / "validation" / "objective_validation.json"
-    if not validation_path.exists():
-        return None
+    if validation_path.exists():
+        try:
+            data = json.loads(validation_path.read_text())
+            for entry in data.get("support_matrix", []):
+                if (entry.get("car", "").lower() == car_slug.lower()
+                        and track_name.lower().startswith(entry.get("track", "").lower()[:10])):
+                    return entry
+        except Exception:
+            pass
+
+    # Fallback: synthesise tier from calibration data on disk.
+    # Uses the same logic as run_trace._compute_support_tier() so both displays agree.
     try:
-        data = json.loads(validation_path.read_text())
-        for entry in data.get("support_matrix", []):
-            if entry.get("car", "").lower() == car_slug.lower() and track_name.lower().startswith(entry.get("track", "").lower()[:10]):
-                return entry
+        cal_dir = Path(__file__).resolve().parent.parent / "data" / "calibration" / car_slug.lower()
+        if not cal_dir.exists():
+            return None
+        pts_file = cal_dir / "calibration_points.json"
+        session_count = 0
+        if pts_file.exists():
+            raw = json.loads(pts_file.read_text(encoding="utf-8", errors="replace"))
+            session_count = len(raw) if isinstance(raw, list) else len(raw.get("sessions", []))
+        has_models = (cal_dir / "models.json").exists()
+        if session_count == 0 and not has_models:
+            return None
+        # Map session count → confidence_tier label (mirrors run_trace thresholds)
+        if has_models and session_count >= 20:
+            tier = "calibrated"
+        elif session_count >= 5:
+            tier = "partial"
+        elif session_count >= 1:
+            tier = "exploratory"
+        else:
+            tier = "partial"  # has models.json but <1 session read
+        return {
+            "car": car_slug,
+            "track": track_name,
+            "confidence_tier": tier,
+            "samples": session_count,
+            "source": "calibration_data",
+        }
     except Exception:
         pass
     return None

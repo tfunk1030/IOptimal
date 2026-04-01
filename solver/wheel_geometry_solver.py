@@ -498,12 +498,57 @@ class WheelGeometrySolver:
                 "If outer runs hotter -> reduce negative camber by 0.2-0.3 deg."
             )
 
-        notes.extend([
-            "BMW Vision tread conditioning (Sebring): fronts +2.4°C/lap, "
-            "rears +3.2°C/lap. Full operating temp by lap 13-15 (fronts), 8-9 (rears).",
-            "For sprint qualifying: add 0.3° more negative camber + 0.2mm extra "
-            "toe-out to accelerate thermal buildup.",
-        ])
+        # Car-specific thermal conditioning notes
+        car_name = self.car.canonical_name
+        if car_name == "bmw":
+            notes.extend([
+                "BMW Vision tread conditioning (Sebring): fronts +2.4°C/lap, "
+                "rears +3.2°C/lap. Full operating temp by lap 13-15 (fronts), 8-9 (rears).",
+                "For sprint qualifying: add 0.3° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+            ])
+        elif car_name == "ferrari":
+            notes.extend([
+                "Ferrari 499P (Michelin LMH compound): target tyre temp 85-105°C. "
+                "Conditioning typically 10-14 laps from cold start.",
+                "For sprint qualifying: add 0.2° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+                "Camber range: front -2.9° to 0.0°, rear -1.9° to 0.0°. "
+                "User-settable per corner — verify values in garage before session.",
+            ])
+        elif car_name == "acura":
+            notes.extend([
+                "Acura ARX-06 (ORECA chassis): tyre conditioning similar to BMW (~10-14 laps). "
+                "Front camber strongly affects front ride height (~2.9mm RH per degree).",
+                "For sprint qualifying: add 0.2° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+            ])
+        elif car_name == "cadillac":
+            notes.extend([
+                "Cadillac V-Series.R (Dallara LMDh): tyre conditioning similar to BMW. "
+                "Target tyre temp 85-105°C.",
+                "For sprint qualifying: add 0.3° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+            ])
+        else:
+            notes.extend([
+                f"{self.car.name}: target tyre temp 85-105°C (Michelin GTP compound). "
+                f"Conditioning typically 10-15 laps from cold start.",
+                "For sprint qualifying: add 0.2-0.3° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+            ])
+
+        # Classify parameters
+        if camber_is_derived:
+            camber_status = "geometry_derived"
+        else:
+            camber_status = "solver_computed"
+        pss = {
+            "front_camber_deg": camber_status,
+            "rear_camber_deg": camber_status,
+            "front_toe_mm": "solver_computed",
+            "rear_toe_mm": "solver_computed",
+        }
 
         return WheelGeometrySolution(
             front_camber_deg=round(front_camber, 1),
@@ -526,6 +571,7 @@ class WheelGeometrySolver:
             camber_confidence=camber_confidence,
             constraints=constraints,
             notes=notes,
+            parameter_search_status=pss,
         )
 
     def solution_from_explicit_settings(
@@ -611,6 +657,12 @@ class WheelGeometrySolver:
             f"Explicit geometry materialization at representative roll {representative_roll_deg:.1f}°.",
             f"Front/rear wheel-rate context preserved: {front_wheel_rate_nmm:.1f} / {rear_wheel_rate_nmm:.1f} N/mm.",
         ]
+        pss = {
+            "front_camber_deg": "user_set",
+            "rear_camber_deg": "user_set",
+            "front_toe_mm": "user_set",
+            "rear_toe_mm": "user_set",
+        }
         return WheelGeometrySolution(
             front_camber_deg=round(front_camber, 1),
             rear_camber_deg=round(rear_camber, 1),
@@ -632,4 +684,5 @@ class WheelGeometrySolver:
             constraints=constraints,
             camber_confidence=camber_confidence,
             notes=notes,
+            parameter_search_status=pss,
         )

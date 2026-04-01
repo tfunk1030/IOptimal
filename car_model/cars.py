@@ -20,6 +20,121 @@ from car_model.garage import GarageOutputModel
 from vertical_dynamics import damped_excursion_mm
 
 
+# ─── Ferrari indexed-control lookup tables ────────────────────────────────────
+
+@dataclass
+class IndexedLookupPoint:
+    """A single calibration point mapping a garage index to a physical value.
+
+    Attributes:
+        index:          Integer garage index (0-based).
+        physical_value: Physical value at this index (e.g. N/mm for springs).
+        unit:           Unit string for display (e.g. "N/mm", "mm").
+        confidence:     Data confidence tier:
+                          "validated"  — confirmed from IBT or garage screenshot
+                          "estimated"  — derived from analytic fit (e.g. k^(1/4))
+                          "derived"    — extrapolated beyond calibration range
+        source:         Free-text description of how this point was obtained.
+    """
+    index: int
+    physical_value: float
+    unit: str
+    confidence: str       # "validated" | "estimated" | "derived"
+    source: str
+
+
+@dataclass
+class FerrariIndexedControlModel:
+    """Typed indexed-control lookup tables for the Ferrari 499P.
+
+    Ferrari 499P exposes heave springs (front 0–8, rear 0–9), front torsion
+    bar OD (0–18), and rear torsion bar OD (0–18) as integer garage indices
+    instead of physical N/mm or mm values.
+
+    This model provides the authoritative physical-value ↔ index conversion
+    for each of those four controls.  Linear interpolation is applied between
+    calibrated anchor points.
+
+    Calibration sources:
+      front_heave  — IBT session anchor: idx 1 → 50 N/mm; slope 20 N/mm/idx
+      rear_heave   — IBT session anchor: idx 2 → 530 N/mm; slope 60 N/mm/idx
+      front_torsion — 6-point garage screenshot sweep: fit k^(1/4) = 3.7829 + 0.04201×idx
+      rear_torsion  — 4-point garage screenshot sweep: fit k^(1/4) = 4.3685 + 0.03108×idx
+    """
+    front_heave: list[IndexedLookupPoint]
+    rear_heave: list[IndexedLookupPoint]
+    front_torsion: list[IndexedLookupPoint]
+    rear_torsion: list[IndexedLookupPoint]
+
+    def front_heave_rate_from_index(self, index: float) -> float:
+        """Decode front heave index → physical spring rate (N/mm)."""
+        return self._interpolate(self.front_heave, index)
+
+    def rear_heave_rate_from_index(self, index: float) -> float:
+        """Decode rear heave index → physical spring rate (N/mm)."""
+        return self._interpolate(self.rear_heave, index)
+
+    def front_torsion_rate_from_index(self, index: float) -> float:
+        """Decode front torsion index → physical wheel rate (N/mm)."""
+        return self._interpolate(self.front_torsion, index)
+
+    def rear_torsion_rate_from_index(self, index: float) -> float:
+        """Decode rear torsion index → physical bar rate (N/mm)."""
+        return self._interpolate(self.rear_torsion, index)
+
+    def front_heave_index_from_rate(self, rate_nmm: float) -> float:
+        """Encode physical front heave rate → nearest garage index."""
+        return self._inverse(self.front_heave, rate_nmm)
+
+    def rear_heave_index_from_rate(self, rate_nmm: float) -> float:
+        """Encode physical rear heave rate → nearest garage index."""
+        return self._inverse(self.rear_heave, rate_nmm)
+
+    def front_torsion_index_from_rate(self, rate_nmm: float) -> float:
+        """Encode physical front torsion wheel rate → nearest garage index."""
+        return self._inverse(self.front_torsion, rate_nmm)
+
+    def rear_torsion_index_from_rate(self, rate_nmm: float) -> float:
+        """Encode physical rear torsion bar rate → nearest garage index."""
+        return self._inverse(self.rear_torsion, rate_nmm)
+
+    def _interpolate(self, points: list[IndexedLookupPoint], index: float) -> float:
+        """Linear interpolation between calibrated anchor points."""
+        if not points:
+            return 0.0
+        sorted_pts = sorted(points, key=lambda p: p.index)
+        if index <= sorted_pts[0].index:
+            return float(sorted_pts[0].physical_value)
+        if index >= sorted_pts[-1].index:
+            return float(sorted_pts[-1].physical_value)
+        for i in range(len(sorted_pts) - 1):
+            lo, hi = sorted_pts[i], sorted_pts[i + 1]
+            if lo.index <= index <= hi.index:
+                t = (index - lo.index) / (hi.index - lo.index)
+                return float(lo.physical_value + t * (hi.physical_value - lo.physical_value))
+        return float(sorted_pts[-1].physical_value)
+
+    def _inverse(self, points: list[IndexedLookupPoint], value: float) -> float:
+        """Find nearest garage index for a target physical value (clamp to range)."""
+        if not points:
+            return 0.0
+        sorted_pts = sorted(points, key=lambda p: p.index)
+        # Clamp to extremes if outside calibrated range
+        if value <= sorted_pts[0].physical_value:
+            return float(sorted_pts[0].index)
+        if value >= sorted_pts[-1].physical_value:
+            return float(sorted_pts[-1].index)
+        # Nearest-physical-value search
+        best = sorted_pts[0]
+        best_dist = abs(best.physical_value - value)
+        for pt in sorted_pts[1:]:
+            d = abs(pt.physical_value - value)
+            if d < best_dist:
+                best_dist = d
+                best = pt
+        return float(best.index)
+
+
 @dataclass
 class AeroCompression:
     """Calibrated aero compression model for static-to-dynamic RH conversion.
@@ -1018,7 +1133,7 @@ class GarageRanges:
     front_torsion_od_discrete: list[float] = field(default_factory=list)  # discrete garage options
     rear_spring_nmm: tuple[float, float] = (100.0, 300.0)
     rear_spring_perch_mm: tuple[float, float] = (25.0, 45.0)
-    static_rh_mm: tuple[float, float] = (10.0, 80.0)
+    static_rh_mm: tuple[float, float] = (30.0, 80.0)  # GTP legal minimum 30mm both axles
     arb_blade: tuple[int, int] = (1, 5)
     damper_click: tuple[int, int] = (0, 11)  # BMW verified; Ferrari overrides
     camber_front_deg: tuple[float, float] = (-2.9, 0.0)   # iRacing GTP legal max
@@ -1254,6 +1369,11 @@ class CarModel:
 
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
+
+    # Ferrari 499P indexed-control lookup tables.
+    # Provides physical↔index conversion for heave springs and torsion bars.
+    # None for all non-Ferrari cars.
+    ferrari_indexed_controls: FerrariIndexedControlModel | None = None
 
     # Measured LLTD target from IBT data (optional per-car calibration).
     # When set, this OVERRIDES the theoretical formula (W_front + λ*0.05).
@@ -1775,6 +1895,69 @@ CADILLAC_VSERIES_R = CarModel(
 )
 
 
+# ─── Ferrari 499P indexed-control calibration data ───────────────────────────
+# Instantiated here (not inside FERRARI_499P) so it can be imported standalone.
+
+_F = "N/mm"                 # unit shorthand
+_VALIDATED = "validated"    # confidence tier: confirmed from IBT / garage screenshot
+_ESTIMATED = "estimated"    # confidence tier: derived from analytic fit
+
+FERRARI_499P_INDEXED_CONTROLS = FerrariIndexedControlModel(
+    # ── Front heave spring (indices 0–8, physical rate in N/mm) ─────────────
+    # Anchor: idx 1 → 50 N/mm (confirmed from IBT sessions Mar19/Mar20).
+    # Linear slope: 20 N/mm/idx. Range: 30–190 N/mm.
+    # heave_index_unvalidated=True — slope is ESTIMATED until full sweep run.
+    front_heave=[
+        IndexedLookupPoint(index=0, physical_value=30.0,  unit=_F, confidence=_ESTIMATED, source="extrapolated from anchor idx1=50, slope=20"),
+        IndexedLookupPoint(index=1, physical_value=50.0,  unit=_F, confidence=_VALIDATED, source="IBT sessions ferrari_hockenheim Mar19/Mar20"),
+        IndexedLookupPoint(index=2, physical_value=70.0,  unit=_F, confidence=_ESTIMATED, source="linear 20 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=3, physical_value=90.0,  unit=_F, confidence=_ESTIMATED, source="linear 20 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=4, physical_value=110.0, unit=_F, confidence=_ESTIMATED, source="linear 20 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=5, physical_value=130.0, unit=_F, confidence=_ESTIMATED, source="linear 20 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=6, physical_value=150.0, unit=_F, confidence=_ESTIMATED, source="linear 20 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=7, physical_value=170.0, unit=_F, confidence=_ESTIMATED, source="linear 20 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=8, physical_value=190.0, unit=_F, confidence=_ESTIMATED, source="linear 20 N/mm/idx from anchor"),
+    ],
+    # ── Rear heave spring (indices 0–9, physical rate in N/mm) ──────────────
+    # Anchor: idx 2 → 530 N/mm (confirmed from IBT sessions Mar19/Mar20).
+    # Linear slope: 60 N/mm/idx. heave_index_unvalidated=True.
+    rear_heave=[
+        IndexedLookupPoint(index=0, physical_value=410.0, unit=_F, confidence=_ESTIMATED, source="extrapolated from anchor idx2=530, slope=60"),
+        IndexedLookupPoint(index=1, physical_value=470.0, unit=_F, confidence=_ESTIMATED, source="linear 60 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=2, physical_value=530.0, unit=_F, confidence=_VALIDATED, source="IBT sessions ferrari_hockenheim Mar19/Mar20"),
+        IndexedLookupPoint(index=3, physical_value=590.0, unit=_F, confidence=_ESTIMATED, source="linear 60 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=4, physical_value=650.0, unit=_F, confidence=_ESTIMATED, source="linear 60 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=5, physical_value=710.0, unit=_F, confidence=_ESTIMATED, source="linear 60 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=6, physical_value=770.0, unit=_F, confidence=_ESTIMATED, source="linear 60 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=7, physical_value=830.0, unit=_F, confidence=_ESTIMATED, source="linear 60 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=8, physical_value=890.0, unit=_F, confidence=_ESTIMATED, source="linear 60 N/mm/idx from anchor"),
+        IndexedLookupPoint(index=9, physical_value=950.0, unit=_F, confidence=_ESTIMATED, source="linear 60 N/mm/idx from anchor"),
+    ],
+    # ── Front torsion bar (indices 0–18, physical wheel rate N/mm) ──────────
+    # Fit: k^(1/4) = 3.7829 + 0.04201×idx  (6-point garage sweep, max err 5.2%)
+    # Calibrated indices: 2, 5, 9, 11, 15, 18.  Others estimated from fit.
+    front_torsion=[
+        IndexedLookupPoint(index=0,  physical_value=204.7, unit=_F, confidence=_ESTIMATED, source="fit k^(1/4)=3.7829+0.04201*0"),
+        IndexedLookupPoint(index=2,  physical_value=220.6, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=12.1mm, corner_weight=2669N"),
+        IndexedLookupPoint(index=5,  physical_value=266.9, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=10.0mm, corner_weight=2669N"),
+        IndexedLookupPoint(index=9,  physical_value=296.6, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=9.0mm, corner_weight=2669N"),
+        IndexedLookupPoint(index=11, physical_value=317.7, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=8.4mm, corner_weight=2669N"),
+        IndexedLookupPoint(index=15, physical_value=360.7, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=7.4mm, corner_weight=2669N"),
+        IndexedLookupPoint(index=18, physical_value=444.8, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=6.0mm, pure-torsion anchor"),
+    ],
+    # ── Rear torsion bar (indices 0–18, physical bar rate N/mm) ─────────────
+    # Fit: k^(1/4) = 4.3685 + 0.03108×idx  (4-point garage sweep, max err 3.2%)
+    # Calibrated indices: 3, 7, 12, 18.  idx 0 estimated from fit.
+    rear_torsion=[
+        IndexedLookupPoint(index=0,  physical_value=364.2, unit=_F, confidence=_ESTIMATED, source="fit k^(1/4)=4.3685+0.03108*0"),
+        IndexedLookupPoint(index=3,  physical_value=399.7, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=7.35mm, corner_weight=2938N"),
+        IndexedLookupPoint(index=7,  physical_value=445.2, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=6.6mm, corner_weight=2938N"),
+        IndexedLookupPoint(index=12, physical_value=489.7, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=6.0mm, corner_weight=2938N"),
+        IndexedLookupPoint(index=18, physical_value=599.6, unit=_F, confidence=_VALIDATED, source="garage screenshot: torsion_defl=4.9mm, corner_weight=2938N"),
+    ],
+)
+
+
 # ─── Ferrari 499P ────────────────────────────────────────────────────────────
 # Bespoke LMH chassis. 3.0L twin-turbo V6 + 200 kW front hybrid.
 # VERY different parameter structure from Dallara:
@@ -1826,8 +2009,8 @@ FERRARI_499P = CarModel(
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
-        front_m_eff_kg=176.0,   # ESTIMATE — needs telemetry calibration
-        rear_m_eff_kg=2870.0,   # ESTIMATE
+        front_m_eff_kg=1439.3,  # CALIBRATED from 7 Ferrari IBT sessions (mean, constant model)
+        rear_m_eff_kg=2870.0,   # ESTIMATE — BMW value, needs Ferrari-specific calibration
         # CALIBRATED from 5 IBT sessions (Mar19-Mar20): rear heave perch is
         # always negative (-101 to -112.5mm). Default of +43mm (BMW) is wrong.
         # Using -103.5mm from the fastest recent session (Mar20-C, heave idx 7).
@@ -1847,6 +2030,7 @@ FERRARI_499P = CarModel(
         rear_rate_at_anchor_nmm=530.0,
         rear_rate_per_index_nmm=60.0,
         heave_index_unvalidated=True,
+        front_spring_range_nmm=(30.0, 190.0),  # idx 0 → 30 N/mm, idx 8 → 190 N/mm (validated)
     ),
     corner_spring=CornerSpringModel(
         # Ferrari uses torsion bars for BOTH front and rear (indexed 0-18)
@@ -1900,6 +2084,12 @@ FERRARI_499P = CarModel(
         front_setting_index_range=(0.0, 18.0),
         rear_setting_index_range=(0.0, 18.0),
         rear_torsion_unvalidated=True,
+        # ── REAR TORSION BAR (was missing — Bug fix 2026-03-31) ──────────
+        # Ferrari rear IS a torsion bar (not coil spring). Same C constant as front,
+        # calibrated from 4-pt garage sweep (indices 3, 7, 12, 18).
+        # k^(1/4) = 4.3685 + 0.03108×idx → C = 0.001282, OD range 23.1–26.0 mm.
+        rear_torsion_c=0.001282,                    # CALIBRATED: same C as front
+        rear_torsion_od_range_mm=(23.1, 26.0),      # CALIBRATED: from 4-pt rear fit
     ),
     arb=ARBModel(
         # Ferrari uses: Disconnected, A, B, C, D, E (6 sizes)
@@ -1931,7 +2121,7 @@ FERRARI_499P = CarModel(
         rear_roll_gain=0.48,          # ESTIMATE
         front_toe_heating_coeff=2.5,
         rear_toe_heating_coeff=1.8,
-        camber_is_derived=True,       # Ferrari camber is derived from suspension geometry — not independently settable
+        camber_is_derived=False,      # Ferrari camber IS user-settable (confirmed: varies -1.3 to -2.9 across 31 sessions)
     ),
     damper=DamperModel(
         # Ferrari damper click scale: 0-40 comp/rbd, 0-11 HS slope (BMW is 0-11 all)
@@ -1988,9 +2178,68 @@ FERRARI_499P = CarModel(
         rear_third_perch_resolution_mm=0.5,
         torsion_bar_turns_resolution=0.125,     # 1/8 turn steps
     ),
-    ride_height_model=RideHeightModel.uncalibrated(),
-    deflection=DeflectionModel.uncalibrated(),
+    ride_height_model=RideHeightModel(
+        # CALIBRATED from 22 unique Ferrari setups (data/calibration/ferrari/models.json)
+        is_calibrated=True,
+        # Front model (6 features): R²=0.696, RMSE=0.65mm
+        front_intercept=29.828,
+        front_coeff_heave_nmm=0.0405,    # mm RH per unit heave setting
+        front_coeff_camber_deg=0.864,    # mm RH per deg front camber
+        front_loo_rmse_mm=1.044,
+        # Rear model (6 features): R²=0.613, RMSE=1.28mm
+        rear_intercept=22.868,
+        rear_coeff_pushrod=0.274,        # mm RH per mm pushrod offset
+        rear_coeff_third_nmm=0.031,      # mm RH per unit rear heave setting
+        rear_coeff_rear_spring=0.152,    # mm RH per unit rear torsion setting
+        rear_coeff_heave_perch=-0.168,   # mm RH per mm rear heave perch
+        rear_coeff_fuel_l=0.031,         # mm RH per L fuel
+        rear_coeff_spring_perch=-0.091,  # mm RH per mm rear spring perch
+        rear_r_squared=0.613,
+        rear_loo_rmse_mm=4.764,
+    ),
+    deflection=DeflectionModel(
+        # CALIBRATED from 22 unique Ferrari setups (data/calibration/ferrari/models.json)
+        # Ferrari-specific models — NOT BMW coefficients.
+        is_calibrated=True,
+        # Shock deflection: front/rear from pushrod regression
+        shock_front_intercept=15.564,
+        shock_front_pushrod_coeff=0.191,    # R²=0.65
+        shock_rear_intercept=35.939,
+        shock_rear_pushrod_coeff=0.129,     # R²=0.60
+        # Torsion bar deflection: load model from heave + perch regression (R²=0.97)
+        tb_load_intercept=-91638.1,
+        tb_load_heave_coeff=17990.2,
+        tb_load_perch_coeff=-4206.3,
+        # Heave spring deflection static: quadratic model (R²=0.88)
+        heave_defl_intercept=4.288,
+        heave_defl_inv_heave_coeff=0.735,   # linear heave term
+        heave_defl_perch_coeff=0.341,       # linear perch term
+        heave_defl_inv_od4_coeff=0.0,       # not used in Ferrari model
+        # Heave slider: from heave + perch + torsion (R²=0.54)
+        slider_intercept=44.058,
+        slider_heave_coeff=0.279,
+        slider_perch_coeff=0.237,
+        slider_od_coeff=-0.837,
+        # Rear spring: force-balance from perch (R²=0.88)
+        rear_spring_eff_load=36858.5,       # rear_spring_defl_static_load model
+        rear_spring_perch_coeff=73050.2,
+        # Third spring: force-balance from perch (R²=0.90)
+        third_spring_eff_load=2282.3,       # third_spring_defl_static_load model
+        third_spring_perch_coeff=21.856,
+        # Third slider: from third spring defl (R²=0.007 — near useless)
+        third_slider_intercept=23.599,
+        third_slider_spring_defl_coeff=-0.064,
+        # Rear spring max: from spring + perch (R²=0.99)
+        rear_spring_defl_max_intercept=-2.917,
+        rear_spring_defl_max_rate_coeff=0.500,
+        rear_spring_defl_max_perch_coeff=-0.132,
+        # Third spring max: from third + perch (R²=0.76)
+        third_spring_defl_max_intercept=89.781,
+        third_spring_defl_max_rate_coeff=-0.101,
+        third_spring_defl_max_perch_coeff=0.186,
+    ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+    ferrari_indexed_controls=FERRARI_499P_INDEXED_CONTROLS,
 )
 
 

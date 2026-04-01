@@ -77,6 +77,23 @@ class DamperConstraintCheck:
 
 
 @dataclass
+class FerrariHeaveDamperSettings:
+    """Typed Ferrari heave damper settings (separate from per-corner dampers).
+
+    Ferrari 499P has dedicated heave dampers at front and rear that control
+    pitch/heave motions independently from the corner (per-wheel) dampers.
+    Click ranges: ls_comp/hs_comp/ls_rbd/hs_rbd share the 0-40 range;
+    hs_slope uses the 0-11 range (same as per-corner hs_slope).
+    """
+    ls_comp: int
+    hs_comp: int
+    ls_rbd: int
+    hs_rbd: int
+    hs_slope: int
+    hs_slope_rbd: int | None = None
+
+
+@dataclass
 class CornerDamperSettings:
     """Damper settings for one corner."""
     ls_comp: int
@@ -142,10 +159,27 @@ class DamperSolution:
     rear_roll_hs: int | None = None
 
     # Heave dampers (Ferrari architecture — separate from corner dampers)
-    front_heave_damper: dict | None = None
-    rear_heave_damper: dict | None = None
+    front_heave_damper: FerrariHeaveDamperSettings | None = None
+    rear_heave_damper: FerrariHeaveDamperSettings | None = None
 
     notes: list[str] = field(default_factory=list)
+    parameter_search_status: dict = None
+    parameter_search_evidence: dict = None
+
+    def __post_init__(self):
+        if self.parameter_search_status is None:
+            self.parameter_search_status = {
+                "lf_ls_comp": "user_set", "lf_ls_rbd": "user_set",
+                "lf_hs_comp": "user_set", "lf_hs_rbd": "user_set",
+                "rf_ls_comp": "user_set", "rf_ls_rbd": "user_set",
+                "rf_hs_comp": "user_set", "rf_hs_rbd": "user_set",
+                "lr_ls_comp": "user_set", "lr_ls_rbd": "user_set",
+                "lr_hs_comp": "user_set", "lr_hs_rbd": "user_set",
+                "rr_ls_comp": "user_set", "rr_ls_rbd": "user_set",
+                "rr_hs_comp": "user_set", "rr_hs_rbd": "user_set",
+            }
+        if self.parameter_search_evidence is None:
+            self.parameter_search_evidence = {}
 
     def summary(self) -> str:
         lines = [
@@ -738,9 +772,23 @@ class DamperSolver:
             # Heave dampers control pitch/heave motions separately from corner dampers.
             # Use car baselines for now — physics-based heave damper tuning not yet implemented.
             dm = self.car.damper
+            fhb = dm.front_heave_baseline or {}
+            rhb = dm.rear_heave_baseline or {}
             heave_damper_kwargs = dict(
-                front_heave_damper=dm.front_heave_baseline,
-                rear_heave_damper=dm.rear_heave_baseline,
+                front_heave_damper=FerrariHeaveDamperSettings(
+                    ls_comp=int(fhb.get("ls_comp", 10)),
+                    hs_comp=int(fhb.get("hs_comp", 40)),
+                    ls_rbd=int(fhb.get("ls_rbd", 5)),
+                    hs_rbd=int(fhb.get("hs_rbd", 10)),
+                    hs_slope=int(fhb.get("hs_slope", 40)),
+                ),
+                rear_heave_damper=FerrariHeaveDamperSettings(
+                    ls_comp=int(rhb.get("ls_comp", 10)),
+                    hs_comp=int(rhb.get("hs_comp", 40)),
+                    ls_rbd=int(rhb.get("ls_rbd", 5)),
+                    hs_rbd=int(rhb.get("hs_rbd", 10)),
+                    hs_slope=int(rhb.get("hs_slope", 40)),
+                ),
             )
             notes.append(
                 "Heave damper values are baselines from validated setup — "
@@ -887,5 +935,8 @@ class DamperSolver:
             front_roll_hs=base.front_roll_hs,
             rear_roll_ls=base.rear_roll_ls,
             rear_roll_hs=base.rear_roll_hs,
+            # Propagate heave damper values from base solve
+            front_heave_damper=base.front_heave_damper,
+            rear_heave_damper=base.rear_heave_damper,
             notes=notes,
         )

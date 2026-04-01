@@ -1327,12 +1327,11 @@ class ObjectiveFunction:
         # TIER 5: DIFF PRELOAD (exit traction, small effect)
         # ═══════════════════════════════════════════════════════════════
 
-        # Ferrari 499P at Sebring: fastest session (108.1s) used 0 Nm + Less Locking.
-        # E-diff + hybrid manage traction electronically; mechanical preload adds
-        # corner-entry understeer at slow hairpins (T1, T17) without traction benefit.
-        # BMW/Porsche/Cadillac may still prefer higher preload — keep 65 Nm default.
+        # Diff preload: penalty for distance from moderate baseline.
+        # All cars use 30 Nm as the neutral target — individual cars will converge
+        # to their optimal via the empirical learner, not hardcoded overrides.
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = 10.0 if self._car_slug == "ferrari" else 65.0  # Nm, calibrated Mar21 (fastest=0Nm+LessLocking)
+        diff_target = 30.0  # Nm — moderate baseline for all cars
         gain -= min(8.0, abs(diff - diff_target) * 0.12)
 
         # ═══════════════════════════════════════════════════════════════
@@ -1498,7 +1497,7 @@ class ObjectiveFunction:
         detail.camber_ms += self._camber_lap_penalty_ms(front_camber, rear_camber)
 
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = 10.0 if self._car_slug == "ferrari" else 65.0
+        diff_target = 30.0  # Nm — moderate baseline for all cars
         detail.diff_preload_ms += min(8.0, abs(diff - diff_target) * 0.12)
 
         f_arb_size_idx = self._arb_size_index(

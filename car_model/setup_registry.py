@@ -348,6 +348,9 @@ _FERRARI_SPECS.update({
     "front_torsion_od_mm":      _S("Chassis.LeftFront.TorsionBarOD",                  "CarSetup_Chassis_LeftFront_TorsionBarOD",                range_min=0.0, range_max=18.0, resolution=1.0, index_map=None),
     "rear_spring_rate_nmm":     _S("Chassis.LeftRear.TorsionBarOD",                   "CarSetup_Chassis_LeftRear_TorsionBarOD",                 range_min=0.0, range_max=18.0, resolution=1.0, index_map=None),
     "rear_spring_perch_mm":     _S("Chassis.LeftRear.SpringPerchOffset",              "",                                                       range_min=0.0, range_max=0.0, resolution=0.0),
+    # Ferrari torsion bar turns are USER-SETTABLE (+-0.250, 0.125 steps) at all 4 corners
+    "torsion_bar_turns":        _S("Chassis.LeftFront.TorsionBarTurns",              "CarSetup_Chassis_LeftFront_TorsionBarTurns",            range_min=-0.250, range_max=0.250, resolution=0.125),
+    "rear_torsion_bar_turns":   _S("Chassis.LeftRear.TorsionBarTurns",               "CarSetup_Chassis_LeftRear_TorsionBarTurns",             range_min=-0.250, range_max=0.250, resolution=0.125),
     "front_arb_size":           _S("Chassis.Front.ArbSize",                           "CarSetup_Chassis_Front_ArbSize",                         options=("Disconnected", "A", "B", "C", "D", "E"), parse_fn="string"),
     "front_arb_blade":          _S("Chassis.Front.ArbBlades",                         "CarSetup_Chassis_Front_ArbBlades[0]",                    range_min=1, range_max=5, parse_fn="int"),
     "rear_arb_size":            _S("Chassis.Rear.ArbSize",                            "CarSetup_Chassis_Rear_ArbSize",                          options=("Disconnected", "A", "B", "C", "D", "E"), parse_fn="string"),
@@ -578,15 +581,21 @@ def _ferrari_public_numeric_value(key: str, value: object) -> object:
             3,
         )
     if key in {"front_torsion_od_mm", "front_torsion_bar_index"}:
-        if gr.front_torsion_od_mm[0] <= numeric <= gr.front_torsion_od_mm[1]:
-            return round(numeric, 3)
+        # Ferrari physical OD range is 20.0–24.0 mm; garage index range is 0–18.
+        # Any value < 20.0 is already a garage index — clamp and return it.
+        # Any value >= 20.0 is a physical OD in mm and must be converted to an index.
+        if numeric < 20.0:
+            return round(max(0.0, min(18.0, numeric)), 3)
         return round(
             corner.front_setting_from_torsion_od(numeric, resolution=gr.rear_spring_resolution_nmm),
             3,
         )
     if key in {"rear_spring_rate_nmm", "rear_spring_nmm", "rear_torsion_bar_index"}:
-        if gr.rear_spring_nmm[0] <= numeric <= gr.rear_spring_nmm[1]:
-            return round(numeric, 3)
+        # Ferrari rear torsion-bar physical rates are 364–590 N/mm; garage index range is 0–18.
+        # Any value <= 18.0 is already a garage index — clamp and return it.
+        # Any value > 18.0 is a physical spring rate in N/mm and must be converted to an index.
+        if numeric <= 18.0:
+            return round(max(0.0, min(18.0, numeric)), 3)
         return round(
             corner.rear_setting_from_bar_rate(numeric, resolution=gr.rear_spring_resolution_nmm),
             3,
@@ -629,6 +638,39 @@ def internal_solver_value(car_or_name: object | str | None, key: str, value: obj
             return corner.rear_bar_rate_from_setting(numeric)
         return value
     return value
+
+
+def public_output_snapshot(car_or_name: object | str | None, payload: dict) -> dict:
+    """Return a new dict with per-car public values for heave/torsion fields.
+
+    Does NOT mutate the input payload.  Applies ``public_output_value()`` and
+    ``public_output_key()`` to every key/value pair, and suppresses keys that
+    are not exposed in the public garage interface (e.g. Ferrari
+    ``rear_spring_perch_mm``).
+
+    Suitable for generating JSON output, report sections, and any other path
+    that needs the public-facing representation of a solver step without
+    modifying the underlying solver objects.
+
+    Args:
+        car_or_name: Car object or canonical name string.
+        payload:     Dict of solver field names → values (e.g. step2.__dict__).
+
+    Returns:
+        New dict with remapped keys and converted values.
+    """
+    car_name = _car_name(car_or_name)
+    result: dict[str, object] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str):
+            result[key] = value
+            continue
+        if car_name == "ferrari" and key in _FERRARI_SUPPRESSED_PUBLIC_OUTPUT_KEYS:
+            continue
+        public_key = public_output_key(car_name, key)
+        public_value = public_output_value(car_name, key, value)
+        result[public_key] = public_value
+    return result
 
 
 def public_output_key(car_or_name: object | str | None, key: str) -> str:

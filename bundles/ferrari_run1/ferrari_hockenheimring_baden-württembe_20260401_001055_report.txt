@@ -1,0 +1,106 @@
+══════════════════════════════════════════════════════════════════════
+  Ferrari 499P  ·  Hockenheimring Baden-Württemberg — Grand Prix  ·  Wing 17.0°
+  Physics-based setup  ·  2026-04-01 00:10 UTC
+══════════════════════════════════════════════════════════════════════
+
+  Support: calibrated  ·  22 observations
+
+┌────────────────────────── SETUP TO ENTER ──────────────────────────┐
+│  PLATFORM / SPRINGS                                                │
+│  Wing                     17.0 deg                                 │
+│  Fuel load                58 L                                     │
+│  Front static RH target   30.0 mm                                  │
+│  Rear static RH target    -2.7 mm                                  │
+│  Front pushrod            -2.5 mm                                  │
+│  Rear pushrod             -29.0 mm                                 │
+│  Front heave index        5 idx                                    │
+│  Front heave perch        -10.5 mm                                 │
+│  Rear heave index         2 idx                                    │
+│  Rear heave perch         -104.0 mm                                │
+│  Front torsion bar index  0 idx                                    │
+│  Front torsion bar turns  0.100 turns                              │
+│  Rear torsion bar index   0 idx                                    │
+│  Rear torsion bar turns   0.048 turns                              │
+│                                                                    │
+│  ARBS / GEOMETRY                                                   │
+│  Front ARB size / blade   A / 1                                    │
+│  Rear ARB size / blade    A / 2                                    │
+│  Rear ARB live slow       blade 1                                  │
+│  Rear ARB live fast       blade 4                                  │
+│  Front camber             -2.9 deg                                 │
+│  Rear camber              -1.9 deg                                 │
+│  Front toe                -2.2 mm                                  │
+│  Rear toe                 +0.0 mm                                  │
+│                                                                    │
+│  BRAKES / DIFF / TC / TYRES                                        │
+│  Hybrid rear drive        enabled  corner pct: 90%                 │
+│  Brake bias               48.9%                                    │
+│  Brake bias status        telemetry_passthrough                    │
+│  Brake target / migration -0.5 / +0.0  [seeded_from_telemetry/se...│
+│  Bias migration gain      0.0                                      │
+│  Master cyl F / R         15.9/22.2 mm  [seeded_from_telemetry]    │
+│  Pad compound             Low  [seeded_from_telemetry]             │
+│  Brake hardware status    Ferrari brake bias is sourced from sta...│
+│  Diff preload             35 Nm                                    │
+│  Diff coast/drive ramp    More Locking                             │
+│  Front diff preload       5 Nm                                     │
+│  Diff clutch plates       6                                        │
+│  Diff lock coast / drive  62.2% / 27.2%                            │
+│  Diff preload / plate %   7.1% / 55.1%                             │
+│  TC gain / slip           3 / 4                                    │
+│  Tyre cold FL / FR        152 / 152 kPa                            │
+│  Tyre cold RL / RR        152 / 153 kPa                            │
+│                                                                    │
+│  DAMPERS                                                           │
+│  LF LS comp / rbd         32 / 20 clicks                           │
+│  LF HS comp / rbd / slope 15 / 22 / 11                             │
+│  RF LS comp / rbd         32 / 20 clicks                           │
+│  RF HS comp / rbd / slope 15 / 22 / 11                             │
+│  LR LS comp / rbd         17 / 20 clicks                           │
+│  LR HS comp / rbd / slope 11 / 33 / 11                             │
+│  RR LS comp / rbd         17 / 20 clicks                           │
+│  RR HS comp / rbd / slope 11 / 33 / 11                             │
+│                                                                    │
+│  TARGETS / LIMITS                                                  │
+│  DF balance               47.97% (target 51.50%)  ✗                │
+│  LLTD                     48.0% (target 47.6%)                     │
+│  Dynamic RH front / rear  19.4 / 25.3 mm                           │
+│  Heave travel margin      53.2 mm                                  │
+│  Front bottoming margin   6.4 mm                                   │
+│  Stall margin             -3.2 mm  ✗                               │
+└────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────── VALIDATION SUMMARY ────────────────────────┐
+│  DF bal: 47.97%  ✗    target 51.50%                                │
+│  Front static RH: 30.0 mm    Rear static RH: -2.7 mm               │
+│  Heave slider: 45.1 mm    Travel margin: 53.2 mm                   │
+│  Stall margin: -3.2 mm  ✗    LLTD: 48.0%                           │
+│  Brake target/mig: -0.5 / +0.0    Master cyl: 15.9/22.2 mm         │
+│  Brake semantics: bias=telemetry_passthrough  target/mig=seeded_from_telemetry/seeded_from_telemetry│
+│  Brake hardware status: Ferrari brake bias is sourced from stable live control or setup context; hardware fields remain pass-through.│
+│  Diff lock coast/drive: 62.2% / 27.2%                              │
+│  RARB live: blade 1 slow  ->  blade 4 fast                         │
+└────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════
+──────────────────────── CANDIDATE SELECTION ─────────────────────────
+  Selected family: incremental
+  Candidate score: 0.653
+
+─────────────────────── PREDICTED IMPROVEMENTS ───────────────────────
+  Prediction confidence: 0.68
+  Front travel used: 59.900 -> 43.128 % (-16.772, improves)
+  Front excursion: 18.830 -> 13.558 mm (-5.272, improves)
+  Rear RH variance: 4.886 -> 3.518 mm (-1.368, improves)
+  Braking pitch: 2.130 -> 1.564 deg (-0.566, improves)
+  Front lock p95: 0.088 -> 0.063 (-0.025, improves)
+  Rear power slip p95: unavailable (predictor did not return an estimate)
+  Body slip p95: 1.581 -> 1.562 deg (-0.019, improves)
+  Understeer low: 0.349 -> 0.322 deg (-0.027, improves)
+  Understeer high: -0.198 -> -0.328 deg (-0.130, improves)
+  Front hot pressure: 176.400 -> 177.600 kPa (+1.200, tracks target)
+  Rear hot pressure: 174.200 -> 174.350 kPa (+0.150, tracks target)
+─────────────────────────── SOLVE CONTEXT ────────────────────────────
+  Selected sequential solver path.
+  Candidate family selected: incremental (score 0.653)
+  Applied rematerialized incremental candidate result to final report/JSON/export payloads.

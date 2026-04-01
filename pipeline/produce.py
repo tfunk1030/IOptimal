@@ -622,257 +622,10 @@ def produce(
         front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
     )
 
-    if optimized is not None:
-        log("=" * 60)
-        log(f"Running BMW/Sebring constrained optimizer (target balance: {target_balance:.2f}%)...")
-        step1 = optimized.step1
-        step2 = optimized.step2
-        step3 = optimized.step3
-        step4 = optimized.step4
-        step5 = optimized.step5
-        step6 = optimized.step6
-        _apply_damper_modifiers(step6, modifiers, car)
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-    else:
-        # Step 1: Rake
-        log("=" * 60)
-        log(f"Running Step 1: Rake (target balance: {target_balance:.2f}%)...")
-        rake_solver = RakeSolver(car, surface, track)
-        step1 = rake_solver.solve(
-            target_balance=target_balance,
-            balance_tolerance=args.tolerance,
-            fuel_load_l=fuel,
-            pin_front_min=True,
-        )
-
-        # Run free optimization comparison if we're in pinned mode
-        if False:
-            try:
-                free_step1 = rake_solver.solve(
-                    target_balance=target_balance,
-                    balance_tolerance=args.tolerance,
-                    fuel_load_l=fuel,
-                    pin_front_min=False,
-                )
-                ld_delta = free_step1.ld_ratio - step1.ld_ratio
-                if ld_delta > 0.005:
-                    log(f"\n  [free-opt] Free optimization L/D: {free_step1.ld_ratio:.3f} "
-                        f"vs pinned: {step1.ld_ratio:.3f} ({ld_delta:+.3f})")
-                    log(f"  [free-opt] Free front RH: {free_step1.dynamic_front_rh_mm:.1f}mm "
-                        f"rear: {free_step1.dynamic_rear_rh_mm:.1f}mm")
-                    if ld_delta > 0.02:
-                        log("  [free-opt] ** Significant L/D gain — consider --free mode **")
-            except Exception:
-                pass  # Free opt comparison is advisory
-
-        if not args.report_only:
-            print(step1.summary())
-
-        if free_mode:
-            log(f"  [free-opt] Legal-manifold search enabled from a pinned seed ({scenario_profile_name}).")
-
-        # Advisory: compare free-mode L/D when running in pinned mode
-        if False:
-            try:
-                free_step1 = rake_solver.solve(
-                    target_balance=target_balance,
-                    balance_tolerance=args.tolerance,
-                    fuel_load_l=fuel,
-                    pin_front_min=False,
-                )
-                ld_delta = free_step1.ld_ratio - step1.ld_ratio
-                if ld_delta > 0.005:
-                    log(f"\n  [free-opt] Free optimization L/D: {free_step1.ld_ratio:.3f} "
-                        f"vs pinned: {step1.ld_ratio:.3f} ({ld_delta:+.3f})")
-                    log(f"  [free-opt] Free front RH: {free_step1.dynamic_front_rh_mm:.1f}mm "
-                        f"rear: {free_step1.dynamic_rear_rh_mm:.1f}mm")
-                    if ld_delta > 0.02:
-                        log("  [free-opt] ** Significant L/D gain — consider --free mode **")
-            except Exception:
-                pass  # Free opt comparison is advisory only
-
-        # Step 2: Heave
-        log("\nRunning Step 2: Heave / Third Springs...")
-        heave_solver = HeaveSolver(car, track)
-        step2 = heave_solver.solve(
-            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-            front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
-            front_pushrod_mm=step1.front_pushrod_offset_mm,
-            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-            fuel_load_l=fuel,
-            front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-        )
-        # Apply modifier floor constraints (check both independently)
-        needs_re_solve = (
-            (modifiers.front_heave_min_floor_nmm > 0 and step2.front_heave_nmm < modifiers.front_heave_min_floor_nmm)
-            or (modifiers.rear_third_min_floor_nmm > 0 and step2.rear_third_nmm < modifiers.rear_third_min_floor_nmm)
-        )
-        if needs_re_solve:
-            step2 = heave_solver.solve(
-                dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-                dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-                front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
-                rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
-                front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
-                front_pushrod_mm=step1.front_pushrod_offset_mm,
-                rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-                fuel_load_l=fuel,
-                front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            )
-        if not args.report_only:
-            print(step2.summary())
-
-        # Step 3: Corner Springs
-        log("\nRunning Step 3: Corner Springs...")
-        corner_solver = CornerSpringSolver(car, track)
-        step3 = corner_solver.solve(
-            front_heave_nmm=step2.front_heave_nmm,
-            rear_third_nmm=step2.rear_third_nmm,
-            fuel_load_l=fuel,
-        )
-        if not args.report_only:
-            print(step3.summary())
-
-        # Convert rear spring rate to wheel rate (MR^2) for downstream solvers
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-
-        # RH reconciliation: refine static RH with actual spring values
-        heave_solver.reconcile_solution(
-            step1,
-            step2,
-            step3,
-            fuel_load_l=fuel,
-            front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            verbose=not args.report_only,
-        )
-        reconcile_ride_heights(
-            car, step1, step2, step3,
-            fuel_load_l=fuel,
-            track_name=track.track_name,
-            verbose=not args.report_only,
-            surface=surface,
-            track=track,
-            target_balance=target_balance,
-        )
-
-        # One fixed-point refinement pass: dampers depend on heave mode, and
-        # heave sizing now accounts for damper work. Run a provisional damper
-        # solve, then re-size heave/third once against that damper state.
-        damper_solver = DamperSolver(car, track)
-        provisional_step6 = damper_solver.solve(
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-            fuel_load_l=fuel,
-            damping_ratio_scale=modifiers.damping_ratio_scale,
-            measured=measured,
-            front_heave_nmm=step2.front_heave_nmm,
-            rear_third_nmm=step2.rear_third_nmm,
-        )
-        refined_step2 = heave_solver.solve(
-            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-            front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
-            rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
-            front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
-            front_pushrod_mm=step1.front_pushrod_offset_mm,
-            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-            front_torsion_od_mm=step3.front_torsion_od_mm,
-            rear_spring_nmm=step3.rear_spring_rate_nmm,
-            rear_spring_perch_mm=step3.rear_spring_perch_mm,
-            rear_third_perch_mm=step2.perch_offset_rear_mm,
-            fuel_load_l=fuel,
-            front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            front_hs_damper_nsm=provisional_step6.c_hs_front,
-            rear_hs_damper_nsm=provisional_step6.c_hs_rear,
-        )
-        if (
-            abs(refined_step2.front_heave_nmm - step2.front_heave_nmm) > 0.05
-            or abs(refined_step2.rear_third_nmm - step2.rear_third_nmm) > 0.05
-            or abs(refined_step2.perch_offset_front_mm - step2.perch_offset_front_mm) > 0.05
-        ):
-            step2 = refined_step2
-            step3 = corner_solver.solve(
-                front_heave_nmm=step2.front_heave_nmm,
-                rear_third_nmm=step2.rear_third_nmm,
-                fuel_load_l=fuel,
-            )
-            rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-            heave_solver.reconcile_solution(
-                step1,
-                step2,
-                step3,
-                fuel_load_l=fuel,
-                front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-                front_hs_damper_nsm=provisional_step6.c_hs_front,
-                verbose=False,
-            )
-            reconcile_ride_heights(
-                car, step1, step2, step3,
-                fuel_load_l=fuel,
-                track_name=track.track_name,
-                verbose=False,
-                surface=surface,
-                track=track,
-                target_balance=target_balance,
-            )
-
-        # Step 4: ARBs (with LLTD offset)
-        log("\nRunning Step 4: Anti-Roll Bars...")
-        arb_solver = ARBSolver(car, track)
-        step4 = arb_solver.solve(
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            lltd_offset=modifiers.lltd_offset,
-            current_rear_arb_size=getattr(current_setup, "rear_arb_size", None),
-        )
-        if not args.report_only:
-            print(step4.summary())
-
-        # Step 5: Wheel Geometry
-        log("\nRunning Step 5: Wheel Geometry...")
-        geom_solver = WheelGeometrySolver(car, track)
-        step5 = geom_solver.solve(
-            k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            fuel_load_l=fuel,
-            camber_confidence=_camber_conf,
-            measured=measured,
-        )
-        if not args.report_only:
-            print(step5.summary())
-
-        reconcile_ride_heights(
-            car, step1, step2, step3,
-            step5=step5,
-            fuel_load_l=fuel,
-            track_name=track.track_name,
-            verbose=False,
-            surface=surface,
-            track=track,
-            target_balance=target_balance,
-        )
-
-        # Step 6: Dampers (with damping ratio scale and click offsets)
-        log("\nRunning Step 6: Dampers...")
-        step6 = damper_solver.solve(
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-            fuel_load_l=fuel,
-            damping_ratio_scale=modifiers.damping_ratio_scale,
-            measured=measured,
-            front_heave_nmm=step2.front_heave_nmm,
-            rear_third_nmm=step2.rear_third_nmm,
-        )
-        # Apply damper click offsets from modifiers
-        _apply_damper_modifiers(step6, modifiers, car)
-        if not args.report_only:
-            print(step6.summary())
+    # NOTE: The optimized/manual solve block was removed here (2026-03-31).
+    # Both the BMW/Sebring optimizer branch and the manual Steps 1-6 branch
+    # were dead code: run_base_solve() below always overwrites their results.
+    # All solve orchestration is now exclusively handled by run_base_solve().
 
     # ── Phase H.5: Multi-solve stint compromise (if --stint) ──
     # Load known-bad setup fingerprints from learner (if available)
@@ -1378,6 +1131,12 @@ def produce(
         except Exception as e:
             log(f"[legal-search] Skipped: {e}")
 
+    # NOTE (2026-03-31): The Ferrari in-place mutation block was removed here.
+    # garage_validator.py, setup_writer.py, and legality_engine.py each make
+    # their own deep copies and call public_output_value() internally.
+    # Mutating the shared solver step objects caused double-conversion bugs
+    # (physical → index → corrupted index on second pass).
+
     # ── Update RunTrace with final legality and notes ──
     run_trace.record_legality(legal_validation)
     for _n in solve_notes:
@@ -1422,8 +1181,6 @@ def produce(
 
         _extra_kw = {}
         if car.canonical_name == "ferrari":
-            _extra_kw["front_tb_turns"] = current_setup.torsion_bar_turns
-            _extra_kw["rear_tb_turns"] = current_setup.rear_torsion_bar_turns
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
             _extra_kw["brake_bias_target"] = supporting.brake_bias_target
@@ -1654,7 +1411,7 @@ def produce(
                 "front_excursion_mm": predicted_telemetry.front_excursion_mm,
                 "braking_pitch_deg": predicted_telemetry.braking_pitch_deg,
                 "front_lock_p95": predicted_telemetry.front_lock_p95,
-                "rear_power_slip_p95": predicted_telemetry.rear_power_slip_p95,
+                "rear_power_slip_p95": predicted_telemetry.rear_power_slip_ratio_p95,
                 "body_slip_p95_deg": predicted_telemetry.body_slip_p95_deg,
                 "understeer_low_deg": predicted_telemetry.understeer_low_deg,
                 "understeer_high_deg": predicted_telemetry.understeer_high_deg,

@@ -409,16 +409,55 @@ class ARBSolver:
             ),
         ]
 
-        # Car-specific notes (BMW)
-        notes: list[str] = [
-            "BMW: keep FARB at blade 1 (maximum front mechanical grip). "
-            "Use RARB as the only live balance variable.",
-            f"Rear ARB '{best_size}' provides the correct blade range. "
-            "If blade runs out of range, change ARB diameter — not FARB.",
-            "Stiffer RARB -> shifts load transfer rear -> front GAINS grip via LLTD -> "
-            "sharpens front-end bite. Softer RARB -> stable/planted rear.",
-            "Cold tyre out-lap: RARB at blade 1 to prevent snap oversteer before tyres are up to temperature.",
-        ]
+        # Car-specific notes
+        car_name = self.car.canonical_name
+        if car_name == "bmw":
+            notes: list[str] = [
+                "BMW: keep FARB at blade 1 (maximum front mechanical grip). "
+                "Use RARB as the only live balance variable.",
+                f"Rear ARB '{best_size}' provides the correct blade range. "
+                "If blade runs out of range, change ARB diameter — not FARB.",
+                "Stiffer RARB -> shifts load transfer rear -> front GAINS grip via LLTD -> "
+                "sharpens front-end bite. Softer RARB -> stable/planted rear.",
+                "Cold tyre out-lap: RARB at blade 1 to prevent snap oversteer before tyres are up to temperature.",
+            ]
+        elif car_name == "ferrari":
+            notes = [
+                f"Ferrari 499P: Front ARB '{farb_size}'/blade {farb_blade} sets baseline front roll stiffness. "
+                "Both FARB and RARB are adjustable live (no lockout).",
+                f"Rear ARB '{best_size}' provides the correct blade range. "
+                "If blade runs out of range, change ARB letter (A→B→C etc.) — not FARB.",
+                "Stiffer RARB -> more rear load transfer -> front gains grip -> sharpens turn-in. "
+                "Softer RARB -> easier rotation, less front bite.",
+                "Cold tyre out-lap: RARB at blade 1 to prevent snap oversteer before tyres are up to temperature.",
+                "Ferrari ARBs use letter sizing (A=softest, E=stiffest). "
+                "Both front and rear blades can be adjusted in-car.",
+            ]
+        elif car_name == "acura":
+            notes = [
+                "Acura ARX-06 (ORECA): FARB at minimum for front grip. "
+                "Use RARB as the primary live balance lever.",
+                f"Rear ARB '{best_size}' selected. Adjust blades to tune balance through corners.",
+                "Stiffer RARB -> shifts load transfer rear -> front gains grip -> better turn-in. "
+                "Softer RARB -> more rear stability.",
+                "Cold tyre out-lap: RARB at blade 1 to prevent snap oversteer.",
+            ]
+        else:
+            notes = [
+                f"{self.car.name}: Front ARB '{farb_size}'/blade {farb_blade}, "
+                f"Rear ARB '{best_size}'/blade {best_blade}.",
+                "Stiffer RARB -> more load transfer to rear -> front gains grip via LLTD. "
+                "Use RARB as the primary live balance variable.",
+                "Cold tyre out-lap: softer RARB to prevent snap oversteer.",
+            ]
+
+        # parameter_search_status: classify ARB settings as user-set
+        pss = {
+            "front_arb_size": "user_set",
+            "front_arb_blade": "user_set",
+            "rear_arb_size": "user_set",
+            "rear_arb_blade": "user_set",
+        }
 
         return ARBSolution(
             front_arb_size=farb_size,
@@ -443,6 +482,7 @@ class ARBSolver:
             lltd_at_rarb_max=round(lltd_max, 4),
             constraints=constraints,
             car_specific_notes=notes,
+            parameter_search_status=pss,
         )
 
     def solution_from_explicit_settings(
@@ -528,6 +568,12 @@ class ARBSolver:
             "Explicit ARB materialization preserves the selected bar/blade family and recomputes LLTD.",
             f"Front ARB {front_arb_size}/{int(front_arb_blade_start)}, rear ARB {rear_arb_size}/{int(rear_arb_blade_start)}.",
         ]
+        pss = {
+            "front_arb_size": "user_set",
+            "front_arb_blade": "user_set",
+            "rear_arb_size": "user_set",
+            "rear_arb_blade": "user_set",
+        }
         return ARBSolution(
             front_arb_size=front_arb_size,
             front_arb_blade_start=int(front_arb_blade_start),
@@ -551,4 +597,5 @@ class ARBSolver:
             lltd_at_rarb_max=round(lltd_max, 4),
             constraints=constraints,
             car_specific_notes=notes,
+            parameter_search_status=pss,
         )

@@ -1,9 +1,33 @@
 {
   "car": "ferrari",
-  "n_sessions": 10,
-  "n_unique_setups": 6,
+  "n_sessions": 34,
+  "n_unique_setups": 24,
   "calibration_complete": true,
-  "front_ride_height": null,
+  "front_ride_height": {
+    "name": "front_ride_height",
+    "feature_names": [
+      "front_heave",
+      "front_heave_perch",
+      "front_camber",
+      "fuel",
+      "front_pushrod",
+      "torsion_od"
+    ],
+    "coefficients": [
+      29.68461100616182,
+      0.029838761019110063,
+      -0.11396115995739327,
+      0.8840259615724175,
+      0.007870951572586403,
+      0.3557944119608012,
+      0.5423783641766575
+    ],
+    "r_squared": 0.6582475294912606,
+    "rmse": 0.6655754703219916,
+    "loo_rmse": 1.0257184196678577,
+    "n_samples": 24,
+    "is_calibrated": true
+  },
   "rear_ride_height": {
     "name": "rear_ride_height",
     "feature_names": [
@@ -15,39 +39,21 @@
       "rear_spring_perch"
     ],
     "coefficients": [
-      -332.87888994776375,
-      0.5500000000012868,
-      5.475000000073193,
-      0.07499999999133777,
-      -2.364705882381884,
-      1.3909392789562105,
-      0.0
+      23.88489035437068,
+      0.27644530322408156,
+      0.029517089093538562,
+      0.15535113823329927,
+      -0.1603121115772242,
+      0.027206562289676328,
+      -0.11701722721650891
     ],
-    "r_squared": 1.0,
-    "rmse": 9.281475648293324e-12,
-    "loo_rmse": 3.0310967687638963,
-    "n_samples": 6,
+    "r_squared": 0.6687250782545122,
+    "rmse": 1.2482350061756073,
+    "loo_rmse": 4.214118844566251,
+    "n_samples": 24,
     "is_calibrated": true
   },
-  "torsion_bar_turns": {
-    "name": "torsion_bar_turns",
-    "feature_names": [
-      "1/front_heave",
-      "front_heave_perch",
-      "torsion_od"
-    ],
-    "coefficients": [
-      0.10094386164632578,
-      0.004820602143417529,
-      0.001145280474843518,
-      0.002774408344949313
-    ],
-    "r_squared": 0.9744548778266037,
-    "rmse": 0.0008737936359883474,
-    "loo_rmse": 0.007116194268167668,
-    "n_samples": 6,
-    "is_calibrated": true
-  },
+  "torsion_bar_turns": null,
   "torsion_bar_defl": {
     "name": "torsion_bar_defl_load",
     "feature_names": [
@@ -55,65 +61,83 @@
       "front_heave_perch"
     ],
     "coefficients": [
-      -6317.138249945848,
-      1345.9575915096382,
-      -329.04453108078815
+      -91856.42777706505,
+      18063.967977809316,
+      -3945.4930196159567
     ],
-    "r_squared": 0.6046340159626606,
-    "rmse": 3253.9437810838276,
-    "loo_rmse": 12642.26246952533,
-    "n_samples": 6,
+    "r_squared": 0.9701253911332821,
+    "rmse": 64377.53376980735,
+    "loo_rmse": 87906.67775567657,
+    "n_samples": 24,
     "is_calibrated": true
   },
   "front_shock_defl_static": {
     "name": "front_shock_defl_static",
     "feature_names": [
-      "front_pushrod"
+      "front_pushrod",
+      "front_heave_perch",
+      "front_heave",
+      "torsion_od"
     ],
     "coefficients": [
-      15.772722620266126,
-      0.2835209825997955
+      15.62799624793559,
+      0.18534206133765885,
+      0.0457784277816164,
+      0.09846112858022249,
+      0.0064002769025604395
     ],
-    "r_squared": 0.9776585606889493,
-    "rmse": 0.22327659850612216,
-    "loo_rmse": 0.3374545744253222,
-    "n_samples": 6,
+    "r_squared": 0.6309687973576539,
+    "rmse": 0.8893539626446358,
+    "loo_rmse": 1.5015881895155998,
+    "n_samples": 24,
     "is_calibrated": true
   },
   "front_shock_defl_max": null,
   "rear_shock_defl_static": {
     "name": "rear_shock_defl_static",
     "feature_names": [
-      "rear_pushrod"
+      "rear_pushrod",
+      "rear_third_perch",
+      "rear_third",
+      "rear_spring"
     ],
     "coefficients": [
-      16.65515570934257,
-      0.09051903114186831
+      34.337693719287145,
+      0.10178913043540892,
+      0.1621811397793771,
+      -0.01903262182844199,
+      -0.0620171704139211
     ],
-    "r_squared": 0.36274170567881225,
-    "rmse": 0.7601189732652894,
-    "loo_rmse": 1.3082523123759862,
-    "n_samples": 6,
+    "r_squared": 0.5753587023039484,
+    "rmse": 1.1259618934292437,
+    "loo_rmse": 1.602050771002709,
+    "n_samples": 24,
     "is_calibrated": true
   },
   "rear_shock_defl_max": null,
   "heave_spring_defl_static": {
     "name": "heave_spring_defl_static",
     "feature_names": [
-      "1/front_heave",
+      "front_heave",
       "front_heave_perch",
-      "1/OD^4"
+      "front_heave^2",
+      "front_heave_perch^2",
+      "heave*perch",
+      "torsion_od"
     ],
     "coefficients": [
-      -14.523096683731518,
-      5.666992983389034,
-      -0.8149641344809568,
-      158.0553927417419
+      4.779499390069199,
+      0.8089777392747586,
+      0.3966996502643104,
+      -0.0038970755310615557,
+      0.045584978722839176,
+      0.007109871733764206,
+      -1.8954564955271131
     ],
-    "r_squared": 0.9848284707438199,
-    "rmse": 0.5061586286656548,
-    "loo_rmse": 3.7228485361405155,
-    "n_samples": 6,
+    "r_squared": 0.8736437333218955,
+    "rmse": 1.8444326733524774,
+    "loo_rmse": 6.903012672916031,
+    "n_samples": 24,
     "is_calibrated": true
   },
   "heave_spring_defl_max": {
@@ -122,13 +146,13 @@
       "front_heave"
     ],
     "coefficients": [
-      86.46981132075473,
-      -2.123584905660374
+      80.35257850763466,
+      0.18958513396715637
     ],
-    "r_squared": 0.9988172681219657,
-    "rmse": 0.1773317255329757,
-    "loo_rmse": 0.24268383708361196,
-    "n_samples": 6,
+    "r_squared": 0.4318066486352934,
+    "rmse": 4.40228558383748,
+    "loo_rmse": 4.721835200439227,
+    "n_samples": 24,
     "is_calibrated": true
   },
   "heave_slider_defl_static": {
@@ -139,32 +163,62 @@
       "torsion_od"
     ],
     "coefficients": [
-      48.41130774740359,
-      0.18466037961083692,
-      0.10100871433686986,
-      -2.9249820938283424
+      44.099834406083275,
+      0.3108376256072888,
+      0.18718921148244125,
+      -1.0039373900648065
     ],
-    "r_squared": 0.9800429995668823,
-    "rmse": 0.5840457912628357,
-    "loo_rmse": 8.956780798307426,
-    "n_samples": 6,
+    "r_squared": 0.5266694657557036,
+    "rmse": 2.885254330813415,
+    "loo_rmse": 4.563902083749365,
+    "n_samples": 24,
     "is_calibrated": true
   },
-  "rear_spring_defl_static": null,
-  "rear_spring_defl_max": null,
+  "rear_spring_defl_static": {
+    "name": "rear_spring_defl_static_load",
+    "feature_names": [
+      "rear_spring_perch"
+    ],
+    "coefficients": [
+      32.787148255730365,
+      73.17550100189284
+    ],
+    "r_squared": 0.8821800090368199,
+    "rmse": 374.00171684356786,
+    "loo_rmse": 497.09209099959986,
+    "n_samples": 24,
+    "is_calibrated": true
+  },
+  "rear_spring_defl_max": {
+    "name": "rear_spring_defl_max",
+    "feature_names": [
+      "rear_spring",
+      "rear_spring_perch"
+    ],
+    "coefficients": [
+      -2.6574617727018057,
+      0.4928551544465537,
+      -0.100843580103097
+    ],
+    "r_squared": 0.9931969594396846,
+    "rmse": 2.7945399554081876,
+    "loo_rmse": 8.138817886079348,
+    "n_samples": 24,
+    "is_calibrated": true
+  },
   "third_spring_defl_static": {
     "name": "third_spring_defl_static_load",
     "feature_names": [
       "rear_third_perch"
     ],
     "coefficients": [
-      -462.2395784543318,
-      -4.738641686182663
+      2286.9284817860994,
+      21.626922431206356
     ],
-    "r_squared": 0.684959136616671,
-    "rmse": 15.652462376710325,
-    "loo_rmse": 20.881986489830684,
-    "n_samples": 6,
+    "r_squared": 0.9034045000923395,
+    "rmse": 443.3073305000082,
+    "loo_rmse": 522.7855109786616,
+    "n_samples": 24,
     "is_calibrated": true
   },
   "third_spring_defl_max": {
@@ -174,14 +228,14 @@
       "rear_third_perch"
     ],
     "coefficients": [
-      81.12285249132438,
-      -2.8676149265241415,
-      -0.0018251146051997402
+      90.44399330711222,
+      -0.10268809201340179,
+      0.1939799100932288
     ],
-    "r_squared": 0.9989188945462061,
-    "rmse": 0.2520002665789347,
-    "loo_rmse": 0.5141002749953476,
-    "n_samples": 6,
+    "r_squared": 0.7627234294675757,
+    "rmse": 5.270789935644451,
+    "loo_rmse": 5.9092302710142,
+    "n_samples": 24,
     "is_calibrated": true
   },
   "third_slider_defl_static": {
@@ -190,13 +244,13 @@
       "third_spring_defl"
     ],
     "coefficients": [
-      22.73801594643408,
-      0.06303687062243964
+      23.58650317832237,
+      -0.060923172707841464
     ],
-    "r_squared": 0.059699379126877505,
-    "rmse": 1.256447477851426,
-    "loo_rmse": 1.6194145834588365,
-    "n_samples": 6,
+    "r_squared": 0.008130252622055911,
+    "rmse": 2.9129049400548612,
+    "loo_rmse": 3.1240162952236035,
+    "n_samples": 24,
     "is_calibrated": true
   },
   "front_heave_lookup": null,
@@ -205,44 +259,224 @@
     "setting_key": "front_torsion_od",
     "entries": [
       {
+        "setting": 0.0,
+        "rate_nmm": 105.4773,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 1.0,
+        "rate_nmm": 110.2439,
+        "source": "physics_extrapolated"
+      },
+      {
         "setting": 2.0,
         "rate_nmm": 115.170265625,
         "source": "decrypted_sto"
+      },
+      {
+        "setting": 3.0,
+        "rate_nmm": 120.2599,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 4.0,
+        "rate_nmm": 125.5164,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 5.0,
+        "rate_nmm": 130.9434,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 6.0,
+        "rate_nmm": 136.5444,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 7.0,
+        "rate_nmm": 142.3233,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 8.0,
+        "rate_nmm": 148.2837,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 9.0,
+        "rate_nmm": 154.4293,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 10.0,
+        "rate_nmm": 160.7641,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 11.0,
+        "rate_nmm": 167.2918,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 12.0,
+        "rate_nmm": 174.0162,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 13.0,
+        "rate_nmm": 180.9414,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 14.0,
+        "rate_nmm": 188.0713,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 15.0,
+        "rate_nmm": 195.4098,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 16.0,
+        "rate_nmm": 202.961,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 17.0,
+        "rate_nmm": 210.7289,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 18.0,
+        "rate_nmm": 218.7178,
+        "source": "physics_extrapolated"
       }
     ],
     "is_calibrated": true,
-    "method": "decrypted_sto"
+    "method": "decrypted_sto+physics_extrapolated"
   },
   "rear_torsion_lookup": {
     "setting_key": "rear_torsion_od",
     "entries": [
       {
+        "setting": 0.0,
+        "rate_nmm": 100.4601,
+        "source": "physics_extrapolated"
+      },
+      {
         "setting": 1.0,
         "rate_nmm": 105.0,
         "source": "decrypted_sto"
+      },
+      {
+        "setting": 2.0,
+        "rate_nmm": 109.692,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 3.0,
+        "rate_nmm": 114.5396,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 4.0,
+        "rate_nmm": 119.546,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 5.0,
+        "rate_nmm": 124.7148,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 6.0,
+        "rate_nmm": 130.0495,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 7.0,
+        "rate_nmm": 135.5535,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 8.0,
+        "rate_nmm": 141.2303,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 9.0,
+        "rate_nmm": 147.0837,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 10.0,
+        "rate_nmm": 153.1171,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 11.0,
+        "rate_nmm": 159.3343,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 12.0,
+        "rate_nmm": 165.7389,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 13.0,
+        "rate_nmm": 172.3347,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 14.0,
+        "rate_nmm": 179.1254,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 15.0,
+        "rate_nmm": 186.1148,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 16.0,
+        "rate_nmm": 193.3068,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 17.0,
+        "rate_nmm": 200.7053,
+        "source": "physics_extrapolated"
+      },
+      {
+        "setting": 18.0,
+        "rate_nmm": 208.3141,
+        "source": "physics_extrapolated"
       }
     ],
     "is_calibrated": true,
-    "method": "decrypted_sto"
+    "method": "decrypted_sto+physics_extrapolated"
   },
-  "m_eff_front_kg": 1461.098700398902,
+  "m_eff_front_kg": 1439.2740496623353,
   "m_eff_rear_kg": null,
   "m_eff_is_rate_dependent": false,
   "m_eff_rate_table": [],
-  "measured_lltd_target": 0.4760932343688853,
+  "measured_lltd_target": 0.47522343381039844,
   "front_ls_zeta": null,
   "rear_ls_zeta": null,
   "front_hs_zeta": null,
   "rear_hs_zeta": null,
   "zeta_n_sessions": 0,
-  "aero_front_compression_mm": 15.166666666666666,
-  "aero_rear_compression_mm": 6.216666666666668,
-  "aero_n_sessions": 6,
+  "aero_front_compression_mm": 15.504166666666668,
+  "aero_rear_compression_mm": 7.070833333333333,
+  "aero_n_sessions": 24,
   "status": {
-    "aero_compression": "calibrated from IBT AeroCalculator (6 sessions, front=15.2mm rear=6.2mm)",
-    "arb_stiffness": "data available (1 spring groups, 2 ARB configs) \u2014 full back-solve requires telemetry roll gradient data (currently deferred)",
-    "m_eff": "constant (4 points, mean 1461 kg)",
-    "lltd_target": "calibrated (6 sessions, mean 0.476)",
-    "deflection_model": "calibrated (6 unique setups, best R\u00b2=1.00)"
+    "aero_compression": "calibrated from IBT AeroCalculator (24 sessions, front=15.5mm rear=7.1mm)",
+    "arb_stiffness": "data available (3 spring groups, 9 ARB configs) \u2014 full back-solve requires telemetry roll gradient data (currently deferred)",
+    "m_eff": "constant (7 points, mean 1439 kg)",
+    "lltd_target": "calibrated (24 sessions, mean 0.475)",
+    "deflection_model": "calibrated (24 unique setups, best R\u00b2=0.87)"
   }
 }

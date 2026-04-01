@@ -135,10 +135,16 @@
     "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_8",
     "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_7",
     "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42",
-    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27"
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_13-24-07",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_13-58-47",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_12-50-14",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_15-49-42",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_19-58-41",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_19-50-02"
   ],
-  "total_observations": 134,
-  "total_deltas": 277,
+  "total_observations": 140,
+  "total_deltas": 301,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -151,5 +157,5 @@
     "Silverstone Circuit_Arena Grand Prix",
     "Hockenheimring Baden-W\u00fcrttemberg_Grand Prix"
   ],
-  "last_updated": "2026-03-31T14:17:01.102599+00:00"
+  "last_updated": "2026-04-01T01:55:14.271908+00:00"
 }

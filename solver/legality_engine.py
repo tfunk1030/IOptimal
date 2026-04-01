@@ -14,6 +14,10 @@ class LegalValidation:
     valid: bool
     warnings: list[str] = field(default_factory=list)
     messages: list[str] = field(default_factory=list)
+    # Informational notes — not warnings, not errors.  Used for Ferrari
+    # "no garage model" notices and similar benign housekeeping messages
+    # that would pollute the report if promoted to warnings.
+    info_messages: list[str] = field(default_factory=list)
     snapped_or_corrected: bool = False
     source: str = "garage_validator"
 
@@ -81,6 +85,23 @@ def validate_solution_legality(
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is None:
         car_name = getattr(car, "canonical_name", "unknown")
+        if car_name == "ferrari":
+            # Ferrari uses indexed controls; no calibrated garage model is
+            # expected or needed.  Promote the note to info_messages so it
+            # doesn't pollute warnings/messages in reports.
+            info_note = (
+                "Ferrari 499P: indexed controls validated via range-clamp. "
+                "No garage output model needed (physics constraints are "
+                "enforced by the index-space range guards)."
+            )
+            return LegalValidation(
+                valid=True,
+                warnings=warnings,
+                messages=[],
+                info_messages=[info_note],
+                snapped_or_corrected=bool(warnings),
+                validation_tier="range_clamp",
+            )
         support_note = (
             f"⚠ No garage model for {car_name} at {track_name}. "
             "Validation is geometric range-clamp ONLY — physics constraints "

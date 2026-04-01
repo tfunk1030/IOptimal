@@ -79,14 +79,52 @@ _STEP_NAMES: dict[int, str] = {
     7: "Supporting (Brake / Diff / TC / Fuel)",
 }
 
-# Car support tier descriptors
-_SUPPORT_TIERS: dict[str, str] = {
-    "bmw":     "calibrated  — 73 IBT sessions, garage model, k-NN, heave cal",
-    "ferrari": "partial     — 9 sessions, sequential Ferrari solve with raw indexed controls",
-    "cadillac":"exploratory — 4 sessions, sequential solver only",
-    "porsche": "exploratory — 2 sessions, sequential solver only",
-    "acura":   "unsupported — <1 session, all terms at physics defaults",
-}
+def _compute_support_tier(car_name: str) -> str:
+    """Compute car support tier dynamically from calibration data on disk.
+
+    Counts IBT sessions in data/calibration/<car>/calibration_points.json and
+    checks for a models.json calibration artefact to determine the tier label.
+    This replaces the hard-coded string dict so that the label automatically
+    reflects ingested sessions without a code edit.
+    """
+    from pathlib import Path
+    import json as _json
+
+    cal_dir = Path(__file__).parent.parent / "data" / "calibration" / car_name
+    if not cal_dir.exists():
+        return "unsupported — no calibration data"
+
+    # Count IBT sessions stored in calibration_points.json (NOT sessions.json)
+    sessions_file = cal_dir / "calibration_points.json"
+    session_count = 0
+    if sessions_file.exists():
+        try:
+            raw = _json.loads(sessions_file.read_text(encoding="utf-8", errors="replace"))
+            session_count = len(raw) if isinstance(raw, list) else len(raw.get("sessions", []))
+        except Exception:
+            pass
+
+    has_models = (cal_dir / "models.json").exists()
+    has_heave_cal = (cal_dir / "heave_calibration.json").exists()
+
+    extras: list[str] = []
+    if has_models:
+        extras.append("garage model")
+    if (cal_dir.parent.parent / "learner").exists():
+        extras.append("k-NN")
+    if has_heave_cal:
+        extras.append("heave cal")
+
+    extra_str = (", " + ", ".join(extras)) if extras else ""
+
+    if has_models and session_count >= 20:
+        return f"calibrated  — {session_count} sessions{extra_str}"
+    elif session_count >= 5:
+        return f"partial     — {session_count} sessions, indexed controls{extra_str}"
+    elif session_count >= 1:
+        return f"exploratory — {session_count} sessions, sequential solver only"
+    else:
+        return "unsupported — <1 session, all terms at physics defaults"
 
 
 # ─── Data classes ─────────────────────────────────────────────────────────────
@@ -156,7 +194,7 @@ class RunTrace:
         self.car_name = car_name.lower()
         self.track_name = track_name
         self.wing_angle = wing_angle
-        self.car_support_tier = _SUPPORT_TIERS.get(self.car_name, "unknown — no data")
+        self.car_support_tier = _compute_support_tier(self.car_name)
 
     def record_signals(self, measured: Any) -> None:
         """Extract signal quality map from MeasuredState."""

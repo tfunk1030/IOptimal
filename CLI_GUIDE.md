@@ -283,6 +283,29 @@ python -c "import numpy, scipy, yaml; print('OK')"
 
 ---
 
+## Bundle Output Mode
+
+Output all artifacts in a single directory with one command:
+
+```powershell
+.\run.ps1 produce --car ferrari --ibt session.ibt --wing 13 --bundle-dir ./bundles/ferrari_run1
+```
+
+This writes four files into `./bundles/ferrari_run1/`:
+- `ferrari_<track>_<timestamp>.sto` — iRacing garage file
+- `ferrari_<track>_<timestamp>.json` — full solver result
+- `ferrari_<track>_<timestamp>_report.txt` — engineering report
+- `ferrari_<track>_<timestamp>_manifest.json` — artifact manifest (paths + metadata)
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--bundle-dir` | (none) | Directory to write all artifacts into (created automatically) |
+
+> **Note:** When `--bundle-dir` is set, `--sto`, `--json`, and `--report` are ignored — all
+> artifacts use the bundle naming scheme. Use the manifest JSON to find paths programmatically.
+
+---
+
 ## Output Files
 
 | File | Description |

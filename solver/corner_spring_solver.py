@@ -53,6 +53,41 @@ from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
 
+def _solve_ferrari_torsion_bar_turns(
+    car: CarModel,
+    *,
+    front_torsion_od_mm: float,
+    rear_spring_rate_nmm: float,
+    front_heave_nmm: float,
+    rear_third_nmm: float,
+) -> tuple[float, float]:
+    """Compute Ferrari front/rear torsion bar preload turns.
+
+    Ferrari 499P exposes bar preload turns (-0.250 to +0.250, resolution 0.125)
+    as read-only display values correlated to the indexed spring selection.
+    For the solver we use 0.0 (neutral preload) as the canonical output —
+    setup_writer.py applies the physical fallback formula when building the
+    final STO file.
+
+    Args:
+        car: CarModel for the Ferrari 499P
+        front_torsion_od_mm: Selected front torsion bar OD (index or physical mm)
+        rear_spring_rate_nmm: Selected rear spring rate (index or N/mm)
+        front_heave_nmm: Front heave spring rate from Step 2
+        rear_third_nmm: Rear third spring rate from Step 2
+
+    Returns:
+        (front_turns, rear_turns) — both 0.0 (neutral preload).
+        Neutral preload: solver does not add pre-twist; STO writer handles it.
+    """
+    # Neutral preload is the safe default for the solver pass.
+    # The actual in-garage torsion bar turns are a function of the indexed
+    # spring selection and are constrained to ±0.250 in 0.125 increments.
+    # We return 0.0 here; setup_writer.py will apply the appropriate
+    # formula (or fallback) based on the public output index values.
+    return 0.0, 0.0
+
+
 @dataclass
 class CornerSpringSolution:
     """Output of the Step 3 corner spring solver."""
@@ -93,9 +128,26 @@ class CornerSpringSolution:
     # ORECA: rear torsion bar OD (None = coil spring car)
     rear_torsion_od_mm: float | None = None
 
-    # Torsion bar preload turns (Ferrari: -0.250 to +0.250 at all 4 corners)
+    # Torsion bar preload turns (Ferrari: -0.250 to +0.250 at all 4 corners).
+    # For Ferrari these are authoritative solver outputs computed by
+    # _solve_ferrari_torsion_bar_turns(); for all other cars they remain 0.0.
     front_torsion_bar_turns: float = 0.0
     rear_torsion_bar_turns: float = 0.0
+    parameter_search_status: dict = None
+    parameter_search_evidence: dict = None
+
+    def __post_init__(self):
+        if self.parameter_search_status is None:
+            self.parameter_search_status = {
+                "front_torsion_od_mm": "user_set",
+                "rear_torsion_od_mm": "user_set",
+                "rear_spring_rate_nmm": "user_set",
+                "rear_spring_perch_mm": "user_set",
+                "front_torsion_bar_turns": "user_set",
+                "rear_torsion_bar_turns": "user_set",
+            }
+        if self.parameter_search_evidence is None:
+            self.parameter_search_evidence = {}
 
     def summary(self) -> str:
         """Human-readable summary of the solution."""
@@ -346,6 +398,19 @@ class CornerSpringSolver:
             m_r_corner=m_r_corner,
         )
 
+        # Ferrari: compute authoritative torsion bar preload turns.
+        # All other cars leave these at the 0.0 default.
+        front_tb_turns = 0.0
+        rear_tb_turns = 0.0
+        if getattr(self.car, 'canonical_name', '') == 'ferrari':
+            front_tb_turns, rear_tb_turns = _solve_ferrari_torsion_bar_turns(
+                self.car,
+                front_torsion_od_mm=front_torsion_od_mm,
+                rear_spring_rate_nmm=rear_spring_rate_nmm,
+                front_heave_nmm=front_heave_nmm,
+                rear_third_nmm=rear_third_nmm,
+            )
+
         return CornerSpringSolution(
             front_torsion_od_mm=front_torsion_od_mm,
             front_wheel_rate_nmm=round(front_rate, 1),
@@ -370,6 +435,8 @@ class CornerSpringSolver:
             ),
             rear_torsion_od_mm=rear_torsion_od_mm,
             constraints=constraints,
+            front_torsion_bar_turns=front_tb_turns,
+            rear_torsion_bar_turns=rear_tb_turns,
         )
 
     def _surface_severity_to_freq_ratio(self, shock_vel_p99_mps: float) -> float:

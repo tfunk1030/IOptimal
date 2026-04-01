@@ -357,7 +357,24 @@ def cmd_produce(args: argparse.Namespace) -> None:
         import copy
         single_args = copy.copy(args)
         single_args.ibt = args.ibt[0]
-        produce(single_args)
+
+        if getattr(args, 'bundle_dir', None):
+            result = produce_result(single_args)
+            if result is not None:
+                from output.bundle import bundle_from_pipeline_result
+                manifest = bundle_from_pipeline_result(
+                    args.bundle_dir,
+                    result,
+                    report_text=result.get("report"),
+                )
+                print(f"\nBundle written to: {manifest.bundle_dir}")
+                for p in manifest.artifacts:
+                    print(f"  {p}")
+                if manifest.errors:
+                    for e in manifest.errors:
+                        print(f"  [bundle error] {e}")
+        else:
+            produce(single_args)
     else:
         # Standalone solver mode
         from solver.solve import run_solver
@@ -457,7 +474,7 @@ def main() -> None:
     )
 
     # Check if called with legacy args (no subcommand)
-    if len(sys.argv) > 1 and not sys.argv[1].startswith('-') and sys.argv[1] not in ['produce', 'analyze', 'solve', 'ingest', 'calibrate']:
+    if len(sys.argv) > 1 and not sys.argv[1].startswith('-') and sys.argv[1] not in ['produce', 'analyze', 'solve', 'ingest', 'calibrate', 'run']:
         # First arg is a subcommand
         pass
     elif len(sys.argv) > 1 and sys.argv[1].startswith('--'):
@@ -517,6 +534,8 @@ def main() -> None:
                         help="Max %% above lap-time median to accept (default: 0.115)")
     produce_parser.add_argument("--no-learn", action="store_true",
                         help="Skip IBT ingestion / empirical corrections (read-only run)")
+    produce_parser.add_argument("--bundle-dir", type=str, default=None, dest="bundle_dir",
+                        help="Write all artifacts (.sto, .json, report, manifest) to this directory")
 
     # ── analyze subcommand ──
     analyze_parser = subparsers.add_parser(
@@ -598,6 +617,24 @@ def main() -> None:
     ingest_parser.add_argument("--all-laps", action="store_true",
                         help="Ingest every valid lap as a separate observation")
 
+    # ── run subcommand (unified: does everything, outputs to folder) ──
+    run_parser = subparsers.add_parser(
+        'run',
+        help='Run everything: analyze + ingest + calibrate + produce. Outputs organized folder.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    run_parser.add_argument("--car", required=True,
+                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+    run_parser.add_argument("--ibt", action="append", required=True, metavar="IBT",
+                        help="IBT telemetry file(s)")
+    run_parser.add_argument("--wing", type=float, default=None,
+                        help="Wing angle in degrees (auto-detected from IBT if not set)")
+    run_parser.add_argument("--output-dir", type=str, default=None, dest="output_dir",
+                        help="Output directory (default: output/<car>_<track>_<timestamp>/)")
+    run_parser.add_argument("--scenario", type=str, default="single_lap_safe",
+                        choices=["single_lap_safe", "quali", "sprint", "race"],
+                        help="Scenario profile (default: single_lap_safe)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -624,6 +661,126 @@ def main() -> None:
         cmd_ingest(args)
     elif args.command == 'calibrate':
         cmd_calibrate(args)
+    elif args.command == 'run':
+        cmd_run(args)
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    """Unified run: analyze + ingest + calibrate + produce, all outputs to one folder."""
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    car_name = args.car
+    ibt_paths = args.ibt
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Determine output directory
+    if args.output_dir:
+        out_dir = Path(args.output_dir)
+    else:
+        # Auto-name from first IBT track info
+        track_label = "unknown"
+        try:
+            from track_model.ibt_parser import IBTFile
+            ibt = IBTFile(ibt_paths[0])
+            ti = ibt.track_info()
+            track_label = ti.get("track_name", "unknown").lower().replace(" ", "_")[:30]
+        except Exception:
+            pass
+        out_dir = Path("output") / f"{car_name}_{track_label}_{timestamp}"
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Output directory: {out_dir}")
+    print("=" * 60)
+
+    manifest = {"car": car_name, "timestamp": timestamp, "files": {}}
+
+    # Step 1: Calibrate (refit from accumulated data)
+    print("\n[1/4] Calibrating car model...")
+    try:
+        from car_model.auto_calibrate import print_calibration_status
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            print_calibration_status(car_name)
+        cal_text = buf.getvalue()
+        cal_path = out_dir / "calibration_status.txt"
+        cal_path.write_text(cal_text, encoding="utf-8")
+        manifest["files"]["calibration_status"] = str(cal_path)
+        print(f"  Saved: {cal_path}")
+    except Exception as e:
+        print(f"  Calibration status: {e}")
+
+    # Step 2: Analyze
+    print("\n[2/4] Analyzing telemetry...")
+    analysis_path = out_dir / "analysis.json"
+    for ibt_path in ibt_paths:
+        try:
+            analyze_ns = argparse.Namespace(car=car_name, ibt=ibt_path, lap=None, save=str(analysis_path))
+            cmd_analyze(analyze_ns)
+            manifest["files"]["analysis"] = str(analysis_path)
+            print(f"  Saved: {analysis_path}")
+        except Exception as e:
+            print(f"  Analysis error: {e}")
+
+    # Step 3: Ingest (learn from session)
+    print("\n[3/4] Ingesting session for learning...")
+    for ibt_path in ibt_paths:
+        try:
+            ingest_ns = argparse.Namespace(
+                car=car_name, ibt=ibt_path, wing=args.wing, lap=None, all_laps=False,
+            )
+            cmd_ingest(ingest_ns)
+            print(f"  Ingested: {ibt_path}")
+        except Exception as e:
+            print(f"  Ingest error: {e}")
+
+    # Step 4: Produce (full pipeline → setup)
+    print("\n[4/4] Running physics solver...")
+    sto_path = out_dir / "setup.sto"
+    json_path = out_dir / "solver_result.json"
+    try:
+        produce_ns = argparse.Namespace(
+            car=car_name,
+            ibt=ibt_paths,
+            wing=args.wing,
+            track=None,
+            lap=None,
+            fuel=None,
+            balance=None,
+            tolerance=0.1,
+            free=False,
+            legacy_solver=False,
+            sto=str(sto_path),
+            json=str(json_path),
+            report_only=True,
+            verbose=False,
+            space=False,
+            search_mode=None,
+            top_n=5,
+            min_lap_time=60.0,
+            outlier_pct=0.115,
+            no_learn=False,
+            bundle_dir=None,
+        )
+        cmd_produce(produce_ns)
+        manifest["files"]["setup_sto"] = str(sto_path)
+        manifest["files"]["solver_result"] = str(json_path)
+        print(f"  Saved: {sto_path}")
+        print(f"  Saved: {json_path}")
+    except Exception as e:
+        print(f"  Produce error: {e}")
+
+    # Write manifest
+    manifest_path = out_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    print(f"\n{'=' * 60}")
+    print(f"All outputs saved to: {out_dir}")
+    print(f"Files:")
+    for label, path in manifest["files"].items():
+        print(f"  {label}: {path}")
 
 
 def main_legacy() -> None:
@@ -680,6 +837,8 @@ def main_legacy() -> None:
                         help="Max %% above lap-time median to accept (default: 0.115)")
     parser.add_argument("--no-learn", action="store_true",
                         help="Skip IBT ingestion / empirical corrections (read-only run)")
+    parser.add_argument("--bundle-dir", type=str, default=None, dest="bundle_dir",
+                        help="Write all artifacts (.sto, .json, report, manifest) to this directory")
 
     args = parser.parse_args()
 
@@ -711,8 +870,26 @@ def main_legacy() -> None:
             import copy
             single_args = copy.copy(args)
             single_args.ibt = args.ibt[0]
-            from pipeline.produce import produce
-            produce(single_args)
+
+            if getattr(args, 'bundle_dir', None):
+                from pipeline.produce import produce_result
+                result = produce_result(single_args)
+                if result is not None:
+                    from output.bundle import bundle_from_pipeline_result
+                    manifest = bundle_from_pipeline_result(
+                        args.bundle_dir,
+                        result,
+                        report_text=result.get("report"),
+                    )
+                    print(f"\nBundle written to: {manifest.bundle_dir}")
+                    for p in manifest.artifacts:
+                        print(f"  {p}")
+                    if manifest.errors:
+                        for e in manifest.errors:
+                            print(f"  [bundle error] {e}")
+            else:
+                from pipeline.produce import produce
+                produce(single_args)
     else:
         # ── Standalone physics solver (no telemetry) ──────────────────
         from solver.solve import run_solver
