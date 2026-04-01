@@ -299,7 +299,7 @@ def produce(
         args.min_lap_time = max(60.0, _fastest * 0.95) if _fastest else 60.0
 
     # ── Auto-detect from session info ──
-    current_setup = CurrentSetup.from_ibt(ibt)
+    current_setup = CurrentSetup.from_ibt(ibt, car_canonical=car.canonical_name)
     wing = args.wing or current_setup.wing_angle_deg
     fuel = args.fuel or current_setup.fuel_l or 89.0
     log(f"  Wing: {wing}°, Fuel: {fuel:.0f} L")

@@ -550,15 +550,20 @@ def _cadillac_schema() -> CarParamSchema:
 def _porsche_schema() -> CarParamSchema:
     """Porsche 963 — LMDh Multimatic chassis (NOT Dallara).
 
-    KEY DIFFERENCES:
-    - DSSV (spool valve) dampers — very different from shim stack.
-      Click behavior is non-linear; calibration from BMW is invalid.
-    - NO front torsion bar adjustment (torsion_bar_od_mm = 0 in all sessions).
-    - NO front heave index field — front_heave_nmm only.
-    - Rear third spring: present but very different range.
-    - ARB: labels unclear (observed '' front, 'Soft' rear — possibly Disc/Soft).
-    - Click count unknown — conservative 20 assumed pending calibration.
-    - NEEDS: dedicated IBT session to establish damper calibration.
+    KEY DIFFERENCES (source: official iRacing Porsche 963 User Manual PDF):
+    - DSSV (spool valve) dampers — very different from BMW shim stack.
+      Click behavior is non-linear; BMW zeta calibration is INVALID for Porsche.
+    - NO front torsion bar OD adjustment (confirmed in manual — torsion bars exist
+      for corner weight via Torsion Bar Turns but no OD selection).
+    - UNIQUE: Roll Spring (front) — resists roll but not heave. Has Roll Perch Offset.
+      Roll Spring Deflection must be ≈0 for tech compliance.
+    - UNIQUE: Roll Damper (front only) — LS + HS + HS Slope, comp+rbd linked.
+    - Front ARB: Connected/Disconnected TOGGLE (NOT size labels like Soft/Medium).
+      ARB Adjustment (blades 1-5) is in-car adjustable via F8 FARB.
+      Disconnecting disables blade adjustment.
+    - HS Comp Damping Slope: REAR CORNERS ONLY. Front heave has no slope.
+    - Rear uses "Pushrod Length DELTA" (not "Offset" like BMW).
+    - NEEDS: dedicated IBT sessions for Roll Spring range, DSSV damper model.
     """
     s = CarParamSchema(car="porsche")
     s.front_heave = ParamDef(
@@ -579,7 +584,10 @@ def _porsche_schema() -> CarParamSchema:
     s.front_torsion = ParamDef(
         canonical="torsion_bar_od_mm", display_label="Front Torsion Bar OD",
         unit="mm", value_type="od_mm", exists=False,
-        # Porsche: torsion_bar_od_mm = 0.0 in all sessions — not adjustable
+        # Porsche: No front Torsion Bar OD selection confirmed by manual.
+        # Manual tech specs: "DOUBLE-WISHBONE FRONT, MULTILINK REAR" — not torsion bar front.
+        # Front spring stiffness in roll controlled by Roll Spring (unique parameter).
+        # Torsion Bar Turns exist per corner for crossweight/RH, but no OD choice.
     )
     s.rear_torsion = ParamDef(
         canonical="rear_torsion_bar_index", display_label="Rear Torsion Bar",
@@ -603,23 +611,28 @@ def _porsche_schema() -> CarParamSchema:
         unit="mm", value_type="physical",
     )
     s.front_arb_size = ParamDef(
-        canonical="front_arb_size", display_label="Front ARB",
+        canonical="front_arb_size", display_label="Front ARB Setting",
         unit="", value_type="label",
-        # Observed: '' in all sessions — possibly Disconnected or no choice
-        exists=False,
+        # CONFIRMED from manual: Connected/Disconnected toggle (NOT size labels)
+        # Connected enables ARB Adjustment (blade) tuning.
+        discrete_values=["Disconnected", "Connected"],
+        exists=True,
     )
     s.front_arb_blade = ParamDef(
-        canonical="front_arb_blade", display_label="Front ARB Blade",
-        unit="", value_type="clicks", exists=False,
+        canonical="front_arb_blade", display_label="Front ARB Adjustment",
+        unit="", value_type="clicks", min_val=1, max_val=5,
+        # In-car via F8 FARB. Only adjustable when ARB Setting = Connected.
     )
     s.rear_arb_size = ParamDef(
-        canonical="rear_arb_size", display_label="Rear ARB",
+        canonical="rear_arb_size", display_label="Rear ARB Size",
         unit="", value_type="label",
-        discrete_values=["Soft"],
+        # Manual confirms: Disconnected + at least Soft. Exact labels from IBT.
+        discrete_values=["Disconnected", "Soft"],
     )
     s.rear_arb_blade = ParamDef(
-        canonical="rear_arb_blade", display_label="Rear ARB Blade",
-        unit="", value_type="clicks", exists=False,
+        canonical="rear_arb_blade", display_label="Rear ARB Adjustment",
+        unit="", value_type="clicks", min_val=1, max_val=5,
+        # In-car via F8 RARB
     )
     s.wing = ParamDef(
         canonical="wing", display_label="Wing Angle",
@@ -670,15 +683,19 @@ def _porsche_schema() -> CarParamSchema:
 
 
 def _acura_schema() -> CarParamSchema:
-    """Acura ARX-06 — LMDh Dallara chassis.
+    """Acura ARX-06 — LMDh Oreca chassis.
 
-    KEY DIFFERENCES:
-    - Wing: 6.0-10.0 deg (completely different range from all other GTP cars).
-    - Front heave: N/mm directly (90-400 range). No indexed heave.
-    - Front torsion bar: OD in mm format (same as BMW/Cadillac).
-    - NO rear torsion bar adjustment (rear_torsion_bar_index = 0.0 in all sessions).
-    - ARB: Soft/Medium only (both front and rear).
-    - Hybrid: has rear-drive enabled/disabled + corner % setting.
+    KEY DIFFERENCES (source: official iRacing Acura ARX-06 User Manual via ManualsLib):
+    - Wing: 6.0-10.0 deg, 0.5-deg steps (ALL other GTP cars: 12-17 deg).
+    - Front heave: N/mm (90-400 range) — same as BMW format, different range.
+    - Front torsion bar: OD in mm (confirmed by manual — Torsion Bar O.D. exists
+      with Torsion Bar Turns for corner weight). Options: 13.90/15.51/15.86.
+    - UNIQUE: HEAVE DAMPER (front) — Acura front heave element is ACTIVELY DAMPED,
+      not a passive slider like BMW. Manual shows "HEAVE DAMPER DEFL" (not "HEAVE SLIDER DEFL").
+    - Front ARB: Disconnected + Soft (possibly Medium) — includes Disconnected option.
+    - REAR: Uses "Rear Heave Spring" NOT "Third Spring". Same function, different name.
+    - NO rear torsion bar adjustment (rear_torsion_bar_index = 0.0 in all IBT sessions).
+    - Hybrid: rear-drive enabled/disabled + corner % setting.
     """
     s = CarParamSchema(car="acura")
     s.front_heave = ParamDef(
@@ -687,7 +704,9 @@ def _acura_schema() -> CarParamSchema:
         solver_key="front_heave_spring_nmm",
     )
     s.rear_heave = ParamDef(
-        canonical="rear_third_nmm", display_label="Rear Third Spring",
+        # CONFIRMED: Acura calls this "Rear Heave Spring" NOT "Third Spring"
+        # Same function as BMW Third Spring, different iRacing label.
+        canonical="rear_third_nmm", display_label="Rear Heave Spring",
         unit="N/mm", value_type="physical", min_val=60.0, max_val=300.0,
         solver_key="rear_third_spring_nmm",
     )

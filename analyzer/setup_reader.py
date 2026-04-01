@@ -251,7 +251,7 @@ class CurrentSetup:
         )
 
     @classmethod
-    def from_ibt(cls, ibt: IBTFile) -> CurrentSetup:
+    def from_ibt(cls, ibt: IBTFile, car_canonical: str | None = None) -> CurrentSetup:
         """Parse the current setup from an IBT file's session info.
 
         The session info is a YAML dict parsed by the IBT parser.
@@ -260,6 +260,13 @@ class CurrentSetup:
             CarSetup.Chassis.Front.HeaveSpring
             CarSetup.Chassis.LeftFront.TorsionBarOD
             etc.
+
+        Args:
+            ibt: IBT file object with parsed session info
+            car_canonical: Canonical car name ("bmw", "ferrari", "cadillac", etc.)
+                           When provided, bypasses structural layout detection for
+                           adapter_name assignment. Required for Cadillac/Porsche
+                           which share the same IBT structure as BMW.
         """
         si = ibt.session_info
         if not isinstance(si, dict):
@@ -452,7 +459,16 @@ class CurrentSetup:
             rf_corner_weight_n=_parse_float(rf.get("CornerWeight")),
             lr_corner_weight_n=_parse_float(lr.get("CornerWeight")),
             rr_corner_weight_n=_parse_float(rr.get("CornerWeight")),
-            adapter_name="acura" if is_heave_roll_layout else ("ferrari" if is_ferrari_layout else "bmw"),
+            adapter_name=(
+                # If caller explicitly knows the car, use that — avoids Cadillac/Porsche
+                # being misidentified as BMW (they share the same IBT setup structure).
+                car_canonical.lower()
+                if car_canonical and car_canonical.lower() in ("bmw", "ferrari", "cadillac", "porsche", "acura")
+                else (
+                    "acura" if is_heave_roll_layout
+                    else ("ferrari" if is_ferrari_layout else "bmw")
+                )
+            ),
             extraction_attempts=attempts,
         )
         if is_ferrari_layout and setup.rear_spring_nmm in (0.0,) and setup.rear_torsion_od_mm not in (0.0,):

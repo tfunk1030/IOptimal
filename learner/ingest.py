@@ -71,7 +71,7 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     # Extract measurements with the same validated lap used below.
     measured = extract_measurements(ibt_path, car, lap=lap_num)
 
-    setup = CurrentSetup.from_ibt(ibt)
+    setup = CurrentSetup.from_ibt(ibt, car_canonical=car.canonical_name)
     apply_live_control_overrides(setup, measured)
     corners = segment_lap(ibt, start, end, car=car, tick_rate=ibt.tick_rate)
     driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
