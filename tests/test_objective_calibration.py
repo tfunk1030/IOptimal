@@ -10,7 +10,9 @@ from validation.objective_calibration import (
 
 
 class ObjectiveCalibrationTests(unittest.TestCase):
-    def test_bmw_sebring_track_aware_single_lap_safe_uses_runtime_guard(self) -> None:
+    def test_single_lap_safe_weights_are_lap_gain_only(self) -> None:
+        """After audit fix (2026-04-01): single_lap_safe uses lap_gain only.
+        All penalty weights are zeroed. No BMW/Sebring runtime guard exists."""
         track_aware = ObjectiveFunction(
             get_car("bmw"),
             {"track_name": "Sebring International Raceway"},
@@ -25,13 +27,12 @@ class ObjectiveCalibrationTests(unittest.TestCase):
         guarded = track_aware._new_breakdown()
         defaulted = trackless._new_breakdown()
 
-        self.assertEqual(guarded.w_lap_gain, 0.25)
-        self.assertEqual(guarded.w_envelope, 0.40)
+        # Both should produce identical weights — no track-specific overrides
+        self.assertEqual(guarded.w_lap_gain, 1.0)
+        self.assertEqual(guarded.w_envelope, 0.0)
+        self.assertEqual(guarded.w_platform, 0.0)
         self.assertEqual(defaulted.w_lap_gain, 1.0)
-        # single_lap_safe scenario profile sets w_envelope=0.55 (updated 2026-03-29;
-        # previously expected 0.70 which was the ObjectiveBreakdown default before
-        # scenario_profiles.py explicitly set this field to 0.55).
-        self.assertEqual(defaulted.w_envelope, 0.55)
+        self.assertEqual(defaulted.w_envelope, 0.0)
 
     def test_heave_realism_moves_to_envelope_not_raw_lap_gain(self) -> None:
         objective = ObjectiveFunction(
@@ -51,7 +52,9 @@ class ObjectiveCalibrationTests(unittest.TestCase):
         self.assertEqual(nominal_gain, extreme_gain)
         self.assertGreater(extreme_penalty.total_ms, nominal_penalty.total_ms)
 
-    def test_bmw_sebring_track_aware_single_lap_safe_halves_camber_penalty(self) -> None:
+    def test_camber_penalty_is_car_agnostic(self) -> None:
+        """After audit fix: camber penalty is no longer halved for BMW/Sebring.
+        Track-aware and trackless produce identical camber penalties."""
         track_aware = ObjectiveFunction(
             get_car("bmw"),
             {"track_name": "Sebring International Raceway"},
@@ -66,7 +69,7 @@ class ObjectiveCalibrationTests(unittest.TestCase):
         guarded = track_aware._camber_lap_penalty_ms(-2.0, -1.0)
         defaulted = trackless._camber_lap_penalty_ms(-2.0, -1.0)
 
-        self.assertEqual(guarded, defaulted * 0.5)
+        self.assertEqual(guarded, defaulted)
 
     def test_build_calibration_report_includes_track_modes(self) -> None:
         report = build_calibration_report(include_search=False)

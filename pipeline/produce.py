@@ -349,9 +349,13 @@ def produce(
     saved_profile_path = None
     if track_hint:
         from track_model.profile import TrackProfile
-        _candidate = Path("data/tracks") / f"{track_hint.lower().replace(' ', '_')}.json"
-        if _candidate.exists():
-            saved_profile_path = _candidate
+        # Try both naming conventions: "{slug}.json" (legacy) and "{slug}_{config}.json" (autosave)
+        _hint_slug = track_hint.lower().replace(" ", "_")
+        for _pattern in [f"{_hint_slug}_*.json", f"{_hint_slug}.json"]:
+            _matches = sorted(Path("data/tracks").glob(_pattern))
+            if _matches:
+                saved_profile_path = _matches[0]
+                break
     if saved_profile_path:
         log(f"\nLoading saved track profile: {saved_profile_path}")
         track = TrackProfile.load(saved_profile_path)
