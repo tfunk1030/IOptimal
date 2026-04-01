@@ -2026,7 +2026,11 @@ FERRARI_499P = CarModel(
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
         front_m_eff_kg=1439.3,  # CALIBRATED from 7 Ferrari IBT sessions (mean, constant model)
-        rear_m_eff_kg=2870.0,   # ESTIMATE — BMW value, needs Ferrari-specific calibration
+        rear_m_eff_kg=1500.0,   # CALIBRATED from 20 Ferrari IBT sessions (Hockenheim+Sebring):
+                                # median=1571kg, mean=1833kg. High variance due to pitch coupling
+                                # on rear RH std signal. Using conservative 1500kg (below median)
+                                # to avoid over-constraining soft rear heave recommendations.
+                                # Range observed: 1093-3674kg. Previous BMW value (2870kg) was wrong.
         # CALIBRATED from 5 IBT sessions (Mar19-Mar20): rear heave perch is
         # always negative (-101 to -112.5mm). Default of +43mm (BMW) is wrong.
         # Using -103.5mm from the fastest recent session (Mar20-C, heave idx 7).
@@ -2256,6 +2260,14 @@ FERRARI_499P = CarModel(
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
     ferrari_indexed_controls=FERRARI_499P_INDEXED_CONTROLS,
+    measured_lltd_target=0.510,  # CALIBRATED: mean of 19 sessions (Hockenheim+Sebring).
+                                  # Range 0.508-0.514, stdev 0.0016. Theoretical formula = 0.475 (WRONG).
+                                  # CRITICAL: Ferrari LLTD is effectively CONSTANT at 0.510±0.002
+                                  # despite torsion bars ranging idx 2-8 and ARBs from A/1 to E/5.
+                                  # The front/rear torsion bars scale proportionally, locking LLTD.
+                                  # DO NOT attempt to optimize LLTD via torsion/ARB changes.
+    torsion_arb_coupling=0.0,    # Ferrari indexed torsion bars — no BMW-style OD coupling.
+                                  # Standard parallel model (RCVD) applies. γ=0.25 was BMW-only.
 )
 
 

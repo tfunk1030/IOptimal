@@ -1104,18 +1104,27 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         models.status["m_eff_rear"] = f"constant ({len(m_effs_rear)} points, mean {models.m_eff_rear_kg:.0f} kg)"
 
     # ─── 16. Measured LLTD target ───
-    lltds = []
+    # ── LLTD target from IBT telemetry ──────────────────────────────────
+    # BUG FIX (2026-04-01): Previously computed weight distribution (front axle
+    # weight / total weight ≈ 0.476 for Ferrari) and called it "LLTD target".
+    # Weight distribution ≠ LLTD. LLTD = lateral load transfer distribution =
+    # front roll stiffness / total roll stiffness (measured from IBT as lltd_measured).
+    #
+    # Now uses the actual IBT-measured LLTD channel when available.
+    # Falls back to the car model's explicit measured_lltd_target if set.
+    # Only overwrites car value if we have real IBT LLTD data.
+    lltd_measured_values = []
     for pt in unique:
-        if pt.lf_corner_weight_n > 0 and pt.lr_corner_weight_n > 0:
-            total_f = pt.lf_corner_weight_n + pt.rf_corner_weight_n
-            total_r = pt.lr_corner_weight_n + pt.rr_corner_weight_n
-            total = total_f + total_r
-            if total > 0:
-                weight_dist = total_f / total
-                lltds.append(weight_dist)
-    if len(lltds) >= 3:
-        models.measured_lltd_target = float(np.mean(lltds))
-        models.status["lltd_target"] = f"calibrated ({len(lltds)} sessions, mean {models.measured_lltd_target:.3f})"
+        _lltd_m = getattr(pt, "lltd_measured", None) or getattr(pt, "lltd", None)
+        if _lltd_m is not None and 0.30 < float(_lltd_m) < 0.70:
+            lltd_measured_values.append(float(_lltd_m))
+    if len(lltd_measured_values) >= 3:
+        models.measured_lltd_target = float(np.mean(lltd_measured_values))
+        models.status["lltd_target"] = (
+            f"calibrated from IBT lltd_measured ({len(lltd_measured_values)} sessions, "
+            f"mean {models.measured_lltd_target:.4f})"
+        )
+    # else: leave models.measured_lltd_target as None → car model's explicit value used
 
     # Build calibration completeness status
     fitted_count = sum(1 for attr in [

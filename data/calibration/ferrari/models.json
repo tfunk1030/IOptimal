@@ -463,7 +463,7 @@
   "m_eff_rear_kg": null,
   "m_eff_is_rate_dependent": false,
   "m_eff_rate_table": [],
-  "measured_lltd_target": 0.47522343381039844,
+  "measured_lltd_target": null,
   "front_ls_zeta": null,
   "rear_ls_zeta": null,
   "front_hs_zeta": null,
@@ -476,7 +476,7 @@
     "aero_compression": "calibrated from IBT AeroCalculator (24 sessions, front=15.5mm rear=7.1mm)",
     "arb_stiffness": "data available (3 spring groups, 9 ARB configs) \u2014 full back-solve requires telemetry roll gradient data (currently deferred)",
     "m_eff": "constant (7 points, mean 1439 kg)",
-    "lltd_target": "calibrated (24 sessions, mean 0.475)",
+    "lltd_target": "not calibrated \u2014 using car model explicit value (0.510)",
     "deflection_model": "calibrated (24 unique setups, best R\u00b2=0.87)"
   }
 }
