@@ -67,11 +67,6 @@ class AppConfig:
     first_run_complete: bool = False
     bulk_import_done: bool = False
 
-    @property
-    def team_connected(self) -> bool:
-        """Whether we have a valid team connection (API key set)."""
-        return bool(self.team_server_url and self.api_key)
-
     def save(self, config_dir: Path | None = None) -> None:
         """Persist config to disk."""
         d = config_dir or _default_config_dir()

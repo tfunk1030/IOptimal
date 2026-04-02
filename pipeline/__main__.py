@@ -12,7 +12,7 @@ if __name__ == "__main__":
     warnings.warn(
         "DeprecationWarning: Use 'python -m ioptimal produce' instead of 'python -m pipeline'",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=1
     )
     print("⚠️  DEPRECATED: Use 'python -m ioptimal produce' instead of 'python -m pipeline'", file=sys.stderr)
     print("", file=sys.stderr)

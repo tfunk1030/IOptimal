@@ -171,7 +171,6 @@ def ingest_ibt(
     prior_obs = [o for o in prior_obs if o["session_id"] != session_id]
 
     if prior_obs:
-        from learner.observation import Observation
         latest_prior = prior_obs[-1]
 
         if verbose:

@@ -661,20 +661,20 @@ class ObjectiveFunction:
         front_pct_start = car.weight_dist_front
         front_pct_end = car.weight_dist_front
 
-        if hasattr(car, 'fuel_cg_fraction_front') and car.fuel_cg_fraction_front is not None:
-            # Compute actual CG shift from fuel burn
+        if hasattr(car, 'fuel_cg_frac') and car.fuel_cg_frac is not None:
+            # Compute actual CG shift from fuel burn using car's fuel CG position.
+            # fuel_cg_frac is distance from front axle as fraction of wheelbase
+            # (0 = front axle, 1 = rear axle), so front load fraction = 1 - fuel_cg_frac.
             fuel_burned = fuel_start_l - fuel_end_l
             fuel_mass_burned = fuel_burned * car.fuel_density_kg_per_l
-            fuel_front_frac = car.fuel_cg_fraction_front
+            fuel_front_frac = 1.0 - car.fuel_cg_frac
             # Wf_end = (Wf_start * m_start - fuel_front_frac * fuel_mass_burned) / m_end
             front_mass_start = front_pct_start * mass_start
             front_mass_end = front_mass_start - fuel_front_frac * fuel_mass_burned
             front_pct_end = front_mass_end / mass_end
         else:
-            # Simplified: use BMW empirical data (fuel tank slightly rear of midship)
-            # From IBT observations: RH slightly increases as fuel burns at Sebring
-            # Approximate: front_pct changes by ~0.3% over 89→20L stint
-            front_pct_end = front_pct_start + 0.003  # fuel behind CG → front gets lighter
+            # Fallback: no fuel CG data — assume fuel is at mid-car CG
+            front_pct_end = front_pct_start + 0.003
 
         # LLTD from roll stiffness (same spring/ARB values → fixed during stint)
         front_heave_nmm = params.get("front_heave_spring_nmm", 50.0)

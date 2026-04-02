@@ -89,6 +89,8 @@ class DesktopApp:
         self._sync_client_obj = SyncClient(
             server_url=self.config.team_server_url,
             api_key=self.config.api_key,
+            push_interval=self.config.push_interval * 60,
+            pull_interval=self.config.pull_interval * 60,
         )
         self._sync_client_obj.start()
         logger.info("Sync client started: %s", self.config.team_server_url)

@@ -728,7 +728,7 @@ def materialize_overrides(
             "rear_spring_rate_nmm": internal_solver_value(car, "rear_spring_rate_nmm", step3_targets["rear_spring_rate_nmm"]),
             "rear_spring_perch_mm": step3_targets["rear_spring_perch_mm"],
             "rear_torsion_od_mm": (
-                internal_solver_value(car, "rear_spring_rate_nmm", step3_targets["rear_torsion_od_mm"])
+                internal_solver_value(car, "rear_torsion_od_mm", step3_targets["rear_torsion_od_mm"])
                 if step3_targets["rear_torsion_od_mm"] is not None
                 else None
             ),
