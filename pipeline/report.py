@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from car_model.garage import GarageSetupState
+from car_model.setup_registry import public_output_value
 from analyzer.telemetry_truth import get_signal, summarize_signal_quality
 from solver.predictor import predict_candidate_telemetry
 
@@ -452,13 +453,23 @@ def generate_report(
         _is_ferrari = getattr(car, "canonical_name", "") == "ferrari"
         _hu = "idx" if _is_ferrari else "N/mm"
         _tu = "idx" if _is_ferrari else "mm"
-        a(_cmp("Front heave",        current_setup.front_heave_nmm,      step2.front_heave_nmm,          _hu, ".0f"))
+        # For Ferrari, convert raw N/mm values to garage indices via public_output_value so
+        # both Current and Recomm columns are in the same display units (idx).
+        _cur_fh  = float(public_output_value(car, "front_heave_nmm",     current_setup.front_heave_nmm))
+        _rec_fh  = float(public_output_value(car, "front_heave_nmm",     step2.front_heave_nmm))
+        _cur_rh  = float(public_output_value(car, "rear_third_nmm",      current_setup.rear_third_nmm))
+        _rec_rh  = float(public_output_value(car, "rear_third_nmm",      step2.rear_third_nmm))
+        _cur_rs  = float(public_output_value(car, "rear_spring_rate_nmm", current_setup.rear_spring_nmm))
+        _rec_rs  = float(public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+        _cur_tb  = float(public_output_value(car, "front_torsion_od_mm", current_setup.front_torsion_od_mm))
+        _rec_tb  = float(public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+        a(_cmp("Front heave",        _cur_fh,   _rec_fh,  _hu, ".0f"))
         _rear_heave_lbl = "Rear heave" if _is_ferrari else "Rear third"
-        a(_cmp(_rear_heave_lbl,      current_setup.rear_third_nmm,       step2.rear_third_nmm,           _hu, ".0f"))
+        a(_cmp(_rear_heave_lbl,      _cur_rh,   _rec_rh,  _hu, ".0f"))
         _rear_spr_lbl = "Rear TB OD" if _is_ferrari else "Rear spring"
-        a(_cmp(_rear_spr_lbl,        current_setup.rear_spring_nmm,      step3.rear_spring_rate_nmm,     _hu, ".0f"))
+        a(_cmp(_rear_spr_lbl,        _cur_rs,   _rec_rs,  _hu, ".0f"))
         _tb_lbl = "F torsion bar OD" if _is_ferrari else "Torsion bar OD"
-        a(_cmp(_tb_lbl,              current_setup.front_torsion_od_mm,  step3.front_torsion_od_mm,      _tu))
+        a(_cmp(_tb_lbl,              _cur_tb,   _rec_tb,  _tu))
         a(_cmp("Front camber",       current_setup.front_camber_deg,     step5.front_camber_deg,         "°"))
         a(_cmp("Rear camber",        current_setup.rear_camber_deg,      step5.rear_camber_deg,          "°"))
         a(_cmp("Brake bias",         current_setup.brake_bias_pct,       supporting.brake_bias_pct,      "%"))
