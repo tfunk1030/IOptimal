@@ -2021,7 +2021,7 @@ FERRARI_499P = CarModel(
     ),
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=30.0,        # iRacing GTP floor — confirmed from IBT (30.1mm)
-        front_pushrod_default_mm=-3.0,  # CALIBRATED: both IBTs show pushrod=-3.0, RH=30.1
+        front_pushrod_default_mm=2.0,   # VALIDATED: best lap (87.575s) garage screenshot 2026-04-02 → pushrod=+2.0mm, RH=30.1mm
         rear_base_rh_mm=42.5,           # CALIBRATED: intercept from 2 IBTs (12→47.9, 14→48.8)
         rear_pushrod_to_rh=0.45,        # CALIBRATED: slope = (48.8-47.9)/(14-12) = 0.45
     ),
@@ -2036,7 +2036,7 @@ FERRARI_499P = CarModel(
         # CALIBRATED from 5 IBT sessions (Mar19-Mar20): rear heave perch is
         # always negative (-101 to -112.5mm). Default of +43mm (BMW) is wrong.
         # Using -103.5mm from the fastest recent session (Mar20-C, heave idx 7).
-        perch_offset_rear_baseline_mm=-103.5,
+        perch_offset_rear_baseline_mm=-104.0,  # VALIDATED: best lap 87.575s garage screenshot 2026-04-02 → rear perch=-104.0mm
         # Ferrari garage exposes raw heave indices, not physical N/mm.
         # Use the existing anchors from observed Ferrari sessions:
         #   front idx 1 ≈ 50 N/mm
@@ -2136,8 +2136,8 @@ FERRARI_499P = CarModel(
         rear_toe_range_mm=(-2.0, 3.0),
         # From verified S1: front camber -2.9°, rear -1.9° CALIBRATED from IBT sessions Mar20A/B/C
         front_camber_baseline_deg=-2.9,
-        rear_camber_baseline_deg=-1.9,  # CALIBRATED from IBT sessions Mar20A/B/C
-        front_toe_baseline_mm=-2.0,   # Ferrari S1: -2.0mm (aggressive toe-out)
+        rear_camber_baseline_deg=-1.8,  # VALIDATED: best lap 87.575s garage screenshot 2026-04-02
+        front_toe_baseline_mm=-0.5,   # VALIDATED: best lap 87.575s garage screenshot → toe=-0.5mm
         rear_toe_baseline_mm=0.0,
         front_roll_gain=0.60,         # ESTIMATE
         rear_roll_gain=0.48,          # ESTIMATE
