@@ -233,17 +233,8 @@
       "correction_factor": 1.0
     }
   },
-<<<<<<< HEAD
-<<<<<<< HEAD
-  "last_updated": "2026-04-02T03:09:05.205338+00:00",
-  "observation_count": 17,
-=======
-  "last_updated": "2026-04-02T03:13:56.004767+00:00",
-=======
   "last_updated": "2026-04-02T03:33:06.078119+00:00",
->>>>>>> 2a5adda96078dd35f1617d3ed66fdc37c8398717
   "observation_count": 18,
->>>>>>> 967f0f910ce487ac9849b998cc8adceb8c948ed6
   "most_sensitive_parameters": [
     [
       "rear_torsion_bar_index",
@@ -257,23 +248,11 @@
     "aero_compression_rear_std_mm": 1.607778186535459,
     "lap_time_surrogate_regularized": 1.0,
     "lap_time_surrogate_sample_weight": 2.0,
-<<<<<<< HEAD
-<<<<<<< HEAD
-    "roll_gradient_measured_mean": 0.33660961228566744,
-    "roll_gradient_measured_std": 0.11460651091342935,
-    "roll_gradient_sample_count": 16,
-    "lltd_measured_mean": 0.510362362236407,
-    "lltd_measured_std": 0.0017774121999052245,
-=======
-    "roll_gradient_measured_mean": 0.3260969674978726,
-=======
     "roll_gradient_measured_mean": 0.3260898480081998,
->>>>>>> 2a5adda96078dd35f1617d3ed66fdc37c8398717
     "roll_gradient_measured_std": 0.11857977327418781,
     "roll_gradient_sample_count": 17,
     "lltd_measured_mean": 0.5102244542737739,
     "lltd_measured_std": 0.0018134096311635723,
->>>>>>> 967f0f910ce487ac9849b998cc8adceb8c948ed6
     "m_eff_front_values": [
       13.2,
       13.5,
@@ -294,55 +273,6 @@
       20.9,
       13.2
     ],
-<<<<<<< HEAD
-    "m_eff_front_empirical_mean": 12.92941176470588,
-    "m_eff_front_empirical_std": 4.181860647786897,
-    "prediction_correction_front_rh_std_mm": 4.7572,
-    "prediction_correction_front_rh_std_mm_std": 0.2863,
-    "prediction_correction_front_rh_std_mm_n": 7,
-    "prediction_correction_rear_rh_std_mm": 6.0122,
-    "prediction_correction_rear_rh_std_mm_std": 0.355,
-    "prediction_correction_rear_rh_std_mm_n": 7,
-    "prediction_correction_lltd_predicted": 0.0146,
-    "prediction_correction_lltd_predicted_std": 0.0265,
-    "prediction_correction_lltd_predicted_n": 7,
-    "prediction_correction_body_roll_predicted_deg_per_g": 0.3463,
-    "prediction_correction_body_roll_predicted_deg_per_g_std": 0.116,
-    "prediction_correction_body_roll_predicted_deg_per_g_n": 7,
-    "prediction_correction_front_bottoming_predicted": 9.2603,
-    "prediction_correction_front_bottoming_predicted_std": 4.3342,
-    "prediction_correction_front_bottoming_predicted_n": 7,
-    "prediction_correction_front_heave_travel_used_pct": 12.7025,
-    "prediction_correction_front_heave_travel_used_pct_std": 6.0374,
-    "prediction_correction_front_heave_travel_used_pct_n": 7,
-    "prediction_correction_front_excursion_mm": 9.441,
-    "prediction_correction_front_excursion_mm_std": 6.0804,
-    "prediction_correction_front_excursion_mm_n": 7,
-    "prediction_correction_braking_pitch_deg": 0.4634,
-    "prediction_correction_braking_pitch_deg_std": 0.2746,
-    "prediction_correction_braking_pitch_deg_n": 7,
-    "prediction_correction_front_lock_p95": 0.0091,
-    "prediction_correction_front_lock_p95_std": 0.0177,
-    "prediction_correction_front_lock_p95_n": 7,
-    "prediction_correction_rear_power_slip_p95": 0.0107,
-    "prediction_correction_rear_power_slip_p95_std": 0.0196,
-    "prediction_correction_rear_power_slip_p95_n": 7,
-    "prediction_correction_body_slip_p95_deg": 0.1834,
-    "prediction_correction_body_slip_p95_deg_std": 0.2833,
-    "prediction_correction_body_slip_p95_deg_n": 7,
-    "prediction_correction_understeer_low_deg": -0.1772,
-    "prediction_correction_understeer_low_deg_std": 0.2334,
-    "prediction_correction_understeer_low_deg_n": 7,
-    "prediction_correction_understeer_high_deg": -0.1756,
-    "prediction_correction_understeer_high_deg_std": 0.1725,
-    "prediction_correction_understeer_high_deg_n": 7,
-    "prediction_correction_front_pressure_hot_kpa": 1.5556,
-    "prediction_correction_front_pressure_hot_kpa_std": 4.9481,
-    "prediction_correction_front_pressure_hot_kpa_n": 7,
-    "prediction_correction_rear_pressure_hot_kpa": 2.8518,
-    "prediction_correction_rear_pressure_hot_kpa_std": 4.9359,
-    "prediction_correction_rear_pressure_hot_kpa_n": 7
-=======
     "m_eff_front_empirical_mean": 12.944444444444446,
     "m_eff_front_empirical_std": 4.064510661024307,
     "prediction_correction_front_rh_std_mm": 4.8313,
@@ -390,6 +320,5 @@
     "prediction_correction_rear_pressure_hot_kpa": 2.4533,
     "prediction_correction_rear_pressure_hot_kpa_std": 4.7307,
     "prediction_correction_rear_pressure_hot_kpa_n": 8
->>>>>>> 967f0f910ce487ac9849b998cc8adceb8c948ed6
   }
 }
