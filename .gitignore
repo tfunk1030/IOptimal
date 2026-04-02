@@ -69,3 +69,8 @@ build/
 
 # Auto-generated empirical model files — never merge, always regenerate
 data/learnings/models/*_empirical.json
+
+# Auto-generated runtime data — conflict-prone, always regenerate locally
+data/garage_models/**/*.json
+data/tracks/*.json
+data/learnings/index.json
