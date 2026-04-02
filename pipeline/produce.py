@@ -337,6 +337,7 @@ def produce(
 
     # ── Apply learned corrections (default: auto, --no-learn to disable) ──
     learned = None
+    n_sessions = 0
     if not getattr(args, "no_learn", False):
         track_info = ibt.track_info()
         track_name = track_info.get("track_name", "")
@@ -1465,11 +1466,7 @@ def produce(
             # Strip None values
             _recommended_dict = {k: v for k, v in _recommended_dict.items() if v is not None}
 
-            _delta_session_count = getattr(locals().get("n_sessions", None), "__class__", None) and n_sessions or 0
-            try:
-                _delta_session_count = n_sessions
-            except NameError:
-                _delta_session_count = 0
+            _delta_session_count = learned.session_count if learned is not None else 0
 
             _best_lap = getattr(track, "best_lap_time_s", None)
 
