@@ -176,20 +176,24 @@ def apply_learned_corrections(
     # ── Apply calibrated damper HS velocity slopes ──
     hs_slope_front = corrections.get("calibrated_hs_vel_slope_front")
     hs_fpc_r2 = corrections.get("calibrated_hs_front_r2", 0)
-    if hs_slope_front is not None and hs_slope_front > 0 and hs_fpc_r2 > 0.15:
+    if hs_slope_front is not None and abs(hs_slope_front) > 1e-6 and hs_fpc_r2 > 0.15:
         result.hs_vel_slope_front = hs_slope_front
+        sign_desc = "more clicks reduces vel" if hs_slope_front < 0 else "more clicks increases vel"
         result.applied.append(
-            f"HS damper sensitivity front: {hs_slope_front*1000:.2f} mm/s per click "
-            f"(R²={hs_fpc_r2:.2f}, {corrections.get('calibrated_hs_front_n', '?')} sessions)"
+            f"HS damper sensitivity front: {hs_slope_front*1000:+.2f} mm/s per click "
+            f"({sign_desc}, R²={hs_fpc_r2:.2f}, "
+            f"{corrections.get('calibrated_hs_front_n', '?')} sessions)"
         )
 
     hs_slope_rear = corrections.get("calibrated_hs_vel_slope_rear")
     hs_fpc_r2_rear = corrections.get("calibrated_hs_rear_r2", 0)
-    if hs_slope_rear is not None and hs_slope_rear > 0 and hs_fpc_r2_rear > 0.15:
+    if hs_slope_rear is not None and abs(hs_slope_rear) > 1e-6 and hs_fpc_r2_rear > 0.15:
         result.hs_vel_slope_rear = hs_slope_rear
+        sign_desc = "more clicks reduces vel" if hs_slope_rear < 0 else "more clicks increases vel"
         result.applied.append(
-            f"HS damper sensitivity rear: {hs_slope_rear*1000:.2f} mm/s per click "
-            f"(R²={hs_fpc_r2_rear:.2f}, {corrections.get('calibrated_hs_rear_n', '?')} sessions)"
+            f"HS damper sensitivity rear: {hs_slope_rear*1000:+.2f} mm/s per click "
+            f"({sign_desc}, R²={hs_fpc_r2_rear:.2f}, "
+            f"{corrections.get('calibrated_hs_rear_n', '?')} sessions)"
         )
 
     # ── Apply calibrated roll gains from tyre thermals ──

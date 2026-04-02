@@ -532,65 +532,11 @@ def _calibrate_force_per_click(obs_list: list[dict], models: EmpiricalModelSet) 
     MIN_R2 = 0.15
     MIN_N = 6
 
-    # Estimate m_eff from corner weights in observations or calibration data.
-    # Observations may not have corner weights — fall back to calibration points
-    # or the corrections dict which may already have m_eff from earlier fitting.
-    front_masses, rear_masses = [], []
-    for obs in obs_list:
-        setup = obs.get("setup", {})
-        lf_w = setup.get("lf_corner_weight_n") or setup.get("corner_weights", {}).get("lf")
-        rf_w = setup.get("rf_corner_weight_n") or setup.get("corner_weights", {}).get("rf")
-        lr_w = setup.get("lr_corner_weight_n") or setup.get("corner_weights", {}).get("lr")
-        rr_w = setup.get("rr_corner_weight_n") or setup.get("corner_weights", {}).get("rr")
-        if lf_w and rf_w:
-            front_masses.append((float(lf_w) + float(rf_w)) / 9.81)  # N → kg
-        if lr_w and rr_w:
-            rear_masses.append((float(lr_w) + float(rr_w)) / 9.81)
-
-    m_eff_front = float(np.mean(front_masses)) if front_masses else None
-    m_eff_rear = float(np.mean(rear_masses)) if rear_masses else None
-
-    # Fallback: use previously calibrated m_eff or estimate from total mass
-    if m_eff_front is None:
-        m_eff_front = models.corrections.get("m_eff_front_empirical_mean")
-    if m_eff_rear is None:
-        m_eff_rear = models.corrections.get("m_eff_rear_empirical_mean")
-    # Last resort: estimate from total mass (car + driver) and weight distribution
-    if m_eff_front is None or m_eff_rear is None:
-        # Try to get total mass from calibration points
-        try:
-            import glob as _glob
-            from pathlib import Path as _Path
-            import json as _json
-            cal_dir = _Path("data/calibration")
-            car_dirs = list(cal_dir.iterdir()) if cal_dir.exists() else []
-            for cd in car_dirs:
-                cal_file = cd / "calibration_points.json"
-                if cal_file.exists():
-                    cal_pts = _json.load(open(cal_file))
-                    if isinstance(cal_pts, list):
-                        for pt in cal_pts:
-                            lf = pt.get("lf_corner_weight_n", 0)
-                            rf = pt.get("rf_corner_weight_n", 0)
-                            lr = pt.get("lr_corner_weight_n", 0)
-                            rr = pt.get("rr_corner_weight_n", 0)
-                            if lf > 100 and rf > 100 and lr > 100 and rr > 100:
-                                if m_eff_front is None:
-                                    m_eff_front = (lf + rf) / 9.81
-                                if m_eff_rear is None:
-                                    m_eff_rear = (lr + rr) / 9.81
-                                break
-        except Exception:
-            pass
-
-    # Reference HS velocity (m/s) — standard industry value for HS regime
-    V_REF_HS = 0.15  # 150 mm/s
-
     if rel_hs_front and rel_hs_front.r_squared >= MIN_R2 and rel_hs_front.sample_count >= MIN_N:
         slope = rel_hs_front.coefficients[0] if rel_hs_front.coefficients else None
         if slope is not None and abs(slope) > 1e-6:
             # Store raw measurement (m/s per click) for audit
-            models.corrections["calibrated_hs_vel_slope_front"] = float(abs(slope))
+            models.corrections["calibrated_hs_vel_slope_front"] = float(slope)  # signed: negative = more clicks reduces vel
             models.corrections["calibrated_hs_front_r2"] = float(rel_hs_front.r_squared)
             models.corrections["calibrated_hs_front_n"] = int(rel_hs_front.sample_count)
 
@@ -606,7 +552,7 @@ def _calibrate_force_per_click(obs_list: list[dict], models: EmpiricalModelSet) 
     if rel_hs_rear and rel_hs_rear.r_squared >= MIN_R2 and rel_hs_rear.sample_count >= MIN_N:
         slope = rel_hs_rear.coefficients[0] if rel_hs_rear.coefficients else None
         if slope is not None and abs(slope) > 1e-6:
-            models.corrections["calibrated_hs_vel_slope_rear"] = float(abs(slope))
+            models.corrections["calibrated_hs_vel_slope_rear"] = float(slope)  # signed: negative = more clicks reduces vel
             models.corrections["calibrated_hs_rear_r2"] = float(rel_hs_rear.r_squared)
             models.corrections["calibrated_hs_rear_n"] = int(rel_hs_rear.sample_count)
 
@@ -657,7 +603,12 @@ def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> 
         if d.get("confidence_level") not in ("high", "medium"):
             continue
 
-        num_changes = d.get("num_setup_changes", 99)
+        raw_num = d.get("num_setup_changes")
+        try:
+            num_changes = int(raw_num) if raw_num is not None else 99
+        except (TypeError, ValueError):
+            num_changes = 99
+        num_changes = max(num_changes, 1)  # guard against 0 or negative
         if num_changes <= 1:
             experiment_weight = 1.0
         elif num_changes == 2:
