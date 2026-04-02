@@ -1222,7 +1222,14 @@ class CarModel:
     fuel_density_kg_per_l: float = 0.742  # Fuel density (E10 gasoline)
 
     # Weight distribution
-    weight_dist_front: float = 0.47  # Static front weight fraction
+    weight_dist_front: float = 0.47  # Static front weight fraction (at max fuel)
+    # Fuel tank CG position as fraction of wheelbase from front axle.
+    # LMDh regulations mandate the fuel cell within the central survival cell,
+    # between the axles. For all LMDh cars: p_fuel ≈ 0.50 (central placement).
+    # Used by front_weight_at_fuel() to compute dynamic W_f during a stint.
+    # Physics-notes.md: 2026-04-02 Topic B — per-10L W_f shift = -0.0018%
+    # for BMW (p_fuel=0.50), full-stint shift (89L→0L) ≈ -0.16%.
+    fuel_cg_frac: float = 0.50  # Fuel tank CG fraction of wheelbase from front
 
     # Brake bias — calibrated from real IBT/LDX data per car.
     # iRacing BrakePressureBias = hydraulic front pressure split (%).
@@ -1416,6 +1423,38 @@ class CarModel:
         """Total car mass including driver and fuel (kg)."""
         return self.mass_car_kg + self.mass_driver_kg + fuel_load_l * self.fuel_density_kg_per_l
 
+    def front_weight_at_fuel(self, fuel_load_l: float) -> float:
+        """Dynamic front weight fraction at a given fuel load.
+
+        Computes W_f(fuel) using the fuel tank CG position (fuel_cg_frac):
+
+            W_f_dry = (W_f_full * m_full - m_fuel_full * p_fuel) / m_dry
+            W_f(fuel) = (W_f_dry * m_dry + m_fuel * p_fuel) / m_total(fuel)
+
+        For BMW M Hybrid V8 (p_fuel=0.50, calibrated 2026-04-02):
+          - Full tank (89L): W_f = 47.27%  (matches IBT calibration)
+          - Empty tank (0L): W_f = 47.11%
+          - Shift per 10L burned: ~-0.018% (rearward as fuel burns)
+          - Full-stint shift: ~-0.16% (small, but correct for theory)
+
+        Note: The shift direction is rearward because p_fuel (0.50) > W_f_full (0.4727).
+        Burning fuel removes mass from slightly ahead of the CG → car moves rearward.
+
+        Args:
+            fuel_load_l: Current fuel load in litres.
+
+        Returns:
+            Front weight fraction [0.0–1.0] at the given fuel load.
+        """
+        m_fuel_max = self.garage_ranges.max_fuel_l * self.fuel_density_kg_per_l
+        m_dry = self.mass_car_kg + self.mass_driver_kg
+        m_full = m_dry + m_fuel_max
+        # Back-derive dry front fraction from calibrated full-tank value
+        w_f_dry = (self.weight_dist_front * m_full - m_fuel_max * self.fuel_cg_frac) / m_dry
+        m_fuel = fuel_load_l * self.fuel_density_kg_per_l
+        m_total = m_dry + m_fuel
+        return (w_f_dry * m_dry + m_fuel * self.fuel_cg_frac) / m_total
+
     def active_garage_output_model(self, track_name: str | None = None) -> GarageOutputModel | None:
         """Return the authoritative garage-output model for the given track."""
         model = self.garage_output_model
@@ -1530,7 +1569,8 @@ BMW_M_HYBRID_V8 = CarModel(
     canonical_name="bmw",
     mass_car_kg=1050.3,       # Calibrated from 41 sessions (corner weights)
     mass_driver_kg=75.0,
-    weight_dist_front=0.4727,  # Calibrated from 41 sessions (corner weights)
+    weight_dist_front=0.4727,  # Calibrated from 41 sessions (corner weights) at full fuel
+    fuel_cg_frac=0.50,        # LMDh reg: central fuel cell. Analysis: per-10L W_f shift=-0.018%
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
     default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
     tyre_load_sensitivity=0.22,    # BMW Michelin GTP compound — moderate sensitivity

@@ -981,3 +981,70 @@ This is a LINEAR interpolation between base bias and migrated bias.
 - **Immediate action:** Add physics documentation comments to `cars.py` explaining the BBT/Migration system.
 - **Future action:** For cars that support migration (Cadillac, Porsche, Acura, Ferrari — NOT BMW), the objective function could model the effective bias range and penalize setups where migration+bias leads to front or rear lockup at either end of the braking zone.
 - **Note:** BMW does NOT have BBT or Migration in iRacing. The `brake_bias_target` and `brake_bias_migration` fields in GTPSetupRange should only be populated for cars that support them.
+
+---
+
+## 2026-04-02 — Topic B (deepened): LMDh Front Weight % Change per Fuel Burn — Quantified
+
+**Sources:**
+- FIA LMDh Technical Regulations 2023 — Art. 12.1: fuel cell within central survival cell between axles
+  https://www.fia.com/sites/default/files/lmdh-technical-regulations-2023.05.03_blackline.pdf
+- First-principles derivation from BMW IBT-calibrated mass properties in cars.py
+- Milliken & Milliken RCVD Ch. 18 — CG migration formula
+- Previous research: 2026-03-22 Topic D documented qualitative findings; this entry quantifies them.
+
+**Key findings:**
+
+1. **Fuel CG position for LMDh (p_fuel):**
+   LMDh regulations mandate the fuel cell within the central survival cell, between the axles.
+   Per FIA Art. 12.1, the fuel cell must be installed centrally. For all LMDh cars:
+   **p_fuel ≈ 0.50 (50% of wheelbase from front axle).**
+   This is a structural constraint, not a tunable parameter.
+
+2. **Per-10L front weight fraction shift (BMW M Hybrid V8):**
+   Using BMW IBT-calibrated constants (mass_car=1050.3 kg, mass_driver=75 kg,
+   fuel_density=0.742 kg/L, weight_dist_front=0.4727 at full tank, p_fuel=0.50):
+   - **Per-10L burned: Δ W_f = −0.018%** (−0.00018 in decimal)
+   - Per-litre: Δ W_f = −0.0018% per L
+   - Full stint (89L → 0L): Δ W_f = **−0.160%** total front-weight shift
+   - Direction: rearward (fuel CG at 50% is ahead of car CG at 47.3%, so burning fuel moves CG rearward)
+
+3. **Sensitivity to p_fuel assumption:**
+   | p_fuel | per-10L Δ W_f | full-stint Δ W_f |
+   |--------|--------------|-----------------|
+   | 0.45   | +0.015%      | +0.133%         |
+   | 0.48   | −0.005%      | −0.043%         |
+   | 0.50   | −0.018%      | −0.160%         |
+   | 0.52   | −0.031%      | −0.278%         |
+   | 0.55   | −0.050%      | −0.454%         |
+   The direction is only confirmed as rearward if the tank is forward of the car CG (p_fuel > W_f).
+   For all LMDh cars, p_fuel ≈ 0.50 > W_f ≈ 0.47 → shift is confirmed rearward.
+
+4. **LLTD target implication:**
+   Since LLTD_target ≈ W_f + offset, a full-stint shift of −0.16% W_f translates to
+   a −0.16% shift in optimal LLTD target (start: 41.0% → end: 40.84% for BMW).
+   This is well within solver tolerance and does not require dynamic re-solving per stint lap.
+   For endurance racing (Le Mans, Petit Le Mans) the effect compounds across multiple stints
+   and COULD justify a mid-race ARB adjustment — but is outside current solver scope.
+
+**Formula (with units):**
+   W_f(fuel_l) = (W_f_dry × m_dry + fuel_l × ρ_fuel × p_fuel) / (m_dry + fuel_l × ρ_fuel)
+   W_f_dry = (W_f_full × m_full − fuel_max × ρ_fuel × p_fuel) / m_dry
+
+   where:
+   - W_f_full = 0.4727 (BMW, full tank, IBT-calibrated)
+   - m_dry = mass_car + mass_driver = 1125.3 kg (BMW)
+   - ρ_fuel = 0.742 kg/L
+   - p_fuel = 0.50 (LMDh central tank)
+   - fuel_max = 89 L (regulation max)
+
+**iOptimal application:**
+- Added `fuel_cg_frac: float = 0.50` to `CarModel` dataclass (car_model/cars.py)
+  All LMDh cars default to 0.50; can be overridden if IBT evidence suggests otherwise.
+- Added `front_weight_at_fuel(fuel_load_l: float) -> float` method to `CarModel`:
+  Returns exact W_f at any fuel level using the back-derived W_f_dry approach.
+- Set `fuel_cg_frac=0.50` explicitly on BMW_M_HYBRID_V8 with calibration comment.
+- The solver can now call `car.front_weight_at_fuel(fuel_l)` instead of `car.weight_dist_front`
+  when fuel level is known (e.g. from IBT `FuelLevel` channel or user input).
+- No changes to ARBSolver yet — weight_dist_front is still used for nominal solves.
+  Integration into solver is a future enhancement (fuel load → dynamic LLTD target).
