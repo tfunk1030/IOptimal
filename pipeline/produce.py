@@ -1388,7 +1388,7 @@ def produce(
     # ── Delta card output (--delta-card flag) ────────────────────────
     if getattr(args, "delta_card", False) and current_setup is not None:
         try:
-            from output.delta_card import format_delta_card
+            from output.delta_card import format_delta_card, build_solver_reasoning
 
             # Build current params dict from IBT-extracted setup.
             # For Ferrari (and any car with indexed springs), use raw_indexed_fields
@@ -1470,6 +1470,12 @@ def produce(
 
             _best_lap = getattr(track, "best_lap_time_s", None)
 
+            _solver_reasoning = build_solver_reasoning(
+                step1=step1, step2=step2, step3=step3,
+                step4=step4, step5=step5, step6=step6,
+                supporting=supporting,
+            )
+
             delta_output = format_delta_card(
                 current=_current_dict,
                 recommended=_recommended_dict,
@@ -1479,6 +1485,7 @@ def produce(
                 best_lap_s=_best_lap,
                 mode=getattr(args, "mode", "safe"),
                 full_setup_str=report,
+                solver_reasoning=_solver_reasoning,
             )
             print("\n")
             print(delta_output)

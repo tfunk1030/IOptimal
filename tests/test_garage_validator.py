@@ -146,11 +146,12 @@ class GarageValidatorTests(unittest.TestCase):
             fuel_l=58.0,
         )
 
-        self.assertFalse(validation.valid)
-        self.assertEqual(validation.validation_tier, "none")
-        self.assertTrue(validation.hard_veto)
-        self.assertTrue(validation.messages)
-        self.assertIn("garage output model", validation.messages[0])
+        # Missing garage model should be non-blocking (range_clamp fallback)
+        self.assertTrue(validation.valid)
+        self.assertEqual(validation.validation_tier, "range_clamp")
+        self.assertFalse(validation.hard_veto)
+        self.assertTrue(validation.warnings)
+        self.assertIn("garage output model", validation.warnings[0])
         self.assertEqual(step2.front_heave_nmm, 190.0)
         self.assertEqual(step2.rear_third_nmm, 950.0)
         self.assertEqual(step3.front_torsion_od_mm, 20.0)

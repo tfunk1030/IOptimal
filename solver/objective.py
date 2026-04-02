@@ -693,8 +693,12 @@ class ObjectiveFunction:
         # rear_spring_nmm*MR^2 rear (Dallara coil spring architecture).
         _ferrari_controls = getattr(car, "ferrari_indexed_controls", None)
         if _ferrari_controls is not None:
-            _ftb_idx = float(params.get("front_torsion_bar_index", 2.0))
-            _rtb_idx = float(params.get("rear_torsion_bar_index", 2.0))
+            # Grid search emits Ferrari indices under standard solver keys
+            # (front_torsion_od_mm / rear_spring_rate_nmm); accept both.
+            _ftb_idx = float(params.get("front_torsion_od_mm",
+                             params.get("front_torsion_bar_index", 2.0)))
+            _rtb_idx = float(params.get("rear_spring_rate_nmm",
+                             params.get("rear_torsion_bar_index", 2.0)))
             front_wheel_rate = _ferrari_controls.front_torsion_rate_from_index(_ftb_idx)
             rear_wheel_rate = _ferrari_controls.rear_torsion_rate_from_index(_rtb_idx)
         else:
@@ -778,8 +782,12 @@ class ObjectiveFunction:
         # Other cars: c_torsion*OD^4 front + rear_spring_nmm*MR^2 rear (Dallara coil).
         _ferrari_controls = getattr(car, "ferrari_indexed_controls", None)
         if _ferrari_controls is not None:
-            _ftb_idx = float(params.get("front_torsion_bar_index", 2.0))
-            _rtb_idx = float(params.get("rear_torsion_bar_index", 2.0))
+            # Grid search emits Ferrari indices under standard solver keys
+            # (front_torsion_od_mm / rear_spring_rate_nmm); accept both.
+            _ftb_idx = float(params.get("front_torsion_od_mm",
+                             params.get("front_torsion_bar_index", 2.0)))
+            _rtb_idx = float(params.get("rear_spring_rate_nmm",
+                             params.get("rear_torsion_bar_index", 2.0)))
             front_wheel_rate = _ferrari_controls.front_torsion_rate_from_index(_ftb_idx)
             rear_wheel_rate = _ferrari_controls.rear_torsion_rate_from_index(_rtb_idx)
         else:

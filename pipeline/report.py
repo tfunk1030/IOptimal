@@ -293,16 +293,23 @@ def generate_report(
         return report
 
     # ── PRE-CARD: Driver & Diagnosis ──────────────────────────────────
+    _car_slug = getattr(car, "canonical_name", "bmw")
+    _tier_info = _load_support_tier(_car_slug, track.track_name)
+    _header_tier = _tier_info.get("confidence_tier", "unknown") if _tier_info else "unknown"
+    _TIER_LABELS = {
+        "calibrated": "Telemetry-calibrated",
+        "partial": "Physics-derived (partial validation)",
+        "exploratory": "Physics-derived (exploratory)",
+    }
+    _tier_label = _TIER_LABELS.get(_header_tier, "Physics-derived (uncalibrated)")
     a("═" * W)
     lap_str = f"  Lap #{measured.lap_number}  ({measured.lap_time_s:.3f}s)" if measured else ""
     a(f"  {car.name}  ·  {track.track_name} — {track.track_config}  ·  Wing {wing}°")
-    a(f"  Telemetry-calibrated{lap_str}  ·  {now}")
+    a(f"  {_tier_label}{lap_str}  ·  {now}")
     a("═" * W)
     a("")
 
     # ── CONFIDENCE & EVIDENCE ────────────────────────────────────────
-    _car_slug = getattr(car, "canonical_name", "bmw")
-    _tier_info = _load_support_tier(_car_slug, track.track_name)
     _sig_quality = summarize_signal_quality(measured)
     _direct_count = _sig_quality.get("direct", 0) if isinstance(_sig_quality, dict) else 0
     _total_count = sum(_sig_quality.values()) if isinstance(_sig_quality, dict) else 0

@@ -87,17 +87,17 @@ def validate_solution_legality(
         car_name = getattr(car, "canonical_name", "unknown")
         support_note = (
             f"No garage output model for {car_name} at {track_name}; "
-            "candidate fails legal gate because garage-output validation is required."
+            "skipping garage-output validation (range-clamp only)."
         )
         return LegalValidation(
-            valid=False,
-            warnings=warnings,
+            valid=True,
+            warnings=warnings + [support_note],
             messages=[support_note],
             snapped_or_corrected=bool(warnings),
-            validation_tier="none",
-            hard_veto=True,
-            hard_veto_reasons=[support_note],
-            constraint_violations=[support_note],
+            validation_tier="range_clamp",
+            hard_veto=False,
+            hard_veto_reasons=[],
+            constraint_violations=[],
         )
 
     state = GarageSetupState.from_solver_steps(

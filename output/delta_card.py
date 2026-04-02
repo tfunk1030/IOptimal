@@ -203,6 +203,7 @@ _DAMPER_WHY: dict[str, str] = {
 
 
 def _get_why(param: str, direction: str) -> str:
+    """Fallback generic why-text when solver reasoning is unavailable."""
     if param in _DAMPER_KEYS:
         # Extract channel from param name: lf_ls_comp_clicks -> ls_comp
         parts = param.replace("_clicks", "").split("_")
@@ -212,6 +213,166 @@ def _get_why(param: str, direction: str) -> str:
         return "[ESTIMATE] damper directional adjustment"
     why_map = _WHY.get(param, _WHY["default"])
     return why_map.get(direction, why_map.get("increase", "solver recommendation"))
+
+
+def build_solver_reasoning(
+    step1: object | None = None,
+    step2: object | None = None,
+    step3: object | None = None,
+    step4: object | None = None,
+    step5: object | None = None,
+    step6: object | None = None,
+    supporting: object | None = None,
+) -> dict[str, str]:
+    """Build parameter-level constraint-based reasoning from solver step results.
+
+    Returns a dict mapping parameter names to physics-justified why-strings
+    referencing actual constraint values from the solver run.
+    """
+    reasons: dict[str, str] = {}
+
+    # ── Step 1: Rake / Ride Heights ─────────────────────────────────
+    if step1 is not None:
+        _df_bal = getattr(step1, "df_balance_pct", None)
+        _ld = getattr(step1, "ld_ratio", None)
+        _vbm = getattr(step1, "vortex_burst_margin_mm", None)
+        _bal_err = getattr(step1, "balance_error_pct", None)
+
+        rh_detail = []
+        if _df_bal is not None:
+            rh_detail.append(f"DF balance={_df_bal:.1f}%")
+        if _bal_err is not None:
+            rh_detail.append(f"error={_bal_err:+.2f}%")
+        if _vbm is not None:
+            rh_detail.append(f"vortex margin={_vbm:.1f}mm")
+        if _ld is not None:
+            rh_detail.append(f"L/D={_ld:.2f}")
+        _rh_why = f"rake target: {', '.join(rh_detail)}" if rh_detail else None
+        if _rh_why:
+            reasons["front_rh_static"] = _rh_why
+            reasons["rear_rh_static"] = _rh_why
+            reasons["front_pushrod_mm"] = f"pushrod compensates RH change ({_rh_why})"
+            reasons["rear_pushrod_mm"] = f"pushrod compensates RH change ({_rh_why})"
+            reasons["wing_angle_deg"] = _rh_why
+
+    # ── Step 2: Heave / Third Springs ───────────────────────────────
+    if step2 is not None:
+        for prefix, param in [("front", "front_heave_nmm"), ("rear", "rear_third_nmm")]:
+            _bind = getattr(step2, f"{prefix}_binding_constraint", None)
+            _bm = getattr(step2, f"{prefix}_bottoming_margin_mm", None)
+            _sigma = getattr(step2, f"{prefix}_sigma_at_rate_mm", None)
+            _travel = getattr(step2, "travel_margin_front_mm", None) if prefix == "front" else None
+
+            parts = []
+            if _bind:
+                parts.append(f"binding: {_bind}")
+            if _bm is not None:
+                parts.append(f"bottoming margin={_bm:.1f}mm")
+            if _sigma is not None:
+                parts.append(f"RH σ={_sigma:.2f}mm")
+            if _travel is not None:
+                parts.append(f"travel margin={_travel:.1f}mm")
+            if parts:
+                reasons[param] = "; ".join(parts)
+
+    # ── Step 3: Corner Springs ──────────────────────────────────────
+    if step3 is not None:
+        _f_iso = getattr(step3, "front_freq_isolation_ratio", None)
+        _r_iso = getattr(step3, "rear_freq_isolation_ratio", None)
+        _f_hc = getattr(step3, "front_heave_corner_ratio", None)
+        _r_hc = getattr(step3, "rear_third_corner_ratio", None)
+        _bump_freq = getattr(step3, "track_bump_freq_hz", None)
+
+        front_parts = []
+        if _f_iso is not None:
+            front_parts.append(f"freq isolation={_f_iso:.2f}")
+        if _f_hc is not None:
+            front_parts.append(f"heave/corner ratio={_f_hc:.2f}")
+        if _bump_freq is not None:
+            front_parts.append(f"bump freq={_bump_freq:.1f}Hz")
+        if front_parts:
+            reasons["torsion_bar_od_mm"] = "; ".join(front_parts)
+
+        rear_parts = []
+        if _r_iso is not None:
+            rear_parts.append(f"freq isolation={_r_iso:.2f}")
+        if _r_hc is not None:
+            rear_parts.append(f"third/corner ratio={_r_hc:.2f}")
+        if rear_parts:
+            reasons["rear_spring_nmm"] = "; ".join(rear_parts)
+
+    # ── Step 4: ARBs ────────────────────────────────────────────────
+    if step4 is not None:
+        _lltd_a = getattr(step4, "lltd_achieved", None)
+        _lltd_t = getattr(step4, "lltd_target", None)
+        _lltd_e = getattr(step4, "lltd_error", None)
+
+        arb_parts = []
+        if _lltd_t is not None:
+            arb_parts.append(f"LLTD target={_lltd_t:.3f}")
+        if _lltd_a is not None:
+            arb_parts.append(f"achieved={_lltd_a:.3f}")
+        if _lltd_e is not None:
+            arb_parts.append(f"error={_lltd_e:+.4f}")
+        _arb_why = "; ".join(arb_parts) if arb_parts else None
+        if _arb_why:
+            for k in ("front_arb_blade", "rear_arb_blade", "front_arb_size", "rear_arb_size"):
+                reasons[k] = _arb_why
+
+    # ── Step 5: Wheel Geometry ──────────────────────────────────────
+    if step5 is not None:
+        _fc = getattr(step5, "front_camber_deg", None)
+        _rc = getattr(step5, "rear_camber_deg", None)
+        if _fc is not None:
+            reasons["front_camber_deg"] = f"optimised contact patch at limit (camber={_fc:.1f}°)"
+        if _rc is not None:
+            reasons["rear_camber_deg"] = f"rear tyre load distribution (camber={_rc:.1f}°)"
+
+    # ── Step 6: Dampers ─────────────────────────────────────────────
+    if step6 is not None:
+        _zls_f = getattr(step6, "zeta_ls_front", None)
+        _zls_r = getattr(step6, "zeta_ls_rear", None)
+        _zhs_f = getattr(step6, "zeta_hs_front", None)
+        _zhs_r = getattr(step6, "zeta_hs_rear", None)
+        _slope = getattr(step6, "hs_slope_reasoning", None)
+
+        for corner in ("lf", "rf", "lr", "rr"):
+            is_front = corner.startswith("l") or corner.startswith("r")
+            # Determine axle: lf/rf = front, lr/rr = rear
+            axle = "front" if corner[1] == "f" else "rear"
+            _zls = _zls_f if axle == "front" else _zls_r
+            _zhs = _zhs_f if axle == "front" else _zhs_r
+            parts = []
+            if _zls is not None:
+                parts.append(f"ζ_ls={_zls:.2f}")
+            if _zhs is not None:
+                parts.append(f"ζ_hs={_zhs:.2f}")
+            if _slope and axle == "front":
+                parts.append(f"slope: {_slope}")
+            detail = "; ".join(parts) if parts else None
+            for ch in ("ls_comp", "hs_comp", "ls_rbd", "hs_rbd"):
+                key = f"{corner}_{ch}_clicks"
+                base = _DAMPER_WHY.get(ch, ch)
+                if detail:
+                    reasons[key] = f"{base} ({detail})"
+                else:
+                    reasons[key] = base
+
+    # ── Supporting: diff, TC, brake ─────────────────────────────────
+    if supporting is not None:
+        _diff_r = getattr(supporting, "diff_reasoning", None)
+        if _diff_r:
+            reasons["diff_preload_nm"] = _diff_r
+            reasons["diff_clutch_plates"] = _diff_r
+        _tc_r = getattr(supporting, "tc_reasoning", None)
+        if _tc_r:
+            reasons["tc_gain"] = _tc_r
+            reasons["tc_slip"] = _tc_r
+        _bb_r = getattr(supporting, "brake_bias_reasoning", None)
+        if _bb_r:
+            reasons["brake_bias_pct"] = _bb_r
+
+    return reasons
 
 
 # ─── Display names ────────────────────────────────────────────────────────────
@@ -320,8 +481,13 @@ def detect_changes(
     recommended: dict,
     car: str,
     session_count: int,
+    solver_reasoning: dict[str, str] | None = None,
 ) -> list[ParameterChange]:
-    """Compare current and recommended setups; return list of meaningful changes."""
+    """Compare current and recommended setups; return list of meaningful changes.
+
+    When *solver_reasoning* is provided, constraint-based why-strings from the
+    actual solver run are used instead of the static ``_WHY`` dictionary.
+    """
     changes = []
     all_keys = set(recommended.keys())
 
@@ -351,7 +517,11 @@ def detect_changes(
             direction = "change"
 
         tier = get_confidence_tier(param, car, session_count)
-        why = _get_why(param, direction)
+        # Prefer run-specific constraint reasoning; fall back to generic text.
+        if solver_reasoning and param in solver_reasoning:
+            why = solver_reasoning[param]
+        else:
+            why = _get_why(param, direction)
         display = _DISPLAY_NAMES.get(param, param.replace("_", " ").title())
         unit = _unit(param, car)
 
@@ -390,6 +560,7 @@ def format_delta_card(
     best_lap_s: float | None = None,
     mode: str = "safe",
     full_setup_str: str | None = None,
+    solver_reasoning: dict[str, str] | None = None,
 ) -> str:
     """Format a complete delta card + full setup.
 
@@ -402,8 +573,10 @@ def format_delta_card(
         best_lap_s: fastest observed lap time for this car/track
         mode: "safe" or "aggressive"
         full_setup_str: pre-formatted full setup string (from print_full_setup_report)
+        solver_reasoning: constraint-based why-strings from build_solver_reasoning()
     """
-    all_changes = detect_changes(current, recommended, car, session_count)
+    all_changes = detect_changes(current, recommended, car, session_count,
+                                 solver_reasoning=solver_reasoning)
     visible_changes = filter_by_mode(all_changes, mode)
     hidden_count = len(all_changes) - len(visible_changes)
 
