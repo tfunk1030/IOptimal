@@ -196,6 +196,9 @@ def fit_models(
     # ── 6. Settle time vs damper clicks ────────────────────────────
     _fit_settle_time(observations, models)
 
+    # ── 6b. Damper click → telemetry physics correlations ──────────
+    _fit_damper_physics(observations, models)
+
     # ── 7. Lap time sensitivity from deltas ────────────────────────
     _fit_lap_time_sensitivity(deltas, models)
 
@@ -385,6 +388,104 @@ def _fit_settle_time(obs_list: list[dict], models: EmpiricalModelSet) -> None:
                 x_min=min(x),
                 x_max=max(x),
             )
+
+
+def _extract_damper_flat(obs: dict) -> dict[str, float]:
+    """Flatten nested damper struct into front/rear averaged click values."""
+    dampers = obs.get("setup", {}).get("dampers", {})
+    if not dampers:
+        return {}
+    flat: dict[str, float] = {}
+    for click in ["ls_comp", "ls_rbd", "hs_comp", "hs_rbd", "hs_slope"]:
+        lf_val = dampers.get("lf", {}).get(click)
+        rf_val = dampers.get("rf", {}).get(click)
+        lr_val = dampers.get("lr", {}).get(click)
+        rr_val = dampers.get("rr", {}).get(click)
+        if lf_val is not None and rf_val is not None:
+            flat[f"front_{click}"] = (float(lf_val) + float(rf_val)) / 2.0
+        if lr_val is not None and rr_val is not None:
+            flat[f"rear_{click}"] = (float(lr_val) + float(rr_val)) / 2.0
+    return flat
+
+
+# Damper click → telemetry signal pairs to correlate.
+# Each tuple: (damper_param, telemetry_key, relationship_name, human_label)
+_DAMPER_PHYSICS_PAIRS: list[tuple[str, str, str, str]] = [
+    # LS comp → platform control signals
+    ("front_ls_comp", "front_rh_std_mm", "front_ls_comp_vs_rh_var", "Front LS comp → front RH variance"),
+    ("front_ls_comp", "pitch_range_braking_deg", "front_ls_comp_vs_pitch", "Front LS comp → braking pitch"),
+    ("front_ls_comp", "front_shock_oscillation_hz", "front_ls_comp_vs_osc", "Front LS comp → front shock oscillation"),
+    ("rear_ls_comp", "rear_rh_std_mm", "rear_ls_comp_vs_rh_var", "Rear LS comp → rear RH variance"),
+    ("rear_ls_comp", "rear_shock_oscillation_hz", "rear_ls_comp_vs_osc", "Rear LS comp → rear shock oscillation"),
+    # LS rbd → settle/rebound signals
+    ("front_ls_rbd", "front_rh_std_mm", "front_ls_rbd_vs_rh_var", "Front LS rbd → front RH variance"),
+    ("front_ls_rbd", "front_shock_oscillation_hz", "front_ls_rbd_vs_osc", "Front LS rbd → front shock oscillation"),
+    ("rear_ls_rbd", "rear_rh_std_mm", "rear_ls_rbd_vs_rh_var", "Rear LS rbd → rear RH variance"),
+    ("rear_ls_rbd", "rear_shock_oscillation_hz", "rear_ls_rbd_vs_osc", "Rear LS rbd → rear shock oscillation"),
+    # HS comp → bump absorption signals
+    ("front_hs_comp", "front_shock_vel_p99_mps", "front_hs_comp_vs_sv99", "Front HS comp → front shock vel p99"),
+    ("front_hs_comp", "front_rh_excursion_measured_mm", "front_hs_comp_vs_excursion", "Front HS comp → front excursion"),
+    ("front_hs_comp", "front_rh_std_hs_mm", "front_hs_comp_vs_rh_hs", "Front HS comp → front RH std (high-speed)"),
+    ("rear_hs_comp", "rear_shock_vel_p99_mps", "rear_hs_comp_vs_sv99", "Rear HS comp → rear shock vel p99"),
+    ("rear_hs_comp", "rear_rh_std_mm", "rear_hs_comp_vs_rh_var", "Rear HS comp → rear RH variance"),
+    # HS rbd → rebound control at speed
+    ("front_hs_rbd", "front_shock_vel_p99_mps", "front_hs_rbd_vs_sv99", "Front HS rbd → front shock vel p99"),
+    ("rear_hs_rbd", "rear_shock_vel_p99_mps", "rear_hs_rbd_vs_sv99", "Rear HS rbd → rear shock vel p99"),
+    # Cross-axis: damper balance → vehicle dynamics
+    ("front_ls_comp", "understeer_low_speed_deg", "front_ls_comp_vs_us_low", "Front LS comp → low-speed understeer"),
+    ("rear_ls_comp", "understeer_low_speed_deg", "rear_ls_comp_vs_us_low", "Rear LS comp → low-speed understeer"),
+    ("front_hs_comp", "understeer_high_speed_deg", "front_hs_comp_vs_us_high", "Front HS comp → high-speed understeer"),
+    ("rear_hs_comp", "understeer_high_speed_deg", "rear_hs_comp_vs_us_high", "Rear HS comp → high-speed understeer"),
+    ("front_ls_comp", "body_roll_p95_deg", "front_ls_comp_vs_roll", "Front LS comp → body roll p95"),
+    ("rear_ls_comp", "body_roll_p95_deg", "rear_ls_comp_vs_roll", "Rear LS comp → body roll p95"),
+    ("front_ls_comp", "body_slip_p95_deg", "front_ls_comp_vs_slip", "Front LS comp → body slip p95"),
+]
+
+
+def _fit_damper_physics(obs_list: list[dict], models: EmpiricalModelSet) -> None:
+    """Fit damper click values against telemetry physics signals.
+
+    This discovers which damper parameters actually affect which telemetry
+    measurements — the core physics correlations that let the solver
+    calibrate its damper recommendations from real data.
+    """
+    for damper_param, tel_key, rel_name, human_name in _DAMPER_PHYSICS_PAIRS:
+        x_vals: list[float] = []
+        y_vals: list[float] = []
+
+        for obs in obs_list:
+            flat = _extract_damper_flat(obs)
+            d_val = flat.get(damper_param)
+            t_val = obs.get("telemetry", {}).get(tel_key)
+            if d_val is not None and t_val is not None and isinstance(t_val, (int, float)):
+                x_vals.append(float(d_val))
+                y_vals.append(float(t_val))
+
+        # Need at least 4 samples AND at least 2 distinct x values
+        if len(x_vals) < 4:
+            continue
+        if len(set(round(v, 1) for v in x_vals)) < 2:
+            continue
+
+        coeffs, r2 = _safe_linear_fit(x_vals, y_vals)
+        if coeffs is None:
+            continue
+
+        residuals = np.array(y_vals) - np.polyval(coeffs, x_vals)
+        models.relationships[rel_name] = FittedRelationship(
+            name=human_name,
+            x_param=damper_param,
+            y_param=tel_key,
+            fit_type="linear",
+            coefficients=coeffs,
+            r_squared=r2,
+            sample_count=len(x_vals),
+            residual_std=float(np.std(residuals)),
+            x_values=x_vals,
+            y_values=y_vals,
+            x_min=min(x_vals),
+            x_max=max(x_vals),
+        )
 
 
 def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> None:
