@@ -71,7 +71,13 @@
       "Bash(ls -la /c/Users/VYRAL/IOptimal/analyzer/*.py)",
       "Bash(ls -1 /c/Users/VYRAL/IOptimal/analyzer/*.py)",
       "Bash(xargs -I {} basename {})",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(wc:*)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "spawner",
+    "codex"
+  ]
 }

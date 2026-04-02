@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from car_model.garage import GarageSetupState
+from car_model.setup_registry import public_output_value
 from output.garage_validator import validate_and_fix_garage_correlation
 
 
@@ -12,6 +14,10 @@ class LegalValidation:
     valid: bool
     warnings: list[str] = field(default_factory=list)
     messages: list[str] = field(default_factory=list)
+    # Informational notes — not warnings, not errors.  Used for Ferrari
+    # "no garage model" notices and similar benign housekeeping messages
+    # that would pollute the report if promoted to warnings.
+    info_messages: list[str] = field(default_factory=list)
     snapped_or_corrected: bool = False
     source: str = "garage_validator"
 
@@ -23,6 +29,12 @@ class LegalValidation:
     garage_corrections_count: int = 0
     corrected_fields: list[str] = field(default_factory=list)
     constraint_violations: list[str] = field(default_factory=list)
+
+    # Validation tier — indicates depth of validation performed
+    # "full"        = garage model active, physics constraints checked (BMW/Sebring)
+    # "range_clamp" = no garage model, geometric range checks only
+    # "none"        = no validation available for this car/track
+    validation_tier: str = "range_clamp"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -38,11 +50,33 @@ def validate_solution_legality(
     step5: Any,
     fuel_l: float,
 ) -> LegalValidation:
+    validation_step1 = step1
+    validation_step2 = step2
+    validation_step3 = step3
+    is_ferrari = getattr(car, "canonical_name", "") == "ferrari"
+    if is_ferrari:
+        validation_step1 = copy.deepcopy(step1)
+        validation_step2 = copy.deepcopy(step2)
+        validation_step3 = copy.deepcopy(step3)
+        validation_step2.front_heave_nmm = float(
+            public_output_value(car, "front_heave_nmm", validation_step2.front_heave_nmm)
+        )
+        validation_step2.rear_third_nmm = float(
+            public_output_value(car, "rear_third_nmm", validation_step2.rear_third_nmm)
+        )
+        validation_step3.front_torsion_od_mm = float(
+            public_output_value(car, "front_torsion_od_mm", validation_step3.front_torsion_od_mm)
+        )
+        validation_step3.rear_spring_rate_nmm = float(
+            public_output_value(car, "rear_spring_rate_nmm", validation_step3.rear_spring_rate_nmm)
+        )
+        validation_step3.rear_spring_perch_mm = 0.0
+
     warnings = validate_and_fix_garage_correlation(
         car=car,
-        step1=step1,
-        step2=step2,
-        step3=step3,
+        step1=validation_step1,
+        step2=validation_step2,
+        step3=validation_step3,
         step5=step5,
         fuel_l=fuel_l,
         track_name=track_name,
@@ -50,31 +84,43 @@ def validate_solution_legality(
 
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is None:
+        car_name = getattr(car, "canonical_name", "unknown")
+        support_note = (
+            f"No garage output model for {car_name} at {track_name}; "
+            "candidate fails legal gate because garage-output validation is required."
+        )
         return LegalValidation(
-            valid=True,
+            valid=False,
             warnings=warnings,
-            messages=["No active garage model; range-clamp validation only."],
+            messages=[support_note],
             snapped_or_corrected=bool(warnings),
+            validation_tier="none",
+            hard_veto=True,
+            hard_veto_reasons=[support_note],
+            constraint_violations=[support_note],
         )
 
     state = GarageSetupState.from_solver_steps(
-        step1=step1,
-        step2=step2,
-        step3=step3,
+        step1=validation_step1,
+        step2=validation_step2,
+        step3=validation_step3,
         step5=step5,
         fuel_l=fuel_l,
     )
     constraint = garage_model.validate(
         state,
-        front_excursion_p99_mm=getattr(step2, "front_excursion_at_rate_mm", 0.0),
-        front_bottoming_margin_mm=getattr(step2, "front_bottoming_margin_mm", 0.0),
-        vortex_burst_margin_mm=getattr(step1, "vortex_burst_margin_mm", 0.0),
+        front_excursion_p99_mm=getattr(validation_step2, "front_excursion_at_rate_mm", 0.0),
+        front_bottoming_margin_mm=getattr(validation_step2, "front_bottoming_margin_mm", 0.0),
+        vortex_burst_margin_mm=getattr(validation_step1, "vortex_burst_margin_mm", 0.0),
     )
+    setattr(step2, "garage_constraints_ok", bool(constraint.valid))
+    setattr(step2, "garage_constraint_notes", list(getattr(constraint, "messages", [])))
     return LegalValidation(
         valid=bool(constraint.valid),
         warnings=warnings,
         messages=list(getattr(constraint, "messages", [])),
         snapped_or_corrected=bool(warnings),
+        validation_tier="full",
     )
 
 

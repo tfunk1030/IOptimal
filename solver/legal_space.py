@@ -95,6 +95,14 @@ def compute_perch_offsets(params: dict, car: CarModel) -> dict:
     Returns:
         Dict with front_heave_perch_mm, rear_third_perch_mm, rear_spring_perch_mm
     """
+    if getattr(car, "canonical_name", "") == "ferrari":
+        preserved: dict[str, float] = {}
+        for key in ("front_heave_perch_mm", "rear_third_perch_mm", "rear_spring_perch_mm"):
+            value = params.get(key)
+            if isinstance(value, (int, float)):
+                preserved[key] = round(float(value), 2)
+        return preserved
+
     gr = car.garage_ranges
 
     heave_nmm = float(params.get("front_heave_spring_nmm", FRONT_HEAVE_SPRING_REF))

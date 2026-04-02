@@ -98,6 +98,20 @@ class RakeSolution:
     # Aero stall proximity
     aero_state: str = "nominal"      # "nominal" | "stall_warning" | "stall_risk"
     stall_factor: float = 0.0        # 0.0 (clear) to 1.0 (full stall)
+    parameter_search_status: dict = None
+    parameter_search_evidence: dict = None
+
+    def __post_init__(self):
+        if self.parameter_search_status is None:
+            self.parameter_search_status = {
+                "front_pushrod_offset_mm": "solver_computed",
+                "rear_pushrod_offset_mm": "solver_computed",
+                "static_front_rh_mm": "solver_computed",
+                "static_rear_rh_mm": "solver_computed",
+            }
+        if self.parameter_search_evidence is None:
+            self.parameter_search_evidence = {}
+
 
     def summary(self) -> str:
         """Human-readable summary of the solution."""
@@ -280,8 +294,8 @@ class RakeSolver:
                 front_camber_deg=baseline.front_camber_deg,
                 fuel_l=fuel_load_l,
             ))
-            static_front = outputs.front_static_rh_mm
-            static_rear = outputs.rear_static_rh_mm
+            static_front = max(outputs.front_static_rh_mm, self.car.min_front_rh_static)
+            static_rear = max(outputs.rear_static_rh_mm, self.car.min_rear_rh_static)
         else:
             # Snap pushrods to 0.5mm increments (iRacing garage constraint)
             front_pushrod = round(self.car.pushrod.front_offset_for_rh(static_front) * 2) / 2
@@ -293,6 +307,14 @@ class RakeSolver:
                 baseline_third_nmm = self.car.rear_third_spring_nmm  # car default
                 baseline_heave_perch = self.car.heave_spring.perch_offset_front_baseline_mm
                 baseline_rear_spring = self.car.corner_spring.rear_spring_range_nmm[0]
+                # Ferrari RH model was calibrated with INDEX inputs (0-9 heave, 0-18 torsion),
+                # not physical N/mm. Convert physical baselines to index space.
+                # Also: Ferrari RH model feature 4 = rear_third_perch (not front_heave_perch).
+                if getattr(self.car, 'canonical_name', '') == 'ferrari':
+                    from car_model.setup_registry import public_output_value
+                    baseline_third_nmm = float(public_output_value('ferrari', 'rear_third_nmm', baseline_third_nmm))
+                    baseline_rear_spring = float(public_output_value('ferrari', 'rear_spring_rate_nmm', baseline_rear_spring))
+                    baseline_heave_perch = self.car.heave_spring.perch_offset_rear_baseline_mm
                 rear_pushrod = rh_model.pushrod_for_target_rh(
                     static_rear, baseline_third_nmm,
                     baseline_rear_spring, baseline_heave_perch,
@@ -316,6 +338,12 @@ class RakeSolver:
                 )
             else:
                 static_rear = self.car.pushrod.rear_rh_for_offset(rear_pushrod)
+
+        # Final safety clamp: pushrod snap (0.5mm rounding) can shift static RH
+        # slightly below the sim-enforced minimum.  This is the definitive floor
+        # that applies regardless of which code path was taken above.
+        static_front = max(static_front, self.car.min_front_rh_static)
+        static_rear = max(static_rear, self.car.min_rear_rh_static)
 
         front_min_p99 = actual_front_dyn - front_excursion_p99
         vb_margin = front_min_p99 - self.car.vortex_burst_threshold_mm
@@ -452,8 +480,8 @@ class RakeSolver:
                 front_camber_deg=baseline.front_camber_deg,
                 fuel_l=fuel_load_l,
             ))
-            static_front = float(outputs.front_static_rh_mm)
-            static_rear = float(outputs.rear_static_rh_mm)
+            static_front = max(float(outputs.front_static_rh_mm), self.car.min_front_rh_static)
+            static_rear = max(float(outputs.rear_static_rh_mm), self.car.min_rear_rh_static)
         else:
             front_pushrod = (
                 round(float(front_pushrod_offset_mm) * 2.0) / 2.0
@@ -465,15 +493,21 @@ class RakeSolver:
                 if rear_pushrod_offset_mm is not None
                 else round(self.car.pushrod.rear_offset_for_rh(float(static_rear_rh_mm or self.car.min_rear_rh_static)) * 2.0) / 2.0
             )
-            static_front = float(
-                static_front_rh_mm
-                if static_front_rh_mm is not None
-                else self.car.pushrod.front_rh_for_offset(front_pushrod)
+            static_front = max(
+                float(
+                    static_front_rh_mm
+                    if static_front_rh_mm is not None
+                    else self.car.pushrod.front_rh_for_offset(front_pushrod)
+                ),
+                self.car.min_front_rh_static,
             )
-            static_rear = float(
-                static_rear_rh_mm
-                if static_rear_rh_mm is not None
-                else self.car.pushrod.rear_rh_for_offset(rear_pushrod)
+            static_rear = max(
+                float(
+                    static_rear_rh_mm
+                    if static_rear_rh_mm is not None
+                    else self.car.pushrod.rear_rh_for_offset(rear_pushrod)
+                ),
+                self.car.min_rear_rh_static,
             )
 
         actual_front_dyn = max(self.car.min_front_rh_dynamic, static_front - front_comp)
@@ -816,8 +850,11 @@ def reconcile_ride_heights(
 
         step1.front_pushrod_offset_mm = round(new_front_pushrod, 1)
         step1.rear_pushrod_offset_mm = round(new_rear_pushrod, 1)
-        step1.static_front_rh_mm = round(outputs.front_static_rh_mm, 1)
-        step1.static_rear_rh_mm = round(outputs.rear_static_rh_mm, 1)
+        # Apply min-RH clamps: garage model can predict below-minimum values when
+        # pushrods are at low offsets or spring rates are too soft. Enforce the
+        # sim-mandated floor here so reconcile never writes a negative/illegal RH.
+        step1.static_front_rh_mm = round(max(outputs.front_static_rh_mm, car.min_front_rh_static), 1)
+        step1.static_rear_rh_mm = round(max(outputs.rear_static_rh_mm, car.min_rear_rh_static), 1)
         step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
 
         # Update dynamic fields if we corrected the rear target from aero balance
@@ -843,8 +880,13 @@ def reconcile_ride_heights(
     # Front RH: refine with actual heave spring from step2
     if rh_model.front_is_calibrated:
         front_camber = car.geometry.front_camber_baseline_deg
+        # Ferrari RH model calibrated with index inputs, not physical N/mm
+        _heave_for_rh = step2.front_heave_nmm
+        if getattr(car, 'canonical_name', '') == 'ferrari':
+            from car_model.setup_registry import public_output_value
+            _heave_for_rh = float(public_output_value('ferrari', 'front_heave_nmm', step2.front_heave_nmm))
         new_front_rh = rh_model.predict_front_static_rh(
-            step2.front_heave_nmm, front_camber,
+            _heave_for_rh, front_camber,
         )
         if abs(new_front_rh - step1.static_front_rh_mm) > 0.05:
             if verbose:
@@ -857,26 +899,37 @@ def reconcile_ride_heights(
         actual_third_nmm = step2.rear_third_nmm
         actual_heave_perch = step2.perch_offset_front_mm
         actual_rear_spring = step3.rear_spring_rate_nmm
-
         actual_spring_perch = step3.rear_spring_perch_mm
 
+        # Ferrari RH model was calibrated with INDEX inputs, not physical N/mm.
+        # Convert solver's physical values to index space for the regression.
+        # Also: Ferrari feature 4 = rear_third_perch (not front_heave_perch).
+        _third_for_rh = actual_third_nmm
+        _rear_spring_for_rh = actual_rear_spring
+        _heave_perch_for_rh = actual_heave_perch
+        if getattr(car, 'canonical_name', '') == 'ferrari':
+            from car_model.setup_registry import public_output_value
+            _third_for_rh = float(public_output_value('ferrari', 'rear_third_nmm', actual_third_nmm))
+            _rear_spring_for_rh = float(public_output_value('ferrari', 'rear_spring_rate_nmm', actual_rear_spring))
+            _heave_perch_for_rh = step2.perch_offset_rear_mm
+
         predicted_rh = rh_model.predict_rear_static_rh(
-            step1.rear_pushrod_offset_mm, actual_third_nmm,
-            actual_rear_spring, actual_heave_perch,
+            step1.rear_pushrod_offset_mm, _third_for_rh,
+            _rear_spring_for_rh, _heave_perch_for_rh,
             spring_perch_mm=actual_spring_perch,
         )
         rh_error = predicted_rh - step1.static_rear_rh_mm
 
         if abs(rh_error) > 0.5:
             new_pushrod = rh_model.pushrod_for_target_rh(
-                step1.static_rear_rh_mm, actual_third_nmm,
-                actual_rear_spring, actual_heave_perch,
+                step1.static_rear_rh_mm, _third_for_rh,
+                _rear_spring_for_rh, _heave_perch_for_rh,
                 spring_perch_mm=actual_spring_perch,
             )
             new_pushrod = round(new_pushrod * 2) / 2  # snap to 0.5mm
             new_rh = rh_model.predict_rear_static_rh(
-                new_pushrod, actual_third_nmm,
-                actual_rear_spring, actual_heave_perch,
+                new_pushrod, _third_for_rh,
+                _rear_spring_for_rh, _heave_perch_for_rh,
                 spring_perch_mm=actual_spring_perch,
             )
             if verbose:
@@ -889,6 +942,20 @@ def reconcile_ride_heights(
             print(f"  RH model check: predicted {predicted_rh:.1f} mm "
                   f"vs target {step1.static_rear_rh_mm:.1f} mm "
                   f"(error {rh_error:+.2f} mm — OK)")
+
+    # Final floor clamp: regression models can extrapolate below the sim minimum.
+    # This is the authoritative floor for the non-garage-model path.
+    if step1.static_rear_rh_mm < car.min_rear_rh_static:
+        if verbose:
+            print(f"  Rear RH clamped: {step1.static_rear_rh_mm:.1f} -> "
+                  f"{car.min_rear_rh_static:.1f} mm (regression below sim floor)")
+        step1.static_rear_rh_mm = round(car.min_rear_rh_static, 1)
+    if step1.static_front_rh_mm < car.min_front_rh_static:
+        if verbose:
+            print(f"  Front RH clamped: {step1.static_front_rh_mm:.1f} -> "
+                  f"{car.min_front_rh_static:.1f} mm (regression below sim floor)")
+        step1.static_front_rh_mm = round(car.min_front_rh_static, 1)
+    step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
 
     # Front pushrod reconcile — for cars with a heave-perch-dependent front RH model
     # (e.g. Cadillac). After step2 we know the actual heave perch, so re-solve pushrod.

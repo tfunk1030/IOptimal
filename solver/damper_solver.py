@@ -77,6 +77,23 @@ class DamperConstraintCheck:
 
 
 @dataclass
+class FerrariHeaveDamperSettings:
+    """Typed Ferrari heave damper settings (separate from per-corner dampers).
+
+    Ferrari 499P has dedicated heave dampers at front and rear that control
+    pitch/heave motions independently from the corner (per-wheel) dampers.
+    Click ranges: ls_comp/hs_comp/ls_rbd/hs_rbd share the 0-40 range;
+    hs_slope uses the 0-11 range (same as per-corner hs_slope).
+    """
+    ls_comp: int
+    hs_comp: int
+    ls_rbd: int
+    hs_rbd: int
+    hs_slope: int
+    hs_slope_rbd: int | None = None
+
+
+@dataclass
 class CornerDamperSettings:
     """Damper settings for one corner."""
     ls_comp: int
@@ -84,6 +101,7 @@ class CornerDamperSettings:
     hs_comp: int
     hs_rbd: int
     hs_slope: int
+    hs_slope_rbd: int | None = None  # Ferrari only (lfHSSlopeRbdDampSetting)
 
     def rbd_comp_ratio_ls(self) -> float:
         return self.ls_rbd / max(self.ls_comp, 1)
@@ -133,7 +151,35 @@ class DamperSolution:
 
     # Constraint checks
     constraints: list[DamperConstraintCheck]
+
+    # Roll dampers (ORECA heave+roll architecture — None for per-corner cars)
+    front_roll_ls: int | None = None
+    front_roll_hs: int | None = None
+    rear_roll_ls: int | None = None
+    rear_roll_hs: int | None = None
+
+    # Heave dampers (Ferrari architecture — separate from corner dampers)
+    front_heave_damper: FerrariHeaveDamperSettings | None = None
+    rear_heave_damper: FerrariHeaveDamperSettings | None = None
+
     notes: list[str] = field(default_factory=list)
+    parameter_search_status: dict = None
+    parameter_search_evidence: dict = None
+
+    def __post_init__(self):
+        if self.parameter_search_status is None:
+            self.parameter_search_status = {
+                "lf_ls_comp": "user_set", "lf_ls_rbd": "user_set",
+                "lf_hs_comp": "user_set", "lf_hs_rbd": "user_set",
+                "rf_ls_comp": "user_set", "rf_ls_rbd": "user_set",
+                "rf_hs_comp": "user_set", "rf_hs_rbd": "user_set",
+                "lr_ls_comp": "user_set", "lr_ls_rbd": "user_set",
+                "lr_hs_comp": "user_set", "lr_hs_rbd": "user_set",
+                "rr_ls_comp": "user_set", "rr_ls_rbd": "user_set",
+                "rr_hs_comp": "user_set", "rr_hs_rbd": "user_set",
+            }
+        if self.parameter_search_evidence is None:
+            self.parameter_search_evidence = {}
 
     def summary(self) -> str:
         lines = [
@@ -149,6 +195,14 @@ class DamperSolution:
             f"  HS Comp:  {self.lf.hs_comp:4d}  {self.rf.hs_comp:4d}  {self.lr.hs_comp:4d}  {self.rr.hs_comp:4d}",
             f"  HS Rbd:   {self.lf.hs_rbd:4d}  {self.rf.hs_rbd:4d}  {self.lr.hs_rbd:4d}  {self.rr.hs_rbd:4d}",
             f"  HS Slope: {self.lf.hs_slope:4d}  {self.rf.hs_slope:4d}  {self.lr.hs_slope:4d}  {self.rr.hs_slope:4d}",
+        ]
+        # Ferrari HS rebound slope (optional field)
+        if self.lf.hs_slope_rbd is not None:
+            lines.append(
+                f"  HS Slope Rbd: {self.lf.hs_slope_rbd:4d}  {self.rf.hs_slope_rbd:4d}  "
+                f"{self.lr.hs_slope_rbd:4d}  {self.rr.hs_slope_rbd:4d}"
+            )
+        lines += [
             "",
             "  DAMPING PHYSICS",
             f"    Critical damping:  front {self.c_crit_front:.0f} N*s/m  |  rear {self.c_crit_rear:.0f} N*s/m",
@@ -436,6 +490,62 @@ class DamperSolver:
         """
         d = self.car.damper
 
+        # ─── UNCALIBRATED EARLY RETURN ────────────────────────────────────────
+        # When zeta targets haven't been validated against IBT data, physics-
+        # derived click values will be wrong.  Return the car's VALIDATED baseline
+        # clicks instead so the report doesn't contradict known-good setups.
+        if not getattr(d, "zeta_is_calibrated", True):
+            front_slope, rear_slope, slope_reason = self._hs_slope_from_surface()
+            lo_ls = d.ls_comp_range[0]
+            hi_ls = d.ls_comp_range[1]
+            lo_hs = d.hs_comp_range[0]
+            hi_hs = d.hs_comp_range[1]
+            _b_flsc  = max(lo_ls, min(hi_ls, d.front_ls_comp_baseline))
+            _b_frbd  = max(lo_ls, min(hi_ls, getattr(d, "front_ls_rbd_baseline",  _b_flsc)))
+            _b_fhsc  = max(lo_hs, min(hi_hs, d.front_hs_comp_baseline))
+            _b_fhrbd = max(lo_hs, min(hi_hs, getattr(d, "front_hs_rbd_baseline",  _b_fhsc)))
+            _b_rlsc  = max(lo_ls, min(hi_ls, d.rear_ls_comp_baseline))
+            _b_rrbd  = max(lo_ls, min(hi_ls, getattr(d, "rear_ls_rbd_baseline",   _b_rlsc)))
+            _b_rhsc  = max(lo_hs, min(hi_hs, d.rear_hs_comp_baseline))
+            _b_rhrbd = max(lo_hs, min(hi_hs, getattr(d, "rear_hs_rbd_baseline",   _b_rhsc)))
+            _b_fslope = getattr(d, "front_hs_slope_baseline", front_slope)
+            _b_rslope = getattr(d, "rear_hs_slope_baseline",  rear_slope)
+
+            def _bc(ls, lsr, hs, hsr, slope):
+                return CornerDamperSettings(
+                    ls_comp=ls, ls_rbd=lsr, hs_comp=hs, hs_rbd=hsr, hs_slope=slope,
+                )
+
+            return DamperSolution(
+                lf=_bc(_b_flsc, _b_frbd, _b_fhsc, _b_fhrbd, _b_fslope),
+                rf=_bc(_b_flsc, _b_frbd, _b_fhsc, _b_fhrbd, _b_fslope),
+                lr=_bc(_b_rlsc, _b_rrbd, _b_rhsc, _b_rhrbd, _b_rslope),
+                rr=_bc(_b_rlsc, _b_rrbd, _b_rhsc, _b_rhrbd, _b_rslope),
+                track_shock_vel_p95_front_mps=0.0,
+                track_shock_vel_p95_rear_mps=0.0,
+                track_shock_vel_p99_front_mps=0.0,
+                track_shock_vel_p99_rear_mps=0.0,
+                c_ls_front=0.0, c_ls_rear=0.0,
+                c_hs_front=0.0, c_hs_rear=0.0,
+                c_crit_front=0.0, c_crit_rear=0.0,
+                zeta_ls_front=0.0, zeta_ls_rear=0.0,
+                zeta_hs_front=0.0, zeta_hs_rear=0.0,
+                ls_rbd_comp_ratio_front=1.0, hs_rbd_comp_ratio_front=1.0,
+                ls_rbd_comp_ratio_rear=1.0,  hs_rbd_comp_ratio_rear=1.0,
+                hs_slope_reasoning=(
+                    "BASELINE — zeta uncalibrated. "
+                    f"Returning validated baseline clicks: "
+                    f"front LS={_b_flsc}/HS={_b_fhsc}, rear LS={_b_rlsc}/HS={_b_rhsc}. "
+                    "Run click-sweep IBT session to unlock physics-derived values."
+                ),
+                constraints=[],
+                notes=[
+                    "BASELINE ONLY — zeta_is_calibrated=False for this car.",
+                    f"front LS={_b_flsc} HS={_b_fhsc} | rear LS={_b_rlsc} HS={_b_rhsc}",
+                    "Perform dedicated click-sweep session to calibrate zeta targets.",
+                ],
+            )
+
         # ─── 1. Corner masses ─────────────────────────────────────────────────
         m_front = self._mass_per_corner_kg(is_front=True, fuel_load_l=fuel_load_l)
         m_rear = self._mass_per_corner_kg(is_front=False, fuel_load_l=fuel_load_l)
@@ -476,7 +586,7 @@ class DamperSolver:
         # If measured rear shock oscillation frequency exceeds 1.5× natural
         # frequency, the rear is underdamped. Bump ζ_hs_rear to reduce oscillation.
         if measured is not None:
-            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0)
+            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
             rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
             if rear_osc_hz > 1.5 * rear_nat_freq_hz and rear_nat_freq_hz > 0:
                 # Underdamped evidence — increase HS ζ by 50% (capped at 0.25)
@@ -544,6 +654,52 @@ class DamperSolver:
         # ─── 8. HS slope (separate front/rear) ───────────────────────────────
         front_slope, rear_slope, slope_reason = self._hs_slope_from_surface()
 
+        # ─── 9. HS rebound slope (Ferrari only) ──────────────────────────────
+        # Ferrari has separate HS slope for rebound (lfHSSlopeRbdDampSetting).
+        #
+        # There is currently no direct click->force calibration for rebound HS slope,
+        # so a single exact click would be false precision. We therefore emit a
+        # telemetry-constrained admissible range in notes/reasoning and leave the
+        # explicit click unset (None) until a rebound-slope force map is calibrated.
+        front_slope_rbd: int | None = None
+        rear_slope_rbd: int | None = None
+        front_slope_rbd_range_note: str | None = None
+        rear_slope_rbd_range_note: str | None = None
+        if d.hs_slope_rbd_range is not None:
+            lo_slope, hi_slope = d.hs_slope_rbd_range
+            rear_osc_ratio = None
+            if measured is not None:
+                rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
+                rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
+                if rear_osc_hz > 0.0 and rear_nat_freq_hz > 0.0:
+                    rear_osc_ratio = rear_osc_hz / rear_nat_freq_hz
+
+            def _bounded_rbd_range(comp_slope: int, delta_lo: int, delta_hi: int) -> tuple[int, int]:
+                lo_val = max(lo_slope, min(hi_slope, comp_slope - delta_hi))
+                hi_val = max(lo_slope, min(hi_slope, comp_slope - delta_lo))
+                if lo_val > hi_val:
+                    lo_val, hi_val = hi_val, lo_val
+                return lo_val, hi_val
+
+            # Front: without rebound-specific telemetry we keep a broad admissible
+            # band 1-3 clicks softer than compression (digressive but not abrupt).
+            f_lo, f_hi = _bounded_rbd_range(front_slope, delta_lo=1, delta_hi=3)
+            front_slope_rbd_range_note = f"{f_lo}-{f_hi}"
+
+            # Rear: constrain by measured oscillation if available.
+            # High oscillation evidence (>1.5x natural freq) narrows toward stiffer
+            # rebound slope (0-2 clicks softer than compression).
+            if rear_osc_ratio is not None and rear_osc_ratio > 1.5:
+                r_lo, r_hi = _bounded_rbd_range(rear_slope, delta_lo=0, delta_hi=2)
+            else:
+                r_lo, r_hi = _bounded_rbd_range(rear_slope, delta_lo=1, delta_hi=3)
+            rear_slope_rbd_range_note = f"{r_lo}-{r_hi}"
+
+            slope_reason = (
+                f"{slope_reason}; Ferrari HS rebound slope underdetermined -> "
+                f"front range {front_slope_rbd_range_note}, rear range {rear_slope_rbd_range_note}"
+            )
+
         # ─── Build corner settings (asymmetric L/R from per-corner shock data) ─
         # When per-corner shock velocity data is available, the side with higher
         # p95 shock velocity (more kerb/bump exposure) gets softer HS compression
@@ -555,10 +711,10 @@ class DamperSolver:
         rr_hs_comp_adj = 0
 
         if measured is not None:
-            lf_sv = measured.lf_shock_vel_p95_mps
-            rf_sv = measured.rf_shock_vel_p95_mps
-            lr_sv = measured.lr_shock_vel_p95_mps
-            rr_sv = measured.rr_shock_vel_p95_mps
+            lf_sv = measured.lf_shock_vel_p95_mps or 0.0
+            rf_sv = measured.rf_shock_vel_p95_mps or 0.0
+            lr_sv = measured.lr_shock_vel_p95_mps or 0.0
+            rr_sv = measured.rr_shock_vel_p95_mps or 0.0
 
             # Front asymmetry: >15% difference triggers adjustment
             if lf_sv > 0 and rf_sv > 0:
@@ -585,21 +741,25 @@ class DamperSolver:
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, front_hs_comp + lf_hs_comp_adj)),
             hs_rbd=front_hs_rbd, hs_slope=front_slope,
+            hs_slope_rbd=front_slope_rbd,
         )
         rf = CornerDamperSettings(
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, front_hs_comp + rf_hs_comp_adj)),
             hs_rbd=front_hs_rbd, hs_slope=front_slope,
+            hs_slope_rbd=front_slope_rbd,
         )
         lr = CornerDamperSettings(
             ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, rear_hs_comp + lr_hs_comp_adj)),
             hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
+            hs_slope_rbd=rear_slope_rbd,
         )
         rr = CornerDamperSettings(
             ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, rear_hs_comp + rr_hs_comp_adj)),
             hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
+            hs_slope_rbd=rear_slope_rbd,
         )
 
         # ─── Constraint checks ────────────────────────────────────────────────
@@ -648,7 +808,7 @@ class DamperSolver:
 
         # Add oscillation validation constraint if telemetry is available
         if measured is not None:
-            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0)
+            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
             rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
             if rear_osc_hz > 0 and rear_nat_freq_hz > 0:
                 osc_ratio = rear_osc_hz / rear_nat_freq_hz
@@ -681,6 +841,55 @@ class DamperSolver:
             "Damping ratios are derived from quarter-car eigenvalue analysis, "
             "NOT from empirical baseline matching.",
         ]
+        if front_slope_rbd_range_note is not None and rear_slope_rbd_range_note is not None:
+            notes.append(
+                "Ferrari HS rebound slope click is emitted as a range (not a point) "
+                "until rebound-slope click-to-force calibration exists: "
+                f"front {front_slope_rbd_range_note}, rear {rear_slope_rbd_range_note}."
+            )
+
+        # Roll dampers (ORECA heave+roll architecture)
+        roll_damper_kwargs: dict = {}
+        if self.car.damper.has_roll_dampers:
+            # Roll dampers control weight transfer rate in roll.
+            # Use car baselines for now — physics-based roll damper tuning
+            # requires lateral g spectrum data and is not yet implemented.
+            dm = self.car.damper
+            roll_damper_kwargs = dict(
+                front_roll_ls=dm.front_roll_ls_baseline,
+                front_roll_hs=dm.front_roll_hs_baseline,
+                rear_roll_ls=dm.rear_roll_ls_baseline,
+                rear_roll_hs=dm.rear_roll_hs_baseline,
+            )
+
+        # Heave dampers (Ferrari architecture)
+        heave_damper_kwargs: dict = {}
+        if self.car.damper.has_heave_dampers:
+            # Heave dampers control pitch/heave motions separately from corner dampers.
+            # Use car baselines for now — physics-based heave damper tuning not yet implemented.
+            dm = self.car.damper
+            fhb = dm.front_heave_baseline or {}
+            rhb = dm.rear_heave_baseline or {}
+            heave_damper_kwargs = dict(
+                front_heave_damper=FerrariHeaveDamperSettings(
+                    ls_comp=int(fhb.get("ls_comp", 10)),
+                    hs_comp=int(fhb.get("hs_comp", 40)),
+                    ls_rbd=int(fhb.get("ls_rbd", 5)),
+                    hs_rbd=int(fhb.get("hs_rbd", 10)),
+                    hs_slope=int(fhb.get("hs_slope", 40)),
+                ),
+                rear_heave_damper=FerrariHeaveDamperSettings(
+                    ls_comp=int(rhb.get("ls_comp", 10)),
+                    hs_comp=int(rhb.get("hs_comp", 40)),
+                    ls_rbd=int(rhb.get("ls_rbd", 5)),
+                    hs_rbd=int(rhb.get("hs_rbd", 10)),
+                    hs_slope=int(rhb.get("hs_slope", 40)),
+                ),
+            )
+            notes.append(
+                "Heave damper values are baselines from validated setup — "
+                "physics tuning not yet implemented."
+            )
 
         return DamperSolution(
             lf=lf, rf=rf, lr=lr, rr=rr,
@@ -705,6 +914,8 @@ class DamperSolver:
             hs_slope_reasoning=slope_reason,
             constraints=constraints,
             notes=notes,
+            **roll_damper_kwargs,
+            **heave_damper_kwargs,
         )
 
     def solution_from_explicit_settings(
@@ -815,5 +1026,13 @@ class DamperSolver:
             hs_rbd_comp_ratio_rear=round((lr.rbd_comp_ratio_hs() + rr.rbd_comp_ratio_hs()) / 2.0, 2),
             hs_slope_reasoning="Explicit click/slope materialization from selected family settings.",
             constraints=constraints,
+            # Propagate roll damper values from base solve
+            front_roll_ls=base.front_roll_ls,
+            front_roll_hs=base.front_roll_hs,
+            rear_roll_ls=base.rear_roll_ls,
+            rear_roll_hs=base.rear_roll_hs,
+            # Propagate heave damper values from base solve
+            front_heave_damper=base.front_heave_damper,
+            rear_heave_damper=base.rear_heave_damper,
             notes=notes,
         )

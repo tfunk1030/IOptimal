@@ -79,6 +79,7 @@ python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --scenario-prof
 | `--scenario-profile` | No | `single_lap_safe` | Scenario objective profile: `single_lap_safe`, `quali`, `sprint`, or `race` |
 | `--sto` | No | — | Export iRacing .sto setup file to this path |
 | `--json` | No | — | Save full solver results as JSON |
+| `--bundle-dir` | No | — | Write all artifacts (.sto, .json, report, manifest) to this directory (created automatically) |
 | `--report-only` | No | off | Only print the final report (skip per-step details) |
 | `--learn` | No | off | Apply empirical corrections from the knowledge store |
 | `--auto-learn` | No | off | Ingest this session into the knowledge store after producing |
@@ -100,6 +101,9 @@ python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --scenario-prof
 
 # Concise report only
 python -m pipeline.produce --car bmw --ibt session.ibt --wing 17 --report-only
+
+# One-command bundle output (all artifacts in one directory)
+python -m pipeline.produce --car ferrari --ibt session.ibt --wing 13 --bundle-dir ./bundles/ferrari_hockenheim
 ```
 
 The pipeline prints a detailed engineering report covering: driver profile, handling diagnosis, aero analysis, each solver step, supporting parameters, selected scenario profile, decision trace, legal-manifold candidate status, and a comparison of your current setup vs the produced setup.
@@ -571,3 +575,28 @@ rear_camber_deg    -1.8     +28.5      low
 3. Front RH (vortex sensitivity)
 4. Brake bias (entry stability)
 5. Torsion bar OD (front wheel rate/LLTD coupling)
+
+---
+
+### 12. Ferrari Hockenheim Calibration Helper (Setup JSON + IBT/ZIP)
+
+Builds a calibration JSON from a setupdelta-style setup export plus one or more telemetry files.
+Useful for week-specific Ferrari tuning when you want channel coverage, aggregate signal stats,
+and a deterministic starting setup recommendation.
+
+```bash
+python -m scripts.ferrari_hockenheim_calibration \
+  --setup-json tests/fixtures/ferrari_hockenheim_setupdelta.json \
+  --telemetry \
+    "ferrari499p_hockenheim_1.zip" \
+    "ferrari499p_hockenheim_2.zip" \
+    "ferrari499p_hockenheim_3.zip" \
+  --output out/ferrari_hockenheim_calibration.json
+```
+
+Notes:
+- Accepts `.ibt` directly, or `.zip` containing one `.ibt`.
+- If a telemetry file is missing, the report still builds and lists missing files.
+- Output is currently exploratory-tier guidance and should be validated with fresh race-week telemetry.
+- Includes setup integrity checks for all provided rows: row-id format/uniqueness, min/max range validation,
+  and Ferrari-only guardrails (`carName` must be `ferrari499p`).

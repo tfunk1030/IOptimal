@@ -1,0 +1,142 @@
+{
+  "CarSetup": {
+    "TiresAero": {
+      "AeroSettings": {},
+      "AeroCalculator": {}
+    },
+    "Chassis": {
+      "Front": {
+        "HeaveSpring": "3",
+        "HeavePerchOffset": "-16.5 mm",
+        "HeaveSpringDefl": "10.9 mm of 80.3 mm",
+        "HeaveSliderDefl": "42.0 mm of 200.0 mm",
+        "ArbSize": "A",
+        "ArbBlades": "1",
+        "PushrodLengthDelta": "1.0 mm",
+        "ToeIn": "-0.7 mm"
+      },
+      "Rear": {
+        "HeaveSpring": "5",
+        "HeavePerchOffset": "-112.5 mm",
+        "HeaveSpringDefl": "13.4 mm of 67.0 mm",
+        "HeaveSliderDefl": "23.1 mm of 300.0 mm",
+        "ArbSize": "C",
+        "ArbBlades": "3",
+        "PushrodLengthDelta": "5.0 mm",
+        "FuelLevel": "58.0 L"
+      },
+      "LeftFront": {
+        "CornerWeight": "2669 N",
+        "RideHeight": "30.1 mm",
+        "ShockDefl": "16.1 mm of 100.0 mm",
+        "TorsionBarDefl": "12.1 mm",
+        "TorsionBarTurns": "0.089 Turns",
+        "TorsionBarOD": "2",
+        "Camber": "-2.8 deg"
+      },
+      "RightFront": {
+        "CornerWeight": "2669 N",
+        "RideHeight": "30.1 mm",
+        "ShockDefl": "16.1 mm of 100.0 mm",
+        "TorsionBarDefl": "12.1 mm",
+        "TorsionBarTurns": "0.089 Turns",
+        "TorsionBarOD": "2",
+        "Camber": "-2.8 deg"
+      },
+      "LeftRear": {
+        "CornerWeight": "2938 N",
+        "RideHeight": "44.1 mm",
+        "ShockDefl": "17.4 mm of 150.0 mm",
+        "TorsionBarDefl": "8.9 mm",
+        "TorsionBarTurns": "0.040 Turns",
+        "TorsionBarOD": "2",
+        "Camber": "-1.9 deg",
+        "ToeIn": "+0.3 mm"
+      },
+      "RightRear": {
+        "CornerWeight": "2938 N",
+        "RideHeight": "44.1 mm",
+        "ShockDefl": "17.4 mm of 150.0 mm",
+        "TorsionBarDefl": "8.9 mm",
+        "TorsionBarTurns": "0.040 Turns",
+        "TorsionBarOD": "2",
+        "Camber": "-1.9 deg",
+        "ToeIn": "+0.3 mm"
+      }
+    },
+    "Dampers": {
+      "LeftFrontDamper": {
+        "LsCompDamping": "20 clicks",
+        "HsCompDamping": "20 clicks",
+        "HsCompDampSlope": "11 clicks",
+        "LsRbdDamping": "24 clicks",
+        "HsRbdDamping": "28 clicks"
+      },
+      "RightFrontDamper": {
+        "LsCompDamping": "20 clicks",
+        "HsCompDamping": "20 clicks",
+        "HsCompDampSlope": "11 clicks",
+        "LsRbdDamping": "24 clicks",
+        "HsRbdDamping": "28 clicks"
+      },
+      "LeftRearDamper": {
+        "LsCompDamping": "16 clicks",
+        "HsCompDamping": "32 clicks",
+        "HsCompDampSlope": "11 clicks",
+        "LsRbdDamping": "34 clicks",
+        "HsRbdDamping": "35 clicks"
+      },
+      "RightRearDamper": {
+        "LsCompDamping": "16 clicks",
+        "HsCompDamping": "32 clicks",
+        "HsCompDampSlope": "11 clicks",
+        "LsRbdDamping": "34 clicks",
+        "HsRbdDamping": "35 clicks"
+      }
+    },
+    "Systems": {
+      "Lighting": {
+        "RoofIdLightColor": "Blue"
+      },
+      "HybridConfig": {
+        "HybridRearDriveEnabled": "On",
+        "HybridRearDriveCornerPct": "90%"
+      },
+      "BrakeSpec": {
+        "PadCompound": "Medium",
+        "FrontMasterCyl": "19.1 mm",
+        "RearMasterCyl": "19.1 mm",
+        "BrakePressureBias": "53.00%",
+        "BiasMigration": "6",
+        "BiasMigrationGain": "-1.00"
+      },
+      "TractionControl": {
+        "TractionControlGain": "3",
+        "TractionControlSlip": "4"
+      },
+      "Fuel": {
+        "FuelLevel": "58.0 L",
+        "FuelTarget": "2.80 L",
+        "FuelLowWarning": "10.0 L"
+      },
+      "GearRatios": {
+        "GearStack": "Short",
+        "SpeedInFirst": "121.7 Km/h",
+        "SpeedInSecond": "157.5 Km/h",
+        "SpeedInThird": "190.0 Km/h",
+        "SpeedInFourth": "222.7 Km/h",
+        "SpeedInFifth": "256.6 Km/h",
+        "SpeedInSixth": "291.0 Km/h",
+        "SpeedInSeventh": "329.2 Km/h"
+      },
+      "FrontDiffSpec": {
+        "Preload": "-50 Nm"
+      },
+      "RearDiffSpec": {
+        "CoastDriveRampOptions": "Less Locking",
+        "ClutchFrictionPlates": "4",
+        "Preload": "25 Nm"
+      }
+    }
+  }
+}

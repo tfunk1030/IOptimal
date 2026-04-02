@@ -107,6 +107,12 @@ def load_observations() -> list[ObservationSample]:
             continue
         if lap_time_s < 60.0:
             continue
+        # Exclude "dangerous" observations from calibration — these have critical
+        # safety issues (vortex burst, severe bottoming) that contaminate the
+        # score-vs-laptime correlation signal.
+        assessment = (payload.get("diagnosis", {}) or {}).get("assessment", "")
+        if assessment == "dangerous":
+            continue
         car = str(payload.get("car") or "").strip().lower()
         track = str(payload.get("track") or "").strip()
         track_config = str(payload.get("track_config") or "").strip()

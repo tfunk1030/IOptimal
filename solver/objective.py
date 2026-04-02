@@ -112,11 +112,11 @@ class PhysicsResult:
     # LLTD
     lltd: float = 0.52
     lltd_error: float = 0.0
-    # Damping
-    zeta_ls_front: float = 0.68   # IBT-calibrated: top-15 fastest mean (73 sessions, 2026-03-26)
-    zeta_ls_rear: float = 0.23    # IBT-calibrated
-    zeta_hs_front: float = 0.47   # IBT-calibrated
-    zeta_hs_rear: float = 0.20    # IBT-calibrated (was 0.14)
+    # Damping (defaults for dataclass; actual targets come from car.damper.zeta_* fields)
+    zeta_ls_front: float = 0.68   # BMW IBT-calibrated default
+    zeta_ls_rear: float = 0.23    # BMW IBT-calibrated default
+    zeta_hs_front: float = 0.47   # BMW IBT-calibrated default
+    zeta_hs_rear: float = 0.20    # BMW IBT-calibrated default
     # Wheel rates
     front_wheel_rate_nmm: float = 30.0
     rear_wheel_rate_nmm: float = 60.0
@@ -139,6 +139,7 @@ class LapGainBreakdown:
     diff_ramp_ms: float = 0.0
     diff_clutch_ms: float = 0.0
     tc_ms: float = 0.0
+    carcass_ms: float = 0.0   # penalty for tyre carcass temp outside optimal window
 
     @property
     def total_penalty_ms(self) -> float:
@@ -153,6 +154,7 @@ class LapGainBreakdown:
             + self.diff_ramp_ms
             + self.diff_clutch_ms
             + self.tc_ms
+            + self.carcass_ms
         )
 
     def as_dict(self) -> dict[str, float]:
@@ -167,6 +169,7 @@ class LapGainBreakdown:
             "diff_ramp_ms": self.diff_ramp_ms,
             "diff_clutch_ms": self.diff_clutch_ms,
             "tc_ms": self.tc_ms,
+            "carcass_ms": self.carcass_ms,
         }
 
 
@@ -382,24 +385,6 @@ class ObjectiveFunction:
         except Exception:
             self._session_db = None
 
-    def _is_bmw_sebring_track_aware_single_lap_safe(self) -> bool:
-        return bool(
-            self.track is not None
-            and self._scenario_profile.name == "single_lap_safe"
-            and self._car_slug == "bmw"
-            and self._track_slug == "sebring"
-        )
-
-    def _apply_runtime_calibration_guard(self, breakdown: ObjectiveBreakdown) -> ObjectiveBreakdown:
-        # BMW/Sebring recalibration currently shows that the track-aware
-        # single-lap runtime objective overweights raw lap-gain estimates
-        # relative to the platform/envelope penalties. Keep this guard narrow
-        # until a broader evidence-backed calibration exists.
-        if self._is_bmw_sebring_track_aware_single_lap_safe():
-            breakdown.w_lap_gain = min(breakdown.w_lap_gain, 0.25)
-            breakdown.w_envelope = min(breakdown.w_envelope, 0.40)
-        return breakdown
-
     def _new_breakdown(self) -> ObjectiveBreakdown:
         weights = self._scenario_profile.objective
         breakdown = ObjectiveBreakdown(
@@ -413,7 +398,7 @@ class ObjectiveFunction:
         )
         if self.explore:
             breakdown.w_empirical = 0.0
-        return self._apply_runtime_calibration_guard(breakdown)
+        return breakdown
 
     def _heave_calibration_uncertainty_penalty_ms(self, front_heave: float) -> float:
         cal_uncertainty = self._heave_cal.uncertainty(front_heave)
@@ -437,17 +422,12 @@ class ObjectiveFunction:
 
     def _df_balance_lap_penalty_ms(self, physics: PhysicsResult) -> float:
         ms_per_pct = 20.0
-        if self._is_bmw_sebring_track_aware_single_lap_safe():
-            ms_per_pct = 10.0
         return physics.df_balance_error_pct * ms_per_pct
 
     def _camber_lap_penalty_ms(self, front_camber: float, rear_camber: float) -> float:
-        scale = 1.0
-        if self._is_bmw_sebring_track_aware_single_lap_safe():
-            scale = 0.5
         front_penalty = min(8.0, abs(front_camber - (-3.0)) * 5.0)
         rear_penalty = min(6.0, abs(rear_camber - (-2.0)) * 4.0)
-        return scale * (front_penalty + rear_penalty)
+        return front_penalty + rear_penalty
 
     @staticmethod
     def _arb_size_label(raw: object, labels: list[str] | tuple[str, ...], baseline: str) -> str:
@@ -528,9 +508,14 @@ class ObjectiveFunction:
         od_ref = self.car.corner_spring.front_torsion_od_ref_mm
         if od_ref <= 0:
             return 1.0
+        # Use car-specific coupling — defaults to 0.0 for uncalibrated cars.
+        # Only BMW/Sebring (γ=0.25) has IBT validation for this term.
+        coupling = getattr(self.car, "torsion_arb_coupling", self.TORSION_ARB_COUPLING)
+        if coupling == 0.0:
+            return 1.0  # no coupling for this car — standard parallel-element model
         # Relative stiffness ratio: (OD/OD_ref)^4 (same OD^4 law as wheel rate)
         stiffness_ratio = (front_torsion_od / od_ref) ** 4
-        return 1.0 + self.TORSION_ARB_COUPLING * (stiffness_ratio - 1.0)
+        return 1.0 + coupling * (stiffness_ratio - 1.0)
 
     def _compute_vortex_threshold_mm(self, wing_deg: float) -> float:
         """Compute wing-specific minimum safe front RH from aero map gradient.
@@ -701,10 +686,22 @@ class ObjectiveFunction:
         front_arb_blade = int(params.get("front_arb_blade", 1))
         rear_arb_blade = int(params.get("rear_arb_blade", 3))
 
-        c_torsion = car.corner_spring.front_torsion_c
-        front_wheel_rate = c_torsion * (front_torsion_od ** 4)
-        mr_rear = car.corner_spring.rear_motion_ratio
-        rear_wheel_rate = rear_spring_nmm * (mr_rear ** 2)
+        # ── Front and rear corner wheel rates ───────────────────────────
+        # Ferrari uses indexed torsion bars at BOTH ends.
+        # Use FerrariIndexedControlModel for both axles — calibrated from garage screenshots.
+        # All other cars (BMW/Cadillac/Porsche/Acura): BMW path — c_torsion*OD^4 front,
+        # rear_spring_nmm*MR^2 rear (Dallara coil spring architecture).
+        _ferrari_controls = getattr(car, "ferrari_indexed_controls", None)
+        if _ferrari_controls is not None:
+            _ftb_idx = float(params.get("front_torsion_bar_index", 2.0))
+            _rtb_idx = float(params.get("rear_torsion_bar_index", 2.0))
+            front_wheel_rate = _ferrari_controls.front_torsion_rate_from_index(_ftb_idx)
+            rear_wheel_rate = _ferrari_controls.rear_torsion_rate_from_index(_rtb_idx)
+        else:
+            c_torsion = car.corner_spring.front_torsion_c
+            front_wheel_rate = c_torsion * (front_torsion_od ** 4)
+            mr_rear = car.corner_spring.rear_motion_ratio
+            rear_wheel_rate = rear_spring_nmm * (mr_rear ** 2)
 
         arb = car.arb
         t_f = arb.track_width_front_mm / 2000.0
@@ -713,9 +710,8 @@ class ObjectiveFunction:
         k_roll_springs_rear = 2.0 * (rear_wheel_rate * 1000.0) * t_r**2 * (math.pi / 180.0)
         k_arb_front_base = arb.front_roll_stiffness(arb.front_baseline_size, front_arb_blade)
         k_arb_rear = arb.rear_roll_stiffness(arb.rear_baseline_size, rear_arb_blade)
-        # Empirical coupling: γ=0.25 back-calibrated from BMW Sebring IBT LLTD.
-        # Theoretically 0.0 (parallel elements, rigid kinematics). See TORSION_ARB_COUPLING
-        # class constant and research/physics-notes.md §2026-03-24 for derivation.
+        # torsion_arb_coupling=0.0 for Ferrari (set in cars.py) — standard parallel model.
+        # γ=0.25 coupling only applies to BMW where it was back-calibrated from IBT LLTD.
         k_arb_front = k_arb_front_base * self._torsion_arb_coupling_factor(front_torsion_od)
 
         k_front_total = k_roll_springs_front + k_arb_front
@@ -778,10 +774,19 @@ class ObjectiveFunction:
         r_hs_rbd = int(params.get("rear_hs_rbd", 3))
 
         # ── Wheel rates ─────────────────────────────────────────────────
-        c_torsion = car.corner_spring.front_torsion_c
-        front_wheel_rate = c_torsion * (front_torsion_od ** 4)
-        mr_rear = car.corner_spring.rear_motion_ratio
-        rear_wheel_rate = rear_spring_nmm * (mr_rear ** 2)
+        # Ferrari: indexed torsion bars at both ends — use FerrariIndexedControlModel.
+        # Other cars: c_torsion*OD^4 front + rear_spring_nmm*MR^2 rear (Dallara coil).
+        _ferrari_controls = getattr(car, "ferrari_indexed_controls", None)
+        if _ferrari_controls is not None:
+            _ftb_idx = float(params.get("front_torsion_bar_index", 2.0))
+            _rtb_idx = float(params.get("rear_torsion_bar_index", 2.0))
+            front_wheel_rate = _ferrari_controls.front_torsion_rate_from_index(_ftb_idx)
+            rear_wheel_rate = _ferrari_controls.rear_torsion_rate_from_index(_rtb_idx)
+        else:
+            c_torsion = car.corner_spring.front_torsion_c
+            front_wheel_rate = c_torsion * (front_torsion_od ** 4)
+            mr_rear = car.corner_spring.rear_motion_ratio
+            rear_wheel_rate = rear_spring_nmm * (mr_rear ** 2)
         result.front_wheel_rate_nmm = front_wheel_rate
         result.rear_wheel_rate_nmm = rear_wheel_rate
 
@@ -918,19 +923,26 @@ class ObjectiveFunction:
         else:
             result.lltd = 0.5
 
-        # LLTD target — use IBT-calibrated measured target when available.
-        # Theory: LLTD_target = W_front + (λ/λ_ref)*0.05  (OptimumG formula)
-        # In practice, some cars run intentionally rear-biased LLTD for rotation.
-        # car.measured_lltd_target overrides the theoretical formula when set.
-        # BMW calibration: theory=0.528, measured=0.38-0.43 → use 0.41.
-        # Source: validation/objective_validation.md Section 6.
-        tyre_sens = getattr(car, "tyre_load_sensitivity", 0.20)
+        # ── LLTD override for cars with constant measured LLTD ──────────
+        # Ferrari 499P: LLTD is effectively constant at 0.510±0.002 across 19 sessions
+        # despite torsion bars ranging idx 2-8 and ARBs from A/1 to E/5.
+        # The component calculation (torsion bars + ARBs) gives 0.35-0.43 — WRONG —
+        # because the individual stiffness values can't be resolved from available data.
+        # Use the measured constant directly when the car's LLTD doesn't vary with setup.
         _measured_lltd_target = getattr(car, "measured_lltd_target", None)
-        if _measured_lltd_target is not None:
-            target_lltd = _measured_lltd_target
+        _ferrari_controls = getattr(car, "ferrari_indexed_controls", None)
+        if _ferrari_controls is not None and _measured_lltd_target is not None:
+            # Ferrari: LLTD is a car constant — use measured value directly
+            result.lltd = _measured_lltd_target
+            result.lltd_error = 0.0  # zero error — LLTD is not tunable
         else:
-            target_lltd = car.weight_dist_front + (tyre_sens / 0.20) * 0.05
-        result.lltd_error = abs(result.lltd - target_lltd)
+            # All other cars: LLTD is computed from components and scored vs target
+            tyre_sens = getattr(car, "tyre_load_sensitivity", 0.20)
+            if _measured_lltd_target is not None:
+                target_lltd = _measured_lltd_target
+            else:
+                target_lltd = car.weight_dist_front + (tyre_sens / 0.20) * 0.05
+            result.lltd_error = abs(result.lltd - target_lltd)
 
         # ── Damping ratios (real physics) ───────────────────────────────
         damper = car.damper
@@ -1228,21 +1240,27 @@ class ObjectiveFunction:
         # lap_gain_ms) to properly capture the peak at clicks 8-9.
         # ═══════════════════════════════════════════════════════════════
 
-        # Front LS near ζ=0.68 (IBT-calibrated from top-15 fastest BMW/Sebring sessions)
-        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
-        gain -= min(4.0, zeta_ls_front_err * 5.0)
+        # Damping ratio targets — only apply when car damper is IBT-calibrated.
+        # For uncalibrated cars (zeta_is_calibrated=False), force/click is an estimate
+        # and the zeta targets were back-derived from BMW IBT. Applying BMW targets to
+        # a Ferrari 40-click damper produces random noise, not a useful gradient.
+        # Calibrated: BMW (73 IBT sessions). Uncalibrated: Ferrari, Porsche, Acura, Cadillac.
+        if getattr(self.car.damper, "zeta_is_calibrated", False):
+            zeta_ls_front_err = abs(physics.zeta_ls_front - self.car.damper.zeta_target_ls_front)
+            gain -= min(4.0, zeta_ls_front_err * 5.0)
 
-        # Rear LS near ζ=0.23 (IBT-calibrated): traction compliance over kerbs
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
-        gain -= min(3.0, zeta_ls_rear_err * 4.0)
+            # Rear LS: traction compliance over kerbs
+            zeta_ls_rear_err = abs(physics.zeta_ls_rear - self.car.damper.zeta_target_ls_rear)
+            gain -= min(3.0, zeta_ls_rear_err * 4.0)
 
-        # Front HS near ζ=0.47 (IBT-calibrated)
-        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
-        gain -= min(2.5, zeta_hs_front_err * 3.5)
+            # Front HS
+            zeta_hs_front_err = abs(physics.zeta_hs_front - self.car.damper.zeta_target_hs_front)
+            gain -= min(2.5, zeta_hs_front_err * 3.5)
 
-        # Rear HS near ζ=0.20 (IBT-calibrated)
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
-        gain -= min(2.5, zeta_hs_rear_err * 3.5)
+            # Rear HS
+            zeta_hs_rear_err = abs(physics.zeta_hs_rear - self.car.damper.zeta_target_hs_rear)
+            gain -= min(2.5, zeta_hs_rear_err * 3.5)
+        # else: damper clicks are not scored — output will flag [ESTIMATE: damper clicks unscored]
 
         # ── REBOUND : COMPRESSION RATIO (previously invisible — pinning bug) ──
         # Rebound clicks had ZERO gradient in the objective because ζ was computed
@@ -1319,12 +1337,11 @@ class ObjectiveFunction:
         # TIER 5: DIFF PRELOAD (exit traction, small effect)
         # ═══════════════════════════════════════════════════════════════
 
-        # Ferrari 499P at Sebring: fastest session (108.1s) used 0 Nm + Less Locking.
-        # E-diff + hybrid manage traction electronically; mechanical preload adds
-        # corner-entry understeer at slow hairpins (T1, T17) without traction benefit.
-        # BMW/Porsche/Cadillac may still prefer higher preload — keep 65 Nm default.
+        # Diff preload: penalty for distance from moderate baseline.
+        # All cars use 30 Nm as the neutral target — individual cars will converge
+        # to their optimal via the empirical learner, not hardcoded overrides.
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = 10.0 if self._car_slug == "ferrari" else 65.0  # Nm, calibrated Mar21 (fastest=0Nm+LessLocking)
+        diff_target = 30.0  # Nm — moderate baseline for all cars
         gain -= min(8.0, abs(diff - diff_target) * 0.12)
 
         # ═══════════════════════════════════════════════════════════════
@@ -1348,17 +1365,15 @@ class ObjectiveFunction:
         )
         f_arb_blade = int(round(params.get("front_arb_blade", 1)))
         r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
-        # Penalty for extreme blade + wrong size (should have sized up/down)
-        # e.g., blade 5 + Soft = should be Medium; blade 1 + Stiff = should be Soft
-        max_blade = 5
-        if f_arb_blade >= max_blade and f_arb_size_idx == 0:
-            gain -= 15.0  # at max blade on Soft → too small, needs Medium
-        if r_arb_blade >= max_blade and r_arb_size_idx == 0:
-            gain -= 20.0
-        if f_arb_blade <= 1 and f_arb_size_idx >= 2:
-            gain -= 10.0  # at min blade on Stiff → too large, needs Medium
-        if r_arb_blade <= 1 and r_arb_size_idx >= 2:
-            gain -= 15.0
+        # ARB extreme-combo penalty ZEROED OUT (2026-03-28, calibration evidence):
+        # Removing this term improved BMW/Sebring in-sample Spearman by +0.048 and
+        # holdout mean by +0.062.  The heuristic (max blade + Soft = wrong size) does
+        # not hold in the 75-session dataset — fast BMW setups use a range of ARB
+        # size/blade combos including those this term would penalise.  The physics
+        # reasoning (blade maxed → size up) is sound in principle but the lap-time
+        # signal is absent, so applying it adds noise that hurts ranking quality.
+        # See validation/calibration_report.md — ablation: arb_extreme_ms removed.
+        # gain -= ...  (placeholder — do NOT restore without corroborating IBT evidence)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: DIFF RAMP ANGLES (corner-entry rotation + exit traction)
@@ -1388,7 +1403,14 @@ class ObjectiveFunction:
             coast_target_idx = 1  # 45° middle
 
         coast_mismatch = abs(ramp_idx - coast_target_idx)
-        gain -= min(12.0, coast_mismatch * 6.0)  # ~6ms per step mismatch
+        # diff_ramp penalty reduced from min(12.0, 6ms/step) to min(4.0, 2ms/step)
+        # (2026-03-28, calibration evidence): removing this term improved trackless
+        # Spearman by +0.069 in-sample and +0.049 holdout mean.  The trail-brake→ramp
+        # mapping is directionally correct but the 6ms-per-step magnitude was too
+        # aggressive, causing correlated noise with driver-profile fallbacks.  Reduced
+        # to 2ms/step max 4ms to keep directional signal while cutting noise floor.
+        # See validation/calibration_report.md — ablation: diff_ramp_ms removed.
+        gain -= min(4.0, coast_mismatch * 2.0)  # reduced from 6ms → 2ms per step mismatch
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: DIFF CLUTCH PLATES (lock authority, exit traction)
@@ -1398,7 +1420,7 @@ class ObjectiveFunction:
         # GTP baseline: 4 plates for traction-limited tracks, 6 for rotation-limited.
         clutch_plates = int(round(params.get("diff_clutch_plates", 4)))
         # Rear power slip p95 from measured
-        rear_slip_p95 = getattr(self._measured, "rear_power_slip_p95", None) if self._measured else None
+        rear_slip_p95 = getattr(self._measured, "rear_power_slip_ratio_p95", None) if self._measured else None
         if rear_slip_p95 is None:
             rear_slip_p95 = 0.07  # Sebring BMW baseline
         if rear_slip_p95 > 0.10:
@@ -1444,15 +1466,16 @@ class ObjectiveFunction:
         lltd_penalty = physics.lltd_error * 100.0 * lltd_ms_per_pct
         detail.lltd_balance_ms += min(10.0, lltd_penalty)
 
-        # IBT-calibrated zeta targets (top-15 fastest BMW/Sebring sessions, 2026-03-26)
-        zeta_ls_front_err = abs(physics.zeta_ls_front - 0.68)
-        zeta_ls_rear_err = abs(physics.zeta_ls_rear - 0.23)
-        zeta_hs_front_err = abs(physics.zeta_hs_front - 0.47)
-        zeta_hs_rear_err = abs(physics.zeta_hs_rear - 0.20)
-        detail.damping_ms += min(4.0, zeta_ls_front_err * 5.0)
-        detail.damping_ms += min(3.0, zeta_ls_rear_err * 4.0)
-        detail.damping_ms += min(2.5, zeta_hs_front_err * 3.5)
-        detail.damping_ms += min(2.5, zeta_hs_rear_err * 3.5)
+        # Damping ratio targets — calibrated cars only (see _estimate_lap_gain guard)
+        if getattr(self.car.damper, "zeta_is_calibrated", False):
+            zeta_ls_front_err = abs(physics.zeta_ls_front - self.car.damper.zeta_target_ls_front)
+            zeta_ls_rear_err = abs(physics.zeta_ls_rear - self.car.damper.zeta_target_ls_rear)
+            zeta_hs_front_err = abs(physics.zeta_hs_front - self.car.damper.zeta_target_hs_front)
+            zeta_hs_rear_err = abs(physics.zeta_hs_rear - self.car.damper.zeta_target_hs_rear)
+            detail.damping_ms += min(4.0, zeta_ls_front_err * 5.0)
+            detail.damping_ms += min(3.0, zeta_ls_rear_err * 4.0)
+            detail.damping_ms += min(2.5, zeta_hs_front_err * 3.5)
+            detail.damping_ms += min(2.5, zeta_hs_rear_err * 3.5)
 
         f_ls_comp = params.get("front_ls_comp", 7)
         f_ls_rbd = params.get("front_ls_rbd", 6)
@@ -1485,7 +1508,7 @@ class ObjectiveFunction:
         detail.camber_ms += self._camber_lap_penalty_ms(front_camber, rear_camber)
 
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = 10.0 if self._car_slug == "ferrari" else 65.0
+        diff_target = 30.0  # Nm — moderate baseline for all cars
         detail.diff_preload_ms += min(8.0, abs(diff - diff_target) * 0.12)
 
         f_arb_size_idx = self._arb_size_index(
@@ -1503,14 +1526,8 @@ class ObjectiveFunction:
         f_arb_blade = int(round(params.get("front_arb_blade", 1)))
         r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
         max_blade = 5
-        if f_arb_blade >= max_blade and f_arb_size_idx == 0:
-            detail.arb_extreme_ms += 15.0
-        if r_arb_blade >= max_blade and r_arb_size_idx == 0:
-            detail.arb_extreme_ms += 20.0
-        if f_arb_blade <= 1 and f_arb_size_idx >= 2:
-            detail.arb_extreme_ms += 10.0
-        if r_arb_blade <= 1 and r_arb_size_idx >= 2:
-            detail.arb_extreme_ms += 15.0
+        # arb_extreme_ms zeroed out — see _estimate_lap_gain() comment (2026-03-28)
+        # detail.arb_extreme_ms += ...  (kept at 0.0 — calibration shows it adds noise)
 
         ramp_options = getattr(
             getattr(self.car, "garage_ranges", None), "diff_coast_drive_ramp_options",
@@ -1526,10 +1543,10 @@ class ObjectiveFunction:
         else:
             coast_target_idx = 1
         coast_mismatch = abs(ramp_idx - coast_target_idx)
-        detail.diff_ramp_ms += min(12.0, coast_mismatch * 6.0)
+        detail.diff_ramp_ms += min(4.0, coast_mismatch * 2.0)  # reduced — see _estimate_lap_gain() comment
 
         clutch_plates = int(round(params.get("diff_clutch_plates", 4)))
-        rear_slip_p95 = getattr(self._measured, "rear_power_slip_p95", None) if self._measured else None
+        rear_slip_p95 = getattr(self._measured, "rear_power_slip_ratio_p95", None) if self._measured else None
         if rear_slip_p95 is None:
             rear_slip_p95 = 0.07
         if rear_slip_p95 > 0.10:
@@ -1552,6 +1569,22 @@ class ObjectiveFunction:
             detail.tc_ms += min(8.0, (5 - tc_gain) * 3.0)
         elif rear_slip_p95 < 0.04 and tc_gain > 6:
             detail.tc_ms += min(5.0, (tc_gain - 6) * 2.0)
+
+        # ── Tyre carcass temperature — thermal window penalty ────────────────
+        # GTP/LMDh Michelin compound optimal window: ~82-104°C (180-220°F)
+        # Source: Ken Payne (Michelin NA), Sportscar365; iRacing GTP data
+        CARCASS_OPTIMAL_MIN_C = 82.0
+        CARCASS_OPTIMAL_MAX_C = 104.0
+        CARCASS_MS_PER_DEG_COLD = 1.2   # ms penalty per °C below min (cold = low grip)
+        CARCASS_MS_PER_DEG_HOT = 1.8    # ms penalty per °C above max (hot = graining)
+        if self._measured is not None:
+            for attr in ("front_carcass_mean_c", "rear_carcass_mean_c"):
+                carcass_temp = getattr(self._measured, attr, None)
+                if carcass_temp is not None and float(carcass_temp) > 20.0:
+                    temp = float(carcass_temp)
+                    cold_pen = max(0.0, CARCASS_OPTIMAL_MIN_C - temp) * CARCASS_MS_PER_DEG_COLD
+                    hot_pen = max(0.0, temp - CARCASS_OPTIMAL_MAX_C) * CARCASS_MS_PER_DEG_HOT
+                    detail.carcass_ms += min(15.0, cold_pen + hot_pen)
 
         return detail
 
@@ -1596,17 +1629,21 @@ class ObjectiveFunction:
         _gr = self.car.garage_ranges
         _k_front = params.get("front_heave_spring_nmm", 50.0)
         _od_mm = params.get("front_torsion_od_mm", 14.34)
-        # Use baseline perch for veto check — compute_perch_offsets uses a zero-referenced
-        # offset (0 at heave=50), but the slider formula is calibrated from the absolute
-        # perch position. Use the car's absolute baseline perch when evaluating legality.
+
+        # Ferrari's auto-calibrated deflection model was trained on INDEX inputs
+        # (front_heave=0-8, torsion_od=0-18), not physical N/mm rates.
+        # Convert N/mm → index before calling the deflection model.
+        _ferrari_controls = getattr(self.car, "ferrari_indexed_controls", None)
+        if _ferrari_controls is not None:
+            # Convert front heave N/mm → index for deflection model
+            _anchor = _hsm.front_setting_anchor_index or 1.0
+            _rate_at_anchor = _hsm.front_rate_at_anchor_nmm or 50.0
+            _rate_per_idx = _hsm.front_rate_per_index_nmm or 20.0
+            _k_front = _anchor + (_k_front - _rate_at_anchor) / _rate_per_idx  # → heave index
+            # Convert torsion OD mm → torsion bar index for deflection model
+            _od_mm = float(params.get("front_torsion_bar_index", 2.0))
+
         _perch_front = _hsm.perch_offset_front_baseline_mm
-        # Use DeflectionModel (multi-variable: heave + perch + OD^4, R²=0.953, 31 sessions)
-        # instead of the HeaveSpringModel simplified single-variable formula.
-        # Bug: old formula gives 24.0mm at k=30 N/mm but actual is 6.4mm (3.7× error).
-        # The DeflectionModel gives ~7.1mm at k=30 N/mm — 10× more accurate.
-        # Impact: old formula caused WRONG near-vetoes for soft heave springs (k≤35 N/mm)
-        # by predicting deflection near the 25.0mm legal max when actual is far below it.
-        # Source: car_model/calibrate_deflections.py, BMW Sebring 31 setups, March 2026.
         _dm = self.car.deflection
         _spring_defl = _dm.heave_spring_defl_static(_k_front, _perch_front, _od_mm)
         _slider_static = _dm.heave_slider_defl_static(_k_front, _perch_front, _od_mm)
@@ -1614,24 +1651,39 @@ class ObjectiveFunction:
         _defl_min, _defl_max = _gr.heave_spring_defl_mm   # (0.6, 25.0)
         _slider_min, _slider_max = _gr.heave_slider_defl_mm  # (25.0, 45.0)
 
-        if _spring_defl < _defl_min:
-            veto_reasons.append(
-                f"Heave spring defl too low: {_spring_defl:.2f}mm < {_defl_min}mm legal min "
-                f"(heave={_k_front:.0f} N/mm — increase heave spring rate)"
-            )
-        if _spring_defl > _defl_max:
-            veto_reasons.append(
-                f"Heave spring defl too high: {_spring_defl:.2f}mm > {_defl_max}mm legal max "
-                f"(heave={_k_front:.0f} N/mm — decrease heave spring rate)"
-            )
-        if _slider_static < _slider_min:
-            veto_reasons.append(
-                f"Heave slider defl too low: {_slider_static:.2f}mm < {_slider_min}mm legal min"
-            )
-        if _slider_static > _slider_max:
-            veto_reasons.append(
-                f"Heave slider defl too high: {_slider_static:.2f}mm > {_slider_max}mm legal max"
-            )
+        # Deflection vetoes only applied when using BMW's validated DeflectionModel
+        # (calibrated from 31 BMW Sebring sessions, R²=0.953).
+        # Ferrari's auto-calibrated model uses INDEX inputs (0-8) and has insufficient
+        # precision at the boundary — all real Ferrari setups predict defl < 0.6mm,
+        # yet they run fine in game. Disable hard veto for Ferrari until model is
+        # re-validated; still log as soft penalty for visibility.
+        _deflection_veto_enabled = _ferrari_controls is None  # True for BMW/Cadillac/etc
+        if _deflection_veto_enabled:
+            if _spring_defl < _defl_min:
+                veto_reasons.append(
+                    f"Heave spring defl too low: {_spring_defl:.2f}mm < {_defl_min}mm legal min "
+                    f"(heave={_k_front:.0f} N/mm — increase heave spring rate)"
+                )
+            if _spring_defl > _defl_max:
+                veto_reasons.append(
+                    f"Heave spring defl too high: {_spring_defl:.2f}mm > {_defl_max}mm legal max "
+                    f"(heave={_k_front:.0f} N/mm — decrease heave spring rate)"
+                )
+            if _slider_static < _slider_min:
+                veto_reasons.append(
+                    f"Heave slider defl too low: {_slider_static:.2f}mm < {_slider_min}mm legal min"
+                )
+            if _slider_static > _slider_max:
+                veto_reasons.append(
+                    f"Heave slider defl too high: {_slider_static:.2f}mm > {_slider_max}mm legal max"
+                )
+        else:
+            # Ferrari: log as soft warning, not veto
+            if _spring_defl < _defl_min or _spring_defl > _defl_max:
+                soft_penalties.append(
+                    f"[Ferrari] Heave defl model uncertainty: pred={_spring_defl:.2f}mm "
+                    f"(legal: {_defl_min}-{_defl_max}mm) — model uses indexed inputs, verify in garage"
+                )
 
         # ── Bottoming risk (from real excursion calculation) ────────────
         margin = physics.front_bottoming_margin_mm

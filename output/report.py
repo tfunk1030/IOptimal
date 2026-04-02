@@ -25,18 +25,57 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from car_model.garage import GarageSetupState
+from car_model.setup_registry import public_output_value, remap_public_output_keys
 
 
 def _load_support_tier(car_slug: str, track_name: str) -> dict[str, Any] | None:
-    """Load support tier for a car/track pair from validation evidence."""
+    """Load support tier for a car/track pair from validation evidence.
+
+    Primary source: validation/objective_validation.json (explicit benchmark data).
+    Fallback: data/calibration/<car>/calibration_points.json + models.json
+      — synthesises a tier from session count when no benchmark entry exists.
+    """
     validation_path = Path(__file__).resolve().parent.parent / "validation" / "objective_validation.json"
-    if not validation_path.exists():
-        return None
+    if validation_path.exists():
+        try:
+            data = json.loads(validation_path.read_text())
+            for entry in data.get("support_matrix", []):
+                if (entry.get("car", "").lower() == car_slug.lower()
+                        and track_name.lower().startswith(entry.get("track", "").lower()[:10])):
+                    return entry
+        except Exception:
+            pass
+
+    # Fallback: synthesise tier from calibration data on disk.
+    # Uses the same logic as run_trace._compute_support_tier() so both displays agree.
     try:
-        data = json.loads(validation_path.read_text())
-        for entry in data.get("support_matrix", []):
-            if entry.get("car", "").lower() == car_slug.lower() and track_name.lower().startswith(entry.get("track", "").lower()[:10]):
-                return entry
+        cal_dir = Path(__file__).resolve().parent.parent / "data" / "calibration" / car_slug.lower()
+        if not cal_dir.exists():
+            return None
+        pts_file = cal_dir / "calibration_points.json"
+        session_count = 0
+        if pts_file.exists():
+            raw = json.loads(pts_file.read_text(encoding="utf-8", errors="replace"))
+            session_count = len(raw) if isinstance(raw, list) else len(raw.get("sessions", []))
+        has_models = (cal_dir / "models.json").exists()
+        if session_count == 0 and not has_models:
+            return None
+        # Map session count → confidence_tier label (mirrors run_trace thresholds)
+        if has_models and session_count >= 20:
+            tier = "calibrated"
+        elif session_count >= 5:
+            tier = "partial"
+        elif session_count >= 1:
+            tier = "exploratory"
+        else:
+            tier = "partial"  # has models.json but <1 session read
+        return {
+            "car": car_slug,
+            "track": track_name,
+            "confidence_tier": tier,
+            "samples": session_count,
+            "source": "calibration_data",
+        }
     except Exception:
         pass
     return None
@@ -60,6 +99,11 @@ def _asdict_safe(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: _asdict_safe(v) for k, v in obj.items()}
     return obj
+
+
+def to_public_output_payload(car_name: str, obj: Any) -> Any:
+    """Serialize solver output using the public per-car naming surface."""
+    return remap_public_output_keys(car_name, _asdict_safe(obj))
 
 
 def _hdr(title: str) -> str:
@@ -97,10 +141,26 @@ def _ok(val: bool) -> str:
     return "✓" if val else "✗"
 
 
-def _setting(label: str, value: str, note: str = "") -> str:
+def _changed_marker(param_key: str, new_val, current_params: dict | None) -> str:
+    """Return ' ←' if this value differs from current_params."""
+    if current_params is None or param_key not in current_params:
+        return ""
+    cur = current_params.get(param_key)
+    try:
+        if abs(float(new_val) - float(cur)) > 0.05:
+            return " ←"
+    except (TypeError, ValueError):
+        if str(new_val) != str(cur):
+            return " ←"
+    return ""
+
+
+def _setting(label: str, value: str, note: str = "", changed: str = "") -> str:
     text = f"  {label:<24} {value}"
     if note:
         text += f"  {note}"
+    if changed:
+        text += changed
     if len(text) > W - 2:
         text = text[:W - 5] + "..."
     return _full(text)
@@ -168,6 +228,7 @@ def print_full_setup_report(
     hybrid_corner_pct: float | None = None,
     front_diff_preload_nm: float | None = None,
     bias_migration_gain: float | None = None,
+    current_params: dict | None = None,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
@@ -214,6 +275,15 @@ def print_full_setup_report(
     diff_solution = getattr(supporting, "_diff_solution", None) if supporting is not None else None
 
     _is_ferrari = car is not None and getattr(car, "canonical_name", "") == "ferrari"
+    _is_acura = car is not None and getattr(car, "canonical_name", "") == "acura"
+    _has_rear_torsion = (car is not None and hasattr(car, "corner_spring")
+                         and getattr(car.corner_spring, "rear_is_torsion_bar", False))
+    _has_roll_dampers = (car is not None and hasattr(car, "damper")
+                         and getattr(car.damper, "has_roll_dampers", False))
+    display_front_heave = float(public_output_value(car, "front_heave_nmm", step2.front_heave_nmm))
+    display_rear_heave = float(public_output_value(car, "rear_third_nmm", step2.rear_third_nmm))
+    display_front_torsion = float(public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+    display_rear_torsion = float(public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
 
     brake_bias_str = f"{brake_bias_val:.1f}%" if brake_bias_val is not None else "(pipeline)"
     diff_preload_str = f"{diff_preload_val:.0f} Nm" if diff_preload_val is not None else "(pipeline)"
@@ -243,9 +313,19 @@ def print_full_setup_report(
         _tb_turns = round(
             0.1089 - 0.1642 / max(step2.front_heave_nmm, 1) + 0.000368 * step2.perch_offset_front_mm, 3
         )
-    # Rear torsion bar turns (Ferrari only — passed through from IBT)
+    # Rear torsion bar turns (Ferrari/Acura — passed through from IBT or computed)
     if rear_tb_turns_override is not None:
         _rear_tb_turns = round(rear_tb_turns_override, 3)
+    elif garage_outputs is not None and getattr(garage_outputs, "rear_torsion_bar_turns", 0) != 0:
+        _rear_tb_turns = round(float(garage_outputs.rear_torsion_bar_turns), 3)
+    elif _has_rear_torsion:
+        # Compute from same formula as front turns, but rear bars preload in the
+        # opposite direction (negative turns). The formula is BMW-calibrated and
+        # gives magnitude only — negate for rear.
+        hsm = car.heave_spring
+        _rear_tb_turns = -round(
+            hsm.torsion_bar_turns_intercept + hsm.torsion_bar_turns_heave_coeff / max(step2.rear_third_nmm, 1), 3
+        )
     else:
         _rear_tb_turns = None
     df_ok = abs(step1.df_balance_pct - target_balance) < 0.2
@@ -274,40 +354,38 @@ def print_full_setup_report(
     # ── FULL PARAMETER SHEET ─────────────────────────────────────────
     a(_box_top("SETUP TO ENTER"))
     a(_full("  PLATFORM / SPRINGS"))
-    a(_setting("Wing", f"{wing:.1f} deg"))
+    a(_setting("Wing", f"{wing:.1f} deg", changed=_changed_marker("wing_angle_deg", wing, current_params)))
     a(_setting("Fuel load", f"{fuel_l:.0f} L"))
-    a(_setting("Front static RH target", f"{step1.static_front_rh_mm:.1f} mm"))
-    a(_setting("Rear static RH target", f"{step1.static_rear_rh_mm:.1f} mm"))
+    a(_setting("Front static RH target", f"{step1.static_front_rh_mm:.1f} mm", changed=_changed_marker("front_rh_static", step1.static_front_rh_mm, current_params)))
+    a(_setting("Rear static RH target", f"{step1.static_rear_rh_mm:.1f} mm", changed=_changed_marker("rear_rh_static", step1.static_rear_rh_mm, current_params)))
     a(_setting("Front pushrod", f"{step1.front_pushrod_offset_mm:+.1f} mm"))
     a(_setting("Rear pushrod", f"{step1.rear_pushrod_offset_mm:+.1f} mm"))
     if _is_ferrari:
-        # Ferrari uses indexed dropdowns (not physical N/mm values).
-        # Heave spring: front 0-8, rear 0-9. Torsion OD: front 0-18, rear 0-18.
-        # The solver computes in N/mm space and reports raw values; clamp to valid range here.
-        # Conversion factors (estimated): front heave ~50 N/mm/index, rear ~50-100 N/mm/index.
-        # These will be updated once full index→N/mm calibration is complete.
-        _FERRARI_HEAVE_F_NMM_PER_IDX = 50.0   # ESTIMATE: index 1 ≈ 50 N/mm (from cars.py)
-        _FERRARI_HEAVE_R_NMM_PER_IDX = 75.0   # ESTIMATE
-        _f_heave_idx = max(0, min(8,  round(step2.front_heave_nmm / _FERRARI_HEAVE_F_NMM_PER_IDX)))
-        _r_heave_idx = max(0, min(9,  round(step2.rear_third_nmm  / _FERRARI_HEAVE_R_NMM_PER_IDX)))
-        a(_setting("Front heave spring", f"{_f_heave_idx} (index)  [~{step2.front_heave_nmm:.0f} N/mm est]"))
+        a(_setting("Front heave index", f"{display_front_heave:.0f} idx", changed=_changed_marker("front_heave_nmm", display_front_heave, current_params)))
         a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
-        a(_setting("Rear heave spring", f"{_r_heave_idx} (index)  [~{step2.rear_third_nmm:.0f} N/mm est]"))
+        a(_setting("Rear heave index", f"{display_rear_heave:.0f} idx", changed=_changed_marker("rear_third_nmm", display_rear_heave, current_params)))
         a(_setting("Rear heave perch", f"{step2.perch_offset_rear_mm:+.1f} mm"))
-        a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.0f} (index)"))
+        a(_setting("Front torsion bar index", f"{display_front_torsion:.0f} idx", changed=_changed_marker("torsion_bar_od_mm", display_front_torsion, current_params)))
         a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
-        a(_setting("Rear torsion bar OD", f"{step3.rear_spring_rate_nmm:.0f} (index)"))
+        a(_setting("Rear torsion bar index", f"{display_rear_torsion:.0f} idx", changed=_changed_marker("rear_spring_nmm", display_rear_torsion, current_params)))
         if _rear_tb_turns is not None:
             a(_setting("Rear torsion bar turns", f"{_rear_tb_turns:.3f} turns"))
     else:
-        a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} N/mm"))
+        a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} N/mm", changed=_changed_marker("front_heave_nmm", step2.front_heave_nmm, current_params)))
         a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
-        a(_setting("Rear third spring", f"{step2.rear_third_nmm:.0f} N/mm"))
-        a(_setting("Rear third perch", f"{step2.perch_offset_rear_mm:+.1f} mm"))
-        a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm"))
+        _rear_heave_label = "Rear heave spring" if _is_acura else "Rear third spring"
+        _rear_perch_label = "Rear heave perch" if _is_acura else "Rear third perch"
+        a(_setting(_rear_heave_label, f"{step2.rear_third_nmm:.0f} N/mm", changed=_changed_marker("rear_third_nmm", step2.rear_third_nmm, current_params)))
+        a(_setting(_rear_perch_label, f"{step2.perch_offset_rear_mm:+.1f} mm"))
+        a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm", changed=_changed_marker("torsion_bar_od_mm", step3.front_torsion_od_mm, current_params)))
         a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
-        a(_setting("Rear coil spring", f"{step3.rear_spring_rate_nmm:.0f} N/mm"))
-        a(_setting("Rear spring perch", f"{step3.rear_spring_perch_mm:.1f} mm"))
+        if _has_rear_torsion and step3.rear_torsion_od_mm is not None:
+            a(_setting("Rear torsion bar OD", f"{step3.rear_torsion_od_mm:.2f} mm", changed=_changed_marker("rear_spring_nmm", step3.rear_torsion_od_mm, current_params)))
+            if _rear_tb_turns is not None:
+                a(_setting("Rear torsion bar turns", f"{_rear_tb_turns:.3f} turns"))
+        else:
+            a(_setting("Rear coil spring", f"{step3.rear_spring_rate_nmm:.0f} N/mm", changed=_changed_marker("rear_spring_nmm", step3.rear_spring_rate_nmm, current_params)))
+            a(_setting("Rear spring perch", f"{step3.rear_spring_perch_mm:.1f} mm"))
     if garage_outputs is not None:
         a(_setting(
             "Heave slider static",
@@ -338,42 +416,41 @@ def print_full_setup_report(
         a(_setting("Torsion bar deflection", torsion_limit_str, torsion_note))
     a(_blank())
     a(_full("  ARBS / GEOMETRY"))
-    a(_setting("Front ARB size / blade", f"{step4.front_arb_size} / {step4.front_arb_blade_start}"))
-    a(_setting("Rear ARB size / blade", f"{step4.rear_arb_size} / {step4.rear_arb_blade_start}"))
+    a(_setting("Front ARB size / blade", f"{step4.front_arb_size} / {step4.front_arb_blade_start}", changed=_changed_marker("front_arb_blade", step4.front_arb_blade_start, current_params)))
+    a(_setting("Rear ARB size / blade", f"{step4.rear_arb_size} / {step4.rear_arb_blade_start}", changed=_changed_marker("rear_arb_blade", step4.rear_arb_blade_start, current_params)))
     a(_setting("Rear ARB live slow", f"blade {step4.rarb_blade_slow_corner}"))
     a(_setting("Rear ARB live fast", f"blade {step4.rarb_blade_fast_corner}"))
     _eff_front_camber = front_camber_override if front_camber_override is not None else step5.front_camber_deg
     _eff_rear_camber = rear_camber_override if rear_camber_override is not None else step5.rear_camber_deg
-    a(_setting("Front camber", f"{_eff_front_camber:+.1f} deg"))
-    a(_setting("Rear camber", f"{_eff_rear_camber:+.1f} deg"))
-    a(_setting("Front toe", f"{step5.front_toe_mm:+.1f} mm"))
-    a(_setting("Rear toe", f"{step5.rear_toe_mm:+.1f} mm"))
+    a(_setting("Front camber", f"{_eff_front_camber:+.1f} deg", changed=_changed_marker("front_camber_deg", _eff_front_camber, current_params)))
+    a(_setting("Rear camber", f"{_eff_rear_camber:+.1f} deg", changed=_changed_marker("rear_camber_deg", _eff_rear_camber, current_params)))
+    a(_setting("Front toe", f"{step5.front_toe_mm:+.1f} mm", changed=_changed_marker("front_toe_mm", step5.front_toe_mm, current_params)))
+    a(_setting("Rear toe", f"{step5.rear_toe_mm:+.1f} mm", changed=_changed_marker("rear_toe_mm", step5.rear_toe_mm, current_params)))
     a(_blank())
     a(_full("  BRAKES / DIFF / TC / TYRES"))
     if _is_ferrari and hybrid_enabled is not None:
         _hybrid_status = "enabled" if hybrid_enabled else "DISABLED ← recommended"
         _hybrid_pct_str = f"  corner pct: {hybrid_corner_pct:.0f}%" if hybrid_corner_pct is not None else ""
         a(_setting("Hybrid rear drive", f"{_hybrid_status}{_hybrid_pct_str}"))
-    a(_setting("Brake bias", brake_bias_str))
+    a(_setting("Brake bias", brake_bias_str, changed=_changed_marker("brake_bias_pct", brake_bias_val, current_params) if brake_bias_val is not None else ""))
     a(_setting("Brake bias status", brake_bias_status))
     a(_setting("Brake target / migration", f"{brake_target_str} / {brake_migration_str}", f"[{brake_target_status}/{brake_migration_status}]"))
     if _is_ferrari and bias_migration_gain is not None:
-        a(_setting("Bias migration gain", f"{bias_migration_gain} (pass-through)"))
+        a(_setting("Bias migration gain", f"{bias_migration_gain}"))
     a(_setting("Master cyl F / R", master_cyl_str, f"[{master_cyl_status}]"))
     a(_setting("Pad compound", pad_compound_str, f"[{pad_compound_status}]"))
     if brake_hardware_status:
         a(_setting("Brake hardware status", brake_hardware_status))
-    a(_setting("Diff preload", diff_preload_str))
+    a(_setting("Diff preload", diff_preload_str, changed=_changed_marker("diff_preload_nm", diff_preload_val, current_params) if diff_preload_val is not None else ""))
     if _is_ferrari:
         # Ferrari: single coast/drive ramp label
         a(_setting("Diff coast/drive ramp", diff_coast_str))
-        # Ferrari front diff preload (pass-through)
         if front_diff_preload_nm is not None:
-            a(_setting("Front diff preload", f"{front_diff_preload_nm:.0f} Nm (pass-through)"))
+            a(_setting("Front diff preload", f"{front_diff_preload_nm:.0f} Nm"))
     else:
         a(_setting("Diff coast ramp", diff_coast_str))
         a(_setting("Diff drive ramp", diff_drive_str))
-    a(_setting("Diff clutch plates", diff_plates_str))
+    a(_setting("Diff clutch plates", diff_plates_str, changed=_changed_marker("diff_clutch_plates", diff_plates_val, current_params) if diff_plates_val is not None else ""))
     if diff_solution is not None:
         a(_setting(
             "Diff lock coast / drive",
@@ -383,19 +460,28 @@ def print_full_setup_report(
             "Diff preload / plate %",
             f"{diff_solution.preload_contribution_pct:.1f}% / {diff_solution.plate_contribution_pct:.1f}%",
         ))
-    a(_setting("TC gain / slip", f"{tc_gain_str} / {tc_slip_str}"))
+    a(_setting("TC gain / slip", f"{tc_gain_str} / {tc_slip_str}", changed=_changed_marker("tc_gain", tc_gain_val, current_params) if tc_gain_val is not None else ""))
     a(_setting("Tyre cold FL / FR", f"{tyre_fl:.0f} / {tyre_fr:.0f} kPa"))
     a(_setting("Tyre cold RL / RR", f"{tyre_rl:.0f} / {tyre_rr:.0f} kPa"))
     a(_blank())
     a(_full("  DAMPERS"))
-    for corner_name, corner in (
-        ("LF", step6.lf),
-        ("RF", step6.rf),
-        ("LR", step6.lr),
-        ("RR", step6.rr),
-    ):
-        a(_setting(f"{corner_name} LS comp / rbd", f"{corner.ls_comp} / {corner.ls_rbd} clicks"))
-        a(_setting(f"{corner_name} HS comp / rbd / slope", f"{corner.hs_comp} / {corner.hs_rbd} / {corner.hs_slope}"))
+    if _has_roll_dampers:
+        # ORECA heave+roll architecture: front/rear heave + roll dampers
+        a(_setting("Front Heave LS comp / rbd", f"{step6.lf.ls_comp} / {step6.lf.ls_rbd} clicks"))
+        a(_setting("Front Heave HS comp / rbd / slope", f"{step6.lf.hs_comp} / {step6.lf.hs_rbd} / {step6.lf.hs_slope}"))
+        a(_setting("Front Roll LS / HS", f"{step6.front_roll_ls or '-'} / {step6.front_roll_hs or '-'} clicks"))
+        a(_setting("Rear Heave LS comp / rbd", f"{step6.lr.ls_comp} / {step6.lr.ls_rbd} clicks"))
+        a(_setting("Rear Heave HS comp / rbd / slope", f"{step6.lr.hs_comp} / {step6.lr.hs_rbd} / {step6.lr.hs_slope}"))
+        a(_setting("Rear Roll LS / HS", f"{step6.rear_roll_ls or '-'} / {step6.rear_roll_hs or '-'} clicks"))
+    else:
+        for corner_name, corner in (
+            ("LF", step6.lf),
+            ("RF", step6.rf),
+            ("LR", step6.lr),
+            ("RR", step6.rr),
+        ):
+            a(_setting(f"{corner_name} LS comp / rbd", f"{corner.ls_comp} / {corner.ls_rbd} clicks"))
+            a(_setting(f"{corner_name} HS comp / rbd / slope", f"{corner.hs_comp} / {corner.hs_rbd} / {corner.hs_slope}"))
     a(_blank())
     a(_full("  TARGETS / LIMITS"))
     a(_setting("DF balance", f"{step1.df_balance_pct:.2f}% (target {target_balance:.2f}%)", _ok(df_ok)))
@@ -475,13 +561,13 @@ def print_full_setup_report(
     a(_row("  RIDE HEIGHTS & PUSHRODS", "  SPRINGS"))
     if _is_ferrari:
         a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
-               f"  Heave F:      {step2.front_heave_nmm:3.0f} idx  perch {step2.perch_offset_front_mm:+.0f}mm"))
+               f"  Heave F:      {display_front_heave:3.0f} idx  perch {step2.perch_offset_front_mm:+.0f}mm"))
         a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
-               f"  Heave R:      {step2.rear_third_nmm:3.0f} idx  perch {step2.perch_offset_rear_mm:+.0f}mm"))
+               f"  Heave R:      {display_rear_heave:3.0f} idx  perch {step2.perch_offset_rear_mm:+.0f}mm"))
         a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
-               f"  F TB OD: {step3.front_torsion_od_mm:4.0f} idx  {_tb_turns:.3f} Turns"))
+               f"  F TB OD: {display_front_torsion:4.0f} idx  {_tb_turns:.3f} Turns"))
         a(_row(f"  Front pushrod: {step1.front_pushrod_offset_mm:5.1f} mm",
-               f"  R TB OD: {step3.rear_spring_rate_nmm:4.0f} idx"))
+               f"  R TB OD: {display_rear_torsion:4.0f} idx"))
         a(_row(f"  Rear pushrod:  {step1.rear_pushrod_offset_mm:5.1f} mm",
                ""))
     else:
@@ -550,19 +636,34 @@ def print_full_setup_report(
     a(_blank())
 
     # Dampers
-    a(_full("  DAMPERS (clicks)                     AERO STATUS"))
-    a(_row(f"            LF   RF   LR   RR",
-           f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
-    a(_row(f"  LS Comp: {step6.lf.ls_comp:3d}  {step6.rf.ls_comp:3d}  {step6.lr.ls_comp:3d}  {step6.rr.ls_comp:3d}",
-           f"  L/D:    {step1.ld_ratio:.3f}"))
-    a(_row(f"  LS Rbd:  {step6.lf.ls_rbd:3d}  {step6.rf.ls_rbd:3d}  {step6.lr.ls_rbd:3d}  {step6.rr.ls_rbd:3d}",
-           f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
-    a(_row(f"  HS Comp: {step6.lf.hs_comp:3d}  {step6.rf.hs_comp:3d}  {step6.lr.hs_comp:3d}  {step6.rr.hs_comp:3d}",
-           f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})"))
-    a(_row(f"  HS Rbd:  {step6.lf.hs_rbd:3d}  {step6.rf.hs_rbd:3d}  {step6.lr.hs_rbd:3d}  {step6.rr.hs_rbd:3d}",
-           f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
-    a(_row(f"  HS Slope:{step6.lf.hs_slope:3d}  {step6.rf.hs_slope:3d}  {step6.lr.hs_slope:3d}  {step6.rr.hs_slope:3d}",
-           f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{step5.camber_confidence}]"))
+    if _has_roll_dampers:
+        a(_full("  DAMPERS (clicks)                     AERO STATUS"))
+        a(_row(f"           FH   FR   RH   RR",
+               f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
+        a(_row(f"  LS Comp: {step6.lf.ls_comp:3d}    -  {step6.lr.ls_comp:3d}    -",
+               f"  L/D:    {step1.ld_ratio:.3f}"))
+        a(_row(f"  LS Rbd:  {step6.lf.ls_rbd:3d}    -  {step6.lr.ls_rbd:3d}    -",
+               f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
+        a(_row(f"  HS Comp: {step6.lf.hs_comp:3d}    -  {step6.lr.hs_comp:3d}    -",
+               f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})"))
+        a(_row(f"  Roll LS: {step6.front_roll_ls or '-':>3}    -  {step6.rear_roll_ls or '-':>3}    -",
+               f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
+        a(_row(f"  Roll HS: {step6.front_roll_hs or '-':>3}    -  {step6.rear_roll_hs or '-':>3}    -",
+               f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{step5.camber_confidence}]"))
+    else:
+        a(_full("  DAMPERS (clicks)                     AERO STATUS"))
+        a(_row(f"            LF   RF   LR   RR",
+               f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
+        a(_row(f"  LS Comp: {step6.lf.ls_comp:3d}  {step6.rf.ls_comp:3d}  {step6.lr.ls_comp:3d}  {step6.rr.ls_comp:3d}",
+               f"  L/D:    {step1.ld_ratio:.3f}"))
+        a(_row(f"  LS Rbd:  {step6.lf.ls_rbd:3d}  {step6.rf.ls_rbd:3d}  {step6.lr.ls_rbd:3d}  {step6.rr.ls_rbd:3d}",
+               f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
+        a(_row(f"  HS Comp: {step6.lf.hs_comp:3d}  {step6.rf.hs_comp:3d}  {step6.lr.hs_comp:3d}  {step6.rr.hs_comp:3d}",
+               f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})"))
+        a(_row(f"  HS Rbd:  {step6.lf.hs_rbd:3d}  {step6.rf.hs_rbd:3d}  {step6.lr.hs_rbd:3d}  {step6.rr.hs_rbd:3d}",
+               f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
+        a(_row(f"  HS Slope:{step6.lf.hs_slope:3d}  {step6.rf.hs_slope:3d}  {step6.lr.hs_slope:3d}  {step6.rr.hs_slope:3d}",
+               f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{step5.camber_confidence}]"))
     a(_blank())
     a(_box_bot())
     a("")
@@ -771,16 +872,16 @@ def print_full_setup_report(
       f"RARB sensitivity: {step4.rarb_sensitivity_per_blade:+.1%}/blade")
     a(f"  RARB 1→{step4.rarb_blade_fast_corner} range: {step4.lltd_at_rarb_min:.1%}→{step4.lltd_at_rarb_max:.1%}")
     if _is_ferrari:
-        a(f"  Heave: {step2.front_heave_nmm:.0f} idx  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
+        a(f"  Heave: {display_front_heave:.0f} idx  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
     else:
         a(f"  Heave: {step2.front_heave_nmm:.0f} N/mm  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
     if garage_outputs is not None:
         a(f"  Heave slider: {garage_outputs.heave_slider_defl_static_mm:.1f}/{garage_outputs.heave_slider_defl_max_mm:.1f} mm  "
           f"travel margin: {garage_outputs.travel_margin_front_mm:.1f} mm")
     if _is_ferrari:
-        a(f"  F TB OD: {step3.front_torsion_od_mm:.0f} idx  {step3.front_natural_freq_hz:.2f}Hz  "
+        a(f"  F TB OD: {display_front_torsion:.0f} idx  {step3.front_natural_freq_hz:.2f}Hz  "
           f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
-        a(f"  R TB OD: {step3.rear_spring_rate_nmm:.0f} idx  {step3.rear_natural_freq_hz:.2f}Hz  "
+        a(f"  R TB OD: {display_rear_torsion:.0f} idx  {step3.rear_natural_freq_hz:.2f}Hz  "
           f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
     else:
         a(f"  Torsion: {step3.front_torsion_od_mm:.2f}mm OD  {step3.front_natural_freq_hz:.2f}Hz  "
@@ -830,15 +931,17 @@ def print_comparison_table(
     _is_ferrari = hasattr(current_setup, "source") and getattr(current_setup, "_car_name", "") == "ferrari"
     _heave_unit = "idx" if _is_ferrari else "N/mm"
     _tb_unit = "idx" if _is_ferrari else "mm"
-    _rear_spring_label = "Rear torsion bar OD" if _is_ferrari else "Rear coil spring"
-    _rear_heave_label = "Rear heave spring" if _is_ferrari else "Rear third spring"
+    _rear_spring_label = (
+        "Rear torsion bar index" if _is_ferrari else "Rear torsion bar OD"
+    ) if (_is_ferrari or _has_rear_torsion) else "Rear coil spring"
+    _rear_heave_label = "Rear heave index" if _is_ferrari else ("Rear heave spring" if _is_acura else "Rear third spring")
 
     param_map = {
         "front_rh_mm":          ("Front static RH",    current_setup.front_rh_static_mm,    "mm"),
         "rear_rh_mm":           ("Rear static RH",     current_setup.rear_rh_static_mm,     "mm"),
-        "front_heave_nmm":      ("Front heave spring", current_setup.front_heave_nmm,       _heave_unit),
+        "front_heave_nmm":      (("Front heave index" if _is_ferrari else "Front heave spring"), current_setup.front_heave_nmm, _heave_unit),
         "rear_third_nmm":       (_rear_heave_label,    current_setup.rear_third_nmm,        _heave_unit),
-        "torsion_bar_od_mm":    ("Front torsion bar OD", current_setup.front_torsion_od_mm, _tb_unit),
+        "torsion_bar_od_mm":    (("Front torsion bar index" if _is_ferrari else "Front torsion bar OD"), current_setup.front_torsion_od_mm, _tb_unit),
         "rear_spring_nmm":      (_rear_spring_label,   current_setup.rear_spring_rate_nmm,  _heave_unit),
         "rear_arb_blade":       ("RARB blade",         current_setup.rear_arb_blade_start,  "blade"),
         "front_camber_deg":     ("Front camber",       current_setup.front_camber_deg,      "°"),
@@ -886,12 +989,12 @@ def save_json_summary(
             "wing": wing,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         },
-        "step1_rake": _asdict_safe(step1),
-        "step2_heave": _asdict_safe(step2),
-        "step3_corner": _asdict_safe(step3),
-        "step4_arb": _asdict_safe(step4),
-        "step5_geometry": _asdict_safe(step5),
-        "step6_dampers": _asdict_safe(step6),
+        "step1_rake": to_public_output_payload(car_name, step1),
+        "step2_heave": to_public_output_payload(car_name, step2),
+        "step3_corner": to_public_output_payload(car_name, step3),
+        "step4_arb": to_public_output_payload(car_name, step4),
+        "step5_geometry": to_public_output_payload(car_name, step5),
+        "step6_dampers": to_public_output_payload(car_name, step6),
     }
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     Path(output_path).write_text(json.dumps(summary, indent=2))

@@ -38,6 +38,8 @@ class SupportingSolution:
     brake_bias_target: float = 0.0
     brake_bias_migration: float = 0.0
     brake_bias_migration_gain: float = 0.0
+    brake_migration_type: int = 1  # Ferrari-specific: migration type 1-6
+    brake_migration_gain_pct: float = 0.0  # Ferrari-specific: migration gain -4% to +4%
     front_master_cyl_mm: float = 0.0
     rear_master_cyl_mm: float = 0.0
     pad_compound: str = ""
@@ -50,6 +52,7 @@ class SupportingSolution:
 
     # Differential
     diff_preload_nm: float = 10.0
+    front_diff_preload_nm: float = 0.0  # Ferrari has front diff
     diff_ramp_coast: int = 40  # coast ramp angle (degrees)
     diff_ramp_drive: int = 65  # drive ramp angle (degrees)
     diff_ramp_option_idx: int = 0
@@ -132,7 +135,7 @@ class SupportingSolver:
         self.current_setup = current_setup
         self._fuel_load_l = (
             measured.fuel_level_at_measurement_l
-            if getattr(measured, "fuel_level_at_measurement_l", 0.0) > 0
+            if (getattr(measured, "fuel_level_at_measurement_l", 0.0) or 0.0) > 0
             else None
         )
 
@@ -143,6 +146,7 @@ class SupportingSolver:
         self._solve_tc(sol)
         self._solve_pressures(sol)
         self._solve_context(sol)
+        self._populate_pss(sol)
         return sol
 
     def _option_step(self, options: list[float], value: float, delta: int) -> float:
@@ -271,6 +275,10 @@ class SupportingSolver:
                 "Ferrari brake bias is sourced from stable live control or setup context; "
                 "hardware fields remain pass-through."
             )
+            # Ferrari brake migration type and gain - held at validated defaults
+            # until brake migration physics model is built
+            sol.brake_migration_type = 1
+            sol.brake_migration_gain_pct = 0.0
 
     def _solve_diff(self, sol: SupportingSolution) -> None:
         """Differential from traction demand × driver style.
@@ -348,7 +356,10 @@ class SupportingSolver:
             preload += 5
             reasons.append(f"+5 Nm for rear power slip p95={rear_power_slip:.3f}")
 
-        sol.diff_preload_nm = round(_clamp(preload, 0.0, 150.0) / 5) * 5  # 5 Nm increments
+        # Clamp to car-specific range and step
+        min_preload, max_preload = self.car.garage_ranges.diff_preload_nm
+        step = self.car.garage_ranges.diff_preload_step_nm
+        sol.diff_preload_nm = round(_clamp(preload, min_preload, max_preload) / step) * step
 
         # ── Ramp angles ── must be a valid garage pair: (40,65), (45,70), (50,75)
         valid_pairs = getattr(self.car.garage_ranges, "diff_coast_drive_ramp_options",
@@ -566,3 +577,68 @@ class SupportingSolver:
         sol.hybrid_rear_drive_enabled = str(getattr(current_setup, "hybrid_rear_drive_enabled", "") or "Off")
         sol.hybrid_rear_drive_corner_pct = round(float(getattr(current_setup, "hybrid_rear_drive_corner_pct", 0.0) or 0.0), 1)
         sol.roof_light_color = str(getattr(current_setup, "roof_light_color", "") or "Orange")
+
+    def _populate_pss(self, sol: SupportingSolution) -> None:
+        """Classify every user-visible supporting parameter into parameter_search_status."""
+        is_ferrari = getattr(self.car, "canonical_name", "") == "ferrari"
+
+        pss: dict[str, str] = {}
+
+        # ── Brake bias ──
+        if is_ferrari:
+            live_bias = getattr(self.measured, "live_brake_bias_pct", None)
+            if live_bias is not None:
+                pss["brake_bias_pct"] = "telemetry_passthrough"
+            else:
+                pss["brake_bias_pct"] = "setup_passthrough"
+        else:
+            pss["brake_bias_pct"] = "solver_computed"
+
+        # ── Brake hardware: all user_set (driver adjusts in garage) ──
+        pss["front_master_cyl_mm"] = "user_set"
+        pss["rear_master_cyl_mm"] = "user_set"
+        pss["brake_pad_compound"] = "user_set"
+        pss["brake_bias_target"] = "user_set"
+        pss["brake_bias_migration"] = "user_set"
+        pss["brake_bias_migration_gain"] = "user_set"
+        if is_ferrari:
+            pss["brake_migration_type"] = "user_set"
+            pss["brake_migration_gain_pct"] = "user_set"
+
+        # ── Differential: all user_set ──
+        pss["diff_preload_nm"] = "user_set"
+        pss["diff_ramp_coast"] = "user_set"
+        pss["diff_ramp_drive"] = "user_set"
+        pss["diff_clutch_plates"] = "user_set"
+        if is_ferrari:
+            pss["front_diff_preload_nm"] = "user_set"
+
+        # ── Traction control ──
+        if is_ferrari:
+            live_gain = getattr(self.measured, "live_tc_gain", None)
+            live_slip = getattr(self.measured, "live_tc_slip", None)
+            pss["tc_gain"] = "telemetry_passthrough" if live_gain is not None else "user_set"
+            pss["tc_slip"] = "telemetry_passthrough" if live_slip is not None else "user_set"
+        else:
+            pss["tc_gain"] = "user_set"
+            pss["tc_slip"] = "user_set"
+
+        # ── Hybrid ──
+        pss["hybrid_rear_drive_enabled"] = "user_set"
+        pss["hybrid_rear_drive_corner_pct"] = "user_set"
+
+        # ── Fuel ──
+        pss["fuel_l"] = "user_set"
+        pss["fuel_low_warning_l"] = "user_set"
+        pss["fuel_target_l"] = "user_set"
+
+        # ── Gear stack ──
+        pss["gear_stack"] = "user_set"
+
+        # ── Tyre pressures: solver_computed from telemetry hot pressures ──
+        pss["tyre_cold_fl_kpa"] = "solver_computed"
+        pss["tyre_cold_fr_kpa"] = "solver_computed"
+        pss["tyre_cold_rl_kpa"] = "solver_computed"
+        pss["tyre_cold_rr_kpa"] = "solver_computed"
+
+        sol.parameter_search_status = pss

@@ -1,0 +1,165 @@
+{
+  "car": "acura",
+  "n_sessions": 8,
+  "n_unique_setups": 6,
+  "calibration_complete": false,
+  "front_ride_height": null,
+  "rear_ride_height": {
+    "name": "rear_ride_height",
+    "feature_names": [
+      "rear_pushrod",
+      "rear_third",
+      "rear_spring",
+      "rear_third_perch",
+      "fuel",
+      "rear_spring_perch"
+    ],
+    "coefficients": [
+      0.014978962339851187,
+      0.10431484788810164,
+      -0.01002321980073101,
+      0.0,
+      -0.060030260047970074,
+      0.868779815711519,
+      0.0
+    ],
+    "r_squared": 0.2996697672299974,
+    "rmse": 1.3568678518861115,
+    "loo_rmse": 14.193622572667296,
+    "n_samples": 6,
+    "is_calibrated": true
+  },
+  "torsion_bar_turns": {
+    "name": "torsion_bar_turns",
+    "feature_names": [
+      "1/front_heave",
+      "front_heave_perch",
+      "torsion_od"
+    ],
+    "coefficients": [
+      -0.27814535233342913,
+      6.910216981007499,
+      -0.0020845766702262125,
+      0.029181908878504803
+    ],
+    "r_squared": 0.6725911017870057,
+    "rmse": 0.007829318073674497,
+    "loo_rmse": 0.04570674865967106,
+    "n_samples": 6,
+    "is_calibrated": true
+  },
+  "torsion_bar_defl": {
+    "name": "torsion_bar_defl_load",
+    "feature_names": [
+      "front_heave",
+      "front_heave_perch"
+    ],
+    "coefficients": [
+      -32500.35460516872,
+      82.57493516922932,
+      14597.910362349778
+    ],
+    "r_squared": 0.08987858913489988,
+    "rmse": 330617.76168150204,
+    "loo_rmse": 968456.2497101971,
+    "n_samples": 6,
+    "is_calibrated": true
+  },
+  "front_shock_defl_static": null,
+  "front_shock_defl_max": null,
+  "rear_shock_defl_static": null,
+  "rear_shock_defl_max": null,
+  "heave_spring_defl_static": {
+    "name": "heave_spring_defl_static",
+    "feature_names": [
+      "1/front_heave",
+      "front_heave_perch",
+      "1/OD^4"
+    ],
+    "coefficients": [
+      -58.972284714774354,
+      -1083.5190385382336,
+      0.7019974950092092,
+      2137865.4056810825
+    ],
+    "r_squared": 0.744418953326079,
+    "rmse": 2.6268215198314397,
+    "loo_rmse": 13.373079447845914,
+    "n_samples": 6,
+    "is_calibrated": true
+  },
+  "heave_spring_defl_max": {
+    "name": "heave_spring_defl_max",
+    "feature_names": [
+      "front_heave"
+    ],
+    "coefficients": [
+      87.42875920084123,
+      -0.10422712933753944
+    ],
+    "r_squared": 0.9656555109688489,
+    "rmse": 2.02053881720004,
+    "loo_rmse": 5.000531815916318,
+    "n_samples": 6,
+    "is_calibrated": true
+  },
+  "heave_slider_defl_static": null,
+  "rear_spring_defl_static": null,
+  "rear_spring_defl_max": null,
+  "third_spring_defl_static": {
+    "name": "third_spring_defl_static_load",
+    "feature_names": [
+      "rear_third_perch"
+    ],
+    "coefficients": [
+      1955.9783173815435,
+      -3.9542715349166837
+    ],
+    "r_squared": 0.020632664283812163,
+    "rmse": 590.7280020394803,
+    "loo_rmse": 2572.4250183703466,
+    "n_samples": 6,
+    "is_calibrated": true
+  },
+  "third_spring_defl_max": {
+    "name": "third_spring_defl_max",
+    "feature_names": [
+      "rear_third",
+      "rear_third_perch"
+    ],
+    "coefficients": [
+      108.56391483360481,
+      -0.2280817542486374,
+      0.13253901784758448
+    ],
+    "r_squared": 0.9974479836395084,
+    "rmse": 0.4810934113601897,
+    "loo_rmse": 1.678505370866176,
+    "n_samples": 6,
+    "is_calibrated": true
+  },
+  "third_slider_defl_static": null,
+  "front_heave_lookup": null,
+  "rear_heave_lookup": null,
+  "front_torsion_lookup": null,
+  "rear_torsion_lookup": null,
+  "m_eff_front_kg": null,
+  "m_eff_rear_kg": null,
+  "m_eff_is_rate_dependent": false,
+  "m_eff_rate_table": [],
+  "measured_lltd_target": 0.47028154327424404,
+  "front_ls_zeta": null,
+  "rear_ls_zeta": null,
+  "front_hs_zeta": null,
+  "rear_hs_zeta": null,
+  "zeta_n_sessions": 0,
+  "aero_front_compression_mm": 7.125000000000001,
+  "aero_rear_compression_mm": null,
+  "aero_n_sessions": 4,
+  "status": {
+    "aero_compression": "calibrated from IBT AeroCalculator (4 sessions, front=7.1mm rear=n/a)",
+    "arb_stiffness": "insufficient controlled data (need sessions with same springs, different ARB)",
+    "lltd_target": "calibrated (6 sessions, mean 0.470)",
+    "deflection_model": "partial (3/6 models fitted, 6 unique setups)"
+  }
+}

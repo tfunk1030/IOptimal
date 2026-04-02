@@ -8,6 +8,8 @@ from car_model.setup_registry import (
     diff_ramp_option_index,
     diff_ramp_pair_for_option,
     diff_ramp_string_for_option,
+    internal_solver_value,
+    public_output_value,
     snap_supporting_field_value,
 )
 from solver.arb_solver import ARBSolver
@@ -107,6 +109,11 @@ class SolveChainResult:
     notes: list[str] = field(default_factory=list)
     candidate_vetoes: list[CandidateVeto] = field(default_factory=list)
     optimizer_used: bool = False
+    # Legacy compatibility flag. Ferrari runs should now solve indexed controls
+    # directly on the legal manifold instead of passing them through.
+    ferrari_passthrough: bool = False
+    # Solver path taken: "optimizer" | "sequential" | "sequential_fallback"
+    solver_path: str = "sequential"
 
 
 def apply_damper_modifiers(
@@ -265,23 +272,6 @@ def _apply_supporting_overrides(supporting: Any, overrides: dict[str, Any], car:
             setattr(supporting, field_name, _snap_supporting_value(field_name, value, car))
 
 
-def _apply_ferrari_passthrough(inputs: SolveChainInputs, *, step1: Any, step2: Any, step3: Any, step4: Any) -> None:
-    if getattr(inputs.car, "canonical_name", "") != "ferrari":
-        return
-    current_setup = inputs.current_setup
-    step1.front_pushrod_offset_mm = current_setup.front_pushrod_mm
-    step1.rear_pushrod_offset_mm = current_setup.rear_pushrod_mm
-    step2.front_heave_nmm = current_setup.front_heave_nmm
-    step2.perch_offset_front_mm = current_setup.front_heave_perch_mm
-    step2.rear_third_nmm = current_setup.rear_third_nmm
-    step2.perch_offset_rear_mm = current_setup.rear_third_perch_mm
-    step3.front_torsion_od_mm = current_setup.front_torsion_od_mm
-    step3.rear_spring_rate_nmm = current_setup.rear_spring_nmm
-    step3.rear_spring_perch_mm = 0.0
-    step4.front_arb_size = current_setup.front_arb_size
-    step4.rear_arb_size = current_setup.rear_arb_size
-
-
 def _finalize_result(
     inputs: SolveChainInputs,
     *,
@@ -296,7 +286,6 @@ def _finalize_result(
     candidate_vetoes: list[CandidateVeto] | None = None,
     optimizer_used: bool = False,
 ) -> SolveChainResult:
-    _apply_ferrari_passthrough(inputs, step1=step1, step2=step2, step3=step3, step4=step4)
     legal_validation = validate_solution_legality(
         car=inputs.car,
         track_name=inputs.track.track_name,
@@ -347,7 +336,35 @@ def _finalize_result(
         notes=list(notes or []),
         candidate_vetoes=list(candidate_vetoes or []),
         optimizer_used=optimizer_used,
+        ferrari_passthrough=False,
+        solver_path="optimizer" if optimizer_used else "sequential",
     )
+
+
+def _decode_ferrari_indexed_setup(car: Any, setup: Any) -> None:
+    """Decode Ferrari indexed controls on current_setup to physical values in-place.
+
+    Ferrari garage exposes heave springs as indices (0-8, 0-9) and torsion bars
+    as indices (0-18). The solver needs physical N/mm and mm values. This decoding
+    MUST happen before any solver step reads current_setup values.
+    """
+    if setup is None or getattr(car, "canonical_name", "") != "ferrari":
+        return
+    _indexed_keys = [
+        "front_heave_nmm",
+        "rear_third_nmm",
+        "front_torsion_od_mm",
+        # CurrentSetup uses rear_spring_nmm for Ferrari rear torsion index.
+        "rear_spring_nmm",
+        # Keep legacy/alternate key for robustness across callers.
+        "rear_spring_rate_nmm",
+    ]
+    for key in _indexed_keys:
+        raw = getattr(setup, key, None)
+        if raw is not None:
+            decoded = internal_solver_value(car, key, raw)
+            if decoded is not None and decoded != raw:
+                setattr(setup, key, float(decoded))
 
 
 def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any, Any, Any, float]:
@@ -356,6 +373,9 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     track = inputs.track
     measured = inputs.measured
     fuel = inputs.fuel_load_l
+
+    # Decode Ferrari indexed controls BEFORE any solver step reads them
+    _decode_ferrari_indexed_setup(car, inputs.current_setup)
 
     rake_solver = RakeSolver(car, inputs.surface, track)
     step1 = rake_solver.solve(
@@ -517,6 +537,8 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
 
 
 def run_base_solve(inputs: SolveChainInputs) -> SolveChainResult:
+    # Decode Ferrari indexed controls early — before optimizer or sequential solver
+    _decode_ferrari_indexed_setup(inputs.car, inputs.current_setup)
     mods = _default_modifiers(inputs.modifiers)
     notes: list[str] = []
     optimized = optimize_if_supported(
@@ -629,6 +651,7 @@ def _build_explicit_corner_settings(base_step6: Any, overrides: dict[str, dict[s
             "hs_comp": base_corner.hs_comp,
             "hs_rbd": base_corner.hs_rbd,
             "hs_slope": base_corner.hs_slope,
+            "hs_slope_rbd": base_corner.hs_slope_rbd,
         }
         merged.update(overrides.get(corner_name, {}))
         result[corner_name] = CornerDamperSettings(**merged)
@@ -671,15 +694,44 @@ def materialize_overrides(
         heave_solver = HeaveSolver(car, track)
         corner_solver = CornerSpringSolver(car, track)
         step2_targets = {
-            "front_heave_nmm": overrides.step2.get("front_heave_nmm", step2.front_heave_nmm),
-            "rear_third_nmm": overrides.step2.get("rear_third_nmm", step2.rear_third_nmm),
+            "front_heave_nmm": overrides.step2.get(
+                "front_heave_nmm",
+                public_output_value(car, "front_heave_nmm", step2.front_heave_nmm),
+            ),
+            "rear_third_nmm": overrides.step2.get(
+                "rear_third_nmm",
+                public_output_value(car, "rear_third_nmm", step2.rear_third_nmm),
+            ),
             "perch_offset_front_mm": overrides.step2.get("perch_offset_front_mm", step2.perch_offset_front_mm),
             "perch_offset_rear_mm": overrides.step2.get("perch_offset_rear_mm", step2.perch_offset_rear_mm),
         }
         step3_targets = {
-            "front_torsion_od_mm": overrides.step3.get("front_torsion_od_mm", step3.front_torsion_od_mm),
-            "rear_spring_rate_nmm": overrides.step3.get("rear_spring_rate_nmm", step3.rear_spring_rate_nmm),
+            "front_torsion_od_mm": overrides.step3.get(
+                "front_torsion_od_mm",
+                public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm),
+            ),
+            "rear_spring_rate_nmm": overrides.step3.get(
+                "rear_spring_rate_nmm",
+                public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm),
+            ),
             "rear_spring_perch_mm": overrides.step3.get("rear_spring_perch_mm", step3.rear_spring_perch_mm),
+            "rear_torsion_od_mm": overrides.step3.get("rear_torsion_od_mm", step3.rear_torsion_od_mm),
+        }
+        decoded_step2_targets = {
+            "front_heave_nmm": internal_solver_value(car, "front_heave_nmm", step2_targets["front_heave_nmm"]),
+            "rear_third_nmm": internal_solver_value(car, "rear_third_nmm", step2_targets["rear_third_nmm"]),
+            "perch_offset_front_mm": step2_targets["perch_offset_front_mm"],
+            "perch_offset_rear_mm": step2_targets["perch_offset_rear_mm"],
+        }
+        decoded_step3_targets = {
+            "front_torsion_od_mm": internal_solver_value(car, "front_torsion_od_mm", step3_targets["front_torsion_od_mm"]),
+            "rear_spring_rate_nmm": internal_solver_value(car, "rear_spring_rate_nmm", step3_targets["rear_spring_rate_nmm"]),
+            "rear_spring_perch_mm": step3_targets["rear_spring_perch_mm"],
+            "rear_torsion_od_mm": (
+                internal_solver_value(car, "rear_spring_rate_nmm", step3_targets["rear_torsion_od_mm"])
+                if step3_targets["rear_torsion_od_mm"] is not None
+                else None
+            ),
         }
 
         explicit_step2 = bool(overrides.step2 or overrides.step3)
@@ -687,15 +739,15 @@ def materialize_overrides(
             step2 = heave_solver.solution_from_explicit_settings(
                 dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
                 dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-                front_heave_nmm=step2_targets["front_heave_nmm"],
-                rear_third_nmm=step2_targets["rear_third_nmm"],
-                front_heave_perch_mm=step2_targets["perch_offset_front_mm"],
-                rear_third_perch_mm=step2_targets["perch_offset_rear_mm"],
+                front_heave_nmm=decoded_step2_targets["front_heave_nmm"],
+                rear_third_nmm=decoded_step2_targets["rear_third_nmm"],
+                front_heave_perch_mm=decoded_step2_targets["perch_offset_front_mm"],
+                rear_third_perch_mm=decoded_step2_targets["perch_offset_rear_mm"],
                 front_pushrod_mm=step1.front_pushrod_offset_mm,
                 rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-                front_torsion_od_mm=step3_targets["front_torsion_od_mm"],
-                rear_spring_nmm=step3_targets["rear_spring_rate_nmm"],
-                rear_spring_perch_mm=step3_targets["rear_spring_perch_mm"],
+                front_torsion_od_mm=decoded_step3_targets["front_torsion_od_mm"],
+                rear_spring_nmm=decoded_step3_targets["rear_spring_rate_nmm"],
+                rear_spring_perch_mm=decoded_step3_targets["rear_spring_perch_mm"],
                 fuel_load_l=inputs.fuel_load_l,
                 front_camber_deg=_front_camber(inputs),
             )
@@ -716,10 +768,11 @@ def materialize_overrides(
             step3 = corner_solver.solution_from_explicit_rates(
                 front_heave_nmm=step2.front_heave_nmm,
                 rear_third_nmm=step2.rear_third_nmm,
-                front_torsion_od_mm=step3_targets["front_torsion_od_mm"],
-                rear_spring_rate_nmm=step3_targets["rear_spring_rate_nmm"],
+                front_torsion_od_mm=decoded_step3_targets["front_torsion_od_mm"],
+                rear_spring_rate_nmm=decoded_step3_targets["rear_spring_rate_nmm"],
                 fuel_load_l=inputs.fuel_load_l,
-                rear_spring_perch_mm=step3_targets["rear_spring_perch_mm"],
+                rear_spring_perch_mm=decoded_step3_targets["rear_spring_perch_mm"],
+                rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
             )
         else:
             step3 = corner_solver.solve(
@@ -766,10 +819,10 @@ def materialize_overrides(
             step2 = heave_solver.solution_from_explicit_settings(
                 dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
                 dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-                front_heave_nmm=step2_targets["front_heave_nmm"],
-                rear_third_nmm=step2_targets["rear_third_nmm"],
-                front_heave_perch_mm=step2_targets["perch_offset_front_mm"],
-                rear_third_perch_mm=step2_targets["perch_offset_rear_mm"],
+                front_heave_nmm=decoded_step2_targets["front_heave_nmm"],
+                rear_third_nmm=decoded_step2_targets["rear_third_nmm"],
+                front_heave_perch_mm=decoded_step2_targets["perch_offset_front_mm"],
+                rear_third_perch_mm=decoded_step2_targets["perch_offset_rear_mm"],
                 front_pushrod_mm=step1.front_pushrod_offset_mm,
                 rear_pushrod_mm=step1.rear_pushrod_offset_mm,
                 front_torsion_od_mm=step3.front_torsion_od_mm,
@@ -803,10 +856,11 @@ def materialize_overrides(
             step3 = corner_solver.solution_from_explicit_rates(
                 front_heave_nmm=step2.front_heave_nmm,
                 rear_third_nmm=step2.rear_third_nmm,
-                front_torsion_od_mm=step3_targets["front_torsion_od_mm"],
-                rear_spring_rate_nmm=step3_targets["rear_spring_rate_nmm"],
+                front_torsion_od_mm=decoded_step3_targets["front_torsion_od_mm"],
+                rear_spring_rate_nmm=decoded_step3_targets["rear_spring_rate_nmm"],
                 fuel_load_l=inputs.fuel_load_l,
-                rear_spring_perch_mm=step3_targets["rear_spring_perch_mm"],
+                rear_spring_perch_mm=decoded_step3_targets["rear_spring_perch_mm"],
+                rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
             )
         else:
             step3 = corner_solver.solve(

@@ -1,0 +1,8 @@
+{
+  "car": "ferrari",
+  "timestamp": "20260331_205510",
+  "files": {
+    "setup_sto": "output\\ferrari_hockenheimring_baden-w\u00fcrttembe_20260331_205510\\setup.sto",
+    "solver_result": "output\\ferrari_hockenheimring_baden-w\u00fcrttembe_20260331_205510\\solver_result.json"
+  }
+}

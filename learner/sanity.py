@@ -8,6 +8,7 @@ from typing import Iterable
 
 _TRACK_LAP_BOUNDS: dict[tuple[str, str], tuple[float, float]] = {
     ("bmw", "sebring"): (105.0, 130.0),
+    ("acura", "hockenheim"): (82.0, 105.0),
 }
 
 
@@ -49,7 +50,7 @@ def select_valid_lap(
     car: str,
     track: str,
     lap: int | None = None,
-    min_time: float = 108.0,
+    min_time: float = 60.0,
     outlier_pct: float | None = 0.115,
 ) -> tuple[int, int, int, float]:
     """Select a valid lap using the same rules as best_lap_indices plus sanity bounds.
@@ -79,3 +80,32 @@ def select_valid_lap(
 
     ln, lt, s, e = min(valid, key=lambda item: item[1])
     return ln, s, e, lt
+
+
+def select_all_valid_laps(
+    ibt,
+    *,
+    car: str,
+    track: str,
+    min_time: float = 60.0,
+    outlier_pct: float | None = 0.115,
+) -> list[tuple[int, int, int, float]]:
+    """Return all valid laps sorted by lap time (fastest first).
+
+    Same filtering as select_valid_lap but returns every qualifying lap
+    instead of just the best one.
+
+    Returns:
+        List of (lap_number, start_idx, end_idx, lap_time_s)
+    """
+    valid = ibt.lap_times(min_time=min_time)
+    if not valid:
+        return []
+
+    if outlier_pct is not None and len(valid) >= 2:
+        med = statistics.median(lt for _, lt, _, _ in valid)
+        ceiling = med * (1.0 + outlier_pct)
+        valid = [(ln, lt, s, e) for ln, lt, s, e in valid if lt <= ceiling]
+
+    bounded = [(ln, lt, s, e) for ln, lt, s, e in valid if is_plausible_lap_time(lt, car, track)]
+    return sorted(bounded, key=lambda item: item[1])

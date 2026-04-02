@@ -3249,26 +3249,6 @@ def reason_and_solve(
     )
     supporting = supporting_solver.solve()
 
-    # Ferrari passthrough: only for indexed params where we can't map index → physical
-    # stiffness. Solver computes dampers, geometry, brake/diff/TC from telemetry.
-    if car.canonical_name == "ferrari":
-        _cs = current.setup
-        # Pushrod — keep IBT values (calibrated model but limited data points)
-        step1.front_pushrod_offset_mm = _cs.front_pushrod_mm
-        step1.rear_pushrod_offset_mm = _cs.rear_pushrod_mm
-        # Springs — indexed dropdowns, can't map to physical stiffness
-        step2.front_heave_nmm = _cs.front_heave_nmm
-        step2.perch_offset_front_mm = _cs.front_heave_perch_mm
-        step2.rear_third_nmm = _cs.rear_third_nmm
-        step2.perch_offset_rear_mm = _cs.rear_third_perch_mm
-        step3.front_torsion_od_mm = _cs.front_torsion_od_mm
-        step3.rear_spring_rate_nmm = _cs.rear_spring_nmm
-        step3.rear_spring_perch_mm = 0.0
-        # ARBs — stiffness uncalibrated, pass through size (solver computes blade)
-        step4.front_arb_size = _cs.front_arb_size
-        step4.rear_arb_size = _cs.rear_arb_size
-        # Geometry, dampers, brake/diff/TC — solver computes from telemetry
-
     solve_inputs = SolveChainInputs(
         car=car,
         surface=surface,
@@ -3495,12 +3475,7 @@ def reason_and_solve(
             print(f"[legal-search] Skipped: {e}")
 
     # ── Output ──
-    if sto_path and car.canonical_name == "ferrari":
-        state.solver_notes.append(
-            "Ferrari native .sto export is disabled in read-first mode; no setup file was written."
-        )
-        log("\nFerrari native .sto export is disabled in read-first mode; use --setup-json for setup inspection.")
-    elif sto_path:
+    if sto_path:
         from output.setup_writer import write_sto
         from output.garage_validator import validate_and_fix_garage_correlation
 
@@ -3516,6 +3491,18 @@ def reason_and_solve(
             _cs = authority.setup
             _extra_kw["front_tb_turns"] = _cs.torsion_bar_turns
             _extra_kw["rear_tb_turns"] = _cs.rear_torsion_bar_turns
+            _extra_kw["brake_bias_migration_gain"] = _cs.brake_bias_migration_gain
+            _extra_kw["front_diff_preload_nm"] = _cs.front_diff_preload_nm
+            _extra_kw["fuel_target_l"] = getattr(supporting, "fuel_target_l", None)
+            _extra_kw["hybrid_rear_drive_enabled"] = _cs.hybrid_rear_drive_enabled
+            _extra_kw["hybrid_rear_drive_corner_pct"] = _cs.hybrid_rear_drive_corner_pct
+            _extra_kw["speed_in_first_kph"] = _cs.speed_in_first_kph
+            _extra_kw["speed_in_second_kph"] = _cs.speed_in_second_kph
+            _extra_kw["speed_in_third_kph"] = _cs.speed_in_third_kph
+            _extra_kw["speed_in_fourth_kph"] = _cs.speed_in_fourth_kph
+            _extra_kw["speed_in_fifth_kph"] = _cs.speed_in_fifth_kph
+            _extra_kw["speed_in_sixth_kph"] = _cs.speed_in_sixth_kph
+            _extra_kw["speed_in_seventh_kph"] = _cs.speed_in_seventh_kph
         _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
         _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
         _extra_kw["brake_bias_target"] = supporting.brake_bias_target
@@ -3553,8 +3540,8 @@ def reason_and_solve(
         log(f"\n.sto setup saved to: {sto_path}")
 
     if json_path:
-        import dataclasses
         import json
+        from output.report import to_public_output_payload
         parameter_coverage = build_parameter_coverage(
             car=car,
             wing=detected_wing,
@@ -3743,13 +3730,13 @@ def reason_and_solve(
             "legal_validation": state.legal_validation.to_dict() if state.legal_validation is not None else None,
             "decision_trace": [decision.to_dict() for decision in state.decision_trace],
             "solver_notes": state.solver_notes,
-            "step1_rake": dataclasses.asdict(step1),
-            "step2_heave": dataclasses.asdict(step2),
-            "step3_corner": dataclasses.asdict(step3),
-            "step4_arb": dataclasses.asdict(step4),
-            "step5_geometry": dataclasses.asdict(step5),
-            "step6_dampers": dataclasses.asdict(step6),
-            "supporting": dataclasses.asdict(supporting),
+            "step1_rake": to_public_output_payload(car.canonical_name, step1),
+            "step2_heave": to_public_output_payload(car.canonical_name, step2),
+            "step3_corner": to_public_output_payload(car.canonical_name, step3),
+            "step4_arb": to_public_output_payload(car.canonical_name, step4),
+            "step5_geometry": to_public_output_payload(car.canonical_name, step5),
+            "step6_dampers": to_public_output_payload(car.canonical_name, step6),
+            "supporting": to_public_output_payload(car.canonical_name, supporting),
         }
         Path(json_path).parent.mkdir(parents=True, exist_ok=True)
         with open(json_path, "w") as f:

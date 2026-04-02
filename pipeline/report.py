@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from car_model.garage import GarageSetupState
+from car_model.setup_registry import public_output_value
 from analyzer.telemetry_truth import get_signal, summarize_signal_quality
 from solver.predictor import predict_candidate_telemetry
 
@@ -234,8 +235,6 @@ def generate_report(
         else None
     )
     _is_ferrari_pipeline = current_setup is not None and getattr(car, "canonical_name", "") == "ferrari"
-    _front_camber_override = -2.9 if _is_ferrari_pipeline else None
-    _rear_camber_override = -1.9 if _is_ferrari_pipeline else None
     _hybrid_enabled = getattr(current_setup, "hybrid_rear_drive_enabled", None) if _is_ferrari_pipeline else None
     _hybrid_corner_pct = getattr(current_setup, "hybrid_rear_drive_corner_pct", None) if _is_ferrari_pipeline else None
     _front_diff_preload_nm = getattr(current_setup, "front_diff_preload_nm", None) if _is_ferrari_pipeline else None
@@ -276,8 +275,6 @@ def generate_report(
             compact=True,
             front_tb_turns_override=_ferrari_tb,
             rear_tb_turns_override=_ferrari_rear_tb,
-            front_camber_override=_front_camber_override,
-            rear_camber_override=_rear_camber_override,
             hybrid_enabled=_hybrid_enabled,
             hybrid_corner_pct=_hybrid_corner_pct,
             front_diff_preload_nm=_front_diff_preload_nm,
@@ -319,6 +316,16 @@ def generate_report(
         _conf = getattr(prediction_confidence, "overall", None)
         if _conf is not None:
             a(f"  Prediction confidence: {_conf:.2f}")
+
+    # In-car adjustment warning
+    _total_adjustments = (
+        getattr(measured, "brake_bias_adjustments", 0) +
+        getattr(measured, "tc_adjustments", 0)
+    )
+    if _total_adjustments > 5:
+        a(f"  ⚠ Driver made {_total_adjustments} in-car adjustments — telemetry reflects "
+          "mixed setup configurations (reduced authority)")
+
     a("")
 
     # Driver profile (one line each)
@@ -428,8 +435,6 @@ def generate_report(
         garage_outputs=garage_outputs,
         front_tb_turns_override=_ferrari_tb,
         rear_tb_turns_override=_ferrari_rear_tb,
-        front_camber_override=_front_camber_override,
-        rear_camber_override=_rear_camber_override,
         hybrid_enabled=_hybrid_enabled,
         hybrid_corner_pct=_hybrid_corner_pct,
         front_diff_preload_nm=_front_diff_preload_nm,
@@ -448,13 +453,23 @@ def generate_report(
         _is_ferrari = getattr(car, "canonical_name", "") == "ferrari"
         _hu = "idx" if _is_ferrari else "N/mm"
         _tu = "idx" if _is_ferrari else "mm"
-        a(_cmp("Front heave",        current_setup.front_heave_nmm,      step2.front_heave_nmm,          _hu, ".0f"))
+        # For Ferrari, convert raw N/mm values to garage indices via public_output_value so
+        # both Current and Recomm columns are in the same display units (idx).
+        _cur_fh  = float(public_output_value(car, "front_heave_nmm",     current_setup.front_heave_nmm))
+        _rec_fh  = float(public_output_value(car, "front_heave_nmm",     step2.front_heave_nmm))
+        _cur_rh  = float(public_output_value(car, "rear_third_nmm",      current_setup.rear_third_nmm))
+        _rec_rh  = float(public_output_value(car, "rear_third_nmm",      step2.rear_third_nmm))
+        _cur_rs  = float(public_output_value(car, "rear_spring_rate_nmm", current_setup.rear_spring_nmm))
+        _rec_rs  = float(public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+        _cur_tb  = float(public_output_value(car, "front_torsion_od_mm", current_setup.front_torsion_od_mm))
+        _rec_tb  = float(public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+        a(_cmp("Front heave",        _cur_fh,   _rec_fh,  _hu, ".0f"))
         _rear_heave_lbl = "Rear heave" if _is_ferrari else "Rear third"
-        a(_cmp(_rear_heave_lbl,      current_setup.rear_third_nmm,       step2.rear_third_nmm,           _hu, ".0f"))
+        a(_cmp(_rear_heave_lbl,      _cur_rh,   _rec_rh,  _hu, ".0f"))
         _rear_spr_lbl = "Rear TB OD" if _is_ferrari else "Rear spring"
-        a(_cmp(_rear_spr_lbl,        current_setup.rear_spring_nmm,      step3.rear_spring_rate_nmm,     _hu, ".0f"))
+        a(_cmp(_rear_spr_lbl,        _cur_rs,   _rec_rs,  _hu, ".0f"))
         _tb_lbl = "F torsion bar OD" if _is_ferrari else "Torsion bar OD"
-        a(_cmp(_tb_lbl,              current_setup.front_torsion_od_mm,  step3.front_torsion_od_mm,      _tu))
+        a(_cmp(_tb_lbl,              _cur_tb,   _rec_tb,  _tu))
         a(_cmp("Front camber",       current_setup.front_camber_deg,     step5.front_camber_deg,         "°"))
         a(_cmp("Rear camber",        current_setup.rear_camber_deg,      step5.rear_camber_deg,          "°"))
         a(_cmp("Brake bias",         current_setup.brake_bias_pct,       supporting.brake_bias_pct,      "%"))
@@ -615,6 +630,52 @@ def generate_report(
             a("")
     except Exception:
         pass
+
+    # ── ESTIMATE WARNINGS ─────────────────────────────────────────────
+    estimate_warnings = []
+
+    # Check deflection model calibration
+    if hasattr(car, 'deflection') and not getattr(car.deflection, 'is_calibrated', True):
+        estimate_warnings.append(
+            "ESTIMATE: Deflection predictions use uncalibrated model — "
+            "verify garage display values manually"
+        )
+
+    # Check ride height model calibration
+    if hasattr(car, 'ride_height_model') and not getattr(car.ride_height_model, 'is_calibrated', True):
+        estimate_warnings.append(
+            "ESTIMATE: Ride height predictions use uncalibrated model"
+        )
+
+    # Check damper zeta calibration
+    if hasattr(car, 'damper') and not getattr(car.damper, 'zeta_is_calibrated', True):
+        estimate_warnings.append(
+            "ESTIMATE: Damper zeta targets are conservative defaults — "
+            "verify damper feel on track"
+        )
+
+    # Check garage output model
+    garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
+    if garage_model is None:
+        estimate_warnings.append(
+            "ESTIMATE: No garage output model — .sto display values are physics estimates only"
+        )
+
+    if estimate_warnings:
+        a(_hdr("ESTIMATE WARNINGS"))
+        for warning in estimate_warnings:
+            # Wrap long warnings at word boundaries to fit width
+            words = warning.split()
+            current_line = "  • "
+            for word in words:
+                if len(current_line) + len(word) + 1 <= W:
+                    current_line += word + " "
+                else:
+                    a(current_line.rstrip())
+                    current_line = "    " + word + " "
+            if current_line.strip():
+                a(current_line.rstrip())
+        a("")
 
     a("═" * W)
     return "\n".join(lines)

@@ -14,9 +14,10 @@ Architecture:
              guarantees locally optimal result
 
 Budget tiers (--search-mode flag in pipeline/produce.py):
-    quick:      L1=1k,  keep=200, L3 top=50,   L4 top=10  (~5s)
-    standard:   L1=10k, keep=500, L3 top=200,  L4 top=25  (~4 min)
-    exhaustive: L1=50k, keep=2k,  L3 top=500,  L4 top=50  (~80 min)
+    quick:      L1=500,   keep=50,   L3 top=10,  L4 top=5   (~3s)
+    standard:   L1=5k,    keep=200,  L3 top=50,  L4 top=10  (~4 min)
+    exhaustive: L1=20k,   keep=500,  L3 top=200, L4 top=25  (~80 min)
+    maximum:    L1=100k,  keep=2k,   L3 top=500, L4 top=50  (~5h)
 
 Key insight from enhancementplan.md:
     Perch offsets are NOT searched — they're computed via compute_perch_offsets().
@@ -128,6 +129,19 @@ BUDGET_TIERS: dict[str, dict] = {
         "l3_top_n": 200,
         "l4_top_n": 25,
         # Expected total: 20k + 200×350×81 + 200×(10×12) + 25×(46×10) ≈ 5.9M ≈ 80 min
+    },
+    "maximum": {
+        # Deepest search — intended for overnight runs or background cron jobs.
+        # Doubles exhaustive L1 + all intermediate layers, keeps 50 for L4.
+        # Expected runtime: ~4–6 hours single-threaded at 0.8ms/eval.
+        # Use with --top-n 10 to surface multiple alternative setup families.
+        "l1_n_sobol": 100_000,
+        "l1_keep": 2_000,
+        "l2_from_l1": 500,       # 500 skeletons → 500×350×81 ≈ 14M L2 evals
+        "l2_coarse_levels": 3,
+        "l3_top_n": 500,
+        "l4_top_n": 50,
+        # Expected total: 100k + 500×350×81 + 500×(10×12) + 50×(46×10) ≈ 14.4M ≈ 5h
     },
 }
 

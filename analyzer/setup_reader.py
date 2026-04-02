@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from track_model.ibt_parser import IBTFile
 
@@ -132,7 +133,10 @@ class CurrentSetup:
     front_toe_mm: float = 0.0
     rear_toe_mm: float = 0.0
 
-    # --- Dampers (front = LF values, rear = LR values) ---
+    # --- Corner springs (rear torsion bar for ORECA cars) ---
+    rear_torsion_od_mm: float = 0.0       # ORECA: rear also uses torsion bars
+
+    # --- Dampers (front = LF or FrontHeave, rear = LR or RearHeave) ---
     front_ls_comp: int = 0
     front_ls_rbd: int = 0
     front_hs_comp: int = 0
@@ -143,6 +147,11 @@ class CurrentSetup:
     rear_hs_comp: int = 0
     rear_hs_rbd: int = 0
     rear_hs_slope: int = 0
+    # Roll dampers (ORECA heave+roll architecture)
+    front_roll_ls: int = 0
+    front_roll_hs: int = 0
+    rear_roll_ls: int = 0
+    rear_roll_hs: int = 0
 
     # --- Brakes / Diff / TC ---
     brake_bias_pct: float = 0.0
@@ -204,9 +213,45 @@ class CurrentSetup:
     conflicted_fields: list[str] = field(default_factory=list)
     decode_warnings: list[str] = field(default_factory=list)
     raw_indexed_fields: dict[str, float] = field(default_factory=dict)
+    sto_car_id: str = ""
+    sto_sha256: str = ""
+    sto_provider_name: str = ""
+    sto_notes_text: str = ""
+    raw_sto_metadata: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
-    def from_ibt(cls, ibt: IBTFile) -> CurrentSetup:
+    def from_sto(cls, path: str | Path) -> CurrentSetup:
+        """Parse the current setup from a version-3 binary STO file."""
+
+        from analyzer.sto_adapters import build_current_setup_fields
+        from analyzer.sto_binary import decode_sto
+
+        decoded = decode_sto(path)
+        adapted = build_current_setup_fields(decoded)
+        return cls(
+            source="sto",
+            adapter_name=adapted.adapter_name,
+            extraction_attempts=[
+                {
+                    "path": "BinaryStoV3",
+                    "status": "ok",
+                    "source_path": str(decoded.source_path),
+                }
+            ],
+            unresolved_fields=list(adapted.unresolved_fields),
+            conflicted_fields=list(adapted.conflicted_fields),
+            decode_warnings=list(adapted.decode_warnings),
+            raw_indexed_fields=dict(adapted.raw_indexed_fields),
+            sto_car_id=decoded.car_id,
+            sto_sha256=decoded.sha256,
+            sto_provider_name=decoded.provider_name,
+            sto_notes_text=decoded.notes_text,
+            raw_sto_metadata=dict(adapted.raw_sto_metadata),
+            **adapted.values,
+        )
+
+    @classmethod
+    def from_ibt(cls, ibt: IBTFile, car_canonical: str | None = None) -> CurrentSetup:
         """Parse the current setup from an IBT file's session info.
 
         The session info is a YAML dict parsed by the IBT parser.
@@ -215,6 +260,13 @@ class CurrentSetup:
             CarSetup.Chassis.Front.HeaveSpring
             CarSetup.Chassis.LeftFront.TorsionBarOD
             etc.
+
+        Args:
+            ibt: IBT file object with parsed session info
+            car_canonical: Canonical car name ("bmw", "ferrari", "cadillac", etc.)
+                           When provided, bypasses structural layout detection for
+                           adapter_name assignment. Required for Cadillac/Porsche
+                           which share the same IBT structure as BMW.
         """
         si = ibt.session_info
         if not isinstance(si, dict):
@@ -246,12 +298,28 @@ class CurrentSetup:
         hybrid_config = systems.get("HybridConfig") or brakes.get("HybridConfig") or {}
         lighting = systems.get("Lighting", {}) or brakes.get("Lighting", {})
 
-        # Ferrari puts dampers under "Dampers.LeftFrontDamper"; BMW under "Chassis.LeftFront"
+        # Damper layout varies by chassis:
+        #   BMW/Cadillac (Dallara): per-corner under Chassis.LeftFront etc.
+        #   Ferrari: per-corner under Dampers.LeftFrontDamper etc.
+        #   Acura (ORECA): heave+roll under Dampers.FrontHeave/FrontRoll etc.
         dampers = cs.get("Dampers", {})
-        lf_damp = dampers.get("LeftFrontDamper", lf)
-        rf_damp = dampers.get("RightFrontDamper", rf)
-        lr_damp = dampers.get("LeftRearDamper", lr)
-        rr_damp = dampers.get("RightRearDamper", rr)
+        front_heave_damp = dampers.get("FrontHeave", {})
+        rear_heave_damp = dampers.get("RearHeave", {})
+        front_roll_damp = dampers.get("FrontRoll", {})
+        rear_roll_damp = dampers.get("RearRoll", {})
+        is_heave_roll_layout = bool(front_heave_damp)
+
+        if is_heave_roll_layout:
+            # ORECA: heave dampers carry the primary LS/HS comp+rbd+slope
+            lf_damp = front_heave_damp
+            rf_damp = front_heave_damp
+            lr_damp = rear_heave_damp
+            rr_damp = rear_heave_damp
+        else:
+            lf_damp = dampers.get("LeftFrontDamper", lf)
+            rf_damp = dampers.get("RightFrontDamper", rf)
+            lr_damp = dampers.get("LeftRearDamper", lr)
+            rr_damp = dampers.get("RightRearDamper", rr)
 
         # Average left/right for symmetric parameters
         def avg_f(key: str) -> float:
@@ -260,7 +328,7 @@ class CurrentSetup:
         def avg_r(key: str) -> float:
             return (_parse_float(lr.get(key)) + _parse_float(rr.get(key))) / 2.0
 
-        is_ferrari_layout = bool(systems) or bool(dampers)
+        is_ferrari_layout = (not is_heave_roll_layout) and (bool(systems) or bool(dampers))
         attempts = [
             {"path": "CarSetup.TiresAero", "status": "ok" if tires_aero else "missing"},
             {"path": "CarSetup.Chassis", "status": "ok" if chassis else "missing"},
@@ -298,10 +366,11 @@ class CurrentSetup:
             rear_third_perch_mm=_parse_float(rear.get("ThirdPerchOffset") or rear.get("HeavePerchOffset")),
 
             # Corner springs (use LF/LR as representative)
-            # Ferrari rear uses TorsionBarOD (indexed) instead of coil SpringRate
+            # Ferrari/Acura rear uses TorsionBarOD instead of coil SpringRate
             front_torsion_od_mm=_parse_float(lf.get("TorsionBarOD")),
-            rear_spring_nmm=_parse_float(lr.get("SpringRate") or lr.get("TorsionBarOD")),
+            rear_spring_nmm=_parse_float(lr.get("SpringRate")) if lr.get("SpringRate") else 0.0,
             rear_spring_perch_mm=_parse_float(lr.get("SpringPerchOffset")),
+            rear_torsion_od_mm=_parse_float(lr.get("TorsionBarOD")) if lr.get("TorsionBarOD") and not lr.get("SpringRate") else 0.0,
 
             # ARBs
             front_arb_size=str(front.get("ArbSize", "")),
@@ -313,7 +382,10 @@ class CurrentSetup:
             front_camber_deg=avg_f("Camber"),
             rear_camber_deg=avg_r("Camber"),
             front_toe_mm=_parse_float(front.get("ToeIn")),
-            rear_toe_mm=(_parse_float(lr.get("ToeIn")) + _parse_float(rr.get("ToeIn"))) / 2.0,
+            # Acura (ORECA) stores rear toe under Chassis.Rear.ToeIn, not per-corner
+            rear_toe_mm=(
+                _parse_float(lr.get("ToeIn")) + _parse_float(rr.get("ToeIn"))
+            ) / 2.0 or _parse_float(rear.get("ToeIn")),
 
             # Dampers (use LF for front, LR for rear)
             # Ferrari: Dampers.LeftFrontDamper; BMW: Chassis.LeftFront
@@ -327,6 +399,11 @@ class CurrentSetup:
             rear_hs_comp=_parse_int(lr_damp.get("HsCompDamping")),
             rear_hs_rbd=_parse_int(lr_damp.get("HsRbdDamping")),
             rear_hs_slope=_parse_int(lr_damp.get("HsCompDampSlope")),
+            # Roll dampers (ORECA heave+roll layout)
+            front_roll_ls=_parse_int(front_roll_damp.get("LsDamping")),
+            front_roll_hs=_parse_int(front_roll_damp.get("HsDamping")),
+            rear_roll_ls=_parse_int(rear_roll_damp.get("LsDamping")),
+            rear_roll_hs=_parse_int(rear_roll_damp.get("HsDamping")),
 
             # Brakes / Diff / TC
             brake_bias_pct=_parse_float(brake_spec.get("BrakePressureBias")),
@@ -340,7 +417,7 @@ class CurrentSetup:
             pad_compound=str(brake_spec.get("PadCompound", "") or ""),
             front_diff_preload_nm=_parse_float(front_diff_spec.get("Preload")),
             diff_preload_nm=_parse_float(diff_spec.get("Preload")),
-            diff_ramp_angles=str(diff_spec.get("CoastDriveRampAngles", "") or diff_spec.get("CoastDriveRampOptions", "")),
+            diff_ramp_angles=str(diff_spec.get("CoastDriveRampAngles", "") or diff_spec.get("CoastDriveRampOptions", "") or diff_spec.get("DiffRampAngles", "")),
             diff_clutch_plates=_parse_int(diff_spec.get("ClutchFrictionPlates")),
             tc_gain=_parse_int(tc.get("TractionControlGain")),
             tc_slip=_parse_int(tc.get("TractionControlSlip")),
@@ -382,20 +459,37 @@ class CurrentSetup:
             rf_corner_weight_n=_parse_float(rf.get("CornerWeight")),
             lr_corner_weight_n=_parse_float(lr.get("CornerWeight")),
             rr_corner_weight_n=_parse_float(rr.get("CornerWeight")),
-            adapter_name="ferrari" if is_ferrari_layout else "bmw",
+            adapter_name=(
+                # If caller explicitly knows the car, use that — avoids Cadillac/Porsche
+                # being misidentified as BMW (they share the same IBT setup structure).
+                car_canonical.lower()
+                if car_canonical and car_canonical.lower() in ("bmw", "ferrari", "cadillac", "porsche", "acura")
+                else (
+                    "acura" if is_heave_roll_layout
+                    else ("ferrari" if is_ferrari_layout else "bmw")
+                )
+            ),
             extraction_attempts=attempts,
         )
+        if is_ferrari_layout and setup.rear_spring_nmm in (0.0,) and setup.rear_torsion_od_mm not in (0.0,):
+            # Ferrari's rear raw index is exposed via torsion-bar OD, but the legacy
+            # compatibility alias still expects it on rear_spring_nmm.
+            setup.rear_spring_nmm = setup.rear_torsion_od_mm
         if is_ferrari_layout:
+            # Convert N/mm → garage index BEFORE storing so that the delta card
+            # current-vs-recommended comparison works in consistent index units.
+            # public_output_value handles the N/mm → index mapping for Ferrari.
+            from car_model.setup_registry import public_output_value as _pov
             setup.raw_indexed_fields = {
-                "front_heave_index": setup.front_heave_nmm,
-                "rear_heave_index": setup.rear_third_nmm,
-                "front_torsion_bar_index": setup.front_torsion_od_mm,
-                "rear_torsion_bar_index": setup.rear_spring_nmm,
+                "front_heave_index": _pov("ferrari", "front_heave_nmm", setup.front_heave_nmm),
+                "rear_heave_index": _pov("ferrari", "rear_third_nmm", setup.rear_third_nmm),
+                "front_torsion_bar_index": _pov("ferrari", "front_torsion_od_mm", setup.front_torsion_od_mm),
+                "rear_torsion_bar_index": _pov("ferrari", "rear_spring_nmm", setup.rear_spring_nmm),
             }
             setup.decode_warnings.extend(
                 [
-                    "Ferrari indexed springs/torsion bars are preserved as legal raw indices; engineering-unit decode remains partial.",
-                    "Ferrari supporting outputs must use Ferrari session values, not BMW defaults.",
+                    "Ferrari indexed springs/torsion bars are preserved as authoritative raw indices.",
+                    "Ferrari supporting outputs are sourced from Ferrari session values and Ferrari-only registry paths.",
                 ]
             )
             if setup.rear_spring_perch_mm not in (0.0,):

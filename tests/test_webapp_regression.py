@@ -10,6 +10,20 @@ from webapp.types import RunCreateRequest
 
 DATA_FILE = Path("data/telemetry/bmw_sebring_2026-03-06.ibt")
 
+_LFS_POINTER_MAGIC = b"version https://git-lfs.github.com/spec"
+
+
+def _ibt_available(path: Path) -> bool:
+    """Return True only if path exists and contains real IBT data (not a git-lfs pointer)."""
+    if not path.exists():
+        return False
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(40)
+        return not header.startswith(_LFS_POINTER_MAGIC)
+    except OSError:
+        return False
+
 
 def _find_recommended(summary_payload: dict, label: str) -> float:
     for group in summary_payload["setup_groups"]:
@@ -19,7 +33,7 @@ def _find_recommended(summary_payload: dict, label: str) -> float:
     raise AssertionError(f"Could not find {label!r} in setup groups")
 
 
-@unittest.skipUnless(DATA_FILE.exists(), "Telemetry fixture not available")
+@unittest.skipUnless(_ibt_available(DATA_FILE), "Telemetry fixture not available (or is a git-lfs pointer)")
 class WebAppRegressionTests(unittest.TestCase):
     def test_single_session_adapter_matches_pipeline_rear_ride_height(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:

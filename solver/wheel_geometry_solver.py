@@ -382,19 +382,27 @@ class WheelGeometrySolver:
             representative_lat_g, k_roll_total_nm_deg, fuel_load_l
         )
 
-        # Optimal static camber — optimized for p95 cornering load
-        front_camber = self._optimal_camber(
-            representative_roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg
-        )
-        rear_camber = self._optimal_camber(
-            representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg,
-            is_front=False,
-        )
-        # Clamp both axles to iRacing legal garage limits
-        f_min, f_max = geo.front_camber_range_deg
-        front_camber = max(f_min, min(f_max, front_camber))
-        r_min, r_max = geo.rear_camber_range_deg
-        rear_camber = max(r_min, min(r_max, rear_camber))
+        # Check if camber is derived from geometry (not independently settable)
+        camber_is_derived = getattr(geo, 'camber_is_derived', False)
+
+        if camber_is_derived:
+            # Camber is derived from suspension geometry — use baseline values
+            front_camber = geo.front_camber_baseline_deg
+            rear_camber = geo.rear_camber_baseline_deg
+        else:
+            # Optimal static camber — optimized for p95 cornering load
+            front_camber = self._optimal_camber(
+                representative_roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg
+            )
+            rear_camber = self._optimal_camber(
+                representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg,
+                is_front=False,
+            )
+            # Clamp both axles to iRacing legal garage limits
+            f_min, f_max = geo.front_camber_range_deg
+            front_camber = max(f_min, min(f_max, front_camber))
+            r_min, r_max = geo.rear_camber_range_deg
+            rear_camber = max(r_min, min(r_max, rear_camber))
 
         # Dynamic camber at peak lateral g (what the tyre actually sees)
         front_camber_change = roll_deg * geo.front_roll_gain
@@ -470,19 +478,77 @@ class WheelGeometrySolver:
             ),
         ]
 
-        notes = [
-            f"Representative cornering: {representative_lat_g:.2f}g "
-            f"(p95={p95_lat_g:.2f}g, peak={peak_lat_g:.2f}g, "
-            f"kerb_weight={kerb_weight:.1f}). "
-            f"Roll: {representative_roll_deg:.1f}° at representative, "
-            f"{roll_deg:.1f}° at peak.",
-            "Tyre temperature spread diagnosis: inner hotter = correct camber. "
-            "If outer runs hotter -> reduce negative camber by 0.2-0.3 deg.",
-            "BMW Vision tread conditioning (Sebring): fronts +2.4°C/lap, "
-            "rears +3.2°C/lap. Full operating temp by lap 13-15 (fronts), 8-9 (rears).",
-            "For sprint qualifying: add 0.3° more negative camber + 0.2mm extra "
-            "toe-out to accelerate thermal buildup.",
-        ]
+        notes = []
+
+        if camber_is_derived:
+            notes.append(
+                f"Camber is derived from suspension geometry — not independently settable on {self.car.name}. "
+                f"Using baseline values: front {front_camber:+.1f}°, rear {rear_camber:+.1f}°."
+            )
+        else:
+            notes.append(
+                f"Representative cornering: {representative_lat_g:.2f}g "
+                f"(p95={p95_lat_g:.2f}g, peak={peak_lat_g:.2f}g, "
+                f"kerb_weight={kerb_weight:.1f}). "
+                f"Roll: {representative_roll_deg:.1f}° at representative, "
+                f"{roll_deg:.1f}° at peak."
+            )
+            notes.append(
+                "Tyre temperature spread diagnosis: inner hotter = correct camber. "
+                "If outer runs hotter -> reduce negative camber by 0.2-0.3 deg."
+            )
+
+        # Car-specific thermal conditioning notes
+        car_name = self.car.canonical_name
+        if car_name == "bmw":
+            notes.extend([
+                "BMW Vision tread conditioning (Sebring): fronts +2.4°C/lap, "
+                "rears +3.2°C/lap. Full operating temp by lap 13-15 (fronts), 8-9 (rears).",
+                "For sprint qualifying: add 0.3° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+            ])
+        elif car_name == "ferrari":
+            notes.extend([
+                "Ferrari 499P (Michelin LMH compound): target tyre temp 85-105°C. "
+                "Conditioning typically 10-14 laps from cold start.",
+                "For sprint qualifying: add 0.2° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+                "Camber range: front -2.9° to 0.0°, rear -1.9° to 0.0°. "
+                "User-settable per corner — verify values in garage before session.",
+            ])
+        elif car_name == "acura":
+            notes.extend([
+                "Acura ARX-06 (ORECA chassis): tyre conditioning similar to BMW (~10-14 laps). "
+                "Front camber strongly affects front ride height (~2.9mm RH per degree).",
+                "For sprint qualifying: add 0.2° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+            ])
+        elif car_name == "cadillac":
+            notes.extend([
+                "Cadillac V-Series.R (Dallara LMDh): tyre conditioning similar to BMW. "
+                "Target tyre temp 85-105°C.",
+                "For sprint qualifying: add 0.3° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+            ])
+        else:
+            notes.extend([
+                f"{self.car.name}: target tyre temp 85-105°C (Michelin GTP compound). "
+                f"Conditioning typically 10-15 laps from cold start.",
+                "For sprint qualifying: add 0.2-0.3° more negative camber + 0.2mm extra "
+                "toe-out to accelerate thermal buildup.",
+            ])
+
+        # Classify parameters
+        if camber_is_derived:
+            camber_status = "geometry_derived"
+        else:
+            camber_status = "solver_computed"
+        pss = {
+            "front_camber_deg": camber_status,
+            "rear_camber_deg": camber_status,
+            "front_toe_mm": "solver_computed",
+            "rear_toe_mm": "solver_computed",
+        }
 
         return WheelGeometrySolution(
             front_camber_deg=round(front_camber, 1),
@@ -505,6 +571,7 @@ class WheelGeometrySolver:
             camber_confidence=camber_confidence,
             constraints=constraints,
             notes=notes,
+            parameter_search_status=pss,
         )
 
     def solution_from_explicit_settings(
@@ -590,6 +657,12 @@ class WheelGeometrySolver:
             f"Explicit geometry materialization at representative roll {representative_roll_deg:.1f}°.",
             f"Front/rear wheel-rate context preserved: {front_wheel_rate_nmm:.1f} / {rear_wheel_rate_nmm:.1f} N/mm.",
         ]
+        pss = {
+            "front_camber_deg": "user_set",
+            "rear_camber_deg": "user_set",
+            "front_toe_mm": "user_set",
+            "rear_toe_mm": "user_set",
+        }
         return WheelGeometrySolution(
             front_camber_deg=round(front_camber, 1),
             rear_camber_deg=round(rear_camber, 1),
@@ -611,4 +684,5 @@ class WheelGeometrySolver:
             constraints=constraints,
             camber_confidence=camber_confidence,
             notes=notes,
+            parameter_search_status=pss,
         )

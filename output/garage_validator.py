@@ -93,6 +93,22 @@ def validate_and_fix_garage_correlation(
     warnings: list[str] = []
     gr = car.garage_ranges
 
+    # Ferrari: public garage_ranges are in index space (0-8 heave, 0-18 torsion),
+    # but solver outputs are physical units (N/mm, mm OD).  Convert to public-unit
+    # deep copies before Phase 1 clamping so the index-space range guards operate
+    # on the correct numeric domain.  This mirrors the pattern already used in
+    # setup_writer.py and legality_engine.py.
+    if getattr(car, 'canonical_name', '') == 'ferrari':
+        import copy as _copy
+        from car_model.setup_registry import public_output_value as _pov
+        step2 = _copy.deepcopy(step2)
+        step3 = _copy.deepcopy(step3)
+        step2.front_heave_nmm = float(_pov(car, "front_heave_nmm", step2.front_heave_nmm))
+        step2.rear_third_nmm = float(_pov(car, "rear_third_nmm", step2.rear_third_nmm))
+        step3.front_torsion_od_mm = float(_pov(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+        step3.rear_spring_rate_nmm = float(_pov(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+        step3.rear_spring_perch_mm = 0.0
+
     # --- Phase 1: Range-clamp and quantise individual parameters ---
     warnings.extend(_clamp_step1(step1, gr))
     warnings.extend(_clamp_step2(step2, gr))
@@ -103,6 +119,16 @@ def validate_and_fix_garage_correlation(
     # --- Phase 2: Garage-model correlation check (BMW/Sebring only) ---
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is None:
+        canonical = getattr(car, 'canonical_name', '')
+        if canonical not in ('bmw', 'ferrari'):
+            # Ferrari uses indexed controls and intentionally has no garage model —
+            # suppress the warning so reports stay clean.  Other unknown cars get
+            # the informational note below.
+            warnings.append(
+                f"NOTE: Garage correlation validation skipped — "
+                f"no calibrated GarageOutputModel for {canonical}. "
+                f"Output values are physics-only estimates."
+            )
         return warnings
 
     state = GarageSetupState.from_solver_steps(

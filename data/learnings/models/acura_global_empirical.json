@@ -1,0 +1,14 @@
+{
+  "car": "acura",
+  "total_sessions": 7,
+  "tracks_included": [
+    "Hockenheimring Baden-W\u00fcrttemberg"
+  ],
+  "aero_compression_front_mm": 10.892822320120676,
+  "aero_compression_rear_mm": 15.097743225097659,
+  "roll_gradient_global_deg_per_g": 0.325,
+  "m_eff_front_global_kg": 296.5546726000676,
+  "anomalies": [],
+  "confidence": "medium",
+  "last_updated": "2026-03-30T03:54:04.021879+00:00"
+}

@@ -114,11 +114,18 @@ class BrakeSolver:
             bias -= 0.5
             reasons.append(f"-0.5% for front braking lock proxy p95={front_lock:.3f}")
 
-        if measured.front_brake_wheel_decel_asymmetry_p95_ms2 > 3.0:
+        # Front brake asymmetry: hardware warning at lower threshold, bias adjustment at higher
+        asymmetry = getattr(measured, 'front_brake_wheel_decel_asymmetry_p95_ms2', 0.0)
+        if asymmetry > 1.5:
+            reasons.append(
+                f"⚠ High brake deceleration asymmetry ({asymmetry:.1f} m/s²) detected — "
+                f"check front caliper/pad condition before adjusting brake bias"
+            )
+        if asymmetry > 3.0:
             bias -= 0.2
             reasons.append(
                 f"-0.2% for front brake wheel decel asymmetry "
-                f"p95={measured.front_brake_wheel_decel_asymmetry_p95_ms2:.1f} m/s^2"
+                f"p95={asymmetry:.1f} m/s^2"
             )
 
         if measured.body_slip_p95_deg > 5.0:

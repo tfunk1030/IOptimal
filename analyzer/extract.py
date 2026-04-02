@@ -378,11 +378,24 @@ def extract_measurements(
     state.speed_max_kph = float(np.max(speed_kph))
     state.peak_lat_g_measured = float(np.max(np.abs(lat_g)))
 
-    # Shock velocities
-    lf_sv = np.abs(ibt.channel("LFshockVel")[start:end + 1])
-    rf_sv = np.abs(ibt.channel("RFshockVel")[start:end + 1])
-    lr_sv = np.abs(ibt.channel("LRshockVel")[start:end + 1])
-    rr_sv = np.abs(ibt.channel("RRshockVel")[start:end + 1])
+    # Shock velocities — synthesise from heave+roll if corner channels missing
+    has_corner_shocks = all(
+        ibt.has_channel(c) for c in ["LFshockVel", "RFshockVel", "LRshockVel", "RRshockVel"]
+    )
+    if has_corner_shocks:
+        lf_sv = np.abs(ibt.channel("LFshockVel")[start:end + 1])
+        rf_sv = np.abs(ibt.channel("RFshockVel")[start:end + 1])
+        lr_sv = np.abs(ibt.channel("LRshockVel")[start:end + 1])
+        rr_sv = np.abs(ibt.channel("RRshockVel")[start:end + 1])
+    else:
+        hf = ibt.channel("HFshockVel")[start:end + 1] if ibt.has_channel("HFshockVel") else np.zeros(n)
+        tr = ibt.channel("TRshockVel")[start:end + 1] if ibt.has_channel("TRshockVel") else np.zeros(n)
+        froll = ibt.channel("FROLLshockVel")[start:end + 1] if ibt.has_channel("FROLLshockVel") else np.zeros(n)
+        rroll = ibt.channel("RROLLshockVel")[start:end + 1] if ibt.has_channel("RROLLshockVel") else np.zeros(n)
+        lf_sv = np.abs(hf + froll)
+        rf_sv = np.abs(hf - froll)
+        lr_sv = np.abs(tr + rroll)
+        rr_sv = np.abs(tr - rroll)
 
     front_sv = np.concatenate([lf_sv, rf_sv])
     rear_sv = np.concatenate([lr_sv, rr_sv])
@@ -397,16 +410,22 @@ def extract_measurements(
     # If zero_crossing_freq > 1.5× natural frequency → underdamped evidence.
     duration_s = n / ibt.tick_rate
     if duration_s > 1.0:
-        # Use signed shock velocity (not abs) for zero-crossing detection
-        lr_sv_signed = ibt.channel("LRshockVel")[start:end + 1]
-        rr_sv_signed = ibt.channel("RRshockVel")[start:end + 1]
-        rear_sv_signed = (lr_sv_signed + rr_sv_signed) / 2.0
+        if has_corner_shocks:
+            lr_sv_signed = ibt.channel("LRshockVel")[start:end + 1]
+            rr_sv_signed = ibt.channel("RRshockVel")[start:end + 1]
+            rear_sv_signed = (lr_sv_signed + rr_sv_signed) / 2.0
+            lf_sv_signed = ibt.channel("LFshockVel")[start:end + 1]
+            rf_sv_signed = ibt.channel("RFshockVel")[start:end + 1]
+            front_sv_signed = (lf_sv_signed + rf_sv_signed) / 2.0
+        else:
+            # Use heave shocks as proxy for oscillation detection
+            hf_s = ibt.channel("HFshockVel")[start:end + 1] if ibt.has_channel("HFshockVel") else np.zeros(n)
+            tr_s = ibt.channel("TRshockVel")[start:end + 1] if ibt.has_channel("TRshockVel") else np.zeros(n)
+            front_sv_signed = hf_s
+            rear_sv_signed = tr_s
+
         rear_zc = int(np.sum(np.diff(np.sign(rear_sv_signed)) != 0))
         state.rear_shock_oscillation_hz = round(rear_zc / 2.0 / duration_s, 2)
-
-        lf_sv_signed = ibt.channel("LFshockVel")[start:end + 1]
-        rf_sv_signed = ibt.channel("RFshockVel")[start:end + 1]
-        front_sv_signed = (lf_sv_signed + rf_sv_signed) / 2.0
         front_zc = int(np.sum(np.diff(np.sign(front_sv_signed)) != 0))
         state.front_shock_oscillation_hz = round(front_zc / 2.0 / duration_s, 2)
 

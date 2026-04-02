@@ -124,7 +124,7 @@ def score_from_prediction(
             target=0.0,
             scale=1.0,
         )
-        + _improvement(_safe(getattr(baseline_measured, "rear_power_slip_ratio_p95", None)), _safe(getattr(predicted, "rear_power_slip_p95", None)), lower_better=True, scale=0.05)
+        + _improvement(_safe(getattr(baseline_measured, "rear_power_slip_ratio_p95", None)), _safe(getattr(predicted, "rear_power_slip_ratio_p95", None)), lower_better=True, scale=0.05)
     ) / 3.0
     # Scale performance by how much time is at stake: higher loss = more weight on fixing it.
     # 500ms estimated loss → 30% boost, capped there. No effect below ~50ms.

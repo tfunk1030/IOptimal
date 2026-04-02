@@ -27,8 +27,15 @@ class RegistryConsistencyTests(unittest.TestCase):
     def test_bmw_covers_all_settable_fields(self):
         settable = iter_fields(kind="settable")
         bmw = CAR_FIELD_SPECS["bmw"]
-        missing = [f.canonical_key for f in settable if f.canonical_key not in bmw
-                   and f.canonical_key != "front_diff_preload_nm"]  # Ferrari-only
+        bmw_exceptions = {
+            "front_diff_preload_nm",  # Ferrari-only
+            "rear_torsion_od_mm",     # Acura ORECA rear torsion-bar field
+            "front_roll_ls",          # Acura ORECA roll dampers
+            "front_roll_hs",
+            "rear_roll_ls",
+            "rear_roll_hs",
+        }
+        missing = [f.canonical_key for f in settable if f.canonical_key not in bmw and f.canonical_key not in bmw_exceptions]
         self.assertEqual(missing, [], f"BMW missing settable fields: {missing}")
 
     def test_get_field_returns_correct_type(self):
@@ -67,14 +74,27 @@ class RegistryConsistencyTests(unittest.TestCase):
         for key in ("wing_angle_deg", "front_pushrod_offset_mm", "brake_bias_pct", "fuel_l"):
             self.assertIn(key, porsche)
 
-    def test_cadillac_and_acura_inherit_bmw_with_arb_override(self):
-        for car in ("cadillac", "acura"):
-            spec = get_car_spec(car, "front_arb_blade")
-            self.assertIn("[0]", spec.sto_param_id)
-            # But heave should match BMW
-            bmw_heave = get_car_spec("bmw", "front_heave_spring_nmm")
-            car_heave = get_car_spec(car, "front_heave_spring_nmm")
-            self.assertEqual(bmw_heave.sto_param_id, car_heave.sto_param_id)
+    def test_cadillac_inherits_bmw_heave_with_arb_override(self):
+        spec = get_car_spec("cadillac", "front_arb_blade")
+        self.assertIn("[0]", spec.sto_param_id)
+        bmw_heave = get_car_spec("bmw", "front_heave_spring_nmm")
+        cadillac_heave = get_car_spec("cadillac", "front_heave_spring_nmm")
+        self.assertEqual(bmw_heave.sto_param_id, cadillac_heave.sto_param_id)
+
+    def test_acura_has_oreca_specific_overrides(self):
+        arb_spec = get_car_spec("acura", "front_arb_blade")
+        self.assertIn("[0]", arb_spec.sto_param_id)
+
+        rear_torsion_spec = get_car_spec("acura", "rear_torsion_od_mm")
+        self.assertIn("TorsionBarOD", rear_torsion_spec.sto_param_id)
+
+        front_roll_ls = get_car_spec("acura", "front_roll_ls")
+        rear_roll_hs = get_car_spec("acura", "rear_roll_hs")
+        self.assertIn("FrontRoll", front_roll_ls.sto_param_id)
+        self.assertIn("RearRoll", rear_roll_hs.sto_param_id)
+
+        diff_spec = get_car_spec("acura", "diff_ramp_angles")
+        self.assertIn("DiffRampAngles", diff_spec.sto_param_id)
 
     def test_iter_fields_filters_correctly(self):
         step1 = iter_fields(solver_step=1)
@@ -109,6 +129,37 @@ class RegistryConsistencyTests(unittest.TestCase):
         ]
         for sto_id in critical_ids:
             self.assertIn(sto_id, bmw_sto_ids, f"BMW registry missing STO ID: {sto_id}")
+
+    def test_writer_param_ids_cover_ferrari_native_map(self):
+        """Verify Ferrari registry uses Ferrari-native Systems and Dampers IDs."""
+        ferrari_specs = CAR_FIELD_SPECS["ferrari"]
+        ferrari_sto_ids = {spec.sto_param_id for spec in ferrari_specs.values() if spec.sto_param_id}
+
+        critical_ids = [
+            "CarSetup_Chassis_Front_HeaveSpring",
+            "CarSetup_Chassis_Rear_HeaveSpring",
+            "CarSetup_Chassis_LeftFront_TorsionBarOD",
+            "CarSetup_Chassis_LeftRear_TorsionBarOD",
+            "CarSetup_Dampers_LeftFrontDamper_LsCompDamping",
+            "CarSetup_Dampers_LeftRearDamper_HsRbdDamping",
+            "CarSetup_Systems_BrakeSpec_BrakePressureBias",
+            "CarSetup_Systems_BrakeSpec_BiasMigrationGain",
+            "CarSetup_Systems_FrontDiffSpec_Preload",
+            "CarSetup_Systems_RearDiffSpec_CoastDriveRampOptions",
+            "CarSetup_Systems_GearRatios_SpeedInFirst",
+            "CarSetup_Systems_HybridConfig_HybridRearDriveEnabled",
+            "CarSetup_Systems_Lighting_RoofIdLightColor",
+        ]
+        legacy_ids = [
+            "CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias",
+            "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload",
+            "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain",
+            "CarSetup_Chassis_LeftFront_LsCompDamping",
+        ]
+        for sto_id in critical_ids:
+            self.assertIn(sto_id, ferrari_sto_ids, f"Ferrari registry missing STO ID: {sto_id}")
+        for sto_id in legacy_ids:
+            self.assertNotIn(sto_id, ferrari_sto_ids, f"Ferrari registry should not use legacy STO ID: {sto_id}")
 
 
 if __name__ == "__main__":

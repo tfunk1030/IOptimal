@@ -124,7 +124,7 @@ def apply_learned_corrections(
 
     # ── Apply m_eff correction ──
     m_eff_mean = corrections.get("m_eff_front_empirical_mean")
-    if m_eff_mean is not None and m_eff_mean > 50:
+    if m_eff_mean is not None and 100.0 < m_eff_mean < 4000.0:
         result.heave_m_eff_front_kg = m_eff_mean
         result.applied.append(
             f"Front m_eff: {m_eff_mean:.1f} kg (empirical, "

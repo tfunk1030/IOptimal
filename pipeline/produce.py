@@ -36,9 +36,11 @@ from analyzer.setup_reader import CurrentSetup
 from analyzer.setup_schema import apply_live_control_overrides, build_setup_schema
 from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
+from output.report import to_public_output_payload
+from car_model.setup_registry import public_output_value
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
-from solver.candidate_search import candidate_to_dict, generate_candidate_families
+from solver.candidate_search import canonical_params_to_overrides, candidate_to_dict, generate_candidate_families
 from solver.arb_solver import ARBSolver
 from solver.corner_spring_solver import CornerSpringSolver
 from solver.damper_solver import DamperSolver
@@ -67,6 +69,32 @@ from track_model.ibt_parser import IBTFile
 
 class PipelineInputError(RuntimeError):
     """User-facing pipeline input error."""
+
+
+def _normalize_grid_search_params_for_overrides(params: dict[str, object] | None) -> dict[str, object]:
+    """Normalize grid-search param aliases to canonical override keys.
+
+    Grid search can surface keys that don't match solve-chain field names
+    directly (e.g. *_spring_nmm, *_arb_blade, *_toe_deg aliases). Convert those
+    into the canonical param set expected by canonical_params_to_overrides().
+    """
+    raw = dict(params or {})
+    normalized = dict(raw)
+    alias_map = {
+        "front_heave_nmm": "front_heave_spring_nmm",
+        "rear_third_nmm": "rear_third_spring_nmm",
+        "rear_spring_nmm": "rear_spring_rate_nmm",
+        "front_arb_blade_start": "front_arb_blade",
+        "rear_arb_blade_start": "rear_arb_blade",
+        # Pipeline/solver canonical toe units are mm. If a *_toe_deg alias is
+        # emitted by search output, route it to toe_mm for override consumption.
+        "front_toe_deg": "front_toe_mm",
+        "rear_toe_deg": "rear_toe_mm",
+    }
+    for source_key, target_key in alias_map.items():
+        if source_key in raw and target_key not in normalized:
+            normalized[target_key] = raw[source_key]
+    return normalized
 
 
 def _wrap_no_valid_laps_error(
@@ -132,6 +160,15 @@ def _compute_single_session_authority(
     score -= min(0.12, setup_distance * 0.025)
     if session_context and not session_context.comparable_to_baseline:
         score *= 0.82
+
+    # In-car adjustment penalty (frequent changes reduce telemetry authority)
+    total_adjustments = (
+        getattr(measured, "brake_bias_adjustments", 0) +
+        getattr(measured, "tc_adjustments", 0)
+    )
+    if total_adjustments > 5:
+        adjustment_penalty = min(0.5, 0.05 * total_adjustments)
+        score *= max(0.5, 1.0 - adjustment_penalty)
 
     return {"session": "S1", "score": round(max(0.0, min(1.0, score)), 3)}
 
@@ -205,6 +242,10 @@ def _resolve_scenario_profile(args: argparse.Namespace) -> str:
         if getattr(args, "stint_select", "all") == "last":
             return "sprint"
         return "race"
+    # --mode aggressive → use quali scenario (all weights active, enables k-NN)
+    # --mode safe (default) → use single_lap_safe scenario
+    if getattr(args, "mode", "safe") == "aggressive":
+        return resolve_scenario_name("quali")
     return resolve_scenario_name(getattr(args, "objective_profile", None))
 
 
@@ -268,6 +309,10 @@ def produce(
     car = get_car(args.car)
     log(f"Car: {car.name}")
 
+    # ── Run trace (data provenance) ──
+    from output.run_trace import RunTrace
+    run_trace = RunTrace()
+
     # Resolve DF balance target from car model if not explicitly set
     if getattr(args, "balance", None) is None:
         args.balance = car.default_df_balance_pct
@@ -285,13 +330,14 @@ def produce(
         args.min_lap_time = max(60.0, _fastest * 0.95) if _fastest else 60.0
 
     # ── Auto-detect from session info ──
-    current_setup = CurrentSetup.from_ibt(ibt)
+    current_setup = CurrentSetup.from_ibt(ibt, car_canonical=car.canonical_name)
     wing = args.wing or current_setup.wing_angle_deg
     fuel = args.fuel or current_setup.fuel_l or 89.0
     log(f"  Wing: {wing}°, Fuel: {fuel:.0f} L")
 
     # ── Apply learned corrections (default: auto, --no-learn to disable) ──
     learned = None
+    n_sessions = 0
     if not getattr(args, "no_learn", False):
         track_info = ibt.track_info()
         track_name = track_info.get("track_name", "")
@@ -335,9 +381,13 @@ def produce(
     saved_profile_path = None
     if track_hint:
         from track_model.profile import TrackProfile
-        _candidate = Path("data/tracks") / f"{track_hint.lower().replace(' ', '_')}.json"
-        if _candidate.exists():
-            saved_profile_path = _candidate
+        # Try both naming conventions: "{slug}.json" (legacy) and "{slug}_{config}.json" (autosave)
+        _hint_slug = track_hint.lower().replace(" ", "_")
+        for _pattern in [f"{_hint_slug}_*.json", f"{_hint_slug}.json"]:
+            _matches = sorted(Path("data/tracks").glob(_pattern))
+            if _matches:
+                saved_profile_path = _matches[0]
+                break
     if saved_profile_path:
         log(f"\nLoading saved track profile: {saved_profile_path}")
         track = TrackProfile.load(saved_profile_path)
@@ -359,6 +409,18 @@ def produce(
             raise
         log(f"  Track: {track.track_name} — {track.track_config}")
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
+        run_trace.record_car_track(car.canonical_name, track.track_name, wing_angle=getattr(args, "wing", None))
+        run_trace.record_calibration()
+
+        # Auto-save track profile for future runs (avoids rebuilding each time)
+        _track_slug = track.track_name.lower().replace(" ", "_")
+        _config_slug = (track.track_config or "default").lower().replace(" ", "_")
+        _save_path = Path("data/tracks") / f"{_track_slug}_{_config_slug}.json"
+        _save_path.parent.mkdir(parents=True, exist_ok=True)
+        # Only overwrite stubs (<2 KB) or missing files; preserve richer existing profiles
+        if not _save_path.exists() or _save_path.stat().st_size < 2000:
+            track.save(_save_path)
+            log(f"  Track profile saved: {_save_path}")
 
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")
@@ -384,6 +446,7 @@ def produce(
     log(f"  Lap {measured.lap_number}: {measured.lap_time_s:.3f}s")
     for note in live_override_notes:
         log(f"  Live override: {note}")
+    run_trace.record_signals(measured)
 
     setup_schema = build_setup_schema(
         car=car,
@@ -605,259 +668,42 @@ def produce(
         front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
     )
 
-    if optimized is not None:
-        log("=" * 60)
-        log(f"Running BMW/Sebring constrained optimizer (target balance: {target_balance:.2f}%)...")
-        step1 = optimized.step1
-        step2 = optimized.step2
-        step3 = optimized.step3
-        step4 = optimized.step4
-        step5 = optimized.step5
-        step6 = optimized.step6
-        _apply_damper_modifiers(step6, modifiers, car)
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-    else:
-        # Step 1: Rake
-        log("=" * 60)
-        log(f"Running Step 1: Rake (target balance: {target_balance:.2f}%)...")
-        rake_solver = RakeSolver(car, surface, track)
-        step1 = rake_solver.solve(
-            target_balance=target_balance,
-            balance_tolerance=args.tolerance,
-            fuel_load_l=fuel,
-            pin_front_min=True,
-        )
-
-        # Run free optimization comparison if we're in pinned mode
-        if False:
-            try:
-                free_step1 = rake_solver.solve(
-                    target_balance=target_balance,
-                    balance_tolerance=args.tolerance,
-                    fuel_load_l=fuel,
-                    pin_front_min=False,
-                )
-                ld_delta = free_step1.ld_ratio - step1.ld_ratio
-                if ld_delta > 0.005:
-                    log(f"\n  [free-opt] Free optimization L/D: {free_step1.ld_ratio:.3f} "
-                        f"vs pinned: {step1.ld_ratio:.3f} ({ld_delta:+.3f})")
-                    log(f"  [free-opt] Free front RH: {free_step1.dynamic_front_rh_mm:.1f}mm "
-                        f"rear: {free_step1.dynamic_rear_rh_mm:.1f}mm")
-                    if ld_delta > 0.02:
-                        log("  [free-opt] ** Significant L/D gain — consider --free mode **")
-            except Exception:
-                pass  # Free opt comparison is advisory
-
-        if not args.report_only:
-            print(step1.summary())
-
-        if free_mode:
-            log(f"  [free-opt] Legal-manifold search enabled from a pinned seed ({scenario_profile_name}).")
-
-        # Advisory: compare free-mode L/D when running in pinned mode
-        if False:
-            try:
-                free_step1 = rake_solver.solve(
-                    target_balance=target_balance,
-                    balance_tolerance=args.tolerance,
-                    fuel_load_l=fuel,
-                    pin_front_min=False,
-                )
-                ld_delta = free_step1.ld_ratio - step1.ld_ratio
-                if ld_delta > 0.005:
-                    log(f"\n  [free-opt] Free optimization L/D: {free_step1.ld_ratio:.3f} "
-                        f"vs pinned: {step1.ld_ratio:.3f} ({ld_delta:+.3f})")
-                    log(f"  [free-opt] Free front RH: {free_step1.dynamic_front_rh_mm:.1f}mm "
-                        f"rear: {free_step1.dynamic_rear_rh_mm:.1f}mm")
-                    if ld_delta > 0.02:
-                        log("  [free-opt] ** Significant L/D gain — consider --free mode **")
-            except Exception:
-                pass  # Free opt comparison is advisory only
-
-        # Step 2: Heave
-        log("\nRunning Step 2: Heave / Third Springs...")
-        heave_solver = HeaveSolver(car, track)
-        step2 = heave_solver.solve(
-            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-            front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
-            front_pushrod_mm=step1.front_pushrod_offset_mm,
-            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-            fuel_load_l=fuel,
-            front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-        )
-        # Apply modifier floor constraints (check both independently)
-        needs_re_solve = (
-            (modifiers.front_heave_min_floor_nmm > 0 and step2.front_heave_nmm < modifiers.front_heave_min_floor_nmm)
-            or (modifiers.rear_third_min_floor_nmm > 0 and step2.rear_third_nmm < modifiers.rear_third_min_floor_nmm)
-        )
-        if needs_re_solve:
-            step2 = heave_solver.solve(
-                dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-                dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-                front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
-                rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
-                front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
-                front_pushrod_mm=step1.front_pushrod_offset_mm,
-                rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-                fuel_load_l=fuel,
-                front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            )
-        if not args.report_only:
-            print(step2.summary())
-
-        # Step 3: Corner Springs
-        log("\nRunning Step 3: Corner Springs...")
-        corner_solver = CornerSpringSolver(car, track)
-        step3 = corner_solver.solve(
-            front_heave_nmm=step2.front_heave_nmm,
-            rear_third_nmm=step2.rear_third_nmm,
-            fuel_load_l=fuel,
-        )
-        if not args.report_only:
-            print(step3.summary())
-
-        # Convert rear spring rate to wheel rate (MR^2) for downstream solvers
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-
-        # RH reconciliation: refine static RH with actual spring values
-        heave_solver.reconcile_solution(
-            step1,
-            step2,
-            step3,
-            fuel_load_l=fuel,
-            front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            verbose=not args.report_only,
-        )
-        reconcile_ride_heights(
-            car, step1, step2, step3,
-            fuel_load_l=fuel,
-            track_name=track.track_name,
-            verbose=not args.report_only,
-            surface=surface,
-            track=track,
-            target_balance=target_balance,
-        )
-
-        # One fixed-point refinement pass: dampers depend on heave mode, and
-        # heave sizing now accounts for damper work. Run a provisional damper
-        # solve, then re-size heave/third once against that damper state.
-        damper_solver = DamperSolver(car, track)
-        provisional_step6 = damper_solver.solve(
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-            fuel_load_l=fuel,
-            damping_ratio_scale=modifiers.damping_ratio_scale,
-            measured=measured,
-            front_heave_nmm=step2.front_heave_nmm,
-            rear_third_nmm=step2.rear_third_nmm,
-        )
-        refined_step2 = heave_solver.solve(
-            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-            front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
-            rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
-            front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
-            front_pushrod_mm=step1.front_pushrod_offset_mm,
-            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-            front_torsion_od_mm=step3.front_torsion_od_mm,
-            rear_spring_nmm=step3.rear_spring_rate_nmm,
-            rear_spring_perch_mm=step3.rear_spring_perch_mm,
-            rear_third_perch_mm=step2.perch_offset_rear_mm,
-            fuel_load_l=fuel,
-            front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            front_hs_damper_nsm=provisional_step6.c_hs_front,
-            rear_hs_damper_nsm=provisional_step6.c_hs_rear,
-        )
-        if (
-            abs(refined_step2.front_heave_nmm - step2.front_heave_nmm) > 0.05
-            or abs(refined_step2.rear_third_nmm - step2.rear_third_nmm) > 0.05
-            or abs(refined_step2.perch_offset_front_mm - step2.perch_offset_front_mm) > 0.05
-        ):
-            step2 = refined_step2
-            step3 = corner_solver.solve(
-                front_heave_nmm=step2.front_heave_nmm,
-                rear_third_nmm=step2.rear_third_nmm,
-                fuel_load_l=fuel,
-            )
-            rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-            heave_solver.reconcile_solution(
-                step1,
-                step2,
-                step3,
-                fuel_load_l=fuel,
-                front_camber_deg=current_setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-                front_hs_damper_nsm=provisional_step6.c_hs_front,
-                verbose=False,
-            )
-            reconcile_ride_heights(
-                car, step1, step2, step3,
-                fuel_load_l=fuel,
-                track_name=track.track_name,
-                verbose=False,
-                surface=surface,
-                track=track,
-                target_balance=target_balance,
-            )
-
-        # Step 4: ARBs (with LLTD offset)
-        log("\nRunning Step 4: Anti-Roll Bars...")
-        arb_solver = ARBSolver(car, track)
-        step4 = arb_solver.solve(
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            lltd_offset=modifiers.lltd_offset,
-            current_rear_arb_size=getattr(current_setup, "rear_arb_size", None),
-        )
-        if not args.report_only:
-            print(step4.summary())
-
-        # Step 5: Wheel Geometry
-        log("\nRunning Step 5: Wheel Geometry...")
-        geom_solver = WheelGeometrySolver(car, track)
-        step5 = geom_solver.solve(
-            k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            fuel_load_l=fuel,
-            camber_confidence=_camber_conf,
-            measured=measured,
-        )
-        if not args.report_only:
-            print(step5.summary())
-
-        reconcile_ride_heights(
-            car, step1, step2, step3,
-            step5=step5,
-            fuel_load_l=fuel,
-            track_name=track.track_name,
-            verbose=False,
-            surface=surface,
-            track=track,
-            target_balance=target_balance,
-        )
-
-        # Step 6: Dampers (with damping ratio scale and click offsets)
-        log("\nRunning Step 6: Dampers...")
-        step6 = damper_solver.solve(
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-            fuel_load_l=fuel,
-            damping_ratio_scale=modifiers.damping_ratio_scale,
-            measured=measured,
-            front_heave_nmm=step2.front_heave_nmm,
-            rear_third_nmm=step2.rear_third_nmm,
-        )
-        # Apply damper click offsets from modifiers
-        _apply_damper_modifiers(step6, modifiers, car)
-        if not args.report_only:
-            print(step6.summary())
+    # NOTE: The optimized/manual solve block was removed here (2026-03-31).
+    # Both the BMW/Sebring optimizer branch and the manual Steps 1-6 branch
+    # were dead code: run_base_solve() below always overwrites their results.
+    # All solve orchestration is now exclusively handled by run_base_solve().
 
     # ── Phase H.5: Multi-solve stint compromise (if --stint) ──
+    # Load known-bad setup fingerprints from learner (if available)
+    # Observations with validation_failed=True contribute hard-veto clusters
+    # that prevent the solver from re-recommending the same setup cluster.
+    failed_clusters = []
+    try:
+        from learner.knowledge_store import KnowledgeStore
+        from solver.setup_fingerprint import ValidationCluster
+
+        ks = KnowledgeStore()
+        obs_list = ks.list_observations(
+            car=car.canonical_name,
+            track=track.track_name.split()[0].lower(),
+        )
+        for obs_data in obs_list:
+            if obs_data.get("validation_failed", False):
+                fp = obs_data.get("setup_fingerprint", "")
+                if fp:
+                    try:
+                        failed_clusters.append(
+                            ValidationCluster(fingerprint=fp, veto_type="hard")
+                        )
+                    except TypeError:
+                        # ValidationCluster constructor differs — try positional
+                        failed_clusters.append(ValidationCluster(fp))
+        if failed_clusters:
+            log(f"[veto] Loaded {len(failed_clusters)} hard-veto clusters from learner store")
+    except Exception:
+        # Learner not available or no data — skip veto mechanism gracefully
+        pass
+
     solve_inputs = SolveChainInputs(
         car=car,
         surface=surface,
@@ -876,6 +722,7 @@ def produce(
         scenario_profile=scenario_profile_name,
         legacy_solver=getattr(args, "legacy_solver", False),
         camber_confidence=_camber_conf,
+        failed_validation_clusters=failed_clusters,
         corners=corners,
     )
     base_solve_result = run_base_solve(solve_inputs)
@@ -889,6 +736,23 @@ def produce(
     legal_validation = base_solve_result.legal_validation
     decision_trace = base_solve_result.decision_trace
     solve_notes = list(base_solve_result.notes)
+
+    # ── Record solver path and steps in RunTrace ──
+    _rt_path = getattr(base_solve_result, "solver_path", "sequential")
+    _rt_reason = (
+        "BMW/Sebring garage model active — constrained SciPy optimizer used"
+        if getattr(base_solve_result, "optimizer_used", False)
+        else "Sequential 6-step physics solver"
+    )
+    run_trace.record_solver_path(_rt_path, reason=_rt_reason)
+    run_trace.record_step(1, step1, physics_override=False)
+    run_trace.record_step(2, step2, physics_override=False)
+    run_trace.record_step(3, step3, physics_override=False)
+    run_trace.record_step(4, step4, physics_override=False)
+    run_trace.record_step(5, step5)
+    run_trace.record_step(6, step6)
+    run_trace.record_step(7, supporting)
+    run_trace.record_legality(legal_validation)
 
     stint_compromise_info: list[str] = []
     stint_solve = None
@@ -971,27 +835,6 @@ def produce(
         log(f"[sensitivity] Skipped: missing data ({e})")
     except (TypeError, NameError) as e:
         raise  # re-raise programming errors — don't hide bugs
-
-    # ── Phase I.8: Ferrari indexed parameter passthrough ──
-    # Only for indexed params where we can't map index → physical stiffness.
-    # Solver computes dampers, geometry, brake/diff/TC from telemetry.
-    if car.canonical_name == "ferrari":
-        _cs = current_setup
-        # Pushrod — keep IBT values
-        step1.front_pushrod_offset_mm = _cs.front_pushrod_mm
-        step1.rear_pushrod_offset_mm = _cs.rear_pushrod_mm
-        # Springs — indexed dropdowns, can't map to physical stiffness
-        step2.front_heave_nmm = _cs.front_heave_nmm
-        step2.perch_offset_front_mm = _cs.front_heave_perch_mm
-        step2.rear_third_nmm = _cs.rear_third_nmm
-        step2.perch_offset_rear_mm = _cs.rear_third_perch_mm
-        step3.front_torsion_od_mm = _cs.front_torsion_od_mm
-        step3.rear_spring_rate_nmm = _cs.rear_spring_nmm
-        step3.rear_spring_perch_mm = 0.0
-        # ARBs — stiffness uncalibrated, pass through size (solver computes blade)
-        step4.front_arb_size = _cs.front_arb_size
-        step4.rear_arb_size = _cs.rear_arb_size
-        # Geometry, dampers, brake/diff/TC — solver computes from telemetry
 
     # ── Phase J: Output ──
     legal_validation = validate_solution_legality(
@@ -1098,6 +941,14 @@ def produce(
             selected_candidate_score_output = (
                 selected_candidate.score.total if selected_candidate.score is not None else None
             )
+            run_trace.candidate_family = selected_candidate_family_output
+            run_trace.candidate_score = selected_candidate_score_output
+            if selected_candidate.score is not None:
+                run_trace.record_objective(
+                    getattr(selected_candidate.score, "breakdown", None),
+                    float(selected_candidate_score_output or 0.0),
+                    scoring_system="ObjectiveFunction (candidate family)",
+                )
             solve_notes.append(
                 f"Applied rematerialized {selected_candidate.family} candidate result to final report/JSON/export payloads."
             )
@@ -1165,6 +1016,113 @@ def produce(
                 gs_result = engine.run(budget=search_mode, progress=True, family=search_family, explore=explore_mode)
                 log()
                 log(gs_result.summary())
+                # ── Apply grid search best result to final output ────────────
+                # Previously this was silently discarded — now we rematerialize
+                # the best candidate through the solve chain.
+                _gs_best = gs_result.best_robust or gs_result.best_overall
+                if _gs_best is not None and not _gs_best.hard_vetoed:
+                    try:
+                        from solver.solve_chain import materialize_overrides
+                        _gs_params = _normalize_grid_search_params_for_overrides(_gs_best.params or {})
+                        _gs_overrides = canonical_params_to_overrides(
+                            base_solve_result,
+                            _gs_params,
+                            car=car,
+                        )
+                        if _gs_overrides.earliest_step() is None:
+                            solve_notes.append(
+                                f"Grid search best ({_gs_best.family}, score={_gs_best.score:+.1f}ms) "
+                                "mapped to no effective solve-chain overrides; base solve result retained."
+                            )
+                            run_trace.add_warning(
+                                f"Grid search best candidate ({_gs_best.family}) produced no effective overrides."
+                            )
+                        else:
+                            _gs_materialized = materialize_overrides(
+                                base_solve_result, _gs_overrides, solve_inputs
+                            )
+                            step1 = _gs_materialized.step1
+                            step2 = _gs_materialized.step2
+                            step3 = _gs_materialized.step3
+                            step4 = _gs_materialized.step4
+                            step5 = _gs_materialized.step5
+                            step6 = _gs_materialized.step6
+                            supporting = _gs_materialized.supporting
+                            legal_validation = _gs_materialized.legal_validation
+                            decision_trace = _gs_materialized.decision_trace
+                            selected_candidate_family_output = (
+                                f"{scenario_profile_name}:grid_{_gs_best.family}"
+                            )
+                            selected_candidate_score_output = _gs_best.score
+                            selected_candidate_applied = True
+                            run_trace.record_solver_path("grid_search", reason=f"--search-mode {search_mode}")
+                            run_trace.candidate_family = selected_candidate_family_output
+                            run_trace.candidate_score = selected_candidate_score_output
+                            run_trace.record_objective(
+                                _gs_best.breakdown,
+                                float(_gs_best.score),
+                                scoring_system="ObjectiveFunction (grid search)",
+                            )
+                            solve_notes.append(
+                                f"Applied grid search best candidate "
+                                f"({_gs_best.family}, score={_gs_best.score:+.1f}ms) "
+                                f"from {search_mode} search — rematerialized through solve chain."
+                            )
+                    except Exception as e:
+                        solve_notes.append(
+                            f"Grid search found best={_gs_best.family} ({_gs_best.score:+.1f}ms) "
+                            f"but rematerialization failed: {e} — base solve result retained."
+                        )
+                        run_trace.add_warning(f"Grid search rematerialization failed: {e}")
+
+                # ── vetoed / empty candidate fallback notes ─────────────────
+                if _gs_best is None:
+                    solve_notes.append(
+                        "Grid search found no acceptable candidates — base solve result retained."
+                    )
+                elif _gs_best.hard_vetoed and not selected_candidate_applied:
+                    solve_notes.append(
+                        f"Grid search best ({_gs_best.family}) was hard-vetoed — base solve result retained."
+                    )
+
+                # ── --top-n: print ranked comparison table for top N candidates ──
+                # Shows alternative setups from the search pool beyond rank-1.
+                # Rank-1 (best robust/overall) has already been applied to the output.
+                # This table is informational — useful for manual review or
+                # multi-setup export workflows.
+                top_n_req = getattr(args, "top_n", 1)
+                if top_n_req > 1 and gs_result.top_candidates:
+                    top_pool = [
+                        e for e in gs_result.top_candidates if not e.hard_vetoed
+                    ][:top_n_req]
+                    if top_pool:
+                        log()
+                        log(f"  ── TOP-{len(top_pool)} CANDIDATES (--top-n {top_n_req}) ──────────────────────────────────────────────────────────────────────────────────────────────")
+                        log(f"  {'Rank':<5} {'Score':>8}  {'Family':<18}  {'Wing':>5}  {'FH-Spg':>7}  {'R3-Spg':>7}  {'Trsn':>6}  {'FARB':>5}  {'RARB':>5}  Penalties")
+                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        for rank, ev in enumerate(top_pool, start=1):
+                            p = ev.params or {}
+                            penalty_str = "; ".join(ev.soft_penalties[:2]) if ev.soft_penalties else "—"
+                            marker = " ← applied" if rank == 1 else ""
+                            log(
+                                f"  {rank:<5} {ev.score:>+8.1f}  "
+                                f"{(ev.family or ''):<18}  "
+                                f"{p.get('wing_angle_deg', 0):>5.0f}  "
+                                f"{p.get('front_heave_spring_nmm', 0):>7.1f}  "
+                                f"{p.get('rear_third_spring_nmm', 0):>7.1f}  "
+                                f"{p.get('front_torsion_od_mm', 0):>6.2f}  "
+                                f"{int(p.get('front_arb_blade', 0)):>5}  "
+                                f"{int(p.get('rear_arb_blade', 0)):>5}  "
+                                f"{penalty_str}{marker}"
+                            )
+                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        log(f"  Rank 1 applied to setup output. Use --top-n 1 to suppress this table.")
+                        solve_notes.append(
+                            f"Top-{len(top_pool)} candidates surfaced via --top-n "
+                            f"(best score={top_pool[0].score:+.1f}ms, "
+                            f"worst={top_pool[-1].score:+.1f}ms)."
+                        )
+                run_trace.search_mode = search_mode
             else:
                 # ── Original random family search ───────────────────────────
                 from solver.legal_search import run_legal_search
@@ -1200,6 +1158,9 @@ def produce(
                     selected_candidate_family_output = f"{scenario_profile_name}:{ls_result.accepted_best.family}"
                     selected_candidate_score_output = ls_result.accepted_best.score
                     selected_candidate_applied = True
+                    run_trace.record_solver_path("legal_search", reason=f"scenario={scenario_profile_name}")
+                    run_trace.candidate_family = selected_candidate_family_output
+                    run_trace.candidate_score = float(selected_candidate_score_output or 0.0)
                     solve_notes.append(
                         f"Applied legal-manifold scenario pick {ls_result.accepted_best.family} "
                         f"for {scenario_profile_name} after full legality + prediction sanity checks."
@@ -1211,12 +1172,22 @@ def produce(
         except Exception as e:
             log(f"[legal-search] Skipped: {e}")
 
-    if args.sto and car.canonical_name == "ferrari":
-        solve_notes.append(
-            "Ferrari native .sto export is disabled in read-first mode; no setup file was written."
-        )
-        print("\nFerrari native .sto export is disabled in read-first mode; use --setup-json for setup inspection.")
-    elif args.sto:
+    # NOTE (2026-03-31): The Ferrari in-place mutation block was removed here.
+    # garage_validator.py, setup_writer.py, and legality_engine.py each make
+    # their own deep copies and call public_output_value() internally.
+    # Mutating the shared solver step objects caused double-conversion bugs
+    # (physical → index → corrupted index on second pass).
+
+    # ── Update RunTrace with final legality and notes ──
+    run_trace.record_legality(legal_validation)
+    for _n in solve_notes:
+        run_trace.add_note(_n)
+
+    # ── Print RunTrace ──
+    _verbose = getattr(args, "verbose", False)
+    run_trace.print_report(verbose=_verbose)
+
+    if args.sto:
         # Final garage correlation check before writing .sto
         from output.garage_validator import validate_and_fix_garage_correlation
         garage_warnings = validate_and_fix_garage_correlation(
@@ -1226,34 +1197,61 @@ def produce(
         for w in garage_warnings:
             print(f"[garage] {w}")
 
+        # Print ESTIMATE warnings for uncalibrated models
+        estimate_warnings = []
+        if hasattr(car, 'deflection') and not getattr(car.deflection, 'is_calibrated', True):
+            estimate_warnings.append(
+                "Deflection predictions use uncalibrated model — verify garage display values manually"
+            )
+        if hasattr(car, 'ride_height_model') and not getattr(car.ride_height_model, 'is_calibrated', True):
+            estimate_warnings.append(
+                "Ride height predictions use uncalibrated model"
+            )
+        if hasattr(car, 'damper') and not getattr(car.damper, 'zeta_is_calibrated', True):
+            estimate_warnings.append(
+                "Damper zeta targets are conservative defaults — verify damper feel on track"
+            )
+        garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
+        if garage_model is None:
+            estimate_warnings.append(
+                "No garage output model — .sto display values are physics estimates only"
+            )
+
+        for w in estimate_warnings:
+            print(f"[ESTIMATE] {w}")
+
         _extra_kw = {}
         if car.canonical_name == "ferrari":
-            # Indexed params: pass through from IBT (can't map index → physical)
-            _extra_kw["front_tb_turns"] = current_setup.torsion_bar_turns
-            _extra_kw["rear_tb_turns"] = current_setup.rear_torsion_bar_turns
-            # Supporting params: solver computes from telemetry
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
             _extra_kw["brake_bias_target"] = supporting.brake_bias_target
             _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration
+            _extra_kw["brake_bias_migration_gain"] = current_setup.brake_bias_migration_gain
             _extra_kw["front_master_cyl_mm"] = supporting.front_master_cyl_mm
             _extra_kw["rear_master_cyl_mm"] = supporting.rear_master_cyl_mm
             _extra_kw["pad_compound"] = supporting.pad_compound
-            # Ferrari diff ramp uses labels ("More Locking"/"Less Locking")
             _extra_kw["diff_coast_drive_ramp"] = (
                 getattr(supporting, "diff_ramp_angles", "")
                 or ("Less Locking" if supporting.diff_ramp_coast >= 45 else "More Locking")
             )
             _extra_kw["diff_clutch_plates"] = supporting.diff_clutch_plates
             _extra_kw["diff_preload_nm"] = supporting.diff_preload_nm
+            _extra_kw["front_diff_preload_nm"] = current_setup.front_diff_preload_nm
             _extra_kw["tc_gain"] = supporting.tc_gain
             _extra_kw["tc_slip"] = supporting.tc_slip
-            _extra_kw["front_camber_override"] = -2.9  # empirical from 7 IBT sessions
-            _extra_kw["rear_camber_override"] = -1.9   # empirical from 7 IBT sessions
-            _extra_kw["hybrid_enabled"] = current_setup.hybrid_rear_drive_enabled
-            _extra_kw["hybrid_corner_pct"] = current_setup.hybrid_rear_drive_corner_pct
-            _extra_kw["front_diff_preload_nm"] = current_setup.front_diff_preload_nm
-            _extra_kw["bias_migration_gain"] = current_setup.brake_bias_migration_gain
+            _extra_kw["fuel_low_warning_l"] = getattr(supporting, "fuel_low_warning_l", fuel)
+            _extra_kw["fuel_target_l"] = getattr(supporting, "fuel_target_l", None)
+            _extra_kw["gear_stack"] = getattr(supporting, "gear_stack", "")
+            _extra_kw["speed_in_first_kph"] = current_setup.speed_in_first_kph
+            _extra_kw["speed_in_second_kph"] = current_setup.speed_in_second_kph
+            _extra_kw["speed_in_third_kph"] = current_setup.speed_in_third_kph
+            _extra_kw["speed_in_fourth_kph"] = current_setup.speed_in_fourth_kph
+            _extra_kw["speed_in_fifth_kph"] = current_setup.speed_in_fifth_kph
+            _extra_kw["speed_in_sixth_kph"] = current_setup.speed_in_sixth_kph
+            _extra_kw["speed_in_seventh_kph"] = current_setup.speed_in_seventh_kph
+            _extra_kw["roof_light_color"] = getattr(supporting, "roof_light_color", "")
+            _extra_kw["hybrid_rear_drive_enabled"] = current_setup.hybrid_rear_drive_enabled
+            _extra_kw["hybrid_rear_drive_corner_pct"] = current_setup.hybrid_rear_drive_corner_pct
         else:
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
@@ -1288,7 +1286,6 @@ def produce(
         print(f"\niRacing .sto setup saved to: {sto_path}")
 
     if args.json:
-        import dataclasses
         json_path = Path(args.json)
         json_path.parent.mkdir(parents=True, exist_ok=True)
         parameter_coverage = build_parameter_coverage(
@@ -1340,13 +1337,13 @@ def produce(
             "legal_validation": legal_validation.to_dict() if legal_validation is not None else None,
             "decision_trace": [decision.to_dict() for decision in decision_trace],
             "solver_notes": solve_notes,
-            "step1_rake": dataclasses.asdict(step1),
-            "step2_heave": dataclasses.asdict(step2),
-            "step3_corner": dataclasses.asdict(step3),
-            "step4_arb": dataclasses.asdict(step4),
-            "step5_geometry": dataclasses.asdict(step5),
-            "step6_dampers": dataclasses.asdict(step6),
-            "supporting": dataclasses.asdict(supporting),
+            "step1_rake": to_public_output_payload(car.canonical_name, step1),
+            "step2_heave": to_public_output_payload(car.canonical_name, step2),
+            "step3_corner": to_public_output_payload(car.canonical_name, step3),
+            "step4_arb": to_public_output_payload(car.canonical_name, step4),
+            "step5_geometry": to_public_output_payload(car.canonical_name, step5),
+            "step6_dampers": to_public_output_payload(car.canonical_name, step6),
+            "supporting": to_public_output_payload(car.canonical_name, supporting),
         }
         with open(json_path, "w") as f:
             json.dump(output, f, indent=2, default=str)
@@ -1387,6 +1384,106 @@ def produce(
     )
     if _emit_report:
         print(report)
+
+    # ── Delta card output (--delta-card flag) ────────────────────────
+    if getattr(args, "delta_card", False) and current_setup is not None:
+        try:
+            from output.delta_card import format_delta_card
+
+            # Build current params dict from IBT-extracted setup.
+            # For Ferrari (and any car with indexed springs), use raw_indexed_fields
+            # so current values are in the same display units as the solver output
+            # (public_output_value converts N/mm → index for Ferrari).
+            _raw_idx = getattr(current_setup, "raw_indexed_fields", {}) or {}
+            _current_dict: dict = {
+                "front_rh_static": getattr(current_setup, "static_front_rh_mm", None),
+                "rear_rh_static": getattr(current_setup, "static_rear_rh_mm", None),
+                # Pushrod — always show so user knows when spring/RH change requires pushrod adjustment
+                "front_pushrod_mm": getattr(current_setup, "front_pushrod_mm", None),
+                "rear_pushrod_mm": getattr(current_setup, "rear_pushrod_mm", None),
+                # Use indexed fields when available (Ferrari), else raw N/mm (BMW)
+                "front_heave_nmm": _raw_idx.get("front_heave_index") if _raw_idx else getattr(current_setup, "front_heave_nmm", None),
+                "rear_third_nmm": _raw_idx.get("rear_heave_index") if _raw_idx else getattr(current_setup, "rear_third_nmm", None),
+                "torsion_bar_od_mm": _raw_idx.get("front_torsion_bar_index") if _raw_idx else getattr(current_setup, "front_torsion_od_mm", None),
+                "rear_spring_nmm": _raw_idx.get("rear_torsion_bar_index") if _raw_idx else getattr(current_setup, "rear_spring_nmm", None),
+                "front_arb_blade": getattr(current_setup, "front_arb_blade", None),
+                "rear_arb_blade": getattr(current_setup, "rear_arb_blade_start", None) or getattr(current_setup, "rear_arb_blade", None),
+                "front_arb_size": getattr(current_setup, "front_arb_size", None),
+                "rear_arb_size": getattr(current_setup, "rear_arb_size", None),
+                "front_camber_deg": getattr(current_setup, "front_camber_deg", None),
+                "rear_camber_deg": getattr(current_setup, "rear_camber_deg", None),
+                "front_toe_mm": getattr(current_setup, "front_toe_mm", None),
+                "rear_toe_mm": getattr(current_setup, "rear_toe_mm", None),
+                "diff_preload_nm": getattr(current_setup, "diff_preload_nm", None),
+                "diff_clutch_plates": getattr(current_setup, "diff_clutch_plates", None),
+                "tc_gain": getattr(current_setup, "tc_gain", None),
+                "tc_slip": getattr(current_setup, "tc_slip", None),
+                "brake_bias_pct": getattr(current_setup, "brake_bias_pct", None),
+                "wing_angle_deg": getattr(current_setup, "wing_angle_deg", None),
+            }
+            # Strip None values so detect_changes skips them cleanly
+            _current_dict = {k: v for k, v in _current_dict.items() if v is not None}
+
+            # Build recommended params dict from solver steps
+            # All spring/torsion values go through public_output_value to match IBT display units
+            _recommended_dict: dict = {
+                "front_rh_static": step1.static_front_rh_mm,
+                "rear_rh_static": step1.static_rear_rh_mm,
+                # Pushrod — solver recalculates this when spring/RH changes (rake_solver.py)
+                "front_pushrod_mm": getattr(step1, "front_pushrod_offset_mm", None),
+                "rear_pushrod_mm": getattr(step1, "rear_pushrod_offset_mm", None),
+                # Use public_output_value to convert to display units (e.g. N/mm → index for Ferrari)
+                "front_heave_nmm": public_output_value(car, "front_heave_nmm", step2.front_heave_nmm),
+                "rear_third_nmm": public_output_value(car, "rear_third_nmm", step2.rear_third_nmm),
+                "torsion_bar_od_mm": public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm),
+                "rear_spring_nmm": public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm),
+                "front_arb_blade": step4.front_arb_blade_start,
+                "rear_arb_blade": step4.rear_arb_blade_start,
+                "front_arb_size": step4.front_arb_size,
+                "rear_arb_size": step4.rear_arb_size,
+                "front_camber_deg": step5.front_camber_deg,
+                "rear_camber_deg": step5.rear_camber_deg,
+                "front_toe_mm": step5.front_toe_mm,
+                "rear_toe_mm": step5.rear_toe_mm,
+                "wing_angle_deg": wing,
+            }
+            if supporting is not None:
+                _recommended_dict.update({
+                    "diff_preload_nm": getattr(supporting, "diff_preload_nm", None),
+                    "diff_clutch_plates": getattr(supporting, "diff_clutch_plates", None),
+                    "tc_gain": getattr(supporting, "tc_gain", None),
+                    "tc_slip": getattr(supporting, "tc_slip", None),
+                    "brake_bias_pct": getattr(supporting, "brake_bias_pct", None),
+                })
+            # Add damper clicks
+            for _corner_name, _corner_obj in (
+                ("lf", step6.lf), ("rf", step6.rf), ("lr", step6.lr), ("rr", step6.rr)
+            ):
+                _recommended_dict[f"{_corner_name}_ls_comp_clicks"] = getattr(_corner_obj, "ls_comp", None)
+                _recommended_dict[f"{_corner_name}_hs_comp_clicks"] = getattr(_corner_obj, "hs_comp", None)
+                _recommended_dict[f"{_corner_name}_ls_rbd_clicks"] = getattr(_corner_obj, "ls_rbd", None)
+                _recommended_dict[f"{_corner_name}_hs_rbd_clicks"] = getattr(_corner_obj, "hs_rbd", None)
+            # Strip None values
+            _recommended_dict = {k: v for k, v in _recommended_dict.items() if v is not None}
+
+            _delta_session_count = learned.session_count if learned is not None else 0
+
+            _best_lap = getattr(track, "best_lap_time_s", None)
+
+            delta_output = format_delta_card(
+                current=_current_dict,
+                recommended=_recommended_dict,
+                car=car.canonical_name,
+                track=track.track_name,
+                session_count=_delta_session_count,
+                best_lap_s=_best_lap,
+                mode=getattr(args, "mode", "safe"),
+                full_setup_str=report,
+            )
+            print("\n")
+            print(delta_output)
+        except Exception as _dc_exc:
+            print(f"\n[delta-card] Warning: could not generate delta card: {_dc_exc}")
 
     # ── Build return dict if requested (multi-IBT batch mode) ──
     _result: dict | None = None
@@ -1455,7 +1552,7 @@ def produce(
                 "front_excursion_mm": predicted_telemetry.front_excursion_mm,
                 "braking_pitch_deg": predicted_telemetry.braking_pitch_deg,
                 "front_lock_p95": predicted_telemetry.front_lock_p95,
-                "rear_power_slip_p95": predicted_telemetry.rear_power_slip_p95,
+                "rear_power_slip_p95": predicted_telemetry.rear_power_slip_ratio_p95,
                 "body_slip_p95_deg": predicted_telemetry.body_slip_p95_deg,
                 "understeer_low_deg": predicted_telemetry.understeer_low_deg,
                 "understeer_high_deg": predicted_telemetry.understeer_high_deg,
@@ -1650,13 +1747,14 @@ def main():
     parser.add_argument("--keep-weird", action="store_true",
                         help="Retain unconventional but legal candidates in results")
     parser.add_argument("--search-mode", type=str, default=None,
-                        choices=["quick", "standard", "exhaustive"],
+                        choices=["quick", "standard", "exhaustive", "maximum"],
                         dest="search_mode",
                         help=(
                             "Hierarchical grid search mode (uses GridSearchEngine). "
-                            "quick=~5s, standard=~4min, exhaustive=~80min. "
+                            "quick=~3s, standard=~4min, exhaustive=~80min, maximum=~5h (overnight). "
                             "When set, uses structured Sobol+grid search instead of "
-                            "random family sampling. Implies --explore-legal-space."
+                            "random family sampling. Implies --explore-legal-space. "
+                            "Combine with --top-n to surface multiple ranked alternatives."
                         ))
     parser.add_argument("--top-n", type=int, default=1, dest="top_n",
                         help=(
@@ -1694,6 +1792,13 @@ def main():
     # Legacy flags (kept for backward-compat; no-op since auto is default)
     parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--delta-card", action="store_true", default=False,
+                        dest="delta_card",
+                        help="Output a delta card showing only changes vs current setup, with confidence tiers")
+    parser.add_argument("--mode", choices=["safe", "aggressive"], default="safe",
+                        dest="mode",
+                        help="Output mode for delta card: safe (HIGH+PIN only) or aggressive (all changes). "
+                             "Also affects scenario: safe→single_lap_safe, aggressive→quali")
     args = parser.parse_args()
     try:
         produce(args)

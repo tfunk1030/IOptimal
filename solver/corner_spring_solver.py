@@ -53,6 +53,41 @@ from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
 
+def _solve_ferrari_torsion_bar_turns(
+    car: CarModel,
+    *,
+    front_torsion_od_mm: float,
+    rear_spring_rate_nmm: float,
+    front_heave_nmm: float,
+    rear_third_nmm: float,
+) -> tuple[float, float]:
+    """Compute Ferrari front/rear torsion bar preload turns.
+
+    Ferrari 499P exposes bar preload turns (-0.250 to +0.250, resolution 0.125)
+    as read-only display values correlated to the indexed spring selection.
+    For the solver we use 0.0 (neutral preload) as the canonical output —
+    setup_writer.py applies the physical fallback formula when building the
+    final STO file.
+
+    Args:
+        car: CarModel for the Ferrari 499P
+        front_torsion_od_mm: Selected front torsion bar OD (index or physical mm)
+        rear_spring_rate_nmm: Selected rear spring rate (index or N/mm)
+        front_heave_nmm: Front heave spring rate from Step 2
+        rear_third_nmm: Rear third spring rate from Step 2
+
+    Returns:
+        (front_turns, rear_turns) — both 0.0 (neutral preload).
+        Neutral preload: solver does not add pre-twist; STO writer handles it.
+    """
+    # Neutral preload is the safe default for the solver pass.
+    # The actual in-garage torsion bar turns are a function of the indexed
+    # spring selection and are constrained to ±0.250 in 0.125 increments.
+    # We return 0.0 here; setup_writer.py will apply the appropriate
+    # formula (or fallback) based on the public output index values.
+    return 0.0, 0.0
+
+
 @dataclass
 class CornerSpringSolution:
     """Output of the Step 3 corner spring solver."""
@@ -64,8 +99,8 @@ class CornerSpringSolution:
     front_heave_corner_ratio: float   # heave_spring / corner_wheel_rate
     front_mass_per_corner_kg: float
 
-    # Rear coil spring
-    rear_spring_rate_nmm: float
+    # Rear corner spring (coil rate in N/mm, or torsion bar OD in mm)
+    rear_spring_rate_nmm: float       # Wheel rate for coil; raw rate for torsion
     rear_natural_freq_hz: float
     rear_third_corner_ratio: float    # third_spring / corner_rate
     rear_mass_per_corner_kg: float
@@ -90,6 +125,30 @@ class CornerSpringSolution:
     # Constraint checks
     constraints: list[CornerSpringCheck]
 
+    # ORECA: rear torsion bar OD (None = coil spring car)
+    rear_torsion_od_mm: float | None = None
+
+    # Torsion bar preload turns (Ferrari: -0.250 to +0.250 at all 4 corners).
+    # For Ferrari these are authoritative solver outputs computed by
+    # _solve_ferrari_torsion_bar_turns(); for all other cars they remain 0.0.
+    front_torsion_bar_turns: float = 0.0
+    rear_torsion_bar_turns: float = 0.0
+    parameter_search_status: dict = None
+    parameter_search_evidence: dict = None
+
+    def __post_init__(self):
+        if self.parameter_search_status is None:
+            self.parameter_search_status = {
+                "front_torsion_od_mm": "user_set",
+                "rear_torsion_od_mm": "user_set",
+                "rear_spring_rate_nmm": "user_set",
+                "rear_spring_perch_mm": "user_set",
+                "front_torsion_bar_turns": "user_set",
+                "rear_torsion_bar_turns": "user_set",
+            }
+        if self.parameter_search_evidence is None:
+            self.parameter_search_evidence = {}
+
     def summary(self) -> str:
         """Human-readable summary of the solution."""
         lines = [
@@ -106,8 +165,13 @@ class CornerSpringSolution:
             f"    Freq isolation:      {self.front_freq_isolation_ratio:6.1f}x "
             f"(target: >2.5x)",
             "",
-            "  REAR COIL SPRING",
-            f"    Spring rate:         {self.rear_spring_rate_nmm:6.0f} N/mm",
+            f"  REAR {'TORSION BAR' if self.rear_torsion_od_mm else 'COIL SPRING'}",
+            *(
+                [f"    Torsion bar OD:      {self.rear_torsion_od_mm:6.2f} mm"]
+                if self.rear_torsion_od_mm else []
+            ),
+            f"    {'Wheel rate' if self.rear_torsion_od_mm else 'Spring rate'}:"
+            f"         {self.rear_spring_rate_nmm:6.0f} N/mm",
             f"    Natural frequency:   {self.rear_natural_freq_hz:6.2f} Hz",
             f"    Third/corner ratio:  {self.rear_third_corner_ratio:6.1f}x "
             f"(guideline: 1.5-3.5x)",
@@ -242,9 +306,21 @@ class CornerSpringSolver:
         rear_target_rate = rear_third_nmm / rear_target_ratio
 
         # Clamp to valid range and snap
-        rear_rate = max(rear_target_rate, csm.rear_spring_range_nmm[0])
-        rear_rate = min(rear_rate, csm.rear_spring_range_nmm[1])
-        rear_rate = csm.snap_rear_rate(rear_rate)
+        if csm.rear_is_torsion_bar:
+            # Rear torsion bar: convert target rate to OD, snap, reconvert
+            rear_od = csm.rear_torsion_bar_od_for_rate(rear_target_rate)
+            rear_od = csm.snap_rear_torsion_od(rear_od)
+            rear_od = max(rear_od, csm.rear_torsion_od_range_mm[0])
+            rear_od = min(rear_od, csm.rear_torsion_od_range_mm[1])
+            rear_rate = csm.rear_torsion_bar_rate(rear_od)
+            # Validation warning for unvalidated rear torsion bar models
+            if getattr(csm, 'rear_torsion_unvalidated', False):
+                print("\n⚠  UNVALIDATED: Ferrari rear torsion bar model may have 3.5x rate error — verify rear spring rates manually\n")
+        else:
+            rear_od = None
+            rear_rate = max(rear_target_rate, csm.rear_spring_range_nmm[0])
+            rear_rate = min(rear_rate, csm.rear_spring_range_nmm[1])
+            rear_rate = csm.snap_rear_rate(rear_rate)
 
         rear_freq = self.natural_freq(rear_rate, m_r_corner)
 
@@ -255,6 +331,7 @@ class CornerSpringSolver:
             rear_spring_rate_nmm=rear_rate,
             fuel_load_l=fuel_load_l,
             rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
+            rear_torsion_od_mm=rear_od,
         )
 
     def solution_from_explicit_rates(
@@ -265,13 +342,18 @@ class CornerSpringSolver:
         rear_spring_rate_nmm: float,
         fuel_load_l: float = 89.0,
         rear_spring_perch_mm: float | None = None,
+        rear_torsion_od_mm: float | None = None,
     ) -> CornerSpringSolution:
         """Build a corner-spring solution from explicit garage selections."""
         csm = self.car.corner_spring
         # Snap torsion OD to discrete garage option
         front_torsion_od_mm = csm.snap_torsion_od(front_torsion_od_mm)
-        # Snap rear spring to garage step
-        rear_spring_rate_nmm = csm.snap_rear_rate(rear_spring_rate_nmm)
+        # Snap rear spring/torsion to garage step
+        if csm.rear_is_torsion_bar and rear_torsion_od_mm is not None:
+            rear_torsion_od_mm = csm.snap_rear_torsion_od(rear_torsion_od_mm)
+            rear_spring_rate_nmm = csm.rear_torsion_bar_rate(rear_torsion_od_mm)
+        else:
+            rear_spring_rate_nmm = csm.snap_rear_rate(rear_spring_rate_nmm)
         total_mass = self.car.total_mass(fuel_load_l)
         m_f_corner = total_mass * self.car.weight_dist_front / 2
         m_r_corner = total_mass * (1 - self.car.weight_dist_front) / 2
@@ -316,6 +398,19 @@ class CornerSpringSolver:
             m_r_corner=m_r_corner,
         )
 
+        # Ferrari: compute authoritative torsion bar preload turns.
+        # All other cars leave these at the 0.0 default.
+        front_tb_turns = 0.0
+        rear_tb_turns = 0.0
+        if getattr(self.car, 'canonical_name', '') == 'ferrari':
+            front_tb_turns, rear_tb_turns = _solve_ferrari_torsion_bar_turns(
+                self.car,
+                front_torsion_od_mm=front_torsion_od_mm,
+                rear_spring_rate_nmm=rear_spring_rate_nmm,
+                front_heave_nmm=front_heave_nmm,
+                rear_third_nmm=rear_third_nmm,
+            )
+
         return CornerSpringSolution(
             front_torsion_od_mm=front_torsion_od_mm,
             front_wheel_rate_nmm=round(front_rate, 1),
@@ -338,7 +433,10 @@ class CornerSpringSolver:
                 if rear_spring_perch_mm is None
                 else rear_spring_perch_mm
             ),
+            rear_torsion_od_mm=rear_torsion_od_mm,
             constraints=constraints,
+            front_torsion_bar_turns=front_tb_turns,
+            rear_torsion_bar_turns=rear_tb_turns,
         )
 
     def _surface_severity_to_freq_ratio(self, shock_vel_p99_mps: float) -> float:

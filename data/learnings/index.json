@@ -117,19 +117,54 @@
     "bmw_sebring_international_raceway_bmwjj",
     "bmw_sebring_international_raceway_01_bmwjj",
     "bmw_sebring_international_raceway_01_bmwjj1",
-    "bmw_sebring_international_raceway_bmwjj1"
+    "bmw_sebring_international_raceway_bmwjj1",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_7",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_4",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_2",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_3",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_1",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-51-12",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_5",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_4",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_3",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_2",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_1",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_10",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_9",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_8",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42__lap_7",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-46-42",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_13-24-07",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_13-58-47",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_12-50-14",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_15-49-42",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_19-58-41",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-31_19-50-02",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_01_ferrari499p_hockenheim_gp_2026-03-31_19-58-41",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-01_22-25-45",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-01_22-42-57",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-01_22-50-48",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-01_23-01-15",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-01_23-19-24",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-02_00-12-58",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-02_00-17-56",
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-02_00-35-07"
   ],
-  "total_observations": 116,
-  "total_deltas": 257,
+  "total_deltas": 323,
   "cars_seen": [
     "bmw",
     "ferrari",
     "porsche",
-    "cadillac"
+    "cadillac",
+    "acura"
   ],
   "tracks_seen": [
     "Sebring International Raceway_International",
-    "Silverstone Circuit_Arena Grand Prix"
+    "Silverstone Circuit_Arena Grand Prix",
+    "Hockenheimring Baden-W\u00fcrttemberg_Grand Prix"
   ],
-  "last_updated": "2026-03-28T00:13:07.428952+00:00"
+  "last_updated": "2026-04-02T05:41:19.510288+00:00",
+  "total_observations": 149
 }

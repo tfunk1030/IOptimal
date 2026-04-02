@@ -15,7 +15,7 @@ class PredictedTelemetry:
     rear_rh_std_mm: float | None = None
     braking_pitch_deg: float | None = None
     front_lock_p95: float | None = None
-    rear_power_slip_p95: float | None = None
+    rear_power_slip_ratio_p95: float | None = None
     body_slip_p95_deg: float | None = None
     understeer_low_deg: float | None = None
     understeer_high_deg: float | None = None
@@ -82,7 +82,7 @@ def predict_candidate_telemetry(
         "front_excursion_mm": 5.0,
         "braking_pitch_deg": 0.5,
         "front_lock_p95": 0.03,
-        "rear_power_slip_p95": 0.03,
+        "rear_power_slip_ratio_p95": 0.03,
         "body_slip_p95_deg": 2.0,
         "understeer_low_deg": 0.5,
         "understeer_high_deg": 0.5,
@@ -226,8 +226,8 @@ def predict_candidate_telemetry(
             if baseline_front_lock is not None
             else None
         ),
-        rear_power_slip_p95=(
-            round(_clamp(baseline_rear_slip * traction_factor + corrections.get("rear_power_slip_p95", 0.0), 0.0, 0.3), 4)
+        rear_power_slip_ratio_p95=(
+            round(_clamp(baseline_rear_slip * traction_factor + corrections.get("rear_power_slip_ratio_p95", 0.0), 0.0, 0.3), 4)
             if baseline_rear_slip is not None
             else None
         ),
@@ -350,10 +350,10 @@ def predict_candidate_telemetry(
             input_terms=[target_bb, target_heave, target_pushrod_front],
             correction_key="front_lock_p95",
         ),
-        "rear_power_slip_p95": _metric_conf(
+        "rear_power_slip_ratio_p95": _metric_conf(
             ["rear_power_slip_ratio_p95"],
             input_terms=[target_third, target_diff_preload, target_tc_gain, target_tc_slip, target_rear_arb],
-            correction_key="rear_power_slip_p95",
+            correction_key="rear_power_slip_ratio_p95",
         ),
         "body_slip_p95_deg": _metric_conf(
             ["body_slip_p95_deg"],

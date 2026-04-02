@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from car_model.cars import get_car
 from car_model.garage import GarageSetupState
 from output.garage_validator import validate_and_fix_garage_correlation
+from solver.legality_engine import validate_solution_legality
 
 
 class GarageValidatorTests(unittest.TestCase):
@@ -104,6 +105,57 @@ class GarageValidatorTests(unittest.TestCase):
 
         self.assertGreater(step3.front_torsion_od_mm, 13.9)
         self.assertTrue(any("soft-front-bar guard" in warning for warning in warnings))
+
+    def test_ferrari_legality_requires_active_garage_output_model(self) -> None:
+        car = get_car("ferrari")
+        step1 = SimpleNamespace(
+            front_pushrod_offset_mm=1.0,
+            rear_pushrod_offset_mm=5.0,
+            static_front_rh_mm=30.1,
+            static_rear_rh_mm=44.1,
+            rake_static_mm=14.0,
+            vortex_burst_margin_mm=12.0,
+        )
+        step2 = SimpleNamespace(
+            front_heave_nmm=190.0,
+            rear_third_nmm=950.0,
+            perch_offset_front_mm=-10.5,
+            perch_offset_rear_mm=-104.0,
+            front_excursion_at_rate_mm=3.0,
+            front_bottoming_margin_mm=17.0,
+        )
+        step3 = SimpleNamespace(
+            front_torsion_od_mm=20.0,
+            rear_spring_rate_nmm=475.0,
+            rear_spring_perch_mm=30.0,
+        )
+        step5 = SimpleNamespace(
+            front_camber_deg=-1.2,
+            rear_camber_deg=-1.1,
+            front_toe_mm=-2.2,
+            rear_toe_mm=0.3,
+        )
+
+        validation = validate_solution_legality(
+            car=car,
+            track_name="Hockenheimring Baden-Württemberg",
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step5=step5,
+            fuel_l=58.0,
+        )
+
+        self.assertFalse(validation.valid)
+        self.assertEqual(validation.validation_tier, "none")
+        self.assertTrue(validation.hard_veto)
+        self.assertTrue(validation.messages)
+        self.assertIn("garage output model", validation.messages[0])
+        self.assertEqual(step2.front_heave_nmm, 190.0)
+        self.assertEqual(step2.rear_third_nmm, 950.0)
+        self.assertEqual(step3.front_torsion_od_mm, 20.0)
+        self.assertEqual(step3.rear_spring_rate_nmm, 475.0)
+        self.assertEqual(step3.rear_spring_perch_mm, 30.0)
 
 
 if __name__ == "__main__":

@@ -202,13 +202,13 @@ class IBTFile:
 
     def best_lap_indices(
         self,
-        min_time: float = 108.0,
+        min_time: float = 60.0,
         outlier_pct: float = 0.115,
     ) -> tuple[int, int] | None:
         """Find start/end indices of the best valid representative lap.
 
         A lap is valid only when:
-          1. Its time >= ``min_time`` (hard absolute floor, default 108s).
+          1. Its time >= ``min_time`` (hard absolute floor, default 60s).
              Catches partial laps, pit exits, and abbreviated stints.
           2. Its time <= median(valid laps) * (1 + ``outlier_pct``).
              Drops anomalously slow laps (safety-car, off-track tours, etc.)

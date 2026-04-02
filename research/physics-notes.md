@@ -727,3 +727,257 @@ Each entry documents: source, key finding, formula (with units), and what was ap
   - The thermal model is a second-order effect for setup; primary effect is mechanical balance.
 - **Compound selection note:** For TrackProfile, add `track_ambient_temp_c` to guide compound
   selection (cold compound for <15°C ambient, hot compound for >30°C ambient).
+
+---
+
+## 2026-03-29 — Topics: IBT Telemetry Channels, Vortex/Ground Effect RH Threshold, STO File Format, BMW LMDh Suspension Geometry
+
+---
+
+### Topic F: iRacing IBT Telemetry Channel Names — Complete List (GTP / iOptimal)
+
+**Sources:**
+- iOptimal codebase scan (all `.py` files, `.channel()` / `has_channel()` calls) — `/root/.openclaw/workspace/isetup/gtp-setup-builder/`
+- LeoAdamek/iracing.rs SDK documentation: https://github.com/LeoAdamek/iracing.rs
+- sajax.github.io/irsdkdocs: https://sajax.github.io/irsdkdocs/
+
+**Finding:**
+iRacing exposes telemetry as a memory-mapped file at `Local\IRSDKMemMapFileName` sampled at 60 Hz. Each variable has a name (max 32 chars), description (64 chars), units, and type. The full set of channels available varies by car — not all variables are present in all IBT sessions. Below is the **confirmed channel list actively used by iOptimal**, extracted from the codebase:
+
+**Ride Height (meters in IBT, ×1000 for mm):**
+- `LFrideHeight` — Left Front ride height (m)
+- `RFrideHeight` — Right Front ride height (m)
+- `LRrideHeight` — Left Rear ride height (m)
+- `RRrideHeight` — Right Rear ride height (m)
+- `CFSRrideHeight` — Center/rear reference ride height (GTP underbody sensor)
+
+**Shock Velocity (m/s):**
+- `LFshockVel`, `RFshockVel` — Front shock velocities
+- `LRshockVel`, `RRshockVel` — Rear shock velocities
+- `HFshockVel` — Front heave shock velocity
+- `HRshockVel` — Rear heave shock velocity
+
+**Shock / Damper Deflection (meters):**
+- `LFshockDefl`, `RFshockDefl` — Front shock deflection
+- `LRshockDefl`, `RRshockDefl` — Rear shock deflection
+- `HFshockDefl` — Front heave spring deflection
+- `HRshockDefl` — Rear heave/third spring deflection
+
+**Accelerations:**
+- `LatAccel` — Lateral acceleration (m/s²)
+- `LongAccel` — Longitudinal acceleration (m/s²)
+- `VertAccel` — Vertical acceleration (m/s²)
+
+**Vehicle dynamics:**
+- `YawRate` — rad/s
+- `Roll`, `Pitch` — rad
+- `RollRate`, `PitchRate` — rad/s
+- `Speed` — m/s
+- `VelocityX`, `VelocityY` — m/s (body frame)
+
+**Driver inputs / in-cockpit adjustments:**
+- `Throttle`, `ThrottleRaw`, `Brake`, `BrakeRaw`
+- `SteeringWheelAngle` — rad
+- `Gear`, `RPM`
+- `dcBrakeBias` — in-lap brake bias adjustment
+- `dcAntiRollFront`, `dcAntiRollRear` — ARB clicks
+- `dcTractionControl`, `dcTractionControl2` — TC adjustment counts
+
+**Brake line pressures (per corner):**
+- `LFbrakeLinePress`, `RFbrakeLinePress`, `LRbrakeLinePress`, `RRbrakeLinePress`
+
+**Wheel speeds:**
+- `LFspeed`, `RFspeed`, `LRspeed`, `RRspeed` — m/s
+
+**Fuel / ERS:**
+- `FuelLevel` — liters
+- `EnergyERSBattery` — J
+- `EnergyERSBatteryPct` — 0–1
+
+**Track / environment:**
+- `LapDist` — m (distance along lap)
+- `LapCurrentLapTime` — s
+- `Lap` — lap count
+- `TrackTempCrew`, `AirTemp`, `AirDensity`
+- `WindVel`, `WindDir`
+- `Alt` — altitude m
+- `IsOnTrack` — bool
+- `BrakeABSactive`, `BrakeABScutPct`
+
+**iOptimal Application:**
+- `LFshockVel` is the primary low-speed/high-speed damper regime classifier (threshold ~0.05 m/s = 50 mm/s for LS/HS boundary). Positive = rebound, negative = compression.
+- `LFrideHeight` / `LRrideHeight` (×1000) are the aerodynamic floor height observables used in the ride height target objective function.
+- `HFshockDefl` / `HRshockDefl` directly measure heave spring engagement — key for third spring calibration.
+- `CFSRrideHeight` is a center-rear sensor that may correspond to the venturi reference height; presence is car-dependent.
+- Note: `DampDeflectLR` style (count=6 float array) seen in some SDK examples is a different encoding; iOptimal uses the per-corner named channels.
+
+---
+
+### Topic G: Vortex Generator / Ground Effect Minimum Ride Height Threshold — GTP
+
+**Sources:**
+- Coach Dave Academy BMW M Hybrid V8 Guide (iRacing): https://coachdaveacademy.com/tutorials/tips-and-tricks-to-driving-new-bmw-m-hybrid-v8-iracing/
+- Coach Dave Academy Acura ARX-06 GTP Guide: https://coachdaveacademy.com/tutorials/iracing-guide-acura-arx-06-gtp/
+- F1Technical forum, ground effect aerodynamics thread
+- iRacing community discussion on GTP aero sensitivity
+
+**Finding:**
+GTP/LMDh cars generate downforce primarily from the **underbody venturi tunnel** — a sealed diffuser system that creates a low-pressure zone under the car. The cars use vortex generators (front brake duct winglets and floor-edge strakes) to maintain the floor aerodynamic seal. The key physics:
+
+1. **Ground effect is inversely nonlinear with ride height.** At very low ride heights (< ~40–50 mm front), the downforce increases steeply due to venturi throat effect. However, below a critical minimum (varies by car/track), the floor contacts or the vortex seal breaks, causing a sudden **aero loss ("vortex burst")** — downforce drops rapidly and balance shifts forward.
+
+2. **Optimal ride height window:** GTP cars in iRacing produce peak aero efficiency when ride heights are as low as possible without plank/floor contact or aerodynamic stall. The Coach Dave guide explicitly states: *"ride height can make a significant difference to downforce, with the car being at its most efficient when keeping the ride heights, both front and rear, as low as possible without bottoming out."*
+
+3. **Rake sensitivity:** Increasing rear rake (higher rear RH relative to front) shifts aero balance rearward, creating understeer on corner entry. Reducing rake increases high-speed stability. This directly couples with wing angle adjustments — the BMW manual notes that rake must be reconsidered when changing rear wing angle due to aero balance shift.
+
+4. **Practical thresholds (iRacing GTP, approximate):**
+   - Front minimum: ~30–40 mm static to prevent floor contact at high-speed bumps
+   - Rear minimum: ~45–65 mm static, varies by track surface
+   - Vortex burst risk: occurs when peak heave compression forces front RH below ~20–25 mm at-speed; marked by sharp yaw instability and understeer transition
+
+**iOptimal Application:**
+- The ride height objective function should apply a **nonlinear penalty** for static RH below ~35 mm front / ~50 mm rear. A cliff penalty (×3–5× steeper slope) should activate below the vortex burst threshold (~20 mm front).
+- `CFSRrideHeight` (center/rear underbody sensor) may be used as an additional safety threshold signal in the scoring function.
+- Heave spring stiffness is the primary lever: stiffer front heave spring raises minimum dynamic front RH and reduces vortex burst risk at the cost of mechanical grip.
+
+---
+
+### Topic H: iRacing STO Setup File Format
+
+**Sources:**
+- Reddit: r/iRacing — "Anyway to convert .STO setup files into a text or .csv file?" (2019): https://www.reddit.com/r/iRacing/comments/b4yrge/
+- Reddit: r/iRacing — Developer comment on STO format (2015): https://www.reddit.com/r/iRacing/comments/3ay4bt/
+- CarTunes (parasyte/cartunes) GitHub: https://github.com/parasyte/cartunes
+
+**Finding:**
+The iRacing `.STO` file format is **proprietary binary** — it is NOT XML, JSON, or plain text. An iRacing staff member confirmed:
+> *"The contents of the .sto files aren't what you at all expect them to be."*
+
+Key facts:
+1. STO files cannot be directly parsed for setup values outside of iRacing.
+2. The CarTunes app works by comparing STO files at the binary level to detect changes, not by decoding the values.
+3. The **correct way to read setup data** in real-time is via the **iRacing SDK YAML session string**, which is embedded in the IBT file's tail section and broadcast via shared memory at session start.
+4. The YAML session string contains a `CarSetup:` section with all setup parameters as human-readable key-value pairs. This is what iOptimal's `setup_reader.py` and `setup_registry.py` parse.
+
+**YAML Session String — CarSetup Structure (GTP BMW example):**
+The session YAML (accessible via `ibt.session_info` after parsing) contains:
+```
+CarSetup:
+  UpdateCount: 1
+  Chassis:
+    LeftFront:
+      CornerWeight: ...
+      RideHeight: ...
+      ShockDefl: "5.20 - 5.40 cm"
+      TorsionBar: "14.34 mm OD"
+      SpringRate: ...
+      ShockCylinder: ...
+    LeftRear:
+      ...
+  Aerodynamics:
+    FrontWingAngle: ...
+    RearWingAngle: ...
+  TiresAero:
+    ...
+```
+
+**iOptimal Application:**
+- iOptimal correctly reads setups via the IBT YAML session string — this is the only reliable method.
+- `setup_registry.py` field mappings like `"Chassis.LeftFront.ShockDefl"` → `"CarSetup_Chassis_LeftFront_ShockDefl"` correctly map YAML path to canonical field names.
+- STO files should not be reverse-engineered; the YAML session string is the ground truth for setup state at the time of the IBT recording.
+
+---
+
+### Topic I: BMW M Hybrid V8 LMDh Suspension Geometry — Torsion Bar & Pushrod Setup
+
+**Sources:**
+- iRacing BMW M Hybrid V8 User Manual (official): https://s100.iracing.com/wp-content/uploads/2023/07/BMW-M-Hybrid-V8-Manual-V2.pdf
+- manuals.plus summary of BMW GTP manual: https://manuals.plus/iracing/bmw-m-hybrid-v8-gpt-race-car-manual
+- Coach Dave Academy BMW M Hybrid V8 iRacing Guide: https://coachdaveacademy.com/tutorials/tips-and-tricks-to-driving-new-bmw-m-hybrid-v8-iracing/
+
+**Finding:**
+The BMW M Hybrid V8 runs a **Dallara-built LMDh spec chassis** with a torsion bar front suspension system. Key geometry characteristics:
+
+1. **Torsion Bar (Front Spring):** The BMW uses torsion bars as the primary front spring element, as mandated by LMDh spec chassis rules (all LMDh cars share the Dallara chassis architecture with common suspension pickup points). The **Torsion Bar OD (outer diameter)** is the adjustable spring parameter — a larger OD = stiffer spring. In iOptimal, the canonical parameter is `front_torsion_od_mm` (default ~14.34 mm OD). This is the iRacing YAML value from `Chassis.LeftFront.TorsionBar`.
+
+2. **Heave Spring System (Front Third Spring):** The front heave spring is mounted on a slider mechanism. Key iRacing parameters:
+   - **Heave Perch Offset:** Adjusts preload / engagement point of the heave spring
+   - **Heave Spring Rate:** Controls the heave spring stiffness (N/mm)
+   - **HEAVE SLIDER DEFL (display-only):** How far the heave spring slider has compressed from fully extended. This is NOT directly adjustable — it results from Heave Perch Offset + Torsion Bar settings. Importantly: *this value doesn't produce damping forces*.
+   - `HFshockDefl` in IBT measures the heave spring slider deflection directly at 60 Hz.
+
+3. **Pushrod Geometry:** Front and rear pushrod offsets shift the effective spring/damper engagement point (cam effect). The iRacing manual states:
+   - Lowering pushrod length → **understeer** tendency
+   - Increasing pushrod length → **oversteer** tendency
+   - This is modeled in iOptimal as `front_pushrod_offset_mm` / `rear_pushrod_offset_mm`
+
+4. **Anti-Roll Bars:** Front and rear ARBs are adjustable (size: Soft/Medium/Stiff + blade position 1–5). The ARB modulates the effective wheel rate difference between inside and outside wheels in corners — a key LLTD lever. In iRacing the dc-adjustable versions are `dcAntiRollFront` / `dcAntiRollRear`.
+
+5. **Rear Spring:** A conventional coil spring (N/mm). Canonical parameter: `rear_spring_rate_nmm`.
+
+6. **Rear Third Spring:** The rear heave/third spring (`rear_third_spring_nmm` in iOptimal, default ~450 N/mm) is a separate interconnected spring element at the rear that controls heave stiffness without affecting roll stiffness — the same principle as front heave spring but at the rear.
+
+**Key Numbers (BMW M Hybrid V8 iRacing defaults):**
+- Front Torsion Bar OD: ~14.34 mm (iOptimal default)
+- Front Heave Spring: ~50 N/mm (iOptimal default)
+- Rear Spring Rate: ~160 N/mm (iOptimal default)
+- Rear Third Spring: ~450 N/mm (iOptimal default)
+- Front Pushrod Offset: ~−26 mm (iOptimal default)
+- Rear Pushrod Offset: ~−22 mm (iOptimal default)
+
+**iOptimal Application:**
+- The torsion bar OD → effective wheel rate conversion is modeled in `car_model/cars.py` using the torsion bar polar moment of inertia formula. This is critical for LLTD calculation: `LLTDF = (k_WR_front × t_front²) / (k_WR_front × t_front² + k_WR_rear × t_rear²)`.
+- `front_heave_spring_nmm` (front third spring rate) controls heave stiffness at the front — its primary effect is on the minimum dynamic ride height and vortex burst margin, not roll balance.
+- The pushrod offset parameters affect the ride height–spring force coupling via a cam function that should be verified against actual YAML session data.
+
+
+## 2026-03-31 — Topic F (supplemental): GTP Brake Migration & Bias Target Physics
+
+### Source Documents
+- **Cadillac V-Series.R GTP User Manual V2** (official iRacing): https://s100.iracing.com/wp-content/uploads/2023/07/Cadillac-V-Series.R-GTP-Manual-V2.pdf
+- **BMW M Hybrid V8 User Manual V2** (official iRacing): https://s100.iracing.com/wp-content/uploads/2023/07/BMW-M-Hybrid-V8-Manual-V2.pdf
+- **OverTake.gg Guide — Brake Migration in LMU/iRacing Hypercars**: https://www.overtake.gg/news/guide-to-brake-migration-in-le-mans-ultimate-hypercars.3592/
+- **Coach Dave Academy — Cadillac V-Series.R Guide**: https://coachdaveacademy.com/tutorials/under-the-hood-tips-and-tricks-to-driving-the-cadillac-v-series-r-gtp/
+
+### Key Findings
+
+**1. Brake Bias Target (BBT)** — Cadillac-only feature (NOT present on BMW):
+- Sets an *offset* from the base Brake Pressure Bias (BBM).
+- **0.5% per click.** E.g., if BBM = 50% and Target = "2", actual bias = 51%.
+- Positive → higher (more forward) bias; negative → more rearward.
+- This is an *in-car adjustable* (dc parameter) allowing the driver to fine-tune bias without going to garage.
+- The BMW M Hybrid V8 does NOT have BBT/Migration — only base Brake Pressure Bias.
+
+**2. Brake Bias Migration (MIG)** — Cadillac-only feature:
+- Controls how bias shifts *during a braking event* as a function of brake pedal travel.
+- **1% per click.** Positive values migrate bias forward; negative values migrate rearward.
+- Physics: At full brake pressure, the base bias (BBM + BBT offset) applies. As the driver releases the brake (trail-braking toward apex), migration shifts the bias.
+- **Positive migration** = bias moves *forward* as pedal releases → prevents rear lockup during trail-braking when downforce is decreasing.
+- **Negative migration** = bias moves *rearward* as pedal releases → prevents front lockup at low speed.
+
+**3. Why Migration Exists — The Downforce-Speed Coupling Problem:**
+- At high speed (start of braking zone): high downforce loads rear axle, rear tires can handle more braking force → lower bias OK.
+- As car decelerates: downforce decreases, rear loses load, front/rear balance shifts forward → rear lockup risk increases.
+- Migration compensates by progressively shifting bias forward as speed/pressure drops.
+- This is analogous to real-world "brake magic" systems on F1 cars (Mercedes W11+).
+
+**4. Practical Recommendations from Literature:**
+- Coach Dave setups: ~2.5% forward migration (max positive) works well for LMDh cars (BMW analogue in LMU, Cadillac, Lamborghini).
+- Most competitive setups run slight positive migration (+2 to +5 clicks = +2% to +5% forward).
+- The system interacts with: front/rear master cylinder sizes (mechanical bias), pad compound, and TC settings.
+
+### Formula
+```
+Effective_Bias(t) = BBM + (BBT × 0.5%) + Migration_shift(pedal_position)
+where Migration_shift = MIG × 1% × (1 - normalized_pedal_position)
+```
+At full pedal: shift = 0 (base bias applies).
+At zero pedal: shift = MIG × 1% (maximum migration effect).
+This is a LINEAR interpolation between base bias and migrated bias.
+
+### iOptimal Application
+- **File:** `car_model/cars.py` — `brake_bias_target` and `brake_bias_migration` are defined as range tuples `(-5.0, 5.0)` but have NO physics comments explaining what they do.
+- **File:** `solver/objective.py` — brake migration is NOT modeled in the objective function at all. The static `brake_bias_pct` is scored but migration's dynamic effect during trail-braking is ignored.
+- **Immediate action:** Add physics documentation comments to `cars.py` explaining the BBT/Migration system.
+- **Future action:** For cars that support migration (Cadillac, Porsche, Acura, Ferrari — NOT BMW), the objective function could model the effective bias range and penalize setups where migration+bias leads to front or rear lockup at either end of the braking zone.
+- **Note:** BMW does NOT have BBT or Migration in iRacing. The `brake_bias_target` and `brake_bias_migration` fields in GTPSetupRange should only be populated for cars that support them.

@@ -1,0 +1,134 @@
+{
+  "session_before": "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_3",
+  "session_after": "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-03-30_17-36-27__lap_2",
+  "car": "ferrari",
+  "track": "Hockenheimring Baden-W\u00fcrttemberg",
+  "setup_changes": [],
+  "telemetry_effects": [
+    {
+      "metric": "rear_rh_std_mm",
+      "category": "platform",
+      "before": 5.395376205444336,
+      "after": 6.16934871673584,
+      "delta": 0.774,
+      "pct_change": 14.3,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_bottoming_events",
+      "category": "platform",
+      "before": 8.0,
+      "after": 6.0,
+      "delta": -2.0,
+      "pct_change": -25.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_bottoming_events",
+      "category": "platform",
+      "before": 4.0,
+      "after": 1.0,
+      "delta": -3.0,
+      "pct_change": -75.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.06947246193885803,
+      "after": 0.07257655262947083,
+      "delta": 0.0031,
+      "pct_change": 4.5,
+      "significance": "small"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.08426598459482193,
+      "after": 0.08971235901117325,
+      "delta": 0.0054,
+      "pct_change": 6.5,
+      "significance": "moderate"
+    },
+    {
+      "metric": "heave_bottoming_events_rear",
+      "category": "platform",
+      "before": 38.0,
+      "after": 31.0,
+      "delta": -7.0,
+      "pct_change": -18.4,
+      "significance": "moderate"
+    },
+    {
+      "metric": "understeer_high_speed_deg",
+      "category": "balance",
+      "before": -0.2623048424720764,
+      "after": -0.37372449040412903,
+      "delta": -0.1114,
+      "pct_change": -42.5,
+      "significance": "large"
+    },
+    {
+      "metric": "understeer_low_speed_deg",
+      "category": "balance",
+      "before": 0.22851014137268066,
+      "after": 0.2652018964290619,
+      "delta": 0.0367,
+      "pct_change": 16.1,
+      "significance": "large"
+    },
+    {
+      "metric": "body_slip_p95_deg",
+      "category": "balance",
+      "before": 1.9231399297714233,
+      "after": 1.78708815574646,
+      "delta": -0.1361,
+      "pct_change": -7.1,
+      "significance": "moderate"
+    },
+    {
+      "metric": "dynamic_rear_rh_mm",
+      "category": "aero",
+      "before": 24.897315979003906,
+      "after": 25.242523193359375,
+      "delta": 0.3452,
+      "pct_change": 1.4,
+      "significance": "small"
+    },
+    {
+      "metric": "roll_gradient_deg_per_g",
+      "category": "aero",
+      "before": 0.469,
+      "after": 0.003,
+      "delta": -0.466,
+      "pct_change": -99.4,
+      "significance": "large"
+    },
+    {
+      "metric": "front_dominant_freq_hz",
+      "category": "damper",
+      "before": 0.89,
+      "after": 0.93,
+      "delta": 0.04,
+      "pct_change": 4.5,
+      "significance": "small"
+    },
+    {
+      "metric": "rear_dominant_freq_hz",
+      "category": "damper",
+      "before": 3.56,
+      "after": 3.72,
+      "delta": 0.16,
+      "pct_change": 4.5,
+      "significance": "small"
+    }
+  ],
+  "hypotheses": [],
+  "num_setup_changes": 0,
+  "controlled_experiment": true,
+  "changed_steps": [],
+  "lap_time_delta_s": 1.543,
+  "driver_style_changed": false,
+  "key_finding": "No setup changes detected between sessions.",
+  "confidence_level": "low"
+}

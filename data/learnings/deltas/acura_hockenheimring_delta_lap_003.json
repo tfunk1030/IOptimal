@@ -1,0 +1,116 @@
+{
+  "session_before": "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_2",
+  "session_after": "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-29_20-05-37__lap_3",
+  "car": "acura",
+  "track": "Hockenheimring Baden-W\u00fcrttemberg",
+  "setup_changes": [],
+  "telemetry_effects": [
+    {
+      "metric": "front_bottoming_events",
+      "category": "platform",
+      "before": 10.0,
+      "after": 8.0,
+      "delta": -2.0,
+      "pct_change": -20.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_bottoming_events",
+      "category": "platform",
+      "before": 20.0,
+      "after": 12.0,
+      "delta": -8.0,
+      "pct_change": -40.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.14910991489887238,
+      "after": 0.17051604390144348,
+      "delta": 0.0214,
+      "pct_change": 14.4,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.18902018666267395,
+      "after": 0.2179235816001892,
+      "delta": 0.0289,
+      "pct_change": 15.3,
+      "significance": "large"
+    },
+    {
+      "metric": "understeer_high_speed_deg",
+      "category": "balance",
+      "before": -0.12347350269556046,
+      "after": -0.04136279225349426,
+      "delta": 0.0821,
+      "pct_change": 66.5,
+      "significance": "large"
+    },
+    {
+      "metric": "body_slip_p95_deg",
+      "category": "balance",
+      "before": 1.6896753311157227,
+      "after": 1.8819961547851562,
+      "delta": 0.1923,
+      "pct_change": 11.4,
+      "significance": "moderate"
+    },
+    {
+      "metric": "dynamic_front_rh_mm",
+      "category": "aero",
+      "before": 19.643753051757812,
+      "after": 19.34781837463379,
+      "delta": -0.2959,
+      "pct_change": -1.5,
+      "significance": "small"
+    },
+    {
+      "metric": "dynamic_rear_rh_mm",
+      "category": "aero",
+      "before": 29.053003311157227,
+      "after": 28.44220733642578,
+      "delta": -0.6108,
+      "pct_change": -2.1,
+      "significance": "small"
+    },
+    {
+      "metric": "roll_gradient_deg_per_g",
+      "category": "aero",
+      "before": 0.547,
+      "after": 0.395,
+      "delta": -0.152,
+      "pct_change": -27.8,
+      "significance": "large"
+    },
+    {
+      "metric": "front_dominant_freq_hz",
+      "category": "damper",
+      "before": 4.08,
+      "after": 0.89,
+      "delta": -3.19,
+      "pct_change": -78.2,
+      "significance": "large"
+    },
+    {
+      "metric": "rear_dominant_freq_hz",
+      "category": "damper",
+      "before": 4.08,
+      "after": 3.56,
+      "delta": -0.52,
+      "pct_change": -12.7,
+      "significance": "moderate"
+    }
+  ],
+  "hypotheses": [],
+  "num_setup_changes": 0,
+  "controlled_experiment": true,
+  "changed_steps": [],
+  "lap_time_delta_s": 0.327,
+  "driver_style_changed": false,
+  "key_finding": "No setup changes detected between sessions.",
+  "confidence_level": "high"
+}
