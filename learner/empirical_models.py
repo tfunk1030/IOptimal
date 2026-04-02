@@ -607,6 +607,12 @@ def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> Non
             # exc = v_p99 * sqrt(m_eff / k) → m_eff = k * (exc/v_p99)^2
             k_nm = heave * 1000
             m_eff = k_nm * (exc / 1000 / sv_p99) ** 2
+            # Sanity check: high-downforce cars (Ferrari LMH) at high speed have aero spring
+            # k_aero >> k_mechanical, collapsing apparent m_eff toward 0. Any value below the
+            # minimum physically plausible sprung corner mass is an aero-contaminated reading
+            # and must be discarded. Range: [100 kg, 4000 kg].
+            if m_eff < 100.0 or m_eff > 4000.0:
+                continue  # discard — aero-contaminated or physically impossible
             m_eff_val = round(m_eff, 1)
             models.corrections.setdefault("m_eff_front_values", [])
             models.corrections["m_eff_front_values"].append(m_eff_val)
