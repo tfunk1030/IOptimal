@@ -490,6 +490,62 @@ class DamperSolver:
         """
         d = self.car.damper
 
+        # ─── UNCALIBRATED EARLY RETURN ────────────────────────────────────────
+        # When zeta targets haven't been validated against IBT data, physics-
+        # derived click values will be wrong.  Return the car's VALIDATED baseline
+        # clicks instead so the report doesn't contradict known-good setups.
+        if not getattr(d, "zeta_is_calibrated", True):
+            front_slope, rear_slope, slope_reason = self._hs_slope_from_surface()
+            lo_ls = d.ls_comp_range[0]
+            hi_ls = d.ls_comp_range[1]
+            lo_hs = d.hs_comp_range[0]
+            hi_hs = d.hs_comp_range[1]
+            _b_flsc  = max(lo_ls, min(hi_ls, d.front_ls_comp_baseline))
+            _b_frbd  = max(lo_ls, min(hi_ls, getattr(d, "front_ls_rbd_baseline",  _b_flsc)))
+            _b_fhsc  = max(lo_hs, min(hi_hs, d.front_hs_comp_baseline))
+            _b_fhrbd = max(lo_hs, min(hi_hs, getattr(d, "front_hs_rbd_baseline",  _b_fhsc)))
+            _b_rlsc  = max(lo_ls, min(hi_ls, d.rear_ls_comp_baseline))
+            _b_rrbd  = max(lo_ls, min(hi_ls, getattr(d, "rear_ls_rbd_baseline",   _b_rlsc)))
+            _b_rhsc  = max(lo_hs, min(hi_hs, d.rear_hs_comp_baseline))
+            _b_rhrbd = max(lo_hs, min(hi_hs, getattr(d, "rear_hs_rbd_baseline",   _b_rhsc)))
+            _b_fslope = getattr(d, "front_hs_slope_baseline", front_slope)
+            _b_rslope = getattr(d, "rear_hs_slope_baseline",  rear_slope)
+
+            def _bc(ls, lsr, hs, hsr, slope):
+                return CornerDamperSettings(
+                    ls_comp=ls, ls_rbd=lsr, hs_comp=hs, hs_rbd=hsr, hs_slope=slope,
+                )
+
+            return DamperSolution(
+                lf=_bc(_b_flsc, _b_frbd, _b_fhsc, _b_fhrbd, _b_fslope),
+                rf=_bc(_b_flsc, _b_frbd, _b_fhsc, _b_fhrbd, _b_fslope),
+                lr=_bc(_b_rlsc, _b_rrbd, _b_rhsc, _b_rhrbd, _b_rslope),
+                rr=_bc(_b_rlsc, _b_rrbd, _b_rhsc, _b_rhrbd, _b_rslope),
+                track_shock_vel_p95_front_mps=0.0,
+                track_shock_vel_p95_rear_mps=0.0,
+                track_shock_vel_p99_front_mps=0.0,
+                track_shock_vel_p99_rear_mps=0.0,
+                c_ls_front=0.0, c_ls_rear=0.0,
+                c_hs_front=0.0, c_hs_rear=0.0,
+                c_crit_front=0.0, c_crit_rear=0.0,
+                zeta_ls_front=0.0, zeta_ls_rear=0.0,
+                zeta_hs_front=0.0, zeta_hs_rear=0.0,
+                ls_rbd_comp_ratio_front=1.0, hs_rbd_comp_ratio_front=1.0,
+                ls_rbd_comp_ratio_rear=1.0,  hs_rbd_comp_ratio_rear=1.0,
+                hs_slope_reasoning=(
+                    "BASELINE — zeta uncalibrated. "
+                    f"Returning validated baseline clicks: "
+                    f"front LS={_b_flsc}/HS={_b_fhsc}, rear LS={_b_rlsc}/HS={_b_rhsc}. "
+                    "Run click-sweep IBT session to unlock physics-derived values."
+                ),
+                constraints=[],
+                notes=[
+                    "BASELINE ONLY — zeta_is_calibrated=False for this car.",
+                    f"front LS={_b_flsc} HS={_b_fhsc} | rear LS={_b_rlsc} HS={_b_rhsc}",
+                    "Perform dedicated click-sweep session to calibrate zeta targets.",
+                ],
+            )
+
         # ─── 1. Corner masses ─────────────────────────────────────────────────
         m_front = self._mass_per_corner_kg(is_front=True, fuel_load_l=fuel_load_l)
         m_rear = self._mass_per_corner_kg(is_front=False, fuel_load_l=fuel_load_l)
