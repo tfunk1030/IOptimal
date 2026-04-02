@@ -148,8 +148,12 @@
   "total_observations": 140,
 =======
   "total_observations": 141,
+<<<<<<< HEAD
 >>>>>>> 967f0f910ce487ac9849b998cc8adceb8c948ed6
   "total_deltas": 308,
+=======
+  "total_deltas": 309,
+>>>>>>> 2a5adda96078dd35f1617d3ed66fdc37c8398717
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -163,8 +167,12 @@
     "Hockenheimring Baden-W\u00fcrttemberg_Grand Prix"
   ],
 <<<<<<< HEAD
+<<<<<<< HEAD
   "last_updated": "2026-04-02T03:09:05.135753+00:00"
 =======
   "last_updated": "2026-04-02T03:13:55.940605+00:00"
 >>>>>>> 967f0f910ce487ac9849b998cc8adceb8c948ed6
+=======
+  "last_updated": "2026-04-02T03:33:05.959742+00:00"
+>>>>>>> 2a5adda96078dd35f1617d3ed66fdc37c8398717
 }

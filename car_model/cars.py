@@ -1990,7 +1990,8 @@ FERRARI_499P = CarModel(
     mass_car_kg=1030.0,           # GTP minimum — confirmed same as LMDh
     mass_driver_kg=75.0,
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
-    brake_bias_pct=54.0,          # CALIBRATED from IBT: BrakePressureBias = 54.0%
+    brake_bias_pct=49.0,          # VALIDATED: best lap 87.575s SYSTEMS tab screenshot 2026-04-02 → 49.00%
+                                  # Prior value 54.0% was from an older IBT session — overridden by garage screenshot
     default_df_balance_pct=48.3,  # CALIBRATED 2026-04-02 from IBT observed operating points:
                                     # 17 Hockenheim sessions at wing=17 run 46.97–48.26% balance naturally.
                                     # Fastest session (87.575s): 47.82%. Mean across session range: 48.3%.
@@ -2294,6 +2295,15 @@ FERRARI_499P = CarModel(
                                   # The front/rear torsion bars scale proportionally, locking LLTD.
                                   # DO NOT attempt to optimize LLTD via torsion/ARB changes.
     torsion_arb_coupling=0.15,   # ESTIMATE — non-zero coupling (Ferrari has torsion bar front, same as BMW).
+    # ── SYSTEMS tab VALIDATED (87.575s best lap, 2026-04-02 screenshot) ─────────────────
+    # Hybrid: rear drive enabled, corner pct = 90% (strong rear bias in corners)
+    # Brake: pad=Low, front MC=17.8mm, rear MC=19.1mm, bias=49.0%, migration=1, gain=0.00
+    # TC: TC2=3 (gain), TC1=4 (slip)
+    # Front diff: preload = 5 Nm
+    # Rear diff: More Locking, friction plates = 6, preload = 20 Nm
+    # Gear stack: Short — speeds (km/h): 1st=121.7, 2nd=157.5, 3rd=190.0, 4th=222.7, 5th=256.6, 6th=291.0, 7th=329.2
+    # (Hockenheim is primarily 3rd–5th gear — braking from 291 km/h at end of main straight into stadium)
+    # ─────────────────────────────────────────────────────────────────────────────────────
                                   # Lower than BMW 0.25 (calibrated) because Ferrari's indexed torsion bars
                                   # are stiffer → smaller coupling fraction. Needs ARB+OD sweep to validate.
                                   # Standard parallel model (RCVD) applies. γ=0.25 was BMW-only.
