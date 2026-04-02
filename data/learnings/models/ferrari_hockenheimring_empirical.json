@@ -9,11 +9,11 @@
       "fit_type": "linear",
       "coefficients": [
         0.0,
-        0.32788235294117646
+        0.31510000000000005
       ],
-      "r_squared": 0.8692068060626449,
-      "sample_count": 17,
-      "residual_std": 0.11857977327418781,
+      "r_squared": 0.8617165355615447,
+      "sample_count": 20,
+      "residual_std": 0.11717461329144636,
       "x_values": [
         4.417797565460205,
         4.114037036895752,
@@ -31,7 +31,10 @@
         4.6628570556640625,
         4.216616153717041,
         3.753544807434082,
-        4.417797565460205
+        4.417797565460205,
+        4.271434307098389,
+        3.980808734893799,
+        4.959342002868652
       ],
       "y_values": [
         0.163,
@@ -50,10 +53,13 @@
         0.226,
         0.249,
         0.445,
-        0.163
+        0.163,
+        0.339,
+        0.234,
+        0.155
       ],
       "x_min": 3.2460989952087402,
-      "x_max": 4.674682140350342,
+      "x_max": 4.959342002868652,
       "physics_prediction_at_mean": 0.0,
       "empirical_prediction_at_mean": 0.0,
       "correction_factor": 1.0
@@ -64,12 +70,12 @@
       "y_param": "lltd_measured",
       "fit_type": "linear",
       "coefficients": [
-        0.0003378848268316562,
-        0.5093690774661233
+        0.00022920023695845436,
+        0.5097572367156707
       ],
-      "r_squared": 0.054861855775142354,
-      "sample_count": 18,
-      "residual_std": 0.0017629644847306299,
+      "r_squared": 0.02940623354505667,
+      "sample_count": 21,
+      "residual_std": 0.0016918447383528952,
       "x_values": [
         3.0,
         3.0,
@@ -88,7 +94,10 @@
         1.0,
         3.0,
         3.0,
-        3.0
+        3.0,
+        1.0,
+        1.0,
+        1.0
       ],
       "y_values": [
         0.5079563558474812,
@@ -108,7 +117,10 @@
         0.5100276698326953,
         0.5095729003634837,
         0.5094853698571985,
-        0.5079563558474812
+        0.5079563558474812,
+        0.5117024802751328,
+        0.510682141709884,
+        0.5095620642305524
       ],
       "x_min": 1.0,
       "x_max": 5.0,
@@ -122,11 +134,11 @@
       "y_param": "front_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        0.03574499753442128,
-        4.60889767656232
+        0.018718463100799606,
+        4.6547383461913
       ],
-      "r_squared": 0.010318998253183165,
-      "sample_count": 18,
+      "r_squared": 0.0031358502992172577,
+      "sample_count": 21,
       "residual_std": 0.0,
       "x_values": [
         3.0,
@@ -146,7 +158,10 @@
         5.0,
         3.0,
         3.0,
-        3.0
+        3.0,
+        5.0,
+        5.0,
+        5.0
       ],
       "y_values": [
         5.343262195587158,
@@ -166,7 +181,10 @@
         4.206254959106445,
         4.971867561340332,
         5.0699543952941895,
-        5.343262195587158
+        5.343262195587158,
+        5.1095967292785645,
+        4.507435321807861,
+        4.363393783569336
       ],
       "x_min": 1.0,
       "x_max": 5.0,
@@ -180,11 +198,11 @@
       "y_param": "rear_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.0011707604533501307,
-        5.966932185169825
+        -0.009681540727615264,
+        6.0017858567691995
       ],
-      "r_squared": 3.8375078674879326e-05,
-      "sample_count": 18,
+      "r_squared": 0.002954497943671086,
+      "sample_count": 21,
       "residual_std": 0.0,
       "x_values": [
         5.0,
@@ -204,7 +222,10 @@
         8.0,
         5.0,
         5.0,
-        5.0
+        5.0,
+        8.0,
+        8.0,
+        8.0
       ],
       "y_values": [
         6.133851051330566,
@@ -224,7 +245,10 @@
         5.362985610961914,
         6.137308120727539,
         6.4227705001831055,
-        6.133851051330566
+        6.133851051330566,
+        6.139565944671631,
+        5.782806396484375,
+        5.609894752502441
       ],
       "x_min": 1.0,
       "x_max": 8.0,
@@ -233,92 +257,78 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-04-02T03:33:06.078119+00:00",
-  "observation_count": 18,
+  "last_updated": "2026-04-02T03:58:29.748538+00:00",
+  "observation_count": 21,
   "most_sensitive_parameters": [
     [
       "rear_torsion_bar_index",
       -0.102
+    ],
+    [
+      "damper_lf_ls_comp",
+      0.0009727272727272727
+    ],
+    [
+      "damper_rf_ls_comp",
+      0.0009727272727272727
     ]
   ],
   "corrections": {
-    "aero_compression_front_mean_mm": 7.467175907558865,
-    "aero_compression_front_std_mm": 0.39804312367336675,
-    "aero_compression_rear_mean_mm": 18.148204909430607,
-    "aero_compression_rear_std_mm": 1.607778186535459,
+    "aero_compression_front_mean_mm": 7.398634901500882,
+    "aero_compression_front_std_mm": 0.41931858034574604,
+    "aero_compression_rear_mean_mm": 17.849650973365417,
+    "aero_compression_rear_std_mm": 1.6664437701838302,
     "lap_time_surrogate_regularized": 1.0,
-    "lap_time_surrogate_sample_weight": 2.0,
-    "roll_gradient_measured_mean": 0.3260898480081998,
-    "roll_gradient_measured_std": 0.11857977327418781,
-    "roll_gradient_sample_count": 17,
-    "lltd_measured_mean": 0.5102244542737739,
-    "lltd_measured_std": 0.0018134096311635723,
-    "m_eff_front_values": [
-      13.2,
-      13.5,
-      7.8,
-      8.5,
-      9.6,
-      11.3,
-      13.5,
-      16.0,
-      16.0,
-      8.5,
-      14.8,
-      15.6,
-      11.3,
-      4.5,
-      19.7,
-      15.1,
-      20.9,
-      13.2
-    ],
-    "m_eff_front_empirical_mean": 12.944444444444446,
-    "m_eff_front_empirical_std": 4.064510661024307,
-    "prediction_correction_front_rh_std_mm": 4.8313,
-    "prediction_correction_front_rh_std_mm_std": 0.331,
-    "prediction_correction_front_rh_std_mm_n": 8,
-    "prediction_correction_rear_rh_std_mm": 6.0276,
-    "prediction_correction_rear_rh_std_mm_std": 0.3343,
-    "prediction_correction_rear_rh_std_mm_n": 8,
-    "prediction_correction_lltd_predicted": 0.0163,
-    "prediction_correction_lltd_predicted_std": 0.0252,
-    "prediction_correction_lltd_predicted_n": 8,
-    "prediction_correction_body_roll_predicted_deg_per_g": 0.3231,
-    "prediction_correction_body_roll_predicted_deg_per_g_std": 0.1244,
-    "prediction_correction_body_roll_predicted_deg_per_g_n": 8,
-    "prediction_correction_front_bottoming_predicted": 9.3538,
-    "prediction_correction_front_bottoming_predicted_std": 4.0583,
-    "prediction_correction_front_bottoming_predicted_n": 8,
-    "prediction_correction_front_heave_travel_used_pct": 13.3198,
-    "prediction_correction_front_heave_travel_used_pct_std": 5.8714,
-    "prediction_correction_front_heave_travel_used_pct_n": 8,
-    "prediction_correction_front_excursion_mm": 9.0828,
-    "prediction_correction_front_excursion_mm_std": 5.7604,
-    "prediction_correction_front_excursion_mm_n": 8,
-    "prediction_correction_braking_pitch_deg": 0.471,
-    "prediction_correction_braking_pitch_deg_std": 0.2575,
-    "prediction_correction_braking_pitch_deg_n": 8,
-    "prediction_correction_front_lock_p95": 0.0118,
-    "prediction_correction_front_lock_p95_std": 0.018,
-    "prediction_correction_front_lock_p95_n": 8,
-    "prediction_correction_rear_power_slip_p95": 0.007,
-    "prediction_correction_rear_power_slip_p95_std": 0.0208,
-    "prediction_correction_rear_power_slip_p95_n": 8,
-    "prediction_correction_body_slip_p95_deg": 0.1567,
-    "prediction_correction_body_slip_p95_deg_std": 0.2739,
-    "prediction_correction_body_slip_p95_deg_n": 8,
-    "prediction_correction_understeer_low_deg": -0.1815,
-    "prediction_correction_understeer_low_deg_std": 0.2185,
-    "prediction_correction_understeer_low_deg_n": 8,
-    "prediction_correction_understeer_high_deg": -0.1706,
-    "prediction_correction_understeer_high_deg_std": 0.1618,
-    "prediction_correction_understeer_high_deg_n": 8,
-    "prediction_correction_front_pressure_hot_kpa": 1.3084,
-    "prediction_correction_front_pressure_hot_kpa_std": 4.6701,
-    "prediction_correction_front_pressure_hot_kpa_n": 8,
-    "prediction_correction_rear_pressure_hot_kpa": 2.4533,
-    "prediction_correction_rear_pressure_hot_kpa_std": 4.7307,
-    "prediction_correction_rear_pressure_hot_kpa_n": 8
+    "lap_time_surrogate_sample_weight": 3.0,
+    "roll_gradient_measured_mean": 0.3122284158818498,
+    "roll_gradient_measured_std": 0.11717461329144636,
+    "roll_gradient_sample_count": 20,
+    "lltd_measured_mean": 0.5102834354597028,
+    "lltd_measured_std": 0.001717282547100512,
+    "prediction_correction_front_rh_std_mm": 4.8781,
+    "prediction_correction_front_rh_std_mm_std": 0.3451,
+    "prediction_correction_front_rh_std_mm_n": 11,
+    "prediction_correction_rear_rh_std_mm": 6.0256,
+    "prediction_correction_rear_rh_std_mm_std": 0.2956,
+    "prediction_correction_rear_rh_std_mm_n": 11,
+    "prediction_correction_lltd_predicted": 0.0138,
+    "prediction_correction_lltd_predicted_std": 0.0209,
+    "prediction_correction_lltd_predicted_n": 11,
+    "prediction_correction_body_roll_predicted_deg_per_g": 0.3002,
+    "prediction_correction_body_roll_predicted_deg_per_g_std": 0.1175,
+    "prediction_correction_body_roll_predicted_deg_per_g_n": 11,
+    "prediction_correction_front_bottoming_predicted": 10.0158,
+    "prediction_correction_front_bottoming_predicted_std": 4.1263,
+    "prediction_correction_front_bottoming_predicted_n": 11,
+    "prediction_correction_front_heave_travel_used_pct": 10.5879,
+    "prediction_correction_front_heave_travel_used_pct_std": 7.8696,
+    "prediction_correction_front_heave_travel_used_pct_n": 11,
+    "prediction_correction_front_excursion_mm": 6.9001,
+    "prediction_correction_front_excursion_mm_std": 6.236,
+    "prediction_correction_front_excursion_mm_n": 11,
+    "prediction_correction_braking_pitch_deg": 0.3526,
+    "prediction_correction_braking_pitch_deg_std": 0.2968,
+    "prediction_correction_braking_pitch_deg_n": 11,
+    "prediction_correction_front_lock_p95": 0.0119,
+    "prediction_correction_front_lock_p95_std": 0.0201,
+    "prediction_correction_front_lock_p95_n": 11,
+    "prediction_correction_rear_power_slip_p95": 0.0004,
+    "prediction_correction_rear_power_slip_p95_std": 0.0203,
+    "prediction_correction_rear_power_slip_p95_n": 11,
+    "prediction_correction_body_slip_p95_deg": 0.1056,
+    "prediction_correction_body_slip_p95_deg_std": 0.2463,
+    "prediction_correction_body_slip_p95_deg_n": 11,
+    "prediction_correction_understeer_low_deg": -0.2585,
+    "prediction_correction_understeer_low_deg_std": 0.261,
+    "prediction_correction_understeer_low_deg_n": 11,
+    "prediction_correction_understeer_high_deg": -0.1619,
+    "prediction_correction_understeer_high_deg_std": 0.1588,
+    "prediction_correction_understeer_high_deg_n": 11,
+    "prediction_correction_front_pressure_hot_kpa": 1.0792,
+    "prediction_correction_front_pressure_hot_kpa_std": 3.9577,
+    "prediction_correction_front_pressure_hot_kpa_n": 11,
+    "prediction_correction_rear_pressure_hot_kpa": 1.9402,
+    "prediction_correction_rear_pressure_hot_kpa_std": 4.0682,
+    "prediction_correction_rear_pressure_hot_kpa_n": 11
   }
 }
