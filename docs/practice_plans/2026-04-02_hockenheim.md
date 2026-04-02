@@ -4,44 +4,52 @@
 
 ## Stint Structure
 Every stint: **Outlap → Push L1 → Push L2 → Inlap → pit/setup change (~2 min)**
-= 4 laps × 1.5 min = 6 min + 2 min = **~8 min per stint**
+= 4 laps × 1.5 min + 2 min = **~8 min per stint**
+
+## High-Value Parameters (Taylor's priority list)
+Heaves · Torsion bar OD · Torsion bar turns · Pushrod · Heave springs · Camber · Toe · Dampers
+*(ARBs deprioritized — less setup sensitivity)*
 
 ---
 
 ## Ferrari 499P Block (T+0:00 – T+44:00) — 5 stints
 
-| # | Time | LS comp | Setup | Notes |
-|---|------|---------|-------|-------|
-| 1 | T+0:00 | 24 (baseline) | fh=5, rh=8, FARB=B/1, RARB=C/1, wing=17 | Reference — best observed (87.575s) |
-| 2 | T+10:00 | **10** | same as above | Soft end |
-| 3 | T+20:00 | **20** | same | Physics model baseline click |
-| 4 | T+30:00 | **30** | same | Stiff end |
-| 5 | T+40:00 | **40** | same | Max |
+| # | Time | Change | Value |
+|---|------|--------|-------|
+| 1 | T+0:00 | **Baseline** | fh=5, rh=8, ftb=2, rtb=1, FARB=B/1, RARB=C/1, wing=17, LS=24 |
+| 2 | T+10:00 | LS comp = **10** | Soft end of damper range |
+| 3 | T+20:00 | LS comp = **20** | Physics model baseline |
+| 4 | T+30:00 | LS comp = **30** | Stiff |
+| 5 | T+40:00 | LS comp = **40** | Max |
 
+**Only changing:** front LS comp. All else locked to Stint 1.
 **Drop IBT after every stint.**
-Only variable changing: front LS comp. Everything else locked to Stint 1.
 
 ---
 
 ## Acura ARX-06 Block (T+46:00 – T+90:00) — 5 stints
 
-| # | Time | Config | Notes |
-|---|------|--------|-------|
-| 6 | T+46:00 | FARB=Soft/1, RARB=Soft/1, wing=10 | Baseline — matches best observed (87.599s) |
-| 7 | T+56:00 | FARB=Stiff/5, RARB=Stiff/5, wing=10 | ARB stiff extreme |
-| 8 | T+66:00 | FARB=Soft/1, RARB=Soft/1, wing=**8** | First wing variation |
-| 9 | T+76:00 | FARB=Medium/1, RARB=Medium/5, wing=10 | Best prior non-baseline (88.048s) |
-| 10 | T+86:00 | Solver rec | Check Telegram card, run it |
+**DB entering:** 5 sessions. Best: 87.599s. All prior at wing=10, Medium or Soft ARB.
+**Focus:** heave springs, torsion bars, camber — parameters that actually move the car.
 
+| # | Time | Change | Value | Why |
+|---|------|--------|-------|-----|
+| 6 | T+46:00 | **Baseline** | Current best setup as-is | Reference anchor |
+| 7 | T+56:00 | Front heave **softer** (–2 idx) | Less front heave stiffness | Heave spring sensitivity |
+| 8 | T+66:00 | Front heave **stiffer** (+2 idx from baseline) | More front heave stiffness | Brackets heave range |
+| 9 | T+76:00 | Front camber **–0.5°** more negative | e.g. –3.0° → –3.5° | Camber sensitivity + tire temp |
+| 10 | T+86:00 | **Solver rec** | Check Telegram card | Run whatever was recommended |
+
+**Only changing one variable per stint from Stint 6 baseline.**
 **Drop IBT after every stint.**
 
 ---
 
-## What This Calibrates
+## What This Feeds
 
-| Stints | Sweep | Model it feeds |
-|--------|-------|---------------|
-| 1–5 | Ferrari LS comp 10→40 | Force per click (31.3 N/click validation) |
-| 6–7 | Acura ARB soft vs stiff | LLTD range, roll gradient |
-| 8 | Acura wing 10 vs 8 | DF balance at Hockenheim |
-| 9 | Acura best prior | k-NN baseline validation |
+| Stints | Car | Parameter | Calibrates |
+|--------|-----|-----------|-----------|
+| 1–5 | Ferrari | LS damper 10/20/24/30/40 | Force per click model (31.3 N/click) |
+| 6–8 | Acura | Front heave ±2 idx | Heave spring sensitivity, m_eff estimate |
+| 9 | Acura | Front camber –0.5° | Camber lap time gradient |
+| 10 | Acura | Solver rec | Real-world validation |
