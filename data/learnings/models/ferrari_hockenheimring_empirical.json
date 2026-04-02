@@ -1999,7 +1999,7 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-04-02T06:42:54.461942+00:00",
+  "last_updated": "2026-04-02T07:37:18.380821+00:00",
   "observation_count": 26,
   "most_sensitive_parameters": [
     [
@@ -2028,10 +2028,10 @@
     "aero_compression_front_std_mm": 0.4589048153319751,
     "aero_compression_rear_mean_mm": 17.6363746202909,
     "aero_compression_rear_std_mm": 1.6035057465473734,
-    "calibrated_shock_vel_per_hs_click_front": 0.0008243206612287275,
+    "calibrated_hs_vel_slope_front": 0.0008243206612287275,
     "calibrated_hs_front_r2": 0.35177739136127384,
     "calibrated_hs_front_n": 26,
-    "calibrated_shock_vel_per_hs_click_rear": 0.004118058330379416,
+    "calibrated_hs_vel_slope_rear": 0.004118058330379416,
     "calibrated_hs_rear_r2": 0.38629385221637946,
     "calibrated_hs_rear_n": 26,
     "lap_time_surrogate_regularized": 1.0,

@@ -47,6 +47,15 @@ class LearnedCorrections:
     # Damping ratio scale from driver history
     damping_ratio_scale: float | None = None
 
+    # Calibrated damper HS velocity slopes (m/s per click) from sweep data.
+    # These measure how much shock_vel_p99 changes per HS comp click — a
+    # telemetry sensitivity that VALIDATES the force-per-click estimate.
+    # The solver uses these to sanity-check and refine its damper predictions,
+    # NOT as a direct N/click replacement (the conversion requires system-level
+    # knowledge that isn't available from the slope alone).
+    hs_vel_slope_front: float | None = None
+    hs_vel_slope_rear: float | None = None
+
     # Number of sessions informing these corrections
     session_count: int = 0
     confidence: str = "no_data"  # "no_data" | "low" | "medium" | "high"
@@ -162,6 +171,25 @@ def apply_learned_corrections(
         result.aero_compression_rear_mm = ac_rear
         result.applied.append(
             f"Aero compression rear: {ac_rear:.1f} mm (measured)"
+        )
+
+    # ── Apply calibrated damper HS velocity slopes ──
+    hs_slope_front = corrections.get("calibrated_hs_vel_slope_front")
+    hs_fpc_r2 = corrections.get("calibrated_hs_front_r2", 0)
+    if hs_slope_front is not None and hs_slope_front > 0 and hs_fpc_r2 > 0.15:
+        result.hs_vel_slope_front = hs_slope_front
+        result.applied.append(
+            f"HS damper sensitivity front: {hs_slope_front*1000:.2f} mm/s per click "
+            f"(R²={hs_fpc_r2:.2f}, {corrections.get('calibrated_hs_front_n', '?')} sessions)"
+        )
+
+    hs_slope_rear = corrections.get("calibrated_hs_vel_slope_rear")
+    hs_fpc_r2_rear = corrections.get("calibrated_hs_rear_r2", 0)
+    if hs_slope_rear is not None and hs_slope_rear > 0 and hs_fpc_r2_rear > 0.15:
+        result.hs_vel_slope_rear = hs_slope_rear
+        result.applied.append(
+            f"HS damper sensitivity rear: {hs_slope_rear*1000:.2f} mm/s per click "
+            f"(R²={hs_fpc_r2_rear:.2f}, {corrections.get('calibrated_hs_rear_n', '?')} sessions)"
         )
 
     # ── Apply calibrated roll gains from tyre thermals ──

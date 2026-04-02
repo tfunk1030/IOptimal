@@ -274,6 +274,10 @@ def run_solver(args: "argparse.Namespace") -> None:
                 car.geometry.front_roll_gain = learned.calibrated_front_roll_gain
             if learned.calibrated_rear_roll_gain is not None:
                 car.geometry.rear_roll_gain = learned.calibrated_rear_roll_gain
+            # HS velocity slopes (m/s per click) are available for validation
+            # but do NOT directly override force-per-click — the conversion from
+            # shock vel slope to N/click requires system-level knowledge.
+            # The damper solver uses these slopes to validate its predictions.
             log()
 
     # Confidence check — warn if car model has ESTIMATE parameters

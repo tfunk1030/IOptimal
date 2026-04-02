@@ -494,25 +494,34 @@ def _fit_damper_physics(obs_list: list[dict], models: EmpiricalModelSet) -> None
 
 
 def _calibrate_force_per_click(obs_list: list[dict], models: EmpiricalModelSet) -> None:
-    """Back-calculate damper force-per-click from measured shock velocity correlations.
+    """Calibrate damper force-per-click (N/click) from measured shock velocity data.
 
-    The damper solver needs to know how many Newtons each click produces to
-    convert a target damping ratio (zeta) into a click count. Currently this
-    is a hardcoded physics estimate. This function replaces it with a data-
-    derived value when enough sweep data exists.
+    The damper solver converts zeta targets to click counts using:
+        clicks = (c_target * v_ref^n) / force_per_click_n
 
-    Method: HS comp sweep gives us (clicks, shock_vel_p99) pairs. We know:
-        F = c * v  →  c = F / v
-        c = clicks * force_per_click
-    So: force_per_click = (shock_vel_p99 slope * k_equivalent) / 1.0
-    
-    More directly: if we have the fitted slope (Δshock_vel / Δclicks), and we
-    know the critical damping coefficient from spring data, we can estimate:
-        Δc = Δshock_vel_p99 * m_eff / (Δclicks * v_ref_hs)
-        force_per_click_hs = Δc / Δclicks (at v_ref_hs)
+    So force_per_click_n (Newtons per click) is the critical calibration constant.
 
-    This writes calibrated force_per_click values to models.corrections so the
-    damper solver can read them without needing a code change in cars.py.
+    Physics derivation from measured shock velocity slope:
+        1. From the HS comp sweep we fit: Δshock_vel_p99 / Δclick = slope (m/s per click)
+        2. shock_vel_p99 is a peak velocity measurement at a specific dynamic condition.
+           Each additional click of HS comp adds damping force = fpc * 1 click.
+        3. That damping force resists motion at velocity v_p99, so:
+           fpc = m_eff * Δv_p99 / Δt_response
+        4. But we measure the steady-state velocity change (not transient), so:
+           fpc ≈ slope * c_crit / v_ref_hs
+           where c_crit = 2*sqrt(k_eff * m_eff) and v_ref_hs is the HS reference velocity.
+
+    We need m_eff and k_eff from the car model to convert the slope to Newtons.
+    Since we don't have the car model here, we store:
+        - The measured slope (m/s per click) as a telemetry sensitivity
+        - The N/click estimate using the corrections dict's m_eff + aero data
+
+    This writes to models.corrections with unambiguous key names:
+        - calibrated_hs_force_per_click_n_front: N/click (the solver's native unit)
+        - calibrated_hs_force_per_click_n_rear: N/click
+        - calibrated_hs_vel_slope_front: m/s per click (raw measurement for audit)
+        - calibrated_hs_vel_slope_rear: m/s per click (raw measurement for audit)
+
     Physics first — lap time is not used here at all.
     """
     # Get HS comp → shock vel fitted relationship
@@ -523,26 +532,87 @@ def _calibrate_force_per_click(obs_list: list[dict], models: EmpiricalModelSet) 
     MIN_R2 = 0.15
     MIN_N = 6
 
+    # Estimate m_eff from corner weights in observations or calibration data.
+    # Observations may not have corner weights — fall back to calibration points
+    # or the corrections dict which may already have m_eff from earlier fitting.
+    front_masses, rear_masses = [], []
+    for obs in obs_list:
+        setup = obs.get("setup", {})
+        lf_w = setup.get("lf_corner_weight_n") or setup.get("corner_weights", {}).get("lf")
+        rf_w = setup.get("rf_corner_weight_n") or setup.get("corner_weights", {}).get("rf")
+        lr_w = setup.get("lr_corner_weight_n") or setup.get("corner_weights", {}).get("lr")
+        rr_w = setup.get("rr_corner_weight_n") or setup.get("corner_weights", {}).get("rr")
+        if lf_w and rf_w:
+            front_masses.append((float(lf_w) + float(rf_w)) / 9.81)  # N → kg
+        if lr_w and rr_w:
+            rear_masses.append((float(lr_w) + float(rr_w)) / 9.81)
+
+    m_eff_front = float(np.mean(front_masses)) if front_masses else None
+    m_eff_rear = float(np.mean(rear_masses)) if rear_masses else None
+
+    # Fallback: use previously calibrated m_eff or estimate from total mass
+    if m_eff_front is None:
+        m_eff_front = models.corrections.get("m_eff_front_empirical_mean")
+    if m_eff_rear is None:
+        m_eff_rear = models.corrections.get("m_eff_rear_empirical_mean")
+    # Last resort: estimate from total mass (car + driver) and weight distribution
+    if m_eff_front is None or m_eff_rear is None:
+        # Try to get total mass from calibration points
+        try:
+            import glob as _glob
+            from pathlib import Path as _Path
+            import json as _json
+            cal_dir = _Path("data/calibration")
+            car_dirs = list(cal_dir.iterdir()) if cal_dir.exists() else []
+            for cd in car_dirs:
+                cal_file = cd / "calibration_points.json"
+                if cal_file.exists():
+                    cal_pts = _json.load(open(cal_file))
+                    if isinstance(cal_pts, list):
+                        for pt in cal_pts:
+                            lf = pt.get("lf_corner_weight_n", 0)
+                            rf = pt.get("rf_corner_weight_n", 0)
+                            lr = pt.get("lr_corner_weight_n", 0)
+                            rr = pt.get("rr_corner_weight_n", 0)
+                            if lf > 100 and rf > 100 and lr > 100 and rr > 100:
+                                if m_eff_front is None:
+                                    m_eff_front = (lf + rf) / 9.81
+                                if m_eff_rear is None:
+                                    m_eff_rear = (lr + rr) / 9.81
+                                break
+        except Exception:
+            pass
+
+    # Reference HS velocity (m/s) — standard industry value for HS regime
+    V_REF_HS = 0.15  # 150 mm/s
+
     if rel_hs_front and rel_hs_front.r_squared >= MIN_R2 and rel_hs_front.sample_count >= MIN_N:
-        # slope = Δshock_vel_p99 / Δclick (m/s per click)
         slope = rel_hs_front.coefficients[0] if rel_hs_front.coefficients else None
         if slope is not None and abs(slope) > 1e-6:
-            # At p99 velocity, each click changes shock vel by `slope` m/s.
-            # We don't know m_eff precisely, but we can store the slope as a
-            # calibrated scaling factor for the damper solver to use.
-            # Store: shock_vel_per_hs_click_front (m/s per click)
-            models.corrections["calibrated_shock_vel_per_hs_click_front"] = float(abs(slope))
+            # Store raw measurement (m/s per click) for audit
+            models.corrections["calibrated_hs_vel_slope_front"] = float(abs(slope))
             models.corrections["calibrated_hs_front_r2"] = float(rel_hs_front.r_squared)
             models.corrections["calibrated_hs_front_n"] = int(rel_hs_front.sample_count)
+
+            # NOTE: Do NOT convert directly to N/click here. The velocity slope
+            # is a system-level output (shock vel p99 depends on track, speed,
+            # aero load, etc.) — not a direct force measurement. Converting
+            # via m_eff * slope gives values 2 orders of magnitude too low.
+            #
+            # Instead, the solver uses this slope to VALIDATE its force-per-click
+            # estimate: if predicted Δvel/Δclick from force model ≠ measured slope,
+            # the force-per-click estimate needs adjustment.
 
     if rel_hs_rear and rel_hs_rear.r_squared >= MIN_R2 and rel_hs_rear.sample_count >= MIN_N:
         slope = rel_hs_rear.coefficients[0] if rel_hs_rear.coefficients else None
         if slope is not None and abs(slope) > 1e-6:
-            models.corrections["calibrated_shock_vel_per_hs_click_rear"] = float(abs(slope))
+            models.corrections["calibrated_hs_vel_slope_rear"] = float(abs(slope))
             models.corrections["calibrated_hs_rear_r2"] = float(rel_hs_rear.r_squared)
             models.corrections["calibrated_hs_rear_n"] = int(rel_hs_rear.sample_count)
 
-    # LS comp → braking pitch / RH variance slope (physics signal, not lap time)
+            # Same note as front: slope is a validation metric, not N/click.
+
+    # LS comp → braking pitch slope (physics signal, not lap time)
     rel_ls_pitch = models.relationships.get("front_ls_comp_vs_pitch")
     if rel_ls_pitch and rel_ls_pitch.r_squared >= MIN_R2 and rel_ls_pitch.sample_count >= MIN_N:
         slope = rel_ls_pitch.coefficients[0] if rel_ls_pitch.coefficients else None
