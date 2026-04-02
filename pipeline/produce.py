@@ -1376,6 +1376,9 @@ def produce(
             _current_dict: dict = {
                 "front_rh_static": getattr(current_setup, "static_front_rh_mm", None),
                 "rear_rh_static": getattr(current_setup, "static_rear_rh_mm", None),
+                # Pushrod — always show so user knows when spring/RH change requires pushrod adjustment
+                "front_pushrod_mm": getattr(current_setup, "front_pushrod_mm", None),
+                "rear_pushrod_mm": getattr(current_setup, "rear_pushrod_mm", None),
                 # Use indexed fields when available (Ferrari), else raw N/mm (BMW)
                 "front_heave_nmm": _raw_idx.get("front_heave_index") if _raw_idx else getattr(current_setup, "front_heave_nmm", None),
                 "rear_third_nmm": _raw_idx.get("rear_heave_index") if _raw_idx else getattr(current_setup, "rear_third_nmm", None),
@@ -1404,6 +1407,9 @@ def produce(
             _recommended_dict: dict = {
                 "front_rh_static": step1.static_front_rh_mm,
                 "rear_rh_static": step1.static_rear_rh_mm,
+                # Pushrod — solver recalculates this when spring/RH changes (rake_solver.py)
+                "front_pushrod_mm": getattr(step1, "front_pushrod_offset_mm", None),
+                "rear_pushrod_mm": getattr(step1, "rear_pushrod_offset_mm", None),
                 # Use public_output_value to convert to display units (e.g. N/mm → index for Ferrari)
                 "front_heave_nmm": public_output_value(car, "front_heave_nmm", step2.front_heave_nmm),
                 "rear_third_nmm": public_output_value(car, "rear_third_nmm", step2.rear_third_nmm),

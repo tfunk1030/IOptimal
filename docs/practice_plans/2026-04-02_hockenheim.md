@@ -10,6 +10,19 @@ Every stint: **Outlap → Push L1 → Push L2 → Inlap → pit/setup change (~2
 Heaves · Torsion bar OD · Torsion bar turns · Pushrod · Heave springs · Camber · Toe · Dampers
 *(ARBs deprioritized — less setup sensitivity)*
 
+## ⚠️ Dependency Rules — Must Follow for Clean Data
+
+| If you change... | You must also adjust... | Why |
+|-----------------|------------------------|-----|
+| Front/rear heave index (spring stiffness) | **Front/rear pushrod** → restore static RH to baseline value | Stiffer spring = less deflection = car sits higher unless pushrod compensates |
+| Torsion bar OD | **Torsion bar turns** → restore static RH | Larger OD = stiffer corner spring = RH rises |
+| Pushrod directly | Nothing — direct RH control | |
+| Camber | Check toe is still in legal range | Geometry coupling, minor |
+
+**Minimum legal static RH: 30mm front and rear.** After any spring or pushrod change, verify garage shows ≥30mm before going out.
+
+**The auto-solver handles this cascade automatically** — when it recommends a new heave index, the delta card will also show the required pushrod adjustment. For manual testing stints below, you must do this yourself.
+
 ---
 
 ## Ferrari 499P Block (T+0:00 – T+44:00) — 5 stints
@@ -35,8 +48,8 @@ Heaves · Torsion bar OD · Torsion bar turns · Pushrod · Heave springs · Cam
 | # | Time | Change | Value | Why |
 |---|------|--------|-------|-----|
 | 6 | T+46:00 | **Baseline** | Current best setup as-is | Reference anchor |
-| 7 | T+56:00 | Front heave **softer** (–2 idx) | Less front heave stiffness | Heave spring sensitivity |
-| 8 | T+66:00 | Front heave **stiffer** (+2 idx from baseline) | More front heave stiffness | Brackets heave range |
+| 7 | T+56:00 | Front heave **–2 idx** + adjust front pushrod to restore baseline static front RH | Less front heave stiffness | Heave spring sensitivity |
+| 8 | T+66:00 | Front heave **+2 idx** + adjust front pushrod to restore baseline static front RH | More front heave stiffness | Brackets heave range |
 | 9 | T+76:00 | Front camber **–0.5°** more negative | e.g. –3.0° → –3.5° | Camber sensitivity + tire temp |
 | 10 | T+86:00 | **Solver rec** | Check Telegram card | Run whatever was recommended |
 

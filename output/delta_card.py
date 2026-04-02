@@ -36,6 +36,7 @@ _CALIBRATED: dict[str, list[str]] = {
         "front_camber_deg", "rear_camber_deg",
         "front_toe_mm", "rear_toe_mm",
         "diff_preload_nm", "diff_clutch_plates",
+        "front_pushrod_mm", "rear_pushrod_mm",
         "lf_ls_comp_clicks", "rf_ls_comp_clicks", "lr_ls_comp_clicks", "rr_ls_comp_clicks",
         "lf_hs_comp_clicks", "rf_hs_comp_clicks", "lr_hs_comp_clicks", "rr_hs_comp_clicks",
         "lf_ls_rbd_clicks", "rf_ls_rbd_clicks", "lr_ls_rbd_clicks", "rr_ls_rbd_clicks",
@@ -50,6 +51,8 @@ _CALIBRATED: dict[str, list[str]] = {
         "diff_preload_nm",
         "wing_angle_deg",
         "front_rh_static", "rear_rh_static",
+        # Pushrod always paired with spring/RH changes — geometry-driven, HIGH confidence
+        "front_pushrod_mm", "rear_pushrod_mm",
     ],
     "cadillac": [
         "front_heave_nmm", "rear_third_nmm", "torsion_bar_od_mm",
@@ -162,6 +165,14 @@ _WHY: dict[str, dict[str, str]] = {
         "increase": "raise rear RH — reduce rake angle",
         "decrease": "lower rear RH — increase rake for more aero balance rear",
     },
+    "front_pushrod_mm": {
+        "increase": "pushrod raised — compensates spring/RH change to maintain target ride height",
+        "decrease": "pushrod lowered — compensates spring/RH change to maintain target ride height",
+    },
+    "rear_pushrod_mm": {
+        "increase": "rear pushrod raised — compensates spring/RH change",
+        "decrease": "rear pushrod lowered — compensates spring/RH change",
+    },
     "wing_angle_deg": {
         "increase": "more wing DF — higher downforce requirement",
         "decrease": "less wing drag — lower DF track or priority is top speed",
@@ -222,6 +233,8 @@ _DISPLAY_NAMES: dict[str, str] = {
     "rear_toe_mm": "Rear Toe",
     "front_rh_static": "Front RH Target",
     "rear_rh_static": "Rear RH Target",
+    "front_pushrod_mm": "Front Pushrod",
+    "rear_pushrod_mm": "Rear Pushrod",
     "wing_angle_deg": "Wing Angle",
     "brake_bias_pct": "Brake Bias",
     "tc_gain": "TC Gain",
@@ -255,6 +268,8 @@ _UNITS: dict[str, str] = {
     "rear_toe_mm": "mm",
     "front_rh_static": "mm",
     "rear_rh_static": "mm",
+    "front_pushrod_mm": "mm",
+    "rear_pushrod_mm": "mm",
     "wing_angle_deg": "deg",
     "diff_preload_nm": "Nm",
     "brake_bias_pct": "%",
