@@ -1,15 +1,15 @@
 {
   "car": "ferrari",
-  "total_sessions": 33,
+  "total_sessions": 34,
   "tracks_included": [
     "Hockenheimring Baden-W\u00fcrttemberg",
     "Sebring International Raceway"
   ],
-  "aero_compression_front_mm": 7.609598807132605,
-  "aero_compression_rear_mm": 17.71551514827844,
-  "roll_gradient_global_deg_per_g": 0.31510000000000005,
+  "aero_compression_front_mm": 7.609977161183078,
+  "aero_compression_rear_mm": 17.686802931392894,
+  "roll_gradient_global_deg_per_g": 0.30923809523809526,
   "m_eff_front_global_kg": null,
   "anomalies": [],
   "confidence": "high",
-  "last_updated": "2026-04-02T03:58:29.792243+00:00"
+  "last_updated": "2026-04-02T04:10:31.719154+00:00"
 }
