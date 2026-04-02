@@ -4,7 +4,7 @@
   "car": "ferrari",
   "track": "Sebring International Raceway",
   "track_config": "International",
-  "timestamp": "2026-03-21T00:43:00.702130+00:00",
+  "timestamp": "2026-04-02T01:46:49.112610+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 17.0,
@@ -85,7 +85,8 @@
         "hs_rbd": 27,
         "hs_slope": 11
       }
-    }
+    },
+    "rear_torsion_od_mm": 8.0
   },
   "performance": {
     "best_lap_time_s": 109.11593627929688,
@@ -160,6 +161,12 @@
     "tc_intervention_pct": 0.0,
     "pitch_mean_at_speed_deg": 0.139,
     "pitch_range_deg": 1.73,
+    "pitch_range_braking_deg": 1.32,
+    "front_rh_excursion_measured_mm": 15.217810602188031,
+    "front_braking_lock_ratio_p95": 0.10287675671279418,
+    "rear_power_slip_ratio_p95": 0.08978281542658806,
+    "front_pressure_mean_kpa": 185.5,
+    "rear_pressure_mean_kpa": 184.0,
     "understeer_left_turn_deg": 0.05543699860572815,
     "understeer_right_turn_deg": -0.11005275696516037,
     "lf_shock_vel_p95_mps": 0.11767644435167313,
@@ -440,21 +447,23 @@
   "solver_predictions": {
     "front_rh_std_mm": 0.0,
     "rear_rh_std_mm": 0.0,
-    "lltd_predicted": 0.5381,
+    "lltd_predicted": 0.4971,
     "body_roll_predicted_deg_per_g": 0.0,
     "front_bottoming_predicted": 0,
-    "front_heave_travel_used_pct": 59.584,
-    "front_excursion_mm": 14.913,
-    "braking_pitch_deg": 1.294,
-    "front_lock_p95": 0.1004,
-    "rear_power_slip_p95": 0.0853,
-    "body_slip_p95_deg": 3.069,
-    "understeer_low_deg": -0.26,
-    "understeer_high_deg": 0.122,
-    "front_pressure_hot_kpa": 186.3,
-    "rear_pressure_hot_kpa": 184.45
+    "front_heave_travel_used_pct": 43.776,
+    "front_excursion_mm": 10.957,
+    "braking_pitch_deg": 0.95,
+    "front_lock_p95": 0.0739,
+    "rear_power_slip_p95": 0.098,
+    "body_slip_p95_deg": 3.273,
+    "understeer_low_deg": 0.038,
+    "understeer_high_deg": 0.231,
+    "front_pressure_hot_kpa": 184.667,
+    "rear_pressure_hot_kpa": 183.85
   },
   "solver_comparison": {},
+  "validation_failed": false,
+  "setup_fingerprint": "",
   "corner_performance": [
     {
       "corner_id": 0,

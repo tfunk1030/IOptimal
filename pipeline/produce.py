@@ -37,6 +37,7 @@ from analyzer.setup_schema import apply_live_control_overrides, build_setup_sche
 from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
 from output.report import to_public_output_payload
+from car_model.setup_registry import public_output_value
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
 from solver.candidate_search import candidate_to_dict, generate_candidate_families
@@ -1367,14 +1368,19 @@ def produce(
         try:
             from output.delta_card import format_delta_card
 
-            # Build current params dict from IBT-extracted setup
+            # Build current params dict from IBT-extracted setup.
+            # For Ferrari (and any car with indexed springs), use raw_indexed_fields
+            # so current values are in the same display units as the solver output
+            # (public_output_value converts N/mm → index for Ferrari).
+            _raw_idx = getattr(current_setup, "raw_indexed_fields", {}) or {}
             _current_dict: dict = {
                 "front_rh_static": getattr(current_setup, "static_front_rh_mm", None),
                 "rear_rh_static": getattr(current_setup, "static_rear_rh_mm", None),
-                "front_heave_nmm": getattr(current_setup, "front_heave_nmm", None),
-                "rear_third_nmm": getattr(current_setup, "rear_third_nmm", None),
-                "torsion_bar_od_mm": getattr(current_setup, "front_torsion_od_mm", None),
-                "rear_spring_nmm": getattr(current_setup, "rear_spring_nmm", None),
+                # Use indexed fields when available (Ferrari), else raw N/mm (BMW)
+                "front_heave_nmm": _raw_idx.get("front_heave_index") if _raw_idx else getattr(current_setup, "front_heave_nmm", None),
+                "rear_third_nmm": _raw_idx.get("rear_heave_index") if _raw_idx else getattr(current_setup, "rear_third_nmm", None),
+                "torsion_bar_od_mm": _raw_idx.get("front_torsion_bar_index") if _raw_idx else getattr(current_setup, "front_torsion_od_mm", None),
+                "rear_spring_nmm": _raw_idx.get("rear_torsion_bar_index") if _raw_idx else getattr(current_setup, "rear_spring_nmm", None),
                 "front_arb_blade": getattr(current_setup, "front_arb_blade", None),
                 "rear_arb_blade": getattr(current_setup, "rear_arb_blade_start", None) or getattr(current_setup, "rear_arb_blade", None),
                 "front_arb_size": getattr(current_setup, "front_arb_size", None),
@@ -1394,13 +1400,15 @@ def produce(
             _current_dict = {k: v for k, v in _current_dict.items() if v is not None}
 
             # Build recommended params dict from solver steps
+            # All spring/torsion values go through public_output_value to match IBT display units
             _recommended_dict: dict = {
                 "front_rh_static": step1.static_front_rh_mm,
                 "rear_rh_static": step1.static_rear_rh_mm,
-                "front_heave_nmm": step2.front_heave_nmm,
-                "rear_third_nmm": step2.rear_third_nmm,
-                "torsion_bar_od_mm": step3.front_torsion_od_mm,
-                "rear_spring_nmm": step3.rear_spring_rate_nmm,
+                # Use public_output_value to convert to display units (e.g. N/mm → index for Ferrari)
+                "front_heave_nmm": public_output_value(car, "front_heave_nmm", step2.front_heave_nmm),
+                "rear_third_nmm": public_output_value(car, "rear_third_nmm", step2.rear_third_nmm),
+                "torsion_bar_od_mm": public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm),
+                "rear_spring_nmm": public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm),
                 "front_arb_blade": step4.front_arb_blade_start,
                 "rear_arb_blade": step4.rear_arb_blade_start,
                 "front_arb_size": step4.front_arb_size,
