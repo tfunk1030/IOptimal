@@ -66,3 +66,6 @@ build/
 
 # PyInstaller
 *.spec
+
+# Auto-generated empirical model files — never merge, always regenerate
+data/learnings/models/*_empirical.json
