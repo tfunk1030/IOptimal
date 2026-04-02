@@ -56,7 +56,7 @@ dir /b /o-d ibtfiles\*.ibt | head 3
 | Car | Sessions | Dampers | Springs | Aero | Geometry | Score |
 |-----|----------|---------|---------|------|----------|-------|
 | BMW | 102 | ✅ | ✅ | ✅ | ✅ | 8.5/10 |
-| Ferrari | 24 | 🔄 LS done, HS started | ✅ heave/torsion validated | ✅ wing=17 | partial (camber at limit) | 6.5/10 |
+| Ferrari | 28 | ✅ LS done (0/10/20/30/40), 🔄 HS (0/10/20 done, need 30/40) | ✅ heave/torsion validated | ✅ wing=17 | partial (camber at limit) | 7.0/10 |
 | Acura | 5 | ❌ | ❌ | ❌ | ❌ | 2.5/10 |
 | Cadillac | 4 | ❌ | ❌ | ❌ | ❌ | 3.0/10 |
 | Porsche | 2 | ❌ (verify IBT parse first) | ❌ | ❌ | ❌ | 1.5/10 |
@@ -115,37 +115,63 @@ dir /b /o-d ibtfiles\*.ibt | head 3
 
 ---
 
-## Ferrari Session A — Front Dampers + Rear Springs + Camber (~1.5 hours, 6 stints)
+## Ferrari Session A — Front LS Comp Sweep ✅ COMPLETE (Apr 1, 2026)
 
-**Batching logic:** Front dampers affect front shock channels. Rear heave affects rear RH channels. Camber affects tyre temps. All separable.
+**What was done:** Front LS comp sweep at 0, 10, 20, 30, 40. Rear locked at 40/40/35/0/10.
 
-| Stint | Front LS Comp | Rear Heave Idx | Front Camber | Everything Else | What It Calibrates |
-|-------|--------------|----------------|-------------|-----------------|-------------------|
-| 1 | **0** (baseline) | **8** (baseline) | **–2.9°** (baseline) | baseline | Reference for all 3 axes |
-| 2 | **10** | **8** | **–2.9°** | baseline | LS force-per-click (front shock osc, pitch) |
-| 3 | **20** | **6** | **–2.9°** | adjust rear pushrod for RH≥30 | LS comp + rear heave m_eff |
-| 4 | **30** | **6** | **–2.5°** | same | LS comp + camber contact patch |
-| 5 | **40** | **4** | **–2.5°** | adjust rear pushrod | LS comp extreme + rear heave soft |
-| 6 | **0** (return) | **8** (return) | **–2.9°** (return) | restore baseline | Confirm repeatability |
+| Stint | Front LS Comp | Lap Time | Status |
+|-------|--------------|----------|--------|
+| 1 | **10** | 88.796s | ✅ done |
+| 2 | **20** | 89.020s | ✅ done |
+| 3 | **30** | 89.127s | ✅ done |
+| 4 | **40** | 88.562s | ✅ done — fastest of LS sweep |
 
-**What you calibrate in 6 stints:** LS force-per-click (5 data points), rear heave m_eff (3 heave values), front camber sensitivity (2 camber values). That's 3 phases of the old plan in 1 session.
+**Note:** Baseline (0) was covered by prior sessions (87.575s best). LS sweep ran rear at 40, not baseline 0.
 
-**After stint 6:** If lap time matches stint 1 within 0.3s, the data is clean. If not, there's a hysteresis issue (tyres, track temp) and we need to time-weight.
+**Learned:**
+- `[learn] damper_lf_ls_comp: 10 → 0.107s slower`
+- `[learn] damper_lf_ls_comp: 10 → 0.566s faster`
+- Front LS comp → braking pitch: R²=0.19
+- Front LS comp → front shock oscillation: R²=0.01 (needs more data)
 
 ---
 
-## Ferrari Session B — HS Dampers + Front Springs + Rear Camber (~1.5 hours, 6 stints)
+## Ferrari Session A2 — Front HS Comp Sweep 🔄 IN PROGRESS
 
-| Stint | Front HS Comp | Front Heave Idx | Rear Camber | Everything Else | What It Calibrates |
-|-------|--------------|----------------|-------------|-----------------|-------------------|
-| 1 | **0** (baseline) | **5** (baseline) | **–1.8°** (baseline) | baseline | Reference |
-| 2 | **10** | **5** | **–1.8°** | baseline | HS force-per-click |
-| 3 | **20** | **3** | **–1.8°** | adjust front pushrod | HS comp + front heave m_eff |
-| 4 | **30** | **3** | **–1.5°** | same | HS comp + rear camber |
-| 5 | **40** | **7** | **–1.5°** | adjust front pushrod | HS comp max + front heave stiff |
-| 6 | **0** (return) | **5** (return) | **–1.8°** (return) | restore baseline | Repeatability check |
+**What's done so far:** Front HS comp at 0 (baseline from prior), 10, 20. Need 30 and 40.
 
-**What you calibrate:** HS force-per-click (5 points), front heave m_eff (3 values), rear camber sensitivity (2 values).
+| Stint | Front HS Comp | Lap Time | Status |
+|-------|--------------|----------|--------|
+| baseline | **0** | 87.575s (best observed) | ✅ from prior sessions |
+| 1 | **10** | 88.647s | ✅ done |
+| 2 | **20** | — | ✅ done (pushed but not verified yet) |
+| 3 | **30** | — | ❌ **DO NEXT** |
+| 4 | **40** | — | ❌ needed |
+
+**Learned so far:**
+- `[learn] damper_lf_hs_comp: 10 → 0.104s faster; front_bottoming -12, understeer_hs -0.09`
+- Front HS comp → front shock vel p99: R²=0.44 (strong signal)
+
+**After HS sweep is complete:** Front dampers fully calibrated. Move to Session B.
+
+---
+
+## Ferrari Session B — Springs + Camber + Rear Dampers (~1.5 hours, 6 stints)
+
+**Prerequisite:** Finish HS comp sweep (stints 3-4 from Session A2 above).
+
+**Batching logic:** Front heave affects front RH channels. Rear heave affects rear RH channels. Camber affects tyre temps. All separable.
+
+| Stint | Front Heave Idx | Rear Heave Idx | Front Camber | Rear Camber | Adjust | Calibrates |
+|-------|----------------|----------------|-------------|-------------|--------|------------|
+| 1 | **5** (baseline) | **8** (baseline) | **–2.9°** | **–1.8°** | — | Reference |
+| 2 | **3** | **8** | **–2.9°** | **–1.8°** | front pushrod for RH≥30 | Front heave m_eff (soft) |
+| 3 | **7** | **6** | **–2.9°** | **–1.5°** | both pushrods | Front heave stiff + rear heave soft + rear camber |
+| 4 | **5** | **4** | **–2.5°** | **–1.5°** | rear pushrod | Front camber + rear heave softer |
+| 5 | **5** | **10** (if available) | **–2.2°** | **–1.8°** | rear pushrod | Rear heave stiff + front camber range |
+| 6 | **5** (return) | **8** (return) | **–2.9°** (return) | **–1.8°** (return) | restore | Repeatability |
+
+**What you calibrate in 6 stints:** Front heave m_eff (3 values), rear heave m_eff (4 values), front camber sensitivity (3 values), rear camber sensitivity (2 values).
 
 ---
 
