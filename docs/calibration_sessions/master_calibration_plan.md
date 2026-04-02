@@ -79,19 +79,40 @@ Phase 6 → ARB stiffness (lowest priority — LLTD sweep if time allows)
 | Wing | 17 |
 | Front heave index | 5 |
 | Rear heave index | 8 |
+| Front heave perch | –6.5 mm |
+| Rear heave perch | –104.0 mm |
 | Front torsion bar index | 2 |
 | Rear torsion bar index | 1 |
+| Front torsion bar turns | 0.100 turns |
+| Rear torsion bar turns | 0.048 turns |
 | FARB | B / blade 1 |
 | RARB | C / blade 1 |
-| Front pushrod | –3.0 mm |
-| Rear pushrod | +14.0 mm |
+| Front pushrod delta | +2.0 mm |
+| Rear pushrod delta | +18.0 mm |
 | Static front RH | 30.1 mm |
 | Static rear RH | 47.5 mm |
-| Front camber | –1.9° |
-| Rear camber | –1.6° |
-| Front toe | –2.0 mm |
+| Front camber | **–2.9°** (at legal limit — ⚠️ warning shown) |
+| Rear camber | **–1.8°** |
+| Front toe | **–0.5 mm** |
 | Rear toe | 0.0 mm |
-| LS comp | 24 (current running value) |
+| Corner weights | Front: 2669 N × 2, Rear: 2938 N × 2 |
+| Fuel | 58.0 L |
+| Front torsion defl | 18.8 mm → k_bar = 2669/18.8 = **142 N/mm** at idx=2 |
+| Rear torsion defl | 17.0 mm → k_bar = 2938/17.0 = **173 N/mm** at idx=1 |
+| Front heave defl | 1.8 mm / 76.1 mm travel (2.4% used — minimal static load on heave spring) |
+| Rear heave defl | 7.8 mm / 57.9 mm |
+| Front shock defl | 16.5 mm / 100.0 mm |
+| Rear shock defl | 19.6 mm / 150.0 mm |
+| Front LS/HS comp | **0** clicks (min) — VALIDATED from best lap IBT |
+| Front LS/HS rbd | **0** clicks (min) — VALIDATED |
+| Front HS slope | **7** clicks — VALIDATED |
+| Rear LS comp | **40** clicks (MAX) — VALIDATED |
+| Rear HS comp | **40** clicks (MAX) — VALIDATED |
+| Rear LS rbd | **35** clicks — VALIDATED |
+| Rear HS rbd | **0** clicks — VALIDATED |
+| Rear HS slope | **10** clicks — VALIDATED |
+
+**Key insight:** Ferrari @ Hockenheim runs near-zero front mechanical damping. Aero load handles front stability. Rear is maxed to control platform bounce. Front LS sweep tests what adding damping costs.
 
 ---
 
@@ -101,11 +122,13 @@ Phase 6 → ARB stiffness (lowest priority — LLTD sweep if time allows)
 
 | Stint | Front LS comp | Expected effect | Drop IBT? |
 |-------|-------------|----------------|-----------|
-| 1 | 24 (baseline) | Reference | ✅ |
-| 2 | 10 | Underdam front — floaty entry | ✅ |
-| 3 | 20 | Physics baseline click | ✅ |
-| 4 | 30 | Stiff entry | ✅ |
-| 5 | 40 (max) | Overdamped — harsh | ✅ |
+| 1 | **0** (baseline — VALIDATED) | Reference — zero front mechanical damping | ✅ |
+| 2 | 5 | First step up — marginal front damping | ✅ |
+| 3 | 10 | Moderate front — may feel more planted but slower | ✅ |
+| 4 | 20 | Noticeably more front — expect lap time loss | ✅ |
+| 5 | 30 | High front — likely significantly slower | ✅ |
+
+**Rear LS stays at 40 (max) throughout every stint.**
 
 **What to note per stint:** Does the car feel underdamped (bouncy over kerbs, floating on braking) or overdamped (harsh, loses traction on bumps)?
 

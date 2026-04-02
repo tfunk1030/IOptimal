@@ -1,0 +1,601 @@
+══════════════════════════════════════════════════════════════════════
+  Ferrari 499P  ·  Hockenheimring Baden-Württemberg — Grand Prix  ·  Wing 17.0°
+  Telemetry-calibrated  Lap #16  (112.308s)  ·  2026-04-02 03:13 UTC
+══════════════════════════════════════════════════════════════════════
+
+  Support: calibrated  ·  35 observations  ·  Signals: 0/0 direct
+  Prediction confidence: 0.68
+
+─────────────────────────── DRIVER PROFILE ───────────────────────────
+  Style: aggressive-erratic  ·  Trail brake: moderate (30%)  ·  Throttle: moderate  ·  Consistency: erratic
+  Noise: driver=1.00, setup=0.72  (driver variance=1.00; setup instability=0.72)
+
+───────────────────────── HANDLING DIAGNOSIS ─────────────────────────
+  🔴 11 vortex burst events detected at speed
+    ↳ Front ride height dropped below critical aero threshold. Sudde
+  ⚪ 17 front bottoming events (clean track)
+    ↳ Front suspension hitting bump stops on clean track surface. Ca
+  ⚪ Rear third spring travel 92% used at speed (p99 defl 46.4mm)
+    ↳ Rear third spring using most of its available travel at speed.
+  ⚪ 3 rear third spring bottoming events (deflection within 2mm of DeflMax)
+    ↳ Rear third spring physically bottoming out — deflection at mec
+  Causal chain: CausalDiagnosis(root_causes=[RootCauseAnalysis(root_ca
+
+───────────────────────── SIGNAL CONFIDENCE ──────────────────────────
+  Trusted: mean_front_rh_at_speed_mm, mean_rear_rh_at_speed_mm, front_
+  Proxy: abs_active_pct, understeer_mean_deg, understeer_low_speed_deg
+  Unresolved: front_rh_settle_time_ms (no_sustained_settle_window), re
+
+───────────────────── BRAKE HARDWARE (FROM IBT) ──────────────────────
+  Brake bias target............................................. +0.0
+  Brake migration............................................... +6.0
+  Front master cyl........................................... 19.1 mm
+  Rear master cyl............................................ 19.1 mm
+  Pad compound................................................ Medium
+
+───────────────────────── PRIMARY CAR STATES ─────────────────────────
+  Overhaul: moderate_rework  (conf 79%, score 1.72)
+  Major states: front_contact_patch_undercambered (1.00/0.85)
+  Impacted solver steps: 1, 2, 3, 4, 5, 6
+  State issues span multiple subsystems; more than a single tweak is r
+  - front_contact_patch_undercambered  sev=1.00  conf=0.85  loss~110ms
+    increase front negative camber or reduce front outer-shoulder ov
+  - front_platform_near_limit_high_speed  sev=1.00  conf=0.30  loss~420ms
+    increase high-speed front platform support
+  - front_platform_collapse_braking  sev=1.00  conf=0.22  loss~300ms
+    increase front heave support and preserve braking travel margin
+  - rear_platform_under_supported  sev=0.59  conf=0.30  loss~158ms
+    increase rear platform support
+
+──────────────────────── CANDIDATE SELECTION ─────────────────────────
+  Selected family: incremental
+  Candidate score: 0.511
+
+─────────────────────── PREDICTED IMPROVEMENTS ───────────────────────
+  Prediction confidence: 0.68
+  Front travel used: 61.300 -> 44.136 % (-17.164, improves)
+  Front excursion: 22.107 -> 15.917 mm (-6.190, improves)
+  Rear RH variance: 6.411 -> 8.013 mm (+1.602, worsens)
+  Braking pitch: 2.100 -> 1.538 deg (-0.562, improves)
+  Front lock p95: 0.080 -> 0.058 (-0.022, improves)
+  Rear power slip p95: unavailable (predictor did not return an estimate)
+  Body slip p95: 2.255 -> 2.198 deg (-0.057, improves)
+  Understeer low: 0.578 -> 0.932 deg (+0.354, worsens)
+  Understeer high: -0.152 -> 0.081 deg (+0.233, worsens)
+  Front hot pressure: 177.900 -> 178.300 kPa (+0.400, tracks target)
+  Rear hot pressure: 174.700 -> 174.700 kPa (+0.000, tracks target)
+
+══════════════════════════════════════════════════════════════════════
+  Ferrari 499P  ·  Hockenheimring Baden-Württemberg — Grand Prix  ·  Wing 17.0°
+  Physics-based setup  ·  2026-04-02 03:13 UTC
+══════════════════════════════════════════════════════════════════════
+
+  Support: calibrated  ·  35 observations
+
+┌────────────────────────── SETUP TO ENTER ──────────────────────────┐
+│  PLATFORM / SPRINGS                                                │
+│  Wing                     17.0 deg                                 │
+│  Fuel load                58 L                                     │
+│  Front static RH target   30.0 mm                                  │
+│  Rear static RH target    41.2 mm                                  │
+│  Front pushrod            -2.5 mm                                  │
+│  Rear pushrod             +2.5 mm                                  │
+│  Front heave index        7 idx                                    │
+│  Front heave perch        -10.5 mm                                 │
+│  Rear heave index         0 idx                                    │
+│  Rear heave perch         -104.0 mm                                │
+│  Front torsion bar index  0 idx                                    │
+│  Front torsion bar turns  0.089 turns                              │
+│  Rear torsion bar index   0 idx                                    │
+│  Rear torsion bar turns   0.040 turns                              │
+│                                                                    │
+│  ARBS / GEOMETRY                                                   │
+│  Front ARB size / blade   A / 1                                    │
+│  Rear ARB size / blade    A / 1                                    │
+│  Rear ARB live slow       blade 1                                  │
+│  Rear ARB live fast       blade 4                                  │
+│  Front camber             -1.6 deg                                 │
+│  Rear camber              -1.4 deg                                 │
+│  Front toe                -2.2 mm                                  │
+│  Rear toe                 +0.3 mm                                  │
+│                                                                    │
+│  BRAKES / DIFF / TC / TYRES                                        │
+│  Hybrid rear drive        enabled  corner pct: 90%                 │
+│  Brake bias               53.0%                                    │
+│  Brake bias status        telemetry_passthrough                    │
+│  Brake target / migration -0.5 / +5.0  [seeded_from_telemetry/se...│
+│  Bias migration gain      -1.0                                     │
+│  Master cyl F / R         16.8/22.2 mm  [seeded_from_telemetry]    │
+│  Pad compound             Low  [seeded_from_telemetry]             │
+│  Brake hardware status    Ferrari brake bias is sourced from sta...│
+│  Diff preload             35 Nm                                    │
+│  Diff coast/drive ramp    More Locking                             │
+│  Front diff preload       -50 Nm                                   │
+│  Diff clutch plates       4                                        │
+│  Diff lock coast / drive  43.9% / 20.5%                            │
+│  Diff preload / plate %   7.1% / 36.7%                             │
+│  TC gain / slip           4 / 5                                    │
+│  Tyre cold FL / FR        152 / 152 kPa                            │
+│  Tyre cold RL / RR        152 / 153 kPa                            │
+│                                                                    │
+│  DAMPERS                                                           │
+│  LF LS comp / rbd         7 / 7 clicks                             │
+│  LF HS comp / rbd / slope 3 / 3 / 11                               │
+│  RF LS comp / rbd         7 / 7 clicks                             │
+│  RF HS comp / rbd / slope 3 / 3 / 11                               │
+│  LR LS comp / rbd         3 / 4 clicks                             │
+│  LR HS comp / rbd / slope 1 / 3 / 11                               │
+│  RR LS comp / rbd         3 / 4 clicks                             │
+│  RR HS comp / rbd / slope 1 / 3 / 11                               │
+│                                                                    │
+│  TARGETS / LIMITS                                                  │
+│  DF balance               50.12% (target 50.14%)  ✓                │
+│  LLTD                     49.7% (target 51.0%)                     │
+│  Dynamic RH front / rear  19.5 / 36.5 mm                           │
+│  Heave travel margin      45.6 mm                                  │
+│  Front bottoming margin   11.4 mm                                  │
+│  Stall margin             +4.4 mm  ✓                               │
+└────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────── GARAGE CARD ────────────────────────────┐
+│                                                                    │
+│  RIDE HEIGHTS & PUSHRODS           SPRINGS                         │
+│  Front static:   30.0 mm           Heave F:        7 idx  perch -10mm│
+│  Rear static:    41.2 mm           Heave R:        0 idx  perch -104mm│
+│  Rake:           11.2 mm           F TB OD:    0 idx  0.089 Turns  │
+│  Front pushrod:  -2.5 mm           R TB OD:    0 idx               │
+│  Rear pushrod:    2.5 mm                                           │
+│                                                                    │
+│  ANTI-ROLL BARS                    WHEEL GEOMETRY                  │
+│  FARB: A      Blade 1  (locked)    Front camber: -1.6°             │
+│  RARB: A      Blade 1  [1→4]       Rear camber:  -1.4°             │
+│                                    Front toe:  -2.2 mm             │
+│                                    Rear toe:   +0.3 mm             │
+│                                                                    │
+│  BRAKES & DIFF                     TYRES                           │
+│  Brake bias: 53.0%                 Cold FL/FR: 152/152 kPa         │
+│  Diff: 35 Nm  More/More Lock  4pl  Cold RL/RR: 152/153 kPa         │
+│  Target/Mig: -0.5/+5.0             Master cyl: 16.8/22.2 mm        │
+│  Lock coast/drive: 43.9/20.5%      Pad: Low                        │
+│  Lock preload/plate: 7.1/36.7%     Status: Ferrari brake bias      │
+│                                                                    │
+│  DAMPERS (clicks)                     AERO STATUS                  │
+│            LF   RF   LR   RR       DF bal: 50.12%  ✓               │
+│  LS Comp:   7    7    3    3       L/D:    4.219                   │
+│  LS Rbd:    7    7    4    4       Stall:  +4.4mm  ✓               │
+│  HS Comp:   3    3    1    1       LLTD:   49.7%  (target 51.0%)   │
+│  HS Rbd:    3    3    3    3       Dyn RH: F 19.5  R 36.5 mm       │
+│  HS Slope: 11   11   11   11       Camber: F-1.6°  R-1.4°  [estimated]│
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────── TOP ACTIONS ────────────────────────────┐
+│  1. RARB live: blade 1 start  →  1 slow / 4 fast  [live adjustment]│
+│  2. wing_angle_deg: 17 deg  (1 deg wing -> DF/drag trad…  [126ms/unit]│
+│  3. Front ride height: 19.5 mm  (1mm front RH -> 55ms/la…  [55ms/unit]│
+│  4. Brake bias: 53 %  (1% bias deviation -> braking effi…  [38ms/unit]│
+│  5. Stint (LOOSE_START): start RARB -1 blade  → +1.6° US…  [endurance]│
+│  6. Sector: 54% fast-corner → aero platform priorit…  [track-specific]│
+└────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────── STINT CARD ────────────────────────────┐
+│  Balance evolution:                                                │
+│    Lap    US drift    RARB rec  Note                               │
+│  ──────────────────────────────────────────────────────────────────│
+│      0      +0.0°   blade 3                                        │
+│      6      +0.3°   blade 2                                        │
+│     12      +0.6°   blade 2                                        │
+│     18      +0.9°   blade 1     ← go softer                        │
+│     24      +1.2°   blade 1     ← go softer                        │
+│     30      +1.6°   blade 1     ← go softer                        │
+│                                                                    │
+│  Pushrod correction: +0.5mm over stint                             │
+│  Lap ~15: +0.3mm   Lap ~30: +0.5mm                                 │
+│  Tyre pressure rise: +3 kPa/10 laps                                │
+└────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────── LAP TIME SENSITIVITY ───────────────────────┐
+│  #    Parameter                  Current        Impact  Conf       │
+│  ──────────────────────────────────────────────────────────────────│
+│  1    wing_angle_deg                  17   -126ms/unit  medium     │
+│  2    front_rh_mm                     20    -55ms/unit  medium     │
+│  3    brake_bias_pct                  53    -38ms/unit  medium     │
+│  4    front_arb_size                   0    +30ms/unit  low        │
+│  5    rear_arb_size                    0    +30ms/unit  low        │
+│  6    rear_rh_mm                      37    -25ms/unit  medium     │
+│  7    torsion_bar_od_mm               20    +23ms/unit  medium     │
+│  8    rear_arb_blade                   1     -7ms/unit  high       │
+│  9    front_arb_blade                  1     +6ms/unit  medium     │
+│  10   front_heave_perch_mm           -11     -5ms/unit  medium     │
+│  11   front_pushrod_mm                -3     -5ms/unit  medium     │
+│  12   front_camber_deg              -1.6     +4ms/unit  low        │
+│  13   rear_camber_deg               -1.4     +4ms/unit  low        │
+│  14   torsion_bar_turns                0     -3ms/unit  low        │
+│  15   rear_third_perch_mm         -1e+02     -3ms/unit  medium     │
+│  16   rear_toe_mm                    0.3     -3ms/unit  low        │
+│  17   rear_spring_nmm            3.7e+02     +3ms/unit  medium     │
+│  18   front_heave_nmm            1.4e+02     +2ms/unit  low        │
+│  19   front_toe_mm                  -2.2     -2ms/unit  low        │
+│  20   rear_pushrod_mm                 16     -2ms/unit  medium     │
+│  21   rear_spring_perch_mm            30     -2ms/unit  low        │
+│  22   rear_third_nmm               1e+02     +2ms/unit  low        │
+│                                                                    │
+│  Biggest lever: wing_angle_deg (126ms/unit)                        │
+└────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────── SECTOR COMPROMISE ─────────────────────────┐
+│  Track split:  slow 18%  ·  medium 28%  ·  fast 54%                │
+│                                                                    │
+│  Parameter            Slow best   Fast best    Compromise  Cost    │
+│  ──────────────────────────────────────────────────────────────────│
+│  RARB blade           blade 1-2     blade 2       blade 1  24ms    │
+│    ↳ Slow corners need softer RARB (rotation, mechanical grip).    │
+│    ↳ Fast corners need stiffer RARB (stability, aero platform).    │
+│  Front heave           150 N/mm    130 N/mm      140 N/mm  18ms    │
+│    ↳ Mild conflict: stiffer heave = better platform; softer = kerb │
+│    ↳ absorption.                                                   │
+│  Brake bias               52.5%       53.5%         53.0%  5ms     │
+│    ↳ Mild: rear bias helps slow rotation, forward bias helps       │
+│    ↳ stability at speed.                                           │
+│  Front camber          -1.8 deg    -1.4 deg      -1.6 deg  4ms     │
+│    ↳ Mild: more camber = max cornering; less camber = less drag on │
+│    ↳ straights.                                                    │
+│                                                                    │
+│  Total compromise cost: ~51ms  ·  use live RARB to recover         │
+│  → Fast-sector circuit (54% fast corners): prioritize aero platform│
+│  → Consider RARB blade 2 as baseline (stiffer than nominal for aero│
+│  → Moderate compromise cost ~51 ms/lap. RARB live adjustment recomm│
+└────────────────────────────────────────────────────────────────────┘
+
+───────────────────────── BALANCE & PLATFORM ─────────────────────────
+  LLTD achieved: 49.7%  target: 51.0%  RARB sensitivity: -0.9%/blade
+  RARB 1→4 range: 49.7%→44.9%
+  Heave: 7 idx  (bottom margin: 11.4mm)
+  F TB OD: 0 idx  3.13Hz  heave/corner: 1.6x
+  R TB OD: 0 idx  5.54Hz  third/corner: 1.1x
+  Roll at peak 4.28g: 2.2°  Fcamber dynamic: -0.26°  [estimated]
+  Tyres to op temp: fronts ~16 laps  rears ~17 laps
+
+──────────────────────── VALIDATION CHECKLIST ────────────────────────
+  [ ] 5 laps minimum before judging — tyres need conditioning
+  [ ] Check IBT ride heights vs Step 1 targets (dyn vs static)
+  [ ] Stall margin 4.4mm — watch if RH drops on bumps
+  [ ] Shock vel p99 >800mm/s → stiffen HS comp +1 click
+  [ ] Tyre temp spread (inner-outer) → flag for camber calibration
+  [ ] RARB live: blade 1 (slow) ↔ blade 4 (fast)
+  [ ] Do NOT touch dampers until Steps 1-5 validated
+
+  Starting points only. Validate every step on track.
+══════════════════════════════════════════════════════════════════════
+
+─────────────────────── CURRENT vs RECOMMENDED ───────────────────────
+  Parameter                Current    Recomm     Change
+  ──────────────────────────────────────────────────────────────────
+  Wing                          17        17        +0 ° ·
+  Front RH (static)           30.2      30.0      -0.2 mm ↓
+  Rear RH (static)            44.4      41.2      -3.2 mm ↓
+  Front heave                   90       170       +80 idx ↑
+  Rear heave                   710       410      -300 idx ↓
+  Rear TB OD                     2       365      +363 idx ↑
+  F torsion bar OD            20.4      20.0      -0.4 idx ↓
+  Front camber                -2.7      -1.6      +1.1 ° ↑
+  Rear camber                 -1.6      -1.4      +0.2 ° ↑
+  Brake bias                  53.0      53.0      +0.0 % ·
+  Brake bias target              —      -0.5         — 
+  Brake migration              6.0       5.0      -1.0  ↓
+  MC: F/R = 19.1/19.1 mm (ratio 1.00)
+  Pad: Medium
+  Diff preload                  25        35       +10 Nm ↑
+  TC gain                        4         4        +0  ·
+  F LS Comp                     20         7       -13 cl ↓
+  F HS Comp                     20         3       -17 cl ↓
+  R LS Comp                     16         3       -13 cl ↓
+  R HS Comp                     32         1       -31 cl ↓
+
+───────────────────── FRONT HEAVE TRAVEL BUDGET ──────────────────────
+  Heave spring:       170 idx
+  Perch offset:       -10.5 mm
+  Slider position:    45.6 mm
+  DeflMax:            53.7 mm
+  Static deflection:  0.0 mm
+  Available travel:   53.7 mm
+  Excursion p99:      8.1 mm
+  Travel margin:      45.6 mm  [OK]
+  Force at limit:
+    Spring:  9134 N  (k × travel)
+    Damper:  341 N  (c_ls × v_braking)
+    Total:   9475 N
+  Measured travel use: 61%
+  Under braking:      61%
+
+
+======================================================================
+  PARAMETER JUSTIFICATION  (ENGINEERING BRIEF)
+======================================================================
+
+  Every parameter in the setup has a physics-based reason.
+  Telemetry evidence cited where measured data was available.
+
+   1. wing_angle_deg
+      Value: 17.00 deg
+      Sensitivity: -126.3 ms/unit  [medium confidence]
+      Physics: 1 deg wing -> DF/drag tradeoff -> ~126ms/lap (speed-depe
+      WHY: Wing 17deg: balances downforce for corners vs drag on st
+      WHY: raights. Track median speed 189kph determines optimal tr
+      WHY: adeoff point.
+      EVIDENCE: median speed = 189kph, track length = 4530m
+      +1-2 units: +1 deg: more DF, faster corners but slower straights
+      -1-2 units: -1 deg: less DF, faster straights but slower corners
+
+   2. front_rh_mm
+      Value: 19.50 mm
+      Sensitivity: -55.0 ms/unit  [medium confidence]
+      Physics: 1mm front RH -> 55ms/lap (research: 30-80 ms/mm, vortex 
+      WHY: Front RH 19.5mm maintains 4.4mm vortex burst margin whil
+      WHY: e maximizing ground effect. Lower = more DF but risk of 
+      WHY: aero stall on bumps/kerbs.
+      EVIDENCE: dynamic front RH = 19.5mm, vortex margin = 4.4mm
+      +1-2 units: +1mm: lose ~55ms from reduced DF but gain stall safe
+      -1-2 units: -1mm: gain ~55ms from more DF but risk vortex burst 
+
+   3. brake_bias_pct
+      Value: 53.00 %
+      Sensitivity: -37.6 ms/unit  [medium confidence]
+      Physics: 1% bias deviation -> braking efficiency, entry balance -
+      WHY: Brake bias 53.0% derived from weight transfer distributi
+      WHY: on under braking. Optimizes front/rear lock balance for 
+      WHY: maximum braking efficiency and trail-brake stability.
+      EVIDENCE: derived from weight transfer physics + driver trail-br
+      +1-2 units: +1%: more front bias -> earlier front lock, shorter 
+      -1-2 units: -1%: more rear bias -> rear instability under brakin
+
+   4. front_arb_size
+      Value: 0.00 size
+      Sensitivity: +30.0 ms/unit  [low confidence]
+      Physics: 1 size step -> ~3 blades worth of roll stiffness -> ~30m
+      WHY: Front ARB size 'A' sets base front roll stiffness. Coars
+      WHY: e adjustment; blade is the fine-tuning control.
+      EVIDENCE: FARB size = A
+      +1-2 units: +1 size: significantly stiffer front, major LLTD shi
+      -1-2 units: -1 size: significantly softer front, major LLTD shif
+
+   5. rear_arb_size
+      Value: 0.00 size
+      Sensitivity: +30.0 ms/unit  [low confidence]
+      Physics: 1 size step -> ~3 blades worth of roll stiffness -> ~30m
+      WHY: Rear ARB size 'A' sets base rear roll stiffness. Paired 
+      WHY: with front ARB size for overall roll stiffness distribut
+      WHY: ion.
+      EVIDENCE: RARB size = A
+      +1-2 units: +1 size: much stiffer rear -> strong understeer tend
+      -1-2 units: -1 size: much softer rear -> strong oversteer tenden
+
+   6. rear_rh_mm
+      Value: 36.60 mm
+      Sensitivity: -25.0 ms/unit  [medium confidence]
+      Physics: 1mm rear RH -> 25ms/lap (research: 15-40 ms/mm, aero bal
+      WHY: Rear RH 36.6mm sets rake angle (11.3mm rake) which contr
+      WHY: ols rear aero load distribution. Value chosen to hit DF 
+      WHY: balance target while maintaining rear stability.
+      EVIDENCE: dynamic rear RH = 36.6mm at speed
+      +1-2 units: Higher rear = more rake = more rear DF but risk of f
+      -1-2 units: Lower rear = less rake = less rear DF, potential ove
+
+   7. torsion_bar_od_mm
+      Value: 20.00 mm
+      Sensitivity: +23.3 ms/unit  [medium confidence]
+      Physics: 1mm OD -> 8.6 N/mm wheel rate -> 2.58% LLTD -> 23ms/lap 
+      WHY: Torsion OD 20.00mm sets front wheel rate to match target
+      WHY:  LLTD. Front wheel rate = 105.5 N/mm from k = C * OD^4.
+      EVIDENCE: front wheel rate = 105.5 N/mm
+      +1-2 units: +0.1mm OD: stiffer front -> more front roll stiffnes
+      -1-2 units: -0.1mm OD: softer front -> more front compliance -> 
+
+   8. rear_arb_blade
+      Value: 1.00 blade
+      Sensitivity: -7.2 ms/unit  [high confidence]
+      Physics: 1 RARB blade -> 1% LLTD -> 0.2deg US -> 7ms/lap
+      WHY: RARB blade 1 chosen to hit LLTD target 51.0% (achieved 4
+      WHY: 9.7%). Fine-tunes rear roll stiffness distribution for n
+      WHY: eutral balance.
+      EVIDENCE: LLTD = 49.7%, target = 51.0%
+      +1-2 units: +1 blade: stiffer rear -> more understeer, safer but
+      -1-2 units: -1 blade: softer rear -> more oversteer, faster rota
+
+   9. front_arb_blade
+      Value: 1.00 blade
+      Sensitivity: +5.8 ms/unit  [medium confidence]
+      Physics: 1 FARB blade -> ~0.6% LLTD -> ~6ms/lap
+      WHY: Front ARB blade 1 (typically locked). Front ARB primaril
+      WHY: y provides initial turn-in response. Size A chosen for f
+      WHY: ront roll stiffness target.
+      EVIDENCE: FARB size = A, blade = 1
+      +1-2 units: +1 blade: stiffer front roll -> sharper turn-in but 
+      -1-2 units: -1 blade: softer front roll -> smoother but less res
+
+  10. front_heave_perch_mm
+      Value: -11.00 mm
+      Sensitivity: -5.0 ms/unit  [medium confidence]
+      Physics: 1mm perch -> slider position change -> ride height and s
+      WHY: Front heave perch -11.0mm: DEPENDENT variable computed f
+      WHY: rom front heave rate 140 N/mm + pushrod offset + target 
+      WHY: RH. Sets heave spring preload and slider static position
+      WHY: .
+      EVIDENCE: slider static = 45.1mm
+      +1-2 units: +1mm: raises slider position, changes spring preload
+      -1-2 units: -1mm: lowers slider position, risk of slider bottomi
+
+  11. front_pushrod_mm
+      Value: -3.00 mm
+      Sensitivity: -5.0 ms/unit  [medium confidence]
+      Physics: 1mm pushrod -> ~0.3mm front RH change -> ~5ms/lap
+      WHY: Front pushrod -3.0mm sets static front RH to 30.0mm. Adj
+      WHY: usts front aero platform height.
+      EVIDENCE: static front RH = 30.0mm
+      +1-2 units: +1mm: raises front slightly, more stall safety but l
+      -1-2 units: -1mm: lowers front, more DF but less bump clearance
+
+  12. front_camber_deg
+      Value: -1.60 deg
+      Sensitivity: +4.5 ms/unit  [low confidence]
+      Physics: 0.1 deg -> front contact patch -> lateral grip -> ~5ms/l
+      WHY: Front camber -1.6deg maximizes front tyre contact patch 
+      WHY: under cornering load for turn-in bite and mid-corner gri
+      WHY: p.
+      EVIDENCE: derived from lateral grip model
+      +1-2 units: +0.1deg (less negative): less peak front grip, slowe
+      -1-2 units: -0.1deg (more negative): more front grip, faster inn
+
+  13. rear_camber_deg
+      Value: -1.40 deg
+      Sensitivity: +3.8 ms/unit  [low confidence]
+      Physics: 0.1 deg camber -> contact patch -> lateral grip -> ~4ms/
+      WHY: Rear camber -1.4deg optimizes rear contact patch under c
+      WHY: ornering load. Balances peak grip vs tyre wear.
+      EVIDENCE: derived from lateral grip model + tyre wear analysis
+      +1-2 units: +0.1deg (less negative): less peak grip, more even t
+      -1-2 units: -0.1deg (more negative): more peak lateral grip, fas
+
+  14. torsion_bar_turns
+      Value: 0.00 turns
+      Sensitivity: -3.0 ms/unit  [low confidence]
+      Physics: Turns -> torsion bar preload -> ride height fine-tune
+      WHY: Torsion turns 0.000: DEPENDENT variable derived from fro
+      WHY: nt heave rate and perch offset. Fine-tunes front corner 
+      WHY: spring preload.
+      EVIDENCE: computed from heave + perch geometry
+      +1-2 units: +0.01 turns: slightly more front preload
+      -1-2 units: -0.01 turns: slightly less front preload
+
+  15. rear_third_perch_mm
+      Value: -104.00 mm
+      Sensitivity: -3.0 ms/unit  [medium confidence]
+      Physics: 1mm perch -> rear heave preload + ride height adjustment
+      WHY: Rear third perch -104.0mm: DEPENDENT variable computed f
+      WHY: rom rear third rate 100 N/mm + pushrod offset + target r
+      WHY: ear RH.
+      EVIDENCE: rear third spring rate = 100 N/mm
+      +1-2 units: +1mm: adjusts rear preload and static height
+      -1-2 units: -1mm: adjusts rear preload and static height
+
+  16. rear_toe_mm
+      Value: 0.30 mm
+      Sensitivity: -3.0 ms/unit  [low confidence]
+      Physics: 1mm rear toe -> rear stability + drag -> ~3ms/lap
+      WHY: Rear toe +0.3mm: slight toe-in stabilizes rear under bra
+      WHY: king and power application. Too much = drag penalty on s
+      WHY: traights.
+      EVIDENCE: geometry solver output
+      +1-2 units: +1mm (more toe-in): more rear stability but drag pen
+      -1-2 units: -1mm (less toe-in): less drag but risk of rear insta
+
+  17. rear_spring_nmm
+      Value: 365.04 N/mm
+      Sensitivity: +2.7 ms/unit  [medium confidence]
+      Physics: 10 N/mm rear spring -> rear wheel rate -> LLTD shift -> 
+      WHY: Rear spring 365 N/mm sets rear wheel rate (182.5 N/mm) t
+      WHY: o match target LLTD distribution. Paired with front tors
+      WHY: ion bar for balance.
+      EVIDENCE: rear wheel rate ~182.5 N/mm
+      +1-2 units: +10 N/mm: stiffer rear corner -> more understeer (re
+      -1-2 units: -10 N/mm: softer rear corner -> more oversteer tende
+
+  18. front_heave_nmm
+      Value: 140.00 N/mm
+      Sensitivity: +2.5 ms/unit  [low confidence]
+      Physics: 10 N/mm change -> 1.5 bottoming events (margin=10.8mm) -
+      WHY: Front heave 140 N/mm maintains 10.8mm bottoming margin a
+      WHY: t p99 excursion 8.7mm. Platform stability gatekeeper: to
+      WHY: o soft = bottoming, too stiff = no compliance.
+      EVIDENCE: front excursion p99 = 8.7mm, bottoming margin = 10.8mm
+      +1-2 units: +10 N/mm: stiffer platform, less bottoming risk but 
+      -1-2 units: -10 N/mm: softer, more mechanical grip but risk of b
+
+  19. front_toe_mm
+      Value: -2.20 mm
+      Sensitivity: -2.3 ms/unit  [low confidence]
+      Physics: 1mm toe -> straight-line drag + turn-in response -> ~2ms
+      WHY: Front toe -2.2mm: toe-out aids turn-in response, toe-in 
+      WHY: adds straight-line stability. Balance of drag vs respons
+      WHY: iveness.
+      EVIDENCE: geometry solver output
+      +1-2 units: +1mm (more toe-in): more stable but slower turn-in, 
+      -1-2 units: -1mm (more toe-out): quicker turn-in but less stable
+
+  20. rear_pushrod_mm
+      Value: 15.50 mm
+      Sensitivity: -2.2 ms/unit  [medium confidence]
+      Physics: 1mm pushrod -> ~0.3mm rear RH change -> ~2ms/lap
+      WHY: Rear pushrod +15.5mm sets static rear RH to 41.3mm. Cont
+      WHY: rols rake angle with front pushrod.
+      EVIDENCE: static rear RH = 41.3mm, rake = 11.3mm
+      +1-2 units: +1mm: more rake, changes rear aero balance
+      -1-2 units: -1mm: less rake, more front-biased DF distribution
+
+  21. rear_spring_perch_mm
+      Value: 30.00 mm
+      Sensitivity: -2.0 ms/unit  [low confidence]
+      Physics: 1mm perch -> rear corner spring preload adjustment
+      WHY: Rear spring perch 30.0mm: DEPENDENT variable. Sets rear 
+      WHY: coil spring preload for target rear corner ride height.
+      EVIDENCE: rear spring rate = 365 N/mm
+      +1-2 units: +1mm: more preload, slightly stiffer initial respons
+      -1-2 units: -1mm: less preload, softer initial response
+
+  22. rear_third_nmm
+      Value: 100.00 N/mm
+      Sensitivity: +1.8 ms/unit  [low confidence]
+      Physics: 10 N/mm -> rear platform stability -> ~18ms/lap per 10 N
+      WHY: Rear third 100 N/mm controls rear axle heave response. R
+      WHY: ear bottoming margin = 29.8mm. Supports rear aero platfo
+      WHY: rm stability.
+      EVIDENCE: rear bottoming margin = 29.8mm
+      +1-2 units: +10 N/mm: stiffer rear platform, less rear squat und
+      -1-2 units: -10 N/mm: softer rear, more traction but risk of rea
+
+======================================================================
+
+======================================================================
+  ACCUMULATED KNOWLEDGE
+  (17 sessions this track, 29 total for ferrari)
+======================================================================
+
+  KEY INSIGHTS:
+    Lap time range: 87.575s – 90.516s (2.942s window across 17
+      sessions)
+    Changed rear_torsion_bar_index: 1.0 (0.357s faster); effects:
+      understeer_low_speed_deg -0.07, rear_dominant_freq_hz -1.43
+      [high confidence]
+    Changed rear_torsion_bar_index: 1.0 (0.357s faster); effects:
+      understeer_low_speed_deg -0.07, rear_dominant_freq_hz -1.43
+      [high confidence]
+    * No setup changes detected between sessions.
+    * No setup changes detected between sessions.
+    * No setup changes detected between sessions.
+
+  SETUP TRENDS:
+    -> front_camber_deg: trending increasing (-2.8 -> -2.7 over 17 sessions)
+    -> rear_camber_deg: trending increasing (-1.9 -> -1.6 over 17 sessions)
+
+  EMPIRICAL CALIBRATIONS:
+    Roll gradient: 0.337 deg/g measured
+    LLTD baseline: 51.0% measured
+    Front m_eff: 13 kg (empirical)
+
+  LAP TIME SENSITIVITY (most impactful):
+    rear_torsion_bar_index: 0.102s/unit (faster)
+
+  HIGH-CONFIDENCE FINDINGS:
+    * No setup changes detected between sessions.
+    * No setup changes detected between sessions.
+    * No setup changes detected between sessions.
+
+======================================================================
+
+───────────────────────── ESTIMATE WARNINGS ──────────────────────────
+  • ESTIMATE: Damper zeta targets are conservative defaults — verify
+    damper feel on track
+  • ESTIMATE: No garage output model — .sto display values are
+    physics estimates only
+
+══════════════════════════════════════════════════════════════════════

@@ -6,7 +6,7 @@ import uvicorn
 
 
 def main() -> None:
-    uvicorn.run("webapp.app:create_app", factory=True, host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("webapp.app:create_app", factory=True, host="0.0.0.0", port=8765, reload=False)
 
 
 if __name__ == "__main__":

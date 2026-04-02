@@ -29,13 +29,14 @@ Heaves · Torsion bar OD · Torsion bar turns · Pushrod · Heave springs · Cam
 
 | # | Time | Change | Value |
 |---|------|--------|-------|
-| 1 | T+0:00 | **Baseline** | fh=5, rh=8, ftb=2, rtb=1, FARB=B/1, RARB=C/1, wing=17, LS=24 |
-| 2 | T+10:00 | LS comp = **10** | Soft end of damper range |
-| 3 | T+20:00 | LS comp = **20** | Physics model baseline |
-| 4 | T+30:00 | LS comp = **30** | Stiff |
-| 5 | T+40:00 | LS comp = **40** | Max |
+| 1 | T+0:00 | **Baseline** | fh=5, rh=8, ftb=2, rtb=1, FARB=B/1, RARB=C/1, wing=17, front LS=**0**, rear LS=**40** |
+| 2 | T+10:00 | Front LS comp = **5** | First step up from zero |
+| 3 | T+20:00 | Front LS comp = **10** | Moderate front damping |
+| 4 | T+30:00 | Front LS comp = **20** | Noticeably more front |
+| 5 | T+40:00 | Front LS comp = **30** | High front damping |
 
-**Only changing:** front LS comp. All else locked to Stint 1.
+**Note:** Baseline is front LS=0 (VALIDATED from best observed IBT). Sweeping upward from zero.
+**Only changing:** front LS comp. All else locked to Stint 1 — especially rear LS stays at 40.
 **Drop IBT after every stint.**
 
 ---
