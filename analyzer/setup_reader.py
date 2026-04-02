@@ -476,11 +476,15 @@ class CurrentSetup:
             # compatibility alias still expects it on rear_spring_nmm.
             setup.rear_spring_nmm = setup.rear_torsion_od_mm
         if is_ferrari_layout:
+            # Convert N/mm → garage index BEFORE storing so that the delta card
+            # current-vs-recommended comparison works in consistent index units.
+            # public_output_value handles the N/mm → index mapping for Ferrari.
+            from car_model.setup_registry import public_output_value as _pov
             setup.raw_indexed_fields = {
-                "front_heave_index": setup.front_heave_nmm,
-                "rear_heave_index": setup.rear_third_nmm,
-                "front_torsion_bar_index": setup.front_torsion_od_mm,
-                "rear_torsion_bar_index": setup.rear_spring_nmm,
+                "front_heave_index": _pov("ferrari", "front_heave_nmm", setup.front_heave_nmm),
+                "rear_heave_index": _pov("ferrari", "rear_third_nmm", setup.rear_third_nmm),
+                "front_torsion_bar_index": _pov("ferrari", "front_torsion_od_mm", setup.front_torsion_od_mm),
+                "rear_torsion_bar_index": _pov("ferrari", "rear_spring_nmm", setup.rear_spring_nmm),
             }
             setup.decode_warnings.extend(
                 [
