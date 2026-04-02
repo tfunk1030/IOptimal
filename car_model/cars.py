@@ -1223,13 +1223,16 @@ class CarModel:
 
     # Weight distribution
     weight_dist_front: float = 0.47  # Static front weight fraction (at max fuel)
-    # Fuel tank CG position as fraction of wheelbase from front axle.
+    # Fuel tank CG position as fraction of wheelbase from the FRONT axle.
+    # 0.0 = at front axle, 1.0 = at rear axle, 0.50 = mid-wheelbase.
     # LMDh regulations mandate the fuel cell within the central survival cell,
     # between the axles. For all LMDh cars: p_fuel ≈ 0.50 (central placement).
     # Used by front_weight_at_fuel() to compute dynamic W_f during a stint.
+    # The front axle load fraction from fuel = (1.0 - fuel_cg_frac) per simple
+    # lever arm: fuel at 0.50 means 50% of fuel weight on front, 50% on rear.
     # Physics-notes.md: 2026-04-02 Topic B — per-10L W_f shift = -0.0018%
     # for BMW (p_fuel=0.50), full-stint shift (89L→0L) ≈ -0.16%.
-    fuel_cg_frac: float = 0.50  # Fuel tank CG fraction of wheelbase from front
+    fuel_cg_frac: float = 0.50  # Fuel CG position: 0=front axle, 1=rear axle
 
     # Brake bias — calibrated from real IBT/LDX data per car.
     # iRacing BrakePressureBias = hydraulic front pressure split (%).
@@ -1426,34 +1429,45 @@ class CarModel:
     def front_weight_at_fuel(self, fuel_load_l: float) -> float:
         """Dynamic front weight fraction at a given fuel load.
 
-        Computes W_f(fuel) using the fuel tank CG position (fuel_cg_frac):
+        fuel_cg_frac is the CG *position* as fraction of wheelbase from
+        the front axle (0.0 = front, 1.0 = rear). The front axle load
+        fraction contributed by the fuel mass is therefore:
+            fuel_front_frac = 1.0 - fuel_cg_frac
 
-            W_f_dry = (W_f_full * m_full - m_fuel_full * p_fuel) / m_dry
-            W_f(fuel) = (W_f_dry * m_dry + m_fuel * p_fuel) / m_total(fuel)
+        Computes W_f(fuel) using:
+            W_f_dry = (W_f_full * m_full - m_fuel_full * fuel_front_frac) / m_dry
+            W_f(fuel) = (W_f_dry * m_dry + m_fuel * fuel_front_frac) / m_total
 
-        For BMW M Hybrid V8 (p_fuel=0.50, calibrated 2026-04-02):
+        For BMW M Hybrid V8 (fuel_cg_frac=0.50 → fuel_front_frac=0.50):
           - Full tank (89L): W_f = 47.27%  (matches IBT calibration)
           - Empty tank (0L): W_f = 47.11%
           - Shift per 10L burned: ~-0.018% (rearward as fuel burns)
           - Full-stint shift: ~-0.16% (small, but correct for theory)
 
-        Note: The shift direction is rearward because p_fuel (0.50) > W_f_full (0.4727).
-        Burning fuel removes mass from slightly ahead of the CG → car moves rearward.
+        Note: The shift direction is rearward because fuel_front_frac (0.50) >
+        W_f_full (0.4727). Burning fuel removes mass from slightly ahead of the
+        vehicle CG → car balance shifts rearward.
 
         Args:
-            fuel_load_l: Current fuel load in litres.
+            fuel_load_l: Current fuel load in litres (clamped to [0, max_fuel]).
 
         Returns:
             Front weight fraction [0.0–1.0] at the given fuel load.
         """
-        m_fuel_max = self.garage_ranges.max_fuel_l * self.fuel_density_kg_per_l
+        max_fuel = self.garage_ranges.max_fuel_l
+        fuel_load_l = max(0.0, min(fuel_load_l, max_fuel))
+
+        fuel_front_frac = 1.0 - self.fuel_cg_frac  # CG position → front load fraction
+
+        m_fuel_max = max_fuel * self.fuel_density_kg_per_l
         m_dry = self.mass_car_kg + self.mass_driver_kg
         m_full = m_dry + m_fuel_max
         # Back-derive dry front fraction from calibrated full-tank value
-        w_f_dry = (self.weight_dist_front * m_full - m_fuel_max * self.fuel_cg_frac) / m_dry
+        w_f_dry = (self.weight_dist_front * m_full - m_fuel_max * fuel_front_frac) / max(m_dry, 1e-9)
         m_fuel = fuel_load_l * self.fuel_density_kg_per_l
         m_total = m_dry + m_fuel
-        return (w_f_dry * m_dry + m_fuel * self.fuel_cg_frac) / m_total
+        result = (w_f_dry * m_dry + m_fuel * fuel_front_frac) / max(m_total, 1e-9)
+        return max(0.0, min(result, 1.0))
 
     def active_garage_output_model(self, track_name: str | None = None) -> GarageOutputModel | None:
         """Return the authoritative garage-output model for the given track."""

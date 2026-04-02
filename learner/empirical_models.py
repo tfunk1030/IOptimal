@@ -494,33 +494,28 @@ def _fit_damper_physics(obs_list: list[dict], models: EmpiricalModelSet) -> None
 
 
 def _calibrate_force_per_click(obs_list: list[dict], models: EmpiricalModelSet) -> None:
-    """Calibrate damper force-per-click (N/click) from measured shock velocity data.
+    """Extract damper HS velocity slopes from measured shock velocity data.
 
-    The damper solver converts zeta targets to click counts using:
-        clicks = (c_target * v_ref^n) / force_per_click_n
+    From the HS comp sweep we fit shock_vel_p99 vs click count and store the
+    signed slope as a telemetry sensitivity metric. The slope captures how much
+    peak shock velocity changes per HS comp click at the system level.
 
-    So force_per_click_n (Newtons per click) is the critical calibration constant.
+    NOTE: This function does NOT compute N/click (force-per-click). Converting
+    the velocity slope to Newtons requires system-level knowledge (m_eff, k_eff,
+    bump profile) that isn't available in the learner. If N/click calibration
+    is ever needed, it should be derived in a separate validation step that has
+    access to the car model.
 
-    Physics derivation from measured shock velocity slope:
-        1. From the HS comp sweep we fit: Δshock_vel_p99 / Δclick = slope (m/s per click)
-        2. shock_vel_p99 is a peak velocity measurement at a specific dynamic condition.
-           Each additional click of HS comp adds damping force = fpc * 1 click.
-        3. That damping force resists motion at velocity v_p99, so:
-           fpc = m_eff * Δv_p99 / Δt_response
-        4. But we measure the steady-state velocity change (not transient), so:
-           fpc ≈ slope * c_crit / v_ref_hs
-           where c_crit = 2*sqrt(k_eff * m_eff) and v_ref_hs is the HS reference velocity.
-
-    We need m_eff and k_eff from the car model to convert the slope to Newtons.
-    Since we don't have the car model here, we store:
-        - The measured slope (m/s per click) as a telemetry sensitivity
-        - The N/click estimate using the corrections dict's m_eff + aero data
-
-    This writes to models.corrections with unambiguous key names:
-        - calibrated_hs_force_per_click_n_front: N/click (the solver's native unit)
-        - calibrated_hs_force_per_click_n_rear: N/click
-        - calibrated_hs_vel_slope_front: m/s per click (raw measurement for audit)
-        - calibrated_hs_vel_slope_rear: m/s per click (raw measurement for audit)
+    Emitted correction keys:
+        - calibrated_hs_vel_slope_front: signed m/s per click (negative = more
+          clicks reduces shock velocity, as physically expected)
+        - calibrated_hs_vel_slope_rear: signed m/s per click
+        - calibrated_hs_front_r2 / calibrated_hs_rear_r2: fit quality
+        - calibrated_hs_front_n / calibrated_hs_rear_n: sample count
+        - calibrated_pitch_per_ls_click_front: LS comp → pitch sensitivity
+        - calibrated_ls_pitch_r2: fit quality for LS pitch
+        - calibrated_rh_var_per_heave_unit_front: heave → RH variance slope
+        - calibrated_heave_var_r2: fit quality for heave variance
 
     Physics first — lap time is not used here at all.
     """
