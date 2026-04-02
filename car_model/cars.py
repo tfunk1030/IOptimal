@@ -1990,13 +1990,14 @@ FERRARI_499P = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
     brake_bias_pct=54.0,          # CALIBRATED from IBT: BrakePressureBias = 54.0%
-    default_df_balance_pct=51.5,  # CALIBRATED from aero map: at typical dyn front RH 19-25mm,
-                                    # minimum achievable balance is 51.2% (wing 12) → 48.6% (wing 16).
-                                    # 49.5% target was physically unachievable at low wing angles.
-                                    # 51.5% is safely within the achievable range at wing 12 (51.2% min),
-                                    # and reasonable across all wing settings (higher wing = lower floor).
-                                    # Provides mild front DF surplus vs BMW 50.14% — consistent with
-                                    # Ferrari's known tendency to run front-biased for understeer safety.
+    default_df_balance_pct=48.3,  # CALIBRATED 2026-04-02 from IBT observed operating points:
+                                    # 17 Hockenheim sessions at wing=17 run 46.97–48.26% balance naturally.
+                                    # Fastest session (87.575s): 47.82%. Mean across session range: 48.3%.
+                                    # Prior value of 51.5% was aero-map-theoretical and was biasing the
+                                    # solver toward lower wing angles (wing=12 scored 63ms better than
+                                    # wing=17 on balance alone — opposite of IBT evidence).
+                                    # 48.3% reflects Ferrari's actual high-downforce aero behavior
+                                    # at competitive ride heights with high wing angles.
     tyre_load_sensitivity=0.25,   # Ferrari bespoke LMH compound — estimated higher sensitivity
     aero_axes_swapped=True,       # Ferrari aero map uses same axis convention as Dallara
     min_front_rh_static=30.0,

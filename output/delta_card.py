@@ -24,9 +24,8 @@ W = 60  # card width
 # ─── Confidence tier registry ────────────────────────────────────────────────
 
 # Parameters that are PINNED from IBT observations
-_PINNED: dict[str, list[str]] = {
-    "ferrari": ["wing_angle_deg"],  # All 20 sessions wing=17
-}
+# NOTE: wing_angle_deg is NOT pinned — track-dependent, let solver use aero map + k-NN
+_PINNED: dict[str, list[str]] = {}
 
 # Parameters with calibrated physics models (HIGH when sessions >= 10, MED when 3-9)
 _CALIBRATED: dict[str, list[str]] = {
