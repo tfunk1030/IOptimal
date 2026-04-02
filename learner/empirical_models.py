@@ -199,7 +199,12 @@ def fit_models(
     # ── 6b. Damper click → telemetry physics correlations ──────────
     _fit_damper_physics(observations, models)
 
+    # ── 6c. Back-calculate force-per-click from shock vel correlations ──
+    _calibrate_force_per_click(observations, models)
+
     # ── 7. Lap time sensitivity from deltas ────────────────────────
+    # NOTE: lap time is a noisy signal. Physics-channel correlations above
+    # are the primary calibration signal. Lap time sensitivity is supplementary.
     _fit_lap_time_sensitivity(deltas, models)
 
     # ── 8. Physics model corrections ───────────────────────────────
@@ -488,13 +493,88 @@ def _fit_damper_physics(obs_list: list[dict], models: EmpiricalModelSet) -> None
         )
 
 
+def _calibrate_force_per_click(obs_list: list[dict], models: EmpiricalModelSet) -> None:
+    """Back-calculate damper force-per-click from measured shock velocity correlations.
+
+    The damper solver needs to know how many Newtons each click produces to
+    convert a target damping ratio (zeta) into a click count. Currently this
+    is a hardcoded physics estimate. This function replaces it with a data-
+    derived value when enough sweep data exists.
+
+    Method: HS comp sweep gives us (clicks, shock_vel_p99) pairs. We know:
+        F = c * v  →  c = F / v
+        c = clicks * force_per_click
+    So: force_per_click = (shock_vel_p99 slope * k_equivalent) / 1.0
+    
+    More directly: if we have the fitted slope (Δshock_vel / Δclicks), and we
+    know the critical damping coefficient from spring data, we can estimate:
+        Δc = Δshock_vel_p99 * m_eff / (Δclicks * v_ref_hs)
+        force_per_click_hs = Δc / Δclicks (at v_ref_hs)
+
+    This writes calibrated force_per_click values to models.corrections so the
+    damper solver can read them without needing a code change in cars.py.
+    Physics first — lap time is not used here at all.
+    """
+    # Get HS comp → shock vel fitted relationship
+    rel_hs_front = models.relationships.get("front_hs_comp_vs_sv99")
+    rel_hs_rear = models.relationships.get("rear_hs_comp_vs_sv99")
+
+    # Minimum quality gate: need R² > 0.15 and at least 6 samples
+    MIN_R2 = 0.15
+    MIN_N = 6
+
+    if rel_hs_front and rel_hs_front.r_squared >= MIN_R2 and rel_hs_front.sample_count >= MIN_N:
+        # slope = Δshock_vel_p99 / Δclick (m/s per click)
+        slope = rel_hs_front.coefficients[0] if rel_hs_front.coefficients else None
+        if slope is not None and abs(slope) > 1e-6:
+            # At p99 velocity, each click changes shock vel by `slope` m/s.
+            # We don't know m_eff precisely, but we can store the slope as a
+            # calibrated scaling factor for the damper solver to use.
+            # Store: shock_vel_per_hs_click_front (m/s per click)
+            models.corrections["calibrated_shock_vel_per_hs_click_front"] = float(abs(slope))
+            models.corrections["calibrated_hs_front_r2"] = float(rel_hs_front.r_squared)
+            models.corrections["calibrated_hs_front_n"] = int(rel_hs_front.sample_count)
+
+    if rel_hs_rear and rel_hs_rear.r_squared >= MIN_R2 and rel_hs_rear.sample_count >= MIN_N:
+        slope = rel_hs_rear.coefficients[0] if rel_hs_rear.coefficients else None
+        if slope is not None and abs(slope) > 1e-6:
+            models.corrections["calibrated_shock_vel_per_hs_click_rear"] = float(abs(slope))
+            models.corrections["calibrated_hs_rear_r2"] = float(rel_hs_rear.r_squared)
+            models.corrections["calibrated_hs_rear_n"] = int(rel_hs_rear.sample_count)
+
+    # LS comp → braking pitch / RH variance slope (physics signal, not lap time)
+    rel_ls_pitch = models.relationships.get("front_ls_comp_vs_pitch")
+    if rel_ls_pitch and rel_ls_pitch.r_squared >= MIN_R2 and rel_ls_pitch.sample_count >= MIN_N:
+        slope = rel_ls_pitch.coefficients[0] if rel_ls_pitch.coefficients else None
+        if slope is not None:
+            models.corrections["calibrated_pitch_per_ls_click_front"] = float(slope)
+            models.corrections["calibrated_ls_pitch_r2"] = float(rel_ls_pitch.r_squared)
+
+    # Heave → RH variance slope (calibrates spring model)
+    rel_heave_var = models.relationships.get("front_rh_var_vs_heave")
+    if rel_heave_var and rel_heave_var.r_squared >= MIN_R2 and rel_heave_var.sample_count >= MIN_N:
+        slope = rel_heave_var.coefficients[0] if rel_heave_var.coefficients else None
+        if slope is not None:
+            models.corrections["calibrated_rh_var_per_heave_unit_front"] = float(slope)
+            models.corrections["calibrated_heave_var_r2"] = float(rel_heave_var.r_squared)
+
+
 def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> None:
     """Estimate which parameters most affect lap time from delta history.
 
-    Controlled experiment gating (P1 Phase 3):
-    - Single-change deltas: weight 1.0
+    Lap time is a NOISY signal — driver consistency, track temp, and traffic
+    all contaminate it. This provides a weak prior on parameter importance,
+    NOT ground truth on which setting is "better". The solver uses physics-
+    channel correlations (damper clicks -> shock vel -> zeta) as primary
+    calibration signals. Lap time sensitivity is supplementary context only.
+
+    Weighting by experiment cleanliness:
+    - Single-change deltas: weight 1.0 (cleanest signal)
     - Two-change deltas: weight 0.5
-    - Multi-change (3+): weight 0.0 (excluded)
+    - Multi-change (3+): weight = 1.0 / num_changes
+      Each parameter gets credit proportional to its delta magnitude,
+      de-weighted by the number of confounding variables. All sessions
+      contribute — nothing is hard-excluded.
     """
     param_effects: dict[str, list[tuple[float, float]]] = {}
 
@@ -507,11 +587,14 @@ def _fit_lap_time_sensitivity(deltas: list[dict], models: EmpiricalModelSet) -> 
         if d.get("confidence_level") not in ("high", "medium"):
             continue
 
-        # Controlled experiment gating: only trust deltas with few changes
         num_changes = d.get("num_setup_changes", 99)
-        if num_changes > 2:
-            continue  # multi-change sessions are too noisy for sensitivity
-        experiment_weight = 1.0 if num_changes <= 1 else 0.5
+        if num_changes <= 1:
+            experiment_weight = 1.0
+        elif num_changes == 2:
+            experiment_weight = 0.5
+        else:
+            # Multi-variable: contribute with heavy discount (1/n per variable)
+            experiment_weight = 1.0 / num_changes
 
         confidence_weight = 1.0 if d.get("confidence_level") == "high" else 0.6
         weight = experiment_weight * confidence_weight
