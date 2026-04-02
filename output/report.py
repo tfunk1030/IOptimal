@@ -141,10 +141,26 @@ def _ok(val: bool) -> str:
     return "✓" if val else "✗"
 
 
-def _setting(label: str, value: str, note: str = "") -> str:
+def _changed_marker(param_key: str, new_val, current_params: dict | None) -> str:
+    """Return ' ←' if this value differs from current_params."""
+    if current_params is None or param_key not in current_params:
+        return ""
+    cur = current_params.get(param_key)
+    try:
+        if abs(float(new_val) - float(cur)) > 0.05:
+            return " ←"
+    except (TypeError, ValueError):
+        if str(new_val) != str(cur):
+            return " ←"
+    return ""
+
+
+def _setting(label: str, value: str, note: str = "", changed: str = "") -> str:
     text = f"  {label:<24} {value}"
     if note:
         text += f"  {note}"
+    if changed:
+        text += changed
     if len(text) > W - 2:
         text = text[:W - 5] + "..."
     return _full(text)
@@ -212,6 +228,7 @@ def print_full_setup_report(
     hybrid_corner_pct: float | None = None,
     front_diff_preload_nm: float | None = None,
     bias_migration_gain: float | None = None,
+    current_params: dict | None = None,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
@@ -337,37 +354,37 @@ def print_full_setup_report(
     # ── FULL PARAMETER SHEET ─────────────────────────────────────────
     a(_box_top("SETUP TO ENTER"))
     a(_full("  PLATFORM / SPRINGS"))
-    a(_setting("Wing", f"{wing:.1f} deg"))
+    a(_setting("Wing", f"{wing:.1f} deg", changed=_changed_marker("wing_angle_deg", wing, current_params)))
     a(_setting("Fuel load", f"{fuel_l:.0f} L"))
-    a(_setting("Front static RH target", f"{step1.static_front_rh_mm:.1f} mm"))
-    a(_setting("Rear static RH target", f"{step1.static_rear_rh_mm:.1f} mm"))
+    a(_setting("Front static RH target", f"{step1.static_front_rh_mm:.1f} mm", changed=_changed_marker("front_rh_static", step1.static_front_rh_mm, current_params)))
+    a(_setting("Rear static RH target", f"{step1.static_rear_rh_mm:.1f} mm", changed=_changed_marker("rear_rh_static", step1.static_rear_rh_mm, current_params)))
     a(_setting("Front pushrod", f"{step1.front_pushrod_offset_mm:+.1f} mm"))
     a(_setting("Rear pushrod", f"{step1.rear_pushrod_offset_mm:+.1f} mm"))
     if _is_ferrari:
-        a(_setting("Front heave index", f"{display_front_heave:.0f} idx"))
+        a(_setting("Front heave index", f"{display_front_heave:.0f} idx", changed=_changed_marker("front_heave_nmm", display_front_heave, current_params)))
         a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
-        a(_setting("Rear heave index", f"{display_rear_heave:.0f} idx"))
+        a(_setting("Rear heave index", f"{display_rear_heave:.0f} idx", changed=_changed_marker("rear_third_nmm", display_rear_heave, current_params)))
         a(_setting("Rear heave perch", f"{step2.perch_offset_rear_mm:+.1f} mm"))
-        a(_setting("Front torsion bar index", f"{display_front_torsion:.0f} idx"))
+        a(_setting("Front torsion bar index", f"{display_front_torsion:.0f} idx", changed=_changed_marker("torsion_bar_od_mm", display_front_torsion, current_params)))
         a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
-        a(_setting("Rear torsion bar index", f"{display_rear_torsion:.0f} idx"))
+        a(_setting("Rear torsion bar index", f"{display_rear_torsion:.0f} idx", changed=_changed_marker("rear_spring_nmm", display_rear_torsion, current_params)))
         if _rear_tb_turns is not None:
             a(_setting("Rear torsion bar turns", f"{_rear_tb_turns:.3f} turns"))
     else:
-        a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} N/mm"))
+        a(_setting("Front heave spring", f"{step2.front_heave_nmm:.0f} N/mm", changed=_changed_marker("front_heave_nmm", step2.front_heave_nmm, current_params)))
         a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
         _rear_heave_label = "Rear heave spring" if _is_acura else "Rear third spring"
         _rear_perch_label = "Rear heave perch" if _is_acura else "Rear third perch"
-        a(_setting(_rear_heave_label, f"{step2.rear_third_nmm:.0f} N/mm"))
+        a(_setting(_rear_heave_label, f"{step2.rear_third_nmm:.0f} N/mm", changed=_changed_marker("rear_third_nmm", step2.rear_third_nmm, current_params)))
         a(_setting(_rear_perch_label, f"{step2.perch_offset_rear_mm:+.1f} mm"))
-        a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm"))
+        a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm", changed=_changed_marker("torsion_bar_od_mm", step3.front_torsion_od_mm, current_params)))
         a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
         if _has_rear_torsion and step3.rear_torsion_od_mm is not None:
-            a(_setting("Rear torsion bar OD", f"{step3.rear_torsion_od_mm:.2f} mm"))
+            a(_setting("Rear torsion bar OD", f"{step3.rear_torsion_od_mm:.2f} mm", changed=_changed_marker("rear_spring_nmm", step3.rear_torsion_od_mm, current_params)))
             if _rear_tb_turns is not None:
                 a(_setting("Rear torsion bar turns", f"{_rear_tb_turns:.3f} turns"))
         else:
-            a(_setting("Rear coil spring", f"{step3.rear_spring_rate_nmm:.0f} N/mm"))
+            a(_setting("Rear coil spring", f"{step3.rear_spring_rate_nmm:.0f} N/mm", changed=_changed_marker("rear_spring_nmm", step3.rear_spring_rate_nmm, current_params)))
             a(_setting("Rear spring perch", f"{step3.rear_spring_perch_mm:.1f} mm"))
     if garage_outputs is not None:
         a(_setting(
@@ -399,23 +416,23 @@ def print_full_setup_report(
         a(_setting("Torsion bar deflection", torsion_limit_str, torsion_note))
     a(_blank())
     a(_full("  ARBS / GEOMETRY"))
-    a(_setting("Front ARB size / blade", f"{step4.front_arb_size} / {step4.front_arb_blade_start}"))
-    a(_setting("Rear ARB size / blade", f"{step4.rear_arb_size} / {step4.rear_arb_blade_start}"))
+    a(_setting("Front ARB size / blade", f"{step4.front_arb_size} / {step4.front_arb_blade_start}", changed=_changed_marker("front_arb_blade", step4.front_arb_blade_start, current_params)))
+    a(_setting("Rear ARB size / blade", f"{step4.rear_arb_size} / {step4.rear_arb_blade_start}", changed=_changed_marker("rear_arb_blade", step4.rear_arb_blade_start, current_params)))
     a(_setting("Rear ARB live slow", f"blade {step4.rarb_blade_slow_corner}"))
     a(_setting("Rear ARB live fast", f"blade {step4.rarb_blade_fast_corner}"))
     _eff_front_camber = front_camber_override if front_camber_override is not None else step5.front_camber_deg
     _eff_rear_camber = rear_camber_override if rear_camber_override is not None else step5.rear_camber_deg
-    a(_setting("Front camber", f"{_eff_front_camber:+.1f} deg"))
-    a(_setting("Rear camber", f"{_eff_rear_camber:+.1f} deg"))
-    a(_setting("Front toe", f"{step5.front_toe_mm:+.1f} mm"))
-    a(_setting("Rear toe", f"{step5.rear_toe_mm:+.1f} mm"))
+    a(_setting("Front camber", f"{_eff_front_camber:+.1f} deg", changed=_changed_marker("front_camber_deg", _eff_front_camber, current_params)))
+    a(_setting("Rear camber", f"{_eff_rear_camber:+.1f} deg", changed=_changed_marker("rear_camber_deg", _eff_rear_camber, current_params)))
+    a(_setting("Front toe", f"{step5.front_toe_mm:+.1f} mm", changed=_changed_marker("front_toe_mm", step5.front_toe_mm, current_params)))
+    a(_setting("Rear toe", f"{step5.rear_toe_mm:+.1f} mm", changed=_changed_marker("rear_toe_mm", step5.rear_toe_mm, current_params)))
     a(_blank())
     a(_full("  BRAKES / DIFF / TC / TYRES"))
     if _is_ferrari and hybrid_enabled is not None:
         _hybrid_status = "enabled" if hybrid_enabled else "DISABLED ← recommended"
         _hybrid_pct_str = f"  corner pct: {hybrid_corner_pct:.0f}%" if hybrid_corner_pct is not None else ""
         a(_setting("Hybrid rear drive", f"{_hybrid_status}{_hybrid_pct_str}"))
-    a(_setting("Brake bias", brake_bias_str))
+    a(_setting("Brake bias", brake_bias_str, changed=_changed_marker("brake_bias_pct", brake_bias_val, current_params) if brake_bias_val is not None else ""))
     a(_setting("Brake bias status", brake_bias_status))
     a(_setting("Brake target / migration", f"{brake_target_str} / {brake_migration_str}", f"[{brake_target_status}/{brake_migration_status}]"))
     if _is_ferrari and bias_migration_gain is not None:
@@ -424,7 +441,7 @@ def print_full_setup_report(
     a(_setting("Pad compound", pad_compound_str, f"[{pad_compound_status}]"))
     if brake_hardware_status:
         a(_setting("Brake hardware status", brake_hardware_status))
-    a(_setting("Diff preload", diff_preload_str))
+    a(_setting("Diff preload", diff_preload_str, changed=_changed_marker("diff_preload_nm", diff_preload_val, current_params) if diff_preload_val is not None else ""))
     if _is_ferrari:
         # Ferrari: single coast/drive ramp label
         a(_setting("Diff coast/drive ramp", diff_coast_str))
@@ -433,7 +450,7 @@ def print_full_setup_report(
     else:
         a(_setting("Diff coast ramp", diff_coast_str))
         a(_setting("Diff drive ramp", diff_drive_str))
-    a(_setting("Diff clutch plates", diff_plates_str))
+    a(_setting("Diff clutch plates", diff_plates_str, changed=_changed_marker("diff_clutch_plates", diff_plates_val, current_params) if diff_plates_val is not None else ""))
     if diff_solution is not None:
         a(_setting(
             "Diff lock coast / drive",
@@ -443,7 +460,7 @@ def print_full_setup_report(
             "Diff preload / plate %",
             f"{diff_solution.preload_contribution_pct:.1f}% / {diff_solution.plate_contribution_pct:.1f}%",
         ))
-    a(_setting("TC gain / slip", f"{tc_gain_str} / {tc_slip_str}"))
+    a(_setting("TC gain / slip", f"{tc_gain_str} / {tc_slip_str}", changed=_changed_marker("tc_gain", tc_gain_val, current_params) if tc_gain_val is not None else ""))
     a(_setting("Tyre cold FL / FR", f"{tyre_fl:.0f} / {tyre_fr:.0f} kPa"))
     a(_setting("Tyre cold RL / RR", f"{tyre_rl:.0f} / {tyre_rr:.0f} kPa"))
     a(_blank())

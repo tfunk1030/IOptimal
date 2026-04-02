@@ -215,6 +215,10 @@ def _resolve_scenario_profile(args: argparse.Namespace) -> str:
         if getattr(args, "stint_select", "all") == "last":
             return "sprint"
         return "race"
+    # --mode aggressive → use quali scenario (all weights active, enables k-NN)
+    # --mode safe (default) → use single_lap_safe scenario
+    if getattr(args, "mode", "safe") == "aggressive":
+        return resolve_scenario_name("quali")
     return resolve_scenario_name(getattr(args, "objective_profile", None))
 
 
@@ -1358,6 +1362,97 @@ def produce(
     if _emit_report:
         print(report)
 
+    # ── Delta card output (--delta-card flag) ────────────────────────
+    if getattr(args, "delta_card", False) and current_setup is not None:
+        try:
+            from output.delta_card import format_delta_card
+
+            # Build current params dict from IBT-extracted setup
+            _current_dict: dict = {
+                "front_rh_static": getattr(current_setup, "static_front_rh_mm", None),
+                "rear_rh_static": getattr(current_setup, "static_rear_rh_mm", None),
+                "front_heave_nmm": getattr(current_setup, "front_heave_nmm", None),
+                "rear_third_nmm": getattr(current_setup, "rear_third_nmm", None),
+                "torsion_bar_od_mm": getattr(current_setup, "front_torsion_od_mm", None),
+                "rear_spring_nmm": getattr(current_setup, "rear_spring_nmm", None),
+                "front_arb_blade": getattr(current_setup, "front_arb_blade", None),
+                "rear_arb_blade": getattr(current_setup, "rear_arb_blade_start", None) or getattr(current_setup, "rear_arb_blade", None),
+                "front_arb_size": getattr(current_setup, "front_arb_size", None),
+                "rear_arb_size": getattr(current_setup, "rear_arb_size", None),
+                "front_camber_deg": getattr(current_setup, "front_camber_deg", None),
+                "rear_camber_deg": getattr(current_setup, "rear_camber_deg", None),
+                "front_toe_mm": getattr(current_setup, "front_toe_mm", None),
+                "rear_toe_mm": getattr(current_setup, "rear_toe_mm", None),
+                "diff_preload_nm": getattr(current_setup, "diff_preload_nm", None),
+                "diff_clutch_plates": getattr(current_setup, "diff_clutch_plates", None),
+                "tc_gain": getattr(current_setup, "tc_gain", None),
+                "tc_slip": getattr(current_setup, "tc_slip", None),
+                "brake_bias_pct": getattr(current_setup, "brake_bias_pct", None),
+                "wing_angle_deg": getattr(current_setup, "wing_angle_deg", None),
+            }
+            # Strip None values so detect_changes skips them cleanly
+            _current_dict = {k: v for k, v in _current_dict.items() if v is not None}
+
+            # Build recommended params dict from solver steps
+            _recommended_dict: dict = {
+                "front_rh_static": step1.static_front_rh_mm,
+                "rear_rh_static": step1.static_rear_rh_mm,
+                "front_heave_nmm": step2.front_heave_nmm,
+                "rear_third_nmm": step2.rear_third_nmm,
+                "torsion_bar_od_mm": step3.front_torsion_od_mm,
+                "rear_spring_nmm": step3.rear_spring_rate_nmm,
+                "front_arb_blade": step4.front_arb_blade_start,
+                "rear_arb_blade": step4.rear_arb_blade_start,
+                "front_arb_size": step4.front_arb_size,
+                "rear_arb_size": step4.rear_arb_size,
+                "front_camber_deg": step5.front_camber_deg,
+                "rear_camber_deg": step5.rear_camber_deg,
+                "front_toe_mm": step5.front_toe_mm,
+                "rear_toe_mm": step5.rear_toe_mm,
+                "wing_angle_deg": wing,
+            }
+            if supporting is not None:
+                _recommended_dict.update({
+                    "diff_preload_nm": getattr(supporting, "diff_preload_nm", None),
+                    "diff_clutch_plates": getattr(supporting, "diff_clutch_plates", None),
+                    "tc_gain": getattr(supporting, "tc_gain", None),
+                    "tc_slip": getattr(supporting, "tc_slip", None),
+                    "brake_bias_pct": getattr(supporting, "brake_bias_pct", None),
+                })
+            # Add damper clicks
+            for _corner_name, _corner_obj in (
+                ("lf", step6.lf), ("rf", step6.rf), ("lr", step6.lr), ("rr", step6.rr)
+            ):
+                _recommended_dict[f"{_corner_name}_ls_comp_clicks"] = getattr(_corner_obj, "ls_comp", None)
+                _recommended_dict[f"{_corner_name}_hs_comp_clicks"] = getattr(_corner_obj, "hs_comp", None)
+                _recommended_dict[f"{_corner_name}_ls_rbd_clicks"] = getattr(_corner_obj, "ls_rbd", None)
+                _recommended_dict[f"{_corner_name}_hs_rbd_clicks"] = getattr(_corner_obj, "hs_rbd", None)
+            # Strip None values
+            _recommended_dict = {k: v for k, v in _recommended_dict.items() if v is not None}
+
+            _delta_session_count = getattr(locals().get("n_sessions", None), "__class__", None) and n_sessions or 0
+            try:
+                _delta_session_count = n_sessions
+            except NameError:
+                _delta_session_count = 0
+
+            _best_lap = getattr(track, "best_lap_time_s", None)
+
+            delta_output = format_delta_card(
+                current=_current_dict,
+                recommended=_recommended_dict,
+                car=car.canonical_name,
+                track=track.track_name,
+                session_count=_delta_session_count,
+                best_lap_s=_best_lap,
+                mode=getattr(args, "mode", "safe"),
+                full_setup_str=report,
+            )
+            print("\n")
+            print(delta_output)
+        except Exception as _dc_exc:
+            print(f"\n[delta-card] Warning: could not generate delta card: {_dc_exc}")
+
     # ── Build return dict if requested (multi-IBT batch mode) ──
     _result: dict | None = None
     if _return_result:
@@ -1665,6 +1760,13 @@ def main():
     # Legacy flags (kept for backward-compat; no-op since auto is default)
     parser.add_argument("--learn", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--auto-learn", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--delta-card", action="store_true", default=False,
+                        dest="delta_card",
+                        help="Output a delta card showing only changes vs current setup, with confidence tiers")
+    parser.add_argument("--mode", choices=["safe", "aggressive"], default="safe",
+                        dest="mode",
+                        help="Output mode for delta card: safe (HIGH+PIN only) or aggressive (all changes). "
+                             "Also affects scenario: safe→single_lap_safe, aggressive→quali")
     args = parser.parse_args()
     try:
         produce(args)
