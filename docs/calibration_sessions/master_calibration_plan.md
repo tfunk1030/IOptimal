@@ -1,6 +1,6 @@
 # iOptimal — Master Calibration Plan
 **All 5 GTP Cars | Complete & Instructional**
-*Last updated: 2026-04-02*
+*Last updated: 2026-04-02 — Ferrari baseline fully validated from 87.575s lap garage screenshots (dampers + chassis + systems)*
 
 ---
 
@@ -103,7 +103,9 @@ Phase 6 → ARB stiffness (lowest priority — LLTD sweep if time allows)
 | Rear heave defl | 7.8 mm / 57.9 mm |
 | Front shock defl | 16.5 mm / 100.0 mm |
 | Rear shock defl | 19.6 mm / 150.0 mm |
-| Front LS/HS comp | **0** clicks (min) — VALIDATED from best lap IBT |
+
+### Dampers (Corner) — VALIDATED
+| Front LS/HS comp | **0** clicks (min) — VALIDATED from best lap screenshot |
 | Front LS/HS rbd | **0** clicks (min) — VALIDATED |
 | Front HS slope | **7** clicks — VALIDATED |
 | Rear LS comp | **40** clicks (MAX) — VALIDATED |
@@ -111,6 +113,19 @@ Phase 6 → ARB stiffness (lowest priority — LLTD sweep if time allows)
 | Rear LS rbd | **35** clicks — VALIDATED |
 | Rear HS rbd | **0** clicks — VALIDATED |
 | Rear HS slope | **10** clicks — VALIDATED |
+
+### Systems — VALIDATED
+| Brake bias | **49.0%** front |
+| Brake pad | Low |
+| Front master cyl | 17.8 mm |
+| Rear master cyl | 19.1 mm |
+| Brake migration | 1 / gain 0.00 |
+| TC2 (gain) | **3** |
+| TC1 (slip) | **4** |
+| Hybrid corner % | **90%** rear |
+| Front diff preload | **5 Nm** |
+| Rear diff | More Locking / 6 plates / **20 Nm** |
+| Gear stack | Short — 1st=121.7, 2nd=157.5, 3rd=190.0, 4th=222.7, 5th=256.6, 6th=291.0, 7th=329.2 km/h |
 
 **Key insight:** Ferrari @ Hockenheim runs near-zero front mechanical damping. Aero load handles front stability. Rear is maxed to control platform bounce. Front LS sweep tests what adding damping costs.
 
@@ -138,15 +153,15 @@ Phase 6 → ARB stiffness (lowest priority — LLTD sweep if time allows)
 
 ## Ferrari Phase 2 — HS Damper Sweep *(1 hour)*
 **What it calibrates:** `hs_force_per_click_n` (currently 151.8 N/click — estimated).
-**Lock:** Everything at baseline. Reset LS comp to 20 (Phase 1 best, or stay at 24 if baseline was fastest). Only vary HS comp.
+**Lock:** Everything at baseline. Set front LS comp to best result from Phase 1 (or 0 if Phase 1 showed baseline is fastest). Only vary front HS comp.
 
 | Stint | Front HS comp | Expected effect |
 |-------|-------------|----------------|
-| 1 | 13 (baseline) | Reference |
-| 2 | 5 | Soft HS — kerb absorption but platform instability |
-| 3 | 20 | Mid |
-| 4 | 30 | Stiff HS |
-| 5 | 40 (max) | Very stiff over kerbs |
+| 1 | **0** (validated baseline) | Reference — zero front HS damping |
+| 2 | 5 | Low HS — soft over kerbs |
+| 3 | 10 | Moderate |
+| 4 | 20 | Stiff HS — harsh over kerbs |
+| 5 | 40 (max) | Very stiff — expect traction loss over bumps |
 
 ---
 
@@ -156,9 +171,9 @@ Phase 6 → ARB stiffness (lowest priority — LLTD sweep if time allows)
 
 | Stint | Front heave idx | Adjust pushrod | Expected static RH after |
 |-------|----------------|----------------|--------------------------|
-| 1 | 5 (baseline) | –3.0 mm (baseline) | 30.1 mm |
+| 1 | 5 (baseline) | **+2.0 mm** (validated baseline) | 30.1 mm |
 | 2 | 3 | Raise pushrod until garage shows ~30.1 mm | 30.1 mm |
-| 3 | 5 | Restore to –3.0 mm | 30.1 mm |
+| 3 | 5 | Restore to +2.0 mm | 30.1 mm |
 | 4 | 7 | Lower pushrod until garage shows ~30.1 mm | 30.1 mm |
 | 5 | 1 (softest) | Raise pushrod significantly | 30.1 mm |
 
@@ -183,13 +198,14 @@ Phase 6 → ARB stiffness (lowest priority — LLTD sweep if time allows)
 ## Ferrari Phase 5 — Camber Sweep *(45 min)*
 **What it calibrates:** Camber sensitivity, tire contact patch model.
 **Lock:** Everything at best from previous phases. Only vary front camber.
+**Note:** –2.9° is the **hard legal limit** (⚠️ shown in garage). Baseline is already AT the limit. This sweep only goes LESS negative to quantify the cost of backing off camber.
 
 | Stint | Front camber | Expected |
 |-------|-------------|----------|
-| 1 | –1.9° (baseline) | Reference |
-| 2 | –1.5° | Less negative — reduce front grip |
-| 3 | –2.2° | More negative — increase limit grip, possible wear |
-| 4 | –1.7° | Between baseline and –1.5° |
+| 1 | **–2.9°** (validated baseline — at legal limit) | Reference |
+| 2 | –2.5° | Slightly less negative — small front grip loss |
+| 3 | –2.2° | Noticeably less negative — meaningful grip loss expected |
+| 4 | –1.8°  | Matching rear — symmetric setup for comparison |
 
 ---
 
