@@ -9,11 +9,11 @@
       "fit_type": "linear",
       "coefficients": [
         0.0,
-        0.30604545454545456
+        0.28896
       ],
-      "r_squared": 0.8574500738298516,
-      "sample_count": 22,
-      "residual_std": 0.11554986222906985,
+      "r_squared": 0.8335090886904608,
+      "sample_count": 25,
+      "residual_std": 0.11790520938448819,
       "x_values": [
         4.417797565460205,
         4.114037036895752,
@@ -36,7 +36,10 @@
         3.980808734893799,
         4.959342002868652,
         4.335446357727051,
-        4.481790065765381
+        4.481790065765381,
+        4.474908828735352,
+        4.116557598114014,
+        4.406710624694824
       ],
       "y_values": [
         0.163,
@@ -60,7 +63,10 @@
         0.234,
         0.155,
         0.192,
-        0.239
+        0.239,
+        0.16,
+        0.154,
+        0.177
       ],
       "x_min": 3.2460989952087402,
       "x_max": 4.959342002868652,
@@ -74,12 +80,12 @@
       "y_param": "lltd_measured",
       "fit_type": "linear",
       "coefficients": [
-        0.00019644968323438185,
-        0.5098742029789711
+        0.00017472153063345061,
+        0.5099518035239743
       ],
-      "r_squared": 0.023139750297763828,
-      "sample_count": 23,
-      "residual_std": 0.0016387723361668562,
+      "r_squared": 0.019803503201260897,
+      "sample_count": 26,
+      "residual_std": 0.001559455860846684,
       "x_values": [
         3.0,
         3.0,
@@ -99,6 +105,9 @@
         3.0,
         3.0,
         3.0,
+        1.0,
+        1.0,
+        1.0,
         1.0,
         1.0,
         1.0,
@@ -128,7 +137,10 @@
         0.510682141709884,
         0.5095620642305524,
         0.511278988751016,
-        0.5097138309702235
+        0.5097138309702235,
+        0.5095686677300026,
+        0.5103253438360199,
+        0.5111622403502292
       ],
       "x_min": 1.0,
       "x_max": 5.0,
@@ -142,11 +154,11 @@
       "y_param": "front_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        0.025482002984392967,
-        4.636528815735467
+        0.025441839414484708,
+        4.633555121281566
       ],
-      "r_squared": 0.005526691536281048,
-      "sample_count": 23,
+      "r_squared": 0.007196893491947853,
+      "sample_count": 26,
       "residual_std": 0.0,
       "x_values": [
         3.0,
@@ -171,7 +183,10 @@
         5.0,
         5.0,
         5.0,
-        5.0
+        5.0,
+        5.0,
+        5.0,
+        7.0
       ],
       "y_values": [
         5.343262195587158,
@@ -196,10 +211,13 @@
         4.507435321807861,
         4.363393783569336,
         4.357760429382324,
-        5.3220367431640625
+        5.3220367431640625,
+        4.428981781005859,
+        4.980513572692871,
+        4.851711750030518
       ],
       "x_min": 1.0,
-      "x_max": 5.0,
+      "x_max": 7.0,
       "physics_prediction_at_mean": 0.0,
       "empirical_prediction_at_mean": 0.0,
       "correction_factor": 1.0
@@ -210,11 +228,11 @@
       "y_param": "rear_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.015571299539619568,
-        6.025905821427881
+        -0.0037333357490989976,
+        5.997894087120099
       ],
-      "r_squared": 0.007145354880120469,
-      "sample_count": 23,
+      "r_squared": 0.00037180318209206753,
+      "sample_count": 26,
       "residual_std": 0.0,
       "x_values": [
         5.0,
@@ -239,7 +257,10 @@
         8.0,
         8.0,
         8.0,
-        8.0
+        8.0,
+        8.0,
+        8.0,
+        6.0
       ],
       "y_values": [
         6.133851051330566,
@@ -264,7 +285,10 @@
         5.782806396484375,
         5.609894752502441,
         5.348992824554443,
-        6.218087673187256
+        6.218087673187256,
+        6.0107622146606445,
+        6.532195091247559,
+        6.405312538146973
       ],
       "x_min": 1.0,
       "x_max": 8.0,
@@ -278,12 +302,12 @@
       "y_param": "front_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.007546014985755974,
-        4.851932276628517
+        -0.0075321715550571025,
+        4.852000310271489
       ],
-      "r_squared": 0.040182373037217056,
-      "sample_count": 23,
-      "residual_std": 0.3873948149277852,
+      "r_squared": 0.04245809136476608,
+      "sample_count": 26,
+      "residual_std": 0.3723025102096595,
       "x_values": [
         20.0,
         20.0,
@@ -307,7 +331,10 @@
         20.0,
         30.0,
         40.0,
-        20.0
+        20.0,
+        20.0,
+        20.0,
+        0.0
       ],
       "y_values": [
         5.343262195587158,
@@ -332,7 +359,10 @@
         4.507435321807861,
         4.363393783569336,
         4.357760429382324,
-        5.3220367431640625
+        5.3220367431640625,
+        4.428981781005859,
+        4.980513572692871,
+        4.851711750030518
       ],
       "x_min": 0.0,
       "x_max": 40.0,
@@ -346,12 +376,12 @@
       "y_param": "pitch_range_braking_deg",
       "fit_type": "linear",
       "coefficients": [
-        -0.006950383771929815,
-        2.2110581140350867
+        -0.0053124317238365535,
+        2.1747585754861256
       ],
-      "r_squared": 0.1897361978222234,
-      "sample_count": 23,
-      "residual_std": 0.150871246146528,
+      "r_squared": 0.11641554411832156,
+      "sample_count": 26,
+      "residual_std": 0.1523312509079907,
       "x_values": [
         20.0,
         20.0,
@@ -375,7 +405,10 @@
         20.0,
         30.0,
         40.0,
-        20.0
+        20.0,
+        20.0,
+        20.0,
+        0.0
       ],
       "y_values": [
         1.96,
@@ -400,7 +433,10 @@
         2.13,
         2.11,
         1.94,
-        2.32
+        2.32,
+        2.08,
+        2.07,
+        1.91
       ],
       "x_min": 0.0,
       "x_max": 40.0,
@@ -414,12 +450,12 @@
       "y_param": "front_shock_oscillation_hz",
       "fit_type": "linear",
       "coefficients": [
-        -0.001484375000000186,
-        11.939062499999993
+        -0.005006008302381342,
+        12.011245357220883
       ],
-      "r_squared": 0.010708798940829212,
-      "sample_count": 23,
-      "residual_std": 0.14986316222242305,
+      "r_squared": 0.07158330415656355,
+      "sample_count": 26,
+      "residual_std": 0.18764382001510818,
       "x_values": [
         20.0,
         20.0,
@@ -443,7 +479,10 @@
         20.0,
         30.0,
         40.0,
-        20.0
+        20.0,
+        20.0,
+        20.0,
+        0.0
       ],
       "y_values": [
         12.04,
@@ -468,7 +507,10 @@
         11.55,
         11.84,
         12.07,
-        12.03
+        12.03,
+        12.02,
+        11.67,
+        12.55
       ],
       "x_min": 0.0,
       "x_max": 40.0,
@@ -482,12 +524,12 @@
       "y_param": "rear_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.002423234859149855,
-        5.9967776838536775
+        0.0013386233073064938,
+        5.935422306997953
       ],
-      "r_squared": 0.006384828897430861,
-      "sample_count": 23,
-      "residual_std": 0.35774706769396364,
+      "r_squared": 0.0018529125355754017,
+      "sample_count": 26,
+      "residual_std": 0.3668987287937613,
       "x_values": [
         16.0,
         16.0,
@@ -507,6 +549,9 @@
         16.0,
         16.0,
         16.0,
+        40.0,
+        40.0,
+        40.0,
         40.0,
         40.0,
         40.0,
@@ -536,7 +581,10 @@
         5.782806396484375,
         5.609894752502441,
         5.348992824554443,
-        6.218087673187256
+        6.218087673187256,
+        6.0107622146606445,
+        6.532195091247559,
+        6.405312538146973
       ],
       "x_min": 16.0,
       "x_max": 40.0,
@@ -550,12 +598,12 @@
       "y_param": "rear_shock_oscillation_hz",
       "fit_type": "linear",
       "coefficients": [
-        -0.004378576827556386,
-        10.80803368966634
+        -0.0046758316361166,
+        10.812881873727083
       ],
-      "r_squared": 0.06824827136030986,
-      "sample_count": 23,
-      "residual_std": 0.19146233435492316,
+      "r_squared": 0.08498847850039815,
+      "sample_count": 26,
+      "residual_std": 0.18117994836772663,
       "x_values": [
         16.0,
         16.0,
@@ -575,6 +623,9 @@
         16.0,
         16.0,
         16.0,
+        40.0,
+        40.0,
+        40.0,
         40.0,
         40.0,
         40.0,
@@ -604,7 +655,10 @@
         10.6,
         10.77,
         10.53,
-        10.54
+        10.54,
+        10.67,
+        10.55,
+        10.58
       ],
       "x_min": 16.0,
       "x_max": 40.0,
@@ -618,12 +672,12 @@
       "y_param": "front_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.0008889589632901021,
-        4.745568693374571
+        -0.0009636572059899502,
+        4.7472867529566685
       ],
-      "r_squared": 0.0006681168069829768,
-      "sample_count": 23,
-      "residual_std": 0.39528862283179655,
+      "r_squared": 0.0008404307235320152,
+      "sample_count": 26,
+      "residual_std": 0.3803071540258801,
       "x_values": [
         24.0,
         24.0,
@@ -643,6 +697,9 @@
         24.0,
         24.0,
         24.0,
+        0.0,
+        0.0,
+        0.0,
         0.0,
         0.0,
         0.0,
@@ -672,7 +729,10 @@
         4.507435321807861,
         4.363393783569336,
         4.357760429382324,
-        5.3220367431640625
+        5.3220367431640625,
+        4.428981781005859,
+        4.980513572692871,
+        4.851711750030518
       ],
       "x_min": 0.0,
       "x_max": 24.0,
@@ -686,12 +746,12 @@
       "y_param": "front_shock_oscillation_hz",
       "fit_type": "linear",
       "coefficients": [
-        -0.00041226941226899275,
-        11.920926640926632
+        -0.0018672086720866491,
+        11.954390243902438
       ],
-      "r_squared": 0.0009897019964131282,
-      "sample_count": 23,
-      "residual_std": 0.15059751359761872,
+      "r_squared": 0.012043453328403175,
+      "sample_count": 26,
+      "residual_std": 0.1935671770536531,
       "x_values": [
         24.0,
         24.0,
@@ -711,6 +771,9 @@
         24.0,
         24.0,
         24.0,
+        0.0,
+        0.0,
+        0.0,
         0.0,
         0.0,
         0.0,
@@ -740,7 +803,10 @@
         11.55,
         11.84,
         12.07,
-        12.03
+        12.03,
+        12.02,
+        11.67,
+        12.55
       ],
       "x_min": 0.0,
       "x_max": 24.0,
@@ -754,12 +820,12 @@
       "y_param": "rear_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        0.0015948015756754583,
-        5.876725484905373
+        0.006037424061749497,
+        5.772323856482633
       ],
-      "r_squared": 0.0003351969245550812,
-      "sample_count": 23,
-      "residual_std": 0.3588344876066716,
+      "r_squared": 0.004142080659943259,
+      "sample_count": 26,
+      "residual_std": 0.3664777612857365,
       "x_values": [
         34.0,
         34.0,
@@ -779,6 +845,9 @@
         34.0,
         34.0,
         34.0,
+        35.0,
+        35.0,
+        35.0,
         35.0,
         35.0,
         35.0,
@@ -808,7 +877,10 @@
         5.782806396484375,
         5.609894752502441,
         5.348992824554443,
-        6.218087673187256
+        6.218087673187256,
+        6.0107622146606445,
+        6.532195091247559,
+        6.405312538146973
       ],
       "x_min": 20.0,
       "x_max": 35.0,
@@ -822,12 +894,12 @@
       "y_param": "rear_shock_oscillation_hz",
       "fit_type": "linear",
       "coefficients": [
-        0.02063919821826268,
-        10.000478841870827
+        0.01921621621621627,
+        10.03391891891892
       ],
-      "r_squared": 0.1837975917132494,
-      "sample_count": 23,
-      "residual_std": 0.17919759717191353,
+      "r_squared": 0.1577448219632639,
+      "sample_count": 26,
+      "residual_std": 0.1738275844221195,
       "x_values": [
         34.0,
         34.0,
@@ -847,6 +919,9 @@
         34.0,
         34.0,
         34.0,
+        35.0,
+        35.0,
+        35.0,
         35.0,
         35.0,
         35.0,
@@ -876,7 +951,10 @@
         10.6,
         10.77,
         10.53,
-        10.54
+        10.54,
+        10.67,
+        10.55,
+        10.58
       ],
       "x_min": 20.0,
       "x_max": 35.0,
@@ -890,12 +968,12 @@
       "y_param": "front_shock_vel_p99_mps",
       "fit_type": "linear",
       "coefficients": [
-        -0.0011638486277030903,
-        0.19583366369783042
+        -0.0008243206612287299,
+        0.19322216690475233
       ],
-      "r_squared": 0.43788527929775656,
-      "sample_count": 23,
-      "residual_std": 0.012436002004545482,
+      "r_squared": 0.3517773913612736,
+      "sample_count": 26,
+      "residual_std": 0.012708936360059554,
       "x_values": [
         20.0,
         20.0,
@@ -919,7 +997,10 @@
         0.0,
         0.0,
         0.0,
-        10.0
+        10.0,
+        30.0,
+        40.0,
+        0.0
       ],
       "y_values": [
         0.16021230757236513,
@@ -944,10 +1025,13 @@
         0.21050326526165009,
         0.20228803157806396,
         0.210374116897583,
-        0.18913476169109344
+        0.18913476169109344,
+        0.1744256466627121,
+        0.1787518411874771,
+        0.19020885229110718
       ],
       "x_min": 0.0,
-      "x_max": 20.0,
+      "x_max": 40.0,
       "physics_prediction_at_mean": 0.0,
       "empirical_prediction_at_mean": 0.0,
       "correction_factor": 1.0
@@ -958,12 +1042,12 @@
       "y_param": "front_rh_excursion_measured_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.07570317376812791,
-        25.532549089883762
+        -0.052619717208617314,
+        25.21433795428057
       ],
-      "r_squared": 0.02010848971047563,
-      "sample_count": 23,
-      "residual_std": 4.983854281831267,
+      "r_squared": 0.015527650561566353,
+      "sample_count": 26,
+      "residual_std": 4.7586338668843045,
       "x_values": [
         20.0,
         20.0,
@@ -987,7 +1071,10 @@
         0.0,
         0.0,
         0.0,
-        10.0
+        10.0,
+        30.0,
+        40.0,
+        0.0
       ],
       "y_values": [
         23.60214900970459,
@@ -1012,10 +1099,13 @@
         36.32867431640625,
         32.699100494384766,
         19.994325637817383,
-        23.6293888092041
+        23.6293888092041,
+        26.000946044921875,
+        22.052125930786133,
+        22.127735137939453
       ],
       "x_min": 0.0,
-      "x_max": 20.0,
+      "x_max": 40.0,
       "physics_prediction_at_mean": 0.0,
       "empirical_prediction_at_mean": 0.0,
       "correction_factor": 1.0
@@ -1026,12 +1116,12 @@
       "y_param": "front_rh_std_hs_mm",
       "fit_type": "linear",
       "coefficients": [
-        0.0043929006797473955,
-        4.480894901293875
+        0.005433392196620286,
+        4.436459829501055
       ],
-      "r_squared": 0.0036930685895532056,
-      "sample_count": 23,
-      "residual_std": 0.6804657195081181,
+      "r_squared": 0.008273884420234356,
+      "sample_count": 26,
+      "residual_std": 0.675611602419798,
       "x_values": [
         20.0,
         20.0,
@@ -1055,7 +1145,10 @@
         0.0,
         0.0,
         0.0,
-        10.0
+        10.0,
+        30.0,
+        40.0,
+        0.0
       ],
       "y_values": [
         4.950173854827881,
@@ -1080,10 +1173,13 @@
         4.703226566314697,
         3.5539965629577637,
         4.594092845916748,
-        4.630001068115234
+        4.630001068115234,
+        3.7236530780792236,
+        5.162397384643555,
+        4.031377792358398
       ],
       "x_min": 0.0,
-      "x_max": 20.0,
+      "x_max": 40.0,
       "physics_prediction_at_mean": 0.0,
       "empirical_prediction_at_mean": 0.0,
       "correction_factor": 1.0
@@ -1094,12 +1190,12 @@
       "y_param": "rear_shock_vel_p99_mps",
       "fit_type": "linear",
       "coefficients": [
-        0.0038889613141520705,
-        0.09868644924691075
+        0.004118058330379422,
+        0.09135534472763558
       ],
-      "r_squared": 0.3543686033578488,
-      "sample_count": 23,
-      "residual_std": 0.020817671564055732,
+      "r_squared": 0.3862938522163796,
+      "sample_count": 26,
+      "residual_std": 0.02020181840625,
       "x_values": [
         32.0,
         32.0,
@@ -1119,6 +1215,9 @@
         32.0,
         32.0,
         32.0,
+        40.0,
+        40.0,
+        40.0,
         40.0,
         40.0,
         40.0,
@@ -1148,7 +1247,10 @@
         0.30160704255104065,
         0.2822185456752777,
         0.26816609501838684,
-        0.24228425323963165
+        0.24228425323963165,
+        0.27564892172813416,
+        0.248017817735672,
+        0.2683923840522766
       ],
       "x_min": 32.0,
       "x_max": 40.0,
@@ -1162,12 +1264,12 @@
       "y_param": "rear_rh_std_mm",
       "fit_type": "linear",
       "coefficients": [
-        -0.00855728938029352,
-        6.242297062507037
+        0.0011946901679038113,
+        5.930233716964727
       ],
-      "r_squared": 0.008941412690138262,
-      "sample_count": 23,
-      "residual_std": 0.35728652750408996,
+      "r_squared": 0.00016031197684829301,
+      "sample_count": 26,
+      "residual_std": 0.3672096799324164,
       "x_values": [
         32.0,
         32.0,
@@ -1187,6 +1289,9 @@
         32.0,
         32.0,
         32.0,
+        40.0,
+        40.0,
+        40.0,
         40.0,
         40.0,
         40.0,
@@ -1216,7 +1321,10 @@
         5.782806396484375,
         5.609894752502441,
         5.348992824554443,
-        6.218087673187256
+        6.218087673187256,
+        6.0107622146606445,
+        6.532195091247559,
+        6.405312538146973
       ],
       "x_min": 32.0,
       "x_max": 40.0,
@@ -1230,12 +1338,12 @@
       "y_param": "front_shock_vel_p99_mps",
       "fit_type": "linear",
       "coefficients": [
-        -0.0007711364916682636,
-        0.19408273507906604
+        -0.0006702726422063656,
+        0.1913854405241011
       ],
-      "r_squared": 0.3863879905978419,
-      "sample_count": 23,
-      "residual_std": 0.0129931732526952,
+      "r_squared": 0.31857511629212454,
+      "sample_count": 26,
+      "residual_std": 0.013030350931389358,
       "x_values": [
         28.0,
         28.0,
@@ -1255,6 +1363,9 @@
         28.0,
         28.0,
         28.0,
+        0.0,
+        0.0,
+        0.0,
         0.0,
         0.0,
         0.0,
@@ -1284,7 +1395,10 @@
         0.21050326526165009,
         0.20228803157806396,
         0.210374116897583,
-        0.18913476169109344
+        0.18913476169109344,
+        0.1744256466627121,
+        0.1787518411874771,
+        0.19020885229110718
       ],
       "x_min": 0.0,
       "x_max": 28.0,
@@ -1298,12 +1412,12 @@
       "y_param": "rear_shock_vel_p99_mps",
       "fit_type": "linear",
       "coefficients": [
-        -0.0006460333567021941,
-        0.25279609478037524
+        -0.0007128159251765124,
+        0.25519560799648733
       ],
-      "r_squared": 0.20034179257377183,
-      "sample_count": 23,
-      "residual_std": 0.023168186000582965,
+      "r_squared": 0.2450456049248183,
+      "sample_count": 26,
+      "residual_std": 0.022406322618421175,
       "x_values": [
         35.0,
         35.0,
@@ -1323,6 +1437,9 @@
         35.0,
         35.0,
         35.0,
+        0.0,
+        0.0,
+        0.0,
         0.0,
         0.0,
         0.0,
@@ -1352,7 +1469,10 @@
         0.30160704255104065,
         0.2822185456752777,
         0.26816609501838684,
-        0.24228425323963165
+        0.24228425323963165,
+        0.27564892172813416,
+        0.248017817735672,
+        0.2683923840522766
       ],
       "x_min": 0.0,
       "x_max": 40.0,
@@ -1366,12 +1486,12 @@
       "y_param": "understeer_low_speed_deg",
       "fit_type": "linear",
       "coefficients": [
-        0.0019197140160637626,
-        0.2249563742273795
+        0.0008276692891331952,
+        0.22572989445379094
       ],
-      "r_squared": 0.03251624780775797,
-      "sample_count": 23,
-      "residual_std": 0.10999368036001775,
+      "r_squared": 0.004179924588446071,
+      "sample_count": 26,
+      "residual_std": 0.13296586274183048,
       "x_values": [
         20.0,
         20.0,
@@ -1395,7 +1515,10 @@
         20.0,
         30.0,
         40.0,
-        20.0
+        20.0,
+        20.0,
+        20.0,
+        0.0
       ],
       "y_values": [
         0.12001371383666992,
@@ -1420,7 +1543,10 @@
         0.22089624404907227,
         0.138723224401474,
         0.344087153673172,
-        0.18782567977905273
+        0.18782567977905273,
+        0.2279563695192337,
+        -0.16905994713306427,
+        0.2804230749607086
       ],
       "x_min": 0.0,
       "x_max": 40.0,
@@ -1434,12 +1560,12 @@
       "y_param": "understeer_low_speed_deg",
       "fit_type": "linear",
       "coefficients": [
-        -0.002875077944168861,
-        0.3341723638886881
+        -0.0038336389214407387,
+        0.3498063584194042
       ],
-      "r_squared": 0.09257626563948085,
-      "sample_count": 23,
-      "residual_std": 0.10652485721074491,
+      "r_squared": 0.1154407133520634,
+      "sample_count": 26,
+      "residual_std": 0.12531792358088897,
       "x_values": [
         16.0,
         16.0,
@@ -1459,6 +1585,9 @@
         16.0,
         16.0,
         16.0,
+        40.0,
+        40.0,
+        40.0,
         40.0,
         40.0,
         40.0,
@@ -1488,7 +1617,10 @@
         0.22089624404907227,
         0.138723224401474,
         0.344087153673172,
-        0.18782567977905273
+        0.18782567977905273,
+        0.2279563695192337,
+        -0.16905994713306427,
+        0.2804230749607086
       ],
       "x_min": 16.0,
       "x_max": 40.0,
@@ -1502,12 +1634,12 @@
       "y_param": "understeer_high_speed_deg",
       "fit_type": "linear",
       "coefficients": [
-        -0.0009512328616997632,
-        -0.21256938277408235
+        0.0003362863726162044,
+        -0.22168543069290184
       ],
-      "r_squared": 0.021347495504017933,
-      "sample_count": 23,
-      "residual_std": 0.06074067496641384,
+      "r_squared": 0.004012275318056591,
+      "sample_count": 26,
+      "residual_std": 0.06017634320781693,
       "x_values": [
         20.0,
         20.0,
@@ -1531,7 +1663,10 @@
         0.0,
         0.0,
         0.0,
-        10.0
+        10.0,
+        30.0,
+        40.0,
+        0.0
       ],
       "y_values": [
         -0.22952619194984436,
@@ -1556,10 +1691,13 @@
         -0.17429082095623016,
         -0.13973195850849152,
         -0.1700592190027237,
-        -0.13691359758377075
+        -0.13691359758377075,
+        -0.1748310774564743,
+        -0.144049271941185,
+        -0.22330038249492645
       ],
       "x_min": 0.0,
-      "x_max": 20.0,
+      "x_max": 40.0,
       "physics_prediction_at_mean": 0.0,
       "empirical_prediction_at_mean": 0.0,
       "correction_factor": 1.0
@@ -1570,12 +1708,12 @@
       "y_param": "understeer_high_speed_deg",
       "fit_type": "linear",
       "coefficients": [
-        0.004315091325686524,
-        -0.38008993061689217
+        0.004942263988777998,
+        -0.40015945583581936
       ],
-      "r_squared": 0.07768137822567245,
-      "sample_count": 23,
-      "residual_std": 0.058966567291201984,
+      "r_squared": 0.10176713288324657,
+      "sample_count": 26,
+      "residual_std": 0.057146978246134544,
       "x_values": [
         32.0,
         32.0,
@@ -1595,6 +1733,9 @@
         32.0,
         32.0,
         32.0,
+        40.0,
+        40.0,
+        40.0,
         40.0,
         40.0,
         40.0,
@@ -1624,7 +1765,10 @@
         -0.17429082095623016,
         -0.13973195850849152,
         -0.1700592190027237,
-        -0.13691359758377075
+        -0.13691359758377075,
+        -0.1748310774564743,
+        -0.144049271941185,
+        -0.22330038249492645
       ],
       "x_min": 32.0,
       "x_max": 40.0,
@@ -1638,12 +1782,12 @@
       "y_param": "body_roll_p95_deg",
       "fit_type": "linear",
       "coefficients": [
-        0.003333333333333296,
-        2.3466666666666653
+        0.0030609569587066263,
+        2.3564561940135453
       ],
-      "r_squared": 0.04682889257948819,
-      "sample_count": 23,
-      "residual_std": 0.15796715857546406,
+      "r_squared": 0.042761068918339085,
+      "sample_count": 26,
+      "residual_std": 0.1507371231909843,
       "x_values": [
         20.0,
         20.0,
@@ -1667,7 +1811,10 @@
         20.0,
         30.0,
         40.0,
-        20.0
+        20.0,
+        20.0,
+        20.0,
+        0.0
       ],
       "y_values": [
         2.32,
@@ -1692,7 +1839,10 @@
         2.56,
         2.55,
         2.47,
-        2.19
+        2.19,
+        2.52,
+        2.38,
+        2.42
       ],
       "x_min": 0.0,
       "x_max": 40.0,
@@ -1706,12 +1856,12 @@
       "y_param": "body_roll_p95_deg",
       "fit_type": "linear",
       "coefficients": [
-        -0.0006624554583738573,
-        2.416579203109815
+        -0.0002113034623217578,
+        2.4092209775967404
       ],
-      "r_squared": 0.0023477011984255336,
-      "sample_count": 23,
-      "residual_std": 0.16161102152999307,
+      "r_squared": 0.00026231864448811315,
+      "sample_count": 26,
+      "residual_std": 0.1540469402978649,
       "x_values": [
         16.0,
         16.0,
@@ -1731,6 +1881,9 @@
         16.0,
         16.0,
         16.0,
+        40.0,
+        40.0,
+        40.0,
         40.0,
         40.0,
         40.0,
@@ -1760,7 +1913,10 @@
         2.56,
         2.55,
         2.47,
-        2.19
+        2.19,
+        2.52,
+        2.38,
+        2.42
       ],
       "x_min": 16.0,
       "x_max": 40.0,
@@ -1774,12 +1930,12 @@
       "y_param": "body_slip_p95_deg",
       "fit_type": "linear",
       "coefficients": [
-        -0.004752759474509395,
-        1.9844760991665604
+        -0.0028122000124403655,
+        1.9299773923924115
       ],
-      "r_squared": 0.024051843529892758,
-      "sample_count": 23,
-      "residual_std": 0.3180127962145066,
+      "r_squared": 0.008740140998498735,
+      "sample_count": 26,
+      "residual_std": 0.31171510368666594,
       "x_values": [
         20.0,
         20.0,
@@ -1803,7 +1959,10 @@
         20.0,
         30.0,
         40.0,
-        20.0
+        20.0,
+        20.0,
+        20.0,
+        0.0
       ],
       "y_values": [
         2.2341578006744385,
@@ -1828,7 +1987,10 @@
         1.4366668462753296,
         1.4910988807678223,
         1.730592966079712,
-        1.898025393486023
+        1.898025393486023,
+        1.6801061630249023,
+        1.8781647682189941,
+        1.556542158126831
       ],
       "x_min": 0.0,
       "x_max": 40.0,
@@ -1837,8 +1999,8 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-04-02T04:58:49.757591+00:00",
-  "observation_count": 23,
+  "last_updated": "2026-04-02T05:41:19.563126+00:00",
+  "observation_count": 26,
   "most_sensitive_parameters": [
     [
       "rear_torsion_bar_index",
@@ -1851,64 +2013,72 @@
     [
       "damper_rf_ls_comp",
       -0.0038249999999999994
+    ],
+    [
+      "damper_lf_hs_comp",
+      0.002008333333333333
+    ],
+    [
+      "damper_rf_hs_comp",
+      0.002008333333333333
     ]
   ],
   "corrections": {
-    "aero_compression_front_mean_mm": 7.389979569808295,
-    "aero_compression_front_std_mm": 0.4128169565372727,
-    "aero_compression_rear_mean_mm": 17.73305619281271,
-    "aero_compression_rear_std_mm": 1.6379602316993678,
+    "aero_compression_front_mean_mm": 7.304598764272837,
+    "aero_compression_front_std_mm": 0.4589048153319751,
+    "aero_compression_rear_mean_mm": 17.6363746202909,
+    "aero_compression_rear_std_mm": 1.6035057465473734,
     "lap_time_surrogate_regularized": 1.0,
-    "lap_time_surrogate_sample_weight": 4.0,
-    "roll_gradient_measured_mean": 0.30286518909224747,
-    "roll_gradient_measured_std": 0.11554986222906985,
-    "roll_gradient_sample_count": 22,
-    "lltd_measured_mean": 0.5103031776660861,
-    "lltd_measured_std": 0.0016580682579310658,
-    "prediction_correction_front_rh_std_mm": 4.8344,
-    "prediction_correction_front_rh_std_mm_std": 0.3807,
-    "prediction_correction_front_rh_std_mm_n": 14,
-    "prediction_correction_rear_rh_std_mm": 5.9591,
-    "prediction_correction_rear_rh_std_mm_std": 0.336,
-    "prediction_correction_rear_rh_std_mm_n": 14,
-    "prediction_correction_lltd_predicted": 0.0136,
-    "prediction_correction_lltd_predicted_std": 0.0185,
-    "prediction_correction_lltd_predicted_n": 14,
-    "prediction_correction_body_roll_predicted_deg_per_g": 0.2769,
-    "prediction_correction_body_roll_predicted_deg_per_g_std": 0.1136,
-    "prediction_correction_body_roll_predicted_deg_per_g_n": 14,
-    "prediction_correction_front_bottoming_predicted": 10.9001,
-    "prediction_correction_front_bottoming_predicted_std": 5.0016,
-    "prediction_correction_front_bottoming_predicted_n": 14,
-    "prediction_correction_front_heave_travel_used_pct": 7.3962,
-    "prediction_correction_front_heave_travel_used_pct_std": 10.5202,
-    "prediction_correction_front_heave_travel_used_pct_n": 14,
-    "prediction_correction_front_excursion_mm": 4.8262,
-    "prediction_correction_front_excursion_mm_std": 7.1033,
-    "prediction_correction_front_excursion_mm_n": 14,
-    "prediction_correction_braking_pitch_deg": 0.2411,
-    "prediction_correction_braking_pitch_deg_std": 0.3767,
-    "prediction_correction_braking_pitch_deg_n": 14,
-    "prediction_correction_front_lock_p95": 0.0081,
-    "prediction_correction_front_lock_p95_std": 0.0203,
-    "prediction_correction_front_lock_p95_n": 14,
-    "prediction_correction_rear_power_slip_p95": -0.0031,
-    "prediction_correction_rear_power_slip_p95_std": 0.0192,
-    "prediction_correction_rear_power_slip_p95_n": 14,
-    "prediction_correction_body_slip_p95_deg": 0.0687,
-    "prediction_correction_body_slip_p95_deg_std": 0.2283,
-    "prediction_correction_body_slip_p95_deg_n": 14,
-    "prediction_correction_understeer_low_deg": -0.2473,
-    "prediction_correction_understeer_low_deg_std": 0.2314,
-    "prediction_correction_understeer_low_deg_n": 14,
-    "prediction_correction_understeer_high_deg": -0.1419,
-    "prediction_correction_understeer_high_deg_std": 0.148,
-    "prediction_correction_understeer_high_deg_n": 14,
-    "prediction_correction_front_pressure_hot_kpa": 0.9951,
-    "prediction_correction_front_pressure_hot_kpa_std": 3.4955,
-    "prediction_correction_front_pressure_hot_kpa_n": 14,
-    "prediction_correction_rear_pressure_hot_kpa": 1.6429,
-    "prediction_correction_rear_pressure_hot_kpa_std": 3.6317,
-    "prediction_correction_rear_pressure_hot_kpa_n": 14
+    "lap_time_surrogate_sample_weight": 6.0,
+    "roll_gradient_measured_mean": 0.2851741592150413,
+    "roll_gradient_measured_std": 0.11790520938448819,
+    "roll_gradient_sample_count": 25,
+    "lltd_measured_mean": 0.5103091808515077,
+    "lltd_measured_std": 0.0015751304015794868,
+    "prediction_correction_front_rh_std_mm": 4.8177,
+    "prediction_correction_front_rh_std_mm_std": 0.3714,
+    "prediction_correction_front_rh_std_mm_n": 16,
+    "prediction_correction_rear_rh_std_mm": 5.9994,
+    "prediction_correction_rear_rh_std_mm_std": 0.3436,
+    "prediction_correction_rear_rh_std_mm_n": 16,
+    "prediction_correction_lltd_predicted": 0.0135,
+    "prediction_correction_lltd_predicted_std": 0.0172,
+    "prediction_correction_lltd_predicted_n": 16,
+    "prediction_correction_body_roll_predicted_deg_per_g": 0.2614,
+    "prediction_correction_body_roll_predicted_deg_per_g_std": 0.1134,
+    "prediction_correction_body_roll_predicted_deg_per_g_n": 16,
+    "prediction_correction_front_bottoming_predicted": 10.461,
+    "prediction_correction_front_bottoming_predicted_std": 4.8081,
+    "prediction_correction_front_bottoming_predicted_n": 16,
+    "prediction_correction_front_heave_travel_used_pct": 5.5091,
+    "prediction_correction_front_heave_travel_used_pct_std": 11.0291,
+    "prediction_correction_front_heave_travel_used_pct_n": 16,
+    "prediction_correction_front_excursion_mm": 3.819,
+    "prediction_correction_front_excursion_mm_std": 7.1456,
+    "prediction_correction_front_excursion_mm_n": 16,
+    "prediction_correction_braking_pitch_deg": 0.1779,
+    "prediction_correction_braking_pitch_deg_std": 0.3899,
+    "prediction_correction_braking_pitch_deg_n": 16,
+    "prediction_correction_front_lock_p95": 0.0053,
+    "prediction_correction_front_lock_p95_std": 0.0205,
+    "prediction_correction_front_lock_p95_n": 16,
+    "prediction_correction_rear_power_slip_p95": -0.0048,
+    "prediction_correction_rear_power_slip_p95_std": 0.0184,
+    "prediction_correction_rear_power_slip_p95_n": 16,
+    "prediction_correction_body_slip_p95_deg": 0.0547,
+    "prediction_correction_body_slip_p95_deg_std": 0.2162,
+    "prediction_correction_body_slip_p95_deg_n": 16,
+    "prediction_correction_understeer_low_deg": -0.2412,
+    "prediction_correction_understeer_low_deg_std": 0.2165,
+    "prediction_correction_understeer_low_deg_n": 16,
+    "prediction_correction_understeer_high_deg": -0.1443,
+    "prediction_correction_understeer_high_deg_std": 0.1383,
+    "prediction_correction_understeer_high_deg_n": 16,
+    "prediction_correction_front_pressure_hot_kpa": 0.9699,
+    "prediction_correction_front_pressure_hot_kpa_std": 3.2626,
+    "prediction_correction_front_pressure_hot_kpa_n": 16,
+    "prediction_correction_rear_pressure_hot_kpa": 1.5083,
+    "prediction_correction_rear_pressure_hot_kpa_std": 3.4071,
+    "prediction_correction_rear_pressure_hot_kpa_n": 16
   }
 }
