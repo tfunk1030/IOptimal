@@ -40,7 +40,7 @@ from output.report import to_public_output_payload
 from car_model.setup_registry import public_output_value
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
-from solver.candidate_search import candidate_to_dict, generate_candidate_families
+from solver.candidate_search import canonical_params_to_overrides, candidate_to_dict, generate_candidate_families
 from solver.arb_solver import ARBSolver
 from solver.corner_spring_solver import CornerSpringSolver
 from solver.damper_solver import DamperSolver
@@ -69,6 +69,32 @@ from track_model.ibt_parser import IBTFile
 
 class PipelineInputError(RuntimeError):
     """User-facing pipeline input error."""
+
+
+def _normalize_grid_search_params_for_overrides(params: dict[str, object] | None) -> dict[str, object]:
+    """Normalize grid-search param aliases to canonical override keys.
+
+    Grid search can surface keys that don't match solve-chain field names
+    directly (e.g. *_spring_nmm, *_arb_blade, *_toe_deg aliases). Convert those
+    into the canonical param set expected by canonical_params_to_overrides().
+    """
+    raw = dict(params or {})
+    normalized = dict(raw)
+    alias_map = {
+        "front_heave_nmm": "front_heave_spring_nmm",
+        "rear_third_nmm": "rear_third_spring_nmm",
+        "rear_spring_nmm": "rear_spring_rate_nmm",
+        "front_arb_blade_start": "front_arb_blade",
+        "rear_arb_blade_start": "rear_arb_blade",
+        # Pipeline/solver canonical toe units are mm. If a *_toe_deg alias is
+        # emitted by search output, route it to toe_mm for override consumption.
+        "front_toe_deg": "front_toe_mm",
+        "rear_toe_deg": "rear_toe_mm",
+    }
+    for source_key, target_key in alias_map.items():
+        if source_key in raw and target_key not in normalized:
+            normalized[target_key] = raw[source_key]
+    return normalized
 
 
 def _wrap_no_valid_laps_error(
@@ -995,57 +1021,52 @@ def produce(
                 _gs_best = gs_result.best_robust or gs_result.best_overall
                 if _gs_best is not None and not _gs_best.hard_vetoed:
                     try:
-                        from solver.solve_chain import SolveChainOverrides, materialize_overrides
-                        # Build overrides from the candidate's params
-                        _gs_overrides = SolveChainOverrides()
-                        _gs_params = _gs_best.params or {}
-                        # Map canonical param keys to step overrides
-                        _step1_keys = {"front_pushrod_offset_mm", "rear_pushrod_offset_mm"}
-                        _step2_keys = {"front_heave_spring_nmm", "rear_third_spring_nmm"}
-                        _step3_keys = {"front_torsion_od_mm", "rear_spring_rate_nmm", "rear_torsion_od_mm"}
-                        _step4_keys = {"front_arb_blade", "rear_arb_blade"}
-                        _step5_keys = {"front_camber_deg", "rear_camber_deg", "front_toe_deg", "rear_toe_deg"}
-                        for k, v in _gs_params.items():
-                            if k in _step1_keys:
-                                _gs_overrides.step1[k] = v
-                            elif k in _step2_keys:
-                                _gs_overrides.step2[k] = v
-                            elif k in _step3_keys:
-                                _gs_overrides.step3[k] = v
-                            elif k in _step4_keys:
-                                _gs_overrides.step4[k] = v
-                            elif k in _step5_keys:
-                                _gs_overrides.step5[k] = v
-                        _gs_materialized = materialize_overrides(
-                            base_solve_result, _gs_overrides, solve_inputs
+                        from solver.solve_chain import materialize_overrides
+                        _gs_params = _normalize_grid_search_params_for_overrides(_gs_best.params or {})
+                        _gs_overrides = canonical_params_to_overrides(
+                            base_solve_result,
+                            _gs_params,
+                            car=car,
                         )
-                        step1 = _gs_materialized.step1
-                        step2 = _gs_materialized.step2
-                        step3 = _gs_materialized.step3
-                        step4 = _gs_materialized.step4
-                        step5 = _gs_materialized.step5
-                        step6 = _gs_materialized.step6
-                        supporting = _gs_materialized.supporting
-                        legal_validation = _gs_materialized.legal_validation
-                        decision_trace = _gs_materialized.decision_trace
-                        selected_candidate_family_output = (
-                            f"{scenario_profile_name}:grid_{_gs_best.family}"
-                        )
-                        selected_candidate_score_output = _gs_best.score
-                        selected_candidate_applied = True
-                        run_trace.record_solver_path("grid_search", reason=f"--search-mode {search_mode}")
-                        run_trace.candidate_family = selected_candidate_family_output
-                        run_trace.candidate_score = selected_candidate_score_output
-                        run_trace.record_objective(
-                            _gs_best.breakdown,
-                            float(_gs_best.score),
-                            scoring_system="ObjectiveFunction (grid search)",
-                        )
-                        solve_notes.append(
-                            f"Applied grid search best candidate "
-                            f"({_gs_best.family}, score={_gs_best.score:+.1f}ms) "
-                            f"from {search_mode} search — rematerialized through solve chain."
-                        )
+                        if _gs_overrides.earliest_step() is None:
+                            solve_notes.append(
+                                f"Grid search best ({_gs_best.family}, score={_gs_best.score:+.1f}ms) "
+                                "mapped to no effective solve-chain overrides; base solve result retained."
+                            )
+                            run_trace.add_warning(
+                                f"Grid search best candidate ({_gs_best.family}) produced no effective overrides."
+                            )
+                        else:
+                            _gs_materialized = materialize_overrides(
+                                base_solve_result, _gs_overrides, solve_inputs
+                            )
+                            step1 = _gs_materialized.step1
+                            step2 = _gs_materialized.step2
+                            step3 = _gs_materialized.step3
+                            step4 = _gs_materialized.step4
+                            step5 = _gs_materialized.step5
+                            step6 = _gs_materialized.step6
+                            supporting = _gs_materialized.supporting
+                            legal_validation = _gs_materialized.legal_validation
+                            decision_trace = _gs_materialized.decision_trace
+                            selected_candidate_family_output = (
+                                f"{scenario_profile_name}:grid_{_gs_best.family}"
+                            )
+                            selected_candidate_score_output = _gs_best.score
+                            selected_candidate_applied = True
+                            run_trace.record_solver_path("grid_search", reason=f"--search-mode {search_mode}")
+                            run_trace.candidate_family = selected_candidate_family_output
+                            run_trace.candidate_score = selected_candidate_score_output
+                            run_trace.record_objective(
+                                _gs_best.breakdown,
+                                float(_gs_best.score),
+                                scoring_system="ObjectiveFunction (grid search)",
+                            )
+                            solve_notes.append(
+                                f"Applied grid search best candidate "
+                                f"({_gs_best.family}, score={_gs_best.score:+.1f}ms) "
+                                f"from {search_mode} search — rematerialized through solve chain."
+                            )
                     except Exception as e:
                         solve_notes.append(
                             f"Grid search found best={_gs_best.family} ({_gs_best.score:+.1f}ms) "

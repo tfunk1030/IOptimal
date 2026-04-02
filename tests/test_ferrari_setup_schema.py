@@ -1,3 +1,4 @@
+import copy
 import json
 import sys
 import unittest
@@ -11,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
 from analyzer.setup_reader import CurrentSetup
 from analyzer.setup_schema import apply_live_control_overrides, build_setup_schema
 from car_model.cars import get_car
+from solver.solve_chain import _decode_ferrari_indexed_setup
 
 
 class FakeIBT:
@@ -140,6 +142,16 @@ class FerrariSetupSchemaTests(unittest.TestCase):
                 "rear_torsion_bar_index": 2.0,
             },
         )
+
+    def test_decode_ferrari_indexed_setup_converts_rear_torsion_index_to_physical_value(self) -> None:
+        setup = copy.deepcopy(self.current_setup)
+        self.assertLessEqual(setup.rear_spring_nmm, 18.0)
+        setup.rear_spring_rate_nmm = setup.rear_spring_nmm
+
+        _decode_ferrari_indexed_setup(self.car, setup)
+
+        self.assertGreater(setup.rear_spring_nmm, 18.0)
+        self.assertGreater(setup.rear_spring_rate_nmm, 18.0)
         self.assertIn(
             "Ferrari indexed springs/torsion bars are preserved as authoritative raw indices.",
             setup.decode_warnings,

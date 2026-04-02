@@ -4,7 +4,12 @@ import sys
 import unittest
 from unittest import mock
 
-from pipeline.produce import PipelineInputError, _wrap_no_valid_laps_error, main
+from pipeline.produce import (
+    PipelineInputError,
+    _normalize_grid_search_params_for_overrides,
+    _wrap_no_valid_laps_error,
+    main,
+)
 
 
 class ProduceErrorTests(unittest.TestCase):
@@ -39,6 +44,38 @@ class ProduceErrorTests(unittest.TestCase):
 
         self.assertEqual(1, exc.exception.code)
         self.assertEqual("ERROR: friendly message", stderr.getvalue().strip())
+
+    def test_normalize_grid_search_params_maps_aliases(self) -> None:
+        params = {
+            "front_heave_nmm": 480.0,
+            "rear_third_nmm": 420.0,
+            "front_arb_blade_start": 3,
+            "rear_arb_blade_start": 4,
+            "front_toe_deg": -0.2,
+            "rear_toe_deg": 0.1,
+            "rear_spring_nmm": 165.0,
+        }
+        normalized = _normalize_grid_search_params_for_overrides(params)
+
+        self.assertEqual(normalized["front_heave_spring_nmm"], 480.0)
+        self.assertEqual(normalized["rear_third_spring_nmm"], 420.0)
+        self.assertEqual(normalized["front_arb_blade"], 3)
+        self.assertEqual(normalized["rear_arb_blade"], 4)
+        self.assertEqual(normalized["front_toe_mm"], -0.2)
+        self.assertEqual(normalized["rear_toe_mm"], 0.1)
+        self.assertEqual(normalized["rear_spring_rate_nmm"], 165.0)
+
+    def test_normalize_grid_search_params_preserves_existing_canonical_values(self) -> None:
+        params = {
+            "front_toe_deg": -0.5,
+            "front_toe_mm": -0.3,
+            "rear_spring_nmm": 150.0,
+            "rear_spring_rate_nmm": 160.0,
+        }
+        normalized = _normalize_grid_search_params_for_overrides(params)
+
+        self.assertEqual(normalized["front_toe_mm"], -0.3)
+        self.assertEqual(normalized["rear_spring_rate_nmm"], 160.0)
 
 
 if __name__ == "__main__":

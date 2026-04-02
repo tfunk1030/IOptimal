@@ -600,15 +600,49 @@ class DamperSolver:
 
         # ─── 9. HS rebound slope (Ferrari only) ──────────────────────────────
         # Ferrari has separate HS slope for rebound (lfHSSlopeRbdDampSetting).
-        # Heuristic: rebound slope is typically 2-3 clicks softer than compression
-        # slope to allow more compliance on extension events.
+        #
+        # There is currently no direct click->force calibration for rebound HS slope,
+        # so a single exact click would be false precision. We therefore emit a
+        # telemetry-constrained admissible range in notes/reasoning and leave the
+        # explicit click unset (None) until a rebound-slope force map is calibrated.
         front_slope_rbd: int | None = None
         rear_slope_rbd: int | None = None
+        front_slope_rbd_range_note: str | None = None
+        rear_slope_rbd_range_note: str | None = None
         if d.hs_slope_rbd_range is not None:
             lo_slope, hi_slope = d.hs_slope_rbd_range
-            # Rebound slope = compression slope - 2 (softer), clamped to range
-            front_slope_rbd = max(lo_slope, min(hi_slope, front_slope - 2))
-            rear_slope_rbd = max(lo_slope, min(hi_slope, rear_slope - 2))
+            rear_osc_ratio = None
+            if measured is not None:
+                rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
+                rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
+                if rear_osc_hz > 0.0 and rear_nat_freq_hz > 0.0:
+                    rear_osc_ratio = rear_osc_hz / rear_nat_freq_hz
+
+            def _bounded_rbd_range(comp_slope: int, delta_lo: int, delta_hi: int) -> tuple[int, int]:
+                lo_val = max(lo_slope, min(hi_slope, comp_slope - delta_hi))
+                hi_val = max(lo_slope, min(hi_slope, comp_slope - delta_lo))
+                if lo_val > hi_val:
+                    lo_val, hi_val = hi_val, lo_val
+                return lo_val, hi_val
+
+            # Front: without rebound-specific telemetry we keep a broad admissible
+            # band 1-3 clicks softer than compression (digressive but not abrupt).
+            f_lo, f_hi = _bounded_rbd_range(front_slope, delta_lo=1, delta_hi=3)
+            front_slope_rbd_range_note = f"{f_lo}-{f_hi}"
+
+            # Rear: constrain by measured oscillation if available.
+            # High oscillation evidence (>1.5x natural freq) narrows toward stiffer
+            # rebound slope (0-2 clicks softer than compression).
+            if rear_osc_ratio is not None and rear_osc_ratio > 1.5:
+                r_lo, r_hi = _bounded_rbd_range(rear_slope, delta_lo=0, delta_hi=2)
+            else:
+                r_lo, r_hi = _bounded_rbd_range(rear_slope, delta_lo=1, delta_hi=3)
+            rear_slope_rbd_range_note = f"{r_lo}-{r_hi}"
+
+            slope_reason = (
+                f"{slope_reason}; Ferrari HS rebound slope underdetermined -> "
+                f"front range {front_slope_rbd_range_note}, rear range {rear_slope_rbd_range_note}"
+            )
 
         # ─── Build corner settings (asymmetric L/R from per-corner shock data) ─
         # When per-corner shock velocity data is available, the side with higher
@@ -751,6 +785,12 @@ class DamperSolver:
             "Damping ratios are derived from quarter-car eigenvalue analysis, "
             "NOT from empirical baseline matching.",
         ]
+        if front_slope_rbd_range_note is not None and rear_slope_rbd_range_note is not None:
+            notes.append(
+                "Ferrari HS rebound slope click is emitted as a range (not a point) "
+                "until rebound-slope click-to-force calibration exists: "
+                f"front {front_slope_rbd_range_note}, rear {rear_slope_rbd_range_note}."
+            )
 
         # Roll dampers (ORECA heave+roll architecture)
         roll_damper_kwargs: dict = {}

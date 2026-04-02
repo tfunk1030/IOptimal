@@ -106,7 +106,7 @@ class GarageValidatorTests(unittest.TestCase):
         self.assertGreater(step3.front_torsion_od_mm, 13.9)
         self.assertTrue(any("soft-front-bar guard" in warning for warning in warnings))
 
-    def test_ferrari_legality_validation_does_not_mutate_internal_solver_units(self) -> None:
+    def test_ferrari_legality_requires_active_garage_output_model(self) -> None:
         car = get_car("ferrari")
         step1 = SimpleNamespace(
             front_pushrod_offset_mm=1.0,
@@ -146,8 +146,11 @@ class GarageValidatorTests(unittest.TestCase):
             fuel_l=58.0,
         )
 
-        self.assertTrue(validation.valid)
-        self.assertEqual(validation.warnings, [])
+        self.assertFalse(validation.valid)
+        self.assertEqual(validation.validation_tier, "none")
+        self.assertTrue(validation.hard_veto)
+        self.assertTrue(validation.messages)
+        self.assertIn("garage output model", validation.messages[0])
         self.assertEqual(step2.front_heave_nmm, 190.0)
         self.assertEqual(step2.rear_third_nmm, 950.0)
         self.assertEqual(step3.front_torsion_od_mm, 20.0)

@@ -354,6 +354,9 @@ def _decode_ferrari_indexed_setup(car: Any, setup: Any) -> None:
         "front_heave_nmm",
         "rear_third_nmm",
         "front_torsion_od_mm",
+        # CurrentSetup uses rear_spring_nmm for Ferrari rear torsion index.
+        "rear_spring_nmm",
+        # Keep legacy/alternate key for robustness across callers.
         "rear_spring_rate_nmm",
     ]
     for key in _indexed_keys:

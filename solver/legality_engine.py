@@ -85,35 +85,19 @@ def validate_solution_legality(
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is None:
         car_name = getattr(car, "canonical_name", "unknown")
-        if car_name == "ferrari":
-            # Ferrari uses indexed controls; no calibrated garage model is
-            # expected or needed.  Promote the note to info_messages so it
-            # doesn't pollute warnings/messages in reports.
-            info_note = (
-                "Ferrari 499P: indexed controls validated via range-clamp. "
-                "No garage output model needed (physics constraints are "
-                "enforced by the index-space range guards)."
-            )
-            return LegalValidation(
-                valid=True,
-                warnings=warnings,
-                messages=[],
-                info_messages=[info_note],
-                snapped_or_corrected=bool(warnings),
-                validation_tier="range_clamp",
-            )
         support_note = (
-            f"⚠ No garage model for {car_name} at {track_name}. "
-            "Validation is geometric range-clamp ONLY — physics constraints "
-            "(bottoming, vortex, slider travel) are NOT checked. "
-            "Treat output as exploratory."
+            f"No garage output model for {car_name} at {track_name}; "
+            "candidate fails legal gate because garage-output validation is required."
         )
         return LegalValidation(
-            valid=True,
+            valid=False,
             warnings=warnings,
             messages=[support_note],
             snapped_or_corrected=bool(warnings),
-            validation_tier="range_clamp",
+            validation_tier="none",
+            hard_veto=True,
+            hard_veto_reasons=[support_note],
+            constraint_violations=[support_note],
         )
 
     state = GarageSetupState.from_solver_steps(
