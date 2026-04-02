@@ -2169,20 +2169,20 @@ FERRARI_499P = CarModel(
         # zeta_is_calibrated=False — targets are physics estimates (m_eff+spring at typical Hockenheim RH)
         # force_per_click derived: ls=31.3 N/click (baseline 20/40), hs=151.8 (baseline 15/40)
         # Needs dedicated click-sweep IBT session to validate
-        front_ls_comp_baseline=20,  # IMPROVED ESTIMATE: 20 clicks → zeta_front_ls=0.55 at v_ls=0.05
-        front_ls_rbd_baseline=16,   # IMPROVED ESTIMATE: rbd ~0.80x comp (Ferrari runs less rbd than comp)
-        front_hs_comp_baseline=15,  # IMPROVED ESTIMATE: 15 clicks → zeta_front_hs=0.20 at v_hs=0.50
-        front_hs_rbd_baseline=12,   # IMPROVED ESTIMATE: rbd ~0.80x comp
-        front_hs_slope_baseline=8,
-        # Rear: c_crit_rear=56391 → need more clicks to achieve same zeta as front
-        # rear_ls: zeta=0.55 → c_target=0.55*56391=31015 → 31015/(31.3*0.05)=19838 → 25 clicks @ v_eff
-        # rear_hs: zeta=0.20 → c_target=0.20*56391=11278 → 11278/(151.8*0.50)=148 → 18 clicks (scaled)
-        # IMPROVED ESTIMATE — physics-consistent with stiffer rear spring (530 N/mm vs 90 N/mm front)
-        rear_ls_comp_baseline=25,   # IMPROVED ESTIMATE: rear spring stiffer → more clicks for same zeta
-        rear_ls_rbd_baseline=20,    # IMPROVED ESTIMATE: rbd ~0.80x comp
-        rear_hs_comp_baseline=18,   # IMPROVED ESTIMATE: physics-consistent (was 40 — stuck at max)
-        rear_hs_rbd_baseline=15,    # IMPROVED ESTIMATE: rbd ~0.80x comp (was 40 — stuck at max)
-        rear_hs_slope_baseline=11,
+        # VALIDATED from IBT: Hockenheim best lap 87.575s (2026-04-02 garage screenshot)
+        # Front corner dampers run at minimum — ground effect aero provides front stability,
+        # mechanical damping at front is counterproductive at high DF levels.
+        # Rear corner dampers maxed — controls rear platform / prevents rear aero bounce.
+        front_ls_comp_baseline=0,   # VALIDATED: IBT best lap — front corner nearly undamped
+        front_ls_rbd_baseline=0,    # VALIDATED: IBT best lap
+        front_hs_comp_baseline=0,   # VALIDATED: IBT best lap
+        front_hs_rbd_baseline=0,    # VALIDATED: IBT best lap
+        front_hs_slope_baseline=7,  # VALIDATED: IBT best lap
+        rear_ls_comp_baseline=40,   # VALIDATED: IBT best lap — rear maxed out (full compression control)
+        rear_ls_rbd_baseline=35,    # VALIDATED: IBT best lap
+        rear_hs_comp_baseline=40,   # VALIDATED: IBT best lap — rear HS also maxed
+        rear_hs_rbd_baseline=0,     # VALIDATED: IBT best lap — rear HS rbd at minimum
+        rear_hs_slope_baseline=10,  # VALIDATED: IBT best lap
         # Damper coefficients for physics calculations (c_crit, zeta).
         # Scaled from BMW calibrated values by sqrt(k_ratio * m_ratio):
         # scale = sqrt(k_ferrari/k_bmw * m_ferrari/m_bmw) = sqrt(90/50 * 1439/228) = sqrt(11.36) = 3.37

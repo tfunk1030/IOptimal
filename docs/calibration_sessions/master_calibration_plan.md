@@ -91,7 +91,16 @@ Phase 6 → ARB stiffness (lowest priority — LLTD sweep if time allows)
 | Rear camber | –1.6° |
 | Front toe | –2.0 mm |
 | Rear toe | 0.0 mm |
-| LS comp | 24 (current running value) |
+| Front LS/HS comp | **0** clicks (min) — VALIDATED from best lap IBT |
+| Front LS/HS rbd | **0** clicks (min) — VALIDATED |
+| Front HS slope | **7** clicks — VALIDATED |
+| Rear LS comp | **40** clicks (MAX) — VALIDATED |
+| Rear HS comp | **40** clicks (MAX) — VALIDATED |
+| Rear LS rbd | **35** clicks — VALIDATED |
+| Rear HS rbd | **0** clicks — VALIDATED |
+| Rear HS slope | **10** clicks — VALIDATED |
+
+**Key insight:** Ferrari @ Hockenheim runs near-zero front mechanical damping. Aero load handles front stability. Rear is maxed to control platform bounce. Front LS sweep tests what adding damping costs.
 
 ---
 
@@ -101,11 +110,13 @@ Phase 6 → ARB stiffness (lowest priority — LLTD sweep if time allows)
 
 | Stint | Front LS comp | Expected effect | Drop IBT? |
 |-------|-------------|----------------|-----------|
-| 1 | 24 (baseline) | Reference | ✅ |
-| 2 | 10 | Underdam front — floaty entry | ✅ |
-| 3 | 20 | Physics baseline click | ✅ |
-| 4 | 30 | Stiff entry | ✅ |
-| 5 | 40 (max) | Overdamped — harsh | ✅ |
+| 1 | **0** (baseline — VALIDATED) | Reference — zero front mechanical damping | ✅ |
+| 2 | 5 | First step up — marginal front damping | ✅ |
+| 3 | 10 | Moderate front — may feel more planted but slower | ✅ |
+| 4 | 20 | Noticeably more front — expect lap time loss | ✅ |
+| 5 | 30 | High front — likely significantly slower | ✅ |
+
+**Rear LS stays at 40 (max) throughout every stint.**
 
 **What to note per stint:** Does the car feel underdamped (bouncy over kerbs, floating on braking) or overdamped (harsh, loses traction on bumps)?
 

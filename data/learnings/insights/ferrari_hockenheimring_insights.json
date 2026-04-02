@@ -1,9 +1,9 @@
 {
   "car": "ferrari",
   "track": "Hockenheimring Baden-W\u00fcrttemberg",
-  "session_count": 17,
+  "session_count": 18,
   "key_insights": [
-    "Lap time range: 87.575s \u2013 90.516s (2.942s window across 17 sessions)",
+    "Lap time range: 87.575s \u2013 90.516s (2.942s window across 18 sessions)",
     "Changed rear_torsion_bar_index: 1.0 (0.357s faster); effects: understeer_low_speed_deg -0.07, rear_dominant_freq_hz -1.43 [high confidence]",
     "Changed rear_torsion_bar_index: 1.0 (0.357s faster); effects: understeer_low_speed_deg -0.07, rear_dominant_freq_hz -1.43 [high confidence]",
     "No setup changes detected between sessions.",
@@ -11,11 +11,9 @@
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
-    "Measured roll gradient: 0.337 deg/g (+/- 0.115)"
+    "No setup changes detected between sessions.",
+    "Measured roll gradient: 0.326 deg/g (+/- 0.119)"
   ],
-  "setup_trends": [
-    "front_camber_deg: trending increasing (-2.8 -> -2.7 over 17 sessions)",
-    "rear_camber_deg: trending increasing (-1.9 -> -1.6 over 17 sessions)"
-  ],
+  "setup_trends": [],
   "unresolved_questions": []
 }
