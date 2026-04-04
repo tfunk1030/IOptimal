@@ -76,11 +76,51 @@ DAMPER CLICKS
 
 ---
 
+## Calibration Gate (2026-04-04)
+
+The solver now enforces a **calibration gate** at each of the 6 solver steps. If any subsystem required by a step is uncalibrated for the current car, that step is **blocked** and the system outputs calibration instructions instead of a setup value.
+
+**The system never outputs a setup value from an uncalibrated model.** An incomplete setup with calibration instructions is more valuable than a complete setup built on unproven data.
+
+### Per-Step Requirements
+
+| Step | Name | Required Subsystems |
+|------|------|-------------------|
+| 1 | Rake / Ride Heights | aero_compression, ride_height_model, pushrod_geometry |
+| 2 | Heave / Third Springs | spring_rates |
+| 3 | Corner Springs | spring_rates |
+| 4 | Anti-Roll Bars | arb_stiffness, lltd_target |
+| 5 | Wheel Geometry | roll_gains |
+| 6 | Dampers | damper_zeta |
+
+### Current Calibration Status
+
+| Car | Steps 1-3 | Step 4 (ARBs) | Step 5 (Geometry) | Step 6 (Dampers) |
+|-----|----------|--------------|-------------------|-----------------|
+| BMW | all calibrated | calibrated | calibrated | calibrated |
+| Ferrari | calibrated | **BLOCKED** (ARB stiffness + LLTD) | **BLOCKED** (roll gains) | **BLOCKED** (damper zeta) |
+| Cadillac | **step 1 BLOCKED** (RH model) | BLOCKED | BLOCKED | BLOCKED |
+| Porsche | calibrated | **BLOCKED** (ARB stiffness + LLTD) | **BLOCKED** (roll gains) | **BLOCKED** (damper zeta) |
+| Acura | **step 1 BLOCKED** (aero + RH) | BLOCKED | BLOCKED | BLOCKED |
+
+### How to Unblock Steps
+
+When the solver blocks a step, it prints exactly what data to collect. The general pattern:
+
+1. **ARB stiffness:** Record 3+ garage screenshots with different front/rear ARB sizes. Run `python -m car_model.auto_calibrate --car <car> --model arb --screenshots <dir>`
+2. **LLTD target:** Accumulate 10+ IBT sessions with varied ARB and spring settings. Run `python -m validation.calibrate_lltd --car <car> --track <track>`
+3. **Roll gains:** Run 5+ laps capturing full lateral-g sweep. Run `python -m learner.ingest --car <car> --ibt <session.ibt> --all-laps`
+4. **Damper zeta:** Run 5+ stints with LS comp at varied clicks (keep everything else identical). Run `python -m validation.calibrate_dampers --car <car> --track <track>`
+5. **Ride height model:** Set 10+ different spring/pushrod/perch combinations in the garage. Take a screenshot at each. Run `python -m car_model.auto_calibrate --car <car> --model rh --screenshots <dir>`
+6. **Aero compression:** Record 3+ IBT sessions at different speed profiles. Run `python -m learner.ingest --car <car> --ibt <each_file>`
+
+---
+
 ## Per-Car Status + Parameter Reference
 
 ---
 
-### 🔵 BMW M Hybrid V8 — Calibration Status: **8.5 / 10**
+### 🔵 BMW M Hybrid V8 — Calibration Status: **FULLY CALIBRATED (6/6 steps)**
 
 **Springs (continuous, not indexed):**
 | Parameter | iRacing Label | Solver Field | Range | Legal | Status |
@@ -117,7 +157,7 @@ DAMPER CLICKS
 
 ---
 
-### 🔴 Ferrari 499P — Calibration Status: **6.5 / 10**
+### 🔴 Ferrari 499P — Calibration Status: **PARTIAL (3/6 steps calibrated, steps 4-6 BLOCKED)**
 
 **Springs (INDEXED — not continuous):**
 
@@ -193,7 +233,7 @@ DAMPER CLICKS
 
 ---
 
-### 🟡 Cadillac V-Series.R — Calibration Status: **3 / 10**
+### 🟡 Cadillac V-Series.R — Calibration Status: **EXPLORATORY (2/6 steps, step 1 BLOCKED)**
 
 **Springs (continuous):**
 | Parameter | Range | Legal | Status |
@@ -238,7 +278,7 @@ DAMPER CLICKS
 
 ---
 
-### ⚪ Porsche 963 — Calibration Status: **2 / 10**
+### ⚪ Porsche 963 — Calibration Status: **UNSUPPORTED (3/6 steps calibrated, steps 4-6 BLOCKED)**
 
 **Springs (continuous):**
 | Parameter | Range | Status |
@@ -281,7 +321,7 @@ DAMPER CLICKS
 
 ---
 
-### 🟢 Acura ARX-06 — Calibration Status: **2.5 / 10**
+### 🟢 Acura ARX-06 — Calibration Status: **EXPLORATORY (0/6 steps — ALL BLOCKED)**
 
 **Springs — DIFFERENT ARCHITECTURE:**
 | Parameter | Range | Status |
