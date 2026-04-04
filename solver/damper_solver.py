@@ -62,7 +62,7 @@ from dataclasses import dataclass, field
 
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
-from vertical_dynamics import axle_modal_rate_nmm
+from solver.vertical_dynamics import axle_modal_rate_nmm
 
 
 @dataclass

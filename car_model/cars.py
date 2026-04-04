@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from car_model.garage import GarageOutputModel
-from vertical_dynamics import damped_excursion_mm
+from solver.vertical_dynamics import damped_excursion_mm
 
 
 # ─── Ferrari indexed-control lookup tables ────────────────────────────────────

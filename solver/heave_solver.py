@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from car_model.garage import GarageSetupState
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
-from vertical_dynamics import damped_excursion_mm, legacy_mass_to_shared_model_kg
+from solver.vertical_dynamics import damped_excursion_mm, legacy_mass_to_shared_model_kg
 
 # Guard so the heave-index UNVALIDATED warning is only printed once per process,
 # regardless of how many times solve() / reconcile_solution() / solution_from_explicit_settings()

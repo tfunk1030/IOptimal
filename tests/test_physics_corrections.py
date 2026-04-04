@@ -11,7 +11,7 @@ from solver.heave_solver import HeaveSolver
 from solver.modifiers import compute_modifiers
 from solver.stint_model import compute_fuel_states
 from track_model.profile import TrackProfile
-from vertical_dynamics import axle_modal_rate_nmm
+from solver.vertical_dynamics import axle_modal_rate_nmm
 
 
 class PhysicsCorrectionTests(unittest.TestCase):

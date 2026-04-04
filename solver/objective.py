@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 
 from solver.scenario_profiles import get_scenario_profile
 from track_model.profile import TrackProfile
-from vertical_dynamics import damped_excursion_mm
+from solver.vertical_dynamics import damped_excursion_mm
 
 
 @dataclass
