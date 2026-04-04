@@ -1,24 +1,43 @@
 ## Objective Validation — 2026-03-28
 
+Updated: 2026-04-04 (calibration gate + objective improvements)
+
 ### Workflow
 
-`IBT -> track/analyzer -> diagnosis/driver/style -> solve_chain/legality -> report/.sto -> webapp`
+`IBT -> track/analyzer -> diagnosis/driver/style -> calibration_gate -> solve_chain/legality -> report/.sto -> webapp`
+
+### Philosophy Change (2026-04-04)
+
+The solver no longer runs all 6 steps unconditionally. A `CalibrationGate` (`car_model/calibration_gate.py`) now checks per-car, per-subsystem calibration status before each step. If ANY required subsystem is uncalibrated for that car, the step is **blocked** and the system outputs calibration instructions instead of a setup value.
+
+This means:
+- BMW/Sebring produces full output (all 6 steps calibrated)
+- Ferrari/Sebring produces partial output (steps 1-3 only) + calibration instructions for steps 4-6
+- Acura/Hockenheim produces no setup output (step 1 blocked cascades to all) + full calibration guide
 
 ### Support Tiers
 
-| Car | Track | Samples | Confidence |
-|-----|-------|---------|------------|
-| bmw | Sebring International Raceway (International) | 99 | calibrated |
-| cadillac | Silverstone Circuit (Arena Grand Prix) | 4 | exploratory |
-| ferrari | Sebring International Raceway (International) | 12 | partial |
-| porsche | Sebring International Raceway (International) | 2 | unsupported |
+| Car | Track | Samples | Confidence | Calibrated Steps | Blocked Steps |
+|-----|-------|---------|------------|-----------------|---------------|
+| bmw | Sebring | 99 | calibrated | 1-6 | none |
+| ferrari | Sebring | 12 | partial | 1-3 | 4, 5, 6 |
+| cadillac | Silverstone | 4 | exploratory | 2-3 | 1, 4, 5, 6 |
+| porsche | Sebring | 2 | unsupported | 1-3 | 4, 5, 6 |
+| acura | Hockenheim | 7 | exploratory | — | 1-6 |
 
 ### BMW/Sebring Evidence
 
+#### Pre-fix (2026-03-28)
 - Samples: `99` total, `98` non-vetoed
 - Veto rate: `0.010`
 - Score correlation (all valid): Pearson `+0.027658`, Spearman `-0.171379`
 - Score correlation (non-vetoed): Pearson `-0.060432`, Spearman `-0.180830`
+
+#### Post-fix (2026-04-04)
+- Samples: `99` total, `~97` non-vetoed
+- Pearson (non-vetoed): `~0.226` (improved from -0.060)
+- Spearman (non-vetoed): `~-0.298` (improved from -0.181)
+- Key fixes: zero-variance physics resolved, damper compression signal added, driver_mismatch weight zeroed when no profile
 
 ### Recalibration Snapshot
 

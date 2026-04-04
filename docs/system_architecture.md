@@ -22,15 +22,33 @@
 
 IOptimal is a **physics-first setup solver** for iRacing's GTP/Hypercar class. It reads in-game telemetry (IBT files), diagnoses handling problems from physics thresholds, profiles driver behavior, and produces optimized setup files (`.sto`) loadable directly into iRacing. Every parameter recommendation is justified by a physical constraint -- not pattern matching, not copying fast setups.
 
-### 1.2 Supported Cars and Calibration Tiers
+### 1.2 Supported Cars and Calibration Tiers (updated 2026-04-04)
 
-| Car | Chassis | Primary Track | Tier | Observations |
-|-----|---------|--------------|------|-------------|
-| BMW M Hybrid V8 | Dallara LMDh | Sebring | **Calibrated** | 73 |
-| Ferrari 499P | Custom LMH | Sebring/Hockenheim | Partial | ~25 |
-| Cadillac V-Series.R | Dallara LMDh | Silverstone | Exploratory | 4 |
-| Acura ARX-06 | ORECA LMDh | Hockenheim/Daytona | Exploratory | 7 |
-| Porsche 963 | Multimatic LMDh | Sebring | Unsupported | 2 |
+| Car | Chassis | Primary Track | Tier | Observations | Calibrated Steps |
+|-----|---------|--------------|------|-------------|-----------------|
+| BMW M Hybrid V8 | Dallara LMDh | Sebring | **Calibrated** | 99 | 1-6 (all) |
+| Ferrari 499P | Custom LMH | Sebring/Hockenheim | Partial | ~25 | 1-3 |
+| Cadillac V-Series.R | Dallara LMDh | Silverstone | Exploratory | 4 | 2-3 |
+| Acura ARX-06 | ORECA LMDh | Hockenheim/Daytona | Exploratory | 7 | — (all blocked) |
+| Porsche 963 | Multimatic LMDh | Sebring | Unsupported | 2 | 1-3 |
+
+### 1.2.1 Calibration Gate
+
+The solver enforces a **calibration gate** (`car_model/calibration_gate.py`) at each of the 6 solver steps. Before running a step, the gate checks whether all required subsystems are calibrated from real measured data for that specific car. If any required subsystem is uncalibrated, the step is **blocked** and the system outputs step-by-step calibration instructions instead of a setup value.
+
+This ensures the system **never outputs a setup value from an uncalibrated model**. The output for a blocked step tells the user:
+- Which subsystem is missing calibration
+- Exactly what data to collect in the sim (IBT sessions, garage screenshots, etc.)
+- The exact CLI command to run after collecting the data
+- How many data points are needed for reliable calibration
+
+Per-step calibration requirements:
+- **Step 1 (Rake/RH):** aero_compression, ride_height_model, pushrod_geometry
+- **Step 2 (Heave/Third):** spring_rates
+- **Step 3 (Corner Springs):** spring_rates
+- **Step 4 (ARBs):** arb_stiffness, lltd_target
+- **Step 5 (Geometry):** roll_gains
+- **Step 6 (Dampers):** damper_zeta
 
 ### 1.3 System Boundary Diagram
 
@@ -94,7 +112,8 @@ IOptimal is a **physics-first setup solver** for iRacing's GTP/Hypercar class. I
 | track_model| | car_model/ |
 | IBT parser | | 5 cars,    |
 | TrackProfile| | legality, |
-|            | | registry   |
+|            | | registry,  |
+|            | | calib_gate |
 +-----+------+ +------+-----+
       |                |
 +-----v-----+   +-----v------+

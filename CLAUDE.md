@@ -3,17 +3,17 @@
 ## Project Goal
 Build a physics-first setup solver for iRacing's GTP/Hypercar class that searches only legal garage states and explains why a setup should work. The current authoritative implementation target is BMW M Hybrid V8 at Sebring International Raceway; Ferrari, Cadillac, Porsche, and Acura paths remain partial or exploratory until more telemetry and garage-truth coverage exists.
 
-## Current Codebase Status (2026-03-30)
+## Current Codebase Status (2026-04-04)
 
-- Workflow map: `IBT -> track/analyzer -> diagnosis/driver/style -> solve_chain/legality -> report/.sto -> webapp`
+- Workflow map: `IBT -> track/analyzer -> diagnosis/driver/style -> calibration_gate -> solve_chain/legality -> report/.sto -> webapp`
+- **Calibration gate (2026-04-04):** `car_model/calibration_gate.py` blocks solver steps whose required subsystems lack proven calibration data. The system **never outputs a setup value from an uncalibrated model**. Blocked steps output step-by-step calibration instructions telling the user exactly what data to collect and which CLI command to run. This is the foundational philosophy of the system.
 - Scenario engine: `solver/scenario_profiles.py` defines `single_lap_safe`, `quali`, `sprint`, and `race`, and those profiles now drive `pipeline/produce.py`, `pipeline/reason.py`, `solver/solve.py`, preset comparison, and the webapp.
-- Legal-manifold search: `--free`, `--explore-legal-space`, and `--legal-search` now mean "start from the pinned physics solve and search the full legal setup manifold". Accepted candidates must pass setup-registry legality, garage-output validation, and telemetry sanity checks.
-- Current BMW/Sebring evidence: `73` observations, `72` non-vetoed. Previous non-vetoed Spearman was `-0.120522` with hardcoded damper zeta targets and equal penalty weights. Damper targets updated to IBT-calibrated values (0.68/0.23/0.47/0.20), penalty scaling halved, and `single_lap_safe` weights set to calibration-searched values (lap_gain=1.25, envelope=0.20, rest=0). Pending re-validation to confirm improvement.
-- Current support tiers from `validation/objective_validation.json`: BMW/Sebring = `calibrated`, Ferrari/Sebring = `partial`, Cadillac/Silverstone = `exploratory`, Porsche/Sebring = `unsupported`, Acura/Hockenheim = `exploratory` (ORECA chassis onboarded, heave+roll dampers, rear torsion bars, 7 observations ingested, RH calibration incomplete).
-- Current source-of-truth reports: `docs/repo_audit.md`, `validation/objective_validation.md`, and `validation/calibration_report.md`.
-- Current roadmap for improving the score model and onboarding the rest of the GTP field: `enhancementplan.md`.
+- Legal-manifold search: `--free`, `--explore-legal-space`, and `--legal-search` now mean "start from the pinned physics solve and search the full legal setup manifold". Accepted candidates must pass setup-registry legality, garage-output validation, and telemetry sanity checks. Legal search is gated on all 6 steps being present (not blocked by calibration).
+- Current BMW/Sebring evidence: `99` observations, `~97` non-vetoed. Post-fix Pearson `~0.226`, Spearman `~-0.298` (improved from -0.06 after zero-variance fix, damper compression signal, driver_mismatch weight fix). Objective is improving but not yet authoritative.
+- Current calibration status: BMW/Sebring = `calibrated` (6/6 steps), Ferrari/Sebring = `partial` (3/6 steps), Cadillac/Silverstone = `exploratory` (2/6 steps), Porsche/Sebring = `unsupported` (3/6 steps), Acura/Hockenheim = `exploratory` (0/6 steps — step 1 blocked cascades to all).
+- Current source-of-truth reports: `docs/repo_audit.md`, `validation/objective_validation.md`, `validation/calibration_report.md`, and `enhancementplan.md`.
 - **Team tool deployed (2026-03-27):** Server live at `https://ioptimal-server-27191526338.us-central1.run.app`, team "SOELPEC Precision Racing" created (invite code `5a1c520b`), desktop app packaged at `dist/IOptimal/IOptimal.exe`. All 18 bugs fixed (12 original + 6 deployment). See `docs/team_tool_next_steps.md` for full deployment reference.
-- **Acura ARX-06 onboarded (2026-03-30):** ORECA LMDh chassis with heave+roll damper architecture (not per-corner). Rear torsion bars, diff ramp angles, synthesized corner shocks from heave±roll telemetry. Pipeline functional end-to-end. Known limitations: front heave damper bottoming at OD≥14.76, rear RH misses aero targets (aero maps uncalibrated for Acura), roll dampers use baselines only. See `skill/per-car-quirks.md` Acura section for full calibration status.
+- **Acura ARX-06 onboarded (2026-03-30):** ORECA LMDh chassis with heave+roll damper architecture (not per-corner). Rear torsion bars, diff ramp angles, synthesized corner shocks from heave±roll telemetry. Pipeline functional end-to-end but ALL steps blocked by calibration gate (aero compression + ride height model uncalibrated). See `skill/per-car-quirks.md` Acura section for full calibration status.
 
 ## Architecture
 
@@ -43,6 +43,7 @@ Build a physics-first setup solver for iRacing's GTP/Hypercar class that searche
 - Tyre load sensitivity curves (derived from telemetry: grip vs vertical load)
 - Parameter name mappings (BMW uses "TorsionBarOD", Ferrari uses indexed values, Porsche has roll springs)
 - Hybrid system characteristics (deployment speed, power, front/rear)
+- **Calibration gate** (`calibration_gate.py`): per-car, per-subsystem calibration status tracking. Checks whether each solver step's required subsystems are calibrated from real measured data. Blocked steps output calibration instructions instead of setup values. This enforces the rule: **never output a setup value from an uncalibrated model**.
 
 #### 4. `solver/` — Constraint Satisfaction Engine
 Follows the 6-step workflow. Each step has constraints and an objective:
@@ -225,6 +226,7 @@ Key features:
 4. Uncertainty is OK. If the solver can't determine a value from physics, it says so and gives a range.
 5. Validate against telemetry. Every prediction should be testable with an IBT file.
 6. Driver-adaptive: different drivers on the same track should produce different setups.
+7. **Calibrated or instruct, never guess.** If a model is not calibrated from real measured data for a specific car, the output must be calibration instructions — not a value derived from another car's coefficients, not a physics estimate, not a default presented as a recommendation. The calibration gate (`car_model/calibration_gate.py`) enforces this at every solver step.
 
 ### Important Implementation Details
 
@@ -249,8 +251,9 @@ Key features:
 - Both `ingest.py` and `recall.py` use `track_name.lower().split()[0]` for consistency
 
 **Known limitations:**
-- BMW/Sebring is the only calibrated path. Other cars/tracks should not be described as equally validated.
-- The objective is improving but still not authoritative: current BMW/Sebring non-vetoed Spearman is `-0.120522` and holdout stability is not yet strong enough for automatic runtime weight application.
+- BMW/Sebring is the only fully calibrated car/track pair (all 6 solver steps pass the calibration gate). Other cars have partial calibration — see the per-subsystem matrix in `enhancementplan.md`.
+- The calibration gate blocks solver steps for uncalibrated cars. Ferrari/Porsche produce steps 1-3 only. Cadillac produces steps 2-3. Acura produces no steps (step 1 blocked cascades to all).
+- The objective is improving but still not authoritative: current BMW/Sebring non-vetoed Spearman is `~-0.298` (improved from -0.06 after 2026-04-04 fixes). Holdout stability is not yet strong enough for automatic runtime weight application.
 - Several BMW validation signals still lean on fallbacks for some rows (`front_excursion_mm`, `braking_pitch_deg`, `rear_power_slip_p95`, hot pressures, lock proxies), so some supporting heuristics remain lower confidence.
 - Ferrari rear torsion bar is calibrated (C=0.001282, MR=0.612, 4-point fit, max 3.2% error). Corner spring and LLTD outputs are functional but need more observations (currently 9) to validate against lap time.
 - `m_eff` empirical correction uses lap-wide statistics (not filtered to high-speed straights), causing overestimation. Treat as rough indicator.

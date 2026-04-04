@@ -1,31 +1,39 @@
 # Repo Audit
 
-Generated: 2026-03-26T00:49:21.470977+00:00
+Generated: 2026-03-26T00:49:21.470977+00:00  
+Updated: 2026-04-04 (calibration gate + objective improvements)
 
 ## Workflow Map
 
-`IBT -> track/analyzer -> diagnosis/driver/style -> solve_chain/legality -> report/.sto -> webapp`
+`IBT -> track/analyzer -> diagnosis/driver/style -> calibration_gate -> solve_chain/legality -> report/.sto -> webapp`
+
+The calibration gate (`car_model/calibration_gate.py`) sits between input loading and the solver. It checks per-car, per-subsystem calibration status and blocks solver steps whose required subsystems lack proven data. Blocked steps output calibration instructions instead of setup values.
 
 ## Anchor Files
 
 - `pipeline/produce.py`: single-session orchestration and report export.
 - `solver/objective.py`: candidate ranking, breakdown weighting, and scenario-aware scoring.
+- `solver/solve.py`: 6-step physics solver with calibration gate enforcement.
+- `car_model/calibration_gate.py`: per-car, per-subsystem calibration status and step-level blocking.
 - `validation/run_validation.py`: reproducible BMW/Sebring evidence report and support tiers.
 
-## Current BMW/Sebring Evidence
+## Current BMW/Sebring Evidence (updated 2026-04-04)
 
-- Samples: `73`
-- Non-vetoed samples: `72`
-- Pearson (non-vetoed): `0.03487001368078883`
-- Spearman (non-vetoed): `-0.12052222007846165`
-- Current objective status: `unverified` until score-vs-lap correlation improves materially.
+- Samples: `99`
+- Non-vetoed samples: `~97`
+- Pearson (non-vetoed): `~0.226` (improved from 0.035 after zero-variance fix + damper signal)
+- Spearman (non-vetoed): `~-0.298` (improved from -0.121 after calibration gate fixes)
+- Current objective status: `improving` — correlation now materially negative, approaching actionable but not yet authoritative.
 
 ## Support Tiers
 
-- `bmw` / `Sebring International Raceway` / `International`: `calibrated` (`73` samples)
-- `cadillac` / `Silverstone Circuit` / `Arena Grand Prix`: `exploratory` (`4` samples)
-- `ferrari` / `Sebring International Raceway` / `International`: `partial` (`9` samples)
-- `porsche` / `Sebring International Raceway` / `International`: `unsupported` (`2` samples)
+| Car | Track | Tier | Samples | Calibrated Steps | Blocked Steps |
+|-----|-------|------|---------|-----------------|---------------|
+| BMW | Sebring | calibrated | 99 | 1-6 (all) | none |
+| Ferrari | Sebring | partial | 12 | 1-3 | 4, 5, 6 |
+| Cadillac | Silverstone | exploratory | 4 | 2-3 | 1, 4, 5, 6 |
+| Porsche | Sebring | unsupported | 2 | 1-3 | 4, 5, 6 |
+| Acura | Hockenheim | exploratory | 7 | — | 1-6 (all) |
 
 ## Value Classes
 
