@@ -112,11 +112,12 @@ class PhysicsResult:
     # LLTD
     lltd: float = 0.52
     lltd_error: float = 0.0
-    # Damping (defaults for dataclass; actual targets come from car.damper.zeta_* fields)
-    zeta_ls_front: float = 0.68   # BMW IBT-calibrated default
-    zeta_ls_rear: float = 0.23    # BMW IBT-calibrated default
-    zeta_hs_front: float = 0.47   # BMW IBT-calibrated default
-    zeta_hs_rear: float = 0.20    # BMW IBT-calibrated default
+    # Damping (sentinel defaults; actual targets read from car.damper.zeta_target_* at eval time)
+    # WARNING: 0.0 = not yet populated. Scoring code must check and use car model values.
+    zeta_ls_front: float = 0.0    # Populated per car during evaluation (was 0.68 BMW default)
+    zeta_ls_rear: float = 0.0     # Populated per car during evaluation (was 0.23 BMW default)
+    zeta_hs_front: float = 0.0    # Populated per car during evaluation (was 0.47 BMW default)
+    zeta_hs_rear: float = 0.0     # Populated per car during evaluation (was 0.20 BMW default)
     # Wheel rates
     front_wheel_rate_nmm: float = 30.0
     rear_wheel_rate_nmm: float = 60.0
@@ -661,20 +662,20 @@ class ObjectiveFunction:
         front_pct_start = car.weight_dist_front
         front_pct_end = car.weight_dist_front
 
-        if hasattr(car, 'fuel_cg_fraction_front') and car.fuel_cg_fraction_front is not None:
-            # Compute actual CG shift from fuel burn
+        if hasattr(car, 'fuel_cg_frac') and car.fuel_cg_frac is not None:
+            # Compute actual CG shift from fuel burn using car's fuel CG position.
+            # fuel_cg_frac is distance from front axle as fraction of wheelbase
+            # (0 = front axle, 1 = rear axle), so front load fraction = 1 - fuel_cg_frac.
             fuel_burned = fuel_start_l - fuel_end_l
             fuel_mass_burned = fuel_burned * car.fuel_density_kg_per_l
-            fuel_front_frac = car.fuel_cg_fraction_front
+            fuel_front_frac = 1.0 - car.fuel_cg_frac
             # Wf_end = (Wf_start * m_start - fuel_front_frac * fuel_mass_burned) / m_end
             front_mass_start = front_pct_start * mass_start
             front_mass_end = front_mass_start - fuel_front_frac * fuel_mass_burned
             front_pct_end = front_mass_end / mass_end
         else:
-            # Simplified: use BMW empirical data (fuel tank slightly rear of midship)
-            # From IBT observations: RH slightly increases as fuel burns at Sebring
-            # Approximate: front_pct changes by ~0.3% over 89→20L stint
-            front_pct_end = front_pct_start + 0.003  # fuel behind CG → front gets lighter
+            # Fallback: no fuel CG data — assume fuel is at mid-car CG
+            front_pct_end = front_pct_start + 0.003
 
         # LLTD from roll stiffness (same spring/ARB values → fixed during stint)
         front_heave_nmm = params.get("front_heave_spring_nmm", 50.0)
@@ -699,7 +700,10 @@ class ObjectiveFunction:
             rear_wheel_rate = _ferrari_controls.rear_torsion_rate_from_index(_rtb_idx)
         else:
             c_torsion = car.corner_spring.front_torsion_c
-            front_wheel_rate = c_torsion * (front_torsion_od ** 4)
+            if c_torsion > 0:
+                front_wheel_rate = c_torsion * (front_torsion_od ** 4)
+            else:
+                front_wheel_rate = car.corner_spring.front_roll_spring_rate_nmm
             mr_rear = car.corner_spring.rear_motion_ratio
             rear_wheel_rate = rear_spring_nmm * (mr_rear ** 2)
 
@@ -784,7 +788,10 @@ class ObjectiveFunction:
             rear_wheel_rate = _ferrari_controls.rear_torsion_rate_from_index(_rtb_idx)
         else:
             c_torsion = car.corner_spring.front_torsion_c
-            front_wheel_rate = c_torsion * (front_torsion_od ** 4)
+            if c_torsion > 0:
+                front_wheel_rate = c_torsion * (front_torsion_od ** 4)
+            else:
+                front_wheel_rate = car.corner_spring.front_roll_spring_rate_nmm
             mr_rear = car.corner_spring.rear_motion_ratio
             rear_wheel_rate = rear_spring_nmm * (mr_rear ** 2)
         result.front_wheel_rate_nmm = front_wheel_rate
@@ -1422,7 +1429,10 @@ class ObjectiveFunction:
         # Rear power slip p95 from measured
         rear_slip_p95 = getattr(self._measured, "rear_power_slip_ratio_p95", None) if self._measured else None
         if rear_slip_p95 is None:
-            rear_slip_p95 = 0.07  # Sebring BMW baseline
+            # Per-car baseline: higher tyre_load_sensitivity = more slip tendency
+            # BMW (0.22) -> 0.083, Porsche (0.18) -> 0.077, Ferrari (0.25) -> 0.088, Acura (0.20) -> 0.080
+            _tls = getattr(self.car, "tyre_load_sensitivity", 0.20)
+            rear_slip_p95 = 0.05 + _tls * 0.15
         if rear_slip_p95 > 0.10:
             # High rear slip → more plates needed for traction
             plates_target = 6

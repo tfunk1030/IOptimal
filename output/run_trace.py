@@ -117,14 +117,14 @@ def _compute_support_tier(car_name: str) -> str:
 
     extra_str = (", " + ", ".join(extras)) if extras else ""
 
-    if has_models and session_count >= 20:
+    if has_models and session_count >= 30:
         return f"calibrated  — {session_count} sessions{extra_str}"
-    elif session_count >= 5:
+    elif session_count >= 15:
         return f"partial     — {session_count} sessions, indexed controls{extra_str}"
-    elif session_count >= 1:
+    elif session_count >= 5:
         return f"exploratory — {session_count} sessions, sequential solver only"
     else:
-        return "unsupported — <1 session, all terms at physics defaults"
+        return "unsupported — <5 sessions, all terms at physics defaults"
 
 
 # ─── Data classes ─────────────────────────────────────────────────────────────

@@ -60,12 +60,12 @@ def _load_support_tier(car_slug: str, track_name: str) -> dict[str, Any] | None:
         has_models = (cal_dir / "models.json").exists()
         if session_count == 0 and not has_models:
             return None
-        # Map session count → confidence_tier label (mirrors run_trace thresholds)
-        if has_models and session_count >= 20:
+        # Map session count → confidence_tier label (mirrors aggregator thresholds)
+        if has_models and session_count >= 30:
             tier = "calibrated"
-        elif session_count >= 5:
+        elif session_count >= 15:
             tier = "partial"
-        elif session_count >= 1:
+        elif session_count >= 5:
             tier = "exploratory"
         else:
             tier = "partial"  # has models.json but <1 session read

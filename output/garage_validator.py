@@ -125,9 +125,12 @@ def validate_and_fix_garage_correlation(
             # suppress the warning so reports stay clean.  Other unknown cars get
             # the informational note below.
             warnings.append(
-                f"NOTE: Garage correlation validation skipped — "
-                f"no calibrated GarageOutputModel for {canonical}. "
-                f"Output values are physics-only estimates."
+                f"NOTE: Garage correlation validation skipped for {canonical} — "
+                f"no calibrated GarageOutputModel. Skipped checks: "
+                f"heave slider position, torsion bar deflection limits, "
+                f"front static RH floor, travel margin. "
+                f"Output values are physics-only estimates — verify "
+                f"all garage display values manually before loading .sto."
             )
         return warnings
 

@@ -235,7 +235,7 @@ class KnowledgeRecall:
 
     def get_insights(self, car: str, track: str) -> RecallResult:
         """Get the distilled insights for a car/track combination."""
-        insight_id = f"{car}_{track}_insights".lower().replace(" ", "_")
+        insight_id = f"{car}_{track.lower().split()[0]}_insights"
         insights = self.store.load_insights(insight_id)
         if insights is None:
             return RecallResult(

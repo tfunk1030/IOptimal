@@ -1,0 +1,10 @@
+8418dc4 ferrari3
+5b7916d research: brake migration & bias target physics (Cadillac/GTP)
+5b88120 yaya
+b42f010 Merge pull request #24 from tfunk1030/a7g3ox-codex/build-and-calibrate-ferrari-gtp-setup
+8c326ef Harden Ferrari Hockenheim calibration validation and car isolation
+c33a9d5 Merge pull request #23 from tfunk1030/claude/tune-suspension-settings-fPKk8
+76c3bbd Merge branch 'claw-research' into claude/tune-suspension-settings-fPKk8
+c8a95f6 fix: exempt Acura-only fields from BMW registry test + fix Acura platform consistency test
+c49e608 feat: add maximum budget tier + implement --top-n ranked candidate table in grid search
+30c6291 feat: promote front_rh_std_mm as tier-1 fallback for front_excursion_mm + signal quality gates

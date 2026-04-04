@@ -28,14 +28,15 @@ class RunTraceBasicTests(unittest.TestCase):
     def test_support_tier_mapping(self):
         from output.run_trace import RunTrace
         trace = RunTrace()
-        trace.record_car_track("bmw", "test")
+        # Thresholds: calibrated=30+models, partial=15, exploratory=5, unsupported<5
+        trace.record_car_track("ferrari", "test")  # 44 sessions + models → calibrated
         self.assertIn("calibrated", trace.car_support_tier)
-        trace.record_car_track("ferrari", "test")
-        self.assertIn("partial", trace.car_support_tier)
-        trace.record_car_track("porsche", "test")
+        trace.record_car_track("bmw", "test")  # 10 sessions + models → exploratory
         self.assertIn("exploratory", trace.car_support_tier)
-        trace.record_car_track("acura", "test")
+        trace.record_car_track("porsche", "test")  # no calibration data
         self.assertIn("unsupported", trace.car_support_tier)
+        trace.record_car_track("acura", "test")  # 8 sessions + models → exploratory
+        self.assertIn("exploratory", trace.car_support_tier)
 
     def test_record_solver_path(self):
         from output.run_trace import RunTrace

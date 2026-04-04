@@ -1,0 +1,264 @@
+{
+  "car": "porsche",
+  "track": "Algarve Grand Prix",
+  "fuel_l": 58.0,
+  "date": "2026-04-03",
+  "notes": "Garage screenshots from single-parameter sweeps. All changes from base setup.",
+  "calibration_points": [
+    {
+      "id": "base",
+      "description": "Base setup (original screenshots from earlier)",
+      "changes": {},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.8,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5,
+        "front_roll_spring_nmm": 100, "front_roll_perch_mm": 15.0
+      },
+      "outputs": {
+        "front_rh_mm": 30.0, "rear_rh_mm": 50.0,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "heave_spring_defl_static_mm": 18.9, "heave_spring_defl_max_mm": 66.8,
+        "heave_slider_defl_static_mm": 18.5, "heave_slider_defl_max_mm": 94.0,
+        "rear_shock_defl_static_mm": 34.2, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 13.0, "rear_spring_defl_max_mm": 76.8,
+        "third_spring_defl_static_mm": 13.8, "third_spring_defl_max_mm": 95.3,
+        "third_slider_defl_static_mm": 40.5, "third_slider_defl_max_mm": 84.0,
+        "roll_spring_defl_mm": 0.0, "roll_spring_defl_max_mm": 50.0,
+        "roll_damper_defl_mm": 0.0, "roll_damper_defl_max_mm": 35.0,
+        "cross_weight_pct": 50.0
+      }
+    },
+    {
+      "id": "heave_150",
+      "description": "Front heave spring 150 N/mm (softer)",
+      "changes": {"front_heave_nmm": 150},
+      "inputs": {
+        "front_heave_nmm": 150, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.9,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 27.9, "rear_rh_mm": 50.0,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "heave_spring_defl_static_mm": 21.9, "heave_spring_defl_max_mm": 70.6,
+        "heave_slider_defl_static_mm": 21.5, "heave_slider_defl_max_mm": 94.0,
+        "rear_shock_defl_static_mm": 34.2, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 13.0, "rear_spring_defl_max_mm": 76.8
+      }
+    },
+    {
+      "id": "heave_250",
+      "description": "Front heave spring 250 N/mm (stiffer)",
+      "changes": {"front_heave_nmm": 250},
+      "inputs": {
+        "front_heave_nmm": 250, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.8,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 33.1, "rear_rh_mm": 50.0,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "heave_spring_defl_static_mm": 14.5, "heave_spring_defl_max_mm": 59.5,
+        "heave_slider_defl_static_mm": 14.1, "heave_slider_defl_max_mm": 94.0,
+        "rear_shock_defl_static_mm": 34.2, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 13.0, "rear_spring_defl_max_mm": 76.8
+      }
+    },
+    {
+      "id": "perch_40",
+      "description": "Front heave perch offset 40 mm (lower)",
+      "changes": {"front_heave_perch_mm": 40.0},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 40.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.7,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 42.9, "rear_rh_mm": 50.0,
+        "front_corner_weight_n": 2692, "rear_corner_weight_n": 3015,
+        "heave_spring_defl_static_mm": 18.4, "heave_spring_defl_max_mm": 66.8,
+        "heave_slider_defl_static_mm": -0.0, "heave_slider_defl_max_mm": 94.0,
+        "roll_spring_defl_mm": 0.01,
+        "rear_shock_defl_static_mm": 34.2, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 13.0, "rear_spring_defl_max_mm": 76.8
+      }
+    },
+    {
+      "id": "perch_75",
+      "description": "Front heave perch offset 75 mm (higher)",
+      "changes": {"front_heave_perch_mm": 75.0},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 75.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -3.0,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 19.0, "rear_rh_mm": 50.0,
+        "front_corner_weight_n": 2688, "rear_corner_weight_n": 3016,
+        "heave_spring_defl_static_mm": 17.7, "heave_spring_defl_max_mm": 66.8,
+        "heave_slider_defl_static_mm": 34.3, "heave_slider_defl_max_mm": 94.0,
+        "rear_shock_defl_static_mm": 34.2, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 13.0, "rear_spring_defl_max_mm": 76.8
+      }
+    },
+    {
+      "id": "third_120",
+      "description": "Rear third spring 120 N/mm (stiffer)",
+      "changes": {"rear_third_nmm": 120},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.8,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 120, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 30.0, "rear_rh_mm": 51.4,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "rear_shock_defl_static_mm": 33.0, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 11.8, "rear_spring_defl_max_mm": 76.8,
+        "third_spring_defl_static_mm": 12.4, "third_spring_defl_max_mm": 86.5,
+        "third_slider_defl_static_mm": 39.1, "third_slider_defl_max_mm": 84.0
+      }
+    },
+    {
+      "id": "third_220",
+      "description": "Rear third spring 220 N/mm (much stiffer)",
+      "changes": {"rear_third_nmm": 220},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.8,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 220, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 30.0, "rear_rh_mm": 53.7,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "rear_shock_defl_static_mm": 30.9, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 9.7, "rear_spring_defl_max_mm": 71.6,
+        "third_spring_defl_static_mm": 9.9, "third_spring_defl_max_mm": 71.6,
+        "third_slider_defl_static_mm": 36.6, "third_slider_defl_max_mm": 84.0
+      }
+    },
+    {
+      "id": "rear_spring_120",
+      "description": "Rear corner spring 120 N/mm (softer)",
+      "changes": {"rear_spring_nmm": 120},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.8,
+        "rear_spring_nmm": 120, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 30.0, "rear_rh_mm": 45.4,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "rear_shock_defl_static_mm": 38.4, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 17.2, "rear_spring_defl_max_mm": 86.5,
+        "third_spring_defl_static_mm": 18.9, "third_spring_defl_max_mm": 95.3,
+        "third_slider_defl_static_mm": 45.6, "third_slider_defl_max_mm": 84.0
+      }
+    },
+    {
+      "id": "rear_spring_220",
+      "description": "Rear corner spring 220 N/mm (stiffer)",
+      "changes": {"rear_spring_nmm": 220},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.8,
+        "rear_spring_nmm": 220, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 30.0, "rear_rh_mm": 52.0,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "rear_shock_defl_static_mm": 32.4, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 11.2, "rear_spring_defl_max_mm": 71.6,
+        "third_spring_defl_static_mm": 11.7, "third_spring_defl_max_mm": 95.3,
+        "third_slider_defl_static_mm": 38.4, "third_slider_defl_max_mm": 84.0
+      }
+    },
+    {
+      "id": "pushrod_minus30",
+      "description": "Front pushrod offset -30.0 mm (less negative = higher RH)",
+      "changes": {"front_pushrod_mm": -30.0},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -30.0, "front_camber_deg": -2.8,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 35.2, "rear_rh_mm": 50.0,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "heave_spring_defl_static_mm": 18.9, "heave_spring_defl_max_mm": 66.8,
+        "heave_slider_defl_static_mm": 18.5, "heave_slider_defl_max_mm": 94.0,
+        "rear_shock_defl_static_mm": 34.2, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 13.0, "rear_spring_defl_max_mm": 76.8
+      }
+    },
+    {
+      "id": "pushrod_minus40",
+      "description": "Front pushrod offset -40.0 mm (more negative = lower RH)",
+      "changes": {"front_pushrod_mm": -40.0},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -40.0, "front_camber_deg": -2.8,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 29.7, "rear_rh_mm": 50.0,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "heave_spring_defl_static_mm": 18.9, "heave_spring_defl_max_mm": 66.8,
+        "heave_slider_defl_static_mm": 18.5, "heave_slider_defl_max_mm": 94.0,
+        "rear_shock_defl_static_mm": 34.2, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 13.0, "rear_spring_defl_max_mm": 76.8
+      }
+    },
+    {
+      "id": "camber_minus2",
+      "description": "Front camber -2.0 deg (less camber)",
+      "changes": {"front_camber_deg": -2.0},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.0,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5
+      },
+      "outputs": {
+        "front_rh_mm": 30.6, "rear_rh_mm": 50.0,
+        "front_corner_weight_n": 2689, "rear_corner_weight_n": 3015,
+        "heave_spring_defl_static_mm": 18.9, "heave_spring_defl_max_mm": 66.8,
+        "heave_slider_defl_static_mm": 18.5, "heave_slider_defl_max_mm": 94.0
+      }
+    },
+    {
+      "id": "fuel_25",
+      "description": "Fuel 25 L (low fuel)",
+      "changes": {"fuel_l": 25.0},
+      "inputs": {
+        "front_heave_nmm": 180, "front_heave_perch_mm": 58.0,
+        "front_pushrod_mm": -39.5, "front_camber_deg": -2.8,
+        "rear_spring_nmm": 180, "rear_spring_perch_mm": 99.0,
+        "rear_third_nmm": 80, "rear_third_perch_mm": 120.5,
+        "fuel_l": 25.0
+      },
+      "outputs": {
+        "front_rh_mm": 30.4, "rear_rh_mm": 50.5,
+        "front_corner_weight_n": 2632, "rear_corner_weight_n": 2951,
+        "heave_spring_defl_static_mm": 18.4, "heave_spring_defl_max_mm": 66.8,
+        "heave_slider_defl_static_mm": 18.0, "heave_slider_defl_max_mm": 94.0,
+        "rear_shock_defl_static_mm": 33.9, "rear_shock_defl_max_mm": 100.0,
+        "rear_spring_defl_static_mm": 12.7, "rear_spring_defl_max_mm": 76.8,
+        "third_spring_defl_static_mm": 13.8, "third_spring_defl_max_mm": 95.3,
+        "third_slider_defl_static_mm": 40.5, "third_slider_defl_max_mm": 84.0
+      }
+    }
+  ]
+}

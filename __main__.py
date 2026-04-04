@@ -338,7 +338,7 @@ def run_grid_search(args: argparse.Namespace) -> None:
     # Export best .sto
     if args.sto and candidates:
         try:
-            from output.sto_writer import write_sto
+            from output.setup_writer import write_sto
             write_sto(candidates[0].params, car, pathlib.Path(args.sto))
             print(f"  Exported .sto → {args.sto}")
         except Exception as e:
@@ -699,11 +699,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     # Step 1: Calibrate (refit from accumulated data)
     print("\n[1/4] Calibrating car model...")
     try:
-        from car_model.auto_calibrate import print_calibration_status
+        from car_model.auto_calibrate import print_status
         import io, contextlib
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            print_calibration_status(car_name)
+            print_status(car_name)
         cal_text = buf.getvalue()
         cal_path = out_dir / "calibration_status.txt"
         cal_path.write_text(cal_text, encoding="utf-8")

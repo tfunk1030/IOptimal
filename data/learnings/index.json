@@ -150,9 +150,16 @@
     "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-01_23-19-24",
     "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-02_00-12-58",
     "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-02_00-17-56",
-    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-02_00-35-07"
+    "ferrari_hockenheimring_baden-w\u00fcrttemberg_ferrari499p_hockenheim_gp_2026-04-02_00-35-07",
+    "acura_daytona_international_speedway_acuraarx06gtp_daytona_2011_road_2026-04-03_20-31-55",
+    "acura_daytona_international_speedway_acuraarx06gtp_daytona_2011_road_2026-04-03_20-39-40",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_13-24-28",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_15-21-02",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_15-35-40",
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_15-58-44",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-03_22-24-18"
   ],
-  "total_deltas": 323,
+  "total_deltas": 329,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -163,8 +170,10 @@
   "tracks_seen": [
     "Sebring International Raceway_International",
     "Silverstone Circuit_Arena Grand Prix",
-    "Hockenheimring Baden-W\u00fcrttemberg_Grand Prix"
+    "Hockenheimring Baden-W\u00fcrttemberg_Grand Prix",
+    "Daytona International Speedway_Road Course",
+    "Autodromo Internacional do Algarve_Grand Prix"
   ],
-  "last_updated": "2026-04-02T05:41:19.510288+00:00",
-  "total_observations": 149
+  "last_updated": "2026-04-04T04:32:31.847713+00:00",
+  "total_observations": 156
 }

@@ -456,6 +456,7 @@ def build_sensitivity_report(
     arb_lltd: float = 0.0,
     arb_lltd_target: float = 0.0,
     rarb_sensitivity: float = 0.0,
+    car: "CarModel | None" = None,
 ) -> SensitivityReport:
     """Build complete sensitivity report from solver solutions.
 
@@ -465,6 +466,7 @@ def build_sensitivity_report(
         arb_lltd: Achieved LLTD from Step 4 (optional)
         arb_lltd_target: Target LLTD from Step 4 (optional)
         rarb_sensitivity: ΔLLTD per RARB blade step (optional)
+        car: Car model for per-car m_eff values (optional, falls back to BMW defaults)
     """
     report = SensitivityReport()
 
@@ -494,12 +496,19 @@ def build_sensitivity_report(
             ),
         ))
 
-    # Heave sensitivities
+    # Heave sensitivities — use per-car m_eff if available, else BMW defaults
+    _m_eff_front = 228.0  # BMW fallback
+    _m_eff_rear = 2395.3  # BMW fallback
+    if car is not None:
+        _hs = getattr(car, "heave_spring", None)
+        if _hs is not None:
+            _m_eff_front = getattr(_hs, "front_m_eff_kg", _m_eff_front)
+            _m_eff_rear = getattr(_hs, "rear_m_eff_kg", _m_eff_rear)
     report.sensitivities.extend(compute_heave_sensitivities(
         v_p99_front_mps=step2.front_shock_vel_p99_mps,
         v_p99_rear_mps=step2.rear_shock_vel_p99_mps,
-        m_eff_front_kg=228.0,   # BMW calibrated default
-        m_eff_rear_kg=2395.3,   # BMW calibrated default
+        m_eff_front_kg=_m_eff_front,
+        m_eff_rear_kg=_m_eff_rear,
         k_front_nmm=step2.front_heave_nmm,
         k_rear_nmm=step2.rear_third_nmm,
     ))

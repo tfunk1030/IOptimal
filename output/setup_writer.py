@@ -702,7 +702,9 @@ def write_sto(
         _lf_cw = _rf_cw = _lr_cw = _rr_cw = 0.0
 
     # Resolve ID mapping for this car
-    ids = _CAR_PARAM_IDS.get(car_canonical.lower(), _BMW_PARAM_IDS)
+    ids = _CAR_PARAM_IDS.get(car_canonical.lower())
+    if ids is None:
+        raise ValueError(f"No STO parameter ID mapping for car: {car_canonical}")
 
     def _w_num(param: str, value: float | int, unit: str) -> None:
         """Write a numeric param using car-specific ID, or TODO comment if unmapped."""
@@ -792,8 +794,8 @@ def write_sto(
         # Ferrari torsion bar turns are user-settable (+-0.250, 0.125 steps).
         # Solver outputs neutral (0.0) -- user adjusts in garage.
         _tb_turns = 0.0
-    else:
-        # BMW fallback formula (calibrated for BMW physical units only)
+    elif car_canonical.lower() in ("bmw", "cadillac"):
+        # Dallara chassis torsion bar turns formula (calibrated from BMW Sebring)
         _tb_turns = round(
             0.0989
             + 0.432 / max(step2.front_heave_nmm, 1)
@@ -801,6 +803,12 @@ def write_sto(
             + 0.000002 * step3.front_torsion_od_mm,
             3,
         )
+    elif car_canonical.lower() == "porsche":
+        # Porsche has no front torsion bar turns
+        _tb_turns = 0.0
+    else:
+        # Ferrari/Acura handled by their own paths; fallback to 0
+        _tb_turns = 0.0
     _w_num("lf_torsion_turns", _tb_turns, "Turns")
     _w_num("rf_torsion_turns", _tb_turns, "Turns")
     # Ferrari also has rear torsion bar turns
@@ -874,8 +882,16 @@ def write_sto(
             _lf_sd = round(step1.static_front_rh_mm * 0.487, 1)
             _lr_sd = round(step1.static_rear_rh_mm * 0.462, 1)
             _tb_defl = round(_tb_turns * 181.5, 1)
-            _heave_defl_static = round(40.5 + (-0.55) * _fh, 1)
-            _heave_slider_static = round(46.2 + 0.012 * _fh + 0.251 * _fh_perch, 1)
+            if hasattr(_car, 'deflection') and getattr(_car.deflection, 'is_calibrated', False):
+                _heave_defl_static = round(40.5 + (-0.55) * _fh, 1)
+            else:
+                _heave_defl_static = 0.0  # No calibrated model; skip display value
+            _heave_defl_static = max(0.0, _heave_defl_static)  # Safety clamp
+            if hasattr(_car, 'deflection') and getattr(_car.deflection, 'is_calibrated', False):
+                _heave_slider_static = round(46.2 + 0.012 * _fh + 0.251 * _fh_perch, 1)
+            else:
+                _heave_slider_static = 0.0  # No calibrated model; skip display value
+            _heave_slider_static = max(0.0, _heave_slider_static)  # Safety clamp
             _lr_spring_defl = round(8.5 * 180.0 / max(step3.rear_spring_rate_nmm, 1.0), 1)
             _r3_defl = round(19.2 * step1.static_rear_rh_mm / 48.9, 1)
             _r3_slider = _r3_defl

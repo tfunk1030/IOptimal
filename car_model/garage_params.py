@@ -626,8 +626,8 @@ def _porsche_schema() -> CarParamSchema:
     s.rear_arb_size = ParamDef(
         canonical="rear_arb_size", display_label="Rear ARB Size",
         unit="", value_type="label",
-        # Manual confirms: Disconnected + at least Soft. Exact labels from IBT.
-        discrete_values=["Disconnected", "Soft"],
+        # CORRECTED 2026-04-03: garage screenshots show Stiff available.
+        discrete_values=["Disconnected", "Soft", "Medium", "Stiff"],
     )
     s.rear_arb_blade = ParamDef(
         canonical="rear_arb_blade", display_label="Rear ARB Adjustment",
@@ -661,11 +661,20 @@ def _porsche_schema() -> CarParamSchema:
     )
     s.diff_preload = ParamDef(
         canonical="diff_preload_nm", display_label="Diff Preload",
-        unit="Nm", value_type="physical", exists=False,
+        unit="Nm", value_type="physical", exists=True,
+        min_val=0.0, max_val=40.0,
+        # CORRECTED 2026-04-03: garage screenshots confirm Porsche HAS diff preload (0 Nm shown)
     )
     s.diff_ramp = ParamDef(
-        canonical="diff_ramp_label", display_label="Diff Ramp",
-        unit="", value_type="label", exists=False,
+        canonical="diff_ramp_label", display_label="Diff Ramp Angles",
+        unit="", value_type="label", exists=True,
+        # CORRECTED 2026-04-03: garage screenshots show "50/75" coast/drive ramp angles
+    )
+    s.diff_clutch_plates = ParamDef(
+        canonical="diff_clutch_plates", display_label="Clutch Friction Plates",
+        unit="", value_type="clicks", exists=True,
+        min_val=1, max_val=10,
+        # CORRECTED 2026-04-03: garage screenshots show 6 clutch plates
     )
     s.tc_gain = ParamDef(
         canonical="tc_gain", display_label="TC Gain",

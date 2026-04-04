@@ -3040,7 +3040,7 @@ def reason_and_solve(
     from solver.damper_solver import DamperSolver
     from solver.supporting_solver import SupportingSolver
     from solver.full_setup_optimizer import optimize_if_supported
-    from pipeline.produce import _apply_damper_modifiers
+    from solver.solve_chain import apply_damper_modifiers as _apply_damper_modifiers
 
     surfaces = load_car_surfaces(car.canonical_name)
     if detected_wing not in surfaces:
@@ -3838,7 +3838,7 @@ def reason_and_solve(
             print(gs_result.summary())
 
             # --save-setup: write flat recommended params as JSON
-            _save_setup_path = getattr(args, "save_setup", None) if "args" in dir() else None
+            _save_setup_path = getattr(args, "save_setup", None) if "args" in locals() else None
             if _save_setup_path and gs_result.best_overall is not None:
                 import json as _json
                 _rec = {

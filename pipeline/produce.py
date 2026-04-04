@@ -41,17 +41,10 @@ from car_model.setup_registry import public_output_value
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
 from solver.candidate_search import canonical_params_to_overrides, candidate_to_dict, generate_candidate_families
-from solver.arb_solver import ARBSolver
-from solver.corner_spring_solver import CornerSpringSolver
-from solver.damper_solver import DamperSolver
-from solver.heave_solver import HeaveSolver
-from solver.modifiers import SolverModifiers, compute_modifiers
+from solver.modifiers import compute_modifiers
 from solver.learned_corrections import apply_learned_corrections
 from solver.predictor import predict_candidate_telemetry
-from solver.rake_solver import RakeSolver, reconcile_ride_heights
 from solver.scenario_profiles import resolve_scenario_name, should_run_legal_manifold_search
-from solver.supporting_solver import SupportingSolver
-from solver.wheel_geometry_solver import WheelGeometrySolver
 from solver.bmw_coverage import (
     build_parameter_coverage,
     build_search_baseline,
@@ -59,7 +52,6 @@ from solver.bmw_coverage import (
 )
 from solver.bmw_rotation_search import preserve_candidate_rotation_controls
 from solver.decision_trace import build_parameter_decisions
-from solver.full_setup_optimizer import optimize_if_supported
 from solver.legality_engine import validate_solution_legality
 from solver.solve_chain import SolveChainInputs, run_base_solve
 from solver.stint_reasoner import solve_stint_compromise
@@ -635,7 +627,7 @@ def produce(
 
     # ── Phase G: Compute solver modifiers ──
     log("Computing solver modifiers...")
-    modifiers = compute_modifiers(diagnosis, driver, measured)
+    modifiers = compute_modifiers(diagnosis, driver, measured, car=car)
     if modifiers.reasons:
         for r in modifiers.reasons:
             log(f"  {r}")
@@ -649,29 +641,7 @@ def produce(
                     if learned and learned.calibrated_front_roll_gain is not None
                     else "estimated")
 
-    optimized = optimize_if_supported(
-        car=car,
-        surface=surface,
-        track=track,
-        target_balance=target_balance,
-        balance_tolerance=args.tolerance,
-        fuel_load_l=fuel,
-        pin_front_min=True,
-        wing_angle=wing,
-        legacy_solver=getattr(args, "legacy_solver", False),
-        damping_ratio_scale=modifiers.damping_ratio_scale,
-        lltd_offset=modifiers.lltd_offset,
-        measured=measured,
-        camber_confidence=_camber_conf,
-        front_heave_floor_nmm=modifiers.front_heave_min_floor_nmm,
-        rear_third_floor_nmm=modifiers.rear_third_min_floor_nmm,
-        front_heave_perch_target_mm=modifiers.front_heave_perch_target_mm,
-    )
-
-    # NOTE: The optimized/manual solve block was removed here (2026-03-31).
-    # Both the BMW/Sebring optimizer branch and the manual Steps 1-6 branch
-    # were dead code: run_base_solve() below always overwrites their results.
-    # All solve orchestration is now exclusively handled by run_base_solve().
+    # All solve orchestration is handled by run_base_solve() below.
 
     # ── Phase H.5: Multi-solve stint compromise (if --stint) ──
     # Load known-bad setup fingerprints from learner (if available)
@@ -689,15 +659,20 @@ def produce(
         )
         for obs_data in obs_list:
             if obs_data.get("validation_failed", False):
-                fp = obs_data.get("setup_fingerprint", "")
-                if fp:
+                fp_data = obs_data.get("setup_fingerprint")
+                if fp_data and isinstance(fp_data, dict):
                     try:
+                        from solver.setup_fingerprint import SetupFingerprint
+                        fp = SetupFingerprint(**fp_data)
                         failed_clusters.append(
-                            ValidationCluster(fingerprint=fp, veto_type="hard")
+                            ValidationCluster(
+                                fingerprint=fp,
+                                validated_failed=True,
+                                penalty_mode="hard",
+                            )
                         )
-                    except TypeError:
-                        # ValidationCluster constructor differs — try positional
-                        failed_clusters.append(ValidationCluster(fp))
+                    except (TypeError, KeyError):
+                        pass  # Malformed fingerprint data — skip
         if failed_clusters:
             log(f"[veto] Loaded {len(failed_clusters)} hard-veto clusters from learner store")
     except Exception:
@@ -1652,35 +1627,7 @@ def produce_result(
     return result
 
 
-def _apply_damper_modifiers(
-    step6: object,
-    modifiers: SolverModifiers,
-    car: object,
-) -> None:
-    """Apply click offsets from modifiers to damper solution in-place."""
-    if not any([
-        modifiers.front_ls_rbd_offset,
-        modifiers.rear_ls_rbd_offset,
-        modifiers.front_hs_comp_offset,
-        modifiers.rear_hs_comp_offset,
-    ]):
-        return
-
-    d = car.damper
-    lo_ls, hi_ls = d.ls_comp_range
-    lo_hs, hi_hs = d.hs_comp_range
-
-    def clamp_click(val: int, lo: int, hi: int) -> int:
-        return max(lo, min(hi, val))
-
-    # Apply offsets to all four corners
-    for corner in [step6.lf, step6.rf]:
-        corner.ls_rbd = clamp_click(corner.ls_rbd + modifiers.front_ls_rbd_offset, lo_ls, hi_ls)
-        corner.hs_comp = clamp_click(corner.hs_comp + modifiers.front_hs_comp_offset, lo_hs, hi_hs)
-
-    for corner in [step6.lr, step6.rr]:
-        corner.ls_rbd = clamp_click(corner.ls_rbd + modifiers.rear_ls_rbd_offset, lo_ls, hi_ls)
-        corner.hs_comp = clamp_click(corner.hs_comp + modifiers.rear_hs_comp_offset, lo_hs, hi_hs)
+    # _apply_damper_modifiers removed — use solver.solve_chain.apply_damper_modifiers
 
 
 def main():

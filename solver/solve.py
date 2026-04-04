@@ -274,6 +274,10 @@ def run_solver(args: "argparse.Namespace") -> None:
                 car.geometry.front_roll_gain = learned.calibrated_front_roll_gain
             if learned.calibrated_rear_roll_gain is not None:
                 car.geometry.rear_roll_gain = learned.calibrated_rear_roll_gain
+            # HS velocity slopes (m/s per click) are available for validation
+            # but do NOT directly override force-per-click — the conversion from
+            # shock vel slope to N/click requires system-level knowledge.
+            # The damper solver uses these slopes to validate its predictions.
             log()
 
     # Confidence check — warn if car model has ESTIMATE parameters
@@ -539,6 +543,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             arb_lltd=step4.lltd_achieved,
             arb_lltd_target=step4.lltd_target,
             rarb_sensitivity=step4.rarb_sensitivity_per_blade,
+            car=car,
         )
         binding = sensitivity_report.binding_constraints()
         if binding and not args.report_only:
@@ -591,8 +596,8 @@ def run_solver(args: "argparse.Namespace") -> None:
             step1=step1, step2=step2, step3=step3,
             step4=step4, step5=step5,
             brake_bias_pct=_bias,
-            step6=step6 if 'step6' in dir() else None,
-            supporting=supporting if 'supporting' in dir() else None,
+            step6=step6 if 'step6' in locals() else None,
+            supporting=supporting if 'supporting' in locals() else None,
             measured=None,
             wing=getattr(args, 'wing', 17.0),
         )

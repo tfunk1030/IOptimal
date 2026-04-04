@@ -147,11 +147,20 @@ class CurrentSetup:
     rear_hs_comp: int = 0
     rear_hs_rbd: int = 0
     rear_hs_slope: int = 0
-    # Roll dampers (ORECA heave+roll architecture)
+    # Roll dampers (ORECA heave+roll architecture, also Porsche Multimatic)
     front_roll_ls: int = 0
     front_roll_hs: int = 0
+    front_roll_hs_slope: int = 0      # Porsche front roll has HS slope
     rear_roll_ls: int = 0
     rear_roll_hs: int = 0
+    # Rear 3rd dampers (Porsche Multimatic)
+    rear_3rd_ls_comp: int = 0
+    rear_3rd_hs_comp: int = 0
+    rear_3rd_ls_rbd: int = 0
+    rear_3rd_hs_rbd: int = 0
+    # Front roll spring (Porsche Multimatic)
+    front_roll_spring_nmm: float = 0.0
+    front_roll_perch_mm: float = 0.0
 
     # --- Brakes / Diff / TC ---
     brake_bias_pct: float = 0.0
@@ -302,14 +311,34 @@ class CurrentSetup:
         #   BMW/Cadillac (Dallara): per-corner under Chassis.LeftFront etc.
         #   Ferrari: per-corner under Dampers.LeftFrontDamper etc.
         #   Acura (ORECA): heave+roll under Dampers.FrontHeave/FrontRoll etc.
+        #   Porsche (Multimatic): HYBRID — front heave+roll under Dampers,
+        #     rear per-corner under Chassis.LeftRear/RightRear, rear 3rd separate.
         dampers = cs.get("Dampers", {})
         front_heave_damp = dampers.get("FrontHeave", {})
         rear_heave_damp = dampers.get("RearHeave", {})
         front_roll_damp = dampers.get("FrontRoll", {})
         rear_roll_damp = dampers.get("RearRoll", {})
+        rear_3rd_damp = dampers.get("Rear3Rd", {}) or dampers.get("Rear3rd", {}) or dampers.get("RearThird", {})
         is_heave_roll_layout = bool(front_heave_damp)
 
-        if is_heave_roll_layout:
+        # Porsche 963 (Multimatic) has a hybrid layout:
+        #   Front: heave+roll dampers (like ORECA)
+        #   Rear: per-corner dampers (like BMW) + separate 3rd dampers
+        # Detect: front heave exists AND rear per-corner exists (LeftRear has damper keys)
+        is_porsche_layout = (
+            is_heave_roll_layout
+            and car_canonical
+            and car_canonical.lower() == "porsche"
+        )
+
+        if is_porsche_layout:
+            # Porsche (Multimatic): front from Dampers.FrontHeave,
+            # rear from Dampers.LeftRear/RightRear (NOT Chassis.LeftRear!)
+            lf_damp = front_heave_damp
+            rf_damp = front_heave_damp
+            lr_damp = dampers.get("LeftRear", lr)   # Dampers.LeftRear
+            rr_damp = dampers.get("RightRear", rr)  # Dampers.RightRear
+        elif is_heave_roll_layout:
             # ORECA: heave dampers carry the primary LS/HS comp+rbd+slope
             lf_damp = front_heave_damp
             rf_damp = front_heave_damp
@@ -372,11 +401,11 @@ class CurrentSetup:
             rear_spring_perch_mm=_parse_float(lr.get("SpringPerchOffset")),
             rear_torsion_od_mm=_parse_float(lr.get("TorsionBarOD")) if lr.get("TorsionBarOD") and not lr.get("SpringRate") else 0.0,
 
-            # ARBs
-            front_arb_size=str(front.get("ArbSize", "")),
-            front_arb_blade=_parse_int(front.get("ArbBlades")),
+            # ARBs — Porsche uses ArbSetting/ArbAdj instead of ArbSize/ArbBlades
+            front_arb_size=str(front.get("ArbSize", "") or front.get("ArbSetting", "")),
+            front_arb_blade=_parse_int(front.get("ArbBlades") or front.get("ArbAdj")),
             rear_arb_size=str(rear.get("ArbSize", "")),
-            rear_arb_blade=_parse_int(rear.get("ArbBlades")),
+            rear_arb_blade=_parse_int(rear.get("ArbBlades") or rear.get("ArbAdj")),
 
             # Geometry (average left/right)
             front_camber_deg=avg_f("Camber"),
@@ -399,11 +428,20 @@ class CurrentSetup:
             rear_hs_comp=_parse_int(lr_damp.get("HsCompDamping")),
             rear_hs_rbd=_parse_int(lr_damp.get("HsRbdDamping")),
             rear_hs_slope=_parse_int(lr_damp.get("HsCompDampSlope")),
-            # Roll dampers (ORECA heave+roll layout)
+            # Roll dampers (ORECA heave+roll layout, also Porsche Multimatic)
             front_roll_ls=_parse_int(front_roll_damp.get("LsDamping")),
             front_roll_hs=_parse_int(front_roll_damp.get("HsDamping")),
+            front_roll_hs_slope=_parse_int(front_roll_damp.get("HsDampSlope") or front_roll_damp.get("HsCompDampSlope")),
             rear_roll_ls=_parse_int(rear_roll_damp.get("LsDamping")),
             rear_roll_hs=_parse_int(rear_roll_damp.get("HsDamping")),
+            # Rear 3rd dampers (Porsche Multimatic)
+            rear_3rd_ls_comp=_parse_int(rear_3rd_damp.get("LsCompDamping")),
+            rear_3rd_hs_comp=_parse_int(rear_3rd_damp.get("HsCompDamping")),
+            rear_3rd_ls_rbd=_parse_int(rear_3rd_damp.get("LsRbdDamping")),
+            rear_3rd_hs_rbd=_parse_int(rear_3rd_damp.get("HsRbdDamping")),
+            # Front roll spring (Porsche Multimatic)
+            front_roll_spring_nmm=_parse_float(front.get("RollSpring")),
+            front_roll_perch_mm=_parse_float(front.get("RollPerchOffset")),
 
             # Brakes / Diff / TC
             brake_bias_pct=_parse_float(brake_spec.get("BrakePressureBias")),
@@ -466,7 +504,7 @@ class CurrentSetup:
                 if car_canonical and car_canonical.lower() in ("bmw", "ferrari", "cadillac", "porsche", "acura")
                 else (
                     "acura" if is_heave_roll_layout
-                    else ("ferrari" if is_ferrari_layout else "bmw")
+                    else ("ferrari" if is_ferrari_layout else "unknown")
                 )
             ),
             extraction_attempts=attempts,

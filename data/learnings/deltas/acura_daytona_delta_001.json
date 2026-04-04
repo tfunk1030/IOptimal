@@ -1,0 +1,170 @@
+{
+  "session_before": "acura_daytona_international_speedway_acuraarx06gtp_daytona_2011_road_2026-04-03_20-31-55",
+  "session_after": "acura_daytona_international_speedway_acuraarx06gtp_daytona_2011_road_2026-04-03_20-39-40",
+  "car": "acura",
+  "track": "Daytona International Speedway",
+  "setup_changes": [],
+  "telemetry_effects": [
+    {
+      "metric": "front_rh_std_mm",
+      "category": "platform",
+      "before": 7.590301513671875,
+      "after": 9.749576568603516,
+      "delta": 2.1593,
+      "pct_change": 28.4,
+      "significance": "large"
+    },
+    {
+      "metric": "front_bottoming_events",
+      "category": "platform",
+      "before": 0.0,
+      "after": 3.0,
+      "delta": 3.0,
+      "pct_change": 0.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_bottoming_events",
+      "category": "platform",
+      "before": 2.0,
+      "after": 5.0,
+      "delta": 3.0,
+      "pct_change": 150.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.13317713141441345,
+      "after": 0.11536268144845963,
+      "delta": -0.0178,
+      "pct_change": -13.4,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.2133111208677292,
+      "after": 0.17456823587417603,
+      "delta": -0.0387,
+      "pct_change": -18.2,
+      "significance": "large"
+    },
+    {
+      "metric": "front_heave_defl_p99_mm",
+      "category": "platform",
+      "before": 30.61,
+      "after": 27.71,
+      "delta": -2.9,
+      "pct_change": -9.5,
+      "significance": "moderate"
+    },
+    {
+      "metric": "lltd_measured",
+      "category": "balance",
+      "before": 0.5063948977100508,
+      "after": 0.5410848444313148,
+      "delta": 0.0347,
+      "pct_change": 6.9,
+      "significance": "large"
+    },
+    {
+      "metric": "understeer_mean_deg",
+      "category": "balance",
+      "before": 0.022944554686546326,
+      "after": -5.947863578796387,
+      "delta": -5.9708,
+      "pct_change": -26022.8,
+      "significance": "large"
+    },
+    {
+      "metric": "understeer_high_speed_deg",
+      "category": "balance",
+      "before": -0.029354136437177658,
+      "after": -1.091270089149475,
+      "delta": -1.0619,
+      "pct_change": -3617.6,
+      "significance": "large"
+    },
+    {
+      "metric": "understeer_low_speed_deg",
+      "category": "balance",
+      "before": 0.1562313288450241,
+      "after": -9.015745162963867,
+      "delta": -9.172,
+      "pct_change": -5870.8,
+      "significance": "large"
+    },
+    {
+      "metric": "body_slip_p95_deg",
+      "category": "balance",
+      "before": 1.7357476949691772,
+      "after": 43.83647155761719,
+      "delta": 42.1007,
+      "pct_change": 2425.5,
+      "significance": "large"
+    },
+    {
+      "metric": "dynamic_front_rh_mm",
+      "category": "aero",
+      "before": 17.174320220947266,
+      "after": 21.958473205566406,
+      "delta": 4.7842,
+      "pct_change": 27.9,
+      "significance": "large"
+    },
+    {
+      "metric": "dynamic_rear_rh_mm",
+      "category": "aero",
+      "before": 28.53964614868164,
+      "after": 33.665367126464844,
+      "delta": 5.1257,
+      "pct_change": 18.0,
+      "significance": "large"
+    },
+    {
+      "metric": "roll_gradient_deg_per_g",
+      "category": "aero",
+      "before": -15.499,
+      "after": -0.167,
+      "delta": 15.332,
+      "pct_change": 98.9,
+      "significance": "large"
+    },
+    {
+      "metric": "front_rh_settle_time_ms",
+      "category": "damper",
+      "before": 0.0,
+      "after": 575.0,
+      "delta": 575.0,
+      "pct_change": 0.0,
+      "significance": "large"
+    },
+    {
+      "metric": "front_dominant_freq_hz",
+      "category": "damper",
+      "before": 0.88,
+      "after": 0.63,
+      "delta": -0.25,
+      "pct_change": -28.4,
+      "significance": "large"
+    },
+    {
+      "metric": "rear_dominant_freq_hz",
+      "category": "damper",
+      "before": 0.88,
+      "after": 0.63,
+      "delta": -0.25,
+      "pct_change": -28.4,
+      "significance": "large"
+    }
+  ],
+  "hypotheses": [],
+  "num_setup_changes": 0,
+  "controlled_experiment": true,
+  "changed_steps": [],
+  "lap_time_delta_s": -33.018,
+  "driver_style_changed": false,
+  "key_finding": "No setup changes detected between sessions.",
+  "confidence_level": "high"
+}
