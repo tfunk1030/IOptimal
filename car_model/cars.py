@@ -17,9 +17,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from car_model.garage import GarageOutputModel
-from solver.vertical_dynamics import damped_excursion_mm
 
 
+def damped_excursion_mm(*args, **kwargs):
+    """Deferred import wrapper for vertical dynamics excursion calculation.
+
+    This preserves the existing call signature while avoiding a module-level
+    dependency from the core car-model layer into the solver package.
+    Importing lazily reduces import-time coupling and lowers the chance of
+    circular-import failures as solver modules evolve.
+    """
+    from solver.vertical_dynamics import damped_excursion_mm as _impl
+
+    return _impl(*args, **kwargs)
 # ─── Ferrari indexed-control lookup tables ────────────────────────────────────
 
 @dataclass
