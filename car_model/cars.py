@@ -362,8 +362,12 @@ class HeaveSpringModel:
     """
     front_m_eff_kg: float            # Calibrated front effective heave mass
     rear_m_eff_kg: float             # Calibrated rear effective heave mass
-    front_spring_range_nmm: tuple[float, float] = (20.0, 200.0)  # Valid range
+    front_spring_range_nmm: tuple[float, float] = (20.0, 200.0)  # Valid garage range
     rear_spring_range_nmm: tuple[float, float] = (100.0, 1000.0)
+    # Realistic operating window for objective function realism penalty.
+    # Distinct from garage range: this is where competitive setups actually run.
+    # If None, falls back to front_spring_range_nmm.
+    front_realistic_range_nmm: tuple[float, float] | None = None
     sigma_target_mm: float = 10.0    # Platform stability threshold
     # WARNING: These defaults are BMW Sebring calibrated. Every car MUST override
     # perch_offset_*_baseline_mm with car-specific values from garage screenshots.
@@ -1231,6 +1235,8 @@ class CarModel:
     mass_car_kg: float               # Dry car mass
     mass_driver_kg: float = 75.0     # Driver mass
     fuel_density_kg_per_l: float = 0.742  # Fuel density (E10 gasoline)
+    fuel_capacity_l: float = 89.0        # Max fuel load (L). BMW=89, Porsche=58
+    fuel_stint_end_l: float = 20.0       # Typical end-of-stint fuel (L)
 
     # Weight distribution
     weight_dist_front: float = 0.47  # Static front weight fraction (at max fuel)
@@ -1659,6 +1665,7 @@ BMW_M_HYBRID_V8 = CarModel(
         front_m_eff_kg=228.0,
         rear_m_eff_kg=2395.3,
         front_spring_range_nmm=(0.0, 900.0),
+        front_realistic_range_nmm=(30.0, 100.0),  # BMW Sebring competitive window
         rear_spring_range_nmm=(100.0, 900.0),
         sigma_target_mm=10.0,   # SKILL.md: sigma > 5mm at >200 kph = unstable
         perch_offset_front_baseline_mm=-13.0,
@@ -2387,7 +2394,9 @@ PORSCHE_963 = CarModel(
     canonical_name="porsche",
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
-    weight_dist_front=0.475,  # ESTIMATE — Multimatic LMDh, twin-turbo V8 mid-rear
+    fuel_capacity_l=58.0,         # From Algarve starting setup (shorter stints than BMW)
+    fuel_stint_end_l=15.0,        # ESTIMATE — Algarve stint end fuel
+    weight_dist_front=0.471,  # CALIBRATED: from corner weights (2689+2689)/(2689*2+3015*2) = 0.4714
     default_df_balance_pct=50.5,  # Traction-limited — benefits from more rear DF
     tyre_load_sensitivity=0.18,   # DSSV dampers give better contact — lower effective sensitivity
     aero_axes_swapped=True,

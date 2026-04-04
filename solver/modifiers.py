@@ -202,10 +202,19 @@ def compute_modifiers(
                 # More negative perch lowers the slider and consumes available
                 # travel. When the front heave spring is running out of travel,
                 # the target must move LESS negative so the slider regains room.
-                mods.front_heave_perch_target_mm = -11.0
+                # Use per-car perch baseline instead of BMW-hardcoded -11mm.
+                _perch_baseline = -11.0  # BMW default
+                if car is not None:
+                    _hs = getattr(car, "heave_spring", None)
+                    if _hs is not None:
+                        _baseline = getattr(_hs, "perch_offset_front_baseline_mm", None)
+                        if _baseline is not None:
+                            # Target ~80% of baseline to preserve travel headroom
+                            _perch_baseline = _baseline * 0.80
+                mods.front_heave_perch_target_mm = _perch_baseline
                 mods.reasons.append(
-                    f"Heave travel {travel_pct:.0f}% exhausted -> perch target -11mm "
-                    f"(less negative perch preserves available slider travel)"
+                    f"Heave travel {travel_pct:.0f}% exhausted -> perch target {_perch_baseline:.1f}mm "
+                    f"(adjusted perch preserves available slider travel)"
                 )
 
         # Damper: settle time

@@ -407,13 +407,22 @@ class ObjectiveFunction:
             return 0.0
         return (cal_uncertainty - 0.2) ** 1.5 * 8.0
 
-    @staticmethod
-    def _heave_realism_penalty_ms(front_heave: float) -> float:
+    def _heave_realism_penalty_ms(self, front_heave: float) -> float:
         # Keep solver search inside a realistic GTP heave window even when
         # the forward physics looks artificially "safe" at very stiff rates.
         # This remains an envelope/realism concern, not raw lap-gain.
-        heave_opt_lo = 30.0
-        heave_opt_hi = 100.0
+        # Read per-car realistic operating range instead of BMW-hardcoded (30, 100).
+        # Falls back to garage range if no realistic range is defined.
+        heave_opt_lo, heave_opt_hi = 30.0, 100.0  # ultimate fallback
+        _hs = getattr(self.car, "heave_spring", None)
+        if _hs is not None:
+            _realistic = getattr(_hs, "front_realistic_range_nmm", None)
+            if _realistic is not None and len(_realistic) >= 2:
+                heave_opt_lo, heave_opt_hi = _realistic[0], _realistic[1]
+            else:
+                _range = getattr(_hs, "front_spring_range_nmm", None)
+                if _range is not None and len(_range) >= 2:
+                    heave_opt_lo, heave_opt_hi = _range[0], _range[1]
         if front_heave > heave_opt_hi:
             excess = front_heave - heave_opt_hi
             return min(300.0, excess * 0.5 + (max(0.0, excess - 100.0) ** 1.2) * 0.3)
@@ -624,8 +633,8 @@ class ObjectiveFunction:
     def _compute_lltd_fuel_window(
         self,
         params: dict[str, float],
-        fuel_start_l: float = 89.0,
-        fuel_end_l: float = 20.0,
+        fuel_start_l: float | None = None,
+        fuel_end_l: float | None = None,
     ) -> tuple[float, float, float]:
         """Compute LLTD at race start and end of stint fuel loads.
 
@@ -651,6 +660,12 @@ class ObjectiveFunction:
             (lltd_start_error, lltd_end_error, worst_lltd_error)
         """
         car = self.car
+
+        # Read per-car fuel loads instead of BMW-hardcoded 89/20L.
+        if fuel_start_l is None:
+            fuel_start_l = getattr(car, "fuel_capacity_l", 89.0)
+        if fuel_end_l is None:
+            fuel_end_l = getattr(car, "fuel_stint_end_l", 20.0)
 
         # Compute weight distributions at start and end fuel
         mass_start = car.total_mass(fuel_start_l)
@@ -755,17 +770,25 @@ class ObjectiveFunction:
         track = self.track
         result = PhysicsResult()
 
-        # ── Extract parameters ──────────────────────────────────────────
-        front_heave_nmm = params.get("front_heave_spring_nmm", 50.0)
-        rear_third_nmm = params.get("rear_third_spring_nmm", 450.0)
+        # ── Extract parameters (defaults from car model, not BMW-hardcoded) ──
+        front_heave_nmm = params.get("front_heave_spring_nmm",
+                                      getattr(car, "front_heave_spring_nmm", 50.0))
+        rear_third_nmm = params.get("rear_third_spring_nmm",
+                                     getattr(car, "rear_third_spring_nmm", 450.0))
         rear_spring_nmm = params.get("rear_spring_rate_nmm", 160.0)
-        front_torsion_od = params.get("front_torsion_od_mm",
-                                       car.corner_spring.front_torsion_od_options[0]
-                                       if car.corner_spring.front_torsion_od_options else 14.34)
-        front_camber = params.get("front_camber_deg", -3.5)
-        rear_camber = params.get("rear_camber_deg", -2.5)
-        front_arb_blade = int(params.get("front_arb_blade", 1))
-        rear_arb_blade = int(params.get("rear_arb_blade", 3))
+        # Torsion OD: use car's options if available, else 0.0 for cars without
+        # torsion bars (Porsche). Old fallback of 14.34 was BMW-specific.
+        _od_options = car.corner_spring.front_torsion_od_options
+        _od_default = _od_options[0] if _od_options else 0.0
+        front_torsion_od = params.get("front_torsion_od_mm", _od_default)
+        front_camber = params.get("front_camber_deg",
+                                   getattr(car.geometry, "front_camber_baseline_deg", -3.5))
+        rear_camber = params.get("rear_camber_deg",
+                                  getattr(car.geometry, "rear_camber_baseline_deg", -2.5))
+        front_arb_blade = int(params.get("front_arb_blade",
+                                          getattr(car.arb, "front_baseline_blade", 1)))
+        rear_arb_blade = int(params.get("rear_arb_blade",
+                                         getattr(car.arb, "rear_baseline_blade", 3)))
 
         # Damper clicks
         f_ls_comp = int(params.get("front_ls_comp", 7))
@@ -861,7 +884,11 @@ class ObjectiveFunction:
             _static_f = car.pushrod.front_pinned_rh_mm
             _comp_f = car.aero_compression.front_compression_mm
             dyn_front_rh = max(5.0, _static_f - _comp_f)
-            dyn_rear_rh = 42.0  # rear not used for vortex; fallback is fine
+            # Compute rear dynamic RH from car model instead of hardcoded BMW value.
+            # Rear RH at speed = static - aero compression (same logic as front).
+            _rear_base = getattr(car.pushrod, "rear_base_rh_mm", 50.0)
+            _rear_comp = car.aero_compression.rear_compression_mm
+            dyn_rear_rh = max(5.0, _rear_base - _rear_comp)
             result.front_bottoming_margin_mm = dyn_front_rh - result.front_excursion_mm
             result.rear_bottoming_margin_mm = dyn_rear_rh - result.rear_excursion_mm
 
@@ -1744,7 +1771,7 @@ class ObjectiveFunction:
         # where W_front changes with fuel load and λ = tyre load sensitivity.
         try:
             err_start, err_end, worst_err = self._compute_lltd_fuel_window(
-                params, fuel_start_l=89.0, fuel_end_l=20.0
+                params
             )
             # Use physics.lltd_error for full-fuel case (already computed)
             # Add incremental penalty for the END-of-stint case getting worse
