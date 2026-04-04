@@ -70,7 +70,7 @@ data/aeromaps_parsed/
 
 # (Audit/documentation files are tracked — removed from ignore list)
 # These are source-controlled documentation, not generated artifacts:
-# AUDIT_REPORT.md, ENGINEERING_AUDIT.md, CLI_GUIDE.md, deep_audit_report_*.md
+# ENGINEERING_AUDIT.md, CLI_GUIDE.md
 
 # IDE / editor artifacts
 .vscode/
