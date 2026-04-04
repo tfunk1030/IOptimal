@@ -312,6 +312,51 @@ No verified setup file available from your data, but the Dallara architecture me
 - **Most popular GTP car.** Most community setups available.
 - **Gentle on tyres.** Can run more aggressive camber/toe without excessive wear.
 
+### Porsche Suspension Architecture (Multimatic-specific)
+
+**Front roll spring system** (unique to Porsche among GTP cars):
+- Roll spring: adjustable rate (e.g., 100 N/mm) with perch offset
+- Roll damper: LS + HS + HS slope (3 adjustments)
+- Roll spring adds roll stiffness INDEPENDENTLY from front ARB
+- Roll spring deflection and roll damper deflection are separate display values
+
+**Damper layout** (different from all other GTP cars):
+```
+FRONT HEAVE:  4 params (LS comp, HS comp, LS rbd, HS rbd) -- NO HS slope
+FRONT ROLL:   3 params (LS damping, HS damping, HS damp slope)
+REAR CORNERS: 5 params (LS comp, HS comp, HS slope, LS rbd, HS rbd) -- per corner
+REAR 3rd:     4 params (LS comp, HS comp, LS rbd, HS rbd) -- NO HS slope
+```
+
+**20-click DSSV (Multimatic) dampers:**
+- Spool-valve design — more progressive force curve than shim-stack (BMW/Acura Ohlins)
+- Only 4% force degradation across temperature range (vs 14-16% for shim-stack)
+- Click range: 1-20 (vs BMW 1-11, Ferrari 1-40, Acura 1-10)
+
+### Calibration Status (2026-04-03)
+
+**What's known from 2 Sebring sessions + Algarve screenshots:**
+- Roll gradient: 0.84 deg/g (2 sessions, low confidence)
+- Aero compression: front ~12mm, rear ~23mm (rough, from telemetry)
+- m_eff: front ~498kg (1 session estimate, unreliable)
+- Front RH floor: 30.0mm (warning shown in garage)
+- Rear RH: 50.0mm with 20mm rake
+- Corner weights: F 2689N / R 3015N at 58L fuel
+
+**What's ESTIMATED (needs calibration):**
+- All deflection model coefficients (16 regressions = zeros)
+- RH model (zeros — no pushrod/spring-to-RH relationship)
+- Damper force per click (using generic 18N LS, 80N HS)
+- ARB stiffness values
+- Torsion bar C constant (using BMW value)
+- Motion ratios (rear=0.60 estimate)
+- LLTD target
+- Damper zeta targets
+
+**Known bugs:**
+- Setup reader fails to parse Porsche dampers (all read as 0 in observations)
+- Roll spring system not modeled in car_model or solver
+
 ---
 
 ## Acura ARX-06 {#acura}

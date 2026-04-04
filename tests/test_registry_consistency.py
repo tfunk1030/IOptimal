@@ -30,10 +30,19 @@ class RegistryConsistencyTests(unittest.TestCase):
         bmw_exceptions = {
             "front_diff_preload_nm",  # Ferrari-only
             "rear_torsion_od_mm",     # Acura ORECA rear torsion-bar field
-            "front_roll_ls",          # Acura ORECA roll dampers
+            "front_roll_ls",          # Acura/Porsche roll dampers
             "front_roll_hs",
+            "front_roll_hs_slope",    # Porsche Multimatic front roll damper
             "rear_roll_ls",
             "rear_roll_hs",
+            "rear_3rd_ls_comp",       # Porsche Multimatic rear 3rd dampers
+            "rear_3rd_hs_comp",
+            "rear_3rd_ls_rbd",
+            "rear_3rd_hs_rbd",
+            "front_roll_spring_nmm",  # Porsche Multimatic roll spring
+            "front_roll_perch_mm",
+            "front_arb_setting",      # Porsche Connected/Disconnected toggle
+            "rear_spring_nmm",        # Alias for rear_spring_rate_nmm
         }
         missing = [f.canonical_key for f in settable if f.canonical_key not in bmw and f.canonical_key not in bmw_exceptions]
         self.assertEqual(missing, [], f"BMW missing settable fields: {missing}")

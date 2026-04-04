@@ -147,13 +147,26 @@ _FIELD_DEFS: list[FieldDefinition] = [
     FieldDefinition("rear_hs_comp", "settable", 6, "clicks", "discrete", True, True, "rear_hs_comp"),
     FieldDefinition("rear_hs_rbd", "settable", 6, "clicks", "discrete", True, True, "rear_hs_rbd"),
     FieldDefinition("rear_hs_slope", "settable", 6, "clicks", "discrete", True, True, "rear_hs_slope"),
-    # Roll dampers (ORECA heave+roll architecture — Acura ARX-06)
+    # Roll dampers (ORECA/Multimatic heave+roll architecture — Acura ARX-06, Porsche 963)
     FieldDefinition("front_roll_ls", "settable", 6, "clicks", "discrete", True, False, "front_roll_ls"),
     FieldDefinition("front_roll_hs", "settable", 6, "clicks", "discrete", True, False, "front_roll_hs"),
+    FieldDefinition("front_roll_hs_slope", "settable", 6, "clicks", "discrete", True, False, "front_roll_hs_slope"),
     FieldDefinition("rear_roll_ls", "settable", 6, "clicks", "discrete", True, False, "rear_roll_ls"),
     FieldDefinition("rear_roll_hs", "settable", 6, "clicks", "discrete", True, False, "rear_roll_hs"),
+    # Rear 3rd dampers (Porsche Multimatic — separate from corner dampers)
+    FieldDefinition("rear_3rd_ls_comp", "settable", 6, "clicks", "discrete", True, False, "rear_3rd_ls_comp"),
+    FieldDefinition("rear_3rd_hs_comp", "settable", 6, "clicks", "discrete", True, False, "rear_3rd_hs_comp"),
+    FieldDefinition("rear_3rd_ls_rbd", "settable", 6, "clicks", "discrete", True, False, "rear_3rd_ls_rbd"),
+    FieldDefinition("rear_3rd_hs_rbd", "settable", 6, "clicks", "discrete", True, False, "rear_3rd_hs_rbd"),
     # Rear torsion bar OD (ORECA: rear also uses torsion bars)
     FieldDefinition("rear_torsion_od_mm", "settable", 3, "mm", "continuous", True, False, "rear_torsion_od_mm"),
+    # Roll spring (Porsche Multimatic — front roll spring + perch)
+    FieldDefinition("front_roll_spring_nmm", "settable", 3, "N/mm", "continuous", True, False, "front_roll_spring_nmm"),
+    FieldDefinition("front_roll_perch_mm", "settable", 3, "mm", "continuous", True, False, "front_roll_perch_mm"),
+    # Front ARB setting (Porsche — Connected/Disconnected toggle, separate from size labels)
+    FieldDefinition("front_arb_setting", "settable", 4, "", "string", True, False, "front_arb_setting"),
+    # Rear spring rate alias (some cars use this canonical key instead of rear_spring_rate_nmm)
+    FieldDefinition("rear_spring_nmm", "settable", 3, "N/mm", "continuous", True, False, "rear_spring_nmm"),
 
     # ── Supporting Parameters ──
     FieldDefinition("brake_bias_pct", "settable", "supporting", "%", "continuous", True, False, "brake_bias_pct"),
@@ -401,23 +414,71 @@ _FERRARI_SPECS.update({
 
 # Porsche 963 GTP — minimal mapping
 _PORSCHE_SPECS: dict[str, CarFieldSpec] = {
+    # --- Aero ---
     "wing_angle_deg":           _S("TiresAero.AeroSettings.RearWingAngle",           "CarSetup_TiresAero_AeroSettings_RearWingAngle"),
-    "front_pushrod_offset_mm":  _S("Chassis.Front.PushrodLengthOffset",              "CarSetup_Chassis_Front_PushrodLengthOffset",        range_min=-40.0, range_max=40.0, resolution=0.5),
-    "rear_pushrod_offset_mm":   _S("Chassis.Rear.PushrodLengthOffset",               "CarSetup_Chassis_Rear_PushrodLengthOffset",         range_min=-40.0, range_max=40.0, resolution=0.5),
+    # --- Ride heights ---
     "lf_ride_height_mm":        _S("Chassis.LeftFront.RideHeight",                   "CarSetup_Chassis_LeftFront_RideHeight"),
     "rf_ride_height_mm":        _S("Chassis.RightFront.RideHeight",                  "CarSetup_Chassis_RightFront_RideHeight"),
     "lr_ride_height_mm":        _S("Chassis.LeftRear.RideHeight",                    "CarSetup_Chassis_LeftRear_RideHeight"),
     "rr_ride_height_mm":        _S("Chassis.RightRear.RideHeight",                   "CarSetup_Chassis_RightRear_RideHeight"),
-    "front_heave_spring_nmm":   _S("Chassis.Front.HeaveSpring",                      "CarSetup_Chassis_Front_HeaveSpring"),
-    "rear_third_spring_nmm":    _S("Chassis.Rear.HeaveSpring",                       "CarSetup_Chassis_Rear_HeaveSpring"),
+    "front_pushrod_offset_mm":  _S("Chassis.Front.PushrodLengthOffset",              "CarSetup_Chassis_Front_PushrodLengthOffset",        range_min=-40.0, range_max=40.0, resolution=0.5),
+    "rear_pushrod_offset_mm":   _S("Chassis.Rear.PushrodLengthOffset",               "CarSetup_Chassis_Rear_PushrodLengthOffset",         range_min=-40.0, range_max=40.0, resolution=0.5),
+    # --- Heave / Third ---
+    "front_heave_spring_nmm":   _S("Chassis.Front.HeaveSpring",                      "CarSetup_Chassis_Front_HeaveSpring",                range_min=20.0, range_max=200.0, resolution=10.0),
+    "front_heave_perch_mm":     _S("Chassis.Front.HeavePerchOffset",                 "CarSetup_Chassis_Front_HeavePerchOffset",           range_min=0.0, range_max=100.0, resolution=0.5),
+    "rear_third_spring_nmm":    _S("Chassis.Rear.HeaveSpring",                       "CarSetup_Chassis_Rear_HeaveSpring",                 range_min=0.0, range_max=300.0, resolution=10.0),
+    "rear_third_perch_mm":      _S("Chassis.Rear.ThirdPerchOffset",                  "CarSetup_Chassis_Rear_ThirdPerchOffset",            range_min=0.0, range_max=150.0, resolution=0.5),
+    # --- Corner springs ---
+    "rear_spring_nmm":          _S("Chassis.LeftRear.SpringRate",                    "CarSetup_Chassis_LeftRear_SpringRate",              range_min=100.0, range_max=400.0, resolution=10.0),
+    "rear_spring_perch_mm":     _S("Chassis.LeftRear.SpringPerchOffset",             "CarSetup_Chassis_LeftRear_SpringPerchOffset",       range_min=0.0, range_max=150.0, resolution=0.5),
+    # --- Roll spring (Porsche Multimatic unique) ---
+    "front_roll_spring_nmm":    _S("Chassis.Front.RollSpring",                       "CarSetup_Chassis_Front_RollSpring",                 range_min=50.0, range_max=300.0, resolution=10.0),
+    "front_roll_perch_mm":      _S("Chassis.Front.RollPerchOffset",                  "CarSetup_Chassis_Front_RollPerchOffset",            range_min=0.0, range_max=50.0, resolution=0.5),
+    # --- ARBs ---
+    "front_arb_setting":        _S("Chassis.Front.ArbSetting",                       "CarSetup_Chassis_Front_ArbSetting",                 options=["Disconnected", "Connected"]),
+    "front_arb_blade":          _S("Chassis.Front.ArbAdj",                           "CarSetup_Chassis_Front_ArbAdj",                     range_min=1, range_max=5, parse_fn="int"),
+    "rear_arb_size":            _S("Chassis.Rear.ArbSize",                           "CarSetup_Chassis_Rear_ArbSize",                     options=["Disconnected", "Soft", "Medium", "Stiff"]),
+    "rear_arb_blade":           _S("Chassis.Rear.ArbAdj",                            "CarSetup_Chassis_Rear_ArbAdj",                      range_min=1, range_max=5, parse_fn="int"),
+    # --- Geometry ---
     "front_camber_deg":         _S("Chassis.LeftFront.Camber",                       "CarSetup_Chassis_LeftFront_Camber"),
     "rear_camber_deg":          _S("Chassis.LeftRear.Camber",                        "CarSetup_Chassis_LeftRear_Camber"),
     "front_toe_mm":             _S("Chassis.Front.ToeIn",                            "CarSetup_Chassis_Front_ToeIn"),
     "rear_toe_mm":              _S("Chassis.LeftRear.ToeIn",                         "CarSetup_Chassis_LeftRear_ToeIn"),
-    "fuel_l":                   _S("BrakesDriveUnit.Fuel.FuelLevel",                 "CarSetup_BrakesDriveUnit_Fuel_FuelLevel"),
+    # --- Front heave dampers (4 params, no slope) ---
+    "front_ls_comp":            _S("Dampers.FrontHeave.LsCompDamping",               "CarSetup_Dampers_FrontHeave_LsCompDamping",         range_min=1, range_max=20, parse_fn="int"),
+    "front_hs_comp":            _S("Dampers.FrontHeave.HsCompDamping",               "CarSetup_Dampers_FrontHeave_HsCompDamping",         range_min=1, range_max=20, parse_fn="int"),
+    "front_ls_rbd":             _S("Dampers.FrontHeave.LsRbdDamping",                "CarSetup_Dampers_FrontHeave_LsRbdDamping",          range_min=1, range_max=20, parse_fn="int"),
+    "front_hs_rbd":             _S("Dampers.FrontHeave.HsRbdDamping",                "CarSetup_Dampers_FrontHeave_HsRbdDamping",          range_min=1, range_max=20, parse_fn="int"),
+    # --- Front roll dampers (3 params: LS, HS, HS slope) ---
+    "front_roll_ls":            _S("Dampers.FrontRoll.LsDamping",                    "CarSetup_Dampers_FrontRoll_LsDamping",              range_min=1, range_max=20, parse_fn="int"),
+    "front_roll_hs":            _S("Dampers.FrontRoll.HsDamping",                    "CarSetup_Dampers_FrontRoll_HsDamping",              range_min=1, range_max=20, parse_fn="int"),
+    "front_roll_hs_slope":      _S("Dampers.FrontRoll.HsDampSlope",                  "CarSetup_Dampers_FrontRoll_HsDampSlope",            range_min=1, range_max=20, parse_fn="int"),
+    # --- Rear corner dampers (5 params per corner, with HS slope) ---
+    "rear_ls_comp":             _S("Chassis.LeftRear.LsCompDamping",                 "CarSetup_Chassis_LeftRear_LsCompDamping",           range_min=1, range_max=20, parse_fn="int"),
+    "rear_hs_comp":             _S("Chassis.LeftRear.HsCompDamping",                 "CarSetup_Chassis_LeftRear_HsCompDamping",           range_min=1, range_max=20, parse_fn="int"),
+    "rear_hs_slope":            _S("Chassis.LeftRear.HsCompDampSlope",               "CarSetup_Chassis_LeftRear_HsCompDampSlope",         range_min=1, range_max=20, parse_fn="int"),
+    "rear_ls_rbd":              _S("Chassis.LeftRear.LsRbdDamping",                  "CarSetup_Chassis_LeftRear_LsRbdDamping",            range_min=1, range_max=20, parse_fn="int"),
+    "rear_hs_rbd":              _S("Chassis.LeftRear.HsRbdDamping",                  "CarSetup_Chassis_LeftRear_HsRbdDamping",            range_min=1, range_max=20, parse_fn="int"),
+    # --- Rear 3rd dampers (4 params, no slope) ---
+    "rear_3rd_ls_comp":         _S("Dampers.Rear3rd.LsCompDamping",                  "CarSetup_Dampers_Rear3rd_LsCompDamping",            range_min=1, range_max=20, parse_fn="int"),
+    "rear_3rd_hs_comp":         _S("Dampers.Rear3rd.HsCompDamping",                  "CarSetup_Dampers_Rear3rd_HsCompDamping",            range_min=1, range_max=20, parse_fn="int"),
+    "rear_3rd_ls_rbd":          _S("Dampers.Rear3rd.LsRbdDamping",                   "CarSetup_Dampers_Rear3rd_LsRbdDamping",             range_min=1, range_max=20, parse_fn="int"),
+    "rear_3rd_hs_rbd":          _S("Dampers.Rear3rd.HsRbdDamping",                   "CarSetup_Dampers_Rear3rd_HsRbdDamping",             range_min=1, range_max=20, parse_fn="int"),
+    # --- Brakes ---
     "brake_bias_pct":           _S("BrakesDriveUnit.BrakeSpec.BrakePressureBias",    "CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias"),
+    "brake_bias_target":        _S("BrakesDriveUnit.BrakeSpec.BrakeBiasTarget",      "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget"),
+    "brake_bias_migration":     _S("BrakesDriveUnit.BrakeSpec.BrakeBiasMigration",   "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration"),
+    "pad_compound":             _S("BrakesDriveUnit.BrakeSpec.PadCompound",          "CarSetup_BrakesDriveUnit_BrakeSpec_PadCompound"),
+    "front_master_cyl_mm":      _S("BrakesDriveUnit.BrakeSpec.FrontMasterCyl",       "CarSetup_BrakesDriveUnit_BrakeSpec_FrontMasterCyl"),
+    "rear_master_cyl_mm":       _S("BrakesDriveUnit.BrakeSpec.RearMasterCyl",        "CarSetup_BrakesDriveUnit_BrakeSpec_RearMasterCyl"),
+    # --- Diff ---
+    "diff_ramp_angles":         _S("BrakesDriveUnit.RearDiffSpec.CoastDriveRampAngles", "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles"),
+    "diff_clutch_plates":       _S("BrakesDriveUnit.RearDiffSpec.ClutchFrictionPlates", "CarSetup_BrakesDriveUnit_RearDiffSpec_ClutchFrictionPlates", parse_fn="int"),
+    "diff_preload_nm":          _S("BrakesDriveUnit.RearDiffSpec.Preload",           "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload"),
+    # --- TC / Fuel ---
     "tc_gain":                  _S("BrakesDriveUnit.TractionControl.TractionControlGain", "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain", parse_fn="int"),
     "tc_slip":                  _S("BrakesDriveUnit.TractionControl.TractionControlSlip", "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip", parse_fn="int"),
+    "fuel_l":                   _S("BrakesDriveUnit.Fuel.FuelLevel",                 "CarSetup_BrakesDriveUnit_Fuel_FuelLevel"),
 }
 
 # Cadillac — BMW base + indexed ARBs

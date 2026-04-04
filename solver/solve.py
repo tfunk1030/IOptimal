@@ -543,6 +543,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             arb_lltd=step4.lltd_achieved,
             arb_lltd_target=step4.lltd_target,
             rarb_sensitivity=step4.rarb_sensitivity_per_blade,
+            car=car,
         )
         binding = sensitivity_report.binding_constraints()
         if binding and not args.report_only:

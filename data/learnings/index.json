@@ -156,7 +156,8 @@
     "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_13-24-28",
     "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_15-21-02",
     "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_15-35-40",
-    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_15-58-44"
+    "acura_hockenheimring_baden-w\u00fcrttemberg_acuraarx06gtp_hockenheim_gp_2026-03-30_15-58-44",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-03_22-24-18"
   ],
   "total_deltas": 329,
   "cars_seen": [
@@ -170,8 +171,9 @@
     "Sebring International Raceway_International",
     "Silverstone Circuit_Arena Grand Prix",
     "Hockenheimring Baden-W\u00fcrttemberg_Grand Prix",
-    "Daytona International Speedway_Road Course"
+    "Daytona International Speedway_Road Course",
+    "Autodromo Internacional do Algarve_Grand Prix"
   ],
-  "last_updated": "2026-04-04T02:57:09.159002+00:00",
-  "total_observations": 155
+  "last_updated": "2026-04-04T04:32:31.847713+00:00",
+  "total_observations": 156
 }

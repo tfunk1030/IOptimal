@@ -627,7 +627,7 @@ def produce(
 
     # ── Phase G: Compute solver modifiers ──
     log("Computing solver modifiers...")
-    modifiers = compute_modifiers(diagnosis, driver, measured)
+    modifiers = compute_modifiers(diagnosis, driver, measured, car=car)
     if modifiers.reasons:
         for r in modifiers.reasons:
             log(f"  {r}")

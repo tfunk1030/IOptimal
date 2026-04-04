@@ -127,7 +127,10 @@ class SetupExplorer:
         rear_camber_deg: float,
     ) -> float:
         c_torsion = self.car.corner_spring.front_torsion_c
-        front_wheel_rate = c_torsion * (front_torsion_od_mm ** 4)
+        if c_torsion > 0:
+            front_wheel_rate = c_torsion * (front_torsion_od_mm ** 4)
+        else:
+            front_wheel_rate = self.car.corner_spring.front_roll_spring_rate_nmm
         front_grip = max(0.0, min(1.0, (80 - front_wheel_rate) / 60))
         rear_grip = max(0.0, min(1.0, (300 - rear_spring_nmm) / 200))
         front_camber_score = max(0.0, min(1.0, 1.0 - abs(front_camber_deg - (-3.5)) / 3.0))
@@ -162,7 +165,10 @@ class SetupExplorer:
     def _is_conventional(self, c: ExplorerCandidate) -> tuple[bool, list[str]]:
         unconventional: list[str] = []
         c_torsion = self.car.corner_spring.front_torsion_c
-        front_wr = c_torsion * (c.front_torsion_od_mm ** 4)
+        if c_torsion > 0:
+            front_wr = c_torsion * (c.front_torsion_od_mm ** 4)
+        else:
+            front_wr = self.car.corner_spring.front_roll_spring_rate_nmm
         if c.front_heave_nmm > 0 and front_wr > 0:
             ratio = c.front_heave_nmm / front_wr
             if ratio < 1.5 or ratio > 3.5:
@@ -251,7 +257,10 @@ class SetupExplorer:
             f_arb = int(front_arb[idx])
             r_arb = int(rear_arb[idx])
 
-            front_wr = c_torsion * (torsion_od ** 4)
+            if c_torsion > 0:
+                front_wr = c_torsion * (torsion_od ** 4)
+            else:
+                front_wr = self.car.corner_spring.front_roll_spring_rate_nmm
             rear_wr = row["rear_spring_nmm"] * mr_rear ** 2
 
             aero = self._score_aero(row["front_heave_nmm"], row["rear_third_nmm"])

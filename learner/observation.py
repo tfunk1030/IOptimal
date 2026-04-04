@@ -212,12 +212,23 @@ def build_observation(
                 "hs_comp": s.rear_hs_comp, "hs_rbd": s.rear_hs_rbd,
                 "hs_slope": s.rear_hs_slope},
     }
-    # Roll dampers (ORECA heave+roll architecture)
+    # Roll dampers (ORECA heave+roll architecture, also Porsche Multimatic)
     if getattr(s, "front_roll_ls", 0) or getattr(s, "rear_roll_ls", 0):
         setup["roll_dampers"] = {
-            "front": {"ls": s.front_roll_ls, "hs": s.front_roll_hs},
+            "front": {"ls": s.front_roll_ls, "hs": s.front_roll_hs,
+                      "hs_slope": getattr(s, "front_roll_hs_slope", 0)},
             "rear": {"ls": s.rear_roll_ls, "hs": s.rear_roll_hs},
         }
+    # Rear 3rd dampers (Porsche Multimatic)
+    if getattr(s, "rear_3rd_ls_comp", 0) or getattr(s, "rear_3rd_hs_comp", 0):
+        setup["rear_3rd_dampers"] = {
+            "ls_comp": s.rear_3rd_ls_comp, "hs_comp": s.rear_3rd_hs_comp,
+            "ls_rbd": s.rear_3rd_ls_rbd, "hs_rbd": s.rear_3rd_hs_rbd,
+        }
+    # Front roll spring (Porsche Multimatic)
+    if getattr(s, "front_roll_spring_nmm", 0.0) > 0:
+        setup["front_roll_spring_nmm"] = s.front_roll_spring_nmm
+        setup["front_roll_perch_mm"] = getattr(s, "front_roll_perch_mm", 0.0)
     # Rear torsion bar OD (ORECA: rear also uses torsion bars)
     if getattr(s, "rear_torsion_od_mm", 0.0) > 0:
         setup["rear_torsion_od_mm"] = s.rear_torsion_od_mm

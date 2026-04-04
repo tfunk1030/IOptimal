@@ -383,7 +383,7 @@ class RakeSolver:
 
     def solve(
         self,
-        target_balance: float = 50.14,
+        target_balance: float | None = None,
         balance_tolerance: float = 0.1,
         fuel_load_l: float = 89.0,
         pin_front_min: bool = True,
@@ -391,7 +391,8 @@ class RakeSolver:
         """Find optimal ride heights for target DF balance.
 
         Args:
-            target_balance: Target DF balance (% front). Default 50.14%.
+            target_balance: Target DF balance (% front). If None, uses the
+                car model's default_df_balance_pct.
             balance_tolerance: Maximum acceptable deviation from target (%).
             fuel_load_l: Fuel load in liters (affects mass for compression).
             pin_front_min: If True (default), pin front static RH at the sim
@@ -402,6 +403,8 @@ class RakeSolver:
         Returns:
             RakeSolution with dynamic targets, static settings, and pushrod offsets.
         """
+        if target_balance is None:
+            target_balance = self.car.default_df_balance_pct
         # Ride height excursion from track surface (use clean-track p99,
         # kerb strikes are not representative of sustained platform behavior)
         front_sv_p99 = (self.track.shock_vel_p99_front_clean_mps

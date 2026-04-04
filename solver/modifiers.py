@@ -91,6 +91,7 @@ def compute_modifiers(
     diagnosis: Diagnosis,
     driver: DriverProfile,
     measured: MeasuredState,
+    car: "CarModel | None" = None,
 ) -> SolverModifiers:
     """Compute solver modifiers from diagnosis, driver profile, and measurements.
 
@@ -102,12 +103,26 @@ def compute_modifiers(
         Driver behavior classification.
     measured : MeasuredState
         Raw telemetry measurements.
+    car : CarModel | None
+        Car model for per-car spring range scaling. If None, uses BMW-range
+        defaults (30 N/mm minimum).
 
     Returns
     -------
     SolverModifiers
     """
     mods = SolverModifiers()
+
+    # Per-car heave spring minimum for scaling floor thresholds.
+    # BMW range starts at ~30 N/mm; Porsche at ~180 N/mm; Acura at ~90 N/mm.
+    # Using absolute BMW values would never trigger for stiffer-sprung cars.
+    _heave_min = 30.0  # BMW-range fallback
+    if car is not None:
+        _hs = getattr(car, "heave_spring", None)
+        if _hs is not None:
+            _range = getattr(_hs, "front_spring_range_nmm", None)
+            if _range is not None and len(_range) >= 2:
+                _heave_min = _range[0]
 
     # ── From Diagnosis Problems ──
     for problem in diagnosis.problems:
@@ -147,8 +162,8 @@ def compute_modifiers(
             if "front" in symptom and problem.measured > 5:
                 # Floor estimate: use heave spring natural frequency constraint
                 # Higher shock velocity → stiffer spring needed to control platform
-                # BMW heave range is 30-50 N/mm; scale from p99 shock velocity
-                sv_floor = max(30.0, 35.0 + _num(measured.front_shock_vel_p99_mps) * 50)
+                # Scale from p99 shock velocity relative to car's heave spring range
+                sv_floor = max(_heave_min, _heave_min * 1.17 + _num(measured.front_shock_vel_p99_mps) * 50)
                 mods.front_heave_min_floor_nmm = max(
                     mods.front_heave_min_floor_nmm,
                     sv_floor,
@@ -164,7 +179,7 @@ def compute_modifiers(
             scrape_count = int(problem.measured)
             if scrape_count > 20:
                 # Critical: frequent scraping, need significant stiffening
-                scrape_floor = 50.0
+                scrape_floor = _heave_min * 1.67  # ~50 N/mm for BMW (30*1.67), ~150 for Porsche
                 mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, scrape_floor)
                 mods.reasons.append(
                     f"Splitter scrape detected ({scrape_count} events) → front heave floor "
@@ -172,7 +187,7 @@ def compute_modifiers(
                 )
             elif scrape_count > 10:
                 # Significant: moderate scraping, 10-20% stiffer
-                scrape_floor = 42.0
+                scrape_floor = _heave_min * 1.40  # ~42 N/mm for BMW (30*1.4), ~126 for Porsche
                 mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, scrape_floor)
                 mods.reasons.append(
                     f"Splitter scrape detected ({scrape_count} events) → front heave floor "
@@ -214,9 +229,10 @@ def compute_modifiers(
     pitch_range_deg = _num(measured.pitch_range_deg)
     if front_heave_vel_hs_pct > 33:
         # >33% of heave velocity in HS regime = platform is getting pounded by surface
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 40.0)
+        _hs_floor = _heave_min * 1.33  # ~40 N/mm for BMW (30*1.33)
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _hs_floor)
         mods.reasons.append(
-            f"Heave HS regime {front_heave_vel_hs_pct:.0f}% > 33% → heave floor 40 N/mm"
+            f"Heave HS regime {front_heave_vel_hs_pct:.0f}% > 33% → heave floor {_hs_floor:.0f} N/mm"
         )
     if front_heave_vel_p95 > 0.35:
         # Very high heave velocity → increase HS damping to control platform
@@ -227,9 +243,10 @@ def compute_modifiers(
 
     # ── From Pitch Dynamics (platform stability) ──
     if pitch_range_deg > 1.5:
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 38.0)
+        _pitch_floor = _heave_min * 1.27  # ~38 N/mm for BMW (30*1.27)
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _pitch_floor)
         mods.reasons.append(
-            f"Pitch range {pitch_range_deg:.2f}° > 1.5° → heave floor 38 N/mm"
+            f"Pitch range {pitch_range_deg:.2f}° > 1.5° → heave floor {_pitch_floor:.0f} N/mm"
         )
 
     # ── From Heave Travel Utilization ──
@@ -237,14 +254,17 @@ def compute_modifiers(
     # even if the p99 bottoming model passes (it uses shock velocity p99 which misses extreme events).
     travel_pct = measured.front_heave_travel_used_pct or 0.0
     if travel_pct >= 90.0:
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 60.0)
-        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 90% → heave floor 60 N/mm (bottoming risk)")
+        _travel_floor = _heave_min * 2.0  # ~60 N/mm for BMW (30*2.0), ~180 for Porsche
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
+        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 90% → heave floor {_travel_floor:.0f} N/mm (bottoming risk)")
     elif travel_pct >= 80.0:
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 50.0)
-        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 80% → heave floor 50 N/mm")
+        _travel_floor = _heave_min * 1.67  # ~50 N/mm for BMW (30*1.67)
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
+        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 80% → heave floor {_travel_floor:.0f} N/mm")
     elif travel_pct >= 70.0:
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 40.0)
-        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 70% → heave floor 40 N/mm")
+        _travel_floor = _heave_min * 1.33  # ~40 N/mm for BMW (30*1.33)
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
+        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 70% → heave floor {_travel_floor:.0f} N/mm")
 
     # ── From Directional Understeer (balance weighting) ──
     us_left = _num(measured.understeer_left_turn_deg)

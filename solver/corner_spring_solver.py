@@ -278,16 +278,21 @@ class CornerSpringSolver:
         front_rate = max(front_target_rate, front_min_for_ratio)
         front_rate = min(front_rate, front_max_for_ratio)
 
-        # Convert to torsion bar OD
-        front_od = csm.torsion_bar_od_for_rate(front_rate)
-        front_od = csm.snap_torsion_od(front_od)
+        # Convert to torsion bar OD (skip for cars with no front torsion bar, e.g. Porsche)
+        if csm.front_torsion_c > 0 and csm.front_torsion_od_options:
+            front_od = csm.torsion_bar_od_for_rate(front_rate)
+            front_od = csm.snap_torsion_od(front_od)
 
-        # Clamp to valid OD range
-        front_od = max(front_od, csm.front_torsion_od_range_mm[0])
-        front_od = min(front_od, csm.front_torsion_od_range_mm[1])
+            # Clamp to valid OD range
+            front_od = max(front_od, csm.front_torsion_od_range_mm[0])
+            front_od = min(front_od, csm.front_torsion_od_range_mm[1])
 
-        # Recalculate actual rate from snapped OD
-        front_rate = csm.torsion_bar_rate(front_od)
+            # Recalculate actual rate from snapped OD
+            front_rate = csm.torsion_bar_rate(front_od)
+        else:
+            # No front torsion bar (e.g. Porsche uses Roll Spring)
+            # Keep the computed front_rate as-is (wheel rate from frequency targeting)
+            front_od = 0.0
         front_freq = self.natural_freq(front_rate, m_f_corner)
 
         # === REAR: Third-to-corner ratio targeting ===
