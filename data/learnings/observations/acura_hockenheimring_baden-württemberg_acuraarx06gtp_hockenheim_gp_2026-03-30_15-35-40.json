@@ -4,7 +4,7 @@
   "car": "acura",
   "track": "Hockenheimring Baden-W\u00fcrttemberg",
   "track_config": "Grand Prix",
-  "timestamp": "2026-03-30T20:51:40.345920+00:00",
+  "timestamp": "2026-04-04T02:57:01.157524+00:00",
   "ibt_date": "",
   "setup": {
     "wing": 10.0,
@@ -433,21 +433,23 @@
   "solver_predictions": {
     "front_rh_std_mm": 0.0,
     "rear_rh_std_mm": 0.0,
-    "lltd_predicted": 0.5301,
+    "lltd_predicted": 0.5369,
     "body_roll_predicted_deg_per_g": 0.0,
     "front_bottoming_predicted": 0,
     "front_heave_travel_used_pct": null,
     "front_excursion_mm": 43.176,
-    "braking_pitch_deg": 2.842,
-    "front_lock_p95": 0.1251,
-    "rear_power_slip_p95": 0.0838,
-    "body_slip_p95_deg": 2.596,
-    "understeer_low_deg": 0.334,
-    "understeer_high_deg": -0.143,
-    "front_pressure_hot_kpa": 173.517,
-    "rear_pressure_hot_kpa": 170.5
+    "braking_pitch_deg": 2.9,
+    "front_lock_p95": 0.1253,
+    "rear_power_slip_p95": 0.0879,
+    "body_slip_p95_deg": 2.437,
+    "understeer_low_deg": 0.41,
+    "understeer_high_deg": -0.14,
+    "front_pressure_hot_kpa": 173.65,
+    "rear_pressure_hot_kpa": 170.65
   },
   "solver_comparison": {},
+  "validation_failed": false,
+  "setup_fingerprint": "",
   "corner_performance": [
     {
       "corner_id": 0,

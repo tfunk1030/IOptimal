@@ -1,18 +1,28 @@
 {
   "car": "acura",
   "track": "Hockenheimring Baden-W\u00fcrttemberg",
-  "session_count": 7,
+  "session_count": 24,
   "key_insights": [
-    "Lap time range: 89.057s \u2013 96.381s (7.324s window across 7 sessions)",
+    "Lap time range: 87.599s \u2013 96.381s (8.781s window across 24 sessions)",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
-    "Measured roll gradient: 0.325 deg/g (+/- 0.118)"
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "Measured roll gradient: 0.377 deg/g (+/- 0.092)"
   ],
-  "setup_trends": [],
+  "setup_trends": [
+    "front_heave_nmm: trending increasing (180.0 -> 200.0 over 24 sessions)",
+    "rear_third_nmm: trending increasing (120.0 -> 220.0 over 24 sessions)",
+    "rear_arb_blade: trending decreasing (2.0 -> 1.0 over 24 sessions)"
+  ],
   "unresolved_questions": [
-    "thermal:Front carcass temp 34C (target >80C) appears in 7/7 sessions \u2014 may need attention",
-    "thermal:Rear carcass temp 34C (target >80C) appears in 7/7 sessions \u2014 may need attention"
+    "thermal:Front carcass temp 34C (target >80C) appears in 12/24 sessions \u2014 may need attention",
+    "thermal:Rear carcass temp 34C (target >80C) appears in 12/24 sessions \u2014 may need attention"
   ]
 }
