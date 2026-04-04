@@ -1,0 +1,116 @@
+{
+  "session_before": "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-04_10-52-26__lap_2",
+  "session_after": "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-04_10-52-26__lap_1",
+  "car": "porsche",
+  "track": "Autodromo Internacional do Algarve",
+  "setup_changes": [],
+  "telemetry_effects": [
+    {
+      "metric": "front_bottoming_events",
+      "category": "platform",
+      "before": 17.0,
+      "after": 11.0,
+      "delta": -6.0,
+      "pct_change": -35.3,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_bottoming_events",
+      "category": "platform",
+      "before": 2.0,
+      "after": 0.0,
+      "delta": -2.0,
+      "pct_change": -100.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.09646228700876236,
+      "after": 0.10352067649364471,
+      "delta": 0.0071,
+      "pct_change": 7.3,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.11537818610668182,
+      "after": 0.11994786560535431,
+      "delta": 0.0046,
+      "pct_change": 4.0,
+      "significance": "small"
+    },
+    {
+      "metric": "heave_bottoming_events_front",
+      "category": "platform",
+      "before": 135.0,
+      "after": 120.0,
+      "delta": -15.0,
+      "pct_change": -11.1,
+      "significance": "large"
+    },
+    {
+      "metric": "understeer_high_speed_deg",
+      "category": "balance",
+      "before": -0.15535713732242584,
+      "after": -0.1623128205537796,
+      "delta": -0.007,
+      "pct_change": -4.5,
+      "significance": "small"
+    },
+    {
+      "metric": "understeer_low_speed_deg",
+      "category": "balance",
+      "before": -0.11566158384084702,
+      "after": -0.09270670264959335,
+      "delta": 0.023,
+      "pct_change": 19.8,
+      "significance": "large"
+    },
+    {
+      "metric": "body_slip_p95_deg",
+      "category": "balance",
+      "before": 2.1160600185394287,
+      "after": 1.7718318700790405,
+      "delta": -0.3442,
+      "pct_change": -16.3,
+      "significance": "large"
+    },
+    {
+      "metric": "dynamic_front_rh_mm",
+      "category": "aero",
+      "before": 17.31341552734375,
+      "after": 16.907752990722656,
+      "delta": -0.4057,
+      "pct_change": -2.3,
+      "significance": "small"
+    },
+    {
+      "metric": "roll_gradient_deg_per_g",
+      "category": "aero",
+      "before": 0.116,
+      "after": 0.221,
+      "delta": 0.105,
+      "pct_change": 90.5,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_dominant_freq_hz",
+      "category": "damper",
+      "before": 3.25,
+      "after": 4.14,
+      "delta": 0.89,
+      "pct_change": 27.4,
+      "significance": "large"
+    }
+  ],
+  "hypotheses": [],
+  "num_setup_changes": 0,
+  "controlled_experiment": true,
+  "changed_steps": [],
+  "lap_time_delta_s": 0.998,
+  "driver_style_changed": false,
+  "key_finding": "No setup changes detected between sessions.",
+  "confidence_level": "high"
+}

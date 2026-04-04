@@ -2435,8 +2435,8 @@ PORSCHE_963 = CarModel(
     heave_spring=HeaveSpringModel(
         front_m_eff_kg=498.0,   # CALIBRATED: empirical from 2 Sebring sessions
         rear_m_eff_kg=800.0,    # ESTIMATE — Porsche rear heave is lighter than BMW; needs heave sweep
-        front_spring_range_nmm=(20.0, 200.0),   # From garage_params schema
-        rear_spring_range_nmm=(0.0, 300.0),      # CORRECTED: Porsche third max ~300, NOT 1000 (was BMW default)
+        front_spring_range_nmm=(150.0, 600.0),  # CORRECTED: real garage range 150–600 N/mm (was 20–200 from schema error)
+        rear_spring_range_nmm=(0.0, 800.0),      # CORRECTED: real garage third spring 0–800 N/mm (was 300, previous correction was also wrong)
         perch_offset_front_baseline_mm=58.0,     # CORRECTED: from Algarve starting setup (was -13 BMW value!)
         perch_offset_rear_baseline_mm=120.5,     # CORRECTED: from Algarve starting setup (was 43 BMW value!)
         sigma_target_mm=8.0,    # Slightly tighter than BMW 10mm — Porsche is aero-dominant
@@ -2449,8 +2449,8 @@ PORSCHE_963 = CarModel(
         front_torsion_od_ref_mm=0.0,
         front_torsion_od_range_mm=(0.0, 0.0),
         front_torsion_od_options=[],  # CORRECTED: empty — no OD options for Porsche
-        front_roll_spring_rate_nmm=100.0,  # CALIBRATED: from Algarve garage screenshot
-        rear_spring_range_nmm=(100.0, 400.0),  # From garage screenshot (spring rate 120-220 tested)
+        front_roll_spring_rate_nmm=100.0,  # Baseline from Algarve setup. Real garage range: 100–320 N/mm (model only stores single value)
+        rear_spring_range_nmm=(105.0, 280.0),  # CORRECTED: real garage range 105–280 N/mm (was 100–400)
         rear_spring_step_nmm=10.0,
         front_motion_ratio=1.0,
         rear_motion_ratio=0.60,  # ESTIMATE — Multimatic pushrod geometry
@@ -2468,27 +2468,32 @@ PORSCHE_963 = CarModel(
         rear_stiffness_nmm_deg=[0.0, 1500.0, 3000.0, 4500.0],  # Disconnected=0 added
         rear_baseline_size="Stiff",          # From Algarve starting setup
         rear_baseline_blade=2,               # From Algarve starting setup
-        front_blade_count=5,
-        rear_blade_count=5,
+        front_blade_count=13,  # CORRECTED: real garage 1–13 (was 5)
+        rear_blade_count=16,   # CORRECTED: real garage 1–16 (was 5)
         track_width_front_mm=1700.0,  # ESTIMATE — Multimatic narrower front than Dallara
         track_width_rear_mm=1620.0,   # ESTIMATE — Multimatic narrower rear
     ),
     geometry=WheelGeometryModel(
         front_camber_baseline_deg=-2.9,  # ESTIMATE — needs Porsche IBT
-        rear_camber_baseline_deg=-1.8,   # ESTIMATE
+        rear_camber_baseline_deg=-1.9,   # CORRECTED: real garage max is -1.9 (was -1.8)
         front_roll_gain=0.60,            # ESTIMATE — Multimatic geometry
         rear_roll_gain=0.48,             # ESTIMATE — Multimatic slightly less rear gain
         # Porsche is gentle on tyres — can run more aggressive geometry
     ),
     damper=DamperModel(
         # DSSV spool-valve dampers — more progressive response than shim stacks.
-        # 20 clicks vs BMW 11 — finer resolution, lower force per click.
-        # DSSV: only 4% force degradation over temperature range (vs 14-16% shim).
-        # Rough scaling: BMW total range ~11*18=198N LS. Porsche 20 clicks ~same range -> ~10N/click
-        ls_force_per_click_n=10.0,  # ESTIMATE — DSSV 20-click, scaled from BMW range (was 18 BMW value)
-        hs_force_per_click_n=45.0,  # ESTIMATE — DSSV 20-click, scaled from BMW range ~11*80=880N -> 20*45=900N
+        # Real Porsche damper architecture (4 separate systems):
+        #   Front heave: LS comp, HS comp, LS rbd, HS rbd (0–11)
+        #   Front roll: LS damping, HS damping, HS damp slope (0–11)
+        #   L/R rear: LS comp, HS comp, HS comp slope, LS rbd, HS rbd (0–11)
+        #   Rear 3rd: LS comp, HS comp, LS rbd, HS rbd (0–5)
+        # Current model only represents front heave + front roll. Rear 3rd damper
+        # and per-corner HS comp slope are NOT modeled yet.
+        ls_force_per_click_n=10.0,  # ESTIMATE — DSSV, scaled from BMW range
+        hs_force_per_click_n=45.0,  # ESTIMATE — DSSV, scaled from BMW range
         has_roll_dampers=True,
-        # NOTE: roll_spring_front_nmm=100.0 — Porsche has front roll springs but no CarModel field exists yet; needs modeling
+        roll_ls_range=(0, 11),  # CORRECTED: real garage 0–11 (was 1–11)
+        roll_hs_range=(0, 11),  # CORRECTED: real garage 0–11 (was 1–11)
     ),
     ride_height_model=RideHeightModel(
         # CALIBRATED 2026-04-03 from 13 Algarve garage screenshots
@@ -2516,10 +2521,22 @@ PORSCHE_963 = CarModel(
     ),
     deflection=DeflectionModel.uncalibrated(),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+    garage_ranges=GarageRanges(
+        # Porsche 963 real garage ranges (from user-verified iRacing garage, 2026-04-04)
+        front_heave_nmm=(150.0, 600.0),
+        front_heave_perch_mm=(40.0, 90.0),
+        rear_third_nmm=(0.0, 800.0),
+        rear_third_perch_mm=(-150.0, 150.0),
+        rear_spring_nmm=(105.0, 280.0),
+        rear_spring_perch_mm=(-150.0, 150.0),
+        camber_front_deg=(-2.9, 0.0),
+        camber_rear_deg=(-1.9, 0.0),
+        arb_blade=(1, 16),  # rear has 1–16; front has 1–13 (model uses single range, take wider)
+    ),
 )
 
 
-# ─── Acura ARX-06 ────────────────────────────────────────────────────────────
+# ─── Acura ARX-06 ──────────��────────────────────���────────────────────────────
 # Dallara LMDh chassis (same as BMW, Cadillac). 2.4L twin-turbo V6.
 # Sharpest front end in class. Diff preload IS THE setup parameter.
 # Narrow wing range (6-10°). Best at technical tracks.

@@ -283,41 +283,48 @@ When the solver blocks a step, it prints exactly what data to collect. The gener
 **Springs (continuous):**
 | Parameter | Range | Status |
 |-----------|-------|--------|
-| Front heave | 20–200 N/mm | ❌ m_eff=176kg (unverified, reasonable) |
-| Rear third | 100–1000 N/mm | ❌ m_eff=2870kg (BMW copy — WRONG) |
+| Front heave | 150–600 N/mm | ✅ m_eff=498kg (calibrated from 2 Sebring sessions) |
+| Front roll spring | 100–320 N/mm | ⚠️ model stores single baseline (100), not range |
+| Rear L/R spring | 105–280 N/mm | ⚠️ per-side with individual perch offsets (-150 to +150) |
+| Rear third | 0–800 N/mm | ⚠️ m_eff=800kg (ESTIMATE — needs heave sweep) |
 
-**Torsion Bar:**
-- `torsion_od_options = []` — **MISSING**, same problem as Cadillac
-- Porsche torsion bar ODs from manual: [13.9, 14.34, 14.76] mm (confirm before adding)
+**Front Corner Stiffness:**
+- Porsche has **NO front torsion bar OD adjustment**. Front corner stiffness comes from the **roll spring** (100–320 N/mm).
+- `front_torsion_c=0.0`, `front_torsion_od_options=[]` — this is CORRECT (not missing).
+- The solver falls back to `front_roll_spring_rate_nmm` when torsion_c is zero.
 
-**Dampers (0–11 clicks):**
-| Issue | Detail |
-|-------|--------|
-| DSSV spool valve | BMW uses digressive shim stacks. Porsche uses DSSV spool valve — non-linear |
-| All zeta values | BMW copies — completely invalid for spool-valve behavior |
-| Has roll spring | `has_roll_dampers=False` — but Porsche 963 has a mechanical roll spring system NOT modeled |
+**Dampers (4 separate systems — DSSV spool valve):**
+| System | Channels | Range | Status |
+|--------|----------|-------|--------|
+| Front heave | LS comp, HS comp, LS rbd, HS rbd | 0–11 | ⚠️ modeled as generic damper |
+| Front roll | LS damping, HS damping, HS damp slope | 0–11 | ⚠️ `has_roll_dampers=True`, HS slope NOT modeled |
+| L/R rear | LS comp, HS comp, HS comp slope, LS rbd, HS rbd | 0–11 | ⚠️ HS comp slope NOT modeled |
+| Rear 3rd | LS comp, HS comp, LS rbd, HS rbd | 0–5 | ❌ NOT modeled — separate damper system |
 
-> **The Porsche damper model is fundamentally wrong.** DSSV behavior is non-linear and cannot
-> be described by the same force-per-click model used for BMW. The roll spring system also
-> adds a compliance path that no other car has. Until both are modeled, Porsche recommendations
-> should be treated as directional only.
+> **The Porsche damper architecture is partially wrong.** DSSV spool-valve behavior is non-linear
+> and cannot be described by the same force-per-click model used for BMW shim stacks. The rear 3rd
+> damper (0–5 range) and HS comp slope channels are not modeled. All zeta values are BMW copies.
 
 **ARB:**
-- Front only has Soft/Medium/Stiff (no Disconnected option)
+- Front: Disconnected / Connected, adj 1–13
+- Rear: Disconnected / Soft / Medium / Stiff, adj 1–16
 - Stiffness values unvalidated for Porsche
 
 **Other:**
 - Wing: 12–17 deg — aero maps present ✅
 - DF balance target: 50.5% (estimate only)
-- CG height: 345mm (BMW-adjacent, unverified)
+- CG height: 345mm (estimate, unverified)
 - Brake bias: 46.0% (from manual, unverified in IBT)
+- Roll perch offset: 14–16 (NOT modeled)
 
 **What needs calibration (priority order):**
-1. Model the DSSV damper non-linearity (architecture change required)
-2. Add roll spring to solver (currently not modeled)
-3. m_eff front and rear (heave sweep)
-4. Torsion bar OD options
-5. DF balance target
+1. m_eff rear (heave sweep — front already calibrated at 498kg)
+2. Roll spring range modeling (currently single baseline value)
+3. Rear 3rd damper system (architecture addition needed)
+4. HS comp slope channels (front roll + L/R rear)
+5. DSSV force-per-click characterization (click sweep)
+6. ARB stiffness per size (LLTD sweep)
+7. DF balance target (run sessions at different RH)
 
 ---
 
@@ -362,98 +369,512 @@ When the solver blocks a step, it prints exactly what data to collect. The gener
 
 ---
 
-## Calibration Procedures (All Cars)
+## Calibration Procedures
 
-### Step 1: Effective Mass (m_eff) — **3 sessions**
+Each procedure tells you exactly what to change in the iRacing garage, what to keep
+constant, how many laps to run, and which CLI command to run afterward. Follow the
+order — later steps depend on earlier ones being correct.
 
-Purpose: determines how much the car deflects under aero load at a given spring rate.
-If wrong: static RH targets will be off by mm, floor clearance calculations wrong.
+### Physics Background
 
-```
-Session 1: Run front heave at index/rate LOW (e.g., softest available)
-Session 2: Run front heave at index/rate MID
-Session 3: Run front heave at index/rate HIGH
-→ Extract ShockDeflStatic from each IBT
-→ Plot deflection vs spring rate → slope = F_aero / k_heave
-→ F_aero = aero downforce per corner at race speed
-→ m_eff = F_aero / g_eff
-```
-
-**After m_eff calibration: ALL static RH targets must be recalculated.**
-The perch offset formula `perch = target_rh + deflection` depends directly on m_eff.
-
----
-
-### Step 2: Spring Index → N/mm Validation (Ferrari only) — **2 sessions**
-
-Purpose: verify actual spring rate at each index.
-
-```
-For each target index: record an IBT session (3+ clean laps)
-→ IBT header contains ShockDeflStatic, TorsionBarDefl, CornerWeight
-→ Verify: k = corner_weight_N / ShockDeflStatic
-→ Run: python -m car_model.auto_calibrate --car ferrari --ibt-dir <dir>
-```
-
-**Fastest approach**: run sessions at index 0, 4, 8 (extremes + midpoint) and interpolate.
-Do NOT run all 9 — linear interpolation is fine if you have 3 anchor points.
+These procedures are based on classical vehicle dynamics methodology:
+- **m_eff measurement:** Vary spring stiffness, measure deflection change at speed.
+  `deflection = F_aero / K_spring`. Use softest available springs to maximize
+  deflection signal. (Ref: OptimumG Tech Tip Part 1, HPA Academy downforce calculation)
+- **ARB stiffness:** `roll_gradient = m*g*h_cg / K_total_roll`. Vary ONE end at a time
+  to isolate front/rear contribution. (Ref: OptimumG "Bar Talk", Suspension Secrets)
+- **Damper zeta:** Target ~0.65 critical damping at low speed, ~0.3 at high speed.
+  `Cc = 2 * sqrt(K_wheel * m_sprung_corner)`, `zeta = C_actual / Cc`.
+  (Ref: OptimumG Tech Tip Part 3, Racecomp Engineering, Far North Racing)
+- **Session count:** iRacing is deterministic — no measurement noise. 3 data points
+  (min/mid/max of range) is sufficient for linear regressions. We use 3 per sweep,
+  not 5, to minimize total sessions without losing accuracy.
 
 ---
 
-### Step 3: LLTD / ARB Stiffness — **3 sessions**
+### Procedure 1: Effective Mass (m_eff) — Unlocks Steps 1-3
 
-Purpose: determine how many degrees of roll each ARB blade contributes.
+**Purpose:** Measures how much the car compresses under aero downforce at a given
+spring rate. The physics: at speed, `aero_compression_mm = F_aero / K_heave`. By
+varying K_heave and measuring the resulting dynamic ride height, we back-calculate
+F_aero, then `m_eff = F_aero / g`.
 
+**Why softest springs first:** Softer springs produce larger deflections, making the
+measurement more accurate. A 50 N/mm spring deflects 4x more than a 200 N/mm spring
+under the same aero load — this magnifies the signal.
+
+**What you need:** 3 sessions varying front heave + 3 sessions varying rear third = 6 total.
+Keep EVERYTHING else identical within each set. Use min, mid, and max of the spring range.
+
+**Phase A: Front heave sweep (3 sessions)**
+
+**BMW / Cadillac (Dallara, range 0–900 N/mm):**
+| Session | Front Heave (N/mm) | Keep constant |
+|---------|-------------------|---------------|
+| 1 | 50 (soft — maximizes deflection) | Rear third: 500, Torsion OD: 15.14, ARBs: Soft blade 3, Dampers: baseline |
+| 2 | 300 (mid) | Same |
+| 3 | 700 (stiff) | Same |
+
+**Porsche (Multimatic, range 150–600 N/mm):**
+| Session | Front Heave (N/mm) | Keep constant |
+|---------|-------------------|---------------|
+| 1 | 150 (min — maximizes deflection) | Rear third: 400, Roll spring: 200, Rear spring: 190, ARBs: Connected adj 7, Dampers: baseline |
+| 2 | 350 (mid) | Same |
+| 3 | 600 (max) | Same |
+
+**Ferrari (indexed, range 0–8):**
+| Session | Front Heave Index | Keep constant |
+|---------|------------------|---------------|
+| 1 | 0 (softest) | Rear third: index 2, Torsion: index 9, ARBs: C blade 3, Dampers: all 20 |
+| 2 | 4 (mid) | Same |
+| 3 | 8 (stiffest) | Same |
+
+**Acura (ORECA, range 90–400 N/mm):**
+| Session | Front Heave (N/mm) | Keep constant |
+|---------|-------------------|---------------|
+| 1 | 90 (min) | Rear third: 150, Front torsion OD: 14.34, ARBs: Soft blade 3, Dampers: all 5 |
+| 2 | 220 (mid) | Same |
+| 3 | 400 (max) | Same |
+
+**Phase B: Rear third sweep (3 sessions)**
+
+**BMW / Cadillac:**
+| Session | Rear Third (N/mm) | Keep constant |
+|---------|-------------------|---------------|
+| 4 | 100 (soft) | Front heave: 300, Torsion OD: 15.14, ARBs: Soft blade 3, Dampers: baseline |
+| 5 | 400 (mid) | Same |
+| 6 | 800 (stiff) | Same |
+
+**Porsche:**
+| Session | Rear Third (N/mm) | Keep constant |
+|---------|-------------------|---------------|
+| 4 | 50 (soft) | Front heave: 350, Roll spring: 200, Rear spring: 190, ARBs: Connected adj 7, Dampers: baseline |
+| 5 | 400 (mid) | Same |
+| 6 | 800 (max) | Same |
+
+**Ferrari:**
+| Session | Rear Third Index | Keep constant |
+|---------|-----------------|---------------|
+| 4 | 0 (softest) | Front heave: index 4, Torsion: index 9, ARBs: C blade 3, Dampers: all 20 |
+| 5 | 2 (mid) | Same |
+| 6 | 4 (stiffest) | Same |
+
+**Acura:**
+| Session | Rear Third (N/mm) | Keep constant |
+|---------|-------------------|---------------|
+| 4 | 60 (soft) | Front heave: 220, Front torsion OD: 14.34, ARBs: Soft blade 3, Dampers: all 5 |
+| 5 | 180 (mid) | Same |
+| 6 | 300 (max) | Same |
+
+**Per session:**
+1. Set the garage exactly as listed. Do NOT change anything else.
+2. Go on track. Run **5+ clean laps** at race pace (no offs, no contact).
+   You need consistent high-speed running so the aero load is representative.
+3. Come back to pits. The IBT is saved automatically.
+
+**Why race pace matters:** Aero compression scales with V². At 100 kph you get 1/5 the
+compression of 230 kph. Slow laps give tiny deflection deltas that are hard to fit.
+
+**After all 6 sessions, run:**
+```bash
+python -m car_model.auto_calibrate --car <car> --ibt-dir <folder_with_all_6_ibts>
 ```
-Session 1: FARB=Disc (disconnected), RARB=Soft, blade 3
-Session 2: FARB=Soft, blade 3, RARB=Soft, blade 3
-Session 3: FARB=Stiff, blade 5, RARB=Stiff, blade 5
-→ Extract LLTD from each IBT (CarLeftRight or suspension loads)
-→ Fit: LLTD = f(front_arb_stiffness, rear_arb_stiffness)
-→ Update ARBModel.front_stiffness_nmm_deg per size
+
+**What it does:** For each session, extracts mean dynamic ride height at high speed
+from the telemetry and the static ride height from the garage. The difference is the
+aero compression: `compression = static_rh - dynamic_rh_at_speed`. Plots compression
+vs spring rate. Fits `F_aero = compression * K_spring` (should be constant across sessions
+if only the spring changed). Then `m_eff = F_aero / g`.
+
+**Check the result:**
+```bash
+python -m car_model.auto_calibrate --car <car> --status
 ```
+Expected m_eff ranges (from physics — these are NOT arbitrary):
+- **Front m_eff:** 150–600 kg. This represents aero downforce per front corner / g.
+  A GTP at 230 kph generates ~3000–6000 N total front DF → 750–1500 N per corner → 150–600 kg equivalent.
+- **Rear m_eff:** 500–3000 kg. Rear tends to be higher because the diffuser generates
+  more force than the front splitter, and it acts through the third spring (not per-corner).
 
-**After ARB calibration: LLTD predictions become meaningful.**
-Before this: ARB size recommendations are estimated from BMW stiffness values.
-
-**⚠️ Dependency:** Do Step 1 first. LLTD is affected by the spring deflection under roll.
-If m_eff is wrong, the aero-induced load changes will confound the LLTD measurement.
+If a value is negative or >5000 kg, one of the sessions likely had an incident,
+the spring wasn't actually changed, or the ride height telemetry was corrupted.
 
 ---
 
-### Step 4: DF Balance Target — **1 session**
+### Procedure 2: Spring Index Validation (Ferrari only) — Refines Steps 2-3
 
-Purpose: find the actual operating balance the car runs at competitive ride heights.
+**Purpose:** Ferrari uses indexed spring controls (0, 1, 2...) not N/mm values.
+The solver needs to know the actual N/mm at each index. Only 2 of 9 heave
+indices and 1 of 5 third indices are validated — the rest are linear estimates.
 
+**Physics:** In the iRacing garage, `ShockDeflStatic = CornerWeight / SpringRate`.
+By reading both from the IBT header at different indices, we solve for the spring
+rate: `K = CornerWeight / ShockDeflStatic`. Three index points (min, mid, max)
+are enough to fit the index→N/mm curve and check if it's linear or non-linear.
+
+**Heave index sweep (3 sessions, keep everything else constant):**
+| Session | Heave Index | Keep constant |
+|---------|-------------|---------------|
+| 1 | 0 (softest) | Third: index 2, Torsion: index 9, ARBs: C blade 3, Dampers: all 20 |
+| 2 | 4 (mid) | Same |
+| 3 | 8 (stiffest) | Same |
+
+**Third index sweep (3 sessions):**
+| Session | Third Index | Keep constant |
+|---------|-------------|---------------|
+| 4 | 0 | Heave: index 4, Torsion: index 9, ARBs: C blade 3, Dampers: all 20 |
+| 5 | 2 | Same |
+| 6 | 4 | Same |
+
+**Per session:** 3+ clean laps, race pace, save IBT.
+
+**After all sessions:**
+```bash
+python -m car_model.auto_calibrate --car ferrari --ibt-dir <folder>
 ```
-Run 5+ clean laps at representative RH (mid-range heave, standard rear third)
-→ Extract dynamic front RH and rear RH from IBT
-→ Look up balance in aero map: AeroSurface.df_balance(dfrh, drrh)
-→ Average across laps → set as default_df_balance_pct in cars.py
-```
 
-**After DF balance calibration: wing angle recommendations become accurate.**
-Wrong balance target = solver recommends wrong wing angle (as seen with Ferrari 51.5% → 48.3%).
+**What it does:** Reads ShockDeflStatic and CornerWeight from each IBT header,
+computes `k = weight / deflection` at each index, fits the index→N/mm lookup table.
+With 3 points you can detect whether the spacing is linear (20 N/mm per step as
+currently assumed) or non-linear.
 
 ---
 
-### Step 5: Damper Zeta — **6 sessions**
+### Procedure 3: LLTD / ARB Stiffness — Unlocks Step 4
 
-Purpose: determine the actual damping ratio per channel at each click setting.
+**Purpose:** Determines how much roll stiffness each ARB size/blade combination adds.
+Without this, the solver can't target a specific lateral load transfer distribution.
 
+**Key DOE principle: vary ONE end at a time.** If you change both front and rear ARBs
+simultaneously, you can only measure TOTAL roll stiffness change — you cannot separate
+front from rear contribution. By sweeping front ARB alone (rear constant), then rear
+ARB alone (front constant), you get independent front and rear stiffness measurements.
+
+**Physics:**
 ```
-Session pair (LS Comp): run clicks at 1/4, 1/2, 3/4 of max
-Session pair (HS Comp): same
-Session pair (LS/HS Rbd): same
-→ Extract ShockVel histogram from IBT
-→ Fit zeta = F_damper / (2 * sqrt(k * m_eff))
-→ Back-calculate effective force per click for LS and HS regimes
-→ Update DamperModel.zeta_* and set zeta_is_calibrated=True
+roll_gradient (deg/g) = m * g * h_cg / K_total_roll
+K_total_roll = K_spring_front + K_spring_rear + K_arb_front + K_arb_rear
+```
+With springs constant:
+```
+ΔK_total = -m * g * h_cg * Δ(1/roll_gradient)
+```
+If only front ARB changed: `ΔK_total = ΔK_arb_front` (directly measurable!)
+
+**Phase A: Front ARB sweep (3 sessions, rear ARB constant)**
+
+**BMW / Cadillac:**
+| Session | Front ARB | Front Blade | Rear ARB (CONSTANT) | Keep constant |
+|---------|-----------|-------------|---------------------|---------------|
+| 1 | Disconnected | 1 | Soft blade 3 | Heave: 300, Third: 500, Torsion: 15.14, Dampers: baseline |
+| 2 | Soft | 3 | Soft blade 3 | Same |
+| 3 | Stiff | 5 | Soft blade 3 | Same |
+
+**Porsche:**
+| Session | Front ARB | Front Adj | Rear ARB (CONSTANT) | Keep constant |
+|---------|-----------|-----------|---------------------|---------------|
+| 1 | Disconnected | 1 | Soft adj 8 | Heave: 350, Third: 400, Roll spring: 200, Rear spring: 190, Dampers: baseline |
+| 2 | Connected | 5 | Soft adj 8 | Same |
+| 3 | Connected | 13 | Soft adj 8 | Same |
+
+**Ferrari:**
+| Session | Front ARB | Front Blade | Rear ARB (CONSTANT) | Keep constant |
+|---------|-----------|-------------|---------------------|---------------|
+| 1 | Disconnected | 1 | C blade 3 | Heave: idx 4, Third: idx 2, Torsion: idx 9, Dampers: all 20 |
+| 2 | C | 3 | C blade 3 | Same |
+| 3 | E | 5 | C blade 3 | Same |
+
+**Acura:**
+| Session | Front ARB | Front Blade | Rear ARB (CONSTANT) | Keep constant |
+|---------|-----------|-------------|---------------------|---------------|
+| 1 | Disconnected | 1 | Soft blade 3 | Heave: 220, Third: 150, Torsion: 14.34, Dampers: all 5 |
+| 2 | Soft | 3 | Soft blade 3 | Same |
+| 3 | Stiff | 5 | Soft blade 3 | Same |
+
+**Phase B: Rear ARB sweep (3 sessions, front ARB constant)**
+
+**BMW / Cadillac:**
+| Session | Front ARB (CONSTANT) | Rear ARB | Rear Blade | Keep constant |
+|---------|---------------------|----------|------------|---------------|
+| 4 | Soft blade 3 | Soft | 1 | Heave: 300, Third: 500, Torsion: 15.14, Dampers: baseline |
+| 5 | Soft blade 3 | Medium | 3 | Same |
+| 6 | Soft blade 3 | Stiff | 5 | Same |
+
+**Porsche:**
+| Session | Front ARB (CONSTANT) | Rear ARB | Rear Adj | Keep constant |
+|---------|---------------------|----------|----------|---------------|
+| 4 | Connected adj 5 | Disconnected | 1 | Heave: 350, Third: 400, Roll spring: 200, Rear spring: 190, Dampers: baseline |
+| 5 | Connected adj 5 | Medium | 8 | Same |
+| 6 | Connected adj 5 | Stiff | 16 | Same |
+
+**Ferrari:**
+| Session | Front ARB (CONSTANT) | Rear ARB | Rear Blade | Keep constant |
+|---------|---------------------|----------|------------|---------------|
+| 4 | C blade 3 | Disconnected | 1 | Heave: idx 4, Third: idx 2, Torsion: idx 9, Dampers: all 20 |
+| 5 | C blade 3 | C | 3 | Same |
+| 6 | C blade 3 | E | 5 | Same |
+
+**Acura:**
+| Session | Front ARB (CONSTANT) | Rear ARB | Rear Blade | Keep constant |
+|---------|---------------------|----------|------------|---------------|
+| 4 | Soft blade 3 | Soft | 1 | Heave: 220, Third: 150, Torsion: 14.34, Dampers: all 5 |
+| 5 | Soft blade 3 | Medium | 3 | Same |
+| 6 | Soft blade 3 | Stiff | 5 | Same |
+
+**Per session:** 5+ clean laps with hard cornering. The car needs sustained lateral g
+(>1.5g) to generate meaningful roll gradient. Tracks with long, fast sweepers work best.
+Short chicanes don't generate enough steady-state roll data.
+
+**After all 6 sessions:**
+```bash
+python -m car_model.auto_calibrate --car <car> --ibt-dir <folder_with_all_arb_ibts>
 ```
 
-> **⚠️ Dependency chain:** Do Steps 1 and 2 before Step 5.
-> Zeta depends on m_eff (via critical damping force). Wrong m_eff → wrong zeta targets.
-> Wrong spring rate (unvalidated index) → wrong natural frequency → wrong zeta at any click.
+Also ingest each session for the learner (needed for LLTD calibration later):
+```bash
+for f in <folder>/*.ibt; do python -m learner.ingest --car <car> --ibt "$f" --all-laps; done
+```
+
+**What it does:** auto_calibrate extracts roll gradient from each session, groups by
+spring config (which is constant across all 6), and computes total roll stiffness
+(K_total) per ARB configuration. Because front and rear are swept independently,
+the deltas from Phase A give front ARB stiffness and Phase B gives rear ARB stiffness.
+
+It then compares measured K_total deltas against the model's predicted ARB stiffness.
+
+**If the model matches measured within 20%:** `arb_calibrated=True`, Step 4 unblocked.
+
+**If mismatch (>20% error):** The gate stays closed. This means the ARB stiffness
+values in `car_model/cars.py` are wrong for this car. You'll need to manually update
+`front_stiffness_nmm_deg` and `rear_stiffness_nmm_deg` in the car's `ARBModel` using
+the measured deltas as a guide.
+
+**After 10+ total sessions are ingested** (from this + earlier procedures), also run:
+```bash
+python -m validation.calibrate_lltd --car <car> --track <track>
+```
+This fits the optimal LLTD target from lap time correlation (quadratic fit of LLTD vs lap time).
+The LLTD that minimizes lap time becomes the solver's target for Step 4.
+
+---
+
+### Procedure 4: DF Balance Target — 1 session
+
+**Purpose:** Find the actual aero balance the car runs at competitive ride heights.
+Wrong balance target = solver recommends wrong wing angle.
+
+**What you need:** 1 session with a middle-of-the-road setup. No extreme settings.
+
+**Suggested baseline setup:**
+
+| Parameter | BMW/Cadillac | Porsche | Ferrari | Acura |
+|-----------|-------------|---------|---------|-------|
+| Wing | 15 deg | 15 deg | 15 deg | 8 deg |
+| Front heave | 300 N/mm | 350 N/mm | Index 4 | 220 N/mm |
+| Rear third | 500 N/mm | 400 N/mm | Index 2 | 150 N/mm |
+| Front ARB | Soft blade 3 | Connected adj 7 | C blade 3 | Soft blade 3 |
+| Rear ARB | Medium blade 3 | Soft adj 8 | C blade 3 | Medium blade 3 |
+
+**Run 8+ clean laps** at race pace. Save the IBT.
+
+**After the session:**
+```bash
+python -m learner.ingest --car <car> --ibt <session.ibt> --all-laps
+python -m car_model.auto_calibrate --car <car> --ibt <session.ibt>
+```
+
+**What it does:** Extracts mean dynamic front/rear ride height at high speed from IBT,
+looks up the DF balance in the car's aero map at those ride heights
+(`AeroSurface.df_balance(front_rh, rear_rh)`), averages across laps.
+
+**Expected values:** 47–53% for GTP cars. If outside this range, either the ride heights
+were extreme or the aero map axes might be swapped (check `aero_axes_swapped` in cars.py).
+
+---
+
+### Procedure 5: Roll Gains — Unlocks Step 5
+
+**Purpose:** Measures how much camber changes per degree of body roll. Needed for the
+wheel geometry solver to predict contact patch behavior through corners.
+
+**Physics:** Roll gain = Δcamber / Δroll_angle. Typical values: 0.4–0.7 deg/deg for
+double wishbone race car suspension. This is a geometry property of the suspension
+linkage, not a setup parameter — it's the same regardless of springs/ARBs.
+
+**What you need:** The sessions from Procedures 1 and 3 are usually sufficient.
+The system needs 3+ sessions with measurable lateral g and consistent roll gradient.
+
+**No extra sessions required** if you've already done Procedures 1 and 3.
+Just run:
+```bash
+python -m car_model.auto_calibrate --car <car> --ibt-dir <folder_with_all_previous_ibts>
+```
+
+auto_calibrate checks roll gradient consistency across sessions (CV < 30%).
+If consistent, it sets `roll_gains_calibrated=True` and Step 5 unblocks.
+
+If the roll gradient data is too noisy (CV > 30%), you need more sessions with
+harder cornering — the car needs to generate enough sustained lateral g (>1.5g)
+for meaningful roll gradient extraction. Run laps on a track with long, fast sweepers.
+
+---
+
+### Procedure 6: Damper Zeta — Unlocks Step 6
+
+**Purpose:** Determines the actual damping ratio at each click setting. Without this,
+the solver returns baseline damper clicks instead of physics-derived recommendations.
+
+**Physics background:**
+```
+Critical damping: Cc = 2 * sqrt(K_wheel * m_sprung_corner)
+Damping ratio:    zeta = C_actual / Cc
+```
+Industry targets (OptimumG, Racecomp Engineering):
+- **Low-speed (LS) ride:** zeta = 0.55–0.70 (controls weight transfer, body motion)
+- **High-speed (HS) bump:** zeta = 0.25–0.35 (controls bump absorption, curb compliance)
+
+In iRacing, click 0 = maximum damping (fully closed), higher clicks = softer.
+
+**What you need:** Two phases — LS sweep and HS sweep. Keep everything else identical
+across all sessions: same springs, ARBs, ride heights, fuel load.
+
+**Phase A: LS Compression sweep (3 sessions)**
+
+**BMW / Cadillac (0–11 click range):**
+| Session | Front LS Comp | Rear LS Comp | Keep constant |
+|---------|--------------|--------------|---------------|
+| 1 | 0 (max damping) | 0 | Heave: 300, Third: 500, Torsion: 15.14, ARBs: Soft/3, HS comp: 5, HS slope: 10, All rbd: baseline |
+| 2 | 5 (mid) | 5 | Same |
+| 3 | 11 (min damping) | 11 | Same |
+
+**Porsche (0–11 DSSV):**
+| Session | Front Heave LS Comp | Rear LS Comp | Keep constant |
+|---------|--------------------|--------------| --------------|
+| 1 | 0 | 0 | Heave: 350, Third: 400, Roll spring: 200, ARBs: Connected/7, HS/slope/rbd: baseline |
+| 2 | 5 | 5 | Same |
+| 3 | 11 | 11 | Same |
+
+**Ferrari (0–40):**
+| Session | Front LS Comp | Rear LS Comp | Keep constant |
+|---------|--------------|--------------|---------------|
+| 1 | 0 | 0 | Heave: idx 4, Third: idx 2, Torsion: idx 9, ARBs: C/3, HS comp: 20, HS slope: 5, All rbd: 20 |
+| 2 | 20 | 20 | Same |
+| 3 | 40 | 40 | Same |
+
+**Acura (1–10):**
+| Session | Front LS Comp | Rear LS Comp | Keep constant |
+|---------|--------------|--------------|---------------|
+| 1 | 1 (max) | 1 | Heave: 220, Third: 150, Torsion: 14.34, ARBs: Soft/3, HS: 5, All rbd: 5 |
+| 2 | 5 (mid) | 5 | Same |
+| 3 | 10 (min) | 10 | Same |
+
+**Phase B: HS Compression sweep (3 sessions)**
+
+**BMW / Cadillac:**
+| Session | Front HS Comp | Rear HS Comp | Keep constant |
+|---------|--------------|--------------|---------------|
+| 4 | 0 | 0 | Heave: 300, Third: 500, Torsion: 15.14, ARBs: Soft/3, LS comp: 5, HS slope: 10, All rbd: baseline |
+| 5 | 5 | 5 | Same |
+| 6 | 11 | 11 | Same |
+
+**Porsche:**
+| Session | Front Heave HS Comp | Rear HS Comp | Keep constant |
+|---------|--------------------|--------------| --------------|
+| 4 | 0 | 0 | Heave: 350, Third: 400, Roll spring: 200, ARBs: Connected/7, LS/slope/rbd: baseline |
+| 5 | 5 | 5 | Same |
+| 6 | 11 | 11 | Same |
+
+**Ferrari:**
+| Session | Front HS Comp | Rear HS Comp | Keep constant |
+|---------|--------------|--------------|---------------|
+| 4 | 0 | 0 | Heave: idx 4, Third: idx 2, Torsion: idx 9, ARBs: C/3, LS comp: 20, HS slope: 5, All rbd: 20 |
+| 5 | 20 | 20 | Same |
+| 6 | 40 | 40 | Same |
+
+**Acura:**
+| Session | Front HS Comp | Rear HS Comp | Keep constant |
+|---------|--------------|--------------|---------------|
+| 4 | 1 | 1 | Heave: 220, Third: 150, Torsion: 14.34, ARBs: Soft/3, LS: 5, All rbd: 5 |
+| 5 | 5 | 5 | Same |
+| 6 | 10 | 10 | Same |
+
+**Per session:** 5+ clean laps at race pace including curbs/bumps. The car will feel
+very different at each extreme:
+- Click 0 (max damping): locked, harsh, poor bump absorption but stable platform
+- Max click (min damping): floaty, wallowy, good bump compliance but unstable
+Drive consistently regardless of feel. That's the experiment.
+
+**After all 6 sessions, ingest each one:**
+```bash
+for f in <folder>/*.ibt; do python -m learner.ingest --car <car> --ibt "$f" --all-laps; done
+```
+
+**Then run the damper calibration:**
+```bash
+python -m validation.calibrate_dampers --car <car> --track <track>
+```
+
+**What it does:** Loads all ingested observations, identifies sessions where only damper
+clicks changed. For each session, extracts shock velocity histograms, platform stability
+metrics (RH variance, settle time after transients), and shock oscillation frequency.
+Maps the click settings to damping force using the force-per-click model, computes zeta
+at each click setting, and identifies the clicks that produce the target zeta values.
+
+**Check the result:**
+```bash
+python -m car_model.auto_calibrate --car <car> --status
+```
+Look for `damper_zeta: calibrated` with values:
+- **LS front zeta:** expect 0.55–0.70 (ride damping, weight transfer control)
+- **LS rear zeta:** expect 0.35–0.55 (slightly lighter than front for traction)
+- **HS front zeta:** expect 0.25–0.35 (bump absorption)
+- **HS rear zeta:** expect 0.15–0.25 (maximum compliance over bumps)
+
+If front LS zeta > 0.85 or < 0.3, the force-per-click estimate is probably wrong.
+
+> **Dependency:** Do Procedures 1 and 2 (if Ferrari) BEFORE this one.
+> `Cc = 2 * sqrt(K * m)`. Wrong m_eff or wrong spring rate means wrong critical damping
+> force, which means every zeta value derived from the click sweep will be off.
+
+---
+
+### Procedure 7: Full Calibration Run — Generates Setup
+
+After completing the procedures above, produce a setup:
+
+```bash
+# Check what's calibrated:
+python -m car_model.auto_calibrate --car <car> --status
+
+# Build track profile (if not already done for this track):
+python -m track_model.build <session.ibt>
+
+# Produce setup from your latest IBT:
+python -m pipeline.produce --car <car> --ibt <session.ibt> --wing <angle> --sto output.sto
+```
+
+The pipeline will run all calibrated solver steps and skip blocked ones (printing
+calibration instructions for anything still missing). Steps 1-3 typically unblock
+after Procedure 1. Steps 4-6 require Procedures 3, 5, and 6 respectively.
+
+---
+
+### Total Session Budget
+
+| Procedure | Sessions | What changes | Unblocks |
+|-----------|----------|-------------|----------|
+| 1. m_eff (front + rear) | 6 | Front heave (3), then rear third (3) | Steps 1-3 |
+| 2. Spring index (Ferrari only) | 6 | Heave index (3) + third index (3) | Steps 2-3 accuracy |
+| 3. ARB stiffness | 6 | Front ARB only (3), then rear ARB only (3) | Step 4 |
+| 4. DF balance | 1 | Nothing (measurement only) | Wing accuracy |
+| 5. Roll gains | 0 | (reuses sessions from 1 + 3) | Step 5 |
+| 6. Damper zeta | 6 | LS comp (3), then HS comp (3) | Step 6 |
+| **Total (non-Ferrari)** | **19 sessions** | | **All 6 steps** |
+| **Total (Ferrari)** | **25 sessions** | | **All 6 steps** |
+
+> Each "session" = go on track, run 5-8 clean laps, come back. At ~2 min/lap for GTP,
+> that's ~10-15 min per session plus garage changes. Budget 5-6 hours total for a
+> complete calibration sweep of a new car.
 
 ---
 
@@ -521,13 +942,13 @@ This is the most common misuse. The full cascade:
 
 ## Calibration Session Budget Per Car
 
-| Car | Sessions to 4/10 | Sessions to 6.5/10 | Sessions to 8/10 |
-|-----|-----------------|---------------------|-----------------|
-| BMW | Done ✅ | Done ✅ | Done ✅ |
-| Ferrari | Done ✅ | ~5 more (dampers, index validation) | ~15 more (full damper sweep) |
-| Cadillac | 3–5 (m_eff) | 10–12 | 20+ |
-| Porsche | 3–5 (m_eff) | Blocked (DSSV model needed) | Blocked |
-| Acura | 3–5 (m_eff) | 12–15 | 20+ |
+| Car | Steps 1-3 (m_eff) | Steps 4-5 (ARB + roll gains) | Step 6 (dampers) | Total to full calibration |
+|-----|-------------------|------------------------------|------------------|--------------------------|
+| BMW | Done ✅ | Done ✅ | Done ✅ | Done ✅ |
+| Ferrari | Done ✅ | 6 sessions (ARB sweep) + LLTD | 6 sessions (LS + HS sweep) + 6 index validation | ~18 more |
+| Cadillac | 6 sessions (heave + third sweep) | 6 sessions (ARB sweep) | 6 sessions (LS + HS sweep) | ~19 |
+| Porsche | 6 sessions (heave + third sweep) | 6 sessions (ARB sweep) | 6 sessions (LS + HS sweep) | ~19 |
+| Acura | 6 sessions (heave + third sweep) | 6 sessions (ARB sweep) | 6 sessions (LS + HS sweep) | ~19 |
 
 ---
 

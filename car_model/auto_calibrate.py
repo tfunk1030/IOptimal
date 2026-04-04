@@ -1078,21 +1078,49 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             sorted_configs = sorted(arb_k_avg.items(), key=lambda x: x[1])
             # Stiffness deltas relative to softest config give ARB deltas
             k_min = sorted_configs[0][1]
-            n_calibrated = 0
-            for arb_key, k_total in sorted_configs:
-                delta_k = k_total - k_min  # relative ARB stiffness increase
-                # Update the car's ARB stiffness if we can map this config
-                front_size, front_blade, rear_size, rear_blade = arb_key
-                # We know the delta in total K; this constrains the sum of front+rear ARB change.
-                # With only total K_total, we can't split front/rear individually.
-                # But we CAN validate the existing model's total stiffness ratio.
-                n_calibrated += 1
+            n_configs = len(sorted_configs)
 
-            models.status["arb_stiffness"] = (
-                f"roll gradient back-solve: {n_calibrated} ARB configs, "
-                f"{len(arb_varied_groups)} spring groups"
+            # Validate: compare measured K_total deltas against the car model's
+            # predicted ARB stiffness deltas.  Only set arb_calibrated=True if
+            # predicted and measured are consistent (within 20%).
+            arb_model = _car_obj.arb
+            baseline_key = sorted_configs[0][0]
+            bf_size, bf_blade, br_size, br_blade = baseline_key
+            k_arb_baseline = (
+                arb_model.front_roll_stiffness(bf_size, bf_blade)
+                + arb_model.rear_roll_stiffness(br_size, br_blade)
             )
-            models.status["arb_calibrated"] = True
+
+            max_relative_error = 0.0
+            n_compared = 0
+            for arb_key, k_total in sorted_configs[1:]:
+                delta_k_measured = k_total - k_min
+                fs, fb, rs, rb = arb_key
+                k_arb_predicted = (
+                    arb_model.front_roll_stiffness(fs, fb)
+                    + arb_model.rear_roll_stiffness(rs, rb)
+                )
+                delta_k_predicted = k_arb_predicted - k_arb_baseline
+                if delta_k_predicted > 0:
+                    rel_err = abs(delta_k_measured - delta_k_predicted) / delta_k_predicted
+                    max_relative_error = max(max_relative_error, rel_err)
+                    n_compared += 1
+
+            if n_compared > 0 and max_relative_error <= 0.20:
+                models.status["arb_stiffness"] = (
+                    f"roll gradient validated: {n_configs} ARB configs, "
+                    f"{len(arb_varied_groups)} spring groups, "
+                    f"max error {max_relative_error:.1%} (within 20% tolerance)"
+                )
+                models.status["arb_calibrated"] = True
+            else:
+                models.status["arb_stiffness"] = (
+                    f"roll gradient data collected ({n_configs} ARB configs, "
+                    f"{len(arb_varied_groups)} spring groups) but model stiffness "
+                    f"does NOT match measured deltas (max error {max_relative_error:.1%}, "
+                    f"need ≤20%). ARB stiffness values in cars.py need updating."
+                )
+                models.status["arb_calibrated"] = False
         else:
             models.status["arb_stiffness"] = (
                 f"data available but insufficient variation "

@@ -1,10 +1,28 @@
 {
   "car": "porsche",
   "track": "Autodromo Internacional do Algarve",
-  "session_count": 1,
+  "session_count": 21,
   "key_insights": [
-    "Only 1 session(s) \u2014 need more data for insights."
+    "Lap time range: 93.021s \u2013 98.359s (5.338s window across 21 sessions)",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "Measured roll gradient: 0.142 deg/g (+/- 0.035)"
   ],
-  "setup_trends": [],
-  "unresolved_questions": []
+  "setup_trends": [
+    "front_heave_nmm: trending increasing (180.0 -> 250.0 over 21 sessions)",
+    "rear_third_nmm: trending increasing (80.0 -> 200.0 over 21 sessions)",
+    "rear_arb_blade: trending increasing (2.0 -> 6.0 over 21 sessions)",
+    "rear_camber_deg: trending increasing (-1.9 -> -1.8 over 21 sessions)"
+  ],
+  "unresolved_questions": [
+    "thermal:Front carcass temp 34C (target >80C) appears in 13/21 sessions \u2014 may need attention"
+  ]
 }

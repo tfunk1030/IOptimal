@@ -264,6 +264,15 @@ Key features:
   The `lltd_measured` field name is a backward-compatible alias for `roll_distribution_proxy`.
 - High-speed m_eff filtering available via `front_heave_vel_p95_hs_mps` and `front_rh_std_hs_mm`
   (>200 kph only) but not yet used by the solver's m_eff correction — uses lap-wide stats.
+- **ARB back-solve (auto_calibrate.py):** measures total roll stiffness per ARB config from roll gradient,
+  but cannot split front/rear individually. Now validates measured deltas against model predictions (within 20%)
+  before setting `arb_calibrated=True`. If model stiffness doesn't match measured data, the gate stays closed
+  and the user must manually update `front_stiffness_nmm_deg`/`rear_stiffness_nmm_deg` in `cars.py`.
+- **Porsche 963 (Multimatic chassis):** Real garage ranges corrected (2026-04-04): heave 150–600, third 0–800,
+  rear spring 105–280, front ARB adj 1–13, rear ARB adj 1–16, roll spring 100–320 (model stores single baseline).
+  Damper architecture has 4 separate systems (front heave, front roll, L/R rear, rear 3rd) — model only
+  represents front heave + front roll. Rear 3rd damper (0–5 range) and per-corner HS comp slope are NOT modeled.
+  Roll perch offset (14–16) not modeled. Individual L/R rear spring perch offsets (-150 to +150) not modeled.
 - **Acura ARX-06 (ORECA chassis):** Heave+roll damper architecture, rear torsion bars, synthesized corner
   shocks. Pipeline functional but RH targets unreliable (aero maps not calibrated for Acura). Front heave
   damper bottoms at torsion OD ≥ 14.76 mm. Roll dampers use baseline values only (no physics tuning yet).
