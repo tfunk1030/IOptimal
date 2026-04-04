@@ -389,10 +389,10 @@ The perch offset formula `perch = target_rh + deflection` depends directly on m_
 Purpose: verify actual spring rate at each index.
 
 ```
-For each target index: check garage screenshot
-→ Read ShockDeflStatic and TorsionBarDefl
+For each target index: record an IBT session (3+ clean laps)
+→ IBT header contains ShockDeflStatic, TorsionBarDefl, CornerWeight
 → Verify: k = corner_weight_N / ShockDeflStatic
-→ Update IndexedLookupPoint in cars.py ferrari_indexed_controls
+→ Run: python -m car_model.auto_calibrate --car ferrari --ibt-dir <dir>
 ```
 
 **Fastest approach**: run sessions at index 0, 4, 8 (extremes + midpoint) and interpolate.

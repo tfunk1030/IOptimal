@@ -1624,7 +1624,7 @@ def generate_protocol(car: str, verbose: bool = True) -> str:
 
     lines.append(f"\n{'─' * 60}")
     lines.append(f"EXISTING FILES PATH: If you have past IBT sessions, try pointing at them first.")
-    lines.append(f"  python -m ioptimal calibrate --car {car} --ibt-dir ~/Documents/iRacing/telemetry/ --dry-run")
+    lines.append(f"  python -m ioptimal calibrate --car {car} --ibt-dir ~/Documents/iRacing/telemetry/")
     lines.append(f"  (Natural setup variation from racing may already cover most of the sweep)")
     lines.append(f"{'=' * 60}\n")
 
