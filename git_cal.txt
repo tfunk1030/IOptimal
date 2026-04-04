@@ -1,6 +1,0 @@
-data/calibration/acura/calibration_points.json
-data/calibration/acura/models.json
-data/calibration/bmw/calibration_points.json
-data/calibration/bmw/models.json
-data/calibration/ferrari/calibration_points.json
-data/calibration/ferrari/models.json

@@ -1,9 +1,0 @@
-{
-  "car": "ferrari",
-  "timestamp": "20260331_205032",
-  "files": {
-    "analysis": "output\\ferrari_hockenheimring_baden-w\u00fcrttembe_20260331_205032\\analysis.json",
-    "setup_sto": "output\\ferrari_hockenheimring_baden-w\u00fcrttembe_20260331_205032\\setup.sto",
-    "solver_result": "output\\ferrari_hockenheimring_baden-w\u00fcrttembe_20260331_205032\\solver_result.json"
-  }
-}

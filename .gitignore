@@ -29,12 +29,41 @@ _commit_msg*.txt
 _fix_*.py
 _git_*.py
 
+# Debug/workflow temp files
+*_output.txt
+stdout.txt
+stderr.txt
+run_output.txt
+pytest.txt
+commit_msg*.txt
+git_*.txt
+ahead.txt
+cl.txt
+git_cal.txt
+
 # Generated solver output files
 *.sto
 output_*.sto
 
 # Temporary binary files
 tmp_*.bin
+
+# Runtime/application state
+.ioptimal_app/
+
+# Solver/pipeline output artifacts
+tmp/
+bundles/
+outputs/
+output/*.json
+output/*/
+
+# Repo indexing tools
+repomix-output.xml
+
+# One-time cleanup scripts
+run_filter.sh
+remove_large_file.sh
 
 # Parsed aero map cache (regenerated from xlsx)
 data/aeromaps_parsed/
