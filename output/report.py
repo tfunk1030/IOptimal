@@ -60,9 +60,12 @@ def _load_support_tier(car_slug: str, track_name: str) -> dict[str, Any] | None:
         has_models = (cal_dir / "models.json").exists()
         if session_count == 0 and not has_models:
             return None
-        # Map session count → confidence_tier label (mirrors aggregator thresholds)
+        # Map session count → confidence_tier label (mirrors aggregator thresholds).
+        # Cap at "partial" — only the explicit validation/objective_validation.json
+        # entries (checked above) may declare "calibrated".  This prevents arbitrary
+        # car/track pairs from reaching calibrated status based on sample count alone.
         if has_models and session_count >= 30:
-            tier = "calibrated"
+            tier = "partial"
         elif session_count >= 15:
             tier = "partial"
         elif session_count >= 5:

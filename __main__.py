@@ -335,14 +335,10 @@ def run_grid_search(args: argparse.Namespace) -> None:
         pathlib.Path(args.json).write_text(json.dumps(out, indent=2))
         print(f"\n  Saved to {args.json}")
 
-    # Export best .sto
+    # Export best .sto — grid search only has flat params, not solver step
+    # objects required by write_sto(); disabled until step materialisation exists.
     if args.sto and candidates:
-        try:
-            from output.setup_writer import write_sto
-            write_sto(candidates[0].params, car, pathlib.Path(args.sto))
-            print(f"  Exported .sto → {args.sto}")
-        except Exception as e:
-            print(f"  [sto export failed: {e}]")
+        print(f"  [sto export not yet supported for grid search candidates]")
 
     print(f"\n{'═' * 72}")
 
