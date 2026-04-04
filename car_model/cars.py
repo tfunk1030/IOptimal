@@ -149,6 +149,7 @@ class AeroCompression:
     ref_speed_kph: float             # Speed at which compression was calibrated
     front_compression_mm: float      # Front RH compression at ref speed
     rear_compression_mm: float       # Rear RH compression at ref speed
+    is_calibrated: bool = False      # True when derived from real IBT data
 
     def front_at_speed(self, speed_kph: float) -> float:
         """Front aero compression (mm) at a given speed."""
@@ -976,6 +977,7 @@ class ARBModel:
     rear_baseline_blade: int = 3
     track_width_front_mm: float = 1730.0
     track_width_rear_mm: float = 1650.0
+    is_calibrated: bool = False      # True when stiffness values are derived from measured data
 
     def blade_factor(self, blade: int, max_blade: int) -> float:
         return 0.30 + 0.70 * (blade - 1) / max(max_blade - 1, 1)
@@ -1013,6 +1015,7 @@ class WheelGeometryModel:
     front_toe_heating_coeff: float = 2.5
     rear_toe_heating_coeff: float = 1.8
     camber_is_derived: bool = False  # True if camber comes from suspension geometry (not independently settable)
+    roll_gains_calibrated: bool = False  # True when roll gains are derived from IBT telemetry
 
 
 @dataclass
@@ -1636,6 +1639,7 @@ BMW_M_HYBRID_V8 = CarModel(
         ref_speed_kph=230.0,
         front_compression_mm=15.0,
         rear_compression_mm=9.5,
+        is_calibrated=True,
     ),
     pushrod=PushrodGeometry(
         # Calibrated from 6 BMW Sebring sessions:
@@ -1732,6 +1736,7 @@ BMW_M_HYBRID_V8 = CarModel(
         rear_baseline_blade=3,
         track_width_front_mm=1730.0,
         track_width_rear_mm=1650.0,
+        is_calibrated=True,
     ),
     geometry=WheelGeometryModel(
         # Verified BMW Sebring baseline from per-car-quirks.md
@@ -1744,6 +1749,7 @@ BMW_M_HYBRID_V8 = CarModel(
         rear_roll_gain=0.50,
         front_toe_heating_coeff=2.5,
         rear_toe_heating_coeff=1.8,
+        roll_gains_calibrated=True,
     ),
     damper=DamperModel(
         # BMW damper scale — all clicks max at 11. Different from Ferrari.
@@ -1904,6 +1910,7 @@ CADILLAC_VSERIES_R = CarModel(
         ref_speed_kph=230.0,
         front_compression_mm=12.0,  # CALIBRATED: learner mean 11.98mm across 2 sessions
         rear_compression_mm=18.5,   # CALIBRATED: learner mean 18.53mm; was 8mm ESTIMATE (2.3× underestimate)
+        is_calibrated=True,
     ),
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=30.0,            # Target front static RH
@@ -1978,7 +1985,7 @@ CADILLAC_VSERIES_R = CarModel(
     # Front RH depends on: pushrod (payload length), heave perch, torsion bar OD,
     # torsion bar turns, camber, and fuel weight. The PushrodGeometry above provides
     # a 2-variable approximation (pushrod + heave_perch) calibrated from 4 data points.
-    # ACCURACY: ±1.5mm. Run calibrate_deflections.py --car cadillac with varied setups
+    # ACCURACY: ±1.5mm. Run auto_calibrate --car cadillac --ibt-dir <dir> with varied setups
     # (different OD, turns, camber, perch) to build a proper 6-variable model.
     # Rear RH depends on: pushrod, third spring rate/perch, rear spring rate/perch,
     # heave perch, fuel. BMW coefficients are completely wrong for Cadillac.
@@ -2093,6 +2100,7 @@ FERRARI_499P = CarModel(
         ref_speed_kph=230.0,
         front_compression_mm=15.1,  # CALIBRATED from IBT aero calculator
         rear_compression_mm=8.3,    # CALIBRATED from IBT aero calculator
+        is_calibrated=True,
     ),
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=30.0,        # iRacing GTP floor — confirmed from IBT (30.1mm)
@@ -2414,6 +2422,7 @@ PORSCHE_963 = CarModel(
         ref_speed_kph=230.0,
         front_compression_mm=12.1,  # CALIBRATED: empirical mean from 2 Sebring sessions
         rear_compression_mm=23.3,   # CALIBRATED: empirical mean from 2 Sebring sessions (was 8.0 estimate)
+        is_calibrated=True,
     ),
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=30.0,       # CALIBRATED: garage screenshots show RH=30.0 at pushrod=-39.5

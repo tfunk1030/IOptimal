@@ -123,17 +123,17 @@ TO CALIBRATE AERO COMPRESSION:
     "ride_height_model": """\
 TO CALIBRATE RIDE HEIGHT MODEL:
 1. In iRacing garage, set 10+ different spring/pushrod/perch combinations
-2. Take a garage screenshot at each setting (screenshot captures displayed ride heights)
-3. Run: python -m car_model.auto_calibrate --car {car} --model rh --screenshots <dir>
-4. This fits a multi-variable regression from displayed garage values
+2. Record an IBT session for each setting (drive 3+ clean laps; the IBT header captures displayed ride heights)
+3. Run: python -m car_model.auto_calibrate --car {car} --ibt-dir <telemetry_dir>
+4. This fits a multi-variable regression from IBT session header values
 5. Minimum 10 unique configurations for reliable fit (R^2 > 0.95)""",
 
     "deflection_model": """\
 TO CALIBRATE DEFLECTION MODEL:
 1. In iRacing garage, set 5+ different heave spring settings
    (keep torsion bar constant, vary heave spring: e.g., 50, 100, 150, 200, 250 N/mm)
-2. Take a garage screenshot at each setting
-3. Run: python -m car_model.auto_calibrate --car {car} --model deflection --screenshots <dir>
+2. Record an IBT session for each setting (drive 3+ clean laps; the IBT header captures deflection values)
+3. Run: python -m car_model.auto_calibrate --car {car} --ibt-dir <telemetry_dir>
 4. Minimum 5 varied settings for reliable fit""",
 
     "damper_zeta": """\
@@ -148,10 +148,10 @@ TO CALIBRATE DAMPER ZETA TARGETS:
 
     "arb_stiffness": """\
 TO CALIBRATE ARB STIFFNESS:
-1. Record 3+ garage screenshots with different front/rear ARB sizes
-2. Note the displayed roll stiffness for each combination
-3. Run: python -m car_model.auto_calibrate --car {car} --model arb --screenshots <dir>
-4. This back-solves ARB stiffness from displayed roll stiffness values""",
+1. Record 3+ IBT sessions with different front/rear ARB sizes (keep springs constant between sessions)
+2. Drive 3+ clean laps per session (the telemetry roll gradient data is needed for ARB back-solve)
+3. Run: python -m car_model.auto_calibrate --car {car} --ibt-dir <telemetry_dir>
+4. This back-solves ARB stiffness from telemetry roll data across varied ARB configurations""",
 
     "lltd_target": """\
 TO CALIBRATE LLTD TARGET:
@@ -162,10 +162,10 @@ TO CALIBRATE LLTD TARGET:
 
     "roll_gains": """\
 TO CALIBRATE ROLL GAINS:
-1. Run 5+ laps at consistent pace, capturing full lateral-g sweep (0.5g to peak)
-2. Run: python -m learner.ingest --car {car} --ibt <session.ibt> --all-laps
-3. System extracts roll gain from camber vs lateral-g regression
-4. Minimum 3 sessions for stable calibration""",
+1. Record 3+ IBT sessions with varied speeds and lateral-g (qualifying + race pace)
+2. Run: python -m car_model.auto_calibrate --car {car} --ibt-dir <telemetry_dir>
+3. Auto-calibrate extracts roll gradient from telemetry and validates geometry roll gains
+4. Minimum 3 sessions with consistent roll gradient (CV < 30%) for calibration""",
 
     "track_profile": """\
 TO GENERATE TRACK PROFILE:
@@ -189,18 +189,12 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     cn = car.canonical_name
     subs: dict[str, SubsystemCalibration] = {}
 
-    # 1. Aero compression
-    # BMW/Ferrari/Cadillac/Porsche have calibrated values from IBT sessions.
-    # Acura has ESTIMATE (no aero map calibration).
-    aero_status = "calibrated"
-    aero_source = "IBT-derived"
-    if cn == "acura":
-        aero_status = "uncalibrated"
-        aero_source = "ESTIMATE — no IBT aero calibration"
+    # 1. Aero compression — check the is_calibrated flag on the car's AeroCompression
+    aero_cal = getattr(car.aero_compression, "is_calibrated", False)
     subs["aero_compression"] = SubsystemCalibration(
         name="aero_compression",
-        status=aero_status,
-        source=aero_source,
+        status="calibrated" if aero_cal else "uncalibrated",
+        source="IBT-derived" if aero_cal else "ESTIMATE — no IBT aero calibration",
         instructions=_fmt_instructions("aero_compression", cn, track_name),
     )
 
@@ -247,25 +241,12 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
         instructions=_fmt_instructions("damper_zeta", cn, track_name),
     )
 
-    # 7. ARB stiffness — check if the car has measured (not estimated) ARB stiffness
-    # BMW: calibrated from LLTD back-calculation (73 sessions)
-    # Cadillac: inherited from BMW (Dallara platform) — treat as partial
-    # Ferrari/Porsche/Acura: estimated
-    arb_calibrated_cars = {"bmw"}
-    arb_partial_cars = {"cadillac"}
-    if cn in arb_calibrated_cars:
-        arb_status = "calibrated"
-        arb_source = "LLTD back-calculation from IBT"
-    elif cn in arb_partial_cars:
-        arb_status = "partial"
-        arb_source = "inherited from BMW (Dallara platform)"
-    else:
-        arb_status = "uncalibrated"
-        arb_source = "estimated — no measured data"
+    # 7. ARB stiffness — check the is_calibrated flag on the car's ARBModel
+    arb_cal = getattr(car.arb, "is_calibrated", False)
     subs["arb_stiffness"] = SubsystemCalibration(
         name="arb_stiffness",
-        status=arb_status,
-        source=arb_source,
+        status="calibrated" if arb_cal else "uncalibrated",
+        source="measured from IBT roll data" if arb_cal else "estimated — no measured data",
         instructions=_fmt_instructions("arb_stiffness", cn, track_name),
     )
 
@@ -278,13 +259,12 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
         instructions=_fmt_instructions("lltd_target", cn, track_name),
     )
 
-    # 9. Roll gains (wheel geometry)
-    # Only BMW has IBT-calibrated roll gains; others use estimates
-    roll_gain_calibrated_cars = {"bmw"}
+    # 9. Roll gains (wheel geometry) — check the roll_gains_calibrated flag
+    roll_cal = getattr(car.geometry, "roll_gains_calibrated", False)
     subs["roll_gains"] = SubsystemCalibration(
         name="roll_gains",
-        status="calibrated" if cn in roll_gain_calibrated_cars else "uncalibrated",
-        source="IBT-calibrated" if cn in roll_gain_calibrated_cars else "estimated",
+        status="calibrated" if roll_cal else "uncalibrated",
+        source="IBT-calibrated" if roll_cal else "estimated",
         instructions=_fmt_instructions("roll_gains", cn, track_name),
     )
 

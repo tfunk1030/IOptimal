@@ -685,11 +685,17 @@ def _build_elevation_profile(
 
 def main():
     parser = argparse.ArgumentParser(description="Build TrackProfile from IBT")
-    parser.add_argument("ibt_file", help="Path to .ibt or .zip file")
+    parser.add_argument("ibt_file", nargs="?", default=None, help="Path to .ibt or .zip file")
+    parser.add_argument("--ibt", default=None, help="Path to .ibt or .zip file (alternative to positional)")
+    parser.add_argument("--car", default=None, help="Car name (for metadata; profile is track-only)")
     parser.add_argument("--output", "-o", help="Output JSON path (default: auto)")
     args = parser.parse_args()
 
-    ibt_path = Path(args.ibt_file)
+    ibt_file = args.ibt_file or args.ibt
+    if not ibt_file:
+        parser.error("IBT file required: provide as positional arg or --ibt <path>")
+
+    ibt_path = Path(ibt_file)
     print(f"Parsing: {ibt_path.name}")
 
     profile = build_profile(ibt_path)

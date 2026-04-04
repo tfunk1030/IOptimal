@@ -107,11 +107,11 @@ The solver now enforces a **calibration gate** at each of the 6 solver steps. If
 
 When the solver blocks a step, it prints exactly what data to collect. The general pattern:
 
-1. **ARB stiffness:** Record 3+ garage screenshots with different front/rear ARB sizes. Run `python -m car_model.auto_calibrate --car <car> --model arb --screenshots <dir>`
+1. **ARB stiffness:** Record 3+ IBT sessions with different front/rear ARB sizes (keep springs constant). Run `python -m car_model.auto_calibrate --car <car> --ibt-dir <telemetry_dir>`
 2. **LLTD target:** Accumulate 10+ IBT sessions with varied ARB and spring settings. Run `python -m validation.calibrate_lltd --car <car> --track <track>`
 3. **Roll gains:** Run 5+ laps capturing full lateral-g sweep. Run `python -m learner.ingest --car <car> --ibt <session.ibt> --all-laps`
 4. **Damper zeta:** Run 5+ stints with LS comp at varied clicks (keep everything else identical). Run `python -m validation.calibrate_dampers --car <car> --track <track>`
-5. **Ride height model:** Set 10+ different spring/pushrod/perch combinations in the garage. Take a screenshot at each. Run `python -m car_model.auto_calibrate --car <car> --model rh --screenshots <dir>`
+5. **Ride height model:** Set 10+ different spring/pushrod/perch combinations in the garage. Record an IBT session at each (3+ clean laps). Run `python -m car_model.auto_calibrate --car <car> --ibt-dir <telemetry_dir>`
 6. **Aero compression:** Record 3+ IBT sessions at different speed profiles. Run `python -m learner.ingest --car <car> --ibt <each_file>`
 
 ---
@@ -389,10 +389,10 @@ The perch offset formula `perch = target_rh + deflection` depends directly on m_
 Purpose: verify actual spring rate at each index.
 
 ```
-For each target index: check garage screenshot
-→ Read ShockDeflStatic and TorsionBarDefl
+For each target index: record an IBT session (3+ clean laps)
+→ IBT header contains ShockDeflStatic, TorsionBarDefl, CornerWeight
 → Verify: k = corner_weight_N / ShockDeflStatic
-→ Update IndexedLookupPoint in cars.py ferrari_indexed_controls
+→ Run: python -m car_model.auto_calibrate --car ferrari --ibt-dir <dir>
 ```
 
 **Fastest approach**: run sessions at index 0, 4, 8 (extremes + midpoint) and interpolate.
