@@ -1235,7 +1235,7 @@ class CarModel:
     mass_car_kg: float               # Dry car mass
     mass_driver_kg: float = 75.0     # Driver mass
     fuel_density_kg_per_l: float = 0.742  # Fuel density (E10 gasoline)
-    fuel_capacity_l: float = 89.0        # Max fuel load (L). BMW=89, Porsche=58
+    fuel_capacity_l: float = 88.96       # Max fuel load (L). All LMDh GTP = 23.5 gal = 88.96L
     fuel_stint_end_l: float = 20.0       # Typical end-of-stint fuel (L)
 
     # Weight distribution
@@ -2394,8 +2394,7 @@ PORSCHE_963 = CarModel(
     canonical_name="porsche",
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
-    fuel_capacity_l=58.0,         # From Algarve starting setup (shorter stints than BMW)
-    fuel_stint_end_l=15.0,        # ESTIMATE — Algarve stint end fuel
+    # fuel_capacity_l=88.96 (class default, same as all LMDh GTP — 23.5 gal)
     weight_dist_front=0.471,  # CALIBRATED: from corner weights (2689+2689)/(2689*2+3015*2) = 0.4714
     default_df_balance_pct=50.5,  # Traction-limited — benefits from more rear DF
     tyre_load_sensitivity=0.18,   # DSSV dampers give better contact — lower effective sensitivity
