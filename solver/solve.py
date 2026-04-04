@@ -715,7 +715,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             log(f"[space] Skipped: {e}")
 
     # ─── Multi-Speed Compromise Analysis (--multi-speed) ──────────────
-    if args.multi_speed:
+    if args.multi_speed and step1 is not None and step2 is not None and step3 is not None:
         log("[EXPERIMENTAL] Multi-speed solver is research-only and not validated for production use.")
         try:
             from solver.multi_speed_solver import MultiSpeedSolver
@@ -751,7 +751,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             log(f"[explore] Skipped: {e}")
 
     # ─── Bayesian Optimization (--bayesian) ───────────────────────────
-    if args.bayesian:
+    if args.bayesian and all(s is not None for s in [step2, step3, step4, step5]):
         log("[EXPERIMENTAL] Bayesian optimizer is research-only and not validated for production use.")
         try:
             from solver.bayesian_optimizer import BayesianOptimizer
