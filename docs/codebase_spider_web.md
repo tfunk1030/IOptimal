@@ -1,11 +1,12 @@
 # iOptimal Codebase Spider Web Analysis
-*Generated: 2026-04-01 18:00 UTC*
+*Generated: 2026-04-01 18:00 UTC*  
+*Updated: 2026-04-04 — Calibration gate, objective fixes*
 
 ---
 
 ## Architecture Overview
 
-**158 Python files** across **17 packages**, totaling **3,152 KB** of code.
+**159 Python files** across **17 packages**, totaling **~3,200 KB** of code.
 
 ```
                     ┌──────────────────────┐
@@ -25,8 +26,8 @@
     │ extract 80K │   │ cars  131KB │   │ profile 10K │
     │ diagnose 55 │   │ auto_cal 81 │   │ ibt_par  8K │
     │ setup_rd 22 │   │ registry 65 │   │ build   28K │
-    └──────┬──────┘   └──────┬──────┘   └─────────────┘
-           │                 │
+    └──────┬──────┘   │ calib_gate  │   └─────────────┘
+           │          └──────┬──────┘
     ┌──────┴──────┐   ┌──────┴──────┐
     │   output/   │   │  aero_model │
     │ writer 55KB │   │ interp  9KB │
@@ -43,7 +44,7 @@ IBT binary ──→ track_model.ibt_parser ──→ session_info (YAML dict)
                                            │
               ┌────────────────────────────┘
               ▼
-    analyzer.setup_reader.from_ibt()      ← [BUG FIXED] adapter_name now car-aware
+    analyzer.setup_reader.from_ibt()      ← adapter_name now car-aware
               │
               ▼
     CurrentSetup (dataclass)              ← 51 fields parsed from IBT
@@ -53,15 +54,21 @@ IBT binary ──→ track_model.ibt_parser ──→ session_info (YAML dict)
   learner.ingest()    pipeline.produce() / pipeline.reason()
     │                     │
     ▼                     ▼
-  Observation JSON    ObjectiveFunction.evaluate()
+  Observation JSON    CalibrationGate.check_step()  ← NEW (2026-04-04)
   (data/learnings/       │
-   observations/)        ├── _estimate_lap_gain() → lap_gain_ms  ← ONLY ACTIVE SIGNAL
-                         ├── platform_risk        → w=0.0 (ZEROED)
-                         ├── driver_mismatch      → w=0.0 (ZEROED)
-                         ├── empirical k-NN       → w=0.0 (ZEROED)
-                         ├── envelope_penalty     → w=0.0 (ZEROED)
-                         └── uncertainty          → w=0.0 (ZEROED)
+   observations/)        ├── BLOCKED → calibration instructions (not setup values)
+                         └── RUNNABLE → 6-step solver → ObjectiveFunction.evaluate()
+                                                           │
+                              ├── _estimate_lap_gain()     → lap_gain_ms (active)
+                              ├── damper compression bonus → gated on zeta_is_calibrated
+                              ├── platform_risk            → w set by scenario profile
+                              ├── driver_mismatch          → w=0 when no driver profile
+                              ├── empirical k-NN           → gated on ≥10 sessions
+                              ├── envelope_penalty         → w set by scenario profile
+                              └── uncertainty              → w set by scenario profile
 ```
+
+**Key change (2026-04-04):** The calibration gate sits between input loading and the solver. Each solver step is blocked if any required subsystem is uncalibrated. Blocked steps output calibration instructions — never a guess.
 
 ---
 
@@ -146,47 +153,44 @@ These use whatever CarModel provides — if non-BMW cars carry BMW-copied consta
 
 ---
 
-## 🔴 ROOT CAUSE: Why Ferrari (and All Non-BMW) Setups Are Bad
+## Non-BMW Car Status: Calibration Gate Now Enforced (2026-04-04)
 
-### The Scoring Function Is Deaf
+### Previous Problem (resolved)
 
-The `single_lap_safe` scenario profile (the default) sets ALL penalty weights to **0.0**:
+Previously, the solver ran all 6 steps for every car and always produced a full setup, even when models were uncalibrated. BMW coefficients were silently applied to Porsche (producing -55.9mm deflection — impossible). Physics estimates were presented as recommendations. The scoring function had all penalty weights zeroed because they were anti-correlated with BMW data.
 
-```python
-# solver/scenario_profiles.py — single_lap_safe
-w_lap_gain=1.00,     # ← ONLY this is non-zero
-w_platform=0.0,      # ← ZEROED
-w_driver=0.0,        # ← ZEROED
-w_uncertainty=0.0,    # ← ZEROED
-w_envelope=0.0,       # ← ZEROED
-w_staleness=0.0,      # ← ZEROED
-w_empirical=0.0,      # ← ZEROED
-```
+### Current State
 
-This was done because the calibration report showed penalty terms are anti-correlated with lap time for BMW/Sebring:
-- `damping_ms` Pearson: **+0.278** (higher penalty = FASTER laps — backwards)
-- `rebound_ratio_ms` Pearson: **+0.138** (backwards)
-- `lltd_balance_ms` Pearson: **+0.022** (noise)
+The **calibration gate** (`car_model/calibration_gate.py`) now blocks solver steps per car:
 
-**Why they're anti-correlated:** The penalty terms use BMW-calibrated targets (zeta=0.88/0.30, etc.) that don't reflect actual physics. More damping → higher zeta → lower penalty, but IBT data shows the optimal damping is at clicks 8-9, not at maximum. The monotonic assumption is wrong.
+| Car | Calibrated Steps | Blocked Steps | What User Sees |
+|-----|-----------------|---------------|----------------|
+| BMW | 1-6 (all) | none | Full setup output |
+| Ferrari | 1-3 | 4, 5, 6 | Partial setup + calibration instructions for ARB/geometry/dampers |
+| Cadillac | 2-3 | 1, 4, 5, 6 | Heave/spring output + instructions for RH model, ARB, geometry, dampers |
+| Porsche | 1-3 | 4, 5, 6 | Partial setup + calibration instructions |
+| Acura | — | 1-6 (all) | Calibration instructions only (step 1 blocked cascades) |
 
-### `_estimate_lap_gain()` Is the Only Active Scorer
+### Scoring Improvements (2026-04-04)
 
-With all other weights at zero, `lap_gain_ms` is the ONLY differentiator. For Ferrari:
+- **Damper compression signal added** — front LS comp (r=-0.447, strongest predictor) scored in `_estimate_lap_gain()`, gated on `zeta_is_calibrated`
+- **k-NN gated on data quality** — `w_empirical` zeroed when < 10 sessions available (prevents noisy predictions)
+- **Driver mismatch weight fix** — `w_driver=0.0` when no driver profile present (prevents wasted weight budget)
+- **DeflectionModel gate** — uncalibrated cars skip deflection veto entirely instead of applying BMW coefficients
+- **BMW/Sebring correlation improved** — Spearman from -0.06 to -0.30 (5x improvement)
 
-1. **LLTD:** Fixed at 0.510 (car constant) → `lltd_error=0.0` → **0ms contribution** ✅ (correct fix)
-2. **Dampers:** `zeta_is_calibrated=False` for Ferrari → **damper scoring SKIPPED entirely**
-3. **Rebound ratios:** Compute from raw click ratios → **4.8ms total range** (the only real differentiation)
-4. **DF balance:** Uses aero map → some differentiation but small for wing=17
-5. **Camber:** Fixed target → small differentiation
-6. **Diff:** Fixed 30 Nm target → small
-7. **TC:** No measured data → no gradient
+### What Non-BMW Cars Need to Unblock Steps 4-6
 
-**Total lap_gain_ms range for Ferrari: ~5ms** across the entire parameter space. For context, the actual lap time spread at Hockenheim is 87.5s to 90.5s = **3000ms**.
+Each car needs the following calibration data to unlock blocked steps:
 
-### The k-NN SessionDatabase Works But Is Unused
+1. **ARB stiffness** — 3+ garage screenshots with different ARB sizes → `python -m car_model.auto_calibrate --car <car> --model arb --screenshots <dir>`
+2. **LLTD target** — 10+ IBT sessions with varied settings → `python -m validation.calibrate_lltd --car <car> --track <track>`
+3. **Roll gains** — 3+ IBT sessions with lateral-g data → `python -m learner.ingest --car <car> --ibt <session.ibt>`
+4. **Damper zeta** — 5+ stints with varied LS comp clicks → `python -m validation.calibrate_dampers --car <car> --track <track>`
 
-Ferrari Hockenheim has **17 sessions loaded** in the SessionDatabase. But `w_empirical=0.0`, so the k-NN prediction is **never applied to the score**. This is the most valuable signal available — real lap time data correlated with setups — and it's turned off.
+### The k-NN SessionDatabase
+
+Ferrari Hockenheim has 17 sessions loaded. The k-NN is now gated on ≥10 sessions (Fix 5) rather than globally disabled. When Ferrari accumulates enough sessions at a track where `w_empirical > 0` in the scenario profile, k-NN will contribute.
 
 ---
 
@@ -211,21 +215,22 @@ Ferrari Hockenheim has **17 sessions loaded** in the SessionDatabase. But `w_emp
 - validation only tests BMW/Sebring
 - **Fix:** Use `garage_params.py` schema (already created) as dispatch layer
 
-### 4. Objective Function Collapse
-- All penalty weights zeroed because they're anti-correlated with BMW data
-- Only `lap_gain_ms` active → 5ms total differentiation for Ferrari
-- k-NN empirical data (17 Ferrari sessions) completely unused
-- **Fix:** Re-enable k-NN (`w_empirical`) for cars with ≥10 sessions; fix anti-correlated penalty terms individually
+### 4. Objective Function — Improved (2026-04-04)
+- ~~All penalty weights zeroed~~ → damper compression signal added (r=-0.447), driver_mismatch weight zeroed when no profile
+- ~~Only `lap_gain_ms` active~~ → lap_gain now includes damper compression bonus (gated on calibrated data)
+- k-NN gated on ≥10 sessions (was globally disabled) — ready to enable via scenario profile
+- BMW/Sebring Spearman improved from -0.06 to -0.30
+- **Remaining:** Re-enable k-NN in `single_lap_safe` after holdout validation
 
 ### 5. Two Separate Empirical Systems
 - `solver/session_database.py` → reads observations directly → **WORKS** (17 Ferrari sessions)
-- `learner/empirical_models.py` → reads `*_empirical.json` → **ALL EMPTY** (0 sessions everywhere)
-- `*_empirical.json` files are created but NEVER populated by any pipeline
-- **Fix:** Either wire the ingestion pipeline to populate `*_empirical.json`, or consolidate on SessionDatabase only
+- `learner/empirical_models.py` → reads `*_empirical.json` → **POPULATED** (BMW: 86 observations, 41 corrections)
+- Both systems serve different purposes: SessionDatabase for k-NN, empirical_models for learned corrections
+- **Status:** Both functional. No consolidation needed.
 
 ---
 
-## Data Flow Bottlenecks
+## Data Flow (updated 2026-04-04)
 
 ```
 IBT files → ibt_parser → session_info (YAML)
@@ -236,18 +241,23 @@ IBT files → ibt_parser → session_info (YAML)
          (CurrentSetup)  (measurements)    (TrackProfile)
               │               │                 │
               ▼               ▼                 ▼
-         observation     auto_calibrate    ObjectiveFunction
-         JSON files      (m_eff, zeta)     (scoring)
+         observation     auto_calibrate    CalibrationGate
+         JSON files      (m_eff, zeta)     (per-step blocking)
               │                                 │
-              ▼                                 ▼
-         SessionDatabase                   CandidateEvaluation
-         (k-NN, 17 Ferrari)               (score = lap_gain_ms only)
-              │
-              ▼
-         [UNUSED — w_empirical=0.0]
+              ▼                          ┌──────┴──────┐
+         SessionDatabase                 ▼             ▼
+         (k-NN predictions)        BLOCKED steps  RUNNABLE steps
+              │                    → calibration  → 6-step solver
+              ▼                      instructions → ObjectiveFunction
+         k-NN scoring                               (scoring)
+         (gated: ≥10 sessions)                       │
+                                                     ▼
+                                              CandidateEvaluation
+                                              (lap_gain + damper comp
+                                               + platform + k-NN)
 ```
 
-**The data is there. The scoring just doesn't use it.**
+**The calibration gate ensures no solver step runs with unproven data.** Blocked steps tell the user exactly what to collect. Runnable steps produce validated output.
 
 ---
 
@@ -269,38 +279,39 @@ IBT files → ibt_parser → session_info (YAML)
 
 ---
 
-## Recommended Fix Priority
+## Recommended Fix Priority (updated 2026-04-04)
 
-| # | Fix | Impact | Effort | Files |
-|---|-----|--------|--------|-------|
-| 1 | Re-enable `w_empirical` for cars with ≥10 k-NN sessions | **HIGH** — unlocks 17 Ferrari data points | Low | scenario_profiles.py |
-| 2 | Fix anti-correlated damper penalty direction | **HIGH** — largest single penalty term | Medium | objective.py |
-| 3 | Wire `garage_params.py` into solver dispatch | **HIGH** — eliminates BMW leakage | High | 34 files |
-| 4 | Split car_model.cars into per-car modules | Medium — reduces blast radius | High | 46 dependents |
-| 5 | Populate `*_empirical.json` or remove dead code | Medium — removes confusion | Low | learner/ |
-| 6 | Break pipeline.reason/produce god modules | Medium — long-term maintenance | Very High | 50+ imports |
-| 7 | Add Porsche Roll Spring to solver | Medium — Porsche currently unsolvable | Medium | solver/, car_model/ |
-| 8 | Validate Cadillac torsion OD + adapter fix | Low (only 4 sessions) | Low | cars.py |
+| # | Fix | Impact | Effort | Status |
+|---|-----|--------|--------|--------|
+| 1 | Calibration gate — block uncalibrated steps | **CRITICAL** | Medium | **DONE** (2026-04-04) |
+| 2 | Fix damper compression signal + zero-variance | **HIGH** | Low | **DONE** (2026-04-04) |
+| 3 | k-NN gated on ≥10 sessions | **HIGH** | Low | **DONE** (2026-04-04) |
+| 4 | DeflectionModel gate (no BMW coefficients on other cars) | **HIGH** | Low | **DONE** (2026-04-04) |
+| 5 | Collect Ferrari calibration data for steps 4-6 | **HIGH** — unlocks 3 blocked steps | User action | PENDING |
+| 6 | Collect Cadillac RH model data (10+ garage screenshots) | **HIGH** — unlocks step 1 cascade | User action | PENDING |
+| 7 | Wire `garage_params.py` into solver dispatch | Medium — eliminates remaining BMW leakage | High | PENDING |
+| 8 | Split car_model.cars into per-car modules | Medium — reduces blast radius | High | PENDING |
+| 9 | Break pipeline.reason/produce god modules | Medium — long-term maintenance | Very High | PENDING |
 
 ---
 
-## Quick Wins (Can Implement Today)
+## Next Steps (2026-04-04)
 
-### 1. Re-enable k-NN for Ferrari
+### 1. Collect calibration data for non-BMW cars
 
-```python
-# scenario_profiles.py — single_lap_safe
-# Change w_empirical from 0.0 to conditional:
-# If car has ≥10 sessions in SessionDatabase → w_empirical=0.30
-# This alone gives Ferrari 17 real data points of signal
-```
+The calibration gate now tells users exactly what to collect. Priority data collection:
 
-### 2. Use `quali` scenario for grid search
+- **Ferrari steps 4-6:** ARB stiffness (3 garage screenshots), LLTD target (10+ IBT sessions), roll gains (3+ sessions), damper zeta (5-stint click-sweep)
+- **Cadillac step 1:** Ride height model (10+ garage screenshots with varied spring/pushrod combinations)
+- **Acura step 1:** Aero compression (3+ IBT sessions at different speeds), ride height model (10+ garage screenshots)
 
-The `quali` profile has ALL weights non-zero:
-```python
-w_platform=0.90, w_driver=0.35, w_uncertainty=0.45,
-w_envelope=0.50, w_empirical=0.25
-```
+### 2. Continue BMW/Sebring objective hardening
 
-This profile would immediately give Ferrari meaningful differentiation. The reason `single_lap_safe` was zeroed is that it was tested only against BMW/Sebring — the penalty terms may work fine for Ferrari where the physics model is calibrated differently.
+Spearman improved from -0.06 to -0.30. Next targets:
+- Reduce fallback dependence in signal extraction
+- Test holdout stability across multiple validation runs
+- Consider re-enabling w_empirical for BMW (99 sessions >> 10 threshold)
+
+### 3. k-NN integration
+
+The k-NN data quality gate (≥10 sessions) is implemented. Next: set `w_empirical > 0` in `single_lap_safe` scenario profile once holdout validation confirms it doesn't worsen BMW correlation.

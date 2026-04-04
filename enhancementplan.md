@@ -8,7 +8,7 @@ This document is the current roadmap for improving IOptimal from a BMW/Sebring-f
 2. generalize the tooling so new cars and tracks can be onboarded without copy-paste heuristics,
 3. promote each new car/track only when the evidence says it is ready.
 
-## Current State
+## Current State (updated 2026-04-04)
 
 ### What the codebase already does
 
@@ -17,29 +17,70 @@ This document is the current roadmap for improving IOptimal from a BMW/Sebring-f
 - `solver/legal_search.py` now treats free optimization as a search over the full legal setup manifold from a pinned baseline seed.
 - `validation/run_validation.py` and `validation/objective_calibration.py` produce reproducible BMW/Sebring evidence from canonical setup mappings.
 - The webapp uses the same scenario-profile path as the CLI.
+- **Calibration gate** (`car_model/calibration_gate.py`) blocks solver steps whose required subsystems lack proven calibration data. Blocked steps output step-by-step calibration instructions instead of unproven setup values. This is the foundational change that enforces the philosophy: **never output a setup value from an uncalibrated model**.
+
+### Philosophy change: calibrated output or calibration instructions
+
+Prior to 2026-04-04, the solver ran all 6 steps for every car/track combination and always produced a full setup, even when critical models were uncalibrated. The system printed a warning but continued anyway, producing values based on BMW coefficients applied to other cars, physics estimates treated as calibration, or default values presented as recommendations.
+
+**This is no longer the case.** The pipeline now enforces a hard rule:
+
+- If a subsystem required by a solver step is not calibrated from real measured data for that specific car, the step is **BLOCKED**.
+- Blocked steps output **calibration instructions** — exactly what the user needs to do in the sim to collect the data, and the exact CLI command to run after collecting it.
+- The solver still runs calibrated steps and produces validated output for those.
+- The .sto file only contains values from calibrated steps. Uncalibrated parameters are left at garage defaults.
+- The JSON output includes `calibration_blocked` and `calibration_instructions` fields when steps are blocked.
+
+This means the system is honest about what it knows and what it doesn't. An incomplete setup with calibration instructions is more useful than a complete setup built on unproven data.
 
 ### What is still weak
 
-- BMW/Sebring is the only calibrated path, and even there the objective is still not strong enough to justify "optimal" claims.
-- Ferrari, Cadillac, Porsche, and Acura do not have equivalent setup-schema confidence, telemetry truth, garage-truth fixtures, or observation volume.
+- BMW/Sebring is the only fully calibrated car/track pair (all 6 steps pass the calibration gate).
+- Ferrari, Cadillac, Porsche, and Acura have partial calibration — steps 1-3 may run, but steps 4-6 are blocked pending ARB stiffness, LLTD targets, roll gains, and damper zeta calibration.
 - Several validation signals still use fallbacks or proxies instead of direct telemetry on some rows.
-- The optimizer is better constrained than before, but the score model remains the limiting factor.
+- The objective correlation has improved significantly (Spearman from -0.06 to -0.30) but is not yet strong enough to justify "optimal" claims.
 
-### Current support tiers
+### Current support tiers and calibration status
 
-- BMW/Sebring: calibrated
-- Ferrari/Sebring: partial
-- Cadillac/Silverstone: exploratory
-- Porsche/Sebring: unsupported
-- Acura: unsupported
+| Car | Primary Track | Tier | Observations | Calibrated Steps | Blocked Steps |
+|-----|--------------|------|-------------|-----------------|---------------|
+| BMW | Sebring | calibrated | 99 | 1-6 (all) | none |
+| Ferrari | Sebring | partial | 12 | 1-3 | 4 (ARB), 5 (Geometry), 6 (Dampers) |
+| Cadillac | Silverstone | exploratory | 4 | 2-3 | 1 (RH model), 4, 5, 6 |
+| Porsche | Sebring | unsupported | 2 | 1-3 | 4, 5, 6 |
+| Acura | Hockenheim | exploratory | 7 | — | 1-6 (all blocked; step 1 cascades) |
+
+### Per-subsystem calibration matrix
+
+| Subsystem | BMW | Ferrari | Cadillac | Porsche | Acura |
+|-----------|-----|---------|----------|---------|-------|
+| Aero compression | calibrated | calibrated | calibrated | calibrated | uncalibrated |
+| Ride height model | calibrated | calibrated | uncalibrated | calibrated | uncalibrated |
+| Deflection model | calibrated | calibrated | uncalibrated | uncalibrated | uncalibrated |
+| Pushrod geometry | calibrated | calibrated | calibrated | calibrated | calibrated |
+| Spring rates | calibrated | calibrated | calibrated | calibrated | calibrated |
+| ARB stiffness | calibrated | uncalibrated | partial | uncalibrated | uncalibrated |
+| LLTD target | calibrated (0.41) | uncalibrated | uncalibrated | uncalibrated | uncalibrated |
+| Roll gains | calibrated | uncalibrated | uncalibrated | uncalibrated | uncalibrated |
+| Damper zeta | calibrated | uncalibrated | uncalibrated | uncalibrated | uncalibrated |
+
+### Recent improvements (2026-04-04)
+
+1. **Calibration gate framework** — per-car, per-subsystem, per-step blocking with calibration instructions
+2. **DeflectionModel gate** — uncalibrated cars skip deflection veto instead of applying BMW coefficients
+3. **Zero-variance physics fix** — all physics outputs now vary across observations (was zero-variance due to variable ordering bug)
+4. **Damper compression signal** — front LS comp (r=-0.447, strongest predictor) now scored, gated on calibrated data
+5. **k-NN data quality gate** — empirical weight zeroed when < 10 sessions available
+6. **Driver mismatch fix** — w_driver=0 when no driver profile, preventing wasted weight budget
+7. **Objective correlation improved** — BMW/Sebring Pearson from ~0.003 to ~0.226, Spearman from -0.06 to -0.30
 
 ## Improvement Goals
 
 ### Goal 1: Trust the score before widening scope
 
-The program should not claim an "optimal" setup until the ranking objective is materially predictive on holdout data. Current BMW/Sebring validation is useful, but still too weak to serve as a final authority.
+The program should not claim an "optimal" setup until the ranking objective is materially predictive on holdout data. BMW/Sebring Spearman has improved from -0.06 to -0.30, which is meaningful progress but not yet authoritative. The calibration gate ensures the system never makes claims beyond what the data supports.
 
-### Goal 2: Make onboarding repeatable
+### Goal 2: Make onboarding repeatable — and gated by calibration
 
 Every new car and every new track should follow the same onboarding pipeline:
 
@@ -47,12 +88,19 @@ Every new car and every new track should follow the same onboarding pipeline:
 - telemetry extraction and signal quality
 - garage-truth correlation
 - canonical observation storage
+- **per-subsystem calibration from real measured data**
 - calibration report
 - support-tier promotion
+
+The calibration gate (`car_model/calibration_gate.py`) now enforces this automatically. A car cannot produce setup values for a solver step until its required subsystems are calibrated. The gate outputs specific calibration instructions telling the user exactly what data to collect and which CLI command to run.
 
 ### Goal 3: Learn from data without violating garage/legal constraints
 
 The system should become more data-aware over time, but learning must only bias choices inside the legal setup manifold and must never bypass iRacing garage limits or validated parameter relationships.
+
+### Goal 4: Never output unproven setup values
+
+The solver must never present a guess as a recommendation. If a model is uncalibrated for a specific car/track, the output must be calibration instructions — not a value derived from another car's data, not a physics estimate, not a default. This goal is now enforced by the calibration gate and is the philosophical foundation of the entire system.
 
 ## Workstream A: BMW/Sebring Objective Hardening
 
@@ -363,29 +411,40 @@ These thresholds are intentionally conservative.
 
 ## Recommended Phase Order
 
-### Phase 1
+### Phase 0 — COMPLETED (2026-04-04)
 
-- BMW/Sebring objective hardening
-- validation gates
+- Calibration gate framework: per-car, per-subsystem, per-step blocking
+- DeflectionModel gate: uncalibrated cars no longer hard-vetoed by BMW coefficients
+- Zero-variance physics fix: all outputs now vary across observations
+- Damper compression signal: strongest predictor (r=-0.447) now scored
+- k-NN data quality gate and driver_mismatch weight fix
+- BMW/Sebring Spearman improved from -0.06 to -0.30
+
+### Phase 1 — IN PROGRESS
+
+- BMW/Sebring objective hardening (correlation improving, not yet authoritative)
 - signal-quality reduction of fallback dependence
+- continued validation gate hardening
 
 ### Phase 2
 
-- Ferrari/Sebring schema and garage-truth parity
-- Ferrari calibration report
+- Ferrari/Sebring calibration: ARB stiffness from garage screenshots, LLTD from 10+ IBT sessions, roll gains from lateral-g data, damper zeta from click-sweep
+- Ferrari calibration report and promotion to calibrated (steps 4-6)
 
 ### Phase 3
 
-- Cadillac/Silverstone evidence expansion
+- Cadillac/Silverstone: ride height model calibration (10+ garage screenshots), evidence expansion
 - Cadillac legality and garage-truth parity
 
 ### Phase 4
 
-- Porsche setup-schema and telemetry truth foundation
+- Porsche: deflection model calibration, ARB/LLTD/roll gains/damper zeta calibration
+- Porsche telemetry truth fixtures
 
 ### Phase 5
 
-- Acura setup registry, telemetry truth, and first supported car/track pairing
+- Acura: aero compression from IBT, ride height model from garage screenshots, full calibration pipeline
+- Acura setup registry completion and first supported car/track pairing
 
 ### Phase 6
 
@@ -411,6 +470,9 @@ Do not promote a new car or track on anecdotal setup lore alone.
 The program is "working" when:
 
 - every promoted car/track pair has explicit evidence behind it,
-- the UI reports confidence honestly,
+- the calibration gate blocks every solver step that lacks proven data — no exceptions,
+- blocked steps output actionable calibration instructions, not silence or warnings,
+- the UI reports confidence honestly and shows which steps are calibrated vs blocked,
 - legal-manifold search never emits illegal or garage-incoherent candidates,
-- the objective ranking is good enough that setup recommendations beat or at least match known good baselines often enough to be trusted.
+- the objective ranking is good enough that setup recommendations beat or at least match known good baselines often enough to be trusted,
+- no car/track combination ever silently outputs setup values from uncalibrated models.

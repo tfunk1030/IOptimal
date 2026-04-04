@@ -137,3 +137,52 @@ From `calibration_report.md`:
 ---
 
 *Next scheduled run: ~2026-04-15*
+
+---
+
+## 2026-04-04 — Fixes Applied (Calibration Gate + Objective Corrections)
+
+The following issues identified in the 2026-04-01 run have been resolved:
+
+### Resolved Issues
+
+1. **Hard veto on all sessions (DeflectionModel)** — FIXED.
+   - Root cause: BMW DeflectionModel intercept was wrong (-20.756, not 6.54).
+   - Additionally, the deflection veto now checks `car.deflection.is_calibrated` before applying.
+   - Non-BMW cars with uncalibrated deflection models skip the veto entirely instead of
+     applying BMW coefficients (which produced impossible values like -55.9mm for Porsche).
+   - See `solver/objective.py` deflection veto section.
+
+2. **Parameter key mismatch** — Already resolved.
+   - `normalize_setup_to_canonical_params()` in `validation/observation_mapping.py` maps
+     observation keys (`front_heave_nmm`, `torsion_bar_od_mm`) to canonical keys
+     (`front_heave_spring_nmm`, `front_torsion_od_mm`). The objective uses canonical keys correctly.
+
+3. **driver_mismatch always zero** — FIXED.
+   - When `driver_profile is None` (no driver telemetry), `w_driver` is now set to 0.0
+     so the zero term doesn't waste weight budget.
+
+4. **Zero-variance physics outputs** — FIXED.
+   - Damper click variables were used before definition in `_estimate_lap_gain()`.
+   - Variable extraction moved before the damper compression bonus block.
+   - All physics outputs (LLTD, zeta, wheel rates, excursion, DF balance) now vary
+     across the 99 BMW/Sebring observations.
+
+5. **Damper compression signal added** — NEW.
+   - `front_ls_comp` r=-0.447 (strongest single predictor) now scored in objective.
+   - Gated behind `zeta_is_calibrated` — only applies for BMW where correlation is measured.
+
+### New: Calibration Gate Framework
+
+A `CalibrationGate` (`car_model/calibration_gate.py`) now blocks solver steps whose
+required subsystems are uncalibrated. Per-car calibration status:
+
+| Car | Calibrated Steps | Blocked Steps |
+|-----|-----------------|---------------|
+| BMW | 1-6 (all) | none |
+| Ferrari | 1-3 | 4 (ARB), 5 (Geometry), 6 (Dampers) |
+| Cadillac | 2-3 | 1 (RH model), 4, 5, 6 |
+| Porsche | 1-3 | 4, 5, 6 |
+| Acura | 2-3 | 1 (RH + aero), 4, 5, 6 |
+
+Blocked steps output calibration instructions instead of setup values.

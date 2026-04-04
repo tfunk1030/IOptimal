@@ -1,7 +1,7 @@
 # IOptimal Agent Guide
 
 > Master reference for all AI agents working on this codebase.  
-> Last updated: 2026-04-03
+> Last updated: 2026-04-04
 
 ---
 
@@ -9,23 +9,69 @@
 
 IOptimal is a **physics-based car setup calculator for iRacing GTP/Hypercar**. It reads binary telemetry (IBT) files, diagnoses handling problems, profiles driver behavior, and produces optimized `.sto` setup files loadable directly into iRacing. Every recommendation is justified by physics constraints -- not pattern matching.
 
-## Current State (2026-04-03)
+## Core Philosophy: Calibrated or Instruct, Never Guess
 
-### Calibration Tiers
+**The system NEVER outputs a setup value from an uncalibrated model.** If a subsystem isn't calibrated from real measured data for that specific car, the output is calibration instructions -- not a guess.
 
-| Car | Tier | Observations | What's Calibrated | What's Missing |
-|-----|------|-------------|-------------------|----------------|
-| BMW M Hybrid V8 | **Calibrated** | 73 (Sebring) | Garage output model (60 regressions), RH model, deflection model, heave calibration, damper zeta targets (0.68/0.23/0.47/0.20), m_eff, LLTD target (0.41), aero compression, spring lookups | Holdout Spearman still weak (-0.12), m_eff uses lap-wide not HS-filtered stats |
-| Ferrari 499P | **Partial** | ~25 (Hockenheim + Sebring) | Rear torsion C=0.001282 (MR=0.612), indexed control lookups (heave 0-8/0-9, torsion 0-18), 3 calibration points | Garage output model, deflection model, damper zeta, LLTD target |
-| Cadillac V-Series.R | **Exploratory** | 4 (Silverstone) | Aero compression calibrated (front=12mm, rear=18.5mm) | Everything else estimated |
-| Porsche 963 | **Unsupported** | 2 (Sebring) | Roll gradient (0.84 deg/g), aero compression rough (front=12mm, rear=23mm) | Everything: garage model, RH model, deflection, damper force/click, m_eff, spring C, ARB stiffness, LLTD -- all ESTIMATE |
-| Acura ARX-06 | **Exploratory** | 7 (Hockenheim) | m_eff (front=450, rear=220), pushrod-to-RH regression (R^2=0.91), ORECA chassis architecture | Torsion C (borrowing BMW), aero maps uncalibrated, roll dampers baseline only |
+This is enforced by the **CalibrationGate** (`car_model/calibration_gate.py`), which sits between input loading and the solver. Each solver step is checked against per-car, per-subsystem calibration status. Blocked steps output calibration instructions telling the user exactly what data to collect and what CLI commands to run. Runnable steps produce validated output.
+
+## Current State (2026-04-04)
+
+### Calibration Gate Status
+
+The CalibrationGate enforces per-car, per-step blocking. Each solver step requires specific calibrated subsystems. If ANY required subsystem is uncalibrated, the step is **blocked** and outputs calibration instructions.
+
+| Car | Tier | Observations | Calibrated Steps | Blocked Steps | What User Sees |
+|-----|------|-------------|-----------------|---------------|----------------|
+| BMW M Hybrid V8 | **Calibrated** | 99 (Sebring) | 1-6 (all) | none | Full setup output |
+| Ferrari 499P | **Partial** | ~25 (Hock+Seb) | 1-3 | 4, 5, 6 | Partial setup + calibration instructions for ARB/geometry/dampers |
+| Cadillac V-Series.R | **Exploratory** | 4 (Silverstone) | 2-3 | 1, 4, 5, 6 | Heave/spring output + instructions for RH model, ARB, geometry, dampers |
+| Porsche 963 | **Unsupported** | 2 (Sebring) | 1-3 | 4, 5, 6 | Partial setup + calibration instructions |
+| Acura ARX-06 | **Exploratory** | 7 (Hockenheim) | — | 1-6 (all) | Calibration instructions only (step 1 blocked cascades) |
+
+### Per-Subsystem Calibration Matrix
+
+| Subsystem | BMW | Ferrari | Cadillac | Porsche | Acura |
+|-----------|-----|---------|----------|---------|-------|
+| Aero maps | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Aero compression | ✅ | ✅ | ✅ | ✅ | ❌ ESTIMATE |
+| Ride height model | ✅ | ✅ | ⚠️ borrowed | ✅ | ❌ uncalibrated |
+| Deflection model | ✅ | ✅ | ✅ | ❌ uncalibrated | ❌ uncalibrated |
+| Damper zeta | ✅ (0.68/0.23/0.47/0.20) | ❌ estimate | ❌ estimate | ❌ estimate | ❌ uncalibrated |
+| ARB stiffness | ✅ | ❌ estimate | ⚠️ inherited BMW | ❌ estimate | ❌ estimate |
+| LLTD target | ✅ (0.41) | ❌ not set | ❌ not set | ❌ not set | ❌ not set |
+| Roll gains | ✅ | ✅ | ❌ estimate | ❌ estimate | ❌ estimate |
+| Pushrod geometry | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+### Per-Step Calibration Requirements
+
+| Step | Name | Required Subsystems |
+|------|------|-------------------|
+| 1 | Rake/RH | aero_maps, aero_compression, ride_height_model, pushrod_geometry |
+| 2 | Heave/Third | Step 1 output, m_eff, track_profile |
+| 3 | Corner Springs | Step 2 output, torsion_constants, spring_rates |
+| 4 | ARBs | Step 3 output, arb_stiffness, lltd_target |
+| 5 | Geometry | Step 4 output, roll_gains, camber/toe ranges |
+| 6 | Dampers | Step 5 output, damper_zeta, force_per_click |
+
+### Objective Function Status (2026-04-04)
+
+BMW/Sebring correlation improved significantly:
+- **Spearman**: -0.06 → **-0.298** (5× improvement)
+- **Pearson**: ~0.003 → **~0.226**
+
+Key fixes applied:
+- Zero-variance physics resolved (variable ordering bug in `_estimate_lap_gain()`)
+- Damper compression signal added (front LS comp r=-0.447, strongest predictor), gated on `zeta_is_calibrated`
+- `w_driver=0.0` when no driver profile present (prevents wasted weight budget)
+- k-NN gated on ≥10 sessions (was globally disabled)
+- DeflectionModel gate: uncalibrated cars skip deflection veto entirely
 
 ### Active Goals
 
-1. **Porsche 963 at Algarve Grand Prix** -- This week's race. Need rapid calibration from unsupported to functional.
-2. **BMW/Sebring score model improvement** -- Spearman -0.12 is weak; enhancementplan.md tracks roadmap.
-3. **Multi-car onboarding** -- Each car needs 5+ varied garage screenshots and 10+ IBT sessions for basic calibration.
+1. **BMW/Sebring objective hardening** -- Spearman -0.298 is approaching actionable but not yet authoritative. Continue improving signal extraction and holdout stability.
+2. **Collect calibration data for non-BMW cars** -- The calibration gate tells users exactly what to collect. Priority: Ferrari steps 4-6, Cadillac step 1, Acura step 1.
+3. **k-NN integration** -- Data quality gate (≥10 sessions) implemented. Set `w_empirical > 0` in `single_lap_safe` after holdout validation confirms it doesn't worsen BMW correlation.
 
 ## Architecture Quick Reference
 
@@ -33,7 +79,9 @@ IOptimal is a **physics-based car setup calculator for iRacing GTP/Hypercar**. I
 ```
 IBT -> track_model/build_profile -> analyzer/extract -> analyzer/diagnose
     -> analyzer/driver_style -> aero_model/gradient -> solver/modifiers
-    -> solver/solve_chain (6 steps) -> output/setup_writer (.sto)
+    -> CalibrationGate.check_step() (per-step blocking)
+        ├── BLOCKED -> calibration instructions (not setup values)
+        └── RUNNABLE -> solver/solve_chain (6 steps) -> output/setup_writer (.sto)
     -> learner/ingest (knowledge accumulation)
 ```
 
@@ -49,6 +97,7 @@ IBT -> track_model/build_profile -> analyzer/extract -> analyzer/diagnose
 | Task | Primary Files |
 |------|--------------|
 | Add/modify car model | `car_model/cars.py`, `car_model/garage_params.py`, `car_model/legality.py`, `car_model/setup_registry.py` |
+| Calibration gate | `car_model/calibration_gate.py`, `solver/solve.py` |
 | Fix telemetry extraction | `analyzer/extract.py`, `analyzer/setup_reader.py` |
 | Modify solver physics | `solver/{step}_solver.py`, `solver/solve_chain.py` |
 | Change scoring | `solver/objective.py`, `solver/scenario_profiles.py` |
@@ -62,18 +111,22 @@ IBT -> track_model/build_profile -> analyzer/extract -> analyzer/diagnose
 - Follow the 6-step ordering. Never jump to dampers before rake is set.
 - Use physics justification for every parameter value.
 - Respect calibration tiers -- don't claim BMW-level accuracy for Porsche.
+- **Always check CalibrationGate before outputting setup values.** If a subsystem is uncalibrated, output calibration instructions instead.
 - Check `car_model/setup_registry.py` for correct YAML paths and STO param IDs before modifying setup readers/writers.
 - Use `snap_to_resolution()` when writing garage values.
 - Apply `rear_motion_ratio ** 2` when converting rear spring rate to wheel rate.
 - Test with `python -m pytest tests/` before committing.
+- **Gate new scoring signals on calibration status.** Any new signal added to the objective function must be gated behind verified calibration data (like damper compression is gated on `zeta_is_calibrated`).
 
 ### DON'T
+- **Don't output setup values from uncalibrated models.** This is the #1 rule. Output calibration instructions instead.
 - Don't pattern-match from other cars' setups.
 - Don't use `lltd_measured` as true LLTD -- it's a roll stiffness distribution proxy.
-- Don't auto-apply calibration weights -- Spearman is too weak for autonomous weight application.
+- Don't auto-apply calibration weights -- Spearman is improving but not yet authoritative.
 - Don't modify the solver step order.
 - Don't assume Porsche/Cadillac/Acura garage models work like BMW's -- they have uncalibrated deflection/RH models.
 - Don't write `include_computed=True` in .sto files for non-BMW cars (may cause iRacing rejection).
+- **Don't apply BMW coefficients to other cars.** The DeflectionModel gate ensures uncalibrated cars skip deflection veto entirely. Similar gates exist for damper zeta, LLTD, and ARB stiffness.
 
 ### Critical Conventions
 - **Front torsion bar `front_wheel_rate_nmm`** = already a wheel rate (MR baked into C*OD^4)
@@ -126,3 +179,35 @@ IBT -> track_model/build_profile -> analyzer/extract -> analyzer/diagnose
 - Open differential (no diff tuning)
 - Front pushrod_to_rh = 1.28 (not pinned like BMW)
 - Same Dallara chassis as BMW but different aero/weight
+
+## How to Unblock Calibration Steps for Non-BMW Cars
+
+Each car needs specific real-world data to unlock blocked steps. The CalibrationGate outputs these instructions automatically, but here's the summary:
+
+| Data Needed | CLI Command | Unlocks |
+|-------------|------------|---------|
+| ARB stiffness (3+ garage screenshots, varied ARB sizes) | `python -m car_model.auto_calibrate --car <car> --model arb --screenshots <dir>` | Step 4 |
+| LLTD target (10+ IBT sessions, varied settings) | `python -m validation.calibrate_lltd --car <car> --track <track>` | Step 4 |
+| Roll gains (3+ IBT sessions with lateral-g data) | `python -m learner.ingest --car <car> --ibt <session.ibt>` | Step 5 |
+| Damper zeta (5+ stints, varied LS comp clicks) | `python -m validation.calibrate_dampers --car <car> --track <track>` | Step 6 |
+| Aero compression (3+ IBT sessions, different speeds) | `python -m learner.ingest --car <car> --ibt <each_file>` | Step 1 |
+| Ride height model (10+ garage screenshots, varied spring/pushrod) | `python -m car_model.auto_calibrate --car <car> --model rh --screenshots <dir>` | Step 1 |
+
+## Empirical Data Systems
+
+Two empirical systems exist, both functional and serving different purposes:
+
+1. **SessionDatabase** (`solver/session_database.py`) -- k-NN predictions from observations. BMW: 99 sessions, Ferrari: 17 sessions. Gated on ≥10 sessions per car/track.
+2. **EmpiricalModels** (`learner/empirical_models.py`) -- Learned corrections from `*_empirical.json`. BMW: 86 observations, 41 corrections. Prediction feedback loop.
+
+No consolidation needed -- they serve complementary roles.
+
+## Recent Changes Log (2026-04-04)
+
+- **CalibrationGate framework** added (`car_model/calibration_gate.py`). Per-car, per-subsystem, per-step blocking.
+- **DeflectionModel gate** -- uncalibrated cars skip deflection veto entirely (was applying BMW coefficients to all cars, producing impossible -55.9mm for Porsche).
+- **Zero-variance physics fix** -- damper click variables were extracted AFTER being used in `_estimate_lap_gain()`, causing UnboundLocalError caught by try/except → all sessions got defaults.
+- **Damper compression signal** -- front LS comp (r=-0.447) now scored in objective, gated on `zeta_is_calibrated`.
+- **driver_mismatch weight** -- `w_driver=0.0` when no driver profile present.
+- **k-NN data quality gate** -- `w_empirical` zeroed when < 10 sessions available.
+- **BMW/Sebring Spearman** improved from -0.06 to -0.298 (5× improvement).

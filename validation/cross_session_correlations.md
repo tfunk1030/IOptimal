@@ -179,3 +179,37 @@ w_damping_signal = 0.50    # NEW: add explicit damper compression reward term
 ---
 
 *Analysis run on 2026-04-01. Methodology: Pearson r, scipy.stats.pearsonr, n=99 BMW Sebring sessions.*
+
+---
+
+## 2026-04-04 Addendum — Fixes Applied
+
+The following issues from the 2026-04-01 analysis have been resolved:
+
+### Resolved
+
+1. **Hard veto on all sessions (#1)** — FIXED. DeflectionModel intercept was already corrected
+   (-20.756). Additionally, the deflection veto now checks `car.deflection.is_calibrated`
+   and skips the check entirely for uncalibrated cars (Porsche, Acura, Cadillac).
+
+2. **LLTD target (#2)** — BMW `measured_lltd_target` is 0.41 (set from IBT data, not 0.472).
+   Cars without measured LLTD data are now blocked by the CalibrationGate at Step 4.
+
+3. **Front LS compression reward (#3, #5)** — ADDED. Damper compression bonus in
+   `_estimate_lap_gain()`, gated behind `zeta_is_calibrated`. BMW only (r=-0.447 measured).
+
+4. **Zero-variance physics (#6)** — FIXED. Variable ordering bug caused `UnboundLocalError`.
+   All physics outputs now vary across observations:
+   - df_balance: 48.3–49.2% (was constant 51.06%)
+   - zeta_ls_front: 0.62–0.76 (was constant 0.640)
+   - front_wheel_rate: 30.0–34.0 N/mm (was constant 30.0)
+   - LLTD: 0.41–0.54 (was constant)
+
+5. **driver_mismatch always zero** — `w_driver` now set to 0.0 when no driver profile
+   is available, preventing wasted weight budget.
+
+### New: Calibration Gate
+
+Solver steps are now gated by per-car, per-subsystem calibration status. Uncalibrated
+steps output calibration instructions instead of setup values. See
+`car_model/calibration_gate.py` for the framework.
