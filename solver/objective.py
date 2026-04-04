@@ -880,15 +880,19 @@ class ObjectiveFunction:
 
             # Dynamic ride heights (use car compression model when available)
             # static_front_rh - aero_compression → mean floor height at speed.
-            # Fallback to 19.0mm if model not available.
+            # Aero compression scales with V²; use track median speed for the
+            # operating-point estimate (falls back to calibration ref speed).
+            _op_speed = getattr(track, "median_speed_kph",
+                                car.aero_compression.ref_speed_kph)
             _static_f = car.pushrod.front_pinned_rh_mm
-            _comp_f = car.aero_compression.front_compression_mm
+            _comp_f = car.aero_compression.front_at_speed(_op_speed)
             dyn_front_rh = max(5.0, _static_f - _comp_f)
-            # Compute rear dynamic RH from car model instead of hardcoded BMW value.
-            # Rear RH at speed = static - aero compression (same logic as front).
-            _rear_base = getattr(car.pushrod, "rear_base_rh_mm", 50.0)
-            _rear_comp = car.aero_compression.rear_compression_mm
-            dyn_rear_rh = max(5.0, _rear_base - _rear_comp)
+            # Rear static RH depends on the candidate's rear pushrod offset.
+            # rear_rh_for_offset() returns rear_base_rh + offset * rear_pushrod_to_rh.
+            _rear_pushrod = float(params.get("rear_pushrod_offset_mm", 0.0))
+            _rear_static = car.pushrod.rear_rh_for_offset(_rear_pushrod)
+            _rear_comp = car.aero_compression.rear_at_speed(_op_speed)
+            dyn_rear_rh = max(5.0, _rear_static - _rear_comp)
             result.front_bottoming_margin_mm = dyn_front_rh - result.front_excursion_mm
             result.rear_bottoming_margin_mm = dyn_rear_rh - result.rear_excursion_mm
 
