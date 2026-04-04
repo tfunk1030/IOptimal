@@ -388,6 +388,14 @@ class ObjectiveFunction:
 
     def _new_breakdown(self) -> ObjectiveBreakdown:
         weights = self._scenario_profile.objective
+        # Gate empirical weight on session count: only enable when the
+        # SessionDatabase has >= 10 sessions for this car/track pair.
+        # Sparse data (< 10) produces noisy k-NN predictions.
+        _w_emp = weights.w_empirical
+        if _w_emp > 0.0 and self._session_db is not None:
+            _n_sessions = len(getattr(self._session_db, "sessions", []))
+            if _n_sessions < 10:
+                _w_emp = 0.0  # not enough data for reliable k-NN
         breakdown = ObjectiveBreakdown(
             w_lap_gain=weights.w_lap_gain,
             w_platform=weights.w_platform,
@@ -395,7 +403,7 @@ class ObjectiveFunction:
             w_uncertainty=weights.w_uncertainty,
             w_envelope=weights.w_envelope,
             w_staleness=weights.w_staleness,
-            w_empirical=weights.w_empirical,
+            w_empirical=_w_emp,
         )
         if self.explore:
             breakdown.w_empirical = 0.0
@@ -1142,6 +1150,10 @@ class ObjectiveFunction:
         )
 
         # ── 3. Driver mismatch ──────────────────────────────────────────
+        # Zero the weight when no driver profile is available — scoring an
+        # always-zero term wastes weight budget and dilutes real signals.
+        if driver_profile is None:
+            breakdown.w_driver = 0.0
         breakdown.driver_mismatch = self._compute_driver_mismatch(
             params, physics, driver_profile, soft_penalties
         )
@@ -1300,6 +1312,31 @@ class ObjectiveFunction:
             gain -= min(2.5, zeta_hs_rear_err * 3.5)
         # else: damper clicks are not scored — output will flag [ESTIMATE: damper clicks unscored]
 
+        # ── Extract damper click params (used by compression bonus + ratio sections) ──
+        f_ls_comp = params.get("front_ls_comp", 7)
+        f_ls_rbd  = params.get("front_ls_rbd", 6)
+        f_hs_comp = params.get("front_hs_comp", 5)
+        f_hs_rbd  = params.get("front_hs_rbd", 5)
+        r_ls_comp = params.get("rear_ls_comp", 5)
+        r_ls_rbd  = params.get("rear_ls_rbd", 5)
+        r_hs_comp = params.get("rear_hs_comp", 3)
+        r_hs_rbd  = params.get("rear_hs_rbd", 3)
+
+        # ── DAMPER COMPRESSION LEVEL (empirical, BMW-calibrated) ──────────────
+        # Cross-session correlation (73 BMW/Sebring sessions): front_ls_comp has
+        # r=-0.447 with lap time — the strongest single predictor under race
+        # conditions. Higher compression clicks = faster laps (within legal range).
+        # This is gated behind zeta_is_calibrated to only apply for cars with
+        # proven correlation data. Weight: ~0.5ms per click above mid-range.
+        if getattr(self.car.damper, "zeta_is_calibrated", False):
+            _lo, _hi = self.car.damper.ls_comp_range
+            _mid = (_lo + _hi) / 2.0
+            # Reward clicks above mid-range (empirical direction: higher = faster)
+            _f_comp_bonus = (f_ls_comp - _mid) * 0.5  # ms per click above mid
+            _r_comp_bonus = (r_ls_comp - _mid) * 0.3  # rear is weaker predictor
+            gain += max(-3.0, min(3.0, _f_comp_bonus))
+            gain += max(-2.0, min(2.0, _r_comp_bonus))
+
         # ── REBOUND : COMPRESSION RATIO (previously invisible — pinning bug) ──
         # Rebound clicks had ZERO gradient in the objective because ζ was computed
         # from compression only. This caused the coord descent to leave rbd pinned
@@ -1319,14 +1356,6 @@ class ObjectiveFunction:
         #   For GTP/prototype: tighter control needed; ~0.9 LS, ~0.6 HS
         #   Penalty: 3ms per 0.1 ratio error (mild — 4ms total range per axis)
         #   This gives the coord descent a gradient without overpowering compression ζ
-        f_ls_comp = params.get("front_ls_comp", 7)
-        f_ls_rbd  = params.get("front_ls_rbd", 6)
-        f_hs_comp = params.get("front_hs_comp", 5)
-        f_hs_rbd  = params.get("front_hs_rbd", 5)
-        r_ls_comp = params.get("rear_ls_comp", 5)
-        r_ls_rbd  = params.get("rear_ls_rbd", 5)
-        r_hs_comp = params.get("rear_hs_comp", 3)
-        r_hs_rbd  = params.get("rear_hs_rbd", 3)
 
         # Ratio target: rbd = target_ratio * comp
         # Penalty is deliberately WEAK (max 5ms) so ζ (comp) stays dominant.
@@ -1692,13 +1721,12 @@ class ObjectiveFunction:
         _defl_min, _defl_max = _gr.heave_spring_defl_mm   # (0.6, 25.0)
         _slider_min, _slider_max = _gr.heave_slider_defl_mm  # (25.0, 45.0)
 
-        # Deflection vetoes only applied when using BMW's validated DeflectionModel
-        # (calibrated from 31 BMW Sebring sessions, R²=0.953).
-        # Ferrari's auto-calibrated model uses INDEX inputs (0-8) and has insufficient
-        # precision at the boundary — all real Ferrari setups predict defl < 0.6mm,
-        # yet they run fine in game. Disable hard veto for Ferrari until model is
-        # re-validated; still log as soft penalty for visibility.
-        _deflection_veto_enabled = _ferrari_controls is None  # True for BMW/Cadillac/etc
+        # Deflection vetoes only applied when the car's DeflectionModel is calibrated
+        # from real measured data. BMW: calibrated from 31 sessions (R²=0.953).
+        # Ferrari: auto-calibrated but indexed inputs have insufficient boundary precision.
+        # Porsche/Acura/Cadillac: uncalibrated — BMW coefficients produce garbage values.
+        # NEVER apply BMW-calibrated deflection model to uncalibrated cars.
+        _deflection_veto_enabled = _dm.is_calibrated and _ferrari_controls is None
         if _deflection_veto_enabled:
             if _spring_defl < _defl_min:
                 veto_reasons.append(
@@ -1718,13 +1746,14 @@ class ObjectiveFunction:
                 veto_reasons.append(
                     f"Heave slider defl too high: {_slider_static:.2f}mm > {_slider_max}mm legal max"
                 )
-        else:
-            # Ferrari: log as soft warning, not veto
+        elif _ferrari_controls is not None and _dm.is_calibrated:
+            # Ferrari: log as soft warning, not veto (indexed inputs have boundary precision issues)
             if _spring_defl < _defl_min or _spring_defl > _defl_max:
                 soft_penalties.append(
                     f"[Ferrari] Heave defl model uncertainty: pred={_spring_defl:.2f}mm "
                     f"(legal: {_defl_min}-{_defl_max}mm) — model uses indexed inputs, verify in garage"
                 )
+        # else: uncalibrated deflection model — skip entirely, don't score with wrong coefficients
 
         # ── Bottoming risk (from real excursion calculation) ────────────
         margin = physics.front_bottoming_margin_mm

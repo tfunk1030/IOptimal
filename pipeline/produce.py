@@ -36,6 +36,7 @@ from analyzer.setup_reader import CurrentSetup
 from analyzer.setup_schema import apply_live_control_overrides, build_setup_schema
 from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
+from car_model.calibration_gate import CalibrationGate
 from output.report import to_public_output_payload
 from car_model.setup_registry import public_output_value
 from output.setup_writer import write_sto
@@ -679,6 +680,21 @@ def produce(
         # Learner not available or no data — skip veto mechanism gracefully
         pass
 
+    # ── Calibration gate ──
+    _track_short = track.track_name.split()[0].lower() if hasattr(track, "track_name") else args.track
+    cal_gate = CalibrationGate(car, _track_short)
+    cal_report = cal_gate.full_report()
+    _steps_blocked: set[int] = set()
+
+    if cal_report.any_blocked:
+        log()
+        log(f"[calibration] {cal_gate.summary_line()}")
+        for sr in cal_report.step_reports:
+            if sr.blocked:
+                _steps_blocked.add(sr.step_number)
+                log(sr.instructions_text())
+        log()
+
     solve_inputs = SolveChainInputs(
         car=car,
         surface=surface,
@@ -1247,6 +1263,11 @@ def produce(
             _extra_kw["gear_stack"] = getattr(supporting, "gear_stack", "")
             _extra_kw["roof_light_color"] = getattr(supporting, "roof_light_color", "")
 
+        if _steps_blocked:
+            print(f"\n[sto] WARNING: Steps {sorted(_steps_blocked)} are uncalibrated.")
+            print("  .sto file will contain solver output, but uncalibrated steps")
+            print("  are NOT validated. Only calibrated step values are proven.")
+
         sto_path = write_sto(
             car_name=car.name,
             track_name=f"{track.track_name} — {track.track_config}",
@@ -1359,6 +1380,14 @@ def produce(
     )
     if _emit_report:
         print(report)
+        if _steps_blocked:
+            print()
+            print("=" * 63)
+            print(f"  CALIBRATION: {len(_steps_blocked)} step(s) use unproven data")
+            print(f"  Steps {sorted(_steps_blocked)} are NOT calibrated for {car.name}")
+            print("=" * 63)
+            print(cal_report.format_header())
+            print()
 
     # ── Delta card output (--delta-card flag) ────────────────────────
     if getattr(args, "delta_card", False) and current_setup is not None:
