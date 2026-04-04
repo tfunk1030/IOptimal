@@ -97,7 +97,7 @@ def analyze_session(
         track_name = wi.get("TrackDisplayName", wi.get("TrackName", "Unknown Track"))
 
     # Current setup from IBT
-    setup = CurrentSetup.from_ibt(ibt)
+    setup = CurrentSetup.from_ibt(ibt, car_canonical=car.canonical_name)
     detected_wing = wing or setup.wing_angle_deg
     detected_fuel = fuel or setup.fuel_l or 89.0
 

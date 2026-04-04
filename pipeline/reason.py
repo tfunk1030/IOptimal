@@ -948,7 +948,7 @@ def _analyze_session(
     ibt = IBTFile(ibt_path)
     sort_timestamp, sort_source = _resolve_sort_metadata(ibt_path)
     track = build_profile(ibt_path)
-    setup = CurrentSetup.from_ibt(ibt)
+    setup = CurrentSetup.from_ibt(ibt, car_canonical=car.canonical_name)
     measured = extract_measurements(ibt_path, car, min_lap_time=min_lap_time)
     live_override_notes = apply_live_control_overrides(setup, measured)
     setup_schema = build_setup_schema(

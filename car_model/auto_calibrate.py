@@ -379,7 +379,7 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
 
     try:
         ibt = IBTFile(str(ibt_path))
-        setup = CurrentSetup.from_ibt(ibt)
+        setup = CurrentSetup.from_ibt(ibt, car_canonical=car_name or None)
     except Exception as e:
         print(f"  [skip] {Path(ibt_path).name}: {e}", file=sys.stderr)
         return None
