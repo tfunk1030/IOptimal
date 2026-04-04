@@ -1985,7 +1985,7 @@ CADILLAC_VSERIES_R = CarModel(
     # Front RH depends on: pushrod (payload length), heave perch, torsion bar OD,
     # torsion bar turns, camber, and fuel weight. The PushrodGeometry above provides
     # a 2-variable approximation (pushrod + heave_perch) calibrated from 4 data points.
-    # ACCURACY: ±1.5mm. Run calibrate_deflections.py --car cadillac with varied setups
+    # ACCURACY: ±1.5mm. Run auto_calibrate --car cadillac --ibt-dir <dir> with varied setups
     # (different OD, turns, camber, perch) to build a proper 6-variable model.
     # Rear RH depends on: pushrod, third spring rate/perch, rear spring rate/perch,
     # heave perch, fuel. BMW coefficients are completely wrong for Cadillac.
