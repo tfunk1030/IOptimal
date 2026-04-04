@@ -30,7 +30,8 @@ _fix_*.py
 _git_*.py
 
 # Debug/workflow temp files
-*_output.txt
+*_output*.txt
+*output*.txt
 stdout.txt
 stderr.txt
 run_output.txt
@@ -56,6 +57,8 @@ tmp/
 bundles/
 outputs/
 output/*.json
+output/*.csv
+output/*.sto
 output/*/
 
 # Repo indexing tools
