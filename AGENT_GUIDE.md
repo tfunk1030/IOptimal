@@ -186,12 +186,12 @@ Each car needs specific real-world data to unlock blocked steps. The Calibration
 
 | Data Needed | CLI Command | Unlocks |
 |-------------|------------|---------|
-| ARB stiffness (3+ garage screenshots, varied ARB sizes) | `python -m car_model.auto_calibrate --car <car> --model arb --screenshots <dir>` | Step 4 |
+| ARB stiffness (3+ IBT sessions, varied ARB sizes, springs constant) | `python -m car_model.auto_calibrate --car <car> --ibt-dir <telemetry_dir>` | Step 4 |
 | LLTD target (10+ IBT sessions, varied settings) | `python -m validation.calibrate_lltd --car <car> --track <track>` | Step 4 |
 | Roll gains (3+ IBT sessions with lateral-g data) | `python -m learner.ingest --car <car> --ibt <session.ibt>` | Step 5 |
 | Damper zeta (5+ stints, varied LS comp clicks) | `python -m validation.calibrate_dampers --car <car> --track <track>` | Step 6 |
 | Aero compression (3+ IBT sessions, different speeds) | `python -m learner.ingest --car <car> --ibt <each_file>` | Step 1 |
-| Ride height model (10+ garage screenshots, varied spring/pushrod) | `python -m car_model.auto_calibrate --car <car> --model rh --screenshots <dir>` | Step 1 |
+| Ride height model (10+ IBT sessions, varied spring/pushrod) | `python -m car_model.auto_calibrate --car <car> --ibt-dir <telemetry_dir>` | Step 1 |
 
 ## Empirical Data Systems
 

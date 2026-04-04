@@ -183,7 +183,7 @@ The **calibration gate** (`car_model/calibration_gate.py`) now blocks solver ste
 
 Each car needs the following calibration data to unlock blocked steps:
 
-1. **ARB stiffness** — 3+ garage screenshots with different ARB sizes → `python -m car_model.auto_calibrate --car <car> --model arb --screenshots <dir>`
+1. **ARB stiffness** — 3+ IBT sessions with different ARB sizes (keep springs constant) → `python -m car_model.auto_calibrate --car <car> --ibt-dir <telemetry_dir>`
 2. **LLTD target** — 10+ IBT sessions with varied settings → `python -m validation.calibrate_lltd --car <car> --track <track>`
 3. **Roll gains** — 3+ IBT sessions with lateral-g data → `python -m learner.ingest --car <car> --ibt <session.ibt>`
 4. **Damper zeta** — 5+ stints with varied LS comp clicks → `python -m validation.calibrate_dampers --car <car> --track <track>`

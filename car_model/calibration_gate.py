@@ -123,17 +123,17 @@ TO CALIBRATE AERO COMPRESSION:
     "ride_height_model": """\
 TO CALIBRATE RIDE HEIGHT MODEL:
 1. In iRacing garage, set 10+ different spring/pushrod/perch combinations
-2. Take a garage screenshot at each setting (screenshot captures displayed ride heights)
-3. Run: python -m car_model.auto_calibrate --car {car} --model rh --screenshots <dir>
-4. This fits a multi-variable regression from displayed garage values
+2. Record an IBT session for each setting (drive 3+ clean laps; the IBT header captures displayed ride heights)
+3. Run: python -m car_model.auto_calibrate --car {car} --ibt-dir <telemetry_dir>
+4. This fits a multi-variable regression from IBT session header values
 5. Minimum 10 unique configurations for reliable fit (R^2 > 0.95)""",
 
     "deflection_model": """\
 TO CALIBRATE DEFLECTION MODEL:
 1. In iRacing garage, set 5+ different heave spring settings
    (keep torsion bar constant, vary heave spring: e.g., 50, 100, 150, 200, 250 N/mm)
-2. Take a garage screenshot at each setting
-3. Run: python -m car_model.auto_calibrate --car {car} --model deflection --screenshots <dir>
+2. Record an IBT session for each setting (drive 3+ clean laps; the IBT header captures deflection values)
+3. Run: python -m car_model.auto_calibrate --car {car} --ibt-dir <telemetry_dir>
 4. Minimum 5 varied settings for reliable fit""",
 
     "damper_zeta": """\
@@ -148,10 +148,10 @@ TO CALIBRATE DAMPER ZETA TARGETS:
 
     "arb_stiffness": """\
 TO CALIBRATE ARB STIFFNESS:
-1. Record 3+ garage screenshots with different front/rear ARB sizes
-2. Note the displayed roll stiffness for each combination
-3. Run: python -m car_model.auto_calibrate --car {car} --model arb --screenshots <dir>
-4. This back-solves ARB stiffness from displayed roll stiffness values""",
+1. Record 3+ IBT sessions with different front/rear ARB sizes (keep springs constant between sessions)
+2. Drive 3+ clean laps per session (the telemetry roll gradient data is needed for ARB back-solve)
+3. Run: python -m car_model.auto_calibrate --car {car} --ibt-dir <telemetry_dir>
+4. This back-solves ARB stiffness from telemetry roll data across varied ARB configurations""",
 
     "lltd_target": """\
 TO CALIBRATE LLTD TARGET:
