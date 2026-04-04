@@ -146,5 +146,78 @@ class TestMeffIndexDecode(unittest.TestCase):
                         "Ferrari heave index should be marked unvalidated")
 
 
+class TestCalibrationGateDependencyPropagation(unittest.TestCase):
+    """Verify that CalibrationGate blocks downstream steps when upstream is blocked."""
+
+    def test_acura_step1_blocked_cascades_all(self):
+        """Acura has uncalibrated aero_compression → Step 1 blocked → all blocked."""
+        from car_model.cars import get_car
+        from car_model.calibration_gate import CalibrationGate
+        car = get_car("acura")
+        gate = CalibrationGate(car, "hockenheim")
+        report = gate.full_report()
+        # Step 1 is blocked by its own subsystems
+        self.assertTrue(report.step_reports[0].blocked)
+        self.assertFalse(report.step_reports[0].dependency_blocked)
+        # Steps 2-6 should be blocked by dependency cascade
+        for step_num in range(2, 7):
+            sr = report.step_reports[step_num - 1]
+            self.assertTrue(sr.blocked, f"Step {step_num} should be blocked")
+            self.assertTrue(sr.dependency_blocked, f"Step {step_num} should be dependency-blocked")
+            self.assertIsNotNone(sr.blocked_by_step)
+
+    def test_bmw_no_steps_blocked(self):
+        """BMW/Sebring is fully calibrated — no steps blocked."""
+        from car_model.cars import get_car
+        from car_model.calibration_gate import CalibrationGate
+        car = get_car("bmw")
+        gate = CalibrationGate(car, "sebring")
+        report = gate.full_report()
+        self.assertFalse(report.any_blocked)
+        self.assertEqual(report.blocked_steps, [])
+        self.assertEqual(len(report.solved_steps), 6)
+
+    def test_ferrari_partial_blocks_steps_4_through_6(self):
+        """Ferrari has calibrated steps 1-3 but blocked steps 4-6."""
+        from car_model.cars import get_car
+        from car_model.calibration_gate import CalibrationGate
+        car = get_car("ferrari")
+        gate = CalibrationGate(car, "sebring")
+        # Steps 1-3 should be runnable
+        for step_num in range(1, 4):
+            self.assertTrue(gate.step_is_runnable(step_num),
+                            f"Ferrari step {step_num} should be runnable")
+        # Step 4 blocked by its own subsystems (arb_stiffness, lltd_target)
+        sr4 = gate.check_step(4)
+        self.assertTrue(sr4.blocked)
+        self.assertFalse(sr4.dependency_blocked)
+        # Steps 5-6 blocked by dependency cascade from step 4
+        for step_num in [5, 6]:
+            sr = gate.check_step(step_num)
+            self.assertTrue(sr.blocked, f"Ferrari step {step_num} should be blocked")
+            self.assertTrue(sr.dependency_blocked,
+                            f"Ferrari step {step_num} should be dependency-blocked")
+
+    def test_dependency_blocked_instructions_text(self):
+        """Dependency-blocked steps should reference the upstream blocker."""
+        from car_model.cars import get_car
+        from car_model.calibration_gate import CalibrationGate
+        car = get_car("acura")
+        gate = CalibrationGate(car, "hockenheim")
+        sr = gate.check_step(3)
+        text = sr.instructions_text()
+        self.assertIn("Depends on Step", text)
+        self.assertIn("Resolve Step", text)
+
+    def test_full_report_blocked_steps_includes_cascaded(self):
+        """full_report().blocked_steps should include dependency-cascaded steps."""
+        from car_model.cars import get_car
+        from car_model.calibration_gate import CalibrationGate
+        car = get_car("acura")
+        gate = CalibrationGate(car, "hockenheim")
+        report = gate.full_report()
+        self.assertEqual(report.blocked_steps, [1, 2, 3, 4, 5, 6])
+
+
 if __name__ == "__main__":
     unittest.main()

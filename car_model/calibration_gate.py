@@ -44,9 +44,18 @@ class StepCalibrationReport:
     step_name: str
     blocked: bool = False
     missing: list[SubsystemCalibration] = field(default_factory=list)
+    # Set when this step is blocked because a prior step is blocked
+    dependency_blocked: bool = False
+    blocked_by_step: int | None = None
 
     def instructions_text(self) -> str:
         """Format calibration instructions for all missing subsystems."""
+        if self.dependency_blocked:
+            return (
+                f"  STEP {self.step_number}: {self.step_name} — BLOCKED\n"
+                f"    Depends on Step {self.blocked_by_step} (which is also blocked)\n"
+                f"    Resolve Step {self.blocked_by_step} first.\n"
+            )
         if not self.missing:
             return ""
         lines = [
@@ -322,7 +331,13 @@ class CalibrationGate:
         ))
 
     def check_step(self, step_number: int) -> StepCalibrationReport:
-        """Check if a solver step can run with calibrated data."""
+        """Check if a solver step can run with calibrated data.
+
+        Enforces dependency propagation: if step N depends on step N-1's
+        output (steps 2-6 each depend on the prior step), and the prior
+        step is blocked, this step is also blocked — even if its own
+        subsystems are calibrated.
+        """
         step_name, required = STEP_REQUIREMENTS.get(
             step_number, (f"Step {step_number}", [])
         )
@@ -330,6 +345,16 @@ class CalibrationGate:
             step_number=step_number,
             step_name=step_name,
         )
+
+        # Dependency cascade: steps 2-6 require the prior step to be runnable.
+        if step_number > 1:
+            prior = self.check_step(step_number - 1)
+            if prior.blocked:
+                report.blocked = True
+                report.dependency_blocked = True
+                report.blocked_by_step = step_number - 1
+                return report
+
         for req in required:
             sub = self.subsystem(req)
             if sub.status == "uncalibrated":

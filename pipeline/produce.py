@@ -724,6 +724,24 @@ def produce(
     step5 = base_solve_result.step5
     step6 = base_solve_result.step6
     supporting = base_solve_result.supporting
+
+    # ── Enforce calibration gate on solver outputs ──
+    # Null-out any steps that were blocked by calibration.  run_base_solve()
+    # runs unconditionally (it doesn't know about the gate), so we must
+    # prevent uncalibrated step values from reaching .sto / JSON output.
+    for sn in _steps_blocked:
+        if sn == 1:
+            step1 = None
+        elif sn == 2:
+            step2 = None
+        elif sn == 3:
+            step3 = None
+        elif sn == 4:
+            step4 = None
+        elif sn == 5:
+            step5 = None
+        elif sn == 6:
+            step6 = None
     legal_validation = base_solve_result.legal_validation
     decision_trace = base_solve_result.decision_trace
     solve_notes = list(base_solve_result.notes)
@@ -1263,23 +1281,27 @@ def produce(
             _extra_kw["gear_stack"] = getattr(supporting, "gear_stack", "")
             _extra_kw["roof_light_color"] = getattr(supporting, "roof_light_color", "")
 
-        if _steps_blocked:
-            print(f"\n[sto] WARNING: Steps {sorted(_steps_blocked)} are uncalibrated.")
-            print("  .sto file will contain solver output, but uncalibrated steps")
-            print("  are NOT validated. Only calibrated step values are proven.")
+        if step1 is None or step2 is None or step3 is None:
+            print("\n[sto] Cannot write .sto — steps 1-3 are required but blocked by calibration.")
+            print("  Follow the calibration instructions above to enable .sto output.")
+        else:
+            if _steps_blocked:
+                print(f"\n[sto] NOTE: Steps {sorted(_steps_blocked)} are uncalibrated (set to None).")
+                print("  .sto will use garage defaults for those steps.")
+                print("  Only calibrated step values are physics-validated.")
 
-        sto_path = write_sto(
-            car_name=car.name,
-            track_name=f"{track.track_name} — {track.track_config}",
-            wing=wing,
-            fuel_l=fuel,
-            step1=step1, step2=step2, step3=step3,
-            step4=step4, step5=step5, step6=step6,
-            output_path=args.sto,
-            car_canonical=car.canonical_name,
-            **_extra_kw,
-        )
-        print(f"\niRacing .sto setup saved to: {sto_path}")
+            sto_path = write_sto(
+                car_name=car.name,
+                track_name=f"{track.track_name} — {track.track_config}",
+                wing=wing,
+                fuel_l=fuel,
+                step1=step1, step2=step2, step3=step3,
+                step4=step4, step5=step5, step6=step6,
+                output_path=args.sto,
+                car_canonical=car.canonical_name,
+                **_extra_kw,
+            )
+            print(f"\niRacing .sto setup saved to: {sto_path}")
 
     if args.json:
         json_path = Path(args.json)
@@ -1340,6 +1362,8 @@ def produce(
             "step5_geometry": to_public_output_payload(car.canonical_name, step5),
             "step6_dampers": to_public_output_payload(car.canonical_name, step6),
             "supporting": to_public_output_payload(car.canonical_name, supporting),
+            "calibration_blocked": sorted(_steps_blocked) if _steps_blocked else [],
+            "calibration_instructions": cal_report.format_header() if _steps_blocked else "",
         }
         with open(json_path, "w") as f:
             json.dump(output, f, indent=2, default=str)

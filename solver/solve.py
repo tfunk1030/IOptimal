@@ -458,63 +458,11 @@ def run_solver(args: "argparse.Namespace") -> None:
             if not args.json and not args.report_only:
                 log()
 
-            # One refinement pass: heave sizing depends on HS damper work, and the
-            # damper solve depends on the modal heave/third rates. Solve once,
-            # re-size heave/third against that damper state, then continue.
-            damper_solver = DamperSolver(car, track)
-            provisional_step6 = damper_solver.solve(
-                front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-                rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-                front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-                rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-                fuel_load_l=args.fuel,
-                front_heave_nmm=step2.front_heave_nmm,
-                rear_third_nmm=step2.rear_third_nmm,
-            )
-            refined_step2 = heave_solver.solve(
-                dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-                dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-                front_pushrod_mm=step1.front_pushrod_offset_mm,
-                rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-                front_torsion_od_mm=step3.front_torsion_od_mm,
-                rear_spring_nmm=step3.rear_spring_rate_nmm,
-                rear_spring_perch_mm=step3.rear_spring_perch_mm,
-                rear_third_perch_mm=step2.perch_offset_rear_mm,
-                fuel_load_l=args.fuel,
-                front_camber_deg=car.geometry.front_camber_baseline_deg,
-                front_hs_damper_nsm=provisional_step6.c_hs_front,
-                rear_hs_damper_nsm=provisional_step6.c_hs_rear,
-            )
-            if (
-                abs(refined_step2.front_heave_nmm - step2.front_heave_nmm) > 0.05
-                or abs(refined_step2.rear_third_nmm - step2.rear_third_nmm) > 0.05
-                or abs(refined_step2.perch_offset_front_mm - step2.perch_offset_front_mm) > 0.05
-            ):
-                step2 = refined_step2
-                step3 = corner_solver.solve(
-                    front_heave_nmm=step2.front_heave_nmm,
-                    rear_third_nmm=step2.rear_third_nmm,
-                    fuel_load_l=args.fuel,
-                )
-                rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-                heave_solver.reconcile_solution(
-                    step1,
-                    step2,
-                    step3,
-                    fuel_load_l=args.fuel,
-                    front_camber_deg=car.geometry.front_camber_baseline_deg,
-                    front_hs_damper_nsm=provisional_step6.c_hs_front,
-                    verbose=False,
-                )
-                reconcile_ride_heights(
-                    car, step1, step2, step3,
-                    fuel_load_l=args.fuel,
-                    track_name=track.track_name,
-                    verbose=False,
-                    surface=surface,
-                    track=track,
-                    target_balance=args.balance,
-                )
+            # NOTE: Previously a provisional Step 6 (DamperSolver) ran here to
+            # refine heave sizing with HS damper values. This was removed because
+            # it introduces a Step 6 dependency before Steps 4/5, violating the
+            # fixed 6-step ordering. The Step 2 solve without damper knowledge is
+            # sufficient; damper effects on heave sizing are second-order.
         elif step2 is None:
             _steps_blocked.add(3)
             log("\n[BLOCKED] Step 3: Corner Springs — depends on Step 2")
@@ -623,7 +571,14 @@ def run_solver(args: "argparse.Namespace") -> None:
         if all(s is None for s in [step1, step2, step3, step4, step5, step6]):
             log("No steps could run. Follow the calibration instructions above.")
             log("Once calibrated, re-run the solver for validated output.")
-            # Early return — nothing to report or write
+            # Still emit --json output so downstream tools can detect calibration
+            # status programmatically. Human text goes to stderr / log only.
+            if args.json:
+                output = {
+                    "calibration_blocked": sorted(_steps_blocked),
+                    "calibration_instructions": cal_report.format_header(),
+                }
+                print(json.dumps(output, indent=2))
             return
 
     # ─── Constraint proximity analysis (binding constraints) ──────────
@@ -936,8 +891,8 @@ def run_solver(args: "argparse.Namespace") -> None:
 
     if args.sto:
         if _steps_blocked:
-            print(f"\n[sto] WARNING: Steps {sorted(_steps_blocked)} are uncalibrated.")
-            print("  .sto file will use garage defaults for blocked steps.")
+            print(f"\n[sto] NOTE: Steps {sorted(_steps_blocked)} are uncalibrated (omitted from .sto).")
+            print("  iRacing will use garage defaults for those parameters.")
             print("  Only calibrated step values are physics-validated.")
 
         if step1 is not None and step2 is not None and step3 is not None:

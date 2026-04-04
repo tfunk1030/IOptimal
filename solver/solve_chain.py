@@ -430,64 +430,11 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         target_balance=inputs.target_balance,
     )
 
+    # NOTE: Previously a provisional Step 6 (DamperSolver) ran here to refine
+    # heave sizing with HS damper values. Removed because it introduces a Step 6
+    # dependency before Steps 4/5, violating the fixed 6-step ordering.
+
     damper_solver = DamperSolver(car, track)
-    provisional_step6 = damper_solver.solve(
-        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-        front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-        rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-        fuel_load_l=fuel,
-        damping_ratio_scale=mods.damping_ratio_scale,
-        measured=measured,
-        front_heave_nmm=step2.front_heave_nmm,
-        rear_third_nmm=step2.rear_third_nmm,
-    )
-    step2 = heave_solver.solve(
-        dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-        dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-        front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
-        rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
-        front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
-        front_pushrod_mm=step1.front_pushrod_offset_mm,
-        rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-        front_torsion_od_mm=step3.front_torsion_od_mm,
-        rear_spring_nmm=step3.rear_spring_rate_nmm,
-        rear_spring_perch_mm=step3.rear_spring_perch_mm,
-        rear_third_perch_mm=step2.perch_offset_rear_mm,
-        fuel_load_l=fuel,
-        front_camber_deg=_front_camber(inputs),
-        front_hs_damper_nsm=provisional_step6.c_hs_front,
-        rear_hs_damper_nsm=provisional_step6.c_hs_rear,
-        measured=inputs.measured,
-        front_heave_current_nmm=_k_current,
-    )
-    step3 = corner_solver.solve(
-        front_heave_nmm=step2.front_heave_nmm,
-        rear_third_nmm=step2.rear_third_nmm,
-        fuel_load_l=fuel,
-    )
-    rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
-    heave_solver.reconcile_solution(
-        step1,
-        step2,
-        step3,
-        fuel_load_l=fuel,
-        front_camber_deg=_front_camber(inputs),
-        front_hs_damper_nsm=provisional_step6.c_hs_front,
-        verbose=False,
-    )
-    reconcile_ride_heights(
-        car,
-        step1,
-        step2,
-        step3,
-        fuel_load_l=fuel,
-        track_name=track.track_name,
-        verbose=False,
-        surface=inputs.surface,
-        track=track,
-        target_balance=inputs.target_balance,
-    )
 
     arb_solver = ARBSolver(car, track)
     _current_rear_arb = getattr(inputs.current_setup, "rear_arb_size", None) if inputs.current_setup else None

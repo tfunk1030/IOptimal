@@ -178,6 +178,21 @@ class AcuraSolverSmokeTests(unittest.TestCase):
         self.assertIn("aero_compression", output)
         self.assertIn("ride_height_model", output)
 
+    def test_json_output_contains_calibration_metadata(self):
+        """--json should still emit parseable JSON even when all steps are blocked."""
+        output = self._run_cli(8.0)
+        data = self._parse_json(output)
+        self.assertIn("calibration_blocked", data)
+        self.assertIn("calibration_instructions", data)
+        self.assertIsInstance(data["calibration_blocked"], list)
+        self.assertGreater(len(data["calibration_blocked"]), 0)
+        # All 6 steps should be blocked for Acura
+        self.assertEqual(data["calibration_blocked"], [1, 2, 3, 4, 5, 6])
+        # No step outputs should be present
+        for key in ["step1_rake", "step2_heave", "step3_corner",
+                     "step4_arb", "step5_geometry", "step6_dampers"]:
+            self.assertNotIn(key, data)
+
 
 # ── 8d. .sto Output Tests ───────────────────────────────────────────────────
 
