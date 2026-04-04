@@ -38,6 +38,14 @@
       "confidence_tier": "unsupported"
     },
     {
+      "car": "porsche",
+      "track": "Autodromo Internacional do Algarve",
+      "track_config": "Grand Prix",
+      "samples": 1,
+      "confidence_tier": "exploratory",
+      "notes": "RH model calibrated (R²=0.9958 front, R²=0.9722 rear, 13 garage screenshots). Aero maps parsed. Damper parsing working. Shock velocity extraction needs validation (0.022 m/s suspiciously low). No Algarve track profile yet."
+    },
+    {
       "car": "acura",
       "track": "Hockenheim Grand Prix",
       "track_config": "Grand Prix",
@@ -56,7 +64,8 @@
       "Sebring International Raceway (International)": 12
     },
     "porsche": {
-      "Sebring International Raceway (International)": 2
+      "Sebring International Raceway (International)": 2,
+      "Autodromo Internacional do Algarve (Grand Prix)": 1
     },
     "acura": {
       "Hockenheim Grand Prix (Grand Prix)": 0

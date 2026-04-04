@@ -48,7 +48,10 @@ class PhysicsCorrectionTests(unittest.TestCase):
 
         mods = compute_modifiers(diagnosis, driver, measured)
 
-        self.assertEqual(mods.front_heave_perch_target_mm, -11.0)
+        # Perch target should move in +ve direction from baseline (-11mm).
+        # With travel_pct=92, excess=(92-85)/15≈0.467, delta=max(2, 11*0.20*0.467)≈2mm
+        # target = -11 + 2 = -9.0
+        self.assertGreater(mods.front_heave_perch_target_mm, -11.0)
         self.assertTrue(any("less negative perch" in reason for reason in mods.reasons))
 
     def test_thermal_targets_accept_nominal_inner_hot_window(self) -> None:

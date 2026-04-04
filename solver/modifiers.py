@@ -199,13 +199,28 @@ def compute_modifiers(
         if cat == "safety" and "travel" in symptom and ("exhausted" in symptom or "used" in symptom):
             travel_pct = problem.measured
             if travel_pct > 85:
-                # More negative perch lowers the slider and consumes available
-                # travel. When the front heave spring is running out of travel,
-                # the target must move LESS negative so the slider regains room.
-                mods.front_heave_perch_target_mm = -11.0
+                # When the front heave spring is running out of travel, the perch
+                # must move in the algebraically positive direction to regain room.
+                # Compute a delta proportional to the excess travel usage:
+                #   excess = (travel_pct - 85) / 15  → 0..1 over the 85-100% range
+                #   delta  = excess * 20% of |baseline|, at least 2mm
+                # This moves the perch toward zero (less negative for BMW-like cars)
+                # or further positive (for Porsche-like cars), both recovering travel.
+                _perch_baseline = -11.0  # BMW default
+                if car is not None:
+                    _hs = getattr(car, "heave_spring", None)
+                    if _hs is not None:
+                        _baseline = getattr(_hs, "perch_offset_front_baseline_mm", None)
+                        if _baseline is not None:
+                            _perch_baseline = _baseline
+                _excess = min(1.0, (travel_pct - 85.0) / 15.0)
+                _delta = max(2.0, abs(_perch_baseline) * 0.20 * _excess)
+                _perch_target = _perch_baseline + _delta
+                mods.front_heave_perch_target_mm = _perch_target
                 mods.reasons.append(
-                    f"Heave travel {travel_pct:.0f}% exhausted -> perch target -11mm "
-                    f"(less negative perch preserves available slider travel)"
+                    f"Heave travel {travel_pct:.0f}% exhausted -> less negative perch "
+                    f"target {_perch_target:.1f}mm (+{_delta:.1f}mm from baseline "
+                    f"{_perch_baseline:.1f}mm preserves available slider travel)"
                 )
 
         # Damper: settle time
