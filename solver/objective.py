@@ -706,7 +706,7 @@ class ObjectiveFunction:
         rear_spring_nmm = params.get("rear_spring_rate_nmm", 160.0)
         front_torsion_od = params.get("front_torsion_od_mm",
                                        car.corner_spring.front_torsion_od_options[0]
-                                       if car.corner_spring.front_torsion_od_options else 14.34)
+                                       if car.corner_spring.front_torsion_od_options else 0.0)
         front_arb_blade = int(params.get("front_arb_blade", 1))
         rear_arb_blade = int(params.get("rear_arb_blade", 3))
 
@@ -1698,7 +1698,10 @@ class ObjectiveFunction:
         _hsm = self.car.heave_spring
         _gr = self.car.garage_ranges
         _k_front = params.get("front_heave_spring_nmm", 50.0)
-        _od_mm = params.get("front_torsion_od_mm", 14.34)
+        # Default OD: use car's first torsion option, or 0.0 for cars without torsion bars (Porsche)
+        _od_default = (self.car.corner_spring.front_torsion_od_options[0]
+                       if self.car.corner_spring.front_torsion_od_options else 0.0)
+        _od_mm = params.get("front_torsion_od_mm", _od_default)
 
         # Ferrari's auto-calibrated deflection model was trained on INDEX inputs
         # (front_heave=0-8, torsion_od=0-18), not physical N/mm rates.

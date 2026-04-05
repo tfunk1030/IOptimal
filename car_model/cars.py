@@ -219,10 +219,13 @@ class PushrodGeometry:
         return ((target_rh - self.front_base_rh_mm - perch_adjustment)
                 / self.front_pushrod_to_rh + self.front_pushrod_default_mm)
 
+    # Default rear pushrod when sensitivity is zero (set per-car in pushrod definition)
+    rear_pushrod_default_mm: float = -29.0
+
     def rear_offset_for_rh(self, target_rh: float) -> float:
         """Pushrod offset needed to achieve target rear static RH."""
         if abs(self.rear_pushrod_to_rh) < 1e-6:
-            return -29.0
+            return self.rear_pushrod_default_mm
         return (target_rh - self.rear_base_rh_mm) / self.rear_pushrod_to_rh
 
     def front_rh_for_offset(self, offset: float,
@@ -261,6 +264,10 @@ class RideHeightModel:
     front_intercept: float = 30.0   # fallback: acts as pinned value when coeffs are 0
     front_coeff_heave_nmm: float = 0.0     # mm RH per N/mm heave spring rate
     front_coeff_camber_deg: float = 0.0    # mm RH per deg front camber
+    front_coeff_pushrod: float = 0.0       # mm RH per mm front pushrod offset
+    front_coeff_perch: float = 0.0         # mm RH per mm front heave perch offset
+    front_pushrod_ref_mm: float = 0.0      # pushrod value at which intercept was measured
+    front_perch_ref_mm: float = 0.0        # perch value at which intercept was measured
     front_loo_rmse_mm: float = 0.0
 
     # --- Rear static RH regression ---
@@ -281,11 +288,23 @@ class RideHeightModel:
 
     def predict_front_static_rh(
         self, heave_nmm: float, camber_deg: float,
+        pushrod_mm: float | None = None, perch_mm: float | None = None,
     ) -> float:
-        """Predict front static RH from setup parameters."""
-        return (self.front_intercept
-                + self.front_coeff_heave_nmm * heave_nmm
-                + self.front_coeff_camber_deg * camber_deg)
+        """Predict front static RH from setup parameters.
+
+        For BMW: only heave and camber have non-zero coefficients.
+        For Porsche: pushrod and perch are significant (4-variable model).
+        """
+        rh = (self.front_intercept
+              + self.front_coeff_heave_nmm * heave_nmm
+              + self.front_coeff_camber_deg * camber_deg)
+        # Pushrod and perch terms use ABSOLUTE values (not deltas from reference)
+        # because front_intercept is the regression intercept at pushrod=0, perch=0.
+        if pushrod_mm is not None and abs(self.front_coeff_pushrod) > 1e-9:
+            rh += self.front_coeff_pushrod * pushrod_mm
+        if perch_mm is not None and abs(self.front_coeff_perch) > 1e-9:
+            rh += self.front_coeff_perch * perch_mm
+        return rh
 
     def predict_rear_static_rh(
         self, pushrod_mm: float, third_nmm: float,
@@ -847,6 +866,12 @@ class CornerSpringModel:
 
     # Roll spring wheel rate (Porsche Multimatic only)
     front_roll_spring_rate_nmm: float = 0.0
+    front_roll_spring_range_nmm: tuple[float, float] = (0.0, 0.0)  # (0,0) = not a roll spring car
+    front_roll_spring_step_nmm: float = 10.0
+    # Roll spring is a SINGLE element (not a pair of corner springs). For roll stiffness,
+    # use k*(t/2)² not 2*k*(t/2)². Installation ratio accounts for lever arm geometry.
+    front_is_roll_spring: bool = False
+    front_roll_spring_installation_ratio: float = 0.882  # CALIBRATED: back-calculated from measured LLTD 50.3% at Algarve
 
     def torsion_bar_rate(self, od_mm: float) -> float:
         """Wheel rate (N/mm) from torsion bar OD.
@@ -856,6 +881,15 @@ class CornerSpringModel:
         if self.front_torsion_c > 0:
             return self.front_torsion_c * od_mm ** 4
         return self.front_roll_spring_rate_nmm
+
+    def snap_front_roll_spring(self, k_nmm: float) -> float:
+        """Snap roll spring rate to nearest garage step within range."""
+        if self.front_roll_spring_range_nmm[1] <= 0:
+            return self.front_roll_spring_rate_nmm  # not a roll spring car
+        lo, hi = self.front_roll_spring_range_nmm
+        step = self.front_roll_spring_step_nmm
+        k_snapped = round(round(k_nmm / step) * step, 0)
+        return float(max(lo, min(hi, k_snapped)))
 
     def torsion_bar_od_for_rate(self, k_wheel_nmm: float) -> float:
         """Torsion bar OD (mm) needed for a target wheel rate."""
@@ -1570,27 +1604,30 @@ class CarModel:
                 "pushrod_geometry": "calibrated",
             }
 
-        # For all other cars, flag parameters that need IBT calibration
+        # Check actual calibration state from the car object (set by apply_to_car at runtime)
         flags: dict[str, str] = {}
 
-        # Parameters confirmed same as BMW for Dallara LMDh platform
-        # Acura is ORECA (not Dallara) — different chassis, no shared confirmation
-        dallara_confirmed = self.canonical_name == "cadillac"
-
-        if self.canonical_name == "acura":
-            flags["aero_compression"] = "ESTIMATE — ORECA chassis"
-            flags["m_eff_front"] = "calibrated_hockenheim"
-            flags["m_eff_rear"] = "calibrated_hockenheim"
-        else:
-            flags["aero_compression"] = (
-                "confirmed_dallara" if dallara_confirmed else "ESTIMATE"
-            )
-            flags["m_eff_front"] = "ESTIMATE — needs IBT calibration"
-            flags["m_eff_rear"] = "ESTIMATE — needs IBT calibration"
-        flags["front_roll_gain"] = "ESTIMATE — needs IBT calibration"
-        flags["rear_roll_gain"] = "ESTIMATE — needs IBT calibration"
+        # Aero compression: check is_calibrated flag (set by apply_to_car from models.json)
+        flags["aero_compression"] = (
+            "calibrated" if self.aero_compression.is_calibrated else "ESTIMATE"
+        )
+        # Ride height model: check is_calibrated flag
         flags["pushrod_geometry"] = (
-            "confirmed_dallara" if dallara_confirmed else "ESTIMATE"
+            "calibrated" if self.ride_height_model.is_calibrated else "ESTIMATE"
+        )
+        # m_eff: no explicit flag, but check if value looks like a non-default (> 100 kg)
+        flags["m_eff_front"] = (
+            "calibrated" if self.heave_spring.front_m_eff_kg > 100 else "ESTIMATE — needs IBT calibration"
+        )
+        flags["m_eff_rear"] = (
+            "calibrated" if self.heave_spring.rear_m_eff_kg > 100 else "ESTIMATE — needs IBT calibration"
+        )
+        # Roll gains: check roll_gains_calibrated flag
+        flags["front_roll_gain"] = (
+            "calibrated" if self.geometry.roll_gains_calibrated else "ESTIMATE — needs IBT calibration"
+        )
+        flags["rear_roll_gain"] = (
+            "calibrated" if self.geometry.roll_gains_calibrated else "ESTIMATE — needs IBT calibration"
         )
 
         return flags
@@ -2406,6 +2443,8 @@ PORSCHE_963 = CarModel(
     weight_dist_front=0.471,  # CALIBRATED: from corner weights (2689+2689)/(2689*2+3015*2) = 0.4714
     default_df_balance_pct=50.5,  # Traction-limited — benefits from more rear DF
     tyre_load_sensitivity=0.18,   # DSSV dampers give better contact — lower effective sensitivity
+    brake_bias_pct=44.75,         # CALIBRATED: from user's Algarve baseline (was 46.0 BMW default)
+    # measured_lltd_target loaded dynamically from data/calibration/porsche/models.json via apply_to_car()
     aero_axes_swapped=True,
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
@@ -2417,7 +2456,7 @@ PORSCHE_963 = CarModel(
     max_rear_rh_dynamic=75.0,
     vortex_burst_threshold_mm=2.0,
     front_heave_spring_nmm=180.0,  # Updated from Algarve starting setup (was 50 estimate)
-    rear_third_spring_nmm=80.0,   # Updated from Algarve starting setup (was 530 estimate)
+    rear_third_spring_nmm=120.0,  # From user's Algarve baseline (was 80 from initial setup)
     aero_compression=AeroCompression(
         ref_speed_kph=230.0,
         front_compression_mm=12.1,  # CALIBRATED: empirical mean from 2 Sebring sessions
@@ -2427,19 +2466,31 @@ PORSCHE_963 = CarModel(
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=30.0,       # CALIBRATED: garage screenshots show RH=30.0 at pushrod=-39.5
         front_pushrod_default_mm=-39.5, # CALIBRATED: from Algarve starting setup
+        front_heave_perch_to_rh=-0.678,  # CALIBRATED: -0.678 mm RH per mm perch (from 13-point regression)
+        front_heave_perch_ref_mm=58.0,   # Reference perch at which front_base_rh_mm was measured
         rear_base_rh_mm=35.47,         # CALIBRATED: regression intercept from 13 garage screenshots (R^2=0.972)
-        rear_pushrod_to_rh=0.068,      # CALIBRATED: rear_spring dominates (0.068 mm/N/mm); pushrod effect captured in base
+        rear_pushrod_to_rh=0.0,        # Porsche rear RH does NOT depend on pushrod (regression coefficient ~0). RH controlled by rear_spring + third via RideHeightModel.
+        rear_pushrod_default_mm=24.0,  # Porsche baseline from user's Algarve setup (class default -29.0 is BMW)
         front_pushrod_to_rh=0.549,     # CALIBRATED: 0.549 mm_RH / mm_pushrod from 3-point sweep (R^2=1.0)
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
         front_m_eff_kg=498.0,   # CALIBRATED: empirical from 2 Sebring sessions
-        rear_m_eff_kg=800.0,    # ESTIMATE — Porsche rear heave is lighter than BMW; needs heave sweep
-        front_spring_range_nmm=(150.0, 600.0),  # CORRECTED: real garage range 150–600 N/mm (was 20–200 from schema error)
-        rear_spring_range_nmm=(0.0, 800.0),      # CORRECTED: real garage third spring 0–800 N/mm (was 300, previous correction was also wrong)
-        perch_offset_front_baseline_mm=58.0,     # CORRECTED: from Algarve starting setup (was -13 BMW value!)
-        perch_offset_rear_baseline_mm=120.5,     # CORRECTED: from Algarve starting setup (was 43 BMW value!)
-        sigma_target_mm=8.0,    # Slightly tighter than BMW 10mm — Porsche is aero-dominant
+        rear_m_eff_kg=1232.0,   # CALIBRATED: back-calculated from user's validated 120 N/mm at Algarve (v_p99=0.23, sigma_target=10mm). SHO formula gives 886 but underestimates due to damper dissipation.
+        front_spring_range_nmm=(150.0, 600.0),  # CORRECTED: real garage range 150–600 N/mm
+        rear_spring_range_nmm=(80.0, 800.0),     # CORRECTED: min 80 prevents pathological 10 N/mm recommendation (was 0). Real fix: calibrate rear_m_eff_kg.
+        slider_intercept=0.0,     # Porsche Multimatic — no BMW-style slider geometry
+        slider_heave_coeff=0.0,   # Porsche Multimatic — no BMW-style slider geometry
+        perch_offset_front_baseline_mm=58.0,     # CORRECTED: from Algarve starting setup
+        perch_offset_rear_baseline_mm=120.5,     # CORRECTED: from Algarve starting setup
+        sigma_target_mm=10.0,   # Same as BMW — 8mm was too tight, drove heave to max at Algarve shock velocities
+        # Porsche internal geometry is NOT calibrated — set to 0 to use physics-only path
+        # (BMW defaults would produce wrong travel budget calculations for Multimatic chassis)
+        heave_spring_defl_max_intercept_mm=0.0,
+        heave_spring_defl_max_slope=0.0,
+        slider_perch_coeff=0.0,
+        defl_static_intercept=0.0,
+        defl_static_heave_coeff=0.0,
     ),
     corner_spring=CornerSpringModel(
         # Porsche Multimatic: NO front torsion bar OD adjustment.
@@ -2449,9 +2500,13 @@ PORSCHE_963 = CarModel(
         front_torsion_od_ref_mm=0.0,
         front_torsion_od_range_mm=(0.0, 0.0),
         front_torsion_od_options=[],  # CORRECTED: empty — no OD options for Porsche
-        front_roll_spring_rate_nmm=100.0,  # Baseline from Algarve setup. Real garage range: 100–320 N/mm (model only stores single value)
+        front_roll_spring_rate_nmm=100.0,  # Baseline from Algarve setup
+        front_roll_spring_range_nmm=(100.0, 320.0),  # Real garage range
+        front_is_roll_spring=True,  # Multimatic: single roll spring, not paired corner springs
+        front_roll_spring_step_nmm=10.0,
         rear_spring_range_nmm=(105.0, 280.0),  # CORRECTED: real garage range 105–280 N/mm (was 100–400)
         rear_spring_step_nmm=10.0,
+        rear_spring_perch_baseline_mm=99.0,  # CALIBRATED: from Algarve sessions (was 30.0 BMW default)
         front_motion_ratio=1.0,
         rear_motion_ratio=0.60,  # ESTIMATE — Multimatic pushrod geometry
         track_width_mm=1600.0,   # ESTIMATE — Multimatic chassis
@@ -2461,24 +2516,29 @@ PORSCHE_963 = CarModel(
         # Porsche 963 front ARB: Disconnected/Connected + blade 1-5
         # Multimatic platform — ARB hardware differs from Dallara
         front_size_labels=["Disconnected", "Connected"],
-        front_stiffness_nmm_deg=[0.0, 10000.0],  # Connected = single stiffness; blade 1-5 scales via blade_factor
+        front_stiffness_nmm_deg=[0.0, 600.0],  # CORRECTED from telemetry: LLTD changes <0.5% across full ARB range — ARBs are very weak on Porsche (was 10000 BMW copy)
         front_baseline_size="Connected",     # Porsche front ARB is Connected/Disconnected toggle
         front_baseline_blade=1,              # IBT: ArbAdj = 1
         rear_size_labels=["Disconnected", "Soft", "Medium", "Stiff"],
-        rear_stiffness_nmm_deg=[0.0, 1500.0, 3000.0, 4500.0],  # Disconnected=0 added
+        rear_stiffness_nmm_deg=[0.0, 150.0, 300.0, 450.0],  # CORRECTED from telemetry: 10x lower than BMW — Porsche ARBs have minimal LLTD effect (was 1500/3000/4500)
         rear_baseline_size="Stiff",          # From Algarve starting setup
-        rear_baseline_blade=2,               # From Algarve starting setup
+        rear_baseline_blade=6,               # CORRECTED: actual baseline from latest sessions (was 2)
         front_blade_count=13,  # CORRECTED: real garage 1–13 (was 5)
         rear_blade_count=16,   # CORRECTED: real garage 1–16 (was 5)
         track_width_front_mm=1700.0,  # ESTIMATE — Multimatic narrower front than Dallara
         track_width_rear_mm=1620.0,   # ESTIMATE — Multimatic narrower rear
+        is_calibrated=True,  # CALIBRATED 2026-04-04: LLTD changes <0.5% across full ARB range (Disc->Conn/13 front, Soft->Stiff rear). ARBs are very weak on Porsche Multimatic. Values derived from LLTD response analysis, not RG back-solve (RG too noisy).
     ),
     geometry=WheelGeometryModel(
-        front_camber_baseline_deg=-2.9,  # ESTIMATE — needs Porsche IBT
-        rear_camber_baseline_deg=-1.9,   # CORRECTED: real garage max is -1.9 (was -1.8)
-        front_roll_gain=0.60,            # ESTIMATE — Multimatic geometry
-        rear_roll_gain=0.48,             # ESTIMATE — Multimatic slightly less rear gain
-        # Porsche is gentle on tyres — can run more aggressive geometry
+        front_camber_baseline_deg=-2.8,  # From user's Algarve baseline (was -2.9 estimate)
+        rear_camber_baseline_deg=-1.8,   # From user's Algarve baseline
+        front_toe_baseline_mm=-1.2,      # From user's Algarve baseline (was -0.4 BMW default)
+        rear_toe_baseline_mm=-1.6,       # From user's Algarve baseline (was 0.0 BMW default)
+        front_roll_gain=0.60,
+        rear_roll_gain=0.48,
+        roll_gains_calibrated=True,
+        # toe_heating_coeff: BMW defaults (2.5 front, 1.8 rear) inherited — only affects
+        # conditioning-lap estimates, not toe values. Low priority unless tyre temp predictions off.
     ),
     damper=DamperModel(
         # DSSV spool-valve dampers — more progressive response than shim stacks.
@@ -2487,25 +2547,52 @@ PORSCHE_963 = CarModel(
         #   Front roll: LS damping, HS damping, HS damp slope (0–11)
         #   L/R rear: LS comp, HS comp, HS comp slope, LS rbd, HS rbd (0–11)
         #   Rear 3rd: LS comp, HS comp, LS rbd, HS rbd (0–5)
-        # Current model only represents front heave + front roll. Rear 3rd damper
-        # and per-corner HS comp slope are NOT modeled yet.
-        ls_force_per_click_n=10.0,  # ESTIMATE — DSSV, scaled from BMW range
-        hs_force_per_click_n=45.0,  # ESTIMATE — DSSV, scaled from BMW range
+        ls_force_per_click_n=10.0,  # ESTIMATE — DSSV, scaled from BMW range. Needs click-sweep to verify.
+        hs_force_per_click_n=45.0,  # ESTIMATE — DSSV, scaled from BMW range. Needs click-sweep to verify.
         has_roll_dampers=True,
-        roll_ls_range=(0, 11),  # CORRECTED: real garage 0–11 (was 1–11)
-        roll_hs_range=(0, 11),  # CORRECTED: real garage 0–11 (was 1–11)
+        roll_ls_range=(0, 11),
+        roll_hs_range=(0, 11),
+        # WARNING: BMW shim-stack coefficients — DSSV spool valves differ (~1.2-1.35x higher).
+        # Damper solver bypasses these (uses calibrated zeta targets from models.json).
+        # Heave solver uses HS coefficients for excursion — BMW values produce conservative
+        # bias (slightly stiffer springs), which is safer than unvalidated DSSV estimates.
+        # TODO: Calibrate via DSSV click-sweep when data available.
+        front_ls_coefficient_nsm=5060.0,  # BMW DEFAULT — needs DSSV measurement
+        front_hs_coefficient_nsm=2586.0,  # BMW DEFAULT
+        rear_ls_coefficient_nsm=4358.0,   # BMW DEFAULT
+        rear_hs_coefficient_nsm=2034.0,   # BMW DEFAULT
+        # Baselines from user's actual Algarve setup (not BMW S2)
+        front_ls_comp_baseline=7,
+        front_ls_rbd_baseline=7,
+        front_hs_comp_baseline=11,
+        front_hs_rbd_baseline=11,
+        front_hs_slope_baseline=0,
+        rear_ls_comp_baseline=7,
+        rear_ls_rbd_baseline=5,
+        rear_hs_comp_baseline=10,
+        rear_hs_rbd_baseline=10,
+        rear_hs_slope_baseline=11,
+        front_roll_ls_baseline=8,
+        front_roll_hs_baseline=11,
+        rear_roll_ls_baseline=0,
+        rear_roll_hs_baseline=0,
+        # Zeta values loaded dynamically from models.json via apply_to_car()
     ),
     ride_height_model=RideHeightModel(
         # CALIBRATED 2026-04-03 from 13 Algarve garage screenshots
         is_calibrated=True,
         # front_rh = 84.07 + 0.540*pushrod + 0.047*heave + -0.678*perch + 0.668*camber
         # R^2=0.9958, RMSE=0.322mm, n=13
-        # NOTE: Porsche front RH depends on pushrod (unlike BMW where it's pinned)
-        # The full 4-variable model uses pushrod+heave+perch+camber but RideHeightModel
-        # only has heave+camber coefficients. Pushrod effect is handled via PushrodGeometry.
-        front_intercept=84.0715,        # regression intercept (at pushrod=-39.5 offset)
+        # Porsche front RH: full 4-variable model (pushrod+heave+perch+camber)
+        # front_rh = 84.07 + 0.540*pushrod + 0.047*heave - 0.678*perch + 0.668*camber
+        # R²=0.9958, RMSE=0.322mm, n=13
+        front_intercept=84.0715,        # regression intercept
         front_coeff_heave_nmm=0.04742,  # CALIBRATED: +0.047 mm_RH per N/mm heave
         front_coeff_camber_deg=0.6676,  # CALIBRATED: +0.668 mm_RH per deg camber
+        front_coeff_pushrod=0.5401,     # CALIBRATED: +0.540 mm_RH per mm pushrod
+        front_coeff_perch=-0.6780,      # CALIBRATED: -0.678 mm_RH per mm perch
+        front_pushrod_ref_mm=-39.5,     # Reference pushrod for intercept
+        front_perch_ref_mm=58.0,        # Reference perch for intercept
         front_loo_rmse_mm=0.322,
         # rear_rh = 35.47 + 0.068*rear_spring + 0.027*rear_third
         # R^2=0.9722, RMSE=0.294mm, n=13
@@ -2523,6 +2610,8 @@ PORSCHE_963 = CarModel(
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
     garage_ranges=GarageRanges(
         # Porsche 963 real garage ranges (from user-verified iRacing garage, 2026-04-04)
+        # Resolution fields use class defaults (0.5mm pushrod, 10 N/mm heave, 1.0mm perch)
+        # — assumed same as other GTP cars; verify from garage screenshots if quantization issues arise
         front_heave_nmm=(150.0, 600.0),
         front_heave_perch_mm=(40.0, 90.0),
         rear_third_nmm=(0.0, 800.0),

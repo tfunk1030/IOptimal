@@ -122,7 +122,10 @@ def compute_modifiers(
         if _hs is not None:
             _range = getattr(_hs, "front_spring_range_nmm", None)
             if _range is not None and len(_range) >= 2:
-                _heave_min = _range[0]
+                # Use 10% of range as base increment, NOT the range minimum.
+                # For BMW (0-900): _heave_step = 90. For Porsche (150-600): _heave_step = 45.
+                # This prevents the modifier from producing floors that exceed the range.
+                _heave_min = (_range[1] - _range[0]) * 0.10
 
     # ── From Diagnosis Problems ──
     for problem in diagnosis.problems:

@@ -321,9 +321,23 @@ _PORSCHE_PARAM_IDS: dict[str, str] = {
     # Porsche uses RollSpring for corner spring (not TorsionBarOD)
     "lf_roll_spring":           "CarSetup_Chassis_LeftFront_RollSpring",
     "rf_roll_spring":           "CarSetup_Chassis_RightFront_RollSpring",
-    # Heave springs (Porsche labels them HeaveSpring, same key as BMW)
+    # Heave / third springs and perch offsets
     "front_heave_spring":       "CarSetup_Chassis_Front_HeaveSpring",
-    "rear_heave_spring":        "CarSetup_Chassis_Rear_HeaveSpring",
+    "front_heave_perch":        "CarSetup_Chassis_Front_HeavePerchOffset",
+    "rear_third_spring":        "CarSetup_Chassis_Rear_HeaveSpring",
+    "rear_third_perch":         "CarSetup_Chassis_Rear_HeavePerchOffset",
+    # Rear corner springs (L/R individual)
+    "lr_spring_rate":           "CarSetup_Chassis_LeftRear_SpringRate",
+    "rr_spring_rate":           "CarSetup_Chassis_RightRear_SpringRate",
+    "lr_spring_perch":          "CarSetup_Chassis_LeftRear_SpringPerchOffset",
+    "rr_spring_perch":          "CarSetup_Chassis_RightRear_SpringPerchOffset",
+    # Roll spring perch
+    "front_roll_perch":         "CarSetup_Chassis_Front_RollPerchOffset",
+    # ARB
+    "front_arb_size":           "CarSetup_Chassis_Front_ArbSize",
+    "front_arb_blades":         "CarSetup_Chassis_Front_ArbAdj",
+    "rear_arb_size":            "CarSetup_Chassis_Rear_ArbSize",
+    "rear_arb_blades":          "CarSetup_Chassis_Rear_ArbAdj",
     # Camber / toe
     "lf_camber":                "CarSetup_Chassis_LeftFront_Camber",
     "rf_camber":                "CarSetup_Chassis_RightFront_Camber",
@@ -332,11 +346,61 @@ _PORSCHE_PARAM_IDS: dict[str, str] = {
     "front_toe":                "CarSetup_Chassis_Front_ToeIn",
     "lr_toe":                   "CarSetup_Chassis_LeftRear_ToeIn",
     "rr_toe":                   "CarSetup_Chassis_RightRear_ToeIn",
+    # Suppress fields Porsche doesn't have
+    "lf_torsion_od":            "",  # no front torsion bar
+    "rf_torsion_od":            "",
+    "lf_torsion_turns":         "",
+    "rf_torsion_turns":         "",
+    "lf_hs_slope":              "",  # front heave has no HS slope
+    # Front heave dampers (4 channels, NO HS slope on Porsche front heave)
+    "lf_ls_comp":               "CarSetup_Dampers_FrontHeave_LsCompDamping",
+    "lf_ls_rbd":                "CarSetup_Dampers_FrontHeave_LsRbdDamping",
+    "lf_hs_comp":               "CarSetup_Dampers_FrontHeave_HsCompDamping",
+    "lf_hs_rbd":                "CarSetup_Dampers_FrontHeave_HsRbdDamping",
+    # lf_hs_slope NOT mapped — Porsche front heave has no HS slope in garage
+    "rf_ls_comp":               "",  # suppress — Porsche front heave is single unit (same as lf)
+    "rf_ls_rbd":                "",
+    "rf_hs_comp":               "",
+    "rf_hs_rbd":                "",
+    "rf_hs_slope":              "",
+    # Front roll dampers (3 channels: LS, HS, HS slope)
+    "front_roll_ls":            "CarSetup_Dampers_FrontRoll_LsDamping",
+    "front_roll_hs":            "CarSetup_Dampers_FrontRoll_HsDamping",
+    "front_roll_hs_slope":      "CarSetup_Dampers_FrontRoll_HsDampSlope",
+    # Rear L/R corner dampers (5 channels: LS comp, HS comp, HS slope, LS rbd, HS rbd)
+    "lr_ls_comp":               "CarSetup_Chassis_LeftRear_LsCompDamping",
+    "lr_ls_rbd":                "CarSetup_Chassis_LeftRear_LsRbdDamping",
+    "lr_hs_comp":               "CarSetup_Chassis_LeftRear_HsCompDamping",
+    "lr_hs_rbd":                "CarSetup_Chassis_LeftRear_HsRbdDamping",
+    "lr_hs_slope":              "CarSetup_Chassis_LeftRear_HsCompDampSlope",
+    "rr_ls_comp":               "CarSetup_Chassis_RightRear_LsCompDamping",
+    "rr_ls_rbd":                "CarSetup_Chassis_RightRear_LsRbdDamping",
+    "rr_hs_comp":               "CarSetup_Chassis_RightRear_HsCompDamping",
+    "rr_hs_rbd":                "CarSetup_Chassis_RightRear_HsRbdDamping",
+    "rr_hs_slope":              "CarSetup_Chassis_RightRear_HsCompDampSlope",
+    # Rear roll dampers (2 channels: LS, HS — no slope, no rbd split)
+    "rear_roll_ls":             "CarSetup_Dampers_RearRoll_LsDamping",
+    "rear_roll_hs":             "CarSetup_Dampers_RearRoll_HsDamping",
+    # Rear 3rd dampers (4 channels, NO HS slope, range 0-5)
+    "rear_3rd_ls_comp":         "CarSetup_Dampers_Rear3rd_LsCompDamping",
+    "rear_3rd_hs_comp":         "CarSetup_Dampers_Rear3rd_HsCompDamping",
+    "rear_3rd_ls_rbd":          "CarSetup_Dampers_Rear3rd_LsRbdDamping",
+    "rear_3rd_hs_rbd":          "CarSetup_Dampers_Rear3rd_HsRbdDamping",
+    # Tyre pressures (same XML IDs as BMW)
+    "lf_pressure":              "CarSetup_TiresAero_LeftFront_StartingPressure",
+    "rf_pressure":              "CarSetup_TiresAero_RightFront_StartingPressure",
+    "lr_pressure":              "CarSetup_TiresAero_LeftRearTire_StartingPressure",
+    "rr_pressure":              "CarSetup_TiresAero_RightRearTire_StartingPressure",
     # Brakes / fuel (same as BMW)
     "fuel_level":               "CarSetup_BrakesDriveUnit_Fuel_FuelLevel",
     "brake_bias":               "CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias",
     "tc_gain":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain",
     "tc_slip":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip",
+    # Diff (same XML IDs as BMW — verify from garage screenshots)
+    "diff_preload":             "CarSetup_BrakesDriveUnit_DiffSpec_DiffPreload",
+    "diff_coast_ramp":          "CarSetup_BrakesDriveUnit_DiffSpec_CoastRampAngle",
+    "diff_drive_ramp":          "CarSetup_BrakesDriveUnit_DiffSpec_DriveRampAngle",
+    "diff_clutch_plates":       "CarSetup_BrakesDriveUnit_DiffSpec_ClutchPlates",
 }
 
 
@@ -731,6 +795,8 @@ def write_sto(
             _comment(details, f"TODO: {car_canonical} {param} not mapped")
 
     is_acura = car_canonical.lower() == "acura"
+    is_porsche = car_canonical.lower() == "porsche"
+    has_roll_dampers = is_acura or is_porsche
 
     # Build XML tree
     root = Element("LDXFile", Version="1.6", Locale="English")
@@ -990,17 +1056,32 @@ def write_sto(
     _w_num("rr_hs_rbd",   step6.rr.hs_rbd,   "clicks")
     _w_num("rr_hs_slope", step6.rr.hs_slope, "clicks")
 
-    # === Roll dampers (Acura ORECA only) ===
-    if is_acura:
+    # === Roll dampers (Porsche / Acura — heave+roll architecture) ===
+    if has_roll_dampers:
         _roll_ls_f = getattr(step6, 'front_roll_ls', None)
         _roll_hs_f = getattr(step6, 'front_roll_hs', None)
         _roll_ls_r = getattr(step6, 'rear_roll_ls', None)
         _roll_hs_r = getattr(step6, 'rear_roll_hs', None)
+        _roll_hs_slope_f = getattr(step6, 'front_roll_hs_slope', None)
         if _roll_ls_f is not None:
             _w_num("front_roll_ls", _roll_ls_f, "clicks")
             _w_num("front_roll_hs", _roll_hs_f, "clicks")
+            if _roll_hs_slope_f is not None:
+                _w_num("front_roll_hs_slope", _roll_hs_slope_f, "clicks")
             _w_num("rear_roll_ls",  _roll_ls_r,  "clicks")
             _w_num("rear_roll_hs",  _roll_hs_r,  "clicks")
+
+    # === Rear 3rd damper (Porsche only) ===
+    if is_porsche:
+        _3rd_ls = getattr(step6, 'rear_3rd_ls_comp', None)
+        _3rd_hs = getattr(step6, 'rear_3rd_hs_comp', None)
+        _3rd_ls_rbd = getattr(step6, 'rear_3rd_ls_rbd', None)
+        _3rd_hs_rbd = getattr(step6, 'rear_3rd_hs_rbd', None)
+        if _3rd_ls is not None:
+            _w_num("rear_3rd_ls_comp", _3rd_ls, "clicks")
+            _w_num("rear_3rd_hs_comp", _3rd_hs, "clicks")
+            _w_num("rear_3rd_ls_rbd",  _3rd_ls_rbd, "clicks")
+            _w_num("rear_3rd_hs_rbd",  _3rd_hs_rbd, "clicks")
 
     # === Tyres ===
     _w_num("lf_pressure", tyre_pressure_kpa, "kPa")

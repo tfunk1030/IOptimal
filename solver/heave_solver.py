@@ -742,43 +742,17 @@ class HeaveSolver:
             v_front_platform = self.track.shock_vel_p99_front_hs_mps
         m_front = hsm.front_m_eff_kg
 
-        # ── Effective velocity calibration from measured travel ──────────────
-        # The iRacing ShockVel channel systematically underreports at rough tracks
-        # (e.g., Sebring). When measured travel percentage is available from a real
-        # IBT session, back-calculate the effective velocity that would produce the
-        # observed spring deflection — this is the true input the car is seeing.
+        # ── Shock velocity for heave sizing ──────────────────────────────────
+        # Use the shock velocity p99 from the track profile / IBT directly.
+        # Do NOT back-calculate effective velocity from deflection p99 — the
+        # deflection includes kerb strikes, braking pitch, and direction changes
+        # that are transient events handled by dampers, not by heave spring rate.
+        # Back-calculating from deflection inflates the velocity by 50-70% on
+        # tracks with aggressive kerbs (Algarve, Sebring) and drives the heave
+        # spring to max range unnecessarily.
         #
-        # Method: binary search for v_eff such that
-        #   excursion(v_eff, m, k_current) ≈ measured_defl_p99 - static_defl
-        # then use v_eff for bottoming constraint (conservative) and v_front_platform
-        # for sigma/platform sizing.
-        v_front_effective = v_front  # fallback = channel value
-        _travel_pct = getattr(measured, "front_heave_travel_used_pct", None) if measured else None
-        _defl_p99 = getattr(measured, "front_heave_defl_p99_mm", None) if measured else None
-        # k_current: prefer field on measured, fall back to car baseline
-        _k_current = (getattr(measured, "front_heave_spring_rate_nmm", None) if measured else None)
-        if _k_current is None:
-            _k_current = front_heave_current_nmm  # passed explicitly from solve chain
-        if _defl_p99 is not None and _k_current is not None and _k_current > 0:
-            # Static deflection: F/k where k is in N/mm
-            # F = m_eff × g (N), k in N/mm → delta in mm
-            g = 9.81
-            static_defl_mm = (m_front * g) / _k_current  # N / (N/mm) = mm
-            dynamic_exc_observed = max(0.0, _defl_p99 - static_defl_mm)
-            if dynamic_exc_observed > 0.5:  # meaningful signal
-                # Binary search v_eff
-                lo_v, hi_v = 0.05, 3.0  # m/s
-                for _ in range(30):
-                    mid_v = (lo_v + hi_v) / 2.0
-                    exc_mid = self.excursion(mid_v, m_front, _k_current, axle="front")
-                    if exc_mid < dynamic_exc_observed:
-                        lo_v = mid_v
-                    else:
-                        hi_v = mid_v
-                v_front_effective = (lo_v + hi_v) / 2.0
-                # Use effective velocity for bottoming constraint only.
-                # Platform sizing still uses channel p99 (less conservative for ride quality).
-                v_front = v_front_effective  # bottoming guard uses calibrated velocity
+        # The shock velocity channel represents the actual bump input the spring
+        # needs to control for platform stability.
 
         # Bottoming constraint uses lap-wide p99 (safety — must not bottom anywhere)
         k_front_bottoming = self.min_rate_for_no_bottoming(
@@ -921,8 +895,14 @@ class HeaveSolver:
         garage_constraint_notes: list[str] = []
         garage_constraints_ok = True
         garage_model = self.car.active_garage_output_model(self.track.track_name)
+        # Auto-built garage models (from auto_calibrate) don't have validated travel
+        # budget constraints — use physics-only path for spring rate selection.
+        _garage_has_travel_constraints = (
+            garage_model is not None
+            and not getattr(garage_model, "_auto_built", False)
+        )
 
-        if garage_model is not None:
+        if _garage_has_travel_constraints:
             initial_front_rate = k_front
             baseline = garage_model.default_state(fuel_l=fuel_load_l)
             front_pushrod_val = (
@@ -1143,7 +1123,8 @@ class HeaveSolver:
     ) -> None:
         """Round-trip the front heave travel budget after torsion/spring choices are known."""
         garage_model = self.car.active_garage_output_model(self.track.track_name)
-        if garage_model is None:
+        # Auto-built garage models don't have validated travel budget constraints
+        if garage_model is None or getattr(garage_model, "_auto_built", False):
             return
 
         front_damper_coeff = (

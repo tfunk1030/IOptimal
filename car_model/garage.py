@@ -188,6 +188,9 @@ class GarageOutputModel:
     heave_defl_coeff_front_pushrod_mm: float = 0.0
     heave_defl_coeff_front_rh_mm: float = 0.0
     heave_defl_coeff_torsion_turns: float = 0.0
+    # Inverse-feature coefficients (Porsche: defl ~ 1/heave_nmm, not ~ heave_nmm)
+    heave_defl_coeff_inv_heave_nmm: float = 0.0
+    heave_defl_coeff_inv_od4: float = 0.0
 
     slider_intercept: float = 0.0
     slider_coeff_heave_nmm: float = 0.0
@@ -295,7 +298,9 @@ class GarageOutputModel:
             + self.heave_defl_coeff_torsion_od_mm * setup.front_torsion_od_mm
             + self.heave_defl_coeff_front_pushrod_mm * setup.front_pushrod_mm
             + self.heave_defl_coeff_front_rh_mm * front_static_rh_mm
-            + self.heave_defl_coeff_torsion_turns * torsion_turns,
+            + self.heave_defl_coeff_torsion_turns * torsion_turns
+            + self.heave_defl_coeff_inv_heave_nmm / max(setup.front_heave_nmm, 1.0)
+            + self.heave_defl_coeff_inv_od4 / max(setup.front_torsion_od_mm ** 4, 1.0),
         )
 
     def predict_heave_slider_defl_static(

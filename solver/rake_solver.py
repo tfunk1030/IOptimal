@@ -328,6 +328,8 @@ class RakeSolver:
                 static_front = rh_model.predict_front_static_rh(
                     heave_nmm=self.car.front_heave_spring_nmm,
                     camber_deg=self.car.geometry.front_camber_baseline_deg,
+                    pushrod_mm=front_pushrod,
+                    perch_mm=self.car.heave_spring.perch_offset_front_baseline_mm,
                 )
             else:
                 static_front = self.car.pushrod.front_rh_for_offset(front_pushrod)
@@ -794,9 +796,10 @@ def reconcile_ride_heights(
             round(corrected_dynamic_rear + step1.aero_compression_rear_mm, 3),
         )
 
-        # Only invert via pushrod if the coefficient is large enough.
-        # For BMW, front pushrod barely affects front RH (coeff ~0.03),
-        # so inverting would produce extreme pushrod values.
+        # Solve for pushrod + perch to achieve target front RH.
+        # When the heave spring changes (e.g., 180→600 N/mm), the pushrod alone
+        # may not have enough range to compensate. In that case, adjust the perch.
+        new_front_pushrod = step1.front_pushrod_offset_mm
         if abs(garage_model.front_coeff_pushrod) >= 0.05:
             new_front_pushrod = garage_model.front_pushrod_for_static_rh(
                 target_front_rh,
@@ -806,8 +809,41 @@ def reconcile_ride_heights(
                 front_camber_deg=front_camber,
                 fuel_l=fuel_load_l,
             )
-        else:
-            new_front_pushrod = step1.front_pushrod_offset_mm
+            # If pushrod is out of range, adjust perch to compensate
+            pushrod_lo, pushrod_hi = car.garage_ranges.front_pushrod_mm
+            if new_front_pushrod < pushrod_lo or new_front_pushrod > pushrod_hi:
+                # Clamp pushrod to range and solve for perch
+                clamped_pushrod = max(pushrod_lo, min(pushrod_hi, new_front_pushrod))
+                # How much RH delta does clamping cause?
+                rh_at_clamped = garage_model.predict_front_static_rh_raw(
+                    GarageSetupState(
+                        front_pushrod_mm=clamped_pushrod,
+                        rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+                        front_heave_nmm=step2.front_heave_nmm,
+                        front_heave_perch_mm=step2.perch_offset_front_mm,
+                        rear_third_nmm=step2.rear_third_nmm,
+                        rear_third_perch_mm=step2.perch_offset_rear_mm,
+                        front_torsion_od_mm=step3.front_torsion_od_mm,
+                        rear_spring_nmm=step3.rear_spring_rate_nmm,
+                        rear_spring_perch_mm=step3.rear_spring_perch_mm,
+                        front_camber_deg=front_camber,
+                        fuel_l=fuel_load_l,
+                    )
+                )
+                rh_deficit = target_front_rh - rh_at_clamped
+                # Perch can absorb the deficit
+                perch_coeff = garage_model.front_coeff_heave_perch_mm
+                if abs(perch_coeff) > 1e-6:
+                    perch_delta = rh_deficit / perch_coeff
+                    new_perch = step2.perch_offset_front_mm + perch_delta
+                    new_perch = round(new_perch * 2) / 2
+                    perch_lo, perch_hi = car.garage_ranges.front_heave_perch_mm
+                    new_perch = max(perch_lo, min(perch_hi, new_perch))
+                    step2.perch_offset_front_mm = new_perch
+                    if verbose:
+                        print(f"  Front perch adjusted to {new_perch:.1f}mm "
+                              f"(compensates for heave {step2.front_heave_nmm:.0f} N/mm)")
+                new_front_pushrod = clamped_pushrod
         new_rear_pushrod = garage_model.rear_pushrod_for_static_rh(
             target_rear_rh,
             rear_third_nmm=step2.rear_third_nmm,
@@ -880,17 +916,50 @@ def reconcile_ride_heights(
 
     rh_model = car.ride_height_model
 
-    # Front RH: refine with actual heave spring from step2
+    # Front RH: when heave spring changes from step2, adjust perch to maintain
+    # the original target static RH (dynamic + compression). Without this, a
+    # stiffer heave produces a higher static RH than intended.
     if rh_model.front_is_calibrated:
         front_camber = car.geometry.front_camber_baseline_deg
-        # Ferrari RH model calibrated with index inputs, not physical N/mm
         _heave_for_rh = step2.front_heave_nmm
         if getattr(car, 'canonical_name', '') == 'ferrari':
             from car_model.setup_registry import public_output_value
             _heave_for_rh = float(public_output_value('ferrari', 'front_heave_nmm', step2.front_heave_nmm))
-        new_front_rh = rh_model.predict_front_static_rh(
-            _heave_for_rh, front_camber,
-        )
+
+        # Target static RH: the value step1 computed (dynamic + compression)
+        target_static_front = step1.static_front_rh_mm
+        _perch_coeff = rh_model.front_coeff_perch
+
+        if abs(_perch_coeff) > 1e-6:
+            # Solve for perch: target = intercept + coeff_heave*heave + coeff_camber*camber
+            #                           + coeff_pushrod*pushrod + coeff_perch*perch
+            # perch = (target - rest) / coeff_perch
+            rest = (rh_model.front_intercept
+                    + rh_model.front_coeff_heave_nmm * _heave_for_rh
+                    + rh_model.front_coeff_camber_deg * front_camber
+                    + rh_model.front_coeff_pushrod * step1.front_pushrod_offset_mm)
+            new_perch = (target_static_front - rest) / _perch_coeff
+            new_perch = round(new_perch * 2) / 2  # snap to 0.5mm garage step
+            # Clamp to valid range
+            perch_lo, perch_hi = car.garage_ranges.front_heave_perch_mm
+            new_perch = max(perch_lo, min(perch_hi, new_perch))
+            # Update step2 perch and recompute actual static RH
+            step2.perch_offset_front_mm = new_perch
+            new_front_rh = rh_model.predict_front_static_rh(
+                _heave_for_rh, front_camber,
+                pushrod_mm=step1.front_pushrod_offset_mm,
+                perch_mm=new_perch,
+            )
+            if verbose and abs(new_perch - car.heave_spring.perch_offset_front_baseline_mm) > 0.1:
+                print(f"  Front perch adjusted: {car.heave_spring.perch_offset_front_baseline_mm:.1f} -> "
+                      f"{new_perch:.1f} mm (heave {step2.front_heave_nmm:.0f} -> maintains {new_front_rh:.1f}mm static RH)")
+        else:
+            new_front_rh = rh_model.predict_front_static_rh(
+                _heave_for_rh, front_camber,
+                pushrod_mm=step1.front_pushrod_offset_mm,
+                perch_mm=car.heave_spring.perch_offset_front_baseline_mm,
+            )
+
         if abs(new_front_rh - step1.static_front_rh_mm) > 0.05:
             if verbose:
                 print(f"  Front RH refined: {step1.static_front_rh_mm:.1f} -> "
@@ -962,7 +1031,14 @@ def reconcile_ride_heights(
 
     # Front pushrod reconcile — for cars with a heave-perch-dependent front RH model
     # (e.g. Cadillac). After step2 we know the actual heave perch, so re-solve pushrod.
-    if abs(car.pushrod.front_heave_perch_to_rh) > 1e-6 and hasattr(step2, "perch_offset_front_mm"):
+    # Pushrod reconciliation for perch changes: only use PushrodGeometry when
+    # the RideHeightModel is NOT calibrated. When the RH model IS calibrated,
+    # the perch adjustment above (lines 895-927) already handled the compensation
+    # correctly using the full 4-variable model. PushrodGeometry doesn't account
+    # for heave rate and would compute a wrong pushrod at different heave rates.
+    if (abs(car.pushrod.front_heave_perch_to_rh) > 1e-6
+            and hasattr(step2, "perch_offset_front_mm")
+            and not rh_model.front_is_calibrated):
         target_front = max(car.min_front_rh_static, step1.static_front_rh_mm)
         actual_perch = float(step2.perch_offset_front_mm)
         new_front_pushrod = round(

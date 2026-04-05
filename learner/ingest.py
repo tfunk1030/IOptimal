@@ -303,13 +303,28 @@ def ingest_ibt(
                 if n_unique >= 5:
                     # Auto-fit models
                     cal_models = fit_models_from_points(car_name, cal_points)
-                    # Preserve existing spring lookup tables
+                    # Preserve existing calibration fields that fit_models doesn't compute
                     existing_saved = load_calibrated_models(car_name)
                     if existing_saved:
+                        # Preserve damper zeta (set by validation/calibrate_dampers.py)
+                        if existing_saved.front_ls_zeta is not None and cal_models.front_ls_zeta is None:
+                            cal_models.front_ls_zeta = existing_saved.front_ls_zeta
+                            cal_models.rear_ls_zeta = existing_saved.rear_ls_zeta
+                            cal_models.front_hs_zeta = existing_saved.front_hs_zeta
+                            cal_models.rear_hs_zeta = existing_saved.rear_hs_zeta
+                            cal_models.zeta_n_sessions = existing_saved.zeta_n_sessions
+                        # Preserve LLTD target (set by validation/calibrate_lltd.py)
+                        if existing_saved.measured_lltd_target is not None and cal_models.measured_lltd_target is None:
+                            cal_models.measured_lltd_target = existing_saved.measured_lltd_target
+                        # Preserve spring lookup tables
                         if existing_saved.front_torsion_lookup and not cal_models.front_torsion_lookup:
                             cal_models.front_torsion_lookup = existing_saved.front_torsion_lookup
                         if existing_saved.rear_torsion_lookup and not cal_models.rear_torsion_lookup:
                             cal_models.rear_torsion_lookup = existing_saved.rear_torsion_lookup
+                        # Merge status dict: preserve keys that fresh model didn't compute
+                        for k, v in existing_saved.status.items():
+                            if k not in cal_models.status:
+                                cal_models.status[k] = v
                     save_calibrated_models(car_name, cal_models)
                     if cal_models.calibration_complete:
                         result["new_learnings"].append(

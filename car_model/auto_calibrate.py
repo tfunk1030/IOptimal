@@ -1054,8 +1054,8 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         # Back-solve: K_total = m*g*h_cg / roll_gradient_rad_per_g
         # K_total = K_springs + K_arb_total
         # With 2+ ARB configs at same springs, K_springs cancels in the delta.
-        m_kg = _car_obj.mass.total_kg
-        h_cg_m = _car_obj.mass.cg_height_mm / 1000.0
+        m_kg = _car_obj.total_mass(50.0)  # approximate with half fuel
+        h_cg_m = _car_obj.corner_spring.cg_height_mm / 1000.0
         mg_h = m_kg * 9.81 * h_cg_m  # N·m
 
         # Collect (arb_config_label, K_total) pairs
@@ -1175,7 +1175,9 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                 k = pt.front_heave_setting  # already N/mm (BMW)
             if k <= 0:
                 continue
-            m = k * (pt.front_sigma_mm / pt.front_shock_vel_p99_mps) ** 2
+            # m_eff = k_N/m * (excursion_m / v_mps)^2, excursion = sigma * 2.33
+            # Unit conversion: k_N/m = k_nmm*1000, excursion_m = sigma_mm*2.33/1000
+            m = k * (pt.front_sigma_mm * 2.33) ** 2 / (1000.0 * pt.front_shock_vel_p99_mps ** 2)
             if 50 < m < 3000:  # plausible range
                 m_effs_front.append((pt.front_heave_setting, m))
 
@@ -1207,7 +1209,8 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                 k = pt.rear_third_setting  # already N/mm (BMW)
             if k <= 0:
                 continue
-            m = k * (pt.rear_sigma_mm / pt.rear_shock_vel_p99_mps) ** 2
+            # Same unit-corrected formula as front
+            m = k * (pt.rear_sigma_mm * 2.33) ** 2 / (1000.0 * pt.rear_shock_vel_p99_mps ** 2)
             if 100 < m < 5000:  # plausible range for rear (heavier: aero + third spring)
                 m_effs_rear.append(m)
 
@@ -1262,6 +1265,138 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Build GarageOutputModel from calibration regressions
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_garage_output_model(car_obj, models: CarCalibrationModels):
+    """Build a GarageOutputModel from fitted calibration regressions.
+
+    Returns a GarageOutputModel if enough data exists, else None.
+    Requires at minimum: front RH model (from cars.py) + heave deflection model (from calibration).
+    """
+    from car_model.garage import GarageOutputModel
+
+    rh = car_obj.ride_height_model
+    if not rh.front_is_calibrated:
+        return None
+
+    hsm = car_obj.heave_spring
+    csm = car_obj.corner_spring
+
+    # Front RH coefficients from the car's RideHeightModel
+    front_intercept = rh.front_intercept
+    front_coeff_pushrod = rh.front_coeff_pushrod
+    front_coeff_heave = rh.front_coeff_heave_nmm
+    front_coeff_camber = rh.front_coeff_camber_deg
+    # Perch maps to heave_perch_mm in garage model
+    front_coeff_perch = rh.front_coeff_perch
+
+    # Rear RH coefficients
+    rear_intercept = rh.rear_intercept
+    rear_coeff_pushrod = rh.rear_coeff_pushrod
+    rear_coeff_third = rh.rear_coeff_third_nmm
+    rear_coeff_rear_spring = rh.rear_coeff_rear_spring
+    rear_coeff_fuel = rh.rear_coeff_fuel_l
+
+    # Heave deflection from calibration models
+    heave_defl_intercept = 0.0
+    heave_defl_coeff_heave = 0.0
+    heave_defl_coeff_perch = 0.0
+    heave_defl_coeff_inv_heave = 0.0
+    heave_defl_coeff_inv_od4 = 0.0
+    if models.heave_spring_defl_static:
+        hs_defl = models.heave_spring_defl_static
+        coeffs = hs_defl.coefficients
+        heave_defl_intercept = coeffs[0] if len(coeffs) > 0 else 0.0
+        # Map feature names to coefficients — inverse features go to separate fields
+        for i, feat in enumerate(hs_defl.feature_names):
+            if i + 1 < len(coeffs):
+                if feat == "inv_heave_nmm":
+                    heave_defl_coeff_inv_heave = coeffs[i + 1]  # 1/heave coefficient
+                elif feat == "front_heave" or feat == "heave_nmm":
+                    heave_defl_coeff_heave = coeffs[i + 1]  # direct heave coefficient
+                elif feat == "front_heave_perch":
+                    heave_defl_coeff_perch = coeffs[i + 1]
+                elif feat == "inv_od4":
+                    heave_defl_coeff_inv_od4 = coeffs[i + 1]  # 1/OD^4 coefficient
+
+    # Heave defl max from calibration
+    defl_max_intercept = 0.0
+    defl_max_slope = 0.0
+    if models.heave_spring_defl_max:
+        dm = models.heave_spring_defl_max
+        defl_max_intercept = dm.coefficients[0] if len(dm.coefficients) > 0 else 0.0
+        for i, feat in enumerate(dm.feature_names):
+            if i + 1 < len(dm.coefficients) and feat == "front_heave":
+                defl_max_slope = dm.coefficients[i + 1]
+
+    # Slider from calibration
+    slider_intercept = 0.0
+    slider_coeff_heave = 0.0
+    slider_coeff_perch = 0.0
+    if models.heave_slider_defl_static:
+        sl = models.heave_slider_defl_static
+        slider_intercept = sl.coefficients[0] if len(sl.coefficients) > 0 else 0.0
+        for i, feat in enumerate(sl.feature_names):
+            if i + 1 < len(sl.coefficients):
+                if feat == "front_heave":
+                    slider_coeff_heave = sl.coefficients[i + 1]
+                elif feat == "front_heave_perch":
+                    slider_coeff_perch = sl.coefficients[i + 1]
+
+    # Defaults from car baseline
+    pg = car_obj.pushrod
+    return GarageOutputModel(
+        name=f"{car_obj.canonical_name}_auto",
+        track_keywords=(),  # applies to all tracks
+        # Defaults from car baseline
+        default_front_pushrod_mm=pg.front_pushrod_default_mm,
+        default_rear_pushrod_mm=pg.rear_pushrod_default_mm,
+        default_front_heave_nmm=car_obj.front_heave_spring_nmm,
+        default_front_heave_perch_mm=hsm.perch_offset_front_baseline_mm,
+        default_rear_third_nmm=car_obj.rear_third_spring_nmm,
+        default_rear_third_perch_mm=hsm.perch_offset_rear_baseline_mm,
+        default_front_torsion_od_mm=(csm.front_torsion_od_options[0]
+                                     if csm.front_torsion_od_options else 0.0),
+        default_rear_spring_nmm=csm.rear_spring_range_nmm[0],
+        default_rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
+        default_front_camber_deg=car_obj.geometry.front_camber_baseline_deg,
+        front_rh_floor_mm=car_obj.min_front_rh_static,
+        max_slider_mm=45.0,
+        heave_spring_defl_max_intercept_mm=defl_max_intercept,
+        heave_spring_defl_max_slope=defl_max_slope,
+        # Front RH regression
+        front_intercept=front_intercept,
+        front_coeff_pushrod=front_coeff_pushrod,
+        front_coeff_heave_nmm=front_coeff_heave,
+        front_coeff_heave_perch_mm=front_coeff_perch,
+        front_coeff_torsion_od_mm=0.0,
+        front_coeff_camber_deg=front_coeff_camber,
+        front_coeff_fuel_l=0.0,
+        # Rear RH regression
+        rear_intercept=rear_intercept,
+        rear_coeff_pushrod=rear_coeff_pushrod,
+        rear_coeff_third_nmm=rear_coeff_third,
+        rear_coeff_third_perch_mm=0.0,
+        rear_coeff_rear_spring_nmm=rear_coeff_rear_spring,
+        rear_coeff_rear_spring_perch_mm=0.0,
+        rear_coeff_front_heave_perch_mm=0.0,
+        rear_coeff_fuel_l=rear_coeff_fuel,
+        # Heave deflection
+        heave_defl_intercept=heave_defl_intercept,
+        heave_defl_coeff_heave_nmm=heave_defl_coeff_heave,
+        heave_defl_coeff_heave_perch_mm=heave_defl_coeff_perch,
+        heave_defl_coeff_inv_heave_nmm=heave_defl_coeff_inv_heave,
+        heave_defl_coeff_inv_od4=heave_defl_coeff_inv_od4,
+        # Slider
+        slider_intercept=slider_intercept,
+        slider_coeff_heave_nmm=slider_coeff_heave,
+        slider_coeff_heave_perch_mm=slider_coeff_perch,
+        # Torsion bar C constant (0 for Porsche/non-torsion cars)
+        torsion_bar_rate_c=csm.front_torsion_c,
+    )
+
+
 # Apply calibrated models to car object
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1275,18 +1410,22 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
     if not models:
         return applied
 
-    # Apply DeflectionModel coefficients
-    if models.front_shock_defl_static and models.heave_spring_defl_static:
+    # Apply DeflectionModel coefficients — apply whatever is available
+    # (Porsche has no front torsion bar, so front_shock_defl_static may be None)
+    _defl_applied = False
+    if models.heave_spring_defl_static or models.front_shock_defl_static or models.rear_shock_defl_static:
         try:
             defl = car_obj.deflection
             fs = models.front_shock_defl_static
-            if len(fs.coefficients) >= 2:
+            if fs and len(fs.coefficients) >= 2:
                 defl.shock_front_intercept = fs.coefficients[0]
                 defl.shock_front_pushrod_coeff = fs.coefficients[1]
+                _defl_applied = True
             rs = models.rear_shock_defl_static
             if rs and len(rs.coefficients) >= 2:
                 defl.shock_rear_intercept = rs.coefficients[0]
                 defl.shock_rear_pushrod_coeff = rs.coefficients[1]
+                _defl_applied = True
             hs = models.heave_spring_defl_static
             # Reciprocal fit: [intercept, 1/heave_nmm, perch, 1/OD^4]
             # Must have exactly 4 coefficients matching DeflectionModel semantics
@@ -1295,8 +1434,10 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                 defl.heave_defl_inv_heave_coeff = hs.coefficients[1]  # 1/heave_nmm
                 defl.heave_defl_perch_coeff = hs.coefficients[2]      # perch_mm
                 defl.heave_defl_inv_od4_coeff = hs.coefficients[3]    # 1/OD^4
-            defl.is_calibrated = True
-            applied.append(f"DeflectionModel updated from {models.n_unique_setups} IBT sessions")
+                _defl_applied = True
+            if _defl_applied:
+                defl.is_calibrated = True
+                applied.append(f"DeflectionModel updated from {models.n_unique_setups} IBT sessions")
         except AttributeError:
             pass
 
@@ -1470,6 +1611,24 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                     )
         except Exception:
             pass
+
+    # Auto-build GarageOutputModel from calibration regressions if the car
+    # doesn't already have one. This enables RH/pushrod reconciliation and
+    # legality validation for non-BMW cars that have been calibrated.
+    # NOTE: The auto-built model is used for RH prediction and pushrod inversion
+    # but NOT for heave spring travel budget constraints — those use the physics-
+    # only path because the auto-built deflection models haven't been validated
+    # against full garage sweep data. Hand-calibrated garage models (BMW) override this.
+    if car_obj.garage_output_model is None:
+        garage_model = build_garage_output_model(car_obj, models)
+        if garage_model is not None:
+            # Mark as auto-built so the heave solver knows to use physics path for travel
+            garage_model._auto_built = True
+            car_obj.garage_output_model = garage_model
+            applied.append(
+                f"GarageOutputModel auto-built from calibration "
+                f"(front RH RMSE={car_obj.ride_height_model.front_loo_rmse_mm:.2f}mm)"
+            )
 
     return applied
 
@@ -1874,7 +2033,7 @@ Examples:
             print("❌ (no valid data)")
             continue
         if pt.session_id in existing_ids:
-            print("→ already in dataset")
+            print("-> already in dataset")
             continue
         new_points.append(pt)
         existing_ids.add(pt.session_id)
@@ -1947,24 +2106,41 @@ Examples:
         print(f"\n  Fitting calibration models from {n_unique} unique setups...")
         models = fit_models_from_points(car, new_points)
 
-        # Preserve existing spring lookup tables (and expand if they only have 1 entry)
+        # Preserve fields from existing models.json that auto_calibrate doesn't compute
+        # (e.g. zeta from calibrate_dampers, spring lookups from STO import)
         existing_saved = load_calibrated_models(car)
         if existing_saved:
+            # Preserve damper zeta (set by validation/calibrate_dampers.py)
+            if existing_saved.front_ls_zeta is not None and models.front_ls_zeta is None:
+                models.front_ls_zeta = existing_saved.front_ls_zeta
+                models.rear_ls_zeta = existing_saved.rear_ls_zeta
+                models.front_hs_zeta = existing_saved.front_hs_zeta
+                models.rear_hs_zeta = existing_saved.rear_hs_zeta
+                models.zeta_n_sessions = existing_saved.zeta_n_sessions
+            # Preserve spring lookup tables (and expand if they only have 1 entry)
             if existing_saved.front_torsion_lookup and not models.front_torsion_lookup:
                 lut_f = existing_saved.front_torsion_lookup
-                # Retroactively expand single-entry lookups with k ∝ OD⁴ extrapolation
+                # Retroactively expand single-entry lookups with k proportional to OD^4 extrapolation
                 n_before = len(lut_f.entries)
                 lut_f = expand_torsion_lookup_from_physics(car, lut_f, axle="front")
                 if len(lut_f.entries) > n_before:
-                    print(f"  ↳ Expanded front torsion lookup: {n_before} → {len(lut_f.entries)} entries (k∝OD⁴)")
+                    print(f"  Expanded front torsion lookup: {n_before} -> {len(lut_f.entries)} entries")
                 models.front_torsion_lookup = lut_f
             if existing_saved.rear_torsion_lookup and not models.rear_torsion_lookup:
                 lut_r = existing_saved.rear_torsion_lookup
                 n_before = len(lut_r.entries)
                 lut_r = expand_torsion_lookup_from_physics(car, lut_r, axle="rear")
                 if len(lut_r.entries) > n_before:
-                    print(f"  ↳ Expanded rear torsion lookup: {n_before} → {len(lut_r.entries)} entries (k∝OD⁴)")
+                    print(f"  Expanded rear torsion lookup: {n_before} -> {len(lut_r.entries)} entries")
                 models.rear_torsion_lookup = lut_r
+            # Preserve LLTD target from calibrate_lltd if not recomputed
+            if existing_saved.measured_lltd_target is not None and models.measured_lltd_target is None:
+                models.measured_lltd_target = existing_saved.measured_lltd_target
+            # Merge status dict: preserve keys from previous runs that this run didn't compute
+            # (e.g. roll_gains_calibrated from a previous run, arb status, etc.)
+            for k, v in existing_saved.status.items():
+                if k not in models.status:
+                    models.status[k] = v
 
         save_calibrated_models(car, models)
         print(f"  ✅ Models saved to {_models_path(car)}")

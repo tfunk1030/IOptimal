@@ -42,7 +42,9 @@ def calibrate_lltd(car_name: str, track_name: str) -> dict | None:
     # Collect LLTD + lap time pairs
     pairs: list[tuple[float, float]] = []
     for oid in obs_ids:
-        obs = store.load_observation(oid)
+        # list_observations returns dicts with 'session_id'; load_observation expects a string
+        obs_key = oid.get("session_id", oid) if isinstance(oid, dict) else oid
+        obs = store.load_observation(obs_key)
         if obs is None:
             continue
 
@@ -50,7 +52,7 @@ def calibrate_lltd(car_name: str, track_name: str) -> dict | None:
         perf = obs.get("performance", {})
 
         lltd = telem.get("lltd_measured", 0)
-        lap_time = perf.get("lap_time_s", 0)
+        lap_time = perf.get("lap_time_s", 0) or perf.get("best_lap_time_s", 0)
 
         # Plausibility: LLTD between 0.30 and 0.70, lap time > 30s
         if 0.30 < lltd < 0.70 and lap_time > 30.0:

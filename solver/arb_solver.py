@@ -251,16 +251,25 @@ class ARBSolver:
         """
         arb = self.car.arb
 
-        # Roll stiffness from corner springs
-        # Both front and rear inputs are already wheel rates (N/mm):
-        #   Front: MR baked into torsion bar C*OD^4 formula
-        #   Rear: converted from spring rate by caller (spring_rate * MR^2)
-        k_springs_front = self._corner_spring_roll_stiffness(
-            front_wheel_rate_nmm, arb.track_width_front_mm,
-        )
+        # Roll stiffness from springs
+        # Rear: always paired corner springs → K = 2 * k_wheel * (t/2)²
         k_springs_rear = self._corner_spring_roll_stiffness(
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )
+        # Front: depends on architecture
+        csm = self.car.corner_spring
+        if getattr(csm, "front_is_roll_spring", False):
+            # Multimatic (Porsche): single roll spring, not a pair.
+            # K_roll = k * IR² * (t/2)²  (no factor of 2)
+            ir = getattr(csm, "front_roll_spring_installation_ratio", 1.0)
+            k_wheel_nm = front_wheel_rate_nmm * 1000.0
+            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
+            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
+        else:
+            # Conventional (BMW/Ferrari/etc): paired corner springs
+            k_springs_front = self._corner_spring_roll_stiffness(
+                front_wheel_rate_nmm, arb.track_width_front_mm,
+            )
 
         # Target LLTD — use measured value if available, otherwise physics-based formula.
         #
@@ -501,9 +510,16 @@ class ARBSolver:
     ) -> ARBSolution:
         """Build a Step 4 solution from explicit ARB settings."""
         arb = self.car.arb
-        k_springs_front = self._corner_spring_roll_stiffness(
-            front_wheel_rate_nmm, arb.track_width_front_mm,
-        )
+        csm = self.car.corner_spring
+        if getattr(csm, "front_is_roll_spring", False):
+            ir = getattr(csm, "front_roll_spring_installation_ratio", 1.0)
+            k_wheel_nm = front_wheel_rate_nmm * 1000.0
+            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
+            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
+        else:
+            k_springs_front = self._corner_spring_roll_stiffness(
+                front_wheel_rate_nmm, arb.track_width_front_mm,
+            )
         k_springs_rear = self._corner_spring_roll_stiffness(
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )

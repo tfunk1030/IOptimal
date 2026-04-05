@@ -48,7 +48,9 @@ def calibrate_dampers(car_name: str, track_name: str) -> dict | None:
     # Load observations and extract damper settings + platform metrics
     records: list[dict] = []
     for oid in obs_ids:
-        obs = store.load_observation(oid)
+        # list_observations returns dicts with 'session_id'; load_observation expects a string
+        obs_key = oid.get("session_id", oid) if isinstance(oid, dict) else oid
+        obs = store.load_observation(obs_key)
         if obs is None:
             continue
 
@@ -79,7 +81,7 @@ def calibrate_dampers(car_name: str, track_name: str) -> dict | None:
         rear_settle = telem.get("rear_rh_settle_time_ms", 0)
         front_rh_std = telem.get("front_rh_std_mm", 0)
         rear_rh_std = telem.get("rear_rh_std_mm", 0)
-        lap_time = obs.get("performance", {}).get("lap_time_s", 0)
+        lap_time = obs.get("performance", {}).get("lap_time_s", 0) or obs.get("performance", {}).get("best_lap_time_s", 0)
 
         if front_ls_click > 0 or rear_ls_click > 0:
             records.append({

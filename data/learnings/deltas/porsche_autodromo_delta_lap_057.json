@@ -1,0 +1,89 @@
+{
+  "session_before": "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-04_17-25-18__lap_58",
+  "session_after": "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-04_17-25-18__lap_57",
+  "car": "porsche",
+  "track": "Autodromo Internacional do Algarve",
+  "setup_changes": [],
+  "telemetry_effects": [
+    {
+      "metric": "front_rh_std_mm",
+      "category": "platform",
+      "before": 8.062067985534668,
+      "after": 8.594246864318848,
+      "delta": 0.5322,
+      "pct_change": 6.6,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_bottoming_events",
+      "category": "platform",
+      "before": 22.0,
+      "after": 12.0,
+      "delta": -10.0,
+      "pct_change": -45.5,
+      "significance": "large"
+    },
+    {
+      "metric": "rear_bottoming_events",
+      "category": "platform",
+      "before": 0.0,
+      "after": 3.0,
+      "delta": 3.0,
+      "pct_change": 0.0,
+      "significance": "moderate"
+    },
+    {
+      "metric": "front_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.10810066759586334,
+      "after": 0.12245796620845795,
+      "delta": 0.0144,
+      "pct_change": 13.3,
+      "significance": "moderate"
+    },
+    {
+      "metric": "rear_shock_vel_p95_mps",
+      "category": "platform",
+      "before": 0.12484182417392731,
+      "after": 0.13415488600730896,
+      "delta": 0.0093,
+      "pct_change": 7.5,
+      "significance": "moderate"
+    },
+    {
+      "metric": "understeer_high_speed_deg",
+      "category": "balance",
+      "before": -0.30665990710258484,
+      "after": -0.32741063833236694,
+      "delta": -0.0208,
+      "pct_change": -6.8,
+      "significance": "moderate"
+    },
+    {
+      "metric": "understeer_low_speed_deg",
+      "category": "balance",
+      "before": -0.2875465452671051,
+      "after": -0.16474980115890503,
+      "delta": 0.1228,
+      "pct_change": 42.7,
+      "significance": "large"
+    },
+    {
+      "metric": "body_slip_p95_deg",
+      "category": "balance",
+      "before": 2.483552932739258,
+      "after": 2.7790544033050537,
+      "delta": 0.2955,
+      "pct_change": 11.9,
+      "significance": "moderate"
+    }
+  ],
+  "hypotheses": [],
+  "num_setup_changes": 0,
+  "controlled_experiment": true,
+  "changed_steps": [],
+  "lap_time_delta_s": 0.016,
+  "driver_style_changed": false,
+  "key_finding": "No setup changes detected between sessions.",
+  "confidence_level": "high"
+}

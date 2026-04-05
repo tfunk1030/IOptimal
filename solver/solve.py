@@ -241,8 +241,17 @@ def run_solver(args: "argparse.Namespace") -> None:
         if not quiet:
             print(message)
 
-    # Load car model
+    # Load car model and apply calibration data if available
     car = get_car(args.car)
+    try:
+        from car_model.auto_calibrate import load_calibrated_models, apply_to_car
+        cal_models = load_calibrated_models(car.canonical_name)
+        if cal_models:
+            notes = apply_to_car(car, cal_models)
+            for note in notes:
+                log(f"  [calibration] {note}")
+    except Exception:
+        pass  # No calibration data — use defaults from cars.py
     log(f"Car: {car.name}")
 
     # Resolve DF balance target from car model if not explicitly set

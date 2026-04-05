@@ -152,11 +152,18 @@ class DamperSolution:
     # Constraint checks
     constraints: list[DamperConstraintCheck]
 
-    # Roll dampers (ORECA heave+roll architecture — None for per-corner cars)
+    # Roll dampers (Porsche/Acura heave+roll architecture — None for per-corner cars)
     front_roll_ls: int | None = None
     front_roll_hs: int | None = None
+    front_roll_hs_slope: int | None = None  # Porsche front roll HS damp slope
     rear_roll_ls: int | None = None
     rear_roll_hs: int | None = None
+
+    # Rear 3rd damper (Porsche — separate from corner dampers, range 0-5)
+    rear_3rd_ls_comp: int | None = None
+    rear_3rd_hs_comp: int | None = None
+    rear_3rd_ls_rbd: int | None = None
+    rear_3rd_hs_rbd: int | None = None
 
     # Heave dampers (Ferrari architecture — separate from corner dampers)
     front_heave_damper: FerrariHeaveDamperSettings | None = None
@@ -280,67 +287,36 @@ class DamperSolver:
         return 2.0 * math.sqrt(k_nm * mass_kg)
 
     def _damping_ratio_ls(self, is_front: bool) -> float:
-        """LS damping ratio derived from quarter-car dynamics.
+        """LS damping ratio — uses calibrated targets if available, else physics defaults.
 
-        The front and rear have VERY different requirements because of
-        the asymmetry in spring rates and the car's dynamic behavior:
+        Calibrated path: reads zeta_target_ls_front / zeta_target_ls_rear from the
+        car's DamperModel, set by validation/calibrate_dampers.py from IBT data.
 
-        Front (ζ ≈ 0.85-0.90):
-            The front suspension has LOW spring rate (~30 N/mm wheel rate
-            from the torsion bar). Low spring rate → low natural frequency
-            → low critical damping coefficient. To control weight transfer
-            on corner entry and braking (which generates large forces at
-            low shaft velocities), the damping ratio must be HIGH — near
-            critical — to prevent excessive dive and roll oscillation.
-
-            At ζ=0.88, the front body settles in <0.5 oscillations after
-            a weight transfer event. This gives the driver immediate,
-            predictable front-end response on turn-in.
-
-        Rear (ζ ≈ 0.28-0.32):
-            The rear has HIGH spring rate (~170 N/mm). High spring rate
-            → high natural frequency → high critical damping coefficient.
-            The rear needs MUCH less damping ratio because:
-            1. The spring itself provides most of the resistance
-            2. The driven rear wheels need compliance for traction
-            3. Over-damping the rear LS causes snap oversteer on entry
-               (the inside rear can't extend fast enough → loses contact)
-
-            At ζ=0.30, the rear is lightly damped — it follows the road
-            surface faithfully rather than fighting it.
-
-        The ratio ζ_front/ζ_rear ≈ 2.9 is a direct consequence of the
-        spring rate asymmetry: c_crit_rear/c_crit_front ≈ 2.5, so to
-        get similar absolute LS force behavior, the ratios must diverge.
+        Physics defaults (uncalibrated):
+        Front (ζ ≈ 0.85-0.90): near-critical for weight transfer control on entry.
+        Rear (ζ ≈ 0.28-0.32): light for rear traction compliance.
+        The front/rear split is driven by spring rate asymmetry.
         """
+        d = self.car.damper
+        if getattr(d, "zeta_is_calibrated", False):
+            return d.zeta_target_ls_front if is_front else d.zeta_target_ls_rear
         if is_front:
             return 0.88  # Near-critical for entry control
         return 0.30  # Light for rear traction
 
     def _damping_ratio_hs(self, is_front: bool) -> float:
-        """HS damping ratio from bump energy analysis.
+        """HS damping ratio — uses calibrated targets if available, else physics defaults.
 
-        HS events are transient (bumps, kerbs). The key physics:
-        - Energy in = ½ * m * v_bump² (kinetic energy of bump event)
-        - Energy out = damper dissipation + spring storage
-        - The damper must absorb enough energy to prevent bottoming
-          but not so much that the tyre lifts off (wheel hop)
+        Calibrated path: reads zeta_target_hs_front / zeta_target_hs_rear from the
+        car's DamperModel, set by validation/calibrate_dampers.py from IBT data.
 
-        Front HS (ζ ≈ 0.45):
-            The front handles aero platform control. Moderate HS damping
-            prevents pitch oscillation that would disrupt the diffuser
-            seal. The front can tolerate momentary tyre unloading because
-            the front contributes less to traction than the rear.
-
-        Rear HS (ζ ≈ 0.13-0.15):
-            The rear must be VERY compliant over bumps. The driven wheels
-            need continuous contact for traction. Over-damped rear HS is
-            the most dangerous mode in a GTP car — it causes the rear to
-            "skip" over bumps, losing traction unpredictably.
-
-            The compliance ratio rear/front HS (0.14/0.45 ≈ 0.31) is
-            fundamentally driven by the traction requirement asymmetry.
+        Physics defaults (uncalibrated):
+        Front HS (ζ ≈ 0.45): aero platform control, moderate HS damping.
+        Rear HS (ζ ≈ 0.13-0.15): maximum compliance for rear traction over bumps.
         """
+        d = self.car.damper
+        if getattr(d, "zeta_is_calibrated", False):
+            return d.zeta_target_hs_front if is_front else d.zeta_target_hs_rear
         if is_front:
             return 0.45  # Platform control
         return 0.14  # Maximum compliance for traction
@@ -848,18 +824,125 @@ class DamperSolver:
                 f"front {front_slope_rbd_range_note}, rear {rear_slope_rbd_range_note}."
             )
 
-        # Roll dampers (ORECA heave+roll architecture)
+        # Roll dampers (Porsche/Acura heave+roll architecture)
+        # Physics: roll dampers control weight transfer rate in roll.
+        # Roll natural freq: omega_roll = sqrt(K_roll_total / I_roll)
+        # Roll critical damping: C_crit_roll = 2 * sqrt(K_roll * I_roll)
+        # Roll inertia: I_roll ~ m_sprung * (0.4 * track_width)^2
         roll_damper_kwargs: dict = {}
         if self.car.damper.has_roll_dampers:
-            # Roll dampers control weight transfer rate in roll.
-            # Use car baselines for now — physics-based roll damper tuning
-            # requires lateral g spectrum data and is not yet implemented.
             dm = self.car.damper
+            roll_lo = dm.roll_ls_range[0]
+            roll_hi = dm.roll_ls_range[1]
+            roll_hs_lo = dm.roll_hs_range[0]
+            roll_hs_hi = dm.roll_hs_range[1]
+
+            # Roll stiffness from corner springs (approximate from wheel rate)
+            tw_f = getattr(self.car.arb, "track_width_front_mm", 1700.0) / 1000.0  # m
+            tw_r = getattr(self.car.arb, "track_width_rear_mm", 1620.0) / 1000.0
+            # Roll stiffness from springs: K_roll = 2 * k_wheel * (t/2)^2
+            k_roll_springs = (
+                2.0 * front_wheel_rate_nmm * 1000.0 * (tw_f / 2) ** 2
+                + 2.0 * rear_wheel_rate_nmm * 1000.0 * (tw_r / 2) ** 2
+            )  # N*m/rad
+            # Roll moment of inertia: I = m * k_roll_gyration^2
+            # k_gyration ~ 0.4 * average_track_width for low CG race car
+            m_total = self.car.total_mass(fuel_load_l)
+            k_gyration = 0.4 * (tw_f + tw_r) / 2.0
+            i_roll = m_total * k_gyration ** 2  # kg*m^2
+
+            # Roll critical damping and target zeta
+            c_crit_roll = 2.0 * math.sqrt(k_roll_springs * i_roll)  # N*m*s/rad
+            # Target roll zeta: 0.55 (moderate — controls weight transfer without over-damping)
+            zeta_roll = 0.55
+            c_roll = zeta_roll * c_crit_roll
+
+            # Roll damper sizing: the roll damper SUPPLEMENTS the per-corner dampers'
+            # roll damping. The heave dampers already resist roll (opposite-phase motion).
+            # The roll damper adds roll-specific damping for weight transfer control.
+            #
+            # Approach: scale the main heave damper's LS/HS coefficient by a roll
+            # supplement factor (0.3 = 30% additional roll damping on top of heave).
+            # This avoids the rotational-to-linear conversion issues and directly
+            # relates roll damper force to the heave damper force already computed.
+            roll_supplement = 0.30  # 30% of heave damper force as roll damping
+            fpc_ls = dm.ls_force_per_click_n
+            fpc_hs = dm.hs_force_per_click_n
+
+            # Scale from heave damper force (c * v_ref) to roll damper clicks
+            f_heave_ls = c_ls_front * v_ls_ref  # heave LS force at reference vel
+            f_heave_hs = c_hs_front * v_hs_ref_front  # heave HS force
+            f_roll_ls = f_heave_ls * roll_supplement
+            f_roll_hs = f_heave_hs * roll_supplement
+
+            front_roll_ls_click = max(roll_lo, min(roll_hi, round(f_roll_ls / max(fpc_ls, 1.0))))
+            front_roll_hs_click = max(roll_hs_lo, min(roll_hs_hi, round(f_roll_hs / max(fpc_hs, 1.0))))
+            # Rear roll: softer than front — rear needs compliance for traction under roll
+            rear_roll_ls_click = max(roll_lo, min(roll_hi, round(f_roll_ls * 0.5 / max(fpc_ls, 1.0))))
+            rear_roll_hs_click = max(roll_hs_lo, min(roll_hs_hi, round(f_roll_hs * 0.5 / max(fpc_hs, 1.0))))
+
+            # Front roll HS slope: use same surface-based logic as main dampers
+            front_roll_hs_slope_click = front_slope  # from _hs_slope_from_surface()
+
             roll_damper_kwargs = dict(
-                front_roll_ls=dm.front_roll_ls_baseline,
-                front_roll_hs=dm.front_roll_hs_baseline,
-                rear_roll_ls=dm.rear_roll_ls_baseline,
-                rear_roll_hs=dm.rear_roll_hs_baseline,
+                front_roll_ls=front_roll_ls_click,
+                front_roll_hs=front_roll_hs_click,
+                front_roll_hs_slope=front_roll_hs_slope_click,
+                rear_roll_ls=rear_roll_ls_click,
+                rear_roll_hs=rear_roll_hs_click,
+            )
+            notes.append(
+                f"Roll dampers: zeta_roll={zeta_roll:.2f}, C_crit_roll={c_crit_roll:.0f} N*m*s/rad, "
+                f"front LS={front_roll_ls_click}/HS={front_roll_hs_click}/slope={front_roll_hs_slope_click}, "
+                f"rear LS={rear_roll_ls_click}/HS={rear_roll_hs_click}"
+            )
+
+        # Rear 3rd damper (Porsche — controls rear heave/pitch via third spring)
+        # Physics: same zeta approach as main dampers but scaled for the third spring's
+        # natural frequency and the 0-5 click range.
+        rear_3rd_kwargs: dict = {}
+        if self.car.damper.has_roll_dampers and rear_third_nmm is not None and rear_third_nmm > 0:
+            # Third spring natural frequency
+            k_3rd = float(rear_third_nmm) * 1000.0  # N/m
+            # Effective mass on third spring is the rear sprung mass (both corners)
+            m_rear_3rd = m_rear * 2.0
+            c_crit_3rd = 2.0 * math.sqrt(k_3rd * m_rear_3rd)
+
+            # Use calibrated rear zeta targets (same physics as rear heave damper)
+            zeta_3rd_ls = zeta_ls_r  # already computed above
+            zeta_3rd_hs = zeta_hs_r
+            c_3rd_ls = zeta_3rd_ls * c_crit_3rd
+            c_3rd_hs = zeta_3rd_hs * c_crit_3rd
+
+            # Third damper click range: 0-5 (not 0-11)
+            third_lo = 0
+            third_hi = 5
+            # Force-per-click for the 3rd damper: scaled from main damper
+            # 6 clicks vs 12 for main → roughly 2x force per click
+            fpc_3rd_ls = dm.ls_force_per_click_n * 2.0
+            fpc_3rd_hs = dm.hs_force_per_click_n * 2.0
+
+            f_3rd_ls = c_3rd_ls * v_ls_ref
+            f_3rd_hs = c_3rd_hs * v_hs_ref_rear
+
+            third_ls_comp = max(third_lo, min(third_hi, round(f_3rd_ls / max(fpc_3rd_ls, 1.0))))
+            third_hs_comp = max(third_lo, min(third_hi, round(f_3rd_hs / max(fpc_3rd_hs, 1.0))))
+            # Rebound: use same ratio as rear corner dampers
+            rbd_ratio_ls = self._rbd_comp_ratio(is_ls=True, is_front=False)
+            rbd_ratio_hs = self._rbd_comp_ratio(is_ls=False, is_front=False)
+            third_ls_rbd = max(third_lo, min(third_hi, round(third_ls_comp * rbd_ratio_ls)))
+            third_hs_rbd = max(third_lo, min(third_hi, round(third_hs_comp * rbd_ratio_hs)))
+
+            rear_3rd_kwargs = dict(
+                rear_3rd_ls_comp=third_ls_comp,
+                rear_3rd_hs_comp=third_hs_comp,
+                rear_3rd_ls_rbd=third_ls_rbd,
+                rear_3rd_hs_rbd=third_hs_rbd,
+            )
+            notes.append(
+                f"Rear 3rd damper: zeta_ls={zeta_3rd_ls:.2f}, zeta_hs={zeta_3rd_hs:.2f}, "
+                f"C_crit={c_crit_3rd:.0f} N*s/m, "
+                f"LS comp/rbd={third_ls_comp}/{third_ls_rbd}, HS comp/rbd={third_hs_comp}/{third_hs_rbd}"
             )
 
         # Heave dampers (Ferrari architecture)
@@ -867,9 +950,9 @@ class DamperSolver:
         if self.car.damper.has_heave_dampers:
             # Heave dampers control pitch/heave motions separately from corner dampers.
             # Use car baselines for now — physics-based heave damper tuning not yet implemented.
-            dm = self.car.damper
-            fhb = dm.front_heave_baseline or {}
-            rhb = dm.rear_heave_baseline or {}
+            dm_h = self.car.damper
+            fhb = dm_h.front_heave_baseline or {}
+            rhb = dm_h.rear_heave_baseline or {}
             heave_damper_kwargs = dict(
                 front_heave_damper=FerrariHeaveDamperSettings(
                     ls_comp=int(fhb.get("ls_comp", 10)),
@@ -915,6 +998,7 @@ class DamperSolver:
             constraints=constraints,
             notes=notes,
             **roll_damper_kwargs,
+            **rear_3rd_kwargs,
             **heave_damper_kwargs,
         )
 

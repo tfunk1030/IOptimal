@@ -1,15 +1,25 @@
 {
   "car": "porsche",
-  "total_sessions": 3,
+  "total_sessions": 66,
   "tracks_included": [
     "Autodromo Internacional do Algarve",
     "Sebring International Raceway"
   ],
-  "aero_compression_front_mm": 12.333111953735353,
-  "aero_compression_rear_mm": 22.722166442871096,
-  "roll_gradient_global_deg_per_g": 0.8398469702351248,
-  "m_eff_front_global_kg": 705.589638858668,
-  "anomalies": [],
-  "confidence": "low",
-  "last_updated": "2026-04-04T04:32:31.960817+00:00"
+  "aero_compression_front_mm": 13.139974209756561,
+  "aero_compression_rear_mm": 19.456343454303163,
+  "roll_gradient_global_deg_per_g": 0.20989497415781097,
+  "m_eff_front_global_kg": 978.3273510121065,
+  "anomalies": [
+    {
+      "track": "Sebring International Raceway",
+      "metric": "roll_gradient_deg_per_g",
+      "global_mean": 0.2099,
+      "track_mean": 0.8398,
+      "deviation_sigma": 4.16,
+      "sample_count": 2,
+      "interpretation": "Sebring International Raceway produces more body roll \u2014 surface roughness or camber changes may require stiffer ARB baseline"
+    }
+  ],
+  "confidence": "high",
+  "last_updated": "2026-04-05T00:59:03.918754+00:00"
 }

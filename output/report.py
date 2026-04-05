@@ -380,8 +380,16 @@ def print_full_setup_report(
         _rear_perch_label = "Rear heave perch" if _is_acura else "Rear third perch"
         a(_setting(_rear_heave_label, f"{step2.rear_third_nmm:.0f} N/mm", changed=_changed_marker("rear_third_nmm", step2.rear_third_nmm, current_params)))
         a(_setting(_rear_perch_label, f"{step2.perch_offset_rear_mm:+.1f} mm"))
-        a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm", changed=_changed_marker("torsion_bar_od_mm", step3.front_torsion_od_mm, current_params)))
-        a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
+        _is_porsche = car is not None and getattr(car, "canonical_name", "") == "porsche"
+        _no_front_torsion = (car is not None and hasattr(car, "corner_spring")
+                             and getattr(car.corner_spring, "front_torsion_c", 1.0) == 0.0)
+        if _no_front_torsion:
+            # Porsche/Multimatic: front corner stiffness from roll spring, not torsion bar
+            _roll_spring = getattr(step3, "front_roll_spring_nmm", None) or getattr(car.corner_spring, "front_roll_spring_rate_nmm", 0)
+            a(_setting("Front roll spring", f"{_roll_spring:.0f} N/mm"))
+        else:
+            a(_setting("Front torsion bar OD", f"{step3.front_torsion_od_mm:.2f} mm", changed=_changed_marker("torsion_bar_od_mm", step3.front_torsion_od_mm, current_params)))
+            a(_setting("Front torsion bar turns", f"{_tb_turns:.3f} turns"))
         if _has_rear_torsion and step3.rear_torsion_od_mm is not None:
             a(_setting("Rear torsion bar OD", f"{step3.rear_torsion_od_mm:.2f} mm", changed=_changed_marker("rear_spring_nmm", step3.rear_torsion_od_mm, current_params)))
             if _rear_tb_turns is not None:
@@ -472,10 +480,21 @@ def print_full_setup_report(
         # ORECA heave+roll architecture: front/rear heave + roll dampers
         a(_setting("Front Heave LS comp / rbd", f"{step6.lf.ls_comp} / {step6.lf.ls_rbd} clicks"))
         a(_setting("Front Heave HS comp / rbd / slope", f"{step6.lf.hs_comp} / {step6.lf.hs_rbd} / {step6.lf.hs_slope}"))
-        a(_setting("Front Roll LS / HS", f"{step6.front_roll_ls or '-'} / {step6.front_roll_hs or '-'} clicks"))
+        _roll_slope_f = getattr(step6, 'front_roll_hs_slope', None)
+        _roll_slope_str = f" / {_roll_slope_f}" if _roll_slope_f is not None else ""
+        a(_setting("Front Roll LS / HS" + (" / slope" if _roll_slope_f is not None else ""),
+                   f"{step6.front_roll_ls or '-'} / {step6.front_roll_hs or '-'}{_roll_slope_str} clicks"))
         a(_setting("Rear Heave LS comp / rbd", f"{step6.lr.ls_comp} / {step6.lr.ls_rbd} clicks"))
         a(_setting("Rear Heave HS comp / rbd / slope", f"{step6.lr.hs_comp} / {step6.lr.hs_rbd} / {step6.lr.hs_slope}"))
         a(_setting("Rear Roll LS / HS", f"{step6.rear_roll_ls or '-'} / {step6.rear_roll_hs or '-'} clicks"))
+        # Rear 3rd damper (Porsche only)
+        _3rd_ls = getattr(step6, 'rear_3rd_ls_comp', None)
+        _3rd_hs = getattr(step6, 'rear_3rd_hs_comp', None)
+        _3rd_ls_rbd = getattr(step6, 'rear_3rd_ls_rbd', None)
+        _3rd_hs_rbd = getattr(step6, 'rear_3rd_hs_rbd', None)
+        if _3rd_ls is not None:
+            a(_setting("Rear 3rd LS comp / rbd", f"{_3rd_ls} / {_3rd_ls_rbd} clicks"))
+            a(_setting("Rear 3rd HS comp / rbd", f"{_3rd_hs} / {_3rd_hs_rbd} clicks"))
     else:
         for corner_name, corner in (
             ("LF", step6.lf),

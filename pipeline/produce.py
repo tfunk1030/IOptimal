@@ -298,8 +298,17 @@ def produce(
         if not quiet:
             print(message)
 
-    # ── Load car model ──
+    # ── Load car model and apply calibration data if available ──
     car = get_car(args.car)
+    try:
+        from car_model.auto_calibrate import load_calibrated_models, apply_to_car
+        cal_models = load_calibrated_models(car.canonical_name)
+        if cal_models:
+            notes = apply_to_car(car, cal_models)
+            for note in notes:
+                log(f"  [calibration] {note}")
+    except Exception:
+        pass  # No calibration data — use defaults from cars.py
     log(f"Car: {car.name}")
 
     # ── Run trace (data provenance) ──
@@ -342,10 +351,22 @@ def produce(
         car_track_label = f"{car.canonical_name}/{track_name.lower().split()[0]}"
         if n_corrections > 0 and learned.session_count >= 3:
             # Apply corrections to car model
+            # Only apply learned m_eff if no calibrated value exists from auto_calibrate.
+            # The calibrated m_eff (from heave sweep) is more reliable than the empirical
+            # estimate (from lap-wide statistics that include kerb events and braking pitch).
+            # Only apply learned m_eff if the learned value is within 2x of the car's
+            # existing value. The empirical m_eff from lap-wide statistics includes kerb
+            # events, braking pitch, and direction changes that inflate the estimate.
+            # A calibrated m_eff (from heave sweep or cars.py) is more reliable.
+            # If the learned value is >2x the existing, it's contaminated.
             if learned.heave_m_eff_front_kg is not None:
-                car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
+                _existing_front = car.heave_spring.front_m_eff_kg
+                if _existing_front > 0 and learned.heave_m_eff_front_kg <= _existing_front * 2.0:
+                    car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
             if learned.heave_m_eff_rear_kg is not None:
-                car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
+                _existing_rear = car.heave_spring.rear_m_eff_kg
+                if _existing_rear > 0 and learned.heave_m_eff_rear_kg <= _existing_rear * 2.0:
+                    car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
             # NOTE: aero_compression_{front,rear}_mm are intentionally NOT applied here.
             # The IBT LFrideHeight/LRrideHeight sensor channels are in a different
             # coordinate frame than the aero maps (AeroCalc reference). Applying the

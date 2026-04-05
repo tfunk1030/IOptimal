@@ -275,8 +275,10 @@ class WheelGeometrySolver:
             if understeer_high < -0.2:
                 candidate += 0.3   # high-speed oversteer → rear toe-in
             r_min, r_max = geo.rear_toe_range_mm
-            # Never go negative (destabilizing)
-            candidate = max(0.0, candidate)
+            # Floor at baseline — baseline was set per car from calibrated/user data.
+            # Previous hard clamp at 0.0 prevented Porsche (-1.6mm baseline) from outputting
+            # any toe-out. The baseline represents the driver's validated operating point.
+            candidate = max(baseline_mm, candidate)
             return max(r_min, min(r_max,
                 round(candidate / geo.rear_toe_step_mm) * geo.rear_toe_step_mm))
 
@@ -410,9 +412,23 @@ class WheelGeometrySolver:
         front_dynamic = front_camber + front_camber_change
         rear_dynamic = rear_camber + rear_camber_change
 
-        # BMW Vision tread conditioning rates (from per-car-quirks.md)
-        front_conditioning_rate = 2.4   # °C/lap baseline (Sebring)
-        rear_conditioning_rate = 3.2    # °C/lap baseline
+        # Tread conditioning rates per car (°C/lap from per-car-quirks.md and telemetry)
+        car_name = self.car.canonical_name
+        if car_name == "bmw":
+            front_conditioning_rate = 2.4   # BMW Sebring: fronts 13-15 laps to op temp
+            rear_conditioning_rate = 3.2    # BMW Sebring: rears 8-9 laps
+        elif car_name == "porsche":
+            front_conditioning_rate = 1.8   # DSSV better compliance → slower front heating
+            rear_conditioning_rate = 2.5    # DSSV → slightly slower rear heating
+        elif car_name == "ferrari":
+            front_conditioning_rate = 2.2   # LMH compound, heavier car
+            rear_conditioning_rate = 3.0
+        elif car_name == "acura":
+            front_conditioning_rate = 2.4   # ORECA similar to BMW
+            rear_conditioning_rate = 3.0
+        else:
+            front_conditioning_rate = 2.4   # generic fallback
+            rear_conditioning_rate = 3.0
 
         # Toe recommendation — driven by thermal conditioning + balance signals
         # Signals come from the TelemetryMeasurements object, not the track profile
@@ -498,8 +514,7 @@ class WheelGeometrySolver:
                 "If outer runs hotter -> reduce negative camber by 0.2-0.3 deg."
             )
 
-        # Car-specific thermal conditioning notes
-        car_name = self.car.canonical_name
+        # Car-specific thermal conditioning notes (car_name set above in conditioning rates)
         if car_name == "bmw":
             notes.extend([
                 "BMW Vision tread conditioning (Sebring): fronts +2.4°C/lap, "

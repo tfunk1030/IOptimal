@@ -92,8 +92,8 @@ def _solve_ferrari_torsion_bar_turns(
 class CornerSpringSolution:
     """Output of the Step 3 corner spring solver."""
 
-    # Front torsion bar
-    front_torsion_od_mm: float
+    # Front torsion bar (or roll spring for Porsche)
+    front_torsion_od_mm: float  # 0.0 for Porsche (uses roll spring instead)
     front_wheel_rate_nmm: float
     front_natural_freq_hz: float
     front_heave_corner_ratio: float   # heave_spring / corner_wheel_rate
@@ -127,6 +127,8 @@ class CornerSpringSolution:
 
     # ORECA: rear torsion bar OD (None = coil spring car)
     rear_torsion_od_mm: float | None = None
+    # Porsche: optimized front roll spring rate (0.0 for torsion bar cars)
+    front_roll_spring_nmm: float = 0.0
 
     # Torsion bar preload turns (Ferrari: -0.250 to +0.250 at all 4 corners).
     # For Ferrari these are authoritative solver outputs computed by
@@ -289,9 +291,15 @@ class CornerSpringSolver:
 
             # Recalculate actual rate from snapped OD
             front_rate = csm.torsion_bar_rate(front_od)
+        elif csm.front_roll_spring_range_nmm[1] > 0:
+            # Porsche: front corner stiffness comes from adjustable roll spring (100-320 N/mm)
+            # Snap computed rate to the roll spring garage range and step
+            front_rate = csm.snap_front_roll_spring(front_rate)
+            # Update the car model so downstream solvers (ARB, geometry) use the optimized value
+            csm.front_roll_spring_rate_nmm = front_rate
+            front_od = 0.0
         else:
-            # No front torsion bar (e.g. Porsche uses Roll Spring)
-            # Keep the computed front_rate as-is (wheel rate from frequency targeting)
+            # No front torsion bar and no roll spring range defined
             front_od = 0.0
         front_freq = self.natural_freq(front_rate, m_f_corner)
 
@@ -418,6 +426,7 @@ class CornerSpringSolver:
 
         return CornerSpringSolution(
             front_torsion_od_mm=front_torsion_od_mm,
+            front_roll_spring_nmm=round(front_rate, 0) if csm.front_roll_spring_range_nmm[1] > 0 else 0.0,
             front_wheel_rate_nmm=round(front_rate, 1),
             front_natural_freq_hz=round(front_freq, 2),
             front_heave_corner_ratio=round(front_heave_ratio, 1),
