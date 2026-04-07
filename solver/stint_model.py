@@ -660,8 +660,8 @@ def analyze_stint(
     car: CarModel,
     stint_laps: int = 30,
     fuel_levels_l: list[float] | None = None,
-    base_heave_nmm: float = 50.0,
-    base_third_nmm: float = 530.0,
+    base_heave_nmm: float | None = None,
+    base_third_nmm: float | None = None,
     v_p99_front_mps: float = 0.260,
     v_p99_rear_mps: float = 0.324,
     base_understeer_deg: float = 0.0,
@@ -673,8 +673,10 @@ def analyze_stint(
         car: Car model
         stint_laps: Expected stint length
         fuel_levels_l: Fuel states to analyze
-        base_heave_nmm: Baseline front heave from solver
-        base_third_nmm: Baseline rear third from solver
+        base_heave_nmm: Baseline front heave from solver. When None, falls back
+            to the car's documented baseline (car.front_heave_spring_nmm).
+        base_third_nmm: Baseline rear third from solver. When None, falls back
+            to the car's documented baseline (car.rear_third_spring_nmm).
         v_p99_front_mps: Track front shock velocity p99
         v_p99_rear_mps: Track rear shock velocity p99
         base_understeer_deg: Starting understeer at lap 0 (from diagnosis)
@@ -686,6 +688,12 @@ def analyze_stint(
     Returns:
         StintStrategy with multi-condition analysis, balance curve, and compromise parameters
     """
+    # Default to per-car baselines (no BMW hardcodes) when caller doesn't pass values
+    if base_heave_nmm is None:
+        base_heave_nmm = float(getattr(car, "front_heave_spring_nmm", 50.0))
+    if base_third_nmm is None:
+        base_third_nmm = float(getattr(car, "rear_third_spring_nmm", 530.0))
+
     # When evolution is provided, derive parameters from telemetry
     if evolution is not None:
         snapshots = getattr(evolution, "snapshots", [])

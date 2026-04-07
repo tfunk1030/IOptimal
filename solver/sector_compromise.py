@@ -237,7 +237,7 @@ def _compute_front_heave_conflict(
 def _compute_brake_bias_conflict(
     slow_pct: float,
     fast_pct: float,
-    base_bias_pct: float = 46.0,  # calibrated default; always pass from compute_brake_bias()
+    base_bias_pct: float = 46.0,  # CAUTION: BMW fallback. Always pass per-car from compute_brake_bias().
 ) -> ParameterConflict | None:
     """Brake bias conflict: slow corners slightly rearward, fast corners forward."""
     if abs(fast_pct - slow_pct) < 20:
@@ -260,7 +260,7 @@ def _compute_brake_bias_conflict(
 def _compute_camber_conflict(
     slow_pct: float,
     fast_pct: float,
-    base_camber_deg: float = -2.9,
+    base_camber_deg: float = -2.9,  # CAUTION: BMW fallback. Always pass per-car from car.geometry.front_camber_baseline_deg.
 ) -> ParameterConflict | None:
     """Front camber conflict: slow wants max mechanical grip, fast wants less drag."""
     if abs(fast_pct - slow_pct) < 25:

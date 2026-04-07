@@ -262,7 +262,8 @@ class RideHeightModel:
 
     # --- Front static RH regression ---
     front_intercept: float = 30.0   # fallback: acts as pinned value when coeffs are 0
-    front_coeff_heave_nmm: float = 0.0     # mm RH per N/mm heave spring rate
+    front_coeff_heave_nmm: float = 0.0     # mm RH per N/mm heave spring rate (linear)
+    front_coeff_inv_heave: float = 0.0    # mm RH per (1/heave_nmm) — compliance model
     front_coeff_camber_deg: float = 0.0    # mm RH per deg front camber
     front_coeff_pushrod: float = 0.0       # mm RH per mm front pushrod offset
     front_coeff_perch: float = 0.0         # mm RH per mm front heave perch offset
@@ -273,7 +274,9 @@ class RideHeightModel:
     # --- Rear static RH regression ---
     rear_intercept: float = 0.0
     rear_coeff_pushrod: float = 0.0        # mm RH per mm pushrod offset
-    rear_coeff_third_nmm: float = 0.0      # mm RH per N/mm third spring rate
+    rear_coeff_third_nmm: float = 0.0      # mm RH per N/mm third spring rate (linear)
+    rear_coeff_inv_third: float = 0.0     # mm RH per (1/third) — compliance model
+    rear_coeff_inv_spring: float = 0.0    # mm RH per (1/rear_spring) — compliance model
     rear_coeff_rear_spring: float = 0.0    # mm RH per N/mm rear spring rate
     rear_coeff_heave_perch: float = 0.0    # mm RH per mm front heave perch offset
     rear_coeff_fuel_l: float = 0.0         # mm RH per L fuel
@@ -292,14 +295,14 @@ class RideHeightModel:
     ) -> float:
         """Predict front static RH from setup parameters.
 
-        For BMW: only heave and camber have non-zero coefficients.
-        For Porsche: pushrod and perch are significant (4-variable model).
+        Supports both linear heave (BMW) and compliance heave (Porsche,
+        physics-correct: spring compression ∝ 1/k under aero load).
         """
         rh = (self.front_intercept
               + self.front_coeff_heave_nmm * heave_nmm
               + self.front_coeff_camber_deg * camber_deg)
-        # Pushrod and perch terms use ABSOLUTE values (not deltas from reference)
-        # because front_intercept is the regression intercept at pushrod=0, perch=0.
+        if abs(self.front_coeff_inv_heave) > 1e-9 and heave_nmm > 0:
+            rh += self.front_coeff_inv_heave / heave_nmm
         if pushrod_mm is not None and abs(self.front_coeff_pushrod) > 1e-9:
             rh += self.front_coeff_pushrod * pushrod_mm
         if perch_mm is not None and abs(self.front_coeff_perch) > 1e-9:
@@ -311,11 +314,19 @@ class RideHeightModel:
         rear_spring_nmm: float, heave_perch_mm: float,
         fuel_l: float = 0.0, spring_perch_mm: float = 0.0,
     ) -> float:
-        """Predict rear static RH from setup parameters."""
+        """Predict rear static RH from setup parameters.
+
+        Supports both linear spring terms (BMW) and compliance terms
+        (Porsche, physics-correct: compression ∝ 1/k under aero load).
+        """
+        inv_third = 1.0 / max(third_nmm, 1.0) if abs(self.rear_coeff_inv_third) > 1e-9 else 0.0
+        inv_spring = 1.0 / max(rear_spring_nmm, 1.0) if abs(self.rear_coeff_inv_spring) > 1e-9 else 0.0
         return (self.rear_intercept
                 + self.rear_coeff_pushrod * pushrod_mm
                 + self.rear_coeff_third_nmm * third_nmm
+                + self.rear_coeff_inv_third * inv_third
                 + self.rear_coeff_rear_spring * rear_spring_nmm
+                + self.rear_coeff_inv_spring * inv_spring
                 + self.rear_coeff_heave_perch * heave_perch_mm
                 + self.rear_coeff_fuel_l * fuel_l
                 + self.rear_coeff_spring_perch * spring_perch_mm)
@@ -328,9 +339,13 @@ class RideHeightModel:
         """Solve for the pushrod offset that achieves a target rear static RH."""
         if abs(self.rear_coeff_pushrod) < 1e-6:
             return -29.0  # Fallback if pushrod has no effect
+        inv_third = 1.0 / max(third_nmm, 1.0) if abs(self.rear_coeff_inv_third) > 1e-9 else 0.0
+        inv_spring = 1.0 / max(rear_spring_nmm, 1.0) if abs(self.rear_coeff_inv_spring) > 1e-9 else 0.0
         other = (self.rear_intercept
                  + self.rear_coeff_third_nmm * third_nmm
+                 + self.rear_coeff_inv_third * inv_third
                  + self.rear_coeff_rear_spring * rear_spring_nmm
+                 + self.rear_coeff_inv_spring * inv_spring
                  + self.rear_coeff_heave_perch * heave_perch_mm
                  + self.rear_coeff_fuel_l * fuel_l
                  + self.rear_coeff_spring_perch * spring_perch_mm)
@@ -380,8 +395,21 @@ class HeaveSpringModel:
     The 2.33 divisor converts p99 excursion to sigma (p99 = mean + 2.33*sigma
     for a Gaussian distribution).
     """
-    front_m_eff_kg: float            # Calibrated front effective heave mass
-    rear_m_eff_kg: float             # Calibrated rear effective heave mass
+    front_m_eff_kg: float            # Calibrated front effective heave mass (scalar fallback)
+    rear_m_eff_kg: float             # Calibrated rear effective heave mass (scalar fallback)
+    # Rate-dependent m_eff tables (populated by apply_to_car when calibration
+    # data shows significant variation with spring rate). Each entry:
+    # {"setting": spring_rate_nmm, "m_eff_kg": effective_mass_kg}
+    # The lookup interpolates linearly between known points, clamping at the
+    # edges. Empty list → use scalar fallback.
+    #
+    # m_eff_rate_lookup_enabled: Gate for the rate-dependent lookup. Defaults to
+    # False so existing solver output is preserved; flip to True per-car after
+    # validating the rate table produces sensible output. When False, the solver
+    # uses the scalar m_eff even if a table is populated.
+    m_eff_rate_lookup_enabled: bool = False
+    m_eff_front_rate_table: list[dict] = field(default_factory=list)
+    m_eff_rear_rate_table: list[dict] = field(default_factory=list)
     front_spring_range_nmm: tuple[float, float] = (20.0, 200.0)  # Valid garage range
     rear_spring_range_nmm: tuple[float, float] = (100.0, 1000.0)
     # Realistic operating window for objective function realism penalty.
@@ -437,6 +465,59 @@ class HeaveSpringModel:
     rear_rate_per_index_nmm: float | None = None
     # Validation flags for unverified heave spring index mappings
     heave_index_unvalidated: bool = False
+
+    def m_eff_at_rate(self, axle: str, spring_rate_nmm: float) -> float:
+        """Look up effective heave mass at a given spring rate.
+
+        When a rate table is populated AND m_eff_rate_lookup_enabled is True,
+        linearly interpolates between known points (clamping at the edges).
+        Otherwise returns the scalar fallback m_eff.
+
+        The enable flag is off by default so existing solver output is
+        preserved. Flip to True per-car after validating the rate table
+        produces sensible output at the car's operating point.
+
+        This is physics-correct: m_eff in the heave excursion model depends on
+        how the spring compresses under aero load, which is a function of
+        compliance (1/k). The calibration data for some cars shows strong
+        rate dependence (e.g. Porsche: 690-2058 kg across 150-250 N/mm).
+        """
+        if axle == "front":
+            table = self.m_eff_front_rate_table
+            scalar = self.front_m_eff_kg
+        else:
+            table = self.m_eff_rear_rate_table
+            scalar = self.rear_m_eff_kg
+        if not table or not self.m_eff_rate_lookup_enabled:
+            return scalar
+        # Group entries by setting and average within each group — the raw
+        # table often has multiple samples at the same spring rate due to
+        # different operating conditions (lap time, tire state, etc).
+        groups: dict[float, list[float]] = {}
+        for entry in table:
+            try:
+                s = float(entry["setting"])
+                m = float(entry["m_eff_kg"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            groups.setdefault(s, []).append(m)
+        if not groups:
+            return scalar
+        sorted_settings = sorted(groups.keys())
+        averaged = [(s, sum(groups[s]) / len(groups[s])) for s in sorted_settings]
+        if spring_rate_nmm <= averaged[0][0]:
+            return averaged[0][1]
+        if spring_rate_nmm >= averaged[-1][0]:
+            return averaged[-1][1]
+        for i in range(len(averaged) - 1):
+            s0, m0 = averaged[i]
+            s1, m1 = averaged[i + 1]
+            if s0 <= spring_rate_nmm <= s1:
+                if s1 == s0:
+                    return m0
+                frac = (spring_rate_nmm - s0) / (s1 - s0)
+                return m0 + frac * (m1 - m0)
+        return scalar
 
     def front_rate_from_setting(self, setting_value: float) -> float:
         """Decode a garage setting into a physical front heave rate."""
@@ -527,6 +608,15 @@ class DeflectionModel:
     shock_front_pushrod_coeff: float = 0.226
     shock_rear_intercept: float = 25.924
     shock_rear_pushrod_coeff: float = 0.266
+    # Direct rear-shock model with compliance + perches (used when
+    # rear_shock_defl_direct=True). Captures the effect of spring/third
+    # compliance and perch offsets on rear shock static deflection in addition
+    # to the pushrod term.
+    rear_shock_defl_direct: bool = False
+    rear_shock_defl_inv_third_coeff: float = 0.0
+    rear_shock_defl_inv_spring_coeff: float = 0.0
+    rear_shock_defl_third_perch_coeff: float = 0.0
+    rear_shock_defl_spring_perch_coeff: float = 0.0
 
     # --- TorsionBarDefl ---
     # TBDefl = (load_intercept + load_heave*heave + load_perch*perch) / k_torsion
@@ -560,6 +650,23 @@ class DeflectionModel:
     # Regression: defl*rate = 6091.76 - 115.89*perch → perch_coeff stored as positive
     rear_spring_eff_load: float = 6091.76
     rear_spring_perch_coeff: float = 115.89
+    # Direct model (used when rear_spring_defl_direct=True). Supports both
+    # linear and compliance terms for spring/third (compliance is physics-correct
+    # for static deflection under aero load: defl = F/k → ∝ 1/k). Perch and
+    # pushrod terms are linear.
+    # defl = intercept + c_rate*spring + c_inv_rate/spring
+    #               + c_third*third + c_inv_third/third
+    #               + c_spring_perch*spring_perch + c_third_perch*third_perch
+    #               + c_pushrod*pushrod
+    rear_spring_defl_direct: bool = False
+    rear_spring_defl_intercept: float = 0.0
+    rear_spring_defl_rate_coeff: float = 0.0
+    rear_spring_defl_inv_rate_coeff: float = 0.0
+    rear_spring_defl_third_coeff: float = 0.0
+    rear_spring_defl_inv_third_coeff: float = 0.0
+    rear_spring_defl_perch_coeff: float = 0.0
+    rear_spring_defl_third_perch_coeff: float = 0.0
+    rear_spring_defl_pushrod_coeff: float = 0.0
 
     # --- ThirdSpringDeflStatic (force-balance) ---
     # defl = (load - perch_coeff * third_perch) / third_rate
@@ -567,6 +674,17 @@ class DeflectionModel:
     # Regression: defl*rate = 17817.75 - 357.96*perch → perch_coeff stored as positive
     third_spring_eff_load: float = 17817.75
     third_spring_perch_coeff: float = 357.96
+    # Direct model (used when third_spring_defl_direct=True). Same shape as
+    # rear_spring_defl: linear + compliance + perches + pushrod.
+    third_spring_defl_direct: bool = False
+    third_spring_defl_intercept: float = 0.0
+    third_spring_defl_third_coeff: float = 0.0
+    third_spring_defl_inv_third_coeff: float = 0.0
+    third_spring_defl_spring_coeff: float = 0.0
+    third_spring_defl_inv_spring_coeff: float = 0.0
+    third_spring_defl_perch_coeff: float = 0.0
+    third_spring_defl_spring_perch_coeff: float = 0.0
+    third_spring_defl_pushrod_coeff: float = 0.0
 
     # --- ThirdSliderDeflStatic ---
     # slider = intercept + coeff * ThirdSpringDeflStatic
@@ -592,8 +710,22 @@ class DeflectionModel:
     def shock_defl_front(self, pushrod_offset_mm: float) -> float:
         return self.shock_front_intercept + self.shock_front_pushrod_coeff * pushrod_offset_mm
 
-    def shock_defl_rear(self, pushrod_offset_mm: float) -> float:
-        return self.shock_rear_intercept + self.shock_rear_pushrod_coeff * pushrod_offset_mm
+    def shock_defl_rear(self, pushrod_offset_mm: float,
+                        third_rate_nmm: float = 0.0,
+                        spring_rate_nmm: float = 0.0,
+                        third_perch_mm: float = 0.0,
+                        spring_perch_mm: float = 0.0) -> float:
+        base = (self.shock_rear_intercept
+                + self.shock_rear_pushrod_coeff * pushrod_offset_mm)
+        if not self.rear_shock_defl_direct:
+            return base
+        inv_third = 1.0 / max(third_rate_nmm, 1.0) if third_rate_nmm > 0 else 0.0
+        inv_spring = 1.0 / max(spring_rate_nmm, 1.0) if spring_rate_nmm > 0 else 0.0
+        return (base
+                + self.rear_shock_defl_inv_third_coeff * inv_third
+                + self.rear_shock_defl_inv_spring_coeff * inv_spring
+                + self.rear_shock_defl_third_perch_coeff * third_perch_mm
+                + self.rear_shock_defl_spring_perch_coeff * spring_perch_mm)
 
     def torsion_bar_defl(self, heave_nmm: float, perch_mm: float, k_torsion: float) -> float:
         load = (self.tb_load_intercept
@@ -613,11 +745,39 @@ class DeflectionModel:
                 + self.slider_perch_coeff * perch_mm
                 + self.slider_od_coeff * od_mm)
 
-    def rear_spring_defl_static(self, spring_rate_nmm: float, spring_perch_mm: float) -> float:
+    def rear_spring_defl_static(self, spring_rate_nmm: float, spring_perch_mm: float,
+                                third_rate_nmm: float = 0.0,
+                                third_perch_mm: float = 0.0,
+                                pushrod_mm: float = 0.0) -> float:
+        if self.rear_spring_defl_direct:
+            inv_rate = 1.0 / max(spring_rate_nmm, 1.0)
+            inv_third = 1.0 / max(third_rate_nmm, 1.0) if third_rate_nmm > 0 else 0.0
+            return (self.rear_spring_defl_intercept
+                    + self.rear_spring_defl_rate_coeff * spring_rate_nmm
+                    + self.rear_spring_defl_inv_rate_coeff * inv_rate
+                    + self.rear_spring_defl_third_coeff * third_rate_nmm
+                    + self.rear_spring_defl_inv_third_coeff * inv_third
+                    + self.rear_spring_defl_perch_coeff * spring_perch_mm
+                    + self.rear_spring_defl_third_perch_coeff * third_perch_mm
+                    + self.rear_spring_defl_pushrod_coeff * pushrod_mm)
         return ((self.rear_spring_eff_load - self.rear_spring_perch_coeff * spring_perch_mm)
                 / max(spring_rate_nmm, 1.0))
 
-    def third_spring_defl_static(self, third_rate_nmm: float, third_perch_mm: float) -> float:
+    def third_spring_defl_static(self, third_rate_nmm: float, third_perch_mm: float,
+                                 spring_rate_nmm: float = 0.0,
+                                 spring_perch_mm: float = 0.0,
+                                 pushrod_mm: float = 0.0) -> float:
+        if self.third_spring_defl_direct:
+            inv_third = 1.0 / max(third_rate_nmm, 1.0)
+            inv_spring = 1.0 / max(spring_rate_nmm, 1.0) if spring_rate_nmm > 0 else 0.0
+            return (self.third_spring_defl_intercept
+                    + self.third_spring_defl_third_coeff * third_rate_nmm
+                    + self.third_spring_defl_inv_third_coeff * inv_third
+                    + self.third_spring_defl_spring_coeff * spring_rate_nmm
+                    + self.third_spring_defl_inv_spring_coeff * inv_spring
+                    + self.third_spring_defl_perch_coeff * third_perch_mm
+                    + self.third_spring_defl_spring_perch_coeff * spring_perch_mm
+                    + self.third_spring_defl_pushrod_coeff * pushrod_mm)
         return ((self.third_spring_eff_load - self.third_spring_perch_coeff * third_perch_mm)
                 / max(third_rate_nmm, 1.0))
 

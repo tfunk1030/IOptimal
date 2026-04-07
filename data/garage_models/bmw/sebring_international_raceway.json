@@ -1,8 +1,8 @@
 {
   "car": "bmw",
   "track": "Sebring International Raceway",
-  "n_sessions": 102,
-  "last_updated": "2026-04-01T17:13:16.317413+00:00",
+  "n_sessions": 125,
+  "last_updated": "2026-04-07T01:30:10.191189+00:00",
   "best_lap": {
     "lap_time_s": 0.0,
     "setup": {
@@ -200,11 +200,34 @@
         0.2337832897901535,
         0.2733524408936504,
         0.23808380961418152,
-        0.23054289817810059
+        0.23054289817810059,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905,
+        0.2563939690589905
       ],
-      "mean": 0.24724843951416947,
-      "stdev": 0.04357977010991332,
-      "n": 102
+      "mean": 0.24893121695041653,
+      "stdev": 0.03949158766114086,
+      "n": 125
     },
     "vp99_rear_mps": {
       "values": [
@@ -309,11 +332,34 @@
         0.3050076365470886,
         0.33845606863498723,
         0.3039308190345764,
-        0.3084113299846649
+        0.3084113299846649,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064,
+        0.3398068845272064
       ],
-      "mean": 0.3088655808538783,
-      "stdev": 0.05649409585858017,
-      "n": 102
+      "mean": 0.3145587807297706,
+      "stdev": 0.052387951261168866,
+      "n": 125
     },
     "lltd_measured": {
       "values": [
@@ -415,11 +461,34 @@
         0.5091809864989241,
         0.5111817462382889,
         0.5101323172499153,
-        0.5079797023605592
+        0.5079797023605592,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299,
+        0.5077459574268299
       ],
-      "mean": 0.5044837884873854,
-      "stdev": 0.010472912843944632,
-      "n": 99
+      "mean": 0.5050987875497397,
+      "stdev": 0.009511821001221768,
+      "n": 122
     },
     "m_eff_front_ratio": {
       "values": [
@@ -521,11 +590,34 @@
         0.002884444747959116,
         0.0024937452709050886,
         0.003139707350297301,
-        0.0027317036892419684
+        0.0027317036892419684,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471,
+        0.002026555049625471
       ],
-      "mean": 0.002664061785337838,
-      "stdev": 0.0006637860162762541,
-      "n": 99
+      "mean": 0.0025438760892609164,
+      "stdev": 0.0006477249676343579,
+      "n": 122
     },
     "m_eff_front_input_k": {
       "values": [
@@ -627,24 +719,47 @@
         50.0,
         30.0,
         40.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
+        50.0,
         50.0
       ],
-      "mean": 55.45454545454545,
-      "stdev": 86.95850203440024,
-      "n": 99
+      "mean": 54.42622950819672,
+      "stdev": 78.28797423380452,
+      "n": 122
     }
   },
   "calibration_status": {
-    "vp99_front_mps": "CALIBRATED (102 sessions)",
-    "vp99_rear_mps": "CALIBRATED (102 sessions)",
-    "lltd_measured": "CALIBRATED (99 sessions)",
-    "m_eff_front_ratio": "CALIBRATED (99 sessions)"
+    "vp99_front_mps": "CALIBRATED (125 sessions)",
+    "vp99_rear_mps": "CALIBRATED (125 sessions)",
+    "lltd_measured": "CALIBRATED (122 sessions)",
+    "m_eff_front_ratio": "CALIBRATED (122 sessions)"
   },
   "parameters": {
     "brake_bias_migration": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": -1.0,
       "max_observed": 0.0,
       "values": [
@@ -655,7 +770,7 @@
     "brake_bias_migration_gain": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 0.0,
       "max_observed": 0.0,
       "values": [
@@ -665,7 +780,7 @@
     "brake_bias_pct": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 45.0,
       "max_observed": 46.5,
       "values": [
@@ -682,7 +797,7 @@
     "brake_bias_target": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": -2.0,
       "max_observed": 0.0,
       "values": [
@@ -694,7 +809,7 @@
     "dampers": {
       "unit": "",
       "type": "label",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "values": [
         "{'lf': {'ls_comp': 10, 'ls_rbd': 5, 'hs_comp': 9, 'hs_rbd': 5, 'hs_slope': 5}, 'rf': {'ls_comp': 10, 'ls_rbd': 5, 'hs_comp': 9, 'hs_rbd': 5, 'hs_slope': 5}, 'lr': {'ls_comp': 5, 'ls_rbd': 5, 'hs_comp': 10, 'hs_rbd': 6, 'hs_slope': 11}, 'rr': {'ls_comp': 5, 'ls_rbd': 5, 'hs_comp': 10, 'hs_rbd': 6, 'hs_slope': 11}}",
         "{'lf': {'ls_comp': 10, 'ls_rbd': 9, 'hs_comp': 6, 'hs_rbd': 10, 'hs_slope': 11}, 'rf': {'ls_comp': 10, 'ls_rbd': 9, 'hs_comp': 6, 'hs_rbd': 10, 'hs_slope': 11}, 'lr': {'ls_comp': 7, 'ls_rbd': 8, 'hs_comp': 6, 'hs_rbd': 11, 'hs_slope': 11}, 'rr': {'ls_comp': 7, 'ls_rbd': 8, 'hs_comp': 6, 'hs_rbd': 11, 'hs_slope': 11}}",
@@ -749,7 +864,7 @@
     "diff_clutch_plates": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 4.0,
       "max_observed": 6.0,
       "values": [
@@ -760,7 +875,7 @@
     "diff_preload_nm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 10.0,
       "max_observed": 65.0,
       "values": [
@@ -770,6 +885,7 @@
         25.0,
         30.0,
         35.0,
+        40.0,
         45.0,
         65.0
       ]
@@ -777,7 +893,7 @@
     "diff_ramp_label": {
       "unit": "",
       "type": "label",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "values": [
         "40/65",
         "45/70",
@@ -787,7 +903,7 @@
     "front_arb_blade": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 1.0,
       "max_observed": 3.0,
       "values": [
@@ -798,7 +914,7 @@
     "front_arb_size": {
       "unit": "",
       "type": "label",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "values": [
         "Soft"
       ]
@@ -806,7 +922,7 @@
     "front_camber_deg": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": -2.9,
       "max_observed": -1.6,
       "values": [
@@ -829,7 +945,7 @@
     "front_diff_preload_nm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 0.0,
       "max_observed": 0.0,
       "values": [
@@ -839,7 +955,7 @@
     "front_heave_index": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 10.0,
       "max_observed": 80.0,
       "values": [
@@ -855,7 +971,7 @@
     "front_heave_nmm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 10.0,
       "max_observed": 900.0,
       "values": [
@@ -873,7 +989,7 @@
     "front_master_cyl_mm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 19.1,
       "max_observed": 20.6,
       "values": [
@@ -884,7 +1000,7 @@
     "front_pushrod": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": -33.5,
       "max_observed": -22.0,
       "values": [
@@ -907,7 +1023,7 @@
     "front_rh_static": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 30.0,
       "max_observed": 33.8,
       "values": [
@@ -927,7 +1043,7 @@
     "front_toe_mm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": -1.0,
       "max_observed": -0.3,
       "values": [
@@ -941,7 +1057,7 @@
     "front_torsion_bar_index": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 13.9,
       "max_observed": 14.34,
       "values": [
@@ -952,7 +1068,7 @@
     "fuel_l": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 10.0,
       "max_observed": 89.0,
       "values": [
@@ -969,17 +1085,18 @@
     "fuel_low_warning_l": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 8.0,
-      "max_observed": 8.0,
+      "max_observed": 10.0,
       "values": [
-        8.0
+        8.0,
+        10.0
       ]
     },
     "fuel_target_l": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 0.0,
       "max_observed": 0.0,
       "values": [
@@ -989,7 +1106,7 @@
     "gear_stack": {
       "unit": "",
       "type": "label",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "values": [
         "Short"
       ]
@@ -997,7 +1114,7 @@
     "hybrid_rear_drive_corner_pct": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 0.0,
       "max_observed": 0.0,
       "values": [
@@ -1007,7 +1124,7 @@
     "hybrid_rear_drive_enabled": {
       "unit": "",
       "type": "label",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "values": [
         ""
       ]
@@ -1015,7 +1132,7 @@
     "pad_compound": {
       "unit": "",
       "type": "label",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "values": [
         "Medium"
       ]
@@ -1023,7 +1140,7 @@
     "rear_arb_blade": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 1.0,
       "max_observed": 5.0,
       "values": [
@@ -1037,7 +1154,7 @@
     "rear_arb_size": {
       "unit": "",
       "type": "label",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "values": [
         "Medium",
         "Soft",
@@ -1047,7 +1164,7 @@
     "rear_camber_deg": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": -1.9,
       "max_observed": -1.1,
       "values": [
@@ -1065,7 +1182,7 @@
     "rear_heave_index": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 120.0,
       "max_observed": 900.0,
       "values": [
@@ -1091,7 +1208,7 @@
     "rear_master_cyl_mm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 20.6,
       "max_observed": 22.2,
       "values": [
@@ -1102,7 +1219,7 @@
     "rear_pushrod": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": -40.0,
       "max_observed": -6.5,
       "values": [
@@ -1144,7 +1261,7 @@
     "rear_rh_static": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 45.3,
       "max_observed": 53.1,
       "values": [
@@ -1183,7 +1300,7 @@
     "rear_spring_nmm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 105.0,
       "max_observed": 280.0,
       "values": [
@@ -1202,7 +1319,7 @@
     "rear_third_nmm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 120.0,
       "max_observed": 900.0,
       "values": [
@@ -1231,7 +1348,7 @@
     "rear_toe_mm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": -0.7,
       "max_observed": 0.3,
       "values": [
@@ -1246,7 +1363,7 @@
     "rear_torsion_bar_index": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 105.0,
       "max_observed": 280.0,
       "values": [
@@ -1265,7 +1382,7 @@
     "speed_in_fifth_kph": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 257.0,
       "max_observed": 257.0,
       "values": [
@@ -1275,7 +1392,7 @@
     "speed_in_first_kph": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 115.8,
       "max_observed": 115.8,
       "values": [
@@ -1285,7 +1402,7 @@
     "speed_in_fourth_kph": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 219.7,
       "max_observed": 219.7,
       "values": [
@@ -1295,7 +1412,7 @@
     "speed_in_second_kph": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 151.4,
       "max_observed": 151.4,
       "values": [
@@ -1305,7 +1422,7 @@
     "speed_in_seventh_kph": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 315.8,
       "max_observed": 315.8,
       "values": [
@@ -1315,7 +1432,7 @@
     "speed_in_sixth_kph": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 288.3,
       "max_observed": 288.3,
       "values": [
@@ -1325,7 +1442,7 @@
     "speed_in_third_kph": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 184.2,
       "max_observed": 184.2,
       "values": [
@@ -1335,7 +1452,7 @@
     "tc_gain": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 3.0,
       "max_observed": 6.0,
       "values": [
@@ -1348,7 +1465,7 @@
     "tc_slip": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 73,
+      "n_sessions": 96,
       "min_observed": 3.0,
       "max_observed": 7.0,
       "values": [
@@ -1362,7 +1479,7 @@
     "torsion_bar_od_mm": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 13.9,
       "max_observed": 15.14,
       "values": [
@@ -1374,7 +1491,7 @@
     "wing": {
       "unit": "",
       "type": "continuous",
-      "n_sessions": 102,
+      "n_sessions": 125,
       "min_observed": 17.0,
       "max_observed": 17.0,
       "values": [
@@ -1387,61 +1504,61 @@
       "channel": "body_roll_p95_deg",
       "unit": "deg",
       "n_sessions": 1,
-      "mean": 1.68,
+      "mean": 1.65,
       "stdev": 0.0,
-      "min": 1.68,
-      "max": 1.68
+      "min": 1.65,
+      "max": 1.65
     },
     "dynamic_front_rh_mm": {
       "channel": "dynamic_front_rh_mm",
       "unit": "mm",
       "n_sessions": 1,
-      "mean": 20.2096,
+      "mean": 19.9856,
       "stdev": 0.0,
-      "min": 20.21,
-      "max": 20.21
+      "min": 19.986,
+      "max": 19.986
     },
     "dynamic_rear_rh_mm": {
       "channel": "dynamic_rear_rh_mm",
       "unit": "mm",
       "n_sessions": 1,
-      "mean": 26.8224,
+      "mean": 28.1439,
       "stdev": 0.0,
-      "min": 26.822,
-      "max": 26.822
+      "min": 28.144,
+      "max": 28.144
     },
     "front_rh_std_mm": {
       "channel": "front_rh_std_mm",
       "unit": "mm",
       "n_sessions": 1,
-      "mean": 5.1715,
+      "mean": 4.9537,
       "stdev": 0.0,
-      "min": 5.171,
-      "max": 5.171
+      "min": 4.954,
+      "max": 4.954
     },
     "front_shock_vel_p95_mps": {
       "channel": "front_shock_vel_p95_mps",
       "unit": "m/s",
       "n_sessions": 1,
-      "mean": 0.1237,
+      "mean": 0.1279,
       "stdev": 0.0,
-      "min": 0.124,
-      "max": 0.124
+      "min": 0.128,
+      "max": 0.128
     },
     "front_shock_vel_p99_mps": {
       "channel": "front_shock_vel_p99_mps",
       "unit": "m/s",
       "n_sessions": 1,
-      "mean": 0.2305,
+      "mean": 0.2564,
       "stdev": 0.0,
-      "min": 0.231,
-      "max": 0.231
+      "min": 0.256,
+      "max": 0.256
     },
     "lltd_measured": {
       "channel": "lltd_measured",
       "unit": "",
       "n_sessions": 1,
-      "mean": 0.508,
+      "mean": 0.5077,
       "stdev": 0.0,
       "min": 0.508,
       "max": 0.508
@@ -1450,46 +1567,46 @@
       "channel": "peak_lat_g",
       "unit": "g",
       "n_sessions": 1,
-      "mean": 4.0955,
+      "mean": 3.9218,
       "stdev": 0.0,
-      "min": 4.095,
-      "max": 4.095
+      "min": 3.922,
+      "max": 3.922
     },
     "rear_rh_std_mm": {
       "channel": "rear_rh_std_mm",
       "unit": "mm",
       "n_sessions": 1,
-      "mean": 7.0291,
+      "mean": 6.8676,
       "stdev": 0.0,
-      "min": 7.029,
-      "max": 7.029
+      "min": 6.868,
+      "max": 6.868
     },
     "rear_shock_vel_p95_mps": {
       "channel": "rear_shock_vel_p95_mps",
       "unit": "m/s",
       "n_sessions": 1,
-      "mean": 0.1574,
+      "mean": 0.1749,
       "stdev": 0.0,
-      "min": 0.157,
-      "max": 0.157
+      "min": 0.175,
+      "max": 0.175
     },
     "rear_shock_vel_p99_mps": {
       "channel": "rear_shock_vel_p99_mps",
       "unit": "m/s",
       "n_sessions": 1,
-      "mean": 0.3084,
+      "mean": 0.3398,
       "stdev": 0.0,
-      "min": 0.308,
-      "max": 0.308
+      "min": 0.34,
+      "max": 0.34
     },
     "roll_gradient_deg_per_g": {
       "channel": "roll_gradient_deg_per_g",
       "unit": "deg/g",
       "n_sessions": 1,
-      "mean": -0.248,
+      "mean": -0.177,
       "stdev": 0.0,
-      "min": -0.248,
-      "max": -0.248
+      "min": -0.177,
+      "max": -0.177
     }
   }
 }

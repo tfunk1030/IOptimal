@@ -33,6 +33,19 @@ class SubsystemCalibration:
     source: str = ""                 # e.g. "31 sessions", "13 garage screenshots"
     data_points: int = 0             # Number of data points used for calibration
     instructions: str = ""           # Calibration instructions if not calibrated
+    # Confidence metadata (added 2026-04-06 for honest reporting)
+    r_squared: float | None = None   # Regression R² where applicable
+    confidence: str = "unknown"      # "high" | "medium" | "low" | "manual_override" | "unknown"
+    warnings: list[str] = field(default_factory=list)  # Non-blocking issues to surface
+
+    def confidence_label(self) -> str:
+        """Short label for display, e.g. '[HIGH R²=0.97]' or '[LOW R²=0.61]'."""
+        parts = []
+        if self.confidence != "unknown":
+            parts.append(self.confidence.upper())
+        if self.r_squared is not None:
+            parts.append(f"R²={self.r_squared:.2f}")
+        return "[" + " ".join(parts) + "]" if parts else ""
 
 
 # ─── Per-step calibration check result ───────────────────────────────────────
@@ -107,6 +120,39 @@ class CalibrationReport:
             for s in blocked:
                 r = self.step_reports[s - 1]
                 lines.append(r.instructions_text())
+        return "\n".join(lines)
+
+    def format_confidence_report(
+        self, subsystems: dict[str, SubsystemCalibration] | None = None
+    ) -> str:
+        """Format a per-subsystem confidence report with R² and warnings.
+
+        This is additive to the block/pass gate — it surfaces weak models
+        and manual overrides without changing what blocks. Pass in the
+        subsystems dict from CalibrationGate.subsystems() for details.
+        """
+        if not subsystems:
+            return ""
+        lines = ["CALIBRATION CONFIDENCE:"]
+        order = [
+            "aero_compression", "ride_height_model", "deflection_model",
+            "spring_rates", "pushrod_geometry", "damper_zeta",
+            "arb_stiffness", "lltd_target", "roll_gains",
+        ]
+        warnings_to_show: list[str] = []
+        for name in order:
+            sub = subsystems.get(name)
+            if sub is None:
+                continue
+            label = sub.confidence_label()
+            status_icon = "OK " if sub.status == "calibrated" else "!! "
+            lines.append(f"  {status_icon}{name:<22} {label}  {sub.source}")
+            for w in sub.warnings:
+                warnings_to_show.append(f"    - {name}: {w}")
+        if warnings_to_show:
+            lines.append("")
+            lines.append("CONFIDENCE WARNINGS (non-blocking):")
+            lines.extend(warnings_to_show)
         return "\n".join(lines)
 
 
@@ -184,35 +230,123 @@ def _fmt_instructions(key: str, car: str, track: str) -> str:
 
 # ─── Build subsystem calibration status from a CarModel ──────────────────────
 
+def _load_raw_calibration_models(car_canonical: str) -> dict:
+    """Load raw models.json for a car to read R² values and status flags.
+
+    Returns an empty dict if no calibration file exists. Used for honest
+    reporting — does NOT override what the live CarModel says.
+    """
+    from pathlib import Path
+    import json
+
+    repo_root = Path(__file__).resolve().parents[1]
+    path = repo_root / "data" / "calibration" / car_canonical / "models.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _classify_r_squared(r2: float | None, threshold_high: float = 0.90,
+                        threshold_low: float = 0.70) -> str:
+    """Map an R² value to a confidence label."""
+    if r2 is None:
+        return "unknown"
+    if r2 >= threshold_high:
+        return "high"
+    if r2 >= threshold_low:
+        return "medium"
+    return "low"
+
+
 def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, SubsystemCalibration]:
     """Inspect a CarModel and return calibration status for every subsystem."""
     cn = car.canonical_name
+    raw_models = _load_raw_calibration_models(cn)
     subs: dict[str, SubsystemCalibration] = {}
 
     # 1. Aero compression — check the is_calibrated flag on the car's AeroCompression
     aero_cal = getattr(car.aero_compression, "is_calibrated", False)
+    aero_sessions = raw_models.get("aero_n_sessions", 0)
     subs["aero_compression"] = SubsystemCalibration(
         name="aero_compression",
         status="calibrated" if aero_cal else "uncalibrated",
-        source="IBT-derived" if aero_cal else "ESTIMATE — no IBT aero calibration",
+        source=(
+            f"IBT-derived ({aero_sessions} sessions)"
+            if aero_cal and aero_sessions
+            else ("IBT-derived" if aero_cal else "ESTIMATE — no IBT aero calibration")
+        ),
+        data_points=aero_sessions,
+        confidence="high" if aero_cal and aero_sessions >= 5 else ("medium" if aero_cal else "unknown"),
         instructions=_fmt_instructions("aero_compression", cn, track_name),
     )
 
-    # 2. Ride height model
+    # 2. Ride height model — surface front+rear R² separately when available
     rh_cal = car.ride_height_model.is_calibrated
+    front_rh = (raw_models.get("front_ride_height") or {}) if isinstance(raw_models, dict) else {}
+    rear_rh = (raw_models.get("rear_ride_height") or {}) if isinstance(raw_models, dict) else {}
+    front_r2 = front_rh.get("r_squared") if isinstance(front_rh, dict) else None
+    rear_r2 = rear_rh.get("r_squared") if isinstance(rear_rh, dict) else None
+    # Use the weaker of the two models as the subsystem confidence
+    weaker_r2 = None
+    if front_r2 is not None and rear_r2 is not None:
+        weaker_r2 = min(front_r2, rear_r2)
+    elif front_r2 is not None:
+        weaker_r2 = front_r2
+    elif rear_r2 is not None:
+        weaker_r2 = rear_r2
+    rh_warnings: list[str] = []
+    if front_r2 is not None and front_r2 < 0.85:
+        rh_warnings.append(f"Front RH model weak: R²={front_r2:.2f}")
+    if rear_r2 is not None and rear_r2 < 0.85:
+        rh_warnings.append(f"Rear RH model weak: R²={rear_r2:.2f}")
     subs["ride_height_model"] = SubsystemCalibration(
         name="ride_height_model",
         status="calibrated" if rh_cal else "uncalibrated",
-        source="regression model" if rh_cal else "no calibration data",
+        source=(
+            f"regression (front R²={front_r2:.2f}, rear R²={rear_r2:.2f})"
+            if front_r2 is not None and rear_r2 is not None
+            else ("regression model" if rh_cal else "no calibration data")
+        ),
+        r_squared=weaker_r2,
+        confidence=_classify_r_squared(weaker_r2) if rh_cal else "unknown",
+        warnings=rh_warnings,
         instructions=_fmt_instructions("ride_height_model", cn, track_name),
     )
 
-    # 3. Deflection model
+    # 3. Deflection model — report best-model R² from raw JSON
     defl_cal = car.deflection.is_calibrated
+    defl_r2s: list[float] = []
+    for key in ("heave_spring_defl_static", "heave_spring_defl_max",
+                "rear_spring_defl_static", "third_spring_defl_static",
+                "rear_shock_defl_static"):
+        model = raw_models.get(key)
+        if isinstance(model, dict) and "r_squared" in model:
+            try:
+                defl_r2s.append(float(model["r_squared"]))
+            except (TypeError, ValueError):
+                pass
+    weakest_defl_r2 = min(defl_r2s) if defl_r2s else None
+    defl_warnings: list[str] = []
+    if weakest_defl_r2 is not None and weakest_defl_r2 < 0.70:
+        defl_warnings.append(
+            f"Weakest deflection sub-model R²={weakest_defl_r2:.2f} "
+            "— some deflection predictions may be unreliable"
+        )
     subs["deflection_model"] = SubsystemCalibration(
         name="deflection_model",
         status="calibrated" if defl_cal else "uncalibrated",
-        source="regression model" if defl_cal else "no calibration data",
+        source=(
+            f"regression (weakest R²={weakest_defl_r2:.2f})"
+            if weakest_defl_r2 is not None
+            else ("regression model" if defl_cal else "no calibration data")
+        ),
+        r_squared=weakest_defl_r2,
+        confidence=_classify_r_squared(weakest_defl_r2) if defl_cal else "unknown",
+        warnings=defl_warnings,
         instructions=_fmt_instructions("deflection_model", cn, track_name),
     )
 
@@ -234,19 +368,52 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
 
     # 6. Damper zeta
     zeta_cal = getattr(car.damper, "zeta_is_calibrated", False)
+    zeta_n = raw_models.get("zeta_n_sessions", 0)
     subs["damper_zeta"] = SubsystemCalibration(
         name="damper_zeta",
         status="calibrated" if zeta_cal else "uncalibrated",
-        source="IBT click-sweep" if zeta_cal else "not calibrated from IBT",
+        source=(
+            f"IBT click-sweep ({zeta_n} sessions)"
+            if zeta_cal and zeta_n
+            else ("IBT click-sweep" if zeta_cal else "not calibrated from IBT")
+        ),
+        data_points=zeta_n,
+        confidence="high" if zeta_cal and zeta_n >= 20 else ("medium" if zeta_cal else "unknown"),
         instructions=_fmt_instructions("damper_zeta", cn, track_name),
     )
 
-    # 7. ARB stiffness — check the is_calibrated flag on the car's ARBModel
+    # 7. ARB stiffness — check car.arb.is_calibrated but also compare against
+    # the auto-calibration result to detect manual-override conflicts.
     arb_cal = getattr(car.arb, "is_calibrated", False)
+    arb_status_from_data = raw_models.get("status", {}).get("arb_calibrated")
+    arb_status_note = raw_models.get("status", {}).get("arb_stiffness", "")
+    arb_warnings: list[str] = []
+    if not arb_cal:
+        arb_confidence = "unknown"
+        arb_source = "estimated — no measured data"
+    elif arb_status_from_data is True:
+        # cars.py says calibrated AND auto-cal agrees
+        arb_confidence = "high"
+        arb_source = "measured from IBT roll data"
+    elif arb_status_from_data is False:
+        # cars.py says calibrated but auto-cal FAILED — manual override
+        arb_confidence = "manual_override"
+        arb_source = "manual override (auto-cal disagrees)"
+        arb_warnings.append(
+            "MANUAL OVERRIDE: car_model says ARB calibrated, but "
+            "auto-calibration from roll-gradient data disagrees. "
+            f"Details: {arb_status_note}"
+        )
+    else:
+        # cars.py says calibrated, no auto-cal run — trust cars.py, medium confidence
+        arb_confidence = "medium"
+        arb_source = "car_model default (no auto-cal available)"
     subs["arb_stiffness"] = SubsystemCalibration(
         name="arb_stiffness",
         status="calibrated" if arb_cal else "uncalibrated",
-        source="measured from IBT roll data" if arb_cal else "estimated — no measured data",
+        source=arb_source,
+        confidence=arb_confidence,
+        warnings=arb_warnings,
         instructions=_fmt_instructions("arb_stiffness", cn, track_name),
     )
 
@@ -309,6 +476,10 @@ class CalibrationGate:
         return self._subsystems.get(name, SubsystemCalibration(
             name=name, status="uncalibrated", source="unknown",
         ))
+
+    def subsystems(self) -> dict[str, SubsystemCalibration]:
+        """Return the full subsystems dict for confidence reporting."""
+        return self._subsystems
 
     def check_step(self, step_number: int) -> StepCalibrationReport:
         """Check if a solver step can run with calibrated data.

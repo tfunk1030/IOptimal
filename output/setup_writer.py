@@ -604,6 +604,10 @@ def write_sto(
     output_path: str | Path,
     car_canonical: str = "bmw",
     tyre_pressure_kpa: float = 152.0,
+    tyre_pressure_fl_kpa: float | None = None,
+    tyre_pressure_fr_kpa: float | None = None,
+    tyre_pressure_rl_kpa: float | None = None,
+    tyre_pressure_rr_kpa: float | None = None,
     # --- Defaults for fields not computed by the solver ---
     brake_bias_pct: float | None = None,  # None = compute from car physics
     brake_bias_migration: float | None = None,
@@ -938,9 +942,15 @@ def write_sto(
             _heave_defl_static = round(_dm.heave_spring_defl_static(_fh, _fh_perch, _f_od), 1)
             _heave_slider_static = round(_dm.heave_slider_defl_static(_fh, _fh_perch, _f_od), 1)
             _lr_spring_defl = round(_dm.rear_spring_defl_static(
-                step3.rear_spring_rate_nmm, step3.rear_spring_perch_mm), 1)
+                step3.rear_spring_rate_nmm, step3.rear_spring_perch_mm,
+                third_rate_nmm=step2.rear_third_nmm,
+                third_perch_mm=step2.perch_offset_rear_mm,
+                pushrod_mm=step1.rear_pushrod_offset_mm), 1)
             _r3_defl = round(_dm.third_spring_defl_static(
-                step2.rear_third_nmm, step2.perch_offset_rear_mm), 1)
+                step2.rear_third_nmm, step2.perch_offset_rear_mm,
+                spring_rate_nmm=step3.rear_spring_rate_nmm,
+                spring_perch_mm=step3.rear_spring_perch_mm,
+                pushrod_mm=step1.rear_pushrod_offset_mm), 1)
             _r3_slider = round(_dm.third_slider_defl_static(_r3_defl), 1)
         else:
             _fh = step2.front_heave_nmm
@@ -1084,10 +1094,10 @@ def write_sto(
             _w_num("rear_3rd_hs_rbd",  _3rd_hs_rbd, "clicks")
 
     # === Tyres ===
-    _w_num("lf_pressure", tyre_pressure_kpa, "kPa")
-    _w_num("rf_pressure", tyre_pressure_kpa, "kPa")
-    _w_num("lr_pressure", tyre_pressure_kpa, "kPa")
-    _w_num("rr_pressure", tyre_pressure_kpa, "kPa")
+    _w_num("lf_pressure", tyre_pressure_fl_kpa if tyre_pressure_fl_kpa is not None else tyre_pressure_kpa, "kPa")
+    _w_num("rf_pressure", tyre_pressure_fr_kpa if tyre_pressure_fr_kpa is not None else tyre_pressure_kpa, "kPa")
+    _w_num("lr_pressure", tyre_pressure_rl_kpa if tyre_pressure_rl_kpa is not None else tyre_pressure_kpa, "kPa")
+    _w_num("rr_pressure", tyre_pressure_rr_kpa if tyre_pressure_rr_kpa is not None else tyre_pressure_kpa, "kPa")
     _w_str("tyre_type", "Dry")
 
     # === Fuel ===
@@ -1095,7 +1105,16 @@ def write_sto(
 
     # === Brakes, Diff, TC — settable parameters ===
     _w_num("brake_bias",           brake_bias_pct,       "%")
-    _w_str("diff_coast_drive_ramp", diff_coast_drive_ramp)
+    # Porsche has separate coast/drive ramp XML IDs; other cars use combined string
+    if car_canonical == "porsche" and diff_coast_drive_ramp:
+        parts = diff_coast_drive_ramp.replace(" ", "").split("/")
+        if len(parts) == 2:
+            _w_num("diff_coast_ramp", int(parts[0]), "deg")
+            _w_num("diff_drive_ramp", int(parts[1]), "deg")
+        else:
+            _w_str("diff_coast_drive_ramp", diff_coast_drive_ramp)
+    else:
+        _w_str("diff_coast_drive_ramp", diff_coast_drive_ramp)
     _w_num("diff_clutch_plates",    diff_clutch_plates,   "")
     _w_num("diff_preload",          None if diff_preload_nm is None else int(round(diff_preload_nm)), "Nm")
     _w_num("tc_gain", tc_gain, "")

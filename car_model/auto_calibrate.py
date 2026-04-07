@@ -249,7 +249,8 @@ class CarCalibrationModels:
     m_eff_front_kg: float | None = None
     m_eff_rear_kg: float | None = None
     m_eff_is_rate_dependent: bool = False
-    m_eff_rate_table: list[dict] = field(default_factory=list)
+    m_eff_rate_table: list[dict] = field(default_factory=list)          # front (legacy name)
+    m_eff_rear_rate_table: list[dict] = field(default_factory=list)     # rear
     # Each entry: {"setting": float, "m_eff_kg": float}
 
     # Calibrated LLTD target
@@ -819,29 +820,74 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     od4 = col("front_torsion_od_mm") ** 4
 
     # ─── 1. Front Ride Height ───
+    # Physics-based feature selection: heave spring compression under aero
+    # load is proportional to 1/k (compliance), not k. Using 1/heave as the
+    # feature matches the underlying physics and dramatically improves fit
+    # quality for cars with varied heave spring rates.
     if np.std(col("static_front_rh_mm")) > 0.5:
-        X = np.column_stack([
-            heave, col("front_heave_perch_mm"), col("front_camber_deg"),
-            col("fuel_l"), col("front_pushrod_mm"), col("front_torsion_od_mm"),
-        ])
-        models.front_ride_height = _fit(
-            X, col("static_front_rh_mm"),
-            ["front_heave", "front_heave_perch", "front_camber", "fuel", "front_pushrod", "torsion_od"],
-            "front_ride_height",
-        )
+        _inv_heave = 1.0 / np.maximum(heave, 1.0)
+        _front_rh_candidates = [
+            (col("front_pushrod_mm"), "front_pushrod"),
+            (_inv_heave, "inv_front_heave"),
+            (col("front_heave_perch_mm"), "front_heave_perch"),
+            (col("front_camber_deg"), "front_camber"),
+            (col("fuel_l"), "fuel"),
+            (col("front_torsion_od_mm"), "torsion_od"),
+        ]
+        _front_rh_X = []
+        _front_rh_names = []
+        for arr, name in _front_rh_candidates:
+            _n_unique = len(np.unique(arr))
+            _std = np.std(arr)
+            # Include features with at least 2 unique values AND non-zero
+            # variance. Fewer restrictive thresholds so perches and camber
+            # (which often have few unique values) still contribute.
+            if _n_unique >= 2 and _std > 1e-6:
+                _front_rh_X.append(arr)
+                _front_rh_names.append(name)
+        if _front_rh_X:
+            X = np.column_stack(_front_rh_X)
+            models.front_ride_height = _fit(
+                X, col("static_front_rh_mm"),
+                _front_rh_names,
+                "front_ride_height",
+            )
 
     # ─── 2. Rear Ride Height ───
     if np.std(col("static_rear_rh_mm")) > 0.5:
-        X = np.column_stack([
-            col("rear_pushrod_mm"), col("rear_third_setting"),
-            col("rear_spring_setting"), col("rear_third_perch_mm"),
-            col("fuel_l"), col("rear_spring_perch_mm"),
-        ])
-        models.rear_ride_height = _fit(
-            X, col("static_rear_rh_mm"),
-            ["rear_pushrod", "rear_third", "rear_spring", "rear_third_perch", "fuel", "rear_spring_perch"],
-            "rear_ride_height",
-        )
+        # Compliance model for BOTH third spring AND rear corner spring.
+        # Static rear RH under aero load = baseline - F_third/k_third - F_spring/k_spring
+        # so the regression features are 1/k_third and 1/k_spring, not the stiffnesses.
+        # This matches the physics and dramatically improves fit quality.
+        _rear_third = col("rear_third_setting")
+        _rear_spring = col("rear_spring_setting")
+        _inv_third = 1.0 / np.maximum(_rear_third, 1.0)
+        _inv_spring = 1.0 / np.maximum(_rear_spring, 1.0)
+        _rear_rh_candidates = [
+            (col("rear_pushrod_mm"), "rear_pushrod"),
+            (_inv_third, "inv_rear_third"),
+            (_inv_spring, "inv_rear_spring"),
+            (col("rear_third_perch_mm"), "rear_third_perch"),
+            (col("rear_spring_perch_mm"), "rear_spring_perch"),
+            (col("fuel_l"), "fuel"),
+        ]
+        _rear_rh_X = []
+        _rear_rh_names = []
+        for arr, name in _rear_rh_candidates:
+            _n_unique = len(np.unique(arr))
+            _std = np.std(arr)
+            # Include features with at least 2 unique values and non-zero variance.
+            # LOO validation in the _fit call guards against overfit.
+            if _n_unique >= 2 and _std > 1e-6:
+                _rear_rh_X.append(arr)
+                _rear_rh_names.append(name)
+        if _rear_rh_X:
+            X = np.column_stack(_rear_rh_X)
+            models.rear_ride_height = _fit(
+                X, col("static_rear_rh_mm"),
+                _rear_rh_names,
+                "rear_ride_height",
+            )
 
     # ─── 3. Torsion Bar Turns ───
     if np.std(col("torsion_bar_turns")) > 0.005:
@@ -933,26 +979,42 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # (load path through third/heave spring vs. corner shock), and rear third
     # spring stiffness (how much the third spring carries).
     if np.std(col("rear_shock_defl_static_mm")) > 0.5:
+        # Compliance physics: rear shock deflection depends on aero load
+        # divided by spring stiffness, plus pushrod offset and perches.
+        _rspring = col("rear_spring_setting")
+        _rthird = col("rear_third_setting")
         X = np.column_stack([
             col("rear_pushrod_mm"),
+            1.0 / np.maximum(_rthird, 1.0),
+            1.0 / np.maximum(_rspring, 1.0),
             col("rear_third_perch_mm"),
-            col("rear_third_setting"),
-            col("rear_spring_setting"),
+            col("rear_spring_perch_mm"),
         ])
         models.rear_shock_defl_static = _fit(
             X, col("rear_shock_defl_static_mm"),
-            ["rear_pushrod", "rear_third_perch", "rear_third", "rear_spring"],
+            ["rear_pushrod", "inv_rear_third", "inv_rear_spring",
+             "rear_third_perch", "rear_spring_perch"],
             "rear_shock_defl_static",
         )
 
     # ─── 10. Rear Spring Deflection Static ───
+    # Compliance physics: defl ∝ F/k (1/spring) under aero load. Include
+    # cross-spring effect (third), perches, and pushrod for a complete model.
     if np.std(col("rear_spring_defl_static_mm")) > 0.5:
-        y_load = col("rear_spring_defl_static_mm") * col("rear_spring_setting")
-        X = np.column_stack([col("rear_spring_perch_mm")])
+        _rspring = col("rear_spring_setting")
+        _rthird = col("rear_third_setting")
+        X = np.column_stack([
+            1.0 / np.maximum(_rspring, 1.0),
+            1.0 / np.maximum(_rthird, 1.0),
+            col("rear_spring_perch_mm"),
+            col("rear_third_perch_mm"),
+            col("rear_pushrod_mm"),
+        ])
         models.rear_spring_defl_static = _fit(
-            X, y_load,
-            ["rear_spring_perch"],
-            "rear_spring_defl_static_load",
+            X, col("rear_spring_defl_static_mm"),
+            ["inv_rear_spring", "inv_rear_third", "rear_spring_perch",
+             "rear_third_perch", "rear_pushrod"],
+            "rear_spring_defl_static",
         )
 
     # ─── 11. Rear Spring Deflection Max ───
@@ -965,13 +1027,22 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         )
 
     # ─── 12. Third Spring Deflection Static ───
+    # Same compliance pattern as rear_spring_defl_static.
     if np.std(col("third_spring_defl_static_mm")) > 0.5:
-        y_load = col("third_spring_defl_static_mm") * col("rear_third_setting")
-        X = np.column_stack([col("rear_third_perch_mm")])
+        _rspring = col("rear_spring_setting")
+        _rthird = col("rear_third_setting")
+        X = np.column_stack([
+            1.0 / np.maximum(_rthird, 1.0),
+            1.0 / np.maximum(_rspring, 1.0),
+            col("rear_third_perch_mm"),
+            col("rear_spring_perch_mm"),
+            col("rear_pushrod_mm"),
+        ])
         models.third_spring_defl_static = _fit(
-            X, y_load,
-            ["rear_third_perch"],
-            "third_spring_defl_static_load",
+            X, col("third_spring_defl_static_mm"),
+            ["inv_rear_third", "inv_rear_spring", "rear_third_perch",
+             "rear_spring_perch", "rear_pushrod"],
+            "third_spring_defl_static",
         )
 
     # ─── 13. Third Spring Deflection Max ───
@@ -1198,7 +1269,7 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
     # ─── 15b. Rear m_eff from telemetry ───
     _rear_uses_index = _heave_model is not None and _heave_model.rear_setting_index_range is not None
-    m_effs_rear = []
+    m_effs_rear: list[tuple[float, float]] = []  # (setting, m_eff) tuples
     for pt in unique:
         if pt.rear_shock_vel_p99_mps > 0.01 and pt.rear_sigma_mm > 0.1 and pt.rear_third_setting > 0:
             if _rear_uses_index:
@@ -1212,11 +1283,28 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             # Same unit-corrected formula as front
             m = k * (pt.rear_sigma_mm * 2.33) ** 2 / (1000.0 * pt.rear_shock_vel_p99_mps ** 2)
             if 100 < m < 5000:  # plausible range for rear (heavier: aero + third spring)
-                m_effs_rear.append(m)
+                m_effs_rear.append((pt.rear_third_setting, m))
 
     if len(m_effs_rear) >= 3:
-        models.m_eff_rear_kg = float(np.mean(m_effs_rear))
-        models.status["m_eff_rear"] = f"constant ({len(m_effs_rear)} points, mean {models.m_eff_rear_kg:.0f} kg)"
+        rear_settings = np.array([x[0] for x in m_effs_rear])
+        rear_masses = np.array([x[1] for x in m_effs_rear])
+        # Same rate-dependence check as front: >20% CV and >5 N/mm setting spread
+        if np.std(rear_masses) / np.mean(rear_masses) > 0.20 and np.std(rear_settings) > 5.0:
+            models.m_eff_rear_rate_table = [
+                {"setting": float(s), "m_eff_kg": float(m)}
+                for s, m in sorted(m_effs_rear)
+            ]
+            # Keep scalar mean as fallback
+            models.m_eff_rear_kg = float(np.mean(rear_masses))
+            models.status["m_eff_rear"] = (
+                f"rate-dependent ({len(m_effs_rear)} points, "
+                f"range {np.min(rear_masses):.0f}-{np.max(rear_masses):.0f} kg)"
+            )
+        else:
+            models.m_eff_rear_kg = float(np.mean(rear_masses))
+            models.status["m_eff_rear"] = (
+                f"constant ({len(m_effs_rear)} points, mean {models.m_eff_rear_kg:.0f} kg)"
+            )
 
     # ─── 16. Measured LLTD target ───
     # ── LLTD target from IBT telemetry ──────────────────────────────────
@@ -1287,15 +1375,19 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
     front_intercept = rh.front_intercept
     front_coeff_pushrod = rh.front_coeff_pushrod
     front_coeff_heave = rh.front_coeff_heave_nmm
+    front_coeff_inv_heave = rh.front_coeff_inv_heave
     front_coeff_camber = rh.front_coeff_camber_deg
-    # Perch maps to heave_perch_mm in garage model
     front_coeff_perch = rh.front_coeff_perch
 
     # Rear RH coefficients
     rear_intercept = rh.rear_intercept
     rear_coeff_pushrod = rh.rear_coeff_pushrod
     rear_coeff_third = rh.rear_coeff_third_nmm
+    rear_coeff_inv_third = rh.rear_coeff_inv_third
     rear_coeff_rear_spring = rh.rear_coeff_rear_spring
+    rear_coeff_inv_rear_spring = rh.rear_coeff_inv_spring
+    rear_coeff_third_perch = rh.rear_coeff_heave_perch   # heave_perch field stores third_perch coeff
+    rear_coeff_rear_spring_perch = rh.rear_coeff_spring_perch
     rear_coeff_fuel = rh.rear_coeff_fuel_l
 
     # Heave deflection from calibration models
@@ -1365,21 +1457,24 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
         max_slider_mm=45.0,
         heave_spring_defl_max_intercept_mm=defl_max_intercept,
         heave_spring_defl_max_slope=defl_max_slope,
-        # Front RH regression
+        # Front RH regression (linear + compliance)
         front_intercept=front_intercept,
         front_coeff_pushrod=front_coeff_pushrod,
         front_coeff_heave_nmm=front_coeff_heave,
+        front_coeff_inv_heave_nmm=front_coeff_inv_heave,
         front_coeff_heave_perch_mm=front_coeff_perch,
         front_coeff_torsion_od_mm=0.0,
         front_coeff_camber_deg=front_coeff_camber,
         front_coeff_fuel_l=0.0,
-        # Rear RH regression
+        # Rear RH regression (linear + compliance)
         rear_intercept=rear_intercept,
         rear_coeff_pushrod=rear_coeff_pushrod,
         rear_coeff_third_nmm=rear_coeff_third,
-        rear_coeff_third_perch_mm=0.0,
+        rear_coeff_inv_third_nmm=rear_coeff_inv_third,
+        rear_coeff_third_perch_mm=rear_coeff_third_perch,
         rear_coeff_rear_spring_nmm=rear_coeff_rear_spring,
-        rear_coeff_rear_spring_perch_mm=0.0,
+        rear_coeff_inv_rear_spring_nmm=rear_coeff_inv_rear_spring,
+        rear_coeff_rear_spring_perch_mm=rear_coeff_rear_spring_perch,
         rear_coeff_front_heave_perch_mm=0.0,
         rear_coeff_fuel_l=rear_coeff_fuel,
         # Heave deflection
@@ -1421,20 +1516,119 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                 defl.shock_front_intercept = fs.coefficients[0]
                 defl.shock_front_pushrod_coeff = fs.coefficients[1]
                 _defl_applied = True
+            # Generic mapping helper: zero target attrs first, then apply
+            # whichever named features exist in the fitted model.
+            def _apply_named(model, intercept_attr, feature_to_attr,
+                             direct_flag_attr=None):
+                if not model:
+                    return False
+                # Zero all mapped attrs to prevent stale coefficients
+                for attr in feature_to_attr.values():
+                    if hasattr(defl, attr):
+                        setattr(defl, attr, 0.0)
+                if intercept_attr and hasattr(defl, intercept_attr):
+                    setattr(defl, intercept_attr, model.coefficients[0])
+                for i, feat in enumerate(model.feature_names):
+                    coeff = model.coefficients[i + 1] if (i + 1) < len(model.coefficients) else 0.0
+                    attr = feature_to_attr.get(feat)
+                    if attr and hasattr(defl, attr):
+                        setattr(defl, attr, coeff)
+                if direct_flag_attr and hasattr(defl, direct_flag_attr):
+                    setattr(defl, direct_flag_attr, True)
+                return True
+
+            # Rear shock defl static (intercept + pushrod + compliance + perches)
             rs = models.rear_shock_defl_static
+            _REAR_SHOCK_MAP = {
+                "rear_pushrod": "shock_rear_pushrod_coeff",
+                "inv_rear_third": "rear_shock_defl_inv_third_coeff",
+                "inv_rear_spring": "rear_shock_defl_inv_spring_coeff",
+                "rear_third_perch": "rear_shock_defl_third_perch_coeff",
+                "rear_spring_perch": "rear_shock_defl_spring_perch_coeff",
+            }
             if rs and len(rs.coefficients) >= 2:
-                defl.shock_rear_intercept = rs.coefficients[0]
-                defl.shock_rear_pushrod_coeff = rs.coefficients[1]
+                _has_compliance = any(
+                    f in (rs.feature_names or [])
+                    for f in ("inv_rear_third", "inv_rear_spring",
+                              "rear_third_perch", "rear_spring_perch")
+                )
+                if _has_compliance:
+                    _apply_named(rs, "shock_rear_intercept", _REAR_SHOCK_MAP)
+                    defl.rear_shock_defl_direct = True
+                else:
+                    # Legacy: just intercept + pushrod coefficient
+                    defl.shock_rear_intercept = rs.coefficients[0]
+                    if len(rs.coefficients) >= 2:
+                        defl.shock_rear_pushrod_coeff = rs.coefficients[1]
+                    defl.rear_shock_defl_direct = False
                 _defl_applied = True
+
+            # Heave spring deflection static (reciprocal fit)
             hs = models.heave_spring_defl_static
-            # Reciprocal fit: [intercept, 1/heave_nmm, perch, 1/OD^4]
-            # Must have exactly 4 coefficients matching DeflectionModel semantics
             if hs and len(hs.coefficients) >= 4:
                 defl.heave_defl_intercept = hs.coefficients[0]
-                defl.heave_defl_inv_heave_coeff = hs.coefficients[1]  # 1/heave_nmm
-                defl.heave_defl_perch_coeff = hs.coefficients[2]      # perch_mm
-                defl.heave_defl_inv_od4_coeff = hs.coefficients[3]    # 1/OD^4
+                defl.heave_defl_inv_heave_coeff = hs.coefficients[1]
+                defl.heave_defl_perch_coeff = hs.coefficients[2]
+                defl.heave_defl_inv_od4_coeff = hs.coefficients[3]
                 _defl_applied = True
+
+            # Rear spring deflection static (compliance + perches + pushrod)
+            _REAR_SPRING_DEFL_MAP = {
+                "rear_spring": "rear_spring_defl_rate_coeff",
+                "inv_rear_spring": "rear_spring_defl_inv_rate_coeff",
+                "rear_third": "rear_spring_defl_third_coeff",
+                "inv_rear_third": "rear_spring_defl_inv_third_coeff",
+                "rear_spring_perch": "rear_spring_defl_perch_coeff",
+                "rear_third_perch": "rear_spring_defl_third_perch_coeff",
+                "rear_pushrod": "rear_spring_defl_pushrod_coeff",
+            }
+            rsd = models.rear_spring_defl_static
+            if rsd:
+                # Only enable direct mode when the fit includes the
+                # compliance terms; otherwise fall back to legacy load-balance.
+                _has_compliance = any(
+                    f in (rsd.feature_names or [])
+                    for f in ("inv_rear_spring", "inv_rear_third")
+                )
+                if _has_compliance:
+                    _apply_named(rsd, "rear_spring_defl_intercept",
+                                 _REAR_SPRING_DEFL_MAP,
+                                 direct_flag_attr="rear_spring_defl_direct")
+                else:
+                    # Legacy load-balance form; set perch coeff and eff load.
+                    if "rear_spring_perch" in (rsd.feature_names or []):
+                        defl.rear_spring_eff_load = rsd.coefficients[0]
+                        defl.rear_spring_perch_coeff = rsd.coefficients[1]
+                    defl.rear_spring_defl_direct = False
+                _defl_applied = True
+
+            # Third spring deflection static (same compliance pattern)
+            _THIRD_SPRING_DEFL_MAP = {
+                "rear_third": "third_spring_defl_third_coeff",
+                "inv_rear_third": "third_spring_defl_inv_third_coeff",
+                "rear_spring": "third_spring_defl_spring_coeff",
+                "inv_rear_spring": "third_spring_defl_inv_spring_coeff",
+                "rear_third_perch": "third_spring_defl_perch_coeff",
+                "rear_spring_perch": "third_spring_defl_spring_perch_coeff",
+                "rear_pushrod": "third_spring_defl_pushrod_coeff",
+            }
+            tsd = models.third_spring_defl_static
+            if tsd:
+                _has_compliance = any(
+                    f in (tsd.feature_names or [])
+                    for f in ("inv_rear_third", "inv_rear_spring")
+                )
+                if _has_compliance:
+                    _apply_named(tsd, "third_spring_defl_intercept",
+                                 _THIRD_SPRING_DEFL_MAP,
+                                 direct_flag_attr="third_spring_defl_direct")
+                else:
+                    if "rear_third_perch" in (tsd.feature_names or []):
+                        defl.third_spring_eff_load = tsd.coefficients[0]
+                        defl.third_spring_perch_coeff = tsd.coefficients[1]
+                    defl.third_spring_defl_direct = False
+                _defl_applied = True
+
             if _defl_applied:
                 defl.is_calibrated = True
                 applied.append(f"DeflectionModel updated from {models.n_unique_setups} IBT sessions")
@@ -1445,12 +1639,17 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
     # Map calibration feature names to RideHeightModel attribute names
     _FRONT_RH_COEFF_MAP = {
         "front_heave": "front_coeff_heave_nmm",
+        "inv_front_heave": "front_coeff_inv_heave",
         "front_camber": "front_coeff_camber_deg",
+        "front_pushrod": "front_coeff_pushrod",
+        "front_heave_perch": "front_coeff_perch",
     }
     _REAR_RH_COEFF_MAP = {
         "rear_pushrod": "rear_coeff_pushrod",
         "rear_third": "rear_coeff_third_nmm",
+        "inv_rear_third": "rear_coeff_inv_third",
         "rear_spring": "rear_coeff_rear_spring",
+        "inv_rear_spring": "rear_coeff_inv_spring",
         "rear_third_perch": "rear_coeff_heave_perch",
         "fuel": "rear_coeff_fuel_l",
         "rear_spring_perch": "rear_coeff_spring_perch",
@@ -1460,14 +1659,34 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             rh = car_obj.ride_height_model
             fr = models.front_ride_height
             if len(fr.coefficients) >= 2:
-                rh.front_intercept = fr.coefficients[0]
+                # Zero ALL front coefficients first so stale values from
+                # cars.py don't contaminate the new model's predictions.
+                for attr in _FRONT_RH_COEFF_MAP.values():
+                    if hasattr(rh, attr):
+                        setattr(rh, attr, 0.0)
+                intercept = fr.coefficients[0]
                 # Apply mapped coefficients (coefficients[1:] match feature_names order)
+                # Unmapped features get their contribution baked into the intercept
+                # using the mean calibration value from the dataset.
+                _UNMAPPED_DEFAULTS = {
+                    "fuel": 58.0,       # calibration fuel level
+                    "torsion_od": 0.0,  # Porsche has no torsion bar
+                }
                 for i, feat in enumerate(fr.feature_names):
+                    coeff = fr.coefficients[i + 1] if (i + 1) < len(fr.coefficients) else 0.0
                     attr = _FRONT_RH_COEFF_MAP.get(feat)
-                    if attr and hasattr(rh, attr) and (i + 1) < len(fr.coefficients):
-                        setattr(rh, attr, fr.coefficients[i + 1])
+                    if attr and hasattr(rh, attr):
+                        setattr(rh, attr, coeff)
+                    elif feat in _UNMAPPED_DEFAULTS:
+                        # Absorb constant feature into intercept
+                        intercept += coeff * _UNMAPPED_DEFAULTS[feat]
+                rh.front_intercept = intercept
             rr = models.rear_ride_height
             if len(rr.coefficients) >= 2:
+                # Zero ALL rear coefficients first to prevent stale values
+                for attr in _REAR_RH_COEFF_MAP.values():
+                    if hasattr(rh, attr):
+                        setattr(rh, attr, 0.0)
                 rh.rear_intercept = rr.coefficients[0]
                 for i, feat in enumerate(rr.feature_names):
                     attr = _REAR_RH_COEFF_MAP.get(feat)
@@ -1490,6 +1709,33 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             car_obj.heave_spring.rear_m_eff_kg = models.m_eff_rear_kg
             applied.append(f"m_eff_rear updated: {models.m_eff_rear_kg:.0f} kg")
         except AttributeError:
+            pass
+
+    # Apply rate-dependent m_eff tables (front and rear). When the calibration
+    # data shows significant variation with spring rate, populate the lookup
+    # table so the heave solver interpolates rather than using a scalar mean.
+    if getattr(models, "m_eff_rate_table", None):
+        try:
+            # models.m_eff_rate_table was historically populated only for front;
+            # we preserve that for backward compatibility but also distribute
+            # to whichever axle it belongs to based on status note.
+            status_note = models.status.get("m_eff", "") if hasattr(models, "status") else ""
+            front_table = list(models.m_eff_rate_table)
+            car_obj.heave_spring.m_eff_front_rate_table = front_table
+            applied.append(
+                f"m_eff_front rate table: {len(front_table)} points "
+                f"({status_note})"
+            )
+        except (AttributeError, TypeError):
+            pass
+    if getattr(models, "m_eff_rear_rate_table", None):
+        try:
+            rear_table = list(models.m_eff_rear_rate_table)
+            car_obj.heave_spring.m_eff_rear_rate_table = rear_table
+            applied.append(
+                f"m_eff_rear rate table: {len(rear_table)} points"
+            )
+        except (AttributeError, TypeError):
             pass
 
     # Apply measured LLTD target
@@ -2143,7 +2389,7 @@ Examples:
                     models.status[k] = v
 
         save_calibrated_models(car, models)
-        print(f"  ✅ Models saved to {_models_path(car)}")
+        print(f"  [OK] Models saved to {_models_path(car)}")
     else:
         remaining = _MIN_SESSIONS_FOR_FIT - n_unique
         print(f"\n  ⏳ Need {remaining} more unique-setup sessions before fitting (have {n_unique}/{_MIN_SESSIONS_FOR_FIT})")

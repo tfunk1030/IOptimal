@@ -716,6 +716,14 @@ def produce(
                 log(sr.instructions_text())
         log()
 
+    # Always show confidence report — surfaces weak models and manual overrides
+    # without changing what blocks. Additive info for the user.
+    _confidence_text = cal_report.format_confidence_report(cal_gate.subsystems())
+    if _confidence_text:
+        log()
+        log(_confidence_text)
+        log()
+
     solve_inputs = SolveChainInputs(
         car=car,
         surface=surface,
@@ -1284,6 +1292,10 @@ def produce(
             _extra_kw["hybrid_rear_drive_corner_pct"] = current_setup.hybrid_rear_drive_corner_pct
         else:
             _extra_kw["tyre_pressure_kpa"] = supporting.tyre_cold_fl_kpa
+            _extra_kw["tyre_pressure_fl_kpa"] = supporting.tyre_cold_fl_kpa
+            _extra_kw["tyre_pressure_fr_kpa"] = supporting.tyre_cold_fr_kpa
+            _extra_kw["tyre_pressure_rl_kpa"] = supporting.tyre_cold_rl_kpa
+            _extra_kw["tyre_pressure_rr_kpa"] = supporting.tyre_cold_rr_kpa
             _extra_kw["brake_bias_pct"] = supporting.brake_bias_pct
             _extra_kw["brake_bias_target"] = supporting.brake_bias_target
             _extra_kw["brake_bias_migration"] = supporting.brake_bias_migration

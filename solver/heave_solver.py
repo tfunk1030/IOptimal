@@ -313,10 +313,15 @@ class HeaveSolver:
         # Start search at 10 N/mm minimum — k=0 returns excursion=0.0 (degenerate,
         # no restoring force) which would falsely satisfy the constraint.
         lo_search = max(10.0, math.ceil(lo / 10.0) * 10)
+        hsm = self.car.heave_spring
         for rate in range(int(lo_search), int(hi) + 10, 10):
+            # Rate-dependent m_eff when calibration data is available, else fallback
+            m_eff_at_this_rate = hsm.m_eff_at_rate(axle, float(rate))
+            if m_eff_at_this_rate <= 0:
+                m_eff_at_this_rate = m_eff_kg  # fallback to passed scalar
             excursion_mm = self.excursion(
                 v_p99_mps,
-                m_eff_kg,
+                m_eff_at_this_rate,
                 float(rate),
                 axle=axle,
                 damper_coeff_nsm=damper_coeff_nsm,
@@ -352,10 +357,14 @@ class HeaveSolver:
             else self.car.heave_spring.rear_spring_range_nmm
         )
         best = float("inf")
+        hsm = self.car.heave_spring
         for rate in range(int(math.ceil(lo / 10.0) * 10), int(hi) + 10, 10):
+            m_eff_at_this_rate = hsm.m_eff_at_rate(axle, float(rate))
+            if m_eff_at_this_rate <= 0:
+                m_eff_at_this_rate = m_eff_kg
             excursion_mm = self.excursion(
                 v_p99_mps,
-                m_eff_kg,
+                m_eff_at_this_rate,
                 float(rate),
                 axle=axle,
                 damper_coeff_nsm=damper_coeff_nsm,
@@ -389,12 +398,14 @@ class HeaveSolver:
             v_p99 = (self.track.shock_vel_p99_front_clean_mps
                      if self.track.shock_vel_p99_front_clean_mps > 0
                      else self.track.shock_vel_p99_front_mps)
-            m_eff = hsm.front_m_eff_kg
+            # Rate-dependent m_eff lookup when calibration data is available;
+            # falls back to scalar front_m_eff_kg if no rate table.
+            m_eff = hsm.m_eff_at_rate("front", rate_nmm)
         else:
             v_p99 = (self.track.shock_vel_p99_rear_clean_mps
                      if self.track.shock_vel_p99_rear_clean_mps > 0
                      else self.track.shock_vel_p99_rear_mps)
-            m_eff = hsm.rear_m_eff_kg
+            m_eff = hsm.m_eff_at_rate("rear", rate_nmm)
 
         damper_coeff = (
             self.car.damper.front_hs_coefficient_nsm

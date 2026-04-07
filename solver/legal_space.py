@@ -65,10 +65,36 @@ FRONT_HEAVE_PERCH_K = 0.001614   # mm_RH / (N/mm)  — from front RH empirical m
 REAR_SPRING_PERCH_K = 0.8        # mm_perch / (N/mm) — rough empirical, rear spring dominant
 REAR_THIRD_PERCH_K = 0.3         # mm_perch / (N/mm) — rear third spring contribution
 
-# Reference values (perch = 0 at these spring rates)
-FRONT_HEAVE_SPRING_REF = 50.0    # N/mm
-REAR_THIRD_SPRING_REF = 450.0    # N/mm
-REAR_SPRING_REF = 160.0          # N/mm
+# BMW-Sebring fallback reference values (perch = 0 at these spring rates).
+# These are used ONLY when the car doesn't define its own baselines.
+# Per-car values are derived from car.heave_spring and car.corner_spring.
+_BMW_FRONT_HEAVE_SPRING_REF = 50.0    # N/mm
+_BMW_REAR_THIRD_SPRING_REF = 450.0    # N/mm
+_BMW_REAR_SPRING_REF = 160.0          # N/mm
+
+
+def _car_spring_refs(car: CarModel) -> tuple[float, float, float]:
+    """Return (front_heave_ref, rear_third_ref, rear_spring_ref) for a car.
+
+    Uses the car's documented baseline spring rates as the reference points
+    for perch offset computation. Falls back to BMW values only if the car
+    doesn't define them.
+    """
+    front_heave_ref = float(getattr(car, "front_heave_spring_nmm", _BMW_FRONT_HEAVE_SPRING_REF))
+    rear_third_ref = float(getattr(car, "rear_third_spring_nmm", _BMW_REAR_THIRD_SPRING_REF))
+    csm = getattr(car, "corner_spring", None)
+    if csm is not None and getattr(csm, "rear_spring_range_nmm", None):
+        rspr_lo, rspr_hi = csm.rear_spring_range_nmm
+        rear_spring_ref = float((rspr_lo + rspr_hi) / 2.0)
+    else:
+        rear_spring_ref = _BMW_REAR_SPRING_REF
+    return front_heave_ref, rear_third_ref, rear_spring_ref
+
+
+# Backward-compat aliases (legacy callers may import these names)
+FRONT_HEAVE_SPRING_REF = _BMW_FRONT_HEAVE_SPRING_REF
+REAR_THIRD_SPRING_REF = _BMW_REAR_THIRD_SPRING_REF
+REAR_SPRING_REF = _BMW_REAR_SPRING_REF
 
 
 def compute_perch_offsets(params: dict, car: CarModel) -> dict:
@@ -104,27 +130,25 @@ def compute_perch_offsets(params: dict, car: CarModel) -> dict:
         return preserved
 
     gr = car.garage_ranges
+    front_heave_ref, rear_third_ref, rear_spring_ref = _car_spring_refs(car)
 
-    heave_nmm = float(params.get("front_heave_spring_nmm", FRONT_HEAVE_SPRING_REF))
-    third_nmm = float(params.get("rear_third_spring_nmm", REAR_THIRD_SPRING_REF))
-    rear_nmm = float(params.get("rear_spring_rate_nmm", REAR_SPRING_REF))
+    heave_nmm = float(params.get("front_heave_spring_nmm", front_heave_ref))
+    third_nmm = float(params.get("rear_third_spring_nmm", rear_third_ref))
+    rear_nmm = float(params.get("rear_spring_rate_nmm", rear_spring_ref))
 
     # Front heave perch:
     # Stiffer heave spring raises front RH (model coeff +0.001614).
     # To compensate and keep the same RH, perch must be reduced (more negative).
-    # Δperch_front ≈ -(heave - ref) * k  where k≈0.08 mm_perch / (N/mm)
-    # (the 0.08 factor maps spring-rate-induced RH change back to perch units)
     front_perch_ref = float(getattr(gr, "front_heave_perch_ref_mm", 0.0))
-    delta_heave = heave_nmm - FRONT_HEAVE_SPRING_REF
+    delta_heave = heave_nmm - front_heave_ref
     front_heave_perch = front_perch_ref - delta_heave * 0.08
-    # Clamp to legal range
     if hasattr(gr, "front_heave_perch_mm"):
         lo, hi = gr.front_heave_perch_mm
         front_heave_perch = max(lo, min(hi, front_heave_perch))
 
     # Rear third perch: third spring rate drives third perch offset
     rear_third_perch_ref = float(getattr(gr, "rear_third_perch_ref_mm", 0.0))
-    delta_third = third_nmm - REAR_THIRD_SPRING_REF
+    delta_third = third_nmm - rear_third_ref
     rear_third_perch = rear_third_perch_ref - delta_third * REAR_THIRD_PERCH_K * 0.01
     if hasattr(gr, "rear_third_perch_mm"):
         lo, hi = gr.rear_third_perch_mm
@@ -132,7 +156,7 @@ def compute_perch_offsets(params: dict, car: CarModel) -> dict:
 
     # Rear spring perch: stiffer rear spring → less perch offset needed
     rear_spring_perch_ref = float(getattr(gr, "rear_spring_perch_ref_mm", 0.0))
-    delta_rear = rear_nmm - REAR_SPRING_REF
+    delta_rear = rear_nmm - rear_spring_ref
     rear_spring_perch = rear_spring_perch_ref - delta_rear * REAR_SPRING_PERCH_K * 0.01
     if hasattr(gr, "rear_spring_perch_mm"):
         lo, hi = gr.rear_spring_perch_mm

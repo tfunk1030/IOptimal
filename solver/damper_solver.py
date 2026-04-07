@@ -837,9 +837,11 @@ class DamperSolver:
             roll_hs_lo = dm.roll_hs_range[0]
             roll_hs_hi = dm.roll_hs_range[1]
 
-            # Roll stiffness from corner springs (approximate from wheel rate)
-            tw_f = getattr(self.car.arb, "track_width_front_mm", 1700.0) / 1000.0  # m
-            tw_r = getattr(self.car.arb, "track_width_rear_mm", 1620.0) / 1000.0
+            # Roll stiffness from corner springs (approximate from wheel rate).
+            # Track widths come from the car-specific ARB model — every car
+            # must define them; the BMW fallback was hiding configuration gaps.
+            tw_f = float(self.car.arb.track_width_front_mm) / 1000.0  # m
+            tw_r = float(self.car.arb.track_width_rear_mm) / 1000.0
             # Roll stiffness from springs: K_roll = 2 * k_wheel * (t/2)^2
             k_roll_springs = (
                 2.0 * front_wheel_rate_nmm * 1000.0 * (tw_f / 2) ** 2
@@ -1113,8 +1115,14 @@ class DamperSolver:
             # Propagate roll damper values from base solve
             front_roll_ls=base.front_roll_ls,
             front_roll_hs=base.front_roll_hs,
+            front_roll_hs_slope=base.front_roll_hs_slope,
             rear_roll_ls=base.rear_roll_ls,
             rear_roll_hs=base.rear_roll_hs,
+            # Propagate rear 3rd damper values from base solve
+            rear_3rd_ls_comp=base.rear_3rd_ls_comp,
+            rear_3rd_hs_comp=base.rear_3rd_hs_comp,
+            rear_3rd_ls_rbd=base.rear_3rd_ls_rbd,
+            rear_3rd_hs_rbd=base.rear_3rd_hs_rbd,
             # Propagate heave damper values from base solve
             front_heave_damper=base.front_heave_damper,
             rear_heave_damper=base.rear_heave_damper,

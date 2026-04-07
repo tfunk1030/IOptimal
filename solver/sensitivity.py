@@ -496,14 +496,15 @@ def build_sensitivity_report(
             ),
         ))
 
-    # Heave sensitivities — use per-car m_eff if available, else BMW defaults
-    _m_eff_front = 228.0  # BMW fallback
-    _m_eff_rear = 2395.3  # BMW fallback
+    # Heave sensitivities — read m_eff from the car model. Every car must
+    # define these; sensitivity bands are skipped if no car is provided.
+    _m_eff_front: float = 0.0
+    _m_eff_rear: float = 0.0
     if car is not None:
         _hs = getattr(car, "heave_spring", None)
         if _hs is not None:
-            _m_eff_front = getattr(_hs, "front_m_eff_kg", _m_eff_front)
-            _m_eff_rear = getattr(_hs, "rear_m_eff_kg", _m_eff_rear)
+            _m_eff_front = float(getattr(_hs, "front_m_eff_kg", 0.0))
+            _m_eff_rear = float(getattr(_hs, "rear_m_eff_kg", 0.0))
     report.sensitivities.extend(compute_heave_sensitivities(
         v_p99_front_mps=step2.front_shock_vel_p99_mps,
         v_p99_rear_mps=step2.rear_shock_vel_p99_mps,
@@ -526,24 +527,24 @@ def build_sensitivity_report(
             ),
         ))
 
-    # Confidence bands
+    # Confidence bands — use per-car m_eff (no BMW hardcodes)
     report.confidence_bands.append(compute_heave_confidence(
         v_p99_mps=step2.front_shock_vel_p99_mps,
-        m_eff_kg=228.0,
+        m_eff_kg=_m_eff_front,
         k_nmm=step2.front_heave_nmm,
         excursion_mm=step2.front_excursion_at_rate_mm,
         axle="front",
     ))
     report.confidence_bands.append(compute_heave_confidence(
         v_p99_mps=step2.rear_shock_vel_p99_mps,
-        m_eff_kg=2395.3,
+        m_eff_kg=_m_eff_rear,
         k_nmm=step2.rear_third_nmm,
         excursion_mm=step2.rear_excursion_at_rate_mm,
         axle="rear",
     ))
     report.confidence_bands.append(compute_excursion_confidence(
         v_p99_mps=step2.front_shock_vel_p99_mps,
-        m_eff_kg=228.0,
+        m_eff_kg=_m_eff_front,
         k_nmm=step2.front_heave_nmm,
         excursion_mm=step2.front_excursion_at_rate_mm,
         axle="front",

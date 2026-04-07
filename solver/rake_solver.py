@@ -315,9 +315,13 @@ class RakeSolver:
                     baseline_third_nmm = float(public_output_value('ferrari', 'rear_third_nmm', baseline_third_nmm))
                     baseline_rear_spring = float(public_output_value('ferrari', 'rear_spring_rate_nmm', baseline_rear_spring))
                     baseline_heave_perch = self.car.heave_spring.perch_offset_rear_baseline_mm
+                baseline_fuel = getattr(self.car, 'fuel_capacity_l', 58.0)
+                baseline_spring_perch = self.car.corner_spring.rear_spring_perch_baseline_mm
                 rear_pushrod = rh_model.pushrod_for_target_rh(
                     static_rear, baseline_third_nmm,
                     baseline_rear_spring, baseline_heave_perch,
+                    fuel_l=baseline_fuel,
+                    spring_perch_mm=baseline_spring_perch,
                 )
             else:
                 rear_pushrod = self.car.pushrod.rear_offset_for_rh(static_rear)
@@ -337,6 +341,8 @@ class RakeSolver:
                 static_rear = rh_model.predict_rear_static_rh(
                     rear_pushrod, baseline_third_nmm,
                     baseline_rear_spring, baseline_heave_perch,
+                    fuel_l=baseline_fuel,
+                    spring_perch_mm=baseline_spring_perch,
                 )
             else:
                 static_rear = self.car.pushrod.rear_rh_for_offset(rear_pushrod)
@@ -620,6 +626,44 @@ class RakeSolver:
             )
             dyn_rear = best_rear
 
+        # ── Garage feasibility check ──────────────────────────────────
+        # The rear dynamic RH implies a static RH (via aero compression).
+        # If that static RH requires a pushrod beyond the garage range, cap
+        # the dynamic rear to the maximum achievable and accept the balance
+        # error rather than producing an impossible setup.
+        rear_comp = comp.rear_at_speed(track_speed)
+        implied_static_rear = dyn_rear + rear_comp
+        pushrod_range = self.car.garage_ranges.rear_pushrod_mm
+        max_pushrod = pushrod_range[1]  # upper garage limit
+
+        rh_model = self.car.ride_height_model
+        if rh_model.is_calibrated and abs(rh_model.rear_coeff_pushrod) > 1e-6:
+            # Compute the max static rear RH achievable at max pushrod
+            # using baseline spring values (step 2/3 haven't run yet)
+            baseline_third = self.car.rear_third_spring_nmm
+            baseline_spring = self.car.corner_spring.rear_spring_range_nmm[0]
+            baseline_perch = self.car.heave_spring.perch_offset_rear_baseline_mm
+            baseline_fuel = getattr(self.car, 'fuel_capacity_l', 58.0)
+            baseline_spring_perch = self.car.corner_spring.rear_spring_perch_baseline_mm
+            max_static_rear = rh_model.predict_rear_static_rh(
+                max_pushrod, baseline_third, baseline_spring,
+                baseline_perch, fuel_l=baseline_fuel,
+                spring_perch_mm=baseline_spring_perch,
+            )
+            if implied_static_rear > max_static_rear:
+                # Cap to maximum achievable
+                capped_dyn_rear = max_static_rear - rear_comp
+                capped_bal, _ = self._query_aero(dyn_front, capped_dyn_rear)
+                import warnings
+                warnings.warn(
+                    f"[rake_solver] Target rear static RH {implied_static_rear:.1f}mm "
+                    f"exceeds garage max ({max_static_rear:.1f}mm at pushrod={max_pushrod}mm). "
+                    f"Capping rear dynamic to {capped_dyn_rear:.1f}mm "
+                    f"(DF balance {capped_bal:.2f}% vs target {target_balance:.2f}%).",
+                    stacklevel=3,
+                )
+                dyn_rear = capped_dyn_rear
+
         # Also find the free-optimization L/D for comparison
         free_opt_ld = self._find_free_max_ld(target_balance, front_excursion_p99)
 
@@ -795,6 +839,48 @@ def reconcile_ride_heights(
             car.min_rear_rh_static,
             round(corrected_dynamic_rear + step1.aero_compression_rear_mm, 3),
         )
+
+        # ── Garage feasibility: cap rear static RH to what pushrod can achieve ──
+        _pushrod_lo, _pushrod_hi = car.garage_ranges.rear_pushrod_mm
+        _test_rear_pushrod = garage_model.rear_pushrod_for_static_rh(
+            target_rear_rh,
+            rear_third_nmm=step2.rear_third_nmm,
+            rear_third_perch_mm=step2.perch_offset_rear_mm,
+            rear_spring_nmm=step3.rear_spring_rate_nmm,
+            rear_spring_perch_mm=step3.rear_spring_perch_mm,
+            front_heave_perch_mm=step2.perch_offset_front_mm,
+            fuel_l=fuel_load_l,
+        )
+        if _test_rear_pushrod > _pushrod_hi or _test_rear_pushrod < _pushrod_lo:
+            _clamped_pushrod = max(_pushrod_lo, min(_pushrod_hi, _test_rear_pushrod))
+            _test_state = GarageSetupState(
+                front_pushrod_mm=step1.front_pushrod_offset_mm,
+                rear_pushrod_mm=_clamped_pushrod,
+                front_heave_nmm=float(step2.front_heave_nmm),
+                front_heave_perch_mm=float(step2.perch_offset_front_mm),
+                rear_third_nmm=float(step2.rear_third_nmm),
+                rear_third_perch_mm=float(step2.perch_offset_rear_mm),
+                front_torsion_od_mm=float(step3.front_torsion_od_mm),
+                rear_spring_nmm=float(step3.rear_spring_rate_nmm),
+                rear_spring_perch_mm=float(step3.rear_spring_perch_mm),
+                front_camber_deg=float(car.geometry.front_camber_baseline_deg),
+                fuel_l=float(fuel_load_l),
+            )
+            _max_rear_rh = garage_model.predict(_test_state).rear_static_rh_mm
+            if verbose:
+                _capped_dyn = _max_rear_rh - step1.aero_compression_rear_mm
+                _capped_bal, _ = (
+                    RakeSolver(car, surface, track)._query_aero(step1.dynamic_front_rh_mm, _capped_dyn)
+                    if surface is not None and track is not None
+                    else (0.0, 0.0)
+                )
+                print(
+                    f"  Rear RH capped: target {target_rear_rh:.1f}mm exceeds garage "
+                    f"(max {_max_rear_rh:.1f}mm at pushrod={_clamped_pushrod:.1f}mm). "
+                    f"DF balance achievable: {_capped_bal:.2f}%"
+                )
+            target_rear_rh = _max_rear_rh
+            corrected_dynamic_rear = target_rear_rh - step1.aero_compression_rear_mm
 
         # Solve for pushrod + perch to achieve target front RH.
         # When the heave spring changes (e.g., 180→600 N/mm), the pushrod alone
@@ -985,9 +1071,11 @@ def reconcile_ride_heights(
             _rear_spring_for_rh = float(public_output_value('ferrari', 'rear_spring_rate_nmm', actual_rear_spring))
             _heave_perch_for_rh = step2.perch_offset_rear_mm
 
+        _fuel_for_rh = getattr(car, 'fuel_capacity_l', 58.0)
         predicted_rh = rh_model.predict_rear_static_rh(
             step1.rear_pushrod_offset_mm, _third_for_rh,
             _rear_spring_for_rh, _heave_perch_for_rh,
+            fuel_l=_fuel_for_rh,
             spring_perch_mm=actual_spring_perch,
         )
         rh_error = predicted_rh - step1.static_rear_rh_mm
@@ -996,12 +1084,14 @@ def reconcile_ride_heights(
             new_pushrod = rh_model.pushrod_for_target_rh(
                 step1.static_rear_rh_mm, _third_for_rh,
                 _rear_spring_for_rh, _heave_perch_for_rh,
+                fuel_l=_fuel_for_rh,
                 spring_perch_mm=actual_spring_perch,
             )
             new_pushrod = round(new_pushrod * 2) / 2  # snap to 0.5mm
             new_rh = rh_model.predict_rear_static_rh(
                 new_pushrod, _third_for_rh,
                 _rear_spring_for_rh, _heave_perch_for_rh,
+                fuel_l=_fuel_for_rh,
                 spring_perch_mm=actual_spring_perch,
             )
             if verbose:

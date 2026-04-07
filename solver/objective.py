@@ -798,15 +798,16 @@ class ObjectiveFunction:
         rear_arb_blade = int(params.get("rear_arb_blade",
                                          getattr(car.arb, "rear_baseline_blade", 3)))
 
-        # Damper clicks
-        f_ls_comp = int(params.get("front_ls_comp", 7))
-        f_ls_rbd = int(params.get("front_ls_rbd", 7))
-        f_hs_comp = int(params.get("front_hs_comp", 5))
-        f_hs_rbd = int(params.get("front_hs_rbd", 5))
-        r_ls_comp = int(params.get("rear_ls_comp", 6))
-        r_ls_rbd = int(params.get("rear_ls_rbd", 7))
-        r_hs_comp = int(params.get("rear_hs_comp", 3))
-        r_hs_rbd = int(params.get("rear_hs_rbd", 3))
+        # Damper clicks — defaults from per-car baselines (not BMW hardcodes)
+        _dm = car.damper
+        f_ls_comp = int(params.get("front_ls_comp", _dm.front_ls_comp_baseline))
+        f_ls_rbd = int(params.get("front_ls_rbd", _dm.front_ls_rbd_baseline))
+        f_hs_comp = int(params.get("front_hs_comp", _dm.front_hs_comp_baseline))
+        f_hs_rbd = int(params.get("front_hs_rbd", _dm.front_hs_rbd_baseline))
+        r_ls_comp = int(params.get("rear_ls_comp", _dm.rear_ls_comp_baseline))
+        r_ls_rbd = int(params.get("rear_ls_rbd", _dm.rear_ls_rbd_baseline))
+        r_hs_comp = int(params.get("rear_hs_comp", _dm.rear_hs_comp_baseline))
+        r_hs_rbd = int(params.get("rear_hs_rbd", _dm.rear_hs_rbd_baseline))
 
         # ── Wheel rates ─────────────────────────────────────────────────
         # Ferrari: indexed torsion bars at both ends — use FerrariIndexedControlModel.

@@ -639,9 +639,15 @@ def run_solver(args: "argparse.Namespace") -> None:
             from solver.sector_compromise import SectorCompromise
             from solver.supporting_solver import compute_brake_bias as _cbias_sec
             _bias_sec, _ = _cbias_sec(car, fuel_load_l=args.fuel)
+            # Use the solved camber if available, else the car-specific baseline
+            _base_camber = (
+                step5.front_camber_deg if step5 is not None
+                else car.geometry.front_camber_baseline_deg
+            )
             sector_result = SectorCompromise(track).analyze(
                 step1=step1, step2=step2, step4=step4,
                 base_bias_pct=_bias_sec,
+                base_camber_deg=_base_camber,
             )
         except Exception as e:
             log(f"[sector] Skipped: {e}")

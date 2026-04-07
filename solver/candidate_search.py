@@ -110,8 +110,16 @@ def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> 
         if getattr(car, "canonical_name", "") == "ferrari":
             s3["front_torsion_od_mm"] = _snap_step(s3["front_torsion_od_mm"], rear_spring_step, torsion_range[0], torsion_range[1])
         else:
-            options = getattr(getattr(car, "corner_spring", None), "front_torsion_od_options", None) or _TORSION_OD_OPTIONS
-            s3["front_torsion_od_mm"] = _snap_nearest(s3["front_torsion_od_mm"], list(options))
+            # Use car-specific torsion OD options. Cars without torsion bars
+            # (Porsche, Acura) should have an empty list — leave the value
+            # untouched rather than silently snapping to BMW options.
+            options = getattr(getattr(car, "corner_spring", None), "front_torsion_od_options", None)
+            if options:
+                s3["front_torsion_od_mm"] = _snap_nearest(s3["front_torsion_od_mm"], list(options))
+            elif getattr(getattr(car, "corner_spring", None), "front_torsion_c", 0.0) > 0:
+                # Car has torsion bar physics but no explicit option list:
+                # fall back to the BMW grid (legacy behavior).
+                s3["front_torsion_od_mm"] = _snap_nearest(s3["front_torsion_od_mm"], _TORSION_OD_OPTIONS)
     if "rear_spring_rate_nmm" in s3 and isinstance(s3["rear_spring_rate_nmm"], (int, float)):
         s3["rear_spring_rate_nmm"] = _snap_step(s3["rear_spring_rate_nmm"], rear_spring_step, rear_spring_range[0], rear_spring_range[1])
     if "rear_spring_perch_mm" in s3 and isinstance(s3["rear_spring_perch_mm"], (int, float)):
@@ -810,7 +818,11 @@ def _estimate_candidate_disruption(current_session: Any, candidate: SetupCandida
     _append(getattr(setup, "diff_preload_nm", None), getattr(candidate.supporting, "diff_preload_nm", None), 20.0)
     _append(getattr(setup, "diff_clutch_plates", None), getattr(candidate.supporting, "diff_clutch_plates", None), 2.0)
     _append(
-        diff_ramp_option_index("bmw", diff_ramp_angles=getattr(setup, "diff_ramp_angles", None), default=1),
+        diff_ramp_option_index(
+            car_name or "bmw",
+            diff_ramp_angles=getattr(setup, "diff_ramp_angles", None),
+            default=1,
+        ),
         getattr(candidate.supporting, "diff_ramp_option_idx", None),
         1.0,
     )

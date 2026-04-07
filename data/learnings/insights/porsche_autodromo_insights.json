@@ -1,9 +1,9 @@
 {
   "car": "porsche",
   "track": "Autodromo Internacional do Algarve",
-  "session_count": 64,
+  "session_count": 85,
   "key_insights": [
-    "Lap time range: 92.188s \u2013 109.216s (17.028s window across 64 sessions)",
+    "Lap time range: 92.188s \u2013 109.216s (17.028s window across 85 sessions)",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
@@ -41,13 +41,21 @@
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
-    "Measured roll gradient: 0.178 deg/g (+/- 0.050)"
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "Measured roll gradient: 0.175 deg/g (+/- 0.053)"
   ],
   "setup_trends": [
-    "front_heave_nmm: trending decreasing (180.0 -> 150.0 over 64 sessions)",
-    "rear_arb_blade: trending increasing (2.0 -> 16.0 over 64 sessions)",
-    "front_camber_deg: trending increasing (-2.8 -> -2.6 over 64 sessions)",
-    "rear_camber_deg: trending increasing (-1.9 -> -1.8 over 64 sessions)"
+    "rear_third_nmm: trending increasing (80.0 -> 160.0 over 85 sessions)",
+    "rear_arb_blade: trending increasing (2.0 -> 10.0 over 85 sessions)",
+    "rear_camber_deg: trending increasing (-1.9 -> -1.8 over 85 sessions)"
   ],
   "unresolved_questions": []
 }

@@ -154,7 +154,7 @@ class GarageOutputModel:
     heave_spring_defl_max_intercept_mm: float = 106.43
     heave_spring_defl_max_slope: float = -0.310
 
-    # Front static RH fit
+    # Front static RH fit (linear terms)
     front_intercept: float = 0.0
     front_coeff_pushrod: float = 0.0
     front_coeff_heave_nmm: float = 0.0
@@ -162,8 +162,10 @@ class GarageOutputModel:
     front_coeff_torsion_od_mm: float = 0.0
     front_coeff_camber_deg: float = 0.0
     front_coeff_fuel_l: float = 0.0
+    # Front compliance terms (physics-correct: ∝ 1/k under aero load)
+    front_coeff_inv_heave_nmm: float = 0.0
 
-    # Rear static RH fit
+    # Rear static RH fit (linear terms)
     rear_intercept: float = 0.0
     rear_coeff_pushrod: float = 0.0
     rear_coeff_third_nmm: float = 0.0
@@ -172,6 +174,9 @@ class GarageOutputModel:
     rear_coeff_rear_spring_perch_mm: float = 0.0
     rear_coeff_front_heave_perch_mm: float = 0.0
     rear_coeff_fuel_l: float = 0.0
+    # Rear compliance terms (physics-correct: ∝ 1/k under aero load)
+    rear_coeff_inv_third_nmm: float = 0.0
+    rear_coeff_inv_rear_spring_nmm: float = 0.0
 
     # Torsion turns fit
     torsion_turns_intercept: float = 0.0
@@ -229,10 +234,14 @@ class GarageOutputModel:
 
     def predict_front_static_rh_raw(self, setup: GarageSetupState) -> float:
         """Predict unclamped front static ride height from the garage state."""
+        inv_heave = 0.0
+        if abs(self.front_coeff_inv_heave_nmm) > 1e-9 and setup.front_heave_nmm > 0:
+            inv_heave = 1.0 / setup.front_heave_nmm
         return (
             self.front_intercept
             + self.front_coeff_pushrod * setup.front_pushrod_mm
             + self.front_coeff_heave_nmm * setup.front_heave_nmm
+            + self.front_coeff_inv_heave_nmm * inv_heave
             + self.front_coeff_heave_perch_mm * setup.front_heave_perch_mm
             + self.front_coeff_torsion_od_mm * setup.front_torsion_od_mm
             + self.front_coeff_camber_deg * setup.front_camber_deg
@@ -251,12 +260,20 @@ class GarageOutputModel:
 
     def predict_rear_static_rh(self, setup: GarageSetupState) -> float:
         """Predict rear static ride height."""
+        inv_third = 0.0
+        if abs(self.rear_coeff_inv_third_nmm) > 1e-9 and setup.rear_third_nmm > 0:
+            inv_third = 1.0 / setup.rear_third_nmm
+        inv_rspring = 0.0
+        if abs(self.rear_coeff_inv_rear_spring_nmm) > 1e-9 and setup.rear_spring_nmm > 0:
+            inv_rspring = 1.0 / setup.rear_spring_nmm
         return (
             self.rear_intercept
             + self.rear_coeff_pushrod * setup.rear_pushrod_mm
             + self.rear_coeff_third_nmm * setup.rear_third_nmm
+            + self.rear_coeff_inv_third_nmm * inv_third
             + self.rear_coeff_third_perch_mm * setup.rear_third_perch_mm
             + self.rear_coeff_rear_spring_nmm * setup.rear_spring_nmm
+            + self.rear_coeff_inv_rear_spring_nmm * inv_rspring
             + self.rear_coeff_rear_spring_perch_mm * setup.rear_spring_perch_mm
             + self.rear_coeff_front_heave_perch_mm * setup.front_heave_perch_mm
             + self.rear_coeff_fuel_l * setup.fuel_l
@@ -339,9 +356,11 @@ class GarageOutputModel:
         if abs(self.front_coeff_pushrod) < 1e-9:
             return self.default_front_pushrod_mm
         target = max(target_rh_mm, self.front_rh_floor_mm)
+        inv_heave = 1.0 / front_heave_nmm if (abs(self.front_coeff_inv_heave_nmm) > 1e-9 and front_heave_nmm > 0) else 0.0
         other = (
             self.front_intercept
             + self.front_coeff_heave_nmm * front_heave_nmm
+            + self.front_coeff_inv_heave_nmm * inv_heave
             + self.front_coeff_heave_perch_mm * front_heave_perch_mm
             + self.front_coeff_torsion_od_mm * front_torsion_od_mm
             + self.front_coeff_camber_deg * front_camber_deg
@@ -363,11 +382,15 @@ class GarageOutputModel:
         """Invert the rear RH regression to a pushrod offset."""
         if abs(self.rear_coeff_pushrod) < 1e-9:
             return self.default_rear_pushrod_mm
+        inv_third = 1.0 / rear_third_nmm if (abs(self.rear_coeff_inv_third_nmm) > 1e-9 and rear_third_nmm > 0) else 0.0
+        inv_rspring = 1.0 / rear_spring_nmm if (abs(self.rear_coeff_inv_rear_spring_nmm) > 1e-9 and rear_spring_nmm > 0) else 0.0
         other = (
             self.rear_intercept
             + self.rear_coeff_third_nmm * rear_third_nmm
+            + self.rear_coeff_inv_third_nmm * inv_third
             + self.rear_coeff_third_perch_mm * rear_third_perch_mm
             + self.rear_coeff_rear_spring_nmm * rear_spring_nmm
+            + self.rear_coeff_inv_rear_spring_nmm * inv_rspring
             + self.rear_coeff_rear_spring_perch_mm * rear_spring_perch_mm
             + self.rear_coeff_front_heave_perch_mm * front_heave_perch_mm
             + self.rear_coeff_fuel_l * fuel_l
@@ -410,7 +433,13 @@ class GarageOutputModel:
         third_slider_defl_static = 0.0
         if self.deflection is not None:
             front_shock_defl_static = self.deflection.shock_defl_front(setup.front_pushrod_mm)
-            rear_shock_defl_static = self.deflection.shock_defl_rear(setup.rear_pushrod_mm)
+            rear_shock_defl_static = self.deflection.shock_defl_rear(
+                setup.rear_pushrod_mm,
+                third_rate_nmm=setup.rear_third_nmm,
+                spring_rate_nmm=setup.rear_spring_nmm,
+                third_perch_mm=setup.rear_third_perch_mm,
+                spring_perch_mm=setup.rear_spring_perch_mm,
+            )
             torsion_bar_rate = self.torsion_bar_rate_c * setup.front_torsion_od_mm ** 4
             torsion_bar_defl = self.deflection.torsion_bar_defl(
                 setup.front_heave_nmm,
@@ -420,6 +449,9 @@ class GarageOutputModel:
             rear_spring_defl_static = self.deflection.rear_spring_defl_static(
                 setup.rear_spring_nmm,
                 setup.rear_spring_perch_mm,
+                third_rate_nmm=setup.rear_third_nmm,
+                third_perch_mm=setup.rear_third_perch_mm,
+                pushrod_mm=setup.rear_pushrod_mm,
             )
             rear_spring_defl_max = self.deflection.rear_spring_defl_max(
                 setup.rear_spring_nmm,
@@ -428,6 +460,9 @@ class GarageOutputModel:
             third_spring_defl_static = self.deflection.third_spring_defl_static(
                 setup.rear_third_nmm,
                 setup.rear_third_perch_mm,
+                spring_rate_nmm=setup.rear_spring_nmm,
+                spring_perch_mm=setup.rear_spring_perch_mm,
+                pushrod_mm=setup.rear_pushrod_mm,
             )
             third_spring_defl_max = self.deflection.third_spring_defl_max(
                 setup.rear_third_nmm,
