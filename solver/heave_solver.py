@@ -237,11 +237,19 @@ class HeaveSolver:
             if is_front
             else self.car.rear_third_spring_nmm
         )
+        # NOTE: m_eff is the modal sprung mass at the heave mode — a constant
+        # for the car, NOT a function of stiffness. Earlier code passed
+        # parallel_wheel_rate_nmm into the legacy rescaling, which inflates
+        # m_eff by the compliance ratio when a parallel corner spring exists
+        # (Porsche). That double-counts the parallel contribution: m grows
+        # ~1.6x while k only grows ~1.1x in excursion, predicting ~20% higher
+        # excursion than physics. The parallel rate must only enter through
+        # k_eff inside damped_excursion_mm; m_eff scaling is reference-only.
         return legacy_mass_to_shared_model_kg(
             legacy_m_eff_kg,
             reference_rate_nmm,
             tyre_vertical_rate_nmm=tyre_rate_nmm,
-            parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+            parallel_wheel_rate_nmm=0.0,
         )
 
     def excursion(
@@ -345,8 +353,39 @@ class HeaveSolver:
         axle: str = "front",
         damper_coeff_nsm: float = 0.0,
         parallel_wheel_rate_nmm: float = 0.0,
+        current_rate_nmm: float | None = None,
+        current_meas_sigma_mm: float | None = None,
+        target_margin: float = 1.05,
     ) -> float:
         """Minimum spring rate (N/mm) to keep sigma below target.
+
+        When ``current_rate_nmm`` and ``current_meas_sigma_mm`` are provided
+        (the driver's currently-loaded setup + the IBT-measured rear/front
+        RH std at that setup), the σ model is calibrated against the
+        measured value at the current rate, and the effective σ-target is
+        anchored on what the driver actually achieves rather than the
+        loose user-set default.
+
+        Calibration math:
+            cal_ratio = current_meas_sigma_mm / model_sigma(current_rate)
+            effective_meas_target = min(sigma_target_mm,
+                                        current_meas_sigma_mm * target_margin)
+            effective_model_target = effective_meas_target / cal_ratio
+
+        Then the search returns the minimum rate where model σ ≤
+        effective_model_target. With target_margin = 1.05, the algorithm
+        produces a rate that gives a measured σ ~5 % looser than the
+        driver's current operating point — preserving the driver-validated
+        choice while allowing slight softening when other constraints
+        permit it.
+
+        cal_ratio is sanity-clamped to [0.5, 2.0] to reject outliers
+        (e.g., a single bad lap with crazy RH transients).
+
+        Validated against Porsche/Algarve IBT 14-23-44 (driver rate 160,
+        measured σ=6.26, model σ at 160 = 7.34): cal_ratio = 0.853,
+        effective_meas_target = 6.57, effective_model_target = 7.71,
+        algorithm returns 140-160 N/mm — within 1 step of driver-validated.
         """
         excursion_limit = sigma_target_mm * 2.33
         if excursion_limit <= 0:
@@ -356,8 +395,71 @@ class HeaveSolver:
             if axle == "front"
             else self.car.heave_spring.rear_spring_range_nmm
         )
-        best = float("inf")
         hsm = self.car.heave_spring
+
+        # ── σ calibration anchor (per-session, current-setup-driven) ──
+        cal_ratio = 1.0
+        effective_target = float(sigma_target_mm)
+        if (current_rate_nmm is not None and current_rate_nmm > 0
+                and current_meas_sigma_mm is not None and current_meas_sigma_mm > 0):
+            anchor_m_eff = hsm.m_eff_at_rate(axle, float(current_rate_nmm))
+            if anchor_m_eff <= 0:
+                anchor_m_eff = m_eff_kg
+            anchor_exc = self.excursion(
+                v_p99_mps,
+                anchor_m_eff,
+                float(current_rate_nmm),
+                axle=axle,
+                damper_coeff_nsm=damper_coeff_nsm,
+                parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+            )
+            anchor_model_sigma = self.sigma_from_excursion(anchor_exc)
+            if anchor_model_sigma > 0:
+                raw_ratio = float(current_meas_sigma_mm) / anchor_model_sigma
+                # Clamp to reject outliers (one bad lap shouldn't dictate setup)
+                cal_ratio = max(0.5, min(2.0, raw_ratio))
+                # Effective σ-target in MEASURED units: tighter of (a) the
+                # driver's current operating σ * margin, (b) the user's loose
+                # default. Driver-anchored σ wins when it's tighter than the
+                # default — which is the normal case for well-driven cars.
+                effective_meas_target = min(
+                    float(sigma_target_mm),
+                    float(current_meas_sigma_mm) * target_margin,
+                )
+                # Translate target to MODEL units via the calibration ratio
+                effective_target = effective_meas_target / cal_ratio
+                # Floor at 3 mm so we never search for absurdly stiff rates
+                effective_target = max(effective_target, 3.0)
+
+        # ── Sticky-anchor pre-check ──
+        # When the driver-loaded current rate satisfies the σ-target (within
+        # epsilon), return it. This prevents one-step drift caused by the
+        # synthetic σ model's gradient slightly mis-matching reality at the
+        # calibration anchor — without it the algorithm picks the next rate
+        # softer than the driver because the model says "good enough" at the
+        # softer rate by a tiny margin.
+        STICKY_EPSILON_MM = 0.05  # ~5 µm of measured σ — within model precision
+        if (current_rate_nmm is not None and current_rate_nmm > 0
+                and lo - 1e-6 <= current_rate_nmm <= hi + 1e-6):
+            anchor_m_eff = hsm.m_eff_at_rate(axle, float(current_rate_nmm))
+            if anchor_m_eff <= 0:
+                anchor_m_eff = m_eff_kg
+            anchor_exc = self.excursion(
+                v_p99_mps,
+                anchor_m_eff,
+                float(current_rate_nmm),
+                axle=axle,
+                damper_coeff_nsm=damper_coeff_nsm,
+                parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+            )
+            anchor_sigma_now = self.sigma_from_excursion(anchor_exc)
+            if anchor_sigma_now <= effective_target + STICKY_EPSILON_MM:
+                # Snap current rate to the 10 N/mm garage step (round nearest)
+                snapped = round(current_rate_nmm / 10.0) * 10
+                snapped = max(int(math.ceil(lo / 10.0) * 10), min(int(hi), snapped))
+                return float(snapped)
+
+        best = float("inf")
         for rate in range(int(math.ceil(lo / 10.0) * 10), int(hi) + 10, 10):
             m_eff_at_this_rate = hsm.m_eff_at_rate(axle, float(rate))
             if m_eff_at_this_rate <= 0:
@@ -371,7 +473,7 @@ class HeaveSolver:
                 parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
             )
             sigma_mm = self.sigma_from_excursion(excursion_mm)
-            if sigma_mm <= sigma_target_mm + 1e-6:
+            if sigma_mm <= effective_target + 1e-6:
                 best = float(rate)
                 break
         return best
@@ -710,6 +812,7 @@ class HeaveSolver:
         rear_hs_damper_nsm: float | None = None,
         measured: object | None = None,
         front_heave_current_nmm: float | None = None,
+        rear_third_current_nmm: float | None = None,
     ) -> HeaveSolution:
         """Find minimum safe heave/third spring rates.
 
@@ -774,12 +877,22 @@ class HeaveSolver:
             damper_coeff_nsm=front_damper_coeff,
         )
         # Platform stability uses high-speed-only p99 (accuracy — only high-speed matters for aero)
+        # Pass driver's CURRENT front_heave + IBT-measured front_rh_std as the
+        # σ calibration anchor. min_rate_for_sigma uses this to translate the
+        # synthetic σ model to MEASURED σ space and target the driver's current
+        # operating point (typically tighter than the loose default 10 mm).
+        _front_meas_sigma = (
+            float(getattr(measured, "front_rh_std_mm", 0.0) or 0.0)
+            if measured is not None else 0.0
+        )
         k_front_sigma = self.min_rate_for_sigma(
             v_front_platform,
             m_front,
             hsm.sigma_target_mm,
             axle="front",
             damper_coeff_nsm=front_damper_coeff,
+            current_rate_nmm=front_heave_current_nmm,
+            current_meas_sigma_mm=_front_meas_sigma,
         )
 
         if k_front_bottoming >= k_front_sigma:
@@ -832,6 +945,12 @@ class HeaveSolver:
             parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
         )
         # Platform stability: high-speed-only (accuracy)
+        # σ calibration anchor: driver's current rear_third + IBT-measured rear_rh_std.
+        # See min_rate_for_sigma docstring for the calibration math.
+        _rear_meas_sigma = (
+            float(getattr(measured, "rear_rh_std_mm", 0.0) or 0.0)
+            if measured is not None else 0.0
+        )
         k_rear_sigma = self.min_rate_for_sigma(
             v_rear_platform,
             m_rear,
@@ -839,6 +958,8 @@ class HeaveSolver:
             axle="rear",
             damper_coeff_nsm=rear_damper_coeff,
             parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
+            current_rate_nmm=rear_third_current_nmm,
+            current_meas_sigma_mm=_rear_meas_sigma,
         )
 
         if k_rear_bottoming >= k_rear_sigma:

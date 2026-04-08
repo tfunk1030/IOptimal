@@ -158,7 +158,7 @@ class SetupExplorer:
         if k_front + k_rear <= 0:
             return 0.0
         lltd = k_front / (k_front + k_rear)
-        tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.20)
+        tyre_sens = self.car.tyre_load_sensitivity
         optimal_lltd = self.car.weight_dist_front + (tyre_sens / 0.20) * 0.05
         return max(0.0, 1.0 - abs(lltd - optimal_lltd) / 0.10)
 

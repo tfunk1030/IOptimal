@@ -1,20 +1,48 @@
 # Repo Audit
 
-Generated: 2026-03-26T00:49:21.470977+00:00  
-Updated: 2026-04-04 (calibration gate + objective improvements)
+Generated: 2026-03-26T00:49:21.470977+00:00
+Updated: 2026-04-08 (LLTD phantom proxy disabled, σ-cal driver anchor architecture, per-axle roll damper flags, rear roll damper writer bug fixed)
+
+## 2026-04-08 Highlights
+
+- **🚨 LLTD phantom proxy disabled** (`auto_calibrate.py:1360`, `data/calibration/porsche/models.json`, `cars.py` Porsche def). The field `lltd_measured` was a misnamed alias for `roll_distribution_proxy`, a geometric ratio insensitive to spring stiffness (verified across 5 IBTs with R_third varying 100%: spread 0.09 pp). The "11 pp model gap" the ARB solver was chasing was apples-to-oranges. Porsche now uses the OptimumG/Milliken physics formula `0.521` as the LLTD target. Open epistemic gap: no true LLTD measurement available from iRacing IBT.
+- **σ-calibration architecture** (`solver/heave_solver.py:min_rate_for_sigma`): accepts `current_rate_nmm` + `current_meas_sigma_mm`, computes `cal_ratio = meas / model_at_current` (clamped [0.5, 2.0]), translates user σ-target to model space, sticky pre-check returns driver rate when its model_σ ≤ effective target + 0.05 mm. Wired through `_run_sequential_solver` and `materialize_overrides` paths in `solve_chain.py`.
+- **Driver-anchor pattern** rolled out across 5 solvers: `heave_solver` (σ sticky), `corner_spring_solver` (direct R_coil), `arb_solver` (LLTD-fallback), `diff_solver` (coast/drive/preload), `supporting_solver` (TC + parses driver coast/drive from "40/65" string), `candidate_search` (skip-scale-when-anchored guard). All anchors are explicit, provenance-tracked, and never lap-time-driven.
+- **Per-axle roll damper flags** (`car_model/cars.py:DamperModel`): added `has_front_roll_damper` and `has_rear_roll_damper`. Porsche set to `front=True / rear=False` (Multimatic has front roll damper but rear roll is implicit in per-corner shocks). Acura set to `both=True`. Setup writer (`output/setup_writer.py:1069`) and damper solver (`solver/damper_solver.py:790`) gate roll damper output on these flags. Fix removes phantom `CarSetup_Dampers_RearRoll_*` XML IDs from Porsche `.sto` output.
+- **`solution_from_explicit_offsets` fix** (`solver/rake_solver.py:493`): when caller provides `static_front_rh_mm`/`static_rear_rh_mm`, USE THEM directly. Previously was recomputing from `garage_model.predict()` with **baseline** springs, drifting static_front from 30 → 32.78 for Porsche and propagating through reconcile.
+- **`solver/objective.py:891`**: replaced `track.median_speed_kph` with `track.aero_reference_speed_kph` (V²-RMS over speed bands ≥100 kph). Compliance-based front static prediction honors candidate's `front_pushrod_offset_mm` (was hardcoded to `pushrod.front_pinned_rh_mm`).
+- **Falsy-int bug fixed in 3 sites**: `solver/supporting_solver.py:303-313` and `:406`, `solver/solve_chain.py:240`. The pattern `diff_ramp_option_index(...) or 1` silently collapsed legal index 0 (= 40/65) to index 1 (= 45/70). Driver-correct ramps were being lost. Replaced with explicit `None` checks.
+- **Porsche/Algarve driver-match score on newest IBT (14-23-44, B HOT, best lap 92.992 s)**: 14 exact / 7 close / 1 trailing (rear pushrod 23.5 vs driver 18, downstream of rear static 1.3 mm above driver).
+
+## 2026-04-07 Highlights
+
+- **Strict calibration gate** with 3-state classification (`calibrated`/`weak`/`uncalibrated`), R² thresholds, and provenance tracking. Cascade fixed so weak blocks don't propagate.
+- **Compliance physics for static RH and deflection**: `defl ∝ F/k` (1/k features) — for Porsche this took rear RH R² from 0.61 → 0.94 and deflection R² from 0.67 → 0.97.
+- **`apply_to_car` zero-stale-coefficients fix**: prevents BMW values from persisting alongside fresh non-BMW calibration.
+- **18 silent BMW fallback patterns removed** from solver/objective.py, solver/sensitivity.py, solver/candidate_search.py, solver/sector_compromise.py, solver/legal_space.py, solver/damper_solver.py, solver/stint_model.py, solver/rake_solver.py, solver/arb_solver.py, solver/bayesian_optimizer.py, solver/explorer.py.
+- **`damper_solver.py` strict mode**: 50-line baseline-fallback path replaced with `ValueError`. Gate blocks Step 6 BEFORE this path is reachable.
+- **`pushrod_for_target_rh` strict mode**: -29.0 BMW fallback replaced with `ValueError`.
+- **Garage feasibility cap** in rake_solver: caps rear static RH target to garage-achievable range, prevents impossible pushrod targets.
+- **Per-corner tyre pressures**, **Front Roll HS slope propagation**, **Rear 3rd damper propagation**, **Porsche diff coast/drive ramp XML IDs** all shipped in setup_writer/solution_from_explicit_settings.
+- **Regression test safety net**: `tests/test_setup_regression.py` runs full pipeline against committed BMW/Sebring and Porsche/Algarve baseline `.sto` fixtures. Both pass after every change in this batch.
 
 ## Workflow Map
 
 `IBT -> track/analyzer -> diagnosis/driver/style -> calibration_gate -> solve_chain/legality -> report/.sto -> webapp`
 
-The calibration gate (`car_model/calibration_gate.py`) sits between input loading and the solver. It checks per-car, per-subsystem calibration status and blocks solver steps whose required subsystems lack proven data. Blocked steps output calibration instructions instead of setup values.
+The calibration gate (`car_model/calibration_gate.py`) sits between input loading and the solver. It classifies every subsystem as `calibrated`/`weak`/`uncalibrated` and either runs the solver, runs with a `WEAK CALIBRATION DETECTED` banner, or blocks with CLI calibration instructions. Provenance is surfaced via `gate.provenance()` and embedded in JSON output as `calibration_provenance`.
 
 ## Anchor Files
 
-- `pipeline/produce.py`: single-session orchestration and report export.
-- `solver/objective.py`: candidate ranking, breakdown weighting, and scenario-aware scoring.
+- `pipeline/produce.py`: single-session orchestration; calls calibration gate and prints `CALIBRATION CONFIDENCE` provenance block on every run.
+- `solver/objective.py`: candidate ranking, breakdown weighting, scenario-aware scoring. Reads damper baselines, m_eff, tyre_load_sensitivity, fuel_capacity directly from `car.*` (no fallbacks).
 - `solver/solve.py`: 6-step physics solver with calibration gate enforcement.
-- `car_model/calibration_gate.py`: per-car, per-subsystem calibration status and step-level blocking.
+- `solver/damper_solver.py`: physics-pure damper solver. Raises ValueError if zeta uncalibrated (gate blocks Step 6 first).
+- `solver/rake_solver.py`: rake/RH solver with garage feasibility cap and reconciliation. Uses compliance-aware RH model.
+- `car_model/calibration_gate.py`: per-car, per-subsystem 3-state calibration with R² thresholds, weak_block, provenance dict.
+- `car_model/cars.py`: `RideHeightModel` and `DeflectionModel` carry both linear AND compliance coefficient slots; each car uses whichever fits its data best.
+- `car_model/auto_calibrate.py`: feature selection includes `1/k` candidates for RH and deflection regressions; `apply_to_car()` zeroes stale coefficient slots before applying new model.
+- `tests/test_setup_regression.py`: pipeline regression test with committed `.sto` fixtures.
 - `validation/run_validation.py`: reproducible BMW/Sebring evidence report and support tiers.
 
 ## Current BMW/Sebring Evidence (updated 2026-04-04)
@@ -25,15 +53,19 @@ The calibration gate (`car_model/calibration_gate.py`) sits between input loadin
 - Spearman (non-vetoed): `~-0.298` (improved from -0.121 after calibration gate fixes)
 - Current objective status: `improving` — correlation now materially negative, approaching actionable but not yet authoritative.
 
-## Support Tiers
+## Support Tiers (updated 2026-04-08)
 
-| Car | Track | Tier | Samples | Calibrated Steps | Blocked Steps |
-|-----|-------|------|---------|-----------------|---------------|
-| BMW | Sebring | calibrated | 99 | 1-6 (all) | none |
-| Ferrari | Sebring | partial | 12 | 1-3 | 4, 5, 6 |
-| Cadillac | Silverstone | exploratory | 4 | 2-3 | 1, 4, 5, 6 |
-| Porsche | Sebring | unsupported | 2 | 1-3 | 4, 5, 6 |
-| Acura | Hockenheim | exploratory | 7 | — | 1-6 (all) |
+| Car | Track | Tier | Samples | Calibrated Steps | Weak Steps | Blocked Steps |
+|-----|-------|------|---------|-----------------|------------|---------------|
+| BMW | Sebring | calibrated | 99 | 1-6 (all) | none | none |
+| Porsche | Algarve | calibrated | 35 unique setups, 88 zeta sessions, 22 aero sessions | 1-6 (all) | none | none |
+| Ferrari | Sebring | partial | 12 | 1-3 | — | 4, 5, 6 |
+| Cadillac | Silverstone | exploratory | 4 | 2-3 | — | 1, 4, 5, 6 |
+| Acura | Hockenheim | exploratory | 7 | — | — | 1-6 (all) |
+
+**Porsche detail (2026-04-08)**: Front RH R²=1.00, rear RH R²=0.91, deflection R²=0.98, damper zeta from 88 click-sweep sessions, aero compression from 22 sessions. ARB stiffness MEDIUM hand-cal (auto-cal noise-floor inconclusive — model_predicted_ARB_delta < K_total measurement noise floor, so the back-solve cannot validate or invalidate; gate maps `arb_calibrated=None` to MEDIUM). LLTD target = 0.521 from OptimumG/Milliken physics formula (NOT from the geometric proxy that was previously stored as `lltd_measured`). Driver-match score on newest IBT (14-23-44, B HOT, best lap 92.992 s): 14 exact / 7 close / 1 trailing.
+
+**LLTD epistemic gap**: We have NO direct LLTD measurement from iRacing IBT. The previously-stored `measured_lltd_target = 0.503` was the geometric proxy `(t_f³/(t_f³+t_r³))`, not real LLTD. The 13 pp gap between model k_front/k_total (0.391) and OptimumG physics target (0.521) is REAL but un-attributable without wheel-force telemetry or controlled per-axle ARB lap-time correlation. Porsche ARB anchors to driver-loaded values via the `arb_solver` LLTD-fallback when `lltd_error > 3 pp`.
 
 ## Value Classes
 

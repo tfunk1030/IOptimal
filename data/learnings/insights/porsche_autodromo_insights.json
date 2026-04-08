@@ -1,9 +1,17 @@
 {
   "car": "porsche",
   "track": "Autodromo Internacional do Algarve",
-  "session_count": 85,
+  "session_count": 95,
   "key_insights": [
-    "Lap time range: 92.188s \u2013 109.216s (17.028s window across 85 sessions)",
+    "Lap time range: 92.188s \u2013 109.216s (17.028s window across 95 sessions)",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "No setup changes detected between sessions.",
+    "Changed fuel_l: -0.20000000000000284 (0.341s slower); effects: understeer_low_speed_deg +0.19, rear_dominant_freq_hz -1.11 [high confidence]",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
@@ -43,19 +51,11 @@
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
     "No setup changes detected between sessions.",
-    "No setup changes detected between sessions.",
-    "No setup changes detected between sessions.",
-    "No setup changes detected between sessions.",
-    "No setup changes detected between sessions.",
-    "No setup changes detected between sessions.",
-    "No setup changes detected between sessions.",
-    "No setup changes detected between sessions.",
-    "Measured roll gradient: 0.175 deg/g (+/- 0.053)"
+    "Measured roll gradient: 0.174 deg/g (+/- 0.051)"
   ],
   "setup_trends": [
-    "rear_third_nmm: trending increasing (80.0 -> 160.0 over 85 sessions)",
-    "rear_arb_blade: trending increasing (2.0 -> 10.0 over 85 sessions)",
-    "rear_camber_deg: trending increasing (-1.9 -> -1.8 over 85 sessions)"
+    "rear_third_nmm: trending increasing (80.0 -> 160.0 over 95 sessions)",
+    "rear_arb_blade: trending increasing (2.0 -> 5.0 over 95 sessions)"
   ],
   "unresolved_questions": []
 }

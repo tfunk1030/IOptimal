@@ -199,7 +199,7 @@ class BayesianOptimizer:
                       + max(0.0, (200 - heave) / 200) * 0.5)
 
         # Balance: LLTD near optimal
-        tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.20)
+        tyre_sens = self.car.tyre_load_sensitivity
         optimal_lltd = self.car.weight_dist_front + (tyre_sens / 0.20) * 0.05
         lltd_est = self.car.weight_dist_front + 0.03 * f_arb - 0.03 * r_arb + 0.05
         balance_score = max(0.0, 1.0 - abs(lltd_est - optimal_lltd) / 0.10)

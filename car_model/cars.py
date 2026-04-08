@@ -336,9 +336,19 @@ class RideHeightModel:
         rear_spring_nmm: float, heave_perch_mm: float,
         fuel_l: float = 0.0, spring_perch_mm: float = 0.0,
     ) -> float:
-        """Solve for the pushrod offset that achieves a target rear static RH."""
+        """Solve for the pushrod offset that achieves a target rear static RH.
+
+        Raises ValueError if the rear pushrod has no calibrated effect on
+        rear ride height — this is a calibration gap, not a fallback.
+        Callers should detect this and surface it as a calibration block.
+        """
         if abs(self.rear_coeff_pushrod) < 1e-6:
-            return -29.0  # Fallback if pushrod has no effect
+            raise ValueError(
+                "Cannot solve pushrod_for_target_rh: rear_coeff_pushrod is zero. "
+                "The car's RideHeightModel does not include rear_pushrod as a "
+                "feature. Calibrate via auto_calibrate with garage screenshots "
+                "that vary the rear pushrod offset."
+            )
         inv_third = 1.0 / max(third_nmm, 1.0) if abs(self.rear_coeff_inv_third) > 1e-9 else 0.0
         inv_spring = 1.0 / max(rear_spring_nmm, 1.0) if abs(self.rear_coeff_inv_spring) > 1e-9 else 0.0
         other = (self.rear_intercept
@@ -1283,6 +1293,11 @@ class DamperModel:
     # instead of per-corner dampers. The main LS/HS fields above apply
     # to the heave dampers; roll dampers have their own LS/HS clicks.
     has_roll_dampers: bool = False
+    # Per-axle roll damper presence — Porsche has FRONT roll damper but NO
+    # rear roll damper (rear roll motion is implicit in per-corner shocks).
+    # Acura has BOTH front and rear roll dampers. Default False — opt-in.
+    has_front_roll_damper: bool = False
+    has_rear_roll_damper: bool = False
     roll_ls_range: tuple[int, int] = (1, 11)
     roll_hs_range: tuple[int, int] = (1, 11)
     # Roll damper baselines (LS and HS for front/rear roll dampers)
@@ -1560,6 +1575,12 @@ class CarModel:
     # Default DF balance target (%) — car-specific, used when --balance not set.
     # Derived from weight distribution + aero characteristics.
     default_df_balance_pct: float = 50.14
+
+    # Default diff preload (Nm) — car-specific operating-point baseline.
+    # Used by diff_solver as the floor below which preload won't drop. Generic
+    # 12 Nm is BMW-derived and far too low for cars like Porsche where the
+    # driver-validated preload is 75-100 Nm. Set per-car from telemetry.
+    default_diff_preload_nm: float = 12.0
 
     # Tyre load sensitivity — grip coefficient degradation per unit vertical load.
     # 0.0 = linear (no sensitivity). Typical racing tyres: 0.15–0.30.
@@ -2601,11 +2622,33 @@ PORSCHE_963 = CarModel(
     mass_driver_kg=75.0,
     # fuel_capacity_l=88.96 (class default, same as all LMDh GTP — 23.5 gal)
     weight_dist_front=0.471,  # CALIBRATED: from corner weights (2689+2689)/(2689*2+3015*2) = 0.4714
-    default_df_balance_pct=50.5,  # Traction-limited — benefits from more rear DF
+    default_df_balance_pct=46.8,  # CALIBRATED 2026-04-07 from 4 Algarve IBTs (Setup A heavy 320,
+    #   Setups B HOT 160 across sessions 13-26-10/13-59-01/14-23-44). Driver-achieved aero balance
+    #   at the brake-off >150 kph operating point: A=47.19%, B=46.63/46.60/46.65% (best lap 92.99s).
+    #   Median = 46.65%; rounded to 46.8% to give the rake solver slight rear-bias headroom.
+    #   Old 50.5% is mathematically unreachable at the sim-min front (30 mm) because the
+    #   aero map (axes-swap honored) at dyn_F=17.6 caps at 52.5% balance only at dyn_R≈49.8 mm,
+    #   which corresponds to static_R ≈66 mm — beyond the +40 mm rear pushrod cap of 50.6 mm.
+    #   The old value forced the rake solver to hit the rear pushrod cap on every run.
     tyre_load_sensitivity=0.18,   # DSSV dampers give better contact — lower effective sensitivity
     brake_bias_pct=44.75,         # CALIBRATED: from user's Algarve baseline (was 46.0 BMW default)
-    # measured_lltd_target loaded dynamically from data/calibration/porsche/models.json via apply_to_car()
+    # LLTD target: PHYSICS-DERIVED via OptimumG/Milliken formula
+    # = weight_dist_front + (tyre_sens/0.20) × 0.05 + speed_correction
+    # = 0.471 + (0.18/0.20) × 0.05 + ~0.005 = 0.521
+    # NOTE 2026-04-07: previously loaded from data/calibration/porsche/models.json
+    # which derived it from analyzer/extract.py:roll_distribution_proxy — but
+    # that field is a GEOMETRIC PROXY (= t_f³/(t_f³+t_r³) ≈ 0.536 for Porsche),
+    # NOT a real LLTD measurement. Verified across 5 IBTs with rear stiffness
+    # varying 300%: proxy varied <0.1 pp. Storing this as the LLTD target
+    # caused a fake 11 pp model gap and triggered the ARB driver-anchor
+    # fallback unnecessarily. Now uses physics formula explicitly. The
+    # auto_calibrate "lltd_target" path is disabled (see auto_calibrate.py:1360).
+    measured_lltd_target=0.521,
     aero_axes_swapped=True,
+    default_diff_preload_nm=85.0,  # CALIBRATED 2026-04-07: driver runs 90 Nm consistently across
+    # 4 Algarve IBTs (Setup A heavy + B HOT). Generic 12 Nm (BMW default) produced pipeline output
+    # 30 Nm — far too soft for Porsche's diff geometry. 85 Nm sets the floor near driver-validated
+    # operating point while leaving room for telemetry-driven downward adjustments.
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
     min_rear_rh_static=30.0,
@@ -2643,7 +2686,14 @@ PORSCHE_963 = CarModel(
         slider_heave_coeff=0.0,   # Porsche Multimatic — no BMW-style slider geometry
         perch_offset_front_baseline_mm=58.0,     # CORRECTED: from Algarve starting setup
         perch_offset_rear_baseline_mm=120.5,     # CORRECTED: from Algarve starting setup
-        sigma_target_mm=10.0,   # Same as BMW — 8mm was too tight, drove heave to max at Algarve shock velocities
+        sigma_target_mm=10.0,   # Same as BMW. NOTE 2026-04-07: tested σ=7.5 calibrated against
+        #   newest IBT 14-23-44 (rear σ_meas=6.26 at driver rate=160) — but the σ MODEL is highly
+        #   sensitive to v_p99_rear_hs which varies 44% across sessions (0.2387 vs 0.3428 m/s),
+        #   making σ_target session-dependent. With σ=7.5 the regression baseline IBT (16-46-36,
+        #   higher v_p99) overshoots to rate=650 N/mm. Reverted to 10.0 — the rear stiffness gap
+        #   (pipeline 80 vs driver 160) requires a deeper fix: either a track-surface-derived σ
+        #   reference (not setup-dependent v_p99) OR a multi-objective rear stiffness selector
+        #   that includes traction/roll-coupling considerations the σ model misses.
         # Porsche internal geometry is NOT calibrated — set to 0 to use physics-only path
         # (BMW defaults would produce wrong travel budget calculations for Multimatic chassis)
         heave_spring_defl_max_intercept_mm=0.0,
@@ -2710,6 +2760,13 @@ PORSCHE_963 = CarModel(
         ls_force_per_click_n=10.0,  # ESTIMATE — DSSV, scaled from BMW range. Needs click-sweep to verify.
         hs_force_per_click_n=45.0,  # ESTIMATE — DSSV, scaled from BMW range. Needs click-sweep to verify.
         has_roll_dampers=True,
+        # Porsche 963 (Multimatic) has FRONT roll damper but NO rear roll
+        # damper. Rear roll motion is implicit in the per-corner LF/RF/LR/RR
+        # shocks. Writing CarSetup_Dampers_RearRoll_* fields to .sto would
+        # be invalid (those XML IDs don't exist in iRacing's Porsche schema)
+        # and the damper solver shouldn't compute rear roll values either.
+        has_front_roll_damper=True,
+        has_rear_roll_damper=False,
         roll_ls_range=(0, 11),
         roll_hs_range=(0, 11),
         # WARNING: BMW shim-stack coefficients — DSSV spool valves differ (~1.2-1.35x higher).
@@ -2931,8 +2988,10 @@ ACURA_ARX06 = CarModel(
         rear_hs_comp_baseline=8,          # IBT: RearHeave HsCompDamping = 8
         rear_hs_rbd_baseline=3,           # IBT: RearHeave HsRbdDamping = 3
         rear_hs_slope_baseline=10,        # IBT: RearHeave HsCompDampSlope = 10
-        # Roll dampers
+        # Roll dampers — Acura ARX-06 (ORECA) has BOTH front and rear roll dampers
         has_roll_dampers=True,
+        has_front_roll_damper=True,
+        has_rear_roll_damper=True,
         roll_ls_range=(1, 10),
         roll_hs_range=(1, 10),
         front_roll_ls_baseline=2,         # IBT: FrontRoll LsDamping = 2

@@ -669,11 +669,11 @@ class ObjectiveFunction:
         """
         car = self.car
 
-        # Read per-car fuel loads instead of BMW-hardcoded 89/20L.
+        # Read per-car fuel loads from the car model (no BMW fallbacks).
         if fuel_start_l is None:
-            fuel_start_l = getattr(car, "fuel_capacity_l", 89.0)
+            fuel_start_l = car.fuel_capacity_l
         if fuel_end_l is None:
-            fuel_end_l = getattr(car, "fuel_stint_end_l", 20.0)
+            fuel_end_l = car.fuel_stint_end_l
 
         # Compute weight distributions at start and end fuel
         mass_start = car.total_mass(fuel_start_l)
@@ -749,7 +749,7 @@ class ObjectiveFunction:
         # Use car.measured_lltd_target when available (IBT-calibrated override).
         # For fuel window analysis, we still model the shift with fuel load,
         # but anchor to the measured target instead of the theoretical formula.
-        tyre_sens = getattr(car, "tyre_load_sensitivity", 0.20)
+        tyre_sens = car.tyre_load_sensitivity
         _measured_lltd_target = getattr(car, "measured_lltd_target", None)
         if _measured_lltd_target is not None:
             # Anchor to measured target; apply fuel-load shift on top
@@ -778,25 +778,26 @@ class ObjectiveFunction:
         track = self.track
         result = PhysicsResult()
 
-        # ── Extract parameters (defaults from car model, not BMW-hardcoded) ──
+        # ── Extract parameters from per-car attributes (no BMW fallbacks) ──
         front_heave_nmm = params.get("front_heave_spring_nmm",
-                                      getattr(car, "front_heave_spring_nmm", 50.0))
+                                      car.front_heave_spring_nmm)
         rear_third_nmm = params.get("rear_third_spring_nmm",
-                                     getattr(car, "rear_third_spring_nmm", 450.0))
-        rear_spring_nmm = params.get("rear_spring_rate_nmm", 160.0)
-        # Torsion OD: use car's options if available, else 0.0 for cars without
-        # torsion bars (Porsche). Old fallback of 14.34 was BMW-specific.
+                                     car.rear_third_spring_nmm)
+        rear_spring_nmm = params.get("rear_spring_rate_nmm",
+                                      car.corner_spring.rear_spring_range_nmm[0])
+        # Torsion OD: use car's options if defined, else 0.0 for cars without
+        # torsion bars (Porsche / Acura).
         _od_options = car.corner_spring.front_torsion_od_options
         _od_default = _od_options[0] if _od_options else 0.0
         front_torsion_od = params.get("front_torsion_od_mm", _od_default)
         front_camber = params.get("front_camber_deg",
-                                   getattr(car.geometry, "front_camber_baseline_deg", -3.5))
+                                   car.geometry.front_camber_baseline_deg)
         rear_camber = params.get("rear_camber_deg",
-                                  getattr(car.geometry, "rear_camber_baseline_deg", -2.5))
+                                  car.geometry.rear_camber_baseline_deg)
         front_arb_blade = int(params.get("front_arb_blade",
-                                          getattr(car.arb, "front_baseline_blade", 1)))
+                                          car.arb.front_baseline_blade))
         rear_arb_blade = int(params.get("rear_arb_blade",
-                                         getattr(car.arb, "rear_baseline_blade", 3)))
+                                         car.arb.rear_baseline_blade))
 
         # Damper clicks — defaults from per-car baselines (not BMW hardcodes)
         _dm = car.damper
@@ -887,20 +888,63 @@ class ObjectiveFunction:
                 parallel_wheel_rate_nmm=rear_wheel_rate * 0.5,
             )
 
-            # Dynamic ride heights (use car compression model when available)
+            # Dynamic ride heights (use car compression model when available).
             # static_front_rh - aero_compression → mean floor height at speed.
-            # Aero compression scales with V²; use track median speed for the
-            # operating-point estimate (falls back to calibration ref speed).
-            _op_speed = getattr(track, "median_speed_kph",
-                                car.aero_compression.ref_speed_kph)
-            _static_f = car.pushrod.front_pinned_rh_mm
+            # Aero compression scales with V²; the relevant operating-point speed
+            # is the V²-RMS of the lap (track.aero_reference_speed_kph) — NOT the
+            # median, because compression is dominated by high-speed sections and
+            # underpredicted at the lap median. Calibrated 2026-04-07 against 4
+            # Porsche/Algarve IBTs (24 speed-binned data points): median 174 kph
+            # under-predicts front comp by ~3 mm; V²-RMS 200 kph matches IBT
+            # measured to within 1 mm.
+            _op_speed = (
+                getattr(track, "aero_reference_speed_kph", 0.0)
+                or getattr(track, "median_speed_kph", 0.0)
+                or car.aero_compression.ref_speed_kph
+            )
+            # Front static: prefer the calibrated GarageOutputModel compliance
+            # prediction at the candidate's pushrod offset, so the objective can
+            # SEE the front_pushrod_offset_mm dimension. Falls back to the legacy
+            # pinned static for cars without a garage_output_model (BMW path).
+            _gom = car.active_garage_output_model(
+                getattr(track, "track_name", None)
+            ) if hasattr(car, "active_garage_output_model") else None
+            _front_pushrod_param = params.get("front_pushrod_offset_mm", None)
+            if _gom is not None and _front_pushrod_param is not None:
+                try:
+                    from car_model.garage import GarageSetupState
+                    _baseline = _gom.default_state(fuel_l=0.0)
+                    _state = GarageSetupState(
+                        front_pushrod_mm=float(_front_pushrod_param),
+                        rear_pushrod_mm=float(params.get("rear_pushrod_offset_mm", _baseline.rear_pushrod_mm)),
+                        front_heave_nmm=float(params.get("front_heave_spring_nmm", _baseline.front_heave_nmm)),
+                        front_heave_perch_mm=_baseline.front_heave_perch_mm,
+                        rear_third_nmm=float(params.get("rear_third_spring_nmm", _baseline.rear_third_nmm)),
+                        rear_third_perch_mm=_baseline.rear_third_perch_mm,
+                        front_torsion_od_mm=float(params.get("front_torsion_od_mm", _baseline.front_torsion_od_mm)),
+                        rear_spring_nmm=float(params.get("rear_spring_rate_nmm", _baseline.rear_spring_nmm)),
+                        rear_spring_perch_mm=_baseline.rear_spring_perch_mm,
+                        front_camber_deg=_baseline.front_camber_deg,
+                        fuel_l=0.0,
+                    )
+                    _static_f = float(_gom.predict_front_static_rh(_state))
+                    _rear_static = float(_gom.predict_rear_static_rh(_state))
+                except Exception:
+                    _static_f = car.pushrod.front_pinned_rh_mm
+                    _rear_static = car.pushrod.rear_rh_for_offset(
+                        float(params.get("rear_pushrod_offset_mm", 0.0))
+                    )
+            else:
+                _static_f = car.pushrod.front_pinned_rh_mm
+                _rear_static = car.pushrod.rear_rh_for_offset(
+                    float(params.get("rear_pushrod_offset_mm", 0.0))
+                )
             _comp_f = car.aero_compression.front_at_speed(_op_speed)
-            dyn_front_rh = max(5.0, _static_f - _comp_f)
-            # Rear static RH depends on the candidate's rear pushrod offset.
-            # rear_rh_for_offset() returns rear_base_rh + offset * rear_pushrod_to_rh.
-            _rear_pushrod = float(params.get("rear_pushrod_offset_mm", 0.0))
-            _rear_static = car.pushrod.rear_rh_for_offset(_rear_pushrod)
             _rear_comp = car.aero_compression.rear_at_speed(_op_speed)
+            # Clamp to sim minimums for safety
+            _static_f = max(_static_f, getattr(car, "min_front_rh_static", 0.0))
+            _rear_static = max(_rear_static, getattr(car, "min_rear_rh_static", 0.0))
+            dyn_front_rh = max(5.0, _static_f - _comp_f)
             dyn_rear_rh = max(5.0, _rear_static - _rear_comp)
             result.front_bottoming_margin_mm = dyn_front_rh - result.front_excursion_mm
             result.rear_bottoming_margin_mm = dyn_rear_rh - result.rear_excursion_mm
@@ -984,7 +1028,7 @@ class ObjectiveFunction:
             result.lltd_error = 0.0  # zero error — LLTD is not tunable
         else:
             # All other cars: LLTD is computed from components and scored vs target
-            tyre_sens = getattr(car, "tyre_load_sensitivity", 0.20)
+            tyre_sens = car.tyre_load_sensitivity
             if _measured_lltd_target is not None:
                 target_lltd = _measured_lltd_target
             else:
@@ -1492,7 +1536,7 @@ class ObjectiveFunction:
         if rear_slip_p95 is None:
             # Per-car baseline: higher tyre_load_sensitivity = more slip tendency
             # BMW (0.22) -> 0.083, Porsche (0.18) -> 0.077, Ferrari (0.25) -> 0.088, Acura (0.20) -> 0.080
-            _tls = getattr(self.car, "tyre_load_sensitivity", 0.20)
+            _tls = self.car.tyre_load_sensitivity
             rear_slip_p95 = 0.05 + _tls * 0.15
         if rear_slip_p95 > 0.10:
             # High rear slip → more plates needed for traction

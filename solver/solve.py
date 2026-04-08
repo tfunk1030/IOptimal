@@ -47,8 +47,15 @@ def find_track_profile(track_name: str) -> TrackProfile:
     if not track_files:
         raise FileNotFoundError(f"No track profiles in {TRACKS_DIR}")
 
-    # Collect all matching files
-    matches = [f for f in track_files if track_name.lower() in f.stem.lower()]
+    # Normalize both query and stems: lowercase + collapse separators (_, -, space)
+    # so "algarve grand prix" matches "algarve_grand_prix".
+    def _norm(s: str) -> str:
+        s = s.lower()
+        for ch in ("_", "-"):
+            s = s.replace(ch, " ")
+        return " ".join(s.split())
+    q = _norm(track_name)
+    matches = [f for f in track_files if q in _norm(f.stem)]
 
     if not matches:
         available = [f.stem for f in track_files]
@@ -924,6 +931,20 @@ def run_solver(args: "argparse.Namespace") -> None:
                 car, fuel_load_l=args.fuel
             )
             print(f"\nBrake bias (physics): {brake_bias:.1f}%  [{bias_reasoning}]")
+            # Supporting params from physics defaults (no telemetry in solver-only mode)
+            _ramp_str = None
+            _clutch = None
+            _preload_nm = None
+            _tc_gain = 4
+            _tc_slip = 3
+            try:
+                from solver.diff_solver import DiffSolver
+                _diff_def = DiffSolver.solve_defaults(car, track)
+                _ramp_str = f"{int(round(_diff_def.coast_ramp_deg))}/{int(round(_diff_def.drive_ramp_deg))}"
+                _clutch = int(_diff_def.clutch_plates)
+                _preload_nm = float(_diff_def.preload_nm)
+            except Exception:
+                pass
             sto_path = write_sto(
                 car_name=car.name,
                 track_name=f"{track.track_name} — {track.track_config}",
@@ -934,6 +955,11 @@ def run_solver(args: "argparse.Namespace") -> None:
                 output_path=args.sto,
                 car_canonical=car.canonical_name,
                 brake_bias_pct=brake_bias,
+                diff_coast_drive_ramp=_ramp_str,
+                diff_clutch_plates=_clutch,
+                diff_preload_nm=_preload_nm,
+                tc_gain=_tc_gain,
+                tc_slip=_tc_slip,
             )
             print(f"\niRacing .sto setup saved to: {sto_path}")
         else:

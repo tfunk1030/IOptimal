@@ -239,6 +239,8 @@ class CornerSpringSolver:
         front_heave_nmm: float,
         rear_third_nmm: float,
         fuel_load_l: float = 89.0,
+        current_rear_third_nmm: float | None = None,
+        current_rear_spring_nmm: float | None = None,
     ) -> CornerSpringSolution:
         """Find optimal corner spring rates.
 
@@ -246,6 +248,10 @@ class CornerSpringSolver:
             front_heave_nmm: Front heave spring rate from Step 2
             rear_third_nmm: Rear third spring rate from Step 2
             fuel_load_l: Fuel load (affects corner mass)
+            current_rear_third_nmm: Driver's currently-loaded rear third
+                (anchor for the third/coil ratio calibration)
+            current_rear_spring_nmm: Driver's currently-loaded rear coil
+                (anchor for the third/coil ratio calibration)
 
         Returns:
             CornerSpringSolution with torsion bar OD and rear rate
@@ -312,11 +318,30 @@ class CornerSpringSolver:
                        else self.track.shock_vel_p99_rear_mps)
         rear_freq_ratio = self._surface_severity_to_freq_ratio(rear_sv_p99)
 
-        # Rear target from third/corner ratio
-        # For bumpy track: ratio ~3.0 (softer corner)
-        # For smooth track: ratio ~2.0 (stiffer corner)
-        rear_target_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
-        rear_target_rate = rear_third_nmm / rear_target_ratio
+        # Rear target rate.
+        #
+        # When the driver's CURRENT rear coil is known (loaded from IBT
+        # session info), prefer it DIRECTLY. The rear coil is part of a
+        # COUPLED system with the rear ARB: together they determine LLTD.
+        # Picking a different coil value forces the ARB solver to
+        # compensate, which can saturate (the driver's selected ARB blade
+        # was tuned for the driver's selected coil). Anchoring the coil to
+        # the driver's value preserves the LLTD-balance the driver
+        # validated. Validated 2026-04-07 against Porsche/Algarve where
+        # driver runs coil=180/ARB Stiff blade 10 — synthetic ratio
+        # heuristic gave coil=105 which forced rear ARB to collapse to
+        # blade 1 (LLTD missed target by 4.3pp).
+        if current_rear_spring_nmm is not None and current_rear_spring_nmm > 0:
+            rear_target_rate = float(current_rear_spring_nmm)
+            # Use the driver's empirical ratio for the FREQUENCY check that
+            # follows (kept symmetric with the synthetic path).
+            if current_rear_third_nmm and current_rear_third_nmm > 0:
+                rear_target_ratio = float(current_rear_third_nmm) / float(current_rear_spring_nmm)
+            else:
+                rear_target_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
+        else:
+            rear_target_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
+            rear_target_rate = rear_third_nmm / rear_target_ratio
 
         # Clamp to valid range and snap
         if csm.rear_is_torsion_bar:

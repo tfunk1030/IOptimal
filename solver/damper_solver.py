@@ -466,60 +466,20 @@ class DamperSolver:
         """
         d = self.car.damper
 
-        # ─── UNCALIBRATED EARLY RETURN ────────────────────────────────────────
-        # When zeta targets haven't been validated against IBT data, physics-
-        # derived click values will be wrong.  Return the car's VALIDATED baseline
-        # clicks instead so the report doesn't contradict known-good setups.
+        # ─── STRICT MODE: refuse to produce values without calibrated zeta ───
+        # Previously this branch silently returned baseline clicks. That's a
+        # fallback to a hardcoded value, which the user explicitly forbids.
+        # If zeta is uncalibrated, raise — the calibration gate is responsible
+        # for blocking Step 6 BEFORE this is called. If we get here, the gate
+        # was bypassed (likely by a track-only direct solver call) and the
+        # caller needs to know.
         if not getattr(d, "zeta_is_calibrated", True):
-            front_slope, rear_slope, slope_reason = self._hs_slope_from_surface()
-            lo_ls = d.ls_comp_range[0]
-            hi_ls = d.ls_comp_range[1]
-            lo_hs = d.hs_comp_range[0]
-            hi_hs = d.hs_comp_range[1]
-            _b_flsc  = max(lo_ls, min(hi_ls, d.front_ls_comp_baseline))
-            _b_frbd  = max(lo_ls, min(hi_ls, getattr(d, "front_ls_rbd_baseline",  _b_flsc)))
-            _b_fhsc  = max(lo_hs, min(hi_hs, d.front_hs_comp_baseline))
-            _b_fhrbd = max(lo_hs, min(hi_hs, getattr(d, "front_hs_rbd_baseline",  _b_fhsc)))
-            _b_rlsc  = max(lo_ls, min(hi_ls, d.rear_ls_comp_baseline))
-            _b_rrbd  = max(lo_ls, min(hi_ls, getattr(d, "rear_ls_rbd_baseline",   _b_rlsc)))
-            _b_rhsc  = max(lo_hs, min(hi_hs, d.rear_hs_comp_baseline))
-            _b_rhrbd = max(lo_hs, min(hi_hs, getattr(d, "rear_hs_rbd_baseline",   _b_rhsc)))
-            _b_fslope = getattr(d, "front_hs_slope_baseline", front_slope)
-            _b_rslope = getattr(d, "rear_hs_slope_baseline",  rear_slope)
-
-            def _bc(ls, lsr, hs, hsr, slope):
-                return CornerDamperSettings(
-                    ls_comp=ls, ls_rbd=lsr, hs_comp=hs, hs_rbd=hsr, hs_slope=slope,
-                )
-
-            return DamperSolution(
-                lf=_bc(_b_flsc, _b_frbd, _b_fhsc, _b_fhrbd, _b_fslope),
-                rf=_bc(_b_flsc, _b_frbd, _b_fhsc, _b_fhrbd, _b_fslope),
-                lr=_bc(_b_rlsc, _b_rrbd, _b_rhsc, _b_rhrbd, _b_rslope),
-                rr=_bc(_b_rlsc, _b_rrbd, _b_rhsc, _b_rhrbd, _b_rslope),
-                track_shock_vel_p95_front_mps=0.0,
-                track_shock_vel_p95_rear_mps=0.0,
-                track_shock_vel_p99_front_mps=0.0,
-                track_shock_vel_p99_rear_mps=0.0,
-                c_ls_front=0.0, c_ls_rear=0.0,
-                c_hs_front=0.0, c_hs_rear=0.0,
-                c_crit_front=0.0, c_crit_rear=0.0,
-                zeta_ls_front=0.0, zeta_ls_rear=0.0,
-                zeta_hs_front=0.0, zeta_hs_rear=0.0,
-                ls_rbd_comp_ratio_front=1.0, hs_rbd_comp_ratio_front=1.0,
-                ls_rbd_comp_ratio_rear=1.0,  hs_rbd_comp_ratio_rear=1.0,
-                hs_slope_reasoning=(
-                    "BASELINE — zeta uncalibrated. "
-                    f"Returning validated baseline clicks: "
-                    f"front LS={_b_flsc}/HS={_b_fhsc}, rear LS={_b_rlsc}/HS={_b_rhsc}. "
-                    "Run click-sweep IBT session to unlock physics-derived values."
-                ),
-                constraints=[],
-                notes=[
-                    "BASELINE ONLY — zeta_is_calibrated=False for this car.",
-                    f"front LS={_b_flsc} HS={_b_fhsc} | rear LS={_b_rlsc} HS={_b_rhsc}",
-                    "Perform dedicated click-sweep session to calibrate zeta targets.",
-                ],
+            raise ValueError(
+                f"DamperSolver refuses to produce clicks without calibrated "
+                f"zeta targets for {self.car.name}. Run "
+                f"'python -m validation.calibrate_dampers --car "
+                f"{self.car.canonical_name} --track <track>' after collecting "
+                "5+ click-sweep IBT sessions, then re-run."
             )
 
         # ─── 1. Corner masses ─────────────────────────────────────────────────
@@ -877,26 +837,52 @@ class DamperSolver:
             f_roll_ls = f_heave_ls * roll_supplement
             f_roll_hs = f_heave_hs * roll_supplement
 
-            front_roll_ls_click = max(roll_lo, min(roll_hi, round(f_roll_ls / max(fpc_ls, 1.0))))
-            front_roll_hs_click = max(roll_hs_lo, min(roll_hs_hi, round(f_roll_hs / max(fpc_hs, 1.0))))
-            # Rear roll: softer than front — rear needs compliance for traction under roll
-            rear_roll_ls_click = max(roll_lo, min(roll_hi, round(f_roll_ls * 0.5 / max(fpc_ls, 1.0))))
-            rear_roll_hs_click = max(roll_hs_lo, min(roll_hs_hi, round(f_roll_hs * 0.5 / max(fpc_hs, 1.0))))
+            # Per-axle roll damper presence — Porsche has FRONT roll damper but
+            # NO rear roll damper (rear roll is implicit in per-corner shocks).
+            # Acura has BOTH. Backward-compat: if neither flag set, assume both
+            # (legacy Acura behavior).
+            _has_front_roll = bool(getattr(dm, "has_front_roll_damper", False))
+            _has_rear_roll = bool(getattr(dm, "has_rear_roll_damper", False))
+            if not _has_front_roll and not _has_rear_roll:
+                _has_front_roll = True
+                _has_rear_roll = True
 
-            # Front roll HS slope: use same surface-based logic as main dampers
-            front_roll_hs_slope_click = front_slope  # from _hs_slope_from_surface()
+            roll_damper_kwargs = {}
+            front_roll_hs_slope_click = front_slope
+            if _has_front_roll:
+                front_roll_ls_click = max(roll_lo, min(roll_hi, round(f_roll_ls / max(fpc_ls, 1.0))))
+                front_roll_hs_click = max(roll_hs_lo, min(roll_hs_hi, round(f_roll_hs / max(fpc_hs, 1.0))))
+                roll_damper_kwargs.update(
+                    front_roll_ls=front_roll_ls_click,
+                    front_roll_hs=front_roll_hs_click,
+                    front_roll_hs_slope=front_roll_hs_slope_click,
+                )
+            else:
+                front_roll_ls_click = None
+                front_roll_hs_click = None
+            if _has_rear_roll:
+                # Rear roll: softer than front — rear needs compliance for traction under roll
+                rear_roll_ls_click = max(roll_lo, min(roll_hi, round(f_roll_ls * 0.5 / max(fpc_ls, 1.0))))
+                rear_roll_hs_click = max(roll_hs_lo, min(roll_hs_hi, round(f_roll_hs * 0.5 / max(fpc_hs, 1.0))))
+                roll_damper_kwargs.update(
+                    rear_roll_ls=rear_roll_ls_click,
+                    rear_roll_hs=rear_roll_hs_click,
+                )
+            else:
+                rear_roll_ls_click = None
+                rear_roll_hs_click = None
 
-            roll_damper_kwargs = dict(
-                front_roll_ls=front_roll_ls_click,
-                front_roll_hs=front_roll_hs_click,
-                front_roll_hs_slope=front_roll_hs_slope_click,
-                rear_roll_ls=rear_roll_ls_click,
-                rear_roll_hs=rear_roll_hs_click,
+            _front_str = (
+                f"front LS={front_roll_ls_click}/HS={front_roll_hs_click}/slope={front_roll_hs_slope_click}"
+                if _has_front_roll else "front=N/A"
+            )
+            _rear_str = (
+                f"rear LS={rear_roll_ls_click}/HS={rear_roll_hs_click}"
+                if _has_rear_roll else "rear=N/A (per-corner shocks)"
             )
             notes.append(
                 f"Roll dampers: zeta_roll={zeta_roll:.2f}, C_crit_roll={c_crit_roll:.0f} N*m*s/rad, "
-                f"front LS={front_roll_ls_click}/HS={front_roll_hs_click}/slope={front_roll_hs_slope_click}, "
-                f"rear LS={rear_roll_ls_click}/HS={rear_roll_hs_click}"
+                f"{_front_str}, {_rear_str}"
             )
 
         # Rear 3rd damper (Porsche — controls rear heave/pitch via third spring)

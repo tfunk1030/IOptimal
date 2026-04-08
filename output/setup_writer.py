@@ -1067,17 +1067,29 @@ def write_sto(
     _w_num("rr_hs_slope", step6.rr.hs_slope, "clicks")
 
     # === Roll dampers (Porsche / Acura — heave+roll architecture) ===
+    # Per-axle gating: Porsche has FRONT roll damper but NO rear roll damper
+    # (rear roll motion is implicit in per-corner shocks). Acura ARX-06 has
+    # both. Writing CarSetup_Dampers_RearRoll_* for Porsche emits XML IDs
+    # that don't exist in iRacing's Porsche garage schema — phantom output.
     if has_roll_dampers:
+        _has_front_roll = bool(getattr(getattr(_car, "damper", None), "has_front_roll_damper", False))
+        _has_rear_roll = bool(getattr(getattr(_car, "damper", None), "has_rear_roll_damper", False))
+        # Backward-compat: if neither per-axle flag is set on a has_roll_dampers car,
+        # assume both (legacy Acura behavior) so we don't silently drop output.
+        if not _has_front_roll and not _has_rear_roll:
+            _has_front_roll = True
+            _has_rear_roll = True
         _roll_ls_f = getattr(step6, 'front_roll_ls', None)
         _roll_hs_f = getattr(step6, 'front_roll_hs', None)
         _roll_ls_r = getattr(step6, 'rear_roll_ls', None)
         _roll_hs_r = getattr(step6, 'rear_roll_hs', None)
         _roll_hs_slope_f = getattr(step6, 'front_roll_hs_slope', None)
-        if _roll_ls_f is not None:
+        if _has_front_roll and _roll_ls_f is not None:
             _w_num("front_roll_ls", _roll_ls_f, "clicks")
             _w_num("front_roll_hs", _roll_hs_f, "clicks")
             if _roll_hs_slope_f is not None:
                 _w_num("front_roll_hs_slope", _roll_hs_slope_f, "clicks")
+        if _has_rear_roll and _roll_ls_r is not None:
             _w_num("rear_roll_ls",  _roll_ls_r,  "clicks")
             _w_num("rear_roll_hs",  _roll_hs_r,  "clicks")
 

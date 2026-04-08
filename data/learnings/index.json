@@ -241,9 +241,19 @@
     "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-06_16-46-36__lap_16",
     "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-06_16-46-36",
     "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-06_19-03-25",
-    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-06_19-58-18"
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-06_19-58-18",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_11-24-30",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_11-33-43",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_13-14-00",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_13-26-10",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_13-59-01",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_14-23-44",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_15-49-17",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_15-58-25",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_17-58-13",
+    "porsche_autodromo_internacional_do_algarve_porsche963gtp_algarve_gp_2026-04-07_17-48-59"
   ],
-  "total_deltas": 461,
+  "total_deltas": 650,
   "cars_seen": [
     "bmw",
     "ferrari",
@@ -258,6 +268,6 @@
     "Daytona International Speedway_Road Course",
     "Autodromo Internacional do Algarve_Grand Prix"
   ],
-  "last_updated": "2026-04-07T01:30:50.724717+00:00",
-  "total_observations": 240
+  "last_updated": "2026-04-07T23:55:33.153204+00:00",
+  "total_observations": 250
 }

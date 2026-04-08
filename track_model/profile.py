@@ -177,6 +177,48 @@ class TrackProfile:
     # Telemetry source description
     telemetry_source: str = ""
 
+    @property
+    def aero_reference_speed_kph(self) -> float:
+        """V²-RMS speed for aero compression sizing.
+
+        Aero downforce (and thus ride-height compression) scales with V². The
+        relevant operating-point speed for ride-height targeting is therefore
+        sqrt(<V²>) over the speed range where aero is meaningful — NOT the
+        lap median. Below ~100 kph aero compression is essentially zero, so
+        slow-corner samples shouldn't dilute the aero reference.
+
+        Validated against Porsche/Algarve IBT-measured compression on
+        2026-04-07: static→dynamic compression at brake-off >150 kph samples
+        gave F=13.4mm R=16.4mm; this property gives 199.6 kph for Algarve,
+        at which the aero compression model returns 12.2/16.5mm — within 1mm
+        of measured for both axles. Median speed (174.5) gave 9.3/12.6mm
+        (4mm under-prediction). V²-RMS over the full lap (187) gave 10.7/14.5
+        — better than median but still under-predicts.
+
+        Falls back to median_speed_kph when speed_bands_kph is unavailable.
+        """
+        if not self.speed_bands_kph:
+            return self.median_speed_kph
+        AERO_MIN_KPH = 100.0
+        total_frac = 0.0
+        v2_sum = 0.0
+        for label, pct in self.speed_bands_kph.items():
+            try:
+                lo, hi = label.split("-")
+                lo_f = float(lo); hi_f = float(hi)
+            except ValueError:
+                continue
+            if lo_f < AERO_MIN_KPH:
+                continue
+            v_mid = (lo_f + hi_f) / 2.0
+            frac = pct / 100.0
+            v2_sum += frac * v_mid * v_mid
+            total_frac += frac
+        if total_frac <= 0.0:
+            return self.median_speed_kph
+        import math as _m
+        return _m.sqrt(v2_sum / total_frac)
+
     def pct_time_above_kph(self, threshold_kph: float) -> float:
         """Fraction of lap time spent above *threshold_kph*.
 

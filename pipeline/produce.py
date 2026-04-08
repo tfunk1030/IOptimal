@@ -716,8 +716,25 @@ def produce(
                 log(sr.instructions_text())
         log()
 
-    # Always show confidence report — surfaces weak models and manual overrides
-    # without changing what blocks. Additive info for the user.
+    # Surface weak steps prominently — these produce output but the
+    # underlying calibration is below threshold (R²<0.85, manual override
+    # contradicts auto-cal, etc.). User must read warnings.
+    if cal_report.any_weak:
+        log()
+        log("=" * 70)
+        log("WEAK CALIBRATION DETECTED — output is produced but verify before use")
+        log("=" * 70)
+        for sr in cal_report.step_reports:
+            if sr.weak_block:
+                log(f"  Step {sr.step_number} ({sr.step_name}):")
+                for sub in sr.missing:
+                    log(f"    {sub.name}: {sub.confidence_label()} {sub.source}")
+                    for w in sub.warnings:
+                        log(f"      ! {w}")
+        log("=" * 70)
+        log()
+
+    # Always show confidence report — full per-subsystem provenance.
     _confidence_text = cal_report.format_confidence_report(cal_gate.subsystems())
     if _confidence_text:
         log()
@@ -1397,6 +1414,10 @@ def produce(
             "supporting": to_public_output_payload(car.canonical_name, supporting),
             "calibration_blocked": sorted(_steps_blocked) if _steps_blocked else [],
             "calibration_instructions": cal_report.format_header() if _steps_blocked else "",
+            # Provenance: where each calibrated subsystem's value came from.
+            # User can audit exactly what's data-derived vs what's weak/missing.
+            "calibration_provenance": cal_gate.provenance(),
+            "calibration_weak_steps": cal_report.weak_steps,
         }
         with open(json_path, "w") as f:
             json.dump(output, f, indent=2, default=str)

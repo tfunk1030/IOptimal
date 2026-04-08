@@ -247,7 +247,13 @@ class RakeSolver:
 
         comp = self.car.aero_compression
         # Use track median speed for compression instead of fixed reference speed
-        track_speed = self.track.median_speed_kph if self.track.median_speed_kph > 0 else comp.ref_speed_kph
+        # Aero-relevant reference speed: V²-RMS over speed bands, not median.
+        # Aero compression scales with V², so the time-averaged operating point
+        # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
+        # than median (187 vs 174 kph). Validated against IBT-measured rear
+        # compression on Porsche/Algarve (Apr 7 2026).
+        _aero_ref = self.track.aero_reference_speed_kph
+        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
         front_comp = comp.front_at_speed(track_speed)
         rear_comp = comp.rear_at_speed(track_speed)
 
@@ -315,7 +321,7 @@ class RakeSolver:
                     baseline_third_nmm = float(public_output_value('ferrari', 'rear_third_nmm', baseline_third_nmm))
                     baseline_rear_spring = float(public_output_value('ferrari', 'rear_spring_rate_nmm', baseline_rear_spring))
                     baseline_heave_perch = self.car.heave_spring.perch_offset_rear_baseline_mm
-                baseline_fuel = getattr(self.car, 'fuel_capacity_l', 58.0)
+                baseline_fuel = self.car.fuel_capacity_l
                 baseline_spring_perch = self.car.corner_spring.rear_spring_perch_baseline_mm
                 rear_pushrod = rh_model.pushrod_for_target_rh(
                     static_rear, baseline_third_nmm,
@@ -441,7 +447,13 @@ class RakeSolver:
     ) -> RakeSolution:
         """Build a Step 1 solution from explicit garage ride-height controls."""
         comp = self.car.aero_compression
-        track_speed = self.track.median_speed_kph if self.track.median_speed_kph > 0 else comp.ref_speed_kph
+        # Aero-relevant reference speed: V²-RMS over speed bands, not median.
+        # Aero compression scales with V², so the time-averaged operating point
+        # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
+        # than median (187 vs 174 kph). Validated against IBT-measured rear
+        # compression on Porsche/Algarve (Apr 7 2026).
+        _aero_ref = self.track.aero_reference_speed_kph
+        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
         front_comp = comp.front_at_speed(track_speed)
         rear_comp = comp.rear_at_speed(track_speed)
         garage_model = self.car.active_garage_output_model(self.track.track_name)
@@ -478,21 +490,52 @@ class RakeSolver:
                     ) * 2.0
                 ) / 2.0
             )
-            outputs = garage_model.predict(GarageSetupState(
-                front_pushrod_mm=front_pushrod,
-                rear_pushrod_mm=rear_pushrod,
-                front_heave_nmm=baseline.front_heave_nmm,
-                front_heave_perch_mm=baseline.front_heave_perch_mm,
-                rear_third_nmm=baseline.rear_third_nmm,
-                rear_third_perch_mm=baseline.rear_third_perch_mm,
-                front_torsion_od_mm=baseline.front_torsion_od_mm,
-                rear_spring_nmm=baseline.rear_spring_nmm,
-                rear_spring_perch_mm=baseline.rear_spring_perch_mm,
-                front_camber_deg=baseline.front_camber_deg,
-                fuel_l=fuel_load_l,
-            ))
-            static_front = max(float(outputs.front_static_rh_mm), self.car.min_front_rh_static)
-            static_rear = max(float(outputs.rear_static_rh_mm), self.car.min_rear_rh_static)
+            # When the caller explicitly provides static_front_rh_mm /
+            # static_rear_rh_mm (e.g. materialize_overrides passing the
+            # rake-pinned base_result), TRUST those values rather than
+            # recomputing from the BASELINE springs in the garage_model.
+            # The base_result was produced by the rake solver + reconcile
+            # with the actual chosen springs, so its static is correct.
+            # Recomputing here with default heave/perch erases that work
+            # and shifts pinned-front output upward by 2-3 mm. Calibrated
+            # 2026-04-07 against Porsche/Algarve where the base solve
+            # returned static_F=30 (pinned) but recomputation drifted to
+            # 32.78 mm with heave_baseline=180.  reconcile_ride_heights
+            # then used 32.78 as its target, propagating the drift.
+            if static_front_rh_mm is not None:
+                static_front = max(float(static_front_rh_mm), self.car.min_front_rh_static)
+            else:
+                outputs_f = garage_model.predict(GarageSetupState(
+                    front_pushrod_mm=front_pushrod,
+                    rear_pushrod_mm=rear_pushrod,
+                    front_heave_nmm=baseline.front_heave_nmm,
+                    front_heave_perch_mm=baseline.front_heave_perch_mm,
+                    rear_third_nmm=baseline.rear_third_nmm,
+                    rear_third_perch_mm=baseline.rear_third_perch_mm,
+                    front_torsion_od_mm=baseline.front_torsion_od_mm,
+                    rear_spring_nmm=baseline.rear_spring_nmm,
+                    rear_spring_perch_mm=baseline.rear_spring_perch_mm,
+                    front_camber_deg=baseline.front_camber_deg,
+                    fuel_l=fuel_load_l,
+                ))
+                static_front = max(float(outputs_f.front_static_rh_mm), self.car.min_front_rh_static)
+            if static_rear_rh_mm is not None:
+                static_rear = max(float(static_rear_rh_mm), self.car.min_rear_rh_static)
+            else:
+                outputs_r = garage_model.predict(GarageSetupState(
+                    front_pushrod_mm=front_pushrod,
+                    rear_pushrod_mm=rear_pushrod,
+                    front_heave_nmm=baseline.front_heave_nmm,
+                    front_heave_perch_mm=baseline.front_heave_perch_mm,
+                    rear_third_nmm=baseline.rear_third_nmm,
+                    rear_third_perch_mm=baseline.rear_third_perch_mm,
+                    front_torsion_od_mm=baseline.front_torsion_od_mm,
+                    rear_spring_nmm=baseline.rear_spring_nmm,
+                    rear_spring_perch_mm=baseline.rear_spring_perch_mm,
+                    front_camber_deg=baseline.front_camber_deg,
+                    fuel_l=fuel_load_l,
+                ))
+                static_rear = max(float(outputs_r.rear_static_rh_mm), self.car.min_rear_rh_static)
         else:
             front_pushrod = (
                 round(float(front_pushrod_offset_mm) * 2.0) / 2.0
@@ -573,7 +616,13 @@ class RakeSolver:
         comp = self.car.aero_compression
 
         # Use track median speed for compression (consistent with _build_solution)
-        track_speed = self.track.median_speed_kph if self.track.median_speed_kph > 0 else comp.ref_speed_kph
+        # Aero-relevant reference speed: V²-RMS over speed bands, not median.
+        # Aero compression scales with V², so the time-averaged operating point
+        # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
+        # than median (187 vs 174 kph). Validated against IBT-measured rear
+        # compression on Porsche/Algarve (Apr 7 2026).
+        _aero_ref = self.track.aero_reference_speed_kph
+        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
 
         # Front static = sim minimum → front dynamic = minimum - compression
         static_front = self.car.min_front_rh_static
@@ -643,7 +692,7 @@ class RakeSolver:
             baseline_third = self.car.rear_third_spring_nmm
             baseline_spring = self.car.corner_spring.rear_spring_range_nmm[0]
             baseline_perch = self.car.heave_spring.perch_offset_rear_baseline_mm
-            baseline_fuel = getattr(self.car, 'fuel_capacity_l', 58.0)
+            baseline_fuel = self.car.fuel_capacity_l
             baseline_spring_perch = self.car.corner_spring.rear_spring_perch_baseline_mm
             max_static_rear = rh_model.predict_rear_static_rh(
                 max_pushrod, baseline_third, baseline_spring,
@@ -1071,7 +1120,7 @@ def reconcile_ride_heights(
             _rear_spring_for_rh = float(public_output_value('ferrari', 'rear_spring_rate_nmm', actual_rear_spring))
             _heave_perch_for_rh = step2.perch_offset_rear_mm
 
-        _fuel_for_rh = getattr(car, 'fuel_capacity_l', 58.0)
+        _fuel_for_rh = car.fuel_capacity_l
         predicted_rh = rh_model.predict_rear_static_rh(
             step1.rear_pushrod_offset_mm, _third_for_rh,
             _rear_spring_for_rh, _heave_perch_for_rh,

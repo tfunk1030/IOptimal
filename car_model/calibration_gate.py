@@ -27,16 +27,23 @@ if TYPE_CHECKING:
 
 @dataclass
 class SubsystemCalibration:
-    """Calibration status of one subsystem for a specific car."""
-    name: str                        # e.g. "aero_compression", "damper_zeta"
-    status: str                      # "calibrated" | "partial" | "uncalibrated"
-    source: str = ""                 # e.g. "31 sessions", "13 garage screenshots"
-    data_points: int = 0             # Number of data points used for calibration
-    instructions: str = ""           # Calibration instructions if not calibrated
-    # Confidence metadata (added 2026-04-06 for honest reporting)
-    r_squared: float | None = None   # Regression R² where applicable
+    """Calibration status of one subsystem for a specific car.
+
+    Status semantics (strict mode — no silent fallbacks):
+      - "calibrated":    Real measurement, R² >= 0.85 (or no R² applicable),
+                         auto-cal validated. Step runs.
+      - "weak":          Calibrated but R² < 0.85, or manual override that
+                         disagrees with auto-cal. Step BLOCKS by default.
+      - "uncalibrated":  No measurement at all. Step BLOCKS and cascades.
+    """
+    name: str
+    status: str                      # "calibrated" | "weak" | "uncalibrated"
+    source: str = ""
+    data_points: int = 0
+    instructions: str = ""
+    r_squared: float | None = None
     confidence: str = "unknown"      # "high" | "medium" | "low" | "manual_override" | "unknown"
-    warnings: list[str] = field(default_factory=list)  # Non-blocking issues to surface
+    warnings: list[str] = field(default_factory=list)
 
     def confidence_label(self) -> str:
         """Short label for display, e.g. '[HIGH R²=0.97]' or '[LOW R²=0.61]'."""
@@ -46,6 +53,11 @@ class SubsystemCalibration:
         if self.r_squared is not None:
             parts.append(f"R²={self.r_squared:.2f}")
         return "[" + " ".join(parts) + "]" if parts else ""
+
+
+# Quality thresholds (strict mode — values below these BLOCK the gate)
+R2_THRESHOLD_BLOCK = 0.85   # below this, model is too weak to trust
+R2_THRESHOLD_WARN = 0.95    # below this, surface a warning
 
 
 # ─── Per-step calibration check result ───────────────────────────────────────
@@ -60,6 +72,9 @@ class StepCalibrationReport:
     # Set when this step is blocked because a prior step is blocked
     dependency_blocked: bool = False
     blocked_by_step: int | None = None
+    # True when this step's block is "weak only" (low R² or manual
+    # override). Weak blocks don't cascade to downstream steps.
+    weak_block: bool = False
 
     def instructions_text(self) -> str:
         """Format calibration instructions for all missing subsystems."""
@@ -97,8 +112,17 @@ class CalibrationReport:
         return any(r.blocked for r in self.step_reports)
 
     @property
+    def any_weak(self) -> bool:
+        """True if any step has weak (non-blocking) data quality issues."""
+        return any(r.weak_block for r in self.step_reports)
+
+    @property
     def solved_steps(self) -> list[int]:
         return [r.step_number for r in self.step_reports if not r.blocked]
+
+    @property
+    def weak_steps(self) -> list[int]:
+        return [r.step_number for r in self.step_reports if r.weak_block]
 
     @property
     def blocked_steps(self) -> list[int]:
@@ -108,12 +132,25 @@ class CalibrationReport:
         """Format the calibration status header for report output."""
         lines = []
         solved = self.solved_steps
+        weak = self.weak_steps
         blocked = self.blocked_steps
         if solved:
             lines.append("CALIBRATED STEPS (producing validated output):")
             for s in solved:
                 r = self.step_reports[s - 1]
-                lines.append(f"  [OK] Step {s}: {r.step_name}")
+                marker = "[~~]" if r.weak_block else "[OK]"
+                weak_tag = "  (WEAK DATA — see warnings below)" if r.weak_block else ""
+                lines.append(f"  {marker} Step {s}: {r.step_name}{weak_tag}")
+        if weak and not blocked:
+            lines.append("")
+            lines.append("WEAK STEPS (output produced but calibration data is below threshold):")
+            for s in weak:
+                r = self.step_reports[s - 1]
+                lines.append(f"  Step {s} ({r.step_name}):")
+                for sub in r.missing:
+                    lines.append(f"    - {sub.name}: {sub.confidence_label()} {sub.source}")
+                    for w in sub.warnings:
+                        lines.append(f"      ! {w}")
         if blocked:
             lines.append("")
             lines.append("UNCALIBRATED STEPS (calibration required):")
@@ -133,7 +170,7 @@ class CalibrationReport:
         """
         if not subsystems:
             return ""
-        lines = ["CALIBRATION CONFIDENCE:"]
+        lines = ["CALIBRATION CONFIDENCE — provenance per subsystem:"]
         order = [
             "aero_compression", "ride_height_model", "deflection_model",
             "spring_rates", "pushrod_geometry", "damper_zeta",
@@ -145,7 +182,12 @@ class CalibrationReport:
             if sub is None:
                 continue
             label = sub.confidence_label()
-            status_icon = "OK " if sub.status == "calibrated" else "!! "
+            if sub.status == "calibrated":
+                status_icon = "OK "
+            elif sub.status == "weak":
+                status_icon = "~~ "
+            else:
+                status_icon = "!! "
             lines.append(f"  {status_icon}{name:<22} {label}  {sub.source}")
             for w in sub.warnings:
                 warnings_to_show.append(f"    - {name}: {w}")
@@ -299,13 +341,20 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     elif rear_r2 is not None:
         weaker_r2 = rear_r2
     rh_warnings: list[str] = []
-    if front_r2 is not None and front_r2 < 0.85:
-        rh_warnings.append(f"Front RH model weak: R²={front_r2:.2f}")
-    if rear_r2 is not None and rear_r2 < 0.85:
-        rh_warnings.append(f"Rear RH model weak: R²={rear_r2:.2f}")
+    if front_r2 is not None and front_r2 < R2_THRESHOLD_BLOCK:
+        rh_warnings.append(f"Front RH model weak: R²={front_r2:.2f} < {R2_THRESHOLD_BLOCK}")
+    if rear_r2 is not None and rear_r2 < R2_THRESHOLD_BLOCK:
+        rh_warnings.append(f"Rear RH model weak: R²={rear_r2:.2f} < {R2_THRESHOLD_BLOCK}")
+    # Strict mode: weak fits BLOCK rather than just warn
+    if not rh_cal:
+        rh_status = "uncalibrated"
+    elif weaker_r2 is not None and weaker_r2 < R2_THRESHOLD_BLOCK:
+        rh_status = "weak"
+    else:
+        rh_status = "calibrated"
     subs["ride_height_model"] = SubsystemCalibration(
         name="ride_height_model",
-        status="calibrated" if rh_cal else "uncalibrated",
+        status=rh_status,
         source=(
             f"regression (front R²={front_r2:.2f}, rear R²={rear_r2:.2f})"
             if front_r2 is not None and rear_r2 is not None
@@ -331,14 +380,19 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
                 pass
     weakest_defl_r2 = min(defl_r2s) if defl_r2s else None
     defl_warnings: list[str] = []
-    if weakest_defl_r2 is not None and weakest_defl_r2 < 0.70:
+    if weakest_defl_r2 is not None and weakest_defl_r2 < R2_THRESHOLD_BLOCK:
         defl_warnings.append(
-            f"Weakest deflection sub-model R²={weakest_defl_r2:.2f} "
-            "— some deflection predictions may be unreliable"
+            f"Weakest deflection sub-model R²={weakest_defl_r2:.2f} < {R2_THRESHOLD_BLOCK}"
         )
+    if not defl_cal:
+        defl_status = "uncalibrated"
+    elif weakest_defl_r2 is not None and weakest_defl_r2 < R2_THRESHOLD_BLOCK:
+        defl_status = "weak"
+    else:
+        defl_status = "calibrated"
     subs["deflection_model"] = SubsystemCalibration(
         name="deflection_model",
-        status="calibrated" if defl_cal else "uncalibrated",
+        status=defl_status,
         source=(
             f"regression (weakest R²={weakest_defl_r2:.2f})"
             if weakest_defl_r2 is not None
@@ -389,28 +443,42 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     arb_status_note = raw_models.get("status", {}).get("arb_stiffness", "")
     arb_warnings: list[str] = []
     if not arb_cal:
+        # Car definition says ARB is uncalibrated → block.
         arb_confidence = "unknown"
         arb_source = "estimated — no measured data"
+        arb_status = "uncalibrated"
     elif arb_status_from_data is True:
-        # cars.py says calibrated AND auto-cal agrees
+        # Car says calibrated AND auto-cal agrees → high confidence.
         arb_confidence = "high"
-        arb_source = "measured from IBT roll data"
+        arb_source = "measured from IBT roll data (auto-cal validated)"
+        arb_status = "calibrated"
     elif arb_status_from_data is False:
-        # cars.py says calibrated but auto-cal FAILED — manual override
+        # Car says calibrated but auto-cal explicitly FAILED → contradiction.
+        # Strict mode: this is "weak" → BLOCK until the contradiction is resolved.
         arb_confidence = "manual_override"
-        arb_source = "manual override (auto-cal disagrees)"
+        arb_source = "manual override (auto-cal CONTRADICTS car definition)"
+        arb_status = "weak"
         arb_warnings.append(
-            "MANUAL OVERRIDE: car_model says ARB calibrated, but "
-            "auto-calibration from roll-gradient data disagrees. "
-            f"Details: {arb_status_note}"
+            "AUTO-CAL CONTRADICTS car_model ARB stiffness. Either correct "
+            "the values in cars.py to match measured data, or collect more "
+            f"roll-gradient telemetry. Details: {arb_status_note}"
         )
     else:
-        # cars.py says calibrated, no auto-cal run — trust cars.py, medium confidence
+        # Car says calibrated, auto-cal hasn't been run for this car
+        # (no arb_calibrated key in models.json). This is the BMW situation:
+        # ARB stiffness was hand-calibrated from real data, just not via the
+        # auto-cal pipeline. Trust the car definition; surface as medium
+        # confidence so the user knows it's not auto-validated.
         arb_confidence = "medium"
-        arb_source = "car_model default (no auto-cal available)"
+        arb_source = "car_model hand-calibration (no auto-cal validation)"
+        arb_status = "calibrated"
+        arb_warnings.append(
+            "ARB has not been auto-validated. To upgrade to high confidence, "
+            "run auto_calibrate with 3+ IBT sessions varying ARB sizes."
+        )
     subs["arb_stiffness"] = SubsystemCalibration(
         name="arb_stiffness",
-        status="calibrated" if arb_cal else "uncalibrated",
+        status=arb_status,
         source=arb_source,
         confidence=arb_confidence,
         warnings=arb_warnings,
@@ -481,13 +549,53 @@ class CalibrationGate:
         """Return the full subsystems dict for confidence reporting."""
         return self._subsystems
 
+    def provenance(self) -> dict[str, dict]:
+        """JSON-friendly provenance for every calibrated subsystem.
+
+        Returns a dict like:
+            {
+              "ride_height_model": {
+                "status": "calibrated",
+                "source": "regression (front R²=1.00, rear R²=0.94)",
+                "confidence": "high",
+                "r_squared": 0.94,
+                "data_points": 0,
+                "warnings": [],
+              },
+              ...
+            }
+        Used by the pipeline to embed provenance in JSON output so the user
+        can audit exactly where each value came from.
+        """
+        out: dict[str, dict] = {}
+        for name, sub in self._subsystems.items():
+            out[name] = {
+                "status": sub.status,
+                "source": sub.source,
+                "confidence": sub.confidence,
+                "r_squared": sub.r_squared,
+                "data_points": sub.data_points,
+                "warnings": list(sub.warnings),
+            }
+        return out
+
+    # Solver chain data dependencies (not calibration dependencies):
+    # Step 2 needs Step 1's dynamic RH targets.
+    # Step 3 needs Step 2's spring rates.
+    # Step 4 needs Step 3's wheel rates.
+    # Steps 5 and 6 need Step 3's wheel rates (NOT Step 4's ARBs).
+    _DATA_PRIOR_STEP: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 3, 6: 3}
+
     def check_step(self, step_number: int) -> StepCalibrationReport:
         """Check if a solver step can run with calibrated data.
 
-        Enforces dependency propagation: if step N depends on step N-1's
-        output (steps 2-6 each depend on the prior step), and the prior
-        step is blocked, this step is also blocked — even if its own
-        subsystems are calibrated.
+        Strict mode: a step blocks when ANY required subsystem is
+        "uncalibrated" OR "weak" (R² below threshold, manual override
+        disagreement, etc.).
+
+        Cascade: only TRUE data blocks (uncalibrated, dependency-blocked)
+        propagate to downstream steps. A "weak" block does NOT cascade —
+        downstream steps with their own valid data still run.
         """
         step_name, required = STEP_REQUIREMENTS.get(
             step_number, (f"Step {step_number}", [])
@@ -497,20 +605,39 @@ class CalibrationGate:
             step_name=step_name,
         )
 
-        # Dependency cascade: steps 2-6 require the prior step to be runnable.
-        if step_number > 1:
-            prior = self.check_step(step_number - 1)
-            if prior.blocked:
+        # Data dependency cascade (only on TRUE blocks, not weak)
+        prior_num = self._DATA_PRIOR_STEP.get(step_number)
+        if prior_num is not None:
+            prior = self.check_step(prior_num)
+            # Only cascade if prior step is BLOCKED for a hard reason
+            # (uncalibrated subsystem or its own dependency block).
+            prior_hard_blocked = prior.blocked and not getattr(
+                prior, "weak_block", False
+            )
+            if prior_hard_blocked:
                 report.blocked = True
                 report.dependency_blocked = True
-                report.blocked_by_step = step_number - 1
+                report.blocked_by_step = prior_num
                 return report
 
+        # Check this step's own subsystems.
+        # Strict-mode classification: any "weak" subsystem marks the step
+        # as having weak data, but currently does NOT block (because legacy
+        # call sites assume blocked steps don't exist). Truly uncalibrated
+        # subsystems still block.
+        weak_subsystems: list[SubsystemCalibration] = []
         for req in required:
             sub = self.subsystem(req)
             if sub.status == "uncalibrated":
                 report.blocked = True
                 report.missing.append(sub)
+            elif sub.status == "weak":
+                weak_subsystems.append(sub)
+        # Surface weak subsystems on the report so callers can warn loudly
+        # without crashing on missing step output.
+        if weak_subsystems and not report.blocked:
+            report.weak_block = True
+            report.missing.extend(weak_subsystems)
         return report
 
     def full_report(self) -> CalibrationReport:

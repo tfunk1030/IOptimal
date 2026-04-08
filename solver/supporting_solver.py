@@ -290,22 +290,44 @@ class SupportingSolver:
         try:
             from solver.diff_solver import DiffSolver
             diff_solver = DiffSolver(self.car)
+            # Parse driver-loaded coast/drive from "40/65" string format
+            _curr_ramps = getattr(self.current_setup, "diff_ramp_angles", None) or ""
+            _curr_coast = None
+            _curr_drive = None
+            if isinstance(_curr_ramps, str) and "/" in _curr_ramps:
+                try:
+                    _c, _d = _curr_ramps.split("/")
+                    _curr_coast = int(float(_c.strip()))
+                    _curr_drive = int(float(_d.strip()))
+                except (ValueError, TypeError):
+                    pass
+            _curr_preload = getattr(self.current_setup, "diff_preload_nm", None)
             diff_sol = diff_solver.solve(
                 driver=self.driver,
                 measured=self.measured,
                 track=self.track,
                 current_clutch_plates=getattr(self.current_setup, "diff_clutch_plates", 0) or None,
+                current_coast_ramp_deg=_curr_coast,
+                current_drive_ramp_deg=_curr_drive,
+                current_preload_nm=_curr_preload,
             )
             sol.diff_preload_nm = diff_sol.preload_nm
             sol.diff_ramp_coast = diff_sol.coast_ramp_deg
             sol.diff_ramp_drive = diff_sol.drive_ramp_deg
             sol.diff_clutch_plates = diff_sol.clutch_plates
-            sol.diff_ramp_option_idx = diff_ramp_option_index(
+            # NOTE: must NOT use `or 1` here — the legal options tuple has
+            # index 0 = (40, 65) which is FALSY in Python and would silently
+            # collapse the driver-correct coast/drive=40/65 to option idx 1
+            # (= 45/70). Validated 2026-04-07 against Porsche/Algarve where
+            # the diff_solver correctly returned coast=40/drive=65 but the
+            # supporting solver wrote 45/70 to the .sto due to this bug.
+            _idx = diff_ramp_option_index(
                 self.car,
                 coast=sol.diff_ramp_coast,
                 drive=sol.diff_ramp_drive,
                 default=1,
-            ) or 1
+            )
+            sol.diff_ramp_option_idx = 1 if _idx is None else int(_idx)
             sol.diff_ramp_angles = diff_ramp_string_for_option(
                 self.car,
                 sol.diff_ramp_option_idx,
@@ -381,7 +403,8 @@ class SupportingSolver:
 
         sol.diff_ramp_coast = coast
         sol.diff_ramp_drive = drive
-        sol.diff_ramp_option_idx = diff_ramp_option_index(self.car, coast=coast, drive=drive, default=1) or 1
+        _idx_fb = diff_ramp_option_index(self.car, coast=coast, drive=drive, default=1)
+        sol.diff_ramp_option_idx = 1 if _idx_fb is None else int(_idx_fb)  # NOT `or 1` — idx 0 is falsy
         sol.diff_ramp_angles = diff_ramp_string_for_option(
             self.car,
             sol.diff_ramp_option_idx,
@@ -457,6 +480,21 @@ class SupportingSolver:
 
         sol.tc_gain = int(_clamp(tc_gain, 1, 10))
         sol.tc_slip = int(_clamp(tc_slip, 1, 10))
+        # Driver-loaded TC anchor: prefer driver's tc_gain/tc_slip when our
+        # heuristic is within ±2 clicks. The synthetic tc_gain/tc_slip rules
+        # don't capture per-driver pedal sensitivity / preferred intervention
+        # — driver-validated values (loaded into the IBT session) trump the
+        # heuristic when the gap is small.
+        _curr_tc_gain = getattr(self.current_setup, "tc_gain", None)
+        _curr_tc_slip = getattr(self.current_setup, "tc_slip", None)
+        if (_curr_tc_gain is not None and 1 <= int(_curr_tc_gain) <= 10
+                and abs(int(_curr_tc_gain) - sol.tc_gain) <= 2):
+            sol.tc_gain = int(_curr_tc_gain)
+            reasons.append(f"anchored to driver-loaded gain={sol.tc_gain}")
+        if (_curr_tc_slip is not None and 1 <= int(_curr_tc_slip) <= 10
+                and abs(int(_curr_tc_slip) - sol.tc_slip) <= 2):
+            sol.tc_slip = int(_curr_tc_slip)
+            reasons.append(f"anchored to driver-loaded slip={sol.tc_slip}")
         sol.tc_reasoning = "; ".join(reasons)
         if getattr(self.car, "canonical_name", "") == "ferrari":
             live_gain = getattr(measured, "live_tc_gain", None)

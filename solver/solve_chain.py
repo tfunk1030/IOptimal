@@ -237,12 +237,16 @@ def _enforce_ramp_pair(supporting: Any, car: Any = None) -> None:
     best = min(valid_pairs, key=lambda p: abs(p[0] - coast) + abs(p[1] - drive))
     supporting.diff_ramp_coast = best[0]
     supporting.diff_ramp_drive = best[1]
-    supporting.diff_ramp_option_idx = diff_ramp_option_index(
+    # NOTE: must NOT use `or 1` — the legal options tuple has index 0 =
+    # (40, 65) which is FALSY in Python. Use explicit None check to preserve
+    # the legitimate idx=0 value. (Same falsy-int bug fixed in supporting_solver.)
+    _idx = diff_ramp_option_index(
         car,
         coast=supporting.diff_ramp_coast,
         drive=supporting.diff_ramp_drive,
         default=1,
-    ) or 1
+    )
+    supporting.diff_ramp_option_idx = 1 if _idx is None else int(_idx)
     supporting.diff_ramp_angles = diff_ramp_string_for_option(
         car,
         getattr(supporting, "diff_ramp_option_idx", 1),
@@ -387,6 +391,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
 
     heave_solver = HeaveSolver(car, track)
     _k_current = getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None
+    _k_rear_current = getattr(inputs.current_setup, "rear_third_nmm", None) if inputs.current_setup else None
     step2 = heave_solver.solve(
         dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
         dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
@@ -399,13 +404,20 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         front_camber_deg=_front_camber(inputs),
         measured=inputs.measured,
         front_heave_current_nmm=_k_current,
+        rear_third_current_nmm=_k_rear_current,
     )
 
     corner_solver = CornerSpringSolver(car, track)
+    _curr_rear_coil = (
+        getattr(inputs.current_setup, "rear_spring_nmm", None)
+        if inputs.current_setup else None
+    )
     step3 = corner_solver.solve(
         front_heave_nmm=step2.front_heave_nmm,
         rear_third_nmm=step2.rear_third_nmm,
         fuel_load_l=fuel,
+        current_rear_third_nmm=_k_rear_current,
+        current_rear_spring_nmm=_curr_rear_coil,
     )
     rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
 
@@ -438,11 +450,17 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
 
     arb_solver = ARBSolver(car, track)
     _current_rear_arb = getattr(inputs.current_setup, "rear_arb_size", None) if inputs.current_setup else None
+    _current_rear_arb_blade = getattr(inputs.current_setup, "rear_arb_blade", None) if inputs.current_setup else None
+    _current_front_arb = getattr(inputs.current_setup, "front_arb_size", None) if inputs.current_setup else None
+    _current_front_arb_blade = getattr(inputs.current_setup, "front_arb_blade", None) if inputs.current_setup else None
     step4 = arb_solver.solve(
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
         rear_wheel_rate_nmm=rear_wheel_rate_nmm,
         lltd_offset=mods.lltd_offset,
         current_rear_arb_size=_current_rear_arb,
+        current_rear_arb_blade=_current_rear_arb_blade,
+        current_front_arb_size=_current_front_arb,
+        current_front_arb_blade=_current_front_arb_blade,
     )
 
     geom_solver = WheelGeometrySolver(car, track)
@@ -699,6 +717,14 @@ def materialize_overrides(
                 front_camber_deg=_front_camber(inputs),
             )
         else:
+            _k_current = (
+                getattr(inputs.current_setup, "front_heave_nmm", None)
+                if inputs.current_setup else None
+            )
+            _k_rear_current = (
+                getattr(inputs.current_setup, "rear_third_nmm", None)
+                if inputs.current_setup else None
+            )
             step2 = heave_solver.solve(
                 dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
                 dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
@@ -709,6 +735,9 @@ def materialize_overrides(
                 rear_pushrod_mm=step1.rear_pushrod_offset_mm,
                 fuel_load_l=inputs.fuel_load_l,
                 front_camber_deg=_front_camber(inputs),
+                measured=inputs.measured,
+                front_heave_current_nmm=_k_current,
+                rear_third_current_nmm=_k_rear_current,
             )
 
         if overrides.step3:
@@ -722,10 +751,20 @@ def materialize_overrides(
                 rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
             )
         else:
+            _curr_rt = (
+                getattr(inputs.current_setup, "rear_third_nmm", None)
+                if inputs.current_setup else None
+            )
+            _curr_rc = (
+                getattr(inputs.current_setup, "rear_spring_nmm", None)
+                if inputs.current_setup else None
+            )
             step3 = corner_solver.solve(
                 front_heave_nmm=step2.front_heave_nmm,
                 rear_third_nmm=step2.rear_third_nmm,
                 fuel_load_l=inputs.fuel_load_l,
+                current_rear_third_nmm=_curr_rt,
+                current_rear_spring_nmm=_curr_rc,
             )
         rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
         heave_solver.reconcile_solution(
@@ -810,10 +849,20 @@ def materialize_overrides(
                 rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
             )
         else:
+            _curr_rt = (
+                getattr(inputs.current_setup, "rear_third_nmm", None)
+                if inputs.current_setup else None
+            )
+            _curr_rc = (
+                getattr(inputs.current_setup, "rear_spring_nmm", None)
+                if inputs.current_setup else None
+            )
             step3 = corner_solver.solve(
                 front_heave_nmm=step2.front_heave_nmm,
                 rear_third_nmm=step2.rear_third_nmm,
                 fuel_load_l=inputs.fuel_load_l,
+                current_rear_third_nmm=_curr_rt,
+                current_rear_spring_nmm=_curr_rc,
             )
         rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
         heave_solver.reconcile_solution(
@@ -869,11 +918,17 @@ def materialize_overrides(
             )
         else:
             _current_rear_arb = getattr(inputs.current_setup, "rear_arb_size", None) if inputs.current_setup else None
+            _current_rear_arb_blade = getattr(inputs.current_setup, "rear_arb_blade", None) if inputs.current_setup else None
+            _current_front_arb = getattr(inputs.current_setup, "front_arb_size", None) if inputs.current_setup else None
+            _current_front_arb_blade = getattr(inputs.current_setup, "front_arb_blade", None) if inputs.current_setup else None
             step4 = arb_solver.solve(
                 front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
                 rear_wheel_rate_nmm=rear_wheel_rate_nmm,
                 lltd_offset=mods.lltd_offset,
                 current_rear_arb_size=_current_rear_arb,
+                current_rear_arb_blade=_current_rear_arb_blade,
+                current_front_arb_size=_current_front_arb,
+                current_front_arb_blade=_current_front_arb_blade,
             )
 
     rebuild_step5 = earliest <= 5 or rebuild_step4

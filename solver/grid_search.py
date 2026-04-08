@@ -165,9 +165,12 @@ FAMILY_BIASES: dict[str, dict[str, tuple[float, float]]] = {
     "robust": {
         # Wing: prefer lower (12-14 deg out of 12-17) → center at 30% of range
         "wing_angle_deg":          (0.30, 0.60),
-        # Pushrods: modest offset, stay away from extremes
-        "front_pushrod_offset_mm": (0.50, 0.60),
-        "rear_pushrod_offset_mm":  (0.50, 0.60),
+        # Pushrods: full range. Validated 2026-04-07 against Porsche/Algarve
+        # driver-optimal front pushrod -39.5 (sim min), rear +18 — driver runs
+        # at the EXTREME end for max DF, not the midpoint. Old (0.50, 0.60)
+        # only sampled ±24 mm from center, mathematically excluding the optimum.
+        "front_pushrod_offset_mm": (0.50, 1.00),
+        "rear_pushrod_offset_mm":  (0.50, 1.00),
         # Springs: soft-to-medium (reduces bottoming risk, wider aero window)
         "front_heave_spring_nmm":  (0.30, 0.60),
         "rear_third_spring_nmm":   (0.30, 0.60),

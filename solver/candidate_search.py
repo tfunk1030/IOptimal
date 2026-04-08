@@ -608,6 +608,20 @@ def _apply_family_state_adjustments(
     _adjust_numeric(targets["step1"], "front_pushrod_offset_mm", 0.8 * front_support * family_intensity, decimals=3)
 
     if not cluster_seeded:
+        # Driver-loaded heave anchor: when the base solver already returned
+        # values matching the driver's current setup (within snap step), the
+        # heave/third have been validated and shouldn't be scaled by the
+        # family heuristic. Scaling on top of an anchor causes 1-step drift
+        # away from the driver-validated operating point. Look up the loaded
+        # values from authority_session.setup if available.
+        _curr_setup = getattr(authority_session, "setup", None) if authority_session else None
+        _curr_fheave = float(getattr(_curr_setup, "front_heave_nmm", 0.0) or 0.0) if _curr_setup else 0.0
+        _curr_rthird = float(getattr(_curr_setup, "rear_third_nmm", 0.0) or 0.0) if _curr_setup else 0.0
+        _base_fheave = float(targets["step2"].get("front_heave_nmm", 0.0) or 0.0)
+        _base_rthird = float(targets["step2"].get("rear_third_nmm", 0.0) or 0.0)
+        _fheave_anchored = _curr_fheave > 0 and abs(_base_fheave - _curr_fheave) <= 10.0
+        _rthird_anchored = _curr_rthird > 0 and abs(_base_rthird - _curr_rthird) <= 10.0
+
         if is_ferrari:
             _adjust_numeric(
                 targets["step2"],
@@ -622,8 +636,10 @@ def _apply_family_state_adjustments(
                 decimals=0,
             )
         else:
-            _scale_numeric(targets["step2"], "front_heave_nmm", 1.0 + 0.12 * front_support * family_intensity, decimals=3)
-            _scale_numeric(targets["step2"], "rear_third_nmm", 1.0 + 0.12 * rear_support * family_intensity, decimals=3)
+            if not _fheave_anchored:
+                _scale_numeric(targets["step2"], "front_heave_nmm", 1.0 + 0.12 * front_support * family_intensity, decimals=3)
+            if not _rthird_anchored:
+                _scale_numeric(targets["step2"], "rear_third_nmm", 1.0 + 0.12 * rear_support * family_intensity, decimals=3)
     _adjust_numeric(targets["step2"], "perch_offset_front_mm", 1.5 * front_support * family_intensity, decimals=3)
     _adjust_numeric(targets["step2"], "perch_offset_rear_mm", 2.0 * rear_support * family_intensity, decimals=3)
 
@@ -650,9 +666,16 @@ def _apply_family_state_adjustments(
         )
 
     arb_delta = int(round((entry_push + high_speed_push - exit_instability) * family_intensity))
-    _adjust_integer(targets["step4"], "rear_arb_blade_start", arb_delta, lo=1, hi=6)
-    _adjust_integer(targets["step4"], "rarb_blade_slow_corner", arb_delta, lo=1, hi=6)
-    _adjust_integer(targets["step4"], "rarb_blade_fast_corner", arb_delta, lo=1, hi=6)
+    # Clamp to the car-specific rear ARB blade range, NOT a hardcoded 1-6
+    # (which was a BMW assumption). Porsche's rear ARB has blade range 1-16;
+    # driver-validated operating point is blade=10 — unreachable with hi=6.
+    _arb_hi = (
+        int(getattr(getattr(car, "arb", None), "rear_blade_count", 6))
+        if car is not None else 6
+    ) or 6
+    _adjust_integer(targets["step4"], "rear_arb_blade_start", arb_delta, lo=1, hi=_arb_hi)
+    _adjust_integer(targets["step4"], "rarb_blade_slow_corner", arb_delta, lo=1, hi=_arb_hi)
+    _adjust_integer(targets["step4"], "rarb_blade_fast_corner", arb_delta, lo=1, hi=_arb_hi)
 
     _adjust_numeric(targets["step5"], "front_camber_deg", -0.12 * entry_push * family_intensity, decimals=3)
     _adjust_numeric(targets["step5"], "rear_camber_deg", -0.08 * exit_instability * family_intensity, decimals=3)

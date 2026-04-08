@@ -688,11 +688,12 @@ def analyze_stint(
     Returns:
         StintStrategy with multi-condition analysis, balance curve, and compromise parameters
     """
-    # Default to per-car baselines (no BMW hardcodes) when caller doesn't pass values
+    # Default to per-car baselines when caller doesn't pass values.
+    # Every car must define these — no fallback to hide missing definitions.
     if base_heave_nmm is None:
-        base_heave_nmm = float(getattr(car, "front_heave_spring_nmm", 50.0))
+        base_heave_nmm = float(car.front_heave_spring_nmm)
     if base_third_nmm is None:
-        base_third_nmm = float(getattr(car, "rear_third_spring_nmm", 530.0))
+        base_third_nmm = float(car.rear_third_spring_nmm)
 
     # When evolution is provided, derive parameters from telemetry
     if evolution is not None:

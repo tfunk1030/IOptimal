@@ -239,6 +239,9 @@ class ARBSolver:
         rear_wheel_rate_nmm: float,
         lltd_offset: float = 0.0,
         current_rear_arb_size: str | None = None,
+        current_rear_arb_blade: int | None = None,
+        current_front_arb_size: str | None = None,
+        current_front_arb_blade: int | None = None,
     ) -> ARBSolution:
         """Find ARB sizes and blades for target LLTD.
 
@@ -301,7 +304,7 @@ class ARBSolver:
             target_lltd = self.car.measured_lltd_target + lltd_offset
         else:
             # Theoretical formula (physics-based from tyre load sensitivity + track speed)
-            tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.20)
+            tyre_sens = self.car.tyre_load_sensitivity
             pct_hs = getattr(self.track, "pct_above_200kph", 0.0)
             hs_correction = 0.01 * pct_hs  # up to +1% at 100% high-speed track
             lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
@@ -363,6 +366,37 @@ class ARBSolver:
                         best_lltd_error = err
                         best_size = rear_size
                         best_blade = blade
+
+            # ── Driver anchor fallback ──
+            # If even the best searched setup is far from target (>3 pp),
+            # the LLTD physics model is mis-calibrated for this car/track
+            # combo and the IBT-validated current setup is more reliable
+            # than any model-derived guess. Anchor to the driver's loaded
+            # ARB and accept the model's LLTD reading is wrong.
+            #
+            # Validated 2026-04-07 against Porsche/Algarve where:
+            #   measured LLTD target = 0.503 (from 14 IBT sessions)
+            #   model says driver setup (Stiff/10) gives LLTD = 0.391
+            #   → 11.2 pp gap means the rear-roll-stiffness contribution
+            #     is over-stated. Solver picks Soft/1 (LLTD=0.43) as
+            #     "closest" but driver's Stiff/10 actually achieves the
+            #     target in real telemetry. Anchor to driver.
+            if (best_lltd_error > 0.03
+                    and current_rear_arb_size is not None
+                    and current_rear_arb_blade is not None
+                    and current_rear_arb_size in arb.rear_size_labels
+                    and current_rear_arb_size.lower() != "disconnected"
+                    and 1 <= int(current_rear_arb_blade) <= arb.rear_blade_count):
+                best_size = current_rear_arb_size
+                best_blade = int(current_rear_arb_blade)
+                # Recompute the model's LLTD at the anchored setup (will
+                # show the model's mis-calibration in step4 output for
+                # later analysis).
+                lltd_anchor, _, _, _, _ = self._compute_lltd(
+                    farb_size, farb_blade, best_size, best_blade,
+                    k_springs_front, k_springs_rear
+                )
+                best_lltd_error = abs(lltd_anchor - target_lltd)
 
         # Compute full solution at chosen ARB setup
         lltd, k_farb, k_rarb, k_front, k_rear = self._compute_lltd(
@@ -528,7 +562,7 @@ class ARBSolver:
             target_lltd = self.car.measured_lltd_target + lltd_offset
         else:
             # Theoretical formula (physics-based from tyre load sensitivity + track speed)
-            tyre_sens = getattr(self.car, "tyre_load_sensitivity", 0.20)
+            tyre_sens = self.car.tyre_load_sensitivity
             pct_hs = getattr(self.track, "pct_above_200kph", 0.0)
             hs_correction = 0.01 * pct_hs
             lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)

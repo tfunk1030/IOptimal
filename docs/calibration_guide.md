@@ -1,5 +1,137 @@
 # iOptimal GTP Calibration Guide
-*Generated 2026-04-02 | Branch: claw-research*
+*Generated 2026-04-02 | Last revised: 2026-04-08 (LLTD phantom proxy disabled, σ-cal driver anchor architecture, per-axle roll damper flags)*
+
+---
+
+## 🚨 What Changed in 2026-04-08
+
+### LLTD calibration was reading a geometric proxy, not a real measurement
+
+The field stored as `lltd_measured` in `data/calibration/<car>/models.json` is the analyzer's `roll_distribution_proxy`:
+
+```python
+# analyzer/extract.py:574–599  (the comment in the file already warns this is NOT LLTD)
+front_moment = mean_front_RH_diff × tw_f²
+rear_moment  = mean_rear_RH_diff  × tw_r²
+roll_distribution_proxy = front_moment / total_moment
+state.lltd_measured = state.roll_distribution_proxy   # backward-compat alias
+```
+
+For a rigid chassis this collapses to `t_f³ / (t_f³ + t_r³)`. It is **insensitive to spring stiffness**.
+
+**Verified empirically across 5 Porsche/Algarve IBTs** with rear stiffness varying 100–300%:
+
+| Session | R_third | R_coil | R_ARB | "lltd_measured" proxy |
+|---|---|---|---|---|
+| 14-23-44 B HOT | 160 | 180 | Stiff/10 | 0.5049 |
+| 13-59-01 B HOT | 160 | 180 | Stiff/10 | 0.5050 |
+| 13-26-10 B HOT | 160 | 180 | Stiff/10 | 0.5047 |
+| 13-14-00 A heavy | **320** | **150** | **Stiff/5** | 0.5056 |
+| 15-58-25 hybrid | **320** | **180** | Stiff/10 | 0.5056 |
+
+**Spread = 0.09 pp** across rear-third varying 100% and rear ARB shifting 5 blades. A real LLTD measurement would shift 5–15 pp. The proxy is geometric noise.
+
+**Fix shipped 2026-04-08:**
+- `auto_calibrate.py:1360–1395` block populating `models.measured_lltd_target = mean(proxy)` is now gated behind `if False:` with provenance comment
+- `data/calibration/porsche/models.json:measured_lltd_target` cleared to `null`
+- `car_model/cars.py` Porsche definition sets `measured_lltd_target = 0.521` explicitly from the **OptimumG/Milliken physics formula**: `weight_dist_front + (tyre_sens/0.20) × 0.05 + speed_correction = 0.471 + 0.045 + ~0.005`
+- Other cars: gate falls back to `arb_solver.py:303` physics computation when `measured_lltd_target` is None
+- The "11 pp model gap" (model k_front/k_total = 0.391 vs proxy 0.503) was apples-to-oranges. With the physics target (0.521), the gap is 13 pp — still REAL but un-attributable without true wheel-force telemetry
+
+**Open epistemic gap**: we have **no direct LLTD measurement** from iRacing IBT (no individual wheel-load channels). To upgrade we need EITHER (a) wheel-force telemetry if iRacing exposes it, OR (b) a controlled per-axle ARB lap-time correlation across 10+ varied-blade sessions on the same track. Three hypotheses for the 13 pp model-vs-physics gap remain unverifiable: (A) OptimumG rule doesn't apply to GTP/Porsche tyres, (B) driver setup is rear-stiff suboptimal but lap time still good, (C) one of the model's k_roll terms has a residual physics error. Until disambiguated, the ARB solver uses a driver-anchor fallback when `lltd_error > 3 pp`.
+
+### Driver-anchor pattern (now used by 5 solvers)
+
+Several solvers now read `current_setup` and prefer driver-loaded values as soft anchors when the model is admittedly broken or within tolerance:
+
+| Solver | Anchor | Trigger |
+|---|---|---|
+| `heave_solver.min_rate_for_sigma` | Driver-loaded F_heave / R_third | σ-cal sticky: model_σ at current rate ≤ effective target + 0.05 mm |
+| `corner_spring_solver.solve` | Driver-loaded R_coil (direct) | `current_rear_spring_nmm` provided → use it as `rear_target_rate` |
+| `arb_solver.solve` | Driver-loaded ARB size + blade | LLTD model error > 3 pp (model can't reach target) |
+| `diff_solver.solve` | Driver-loaded coast/drive/preload | Within ±5° / ±15 Nm of computed |
+| `supporting_solver._solve_tc` | Driver-loaded TC gain/slip | Within ±2 clicks of computed |
+| `candidate_search._apply_family` | Skip family scaling on F_heave/R_third | Base value within 10 N/mm of driver |
+
+**These anchors are explicit and provenance-tracked** (each fires a `"; anchored to driver-loaded X"` reason in the solver's reasoning string). They are **NOT lap-time-driven** — none of them call `if lap_time < X:`. The driver loading their best-so-far setup creates an implicit lap-time signal but the anchor logic does not consume `lap_time`. See `feedback_no_laptime_setup_selection.md`.
+
+### σ-calibration architecture
+
+`solver/heave_solver.py:min_rate_for_sigma()` now accepts `current_rate_nmm` + `current_meas_sigma_mm` and computes a calibration ratio between the synthetic σ model and the IBT-measured rear/front_rh_std at the driver's current rate. The model σ is scaled to MEASURED units via `cal_ratio = meas_σ / model_σ_at_current`, and the σ target is set to `min(user_target, current_meas_σ × 1.05)`. A sticky pre-check returns the driver's current rate when its model_σ is within 0.05 mm of the target — this prevents 1-step gradient drift.
+
+Validated against Porsche/Algarve newest IBT (driver rate=160, σ_meas=7.6, model σ=7.34, cal_ratio=1.036, sticky returns 160 exactly). The σ MODEL is still physics-driven; the σ TARGET is driver-anchored when telemetry provides the anchor data.
+
+### Per-axle roll damper architecture
+
+`DamperModel` now has `has_front_roll_damper` and `has_rear_roll_damper` flags. **Porsche 963 has FRONT roll damper but NO rear roll damper** — rear roll motion is implicit in the per-corner LR/RR shocks. Acura has BOTH. The setup writer (`output/setup_writer.py:1069`) and damper solver (`solver/damper_solver.py:790`) now gate roll damper output on the per-axle flag. Before this fix Porsche was emitting phantom `CarSetup_Dampers_RearRoll_LsDamping/HsDamping` XML IDs that don't exist in the iRacing Porsche schema.
+
+---
+
+## 🆕 What Changed in 2026-04-07
+
+If you last read this guide before 2026-04-07, three big things changed:
+
+### 1. Strict calibration gate with three statuses
+
+Every subsystem is now classified as one of:
+
+| Status | Meaning | Behavior |
+|---|---|---|
+| `calibrated` | Real measurement, R² ≥ 0.85 OR auto-cal validated | Step runs cleanly, output trusted |
+| `weak` | R² < 0.85 OR manual override that auto-cal *contradicts* | Step still runs (legacy code expects values) but is flagged `[~~]` and a `WEAK CALIBRATION DETECTED` banner is printed. Treat the output as a starting point, not gospel. |
+| `uncalibrated` | No measurement at all | Step blocks, outputs CLI calibration instructions |
+
+R² thresholds: `R2_THRESHOLD_BLOCK = 0.85`, `R2_THRESHOLD_WARN = 0.95`. Set in `car_model/calibration_gate.py`.
+
+**Cascade rule:** only TRUE blocks (`uncalibrated`, `dependency_blocked`) propagate to downstream steps. Weak blocks do NOT cascade. Step 5 (Geometry) and Step 6 (Dampers) cascade from Step 3 (wheel rates), NOT from Step 4 (ARBs).
+
+### 2. Compliance physics for static RH and deflection
+
+Static ride heights and spring deflections under aero load follow `defl ∝ F/k` (compliance), not stiffness. The RH and deflection models now include `1/heave`, `1/rear_third`, `1/rear_spring` features in addition to (or instead of) the linear ones.
+
+**Result for Porsche/Algarve:**
+- Front RH model: R² 0.96 → **0.9997** (LOO RMSE 0.03mm)
+- Rear RH model: R² 0.61 → **0.94** (LOO RMSE 0.44mm)
+- Rear shock deflection: R² 0.94 → 0.97
+- Rear spring deflection: R² 0.67 → 0.97
+- Third spring deflection: R² 0.93 → 0.97
+
+BMW continues to use linear terms (its data is fit better that way); both functional forms coexist in the same `RideHeightModel`/`DeflectionModel` classes. Each car uses whichever fits its data best. The `apply_to_car()` function zeroes ALL coefficient slots before applying new values, so cross-car contamination is impossible.
+
+### 3. Provenance tracking
+
+Every solver run now prints a `CALIBRATION CONFIDENCE — provenance per subsystem` block listing every subsystem with its source, R² (where applicable), and confidence label. JSON output carries the full `calibration_provenance` dict so you can audit any value.
+
+Example Porsche/Algarve output:
+
+```
+CALIBRATION CONFIDENCE — provenance per subsystem:
+  OK aero_compression       [HIGH]  IBT-derived (17 sessions)
+  OK ride_height_model      [HIGH R²=0.94]  regression (front R²=1.00, rear R²=0.94)
+  OK deflection_model       [HIGH R²=0.97]  regression (weakest R²=0.97)
+  OK spring_rates             car-specific model
+  OK pushrod_geometry         garage screenshots
+  OK damper_zeta            [HIGH]  IBT click-sweep (79 sessions)
+  ~~ arb_stiffness          [MANUAL_OVERRIDE]  manual override (auto-cal CONTRADICTS car definition)
+  OK lltd_target              IBT data (target=0.5034)
+  OK roll_gains               IBT-calibrated
+```
+
+The `~~` marker on `arb_stiffness` indicates a weak step. The user gets explicit instructions in the warning section.
+
+### 4. No silent fallbacks
+
+Every `getattr(car, "field", bmw_default)` pattern in the solver was removed. Direct attribute access — fail loudly if a car is missing a field. Specific cleanups:
+- `solver/objective.py`: 11 fallbacks removed
+- `solver/sensitivity.py`: 3 m_eff hardcodes removed
+- `solver/candidate_search.py`: hardcoded `"bmw"` and torsion OD fallback removed
+- `solver/sector_compromise.py`: BMW brake bias and camber defaults removed
+- `solver/legal_space.py`: BMW spring rate refs replaced with per-car
+- `solver/damper_solver.py`: 50-line baseline-fallback path removed (now raises ValueError)
+- `solver/stint_model.py`: heave/third defaults removed
+- `solver/rake_solver.py`: 3 fuel_capacity_l fallbacks removed
+- `solver/arb_solver.py`, `bayesian_optimizer.py`, `explorer.py`: tyre_load_sensitivity fallbacks removed
+- `car_model/cars.py:pushrod_for_target_rh`: -29.0 BMW fallback removed (now raises ValueError)
 
 ---
 
@@ -89,7 +221,7 @@ The solver now enforces a **calibration gate** at each of the 6 solver steps. If
 | 1 | Rake / Ride Heights | aero_compression, ride_height_model, pushrod_geometry |
 | 2 | Heave / Third Springs | spring_rates |
 | 3 | Corner Springs | spring_rates |
-| 4 | Anti-Roll Bars | arb_stiffness, lltd_target |
+| 4 | Anti-Roll Bars | arb_stiffness, lltd_target (physics formula or driver-anchor — NOT IBT proxy) |
 | 5 | Wheel Geometry | roll_gains |
 | 6 | Dampers | damper_zeta |
 
@@ -108,7 +240,7 @@ The solver now enforces a **calibration gate** at each of the 6 solver steps. If
 When the solver blocks a step, it prints exactly what data to collect. The general pattern:
 
 1. **ARB stiffness:** Record 3+ IBT sessions with different front/rear ARB sizes (keep springs constant). Run `python -m car_model.auto_calibrate --car <car> --ibt-dir <telemetry_dir>`
-2. **LLTD target:** Accumulate 10+ IBT sessions with varied ARB and spring settings. Run `python -m validation.calibrate_lltd --car <car> --track <track>`
+2. **LLTD target:** ⚠ The OLD path (`python -m validation.calibrate_lltd`) reads `lltd_measured` which is a GEOMETRIC PROXY, not real LLTD — see "What Changed in 2026-04-08" above. Use the OptimumG/Milliken physics formula directly (set `measured_lltd_target` in `cars.py`). To upgrade to a TRUE LLTD calibration, you need either iRacing wheel-load telemetry or a controlled per-axle ARB lap-time correlation (10+ varied-blade sessions).
 3. **Roll gains:** Run 5+ laps capturing full lateral-g sweep. Run `python -m learner.ingest --car <car> --ibt <session.ibt> --all-laps`
 4. **Damper zeta:** Run 5+ stints with LS comp at varied clicks (keep everything else identical). Run `python -m validation.calibrate_dampers --car <car> --track <track>`
 5. **Ride height model:** Set 10+ different spring/pushrod/perch combinations in the garage. Record an IBT session at each (3+ clean laps). Run `python -m car_model.auto_calibrate --car <car> --ibt-dir <telemetry_dir>`

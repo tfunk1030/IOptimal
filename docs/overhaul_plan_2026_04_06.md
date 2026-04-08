@@ -1,8 +1,49 @@
 # iOptimal Architectural Overhaul Plan
 
 **Created:** 2026-04-06
-**Status:** Planning
+**Last updated:** 2026-04-08 (LLTD phantom proxy disabled, σ-cal driver-anchor architecture, per-axle damper flags, rear roll damper bug fixed, driver-anchor pattern across 5 solvers)
+**Status:** ~70% delivered. Phase 2 (RH model unification) and Phase 4 (solver path unification) still pending. **NEW: Phase 6 (driver-anchor pattern + LLTD honesty) shipped 2026-04-08.**
 **Estimated scope:** 6 phases, ~15-20 sessions
+
+## Progress as of 2026-04-08
+
+✅ **Shipped 2026-04-08 (this branch):**
+
+10. **🚨 LLTD phantom proxy disabled** — `analyzer/extract.py:lltd_measured` is a misnamed alias for `roll_distribution_proxy`, a geometric ratio insensitive to spring stiffness. Verified across 5 Porsche/Algarve IBTs with R_third varying 100%: spread 0.09 pp (a real LLTD would shift 5–15 pp). The "11 pp model gap" the ARB solver was chasing was apples-to-oranges. `auto_calibrate.py:1360` block populating `models.measured_lltd_target = mean(proxy)` is now gated behind `if False:`. `data/calibration/porsche/models.json:measured_lltd_target` cleared. Porsche `cars.py` sets `measured_lltd_target = 0.521` explicitly from the OptimumG/Milliken physics formula. Open epistemic gap documented: no true LLTD measurement from iRacing IBT.
+11. **σ-calibration architecture** — `solver/heave_solver.py:min_rate_for_sigma` now accepts `current_rate_nmm` + `current_meas_sigma_mm`, computes `cal_ratio = meas / model_at_current` (clamped [0.5, 2.0]), translates user σ-target to model space. Sticky pre-check returns driver rate when its model_σ ≤ effective target + 0.05 mm. Wired through both `_run_sequential_solver` and `materialize_overrides` paths.
+12. **Driver-anchor pattern** rolled out across 5 solvers (`heave`, `corner_spring`, `arb`, `diff`, `supporting`). Anchors are explicit, provenance-tracked, and never lap-time-driven. See "Driver-anchor pattern caveats" in CLAUDE.md known limitations.
+13. **Per-axle roll damper flags** — `DamperModel.has_front_roll_damper` and `has_rear_roll_damper`. Porsche set to `front=True / rear=False` (Multimatic). Acura set to `both=True`. Setup writer + damper solver gate output on these flags. Fixes phantom `CarSetup_Dampers_RearRoll_*` XML IDs in Porsche `.sto`.
+14. **`solution_from_explicit_offsets` static-honoring fix** — when caller provides explicit `static_front_rh_mm`/`static_rear_rh_mm`, use them directly instead of recomputing from `garage_model.predict()` with baseline springs. Was the single largest fix for Porsche front static drift.
+15. **`solver/objective.py` aero ref + compliance front static** — replaced `track.median_speed_kph` with `track.aero_reference_speed_kph` (V²-RMS over speed bands ≥100 kph). Compliance-based front static now honors candidate's `front_pushrod_offset_mm` (was hardcoded to `pushrod.front_pinned_rh_mm`).
+16. **Falsy-int bug fix in 3 sites** (`supporting_solver.py:303-313`, `:406`, `solve_chain.py:240`) — `diff_ramp_option_index(...) or 1` was silently collapsing legal index 0 (= 40/65) to index 1 (= 45/70). Replaced with explicit None checks.
+17. **Porsche `default_df_balance_pct` 50.5 → 46.8** — calibrated from 4 Algarve IBTs (driver achieves 46.6–47.2% balance). Old 50.5% was unreachable at sim-min front (aero map caps at 52.5% only at static_R ≈ 66 mm, beyond garage cap).
+18. **Porsche `default_diff_preload_nm`** field added (default 12 N·m for cars without override, 85 N·m for Porsche). `solver/diff_solver.py` reads from car instead of hardcoded 12.
+19. **ARB blade clamp** uses `car.arb.rear_blade_count` instead of hardcoded `hi=6` BMW assumption. Driver-validated Stiff/10 was unreachable for Porsche before this fix (Porsche range 1–16).
+
+## Progress as of 2026-04-07
+
+✅ **Shipped (in current branch):**
+
+1. **Regression test safety net** — `tests/test_setup_regression.py` runs the full pipeline against committed `tests/fixtures/baselines/{bmw_sebring,porsche_algarve}_baseline.sto` fixtures. Every code change verified against these.
+2. **Honest calibration gate** — Three-status classification (`calibrated` / `weak` / `uncalibrated`), R² thresholds (0.85 block / 0.95 warn), per-subsystem provenance, JSON `calibration_provenance` output, prominent `WEAK CALIBRATION DETECTED` banner. Cascade fixed: only TRUE blocks (uncalibrated) propagate; weak blocks do not. Steps 5/6 cascade from Step 3 (wheel rates), not from Step 4 (ARBs).
+3. **Compliance physics for RH and deflection models** — Static RH and deflection under aero load follow `defl ∝ F/k`. Added `front_coeff_inv_heave`, `rear_coeff_inv_third`, `rear_coeff_inv_spring` fields. For Porsche: front R² 0.96→0.9997, rear R² 0.61→0.94, deflection R² 0.67→0.97. BMW continues to use linear (its data fits that better). Both forms coexist in `RideHeightModel`/`DeflectionModel`.
+4. **`apply_to_car` zeroing fix** — Stale BMW coefficients no longer persist alongside fresh non-BMW calibration. Every coefficient in the maps is zeroed before applying the new model.
+5. **18 silent BMW fallback patterns removed** from `solver/objective.py`, `solver/sensitivity.py`, `solver/candidate_search.py`, `solver/sector_compromise.py`, `solver/legal_space.py`, `solver/damper_solver.py`, `solver/stint_model.py`, `solver/rake_solver.py`, `solver/arb_solver.py`, `solver/bayesian_optimizer.py`, `solver/explorer.py`. Direct attribute access — fail loudly if a car is missing a field.
+6. **`damper_solver.py` strict mode** — 50-line baseline-fallback path removed. Now raises `ValueError` with click-sweep instructions if zeta is uncalibrated. Gate blocks Step 6 BEFORE this is reached.
+7. **`pushrod_for_target_rh` strict mode** — `-29.0` BMW fallback removed. Now raises `ValueError` if `rear_coeff_pushrod` is zero (uncalibrated).
+8. **Garage feasibility cap** in `rake_solver` — caps target rear static RH to what the garage pushrod range can produce. Prevents impossible targets that previously caused +74.5mm pushrod garbage.
+9. **Per-corner tyre pressures**, **Front Roll HS slope propagation**, **Rear 3rd damper propagation**, **Porsche diff coast/drive ramp XML IDs** — all `.sto` mapping fixes shipped.
+
+⏳ **Pending (need future sessions):**
+
+- **Phase 2: Unify the 3 RH models** (`PushrodGeometry`, `RideHeightModel`, `GarageOutputModel`). They are now CONSISTENT (compliance physics applied to all three) but still SEPARATE classes. The 12 `reconcile_ride_heights()` call sites still exist. This is the highest-value remaining structural cleanup.
+- **Phase 4: Unify the 4 solver entry points** (`solve.py`, `solve_chain.py`, `full_setup_optimizer.py`, `pipeline/reason.py`). 14 known divergences. Current state: bug fixes have to be applied to each path independently.
+- **Phase 5: Decompose `pipeline/produce.py`** (still ~1500 lines despite this session's additions). Lower priority.
+- **Strict gate hard-blocking on `weak`** — currently weak status produces output + loud warning. To make it actually `blocked = True`, ~170 references to `step4`/`step5`/`step6` across the codebase need None-handling. Multi-session refactor.
+- **m_eff rate-table lookup enable** — infrastructure shipped, gated off (`m_eff_rate_lookup_enabled=False`) because the table is too noisy (rear range 5.9x with non-monotonic averages). Need 10+ samples per spring rate to enable safely.
+- **Porsche ARB resolution** — RESOLVED 2026-04-07: noise-floor gate added to auto_calibrate. The ARB back-solve now returns `arb_calibrated=None` (inconclusive) when the predicted ARB stiffness delta is below the K_total measurement noise floor. Gate maps None → MEDIUM hand-cal, not weak. Porsche ARB no longer triggers WEAK CALIBRATION banner.
+- **🚨 LLTD true measurement** (NEW open item) — `analyzer/extract.py:lltd_measured` is a geometric proxy, NOT real LLTD (see Phase 6 shipped items). To get a TRUE LLTD calibration we need EITHER (a) iRacing wheel-load telemetry channels (`LF/RF/LR/RR_LoadN` if exposed), OR (b) controlled per-axle ARB lap-time correlation across 10+ varied-blade sessions on the same track. Without one of these the 13 pp model-vs-physics gap (model 0.391 vs OptimumG 0.521 for Porsche driver setup) is un-attributable. Currently the ARB solver uses driver-anchor fallback when `lltd_error > 3 pp`.
+- **Trailing rear pushrod gap** — Porsche newest IBT shows pipeline R_pushrod = 23.5 vs driver = 18 (5 mm gap), cascading from rear static 1.3 mm above driver. Same anchor pattern fix as Phase 6 anchors would close it: add `current_rear_rh_dynamic_mm = measured.mean_rear_rh_at_speed_mm` anchor to `rake_solver._find_rear_for_balance`. Estimated 30-min next-session task.
 
 ## Why This Overhaul
 

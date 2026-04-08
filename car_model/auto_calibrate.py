@@ -1129,13 +1129,19 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         h_cg_m = _car_obj.corner_spring.cg_height_mm / 1000.0
         mg_h = m_kg * 9.81 * h_cg_m  # N·m
 
-        # Collect (arb_config_label, K_total) pairs
+        # Collect (arb_config_label, K_total) pairs.
+        # Units: k_total is in N·m/deg (matches arb_model.*_roll_stiffness units).
+        # Original code stored N·m/rad here while comparing against N·m/deg
+        # predictions — a 57.3× units mismatch that produced the 170787% bogus
+        # error and forced arb_calibrated=False. Now both sides are N·m/deg.
+        DEG_PER_RAD = 180.0 / 3.14159265358979
         arb_k_totals: dict[tuple, list[float]] = {}
         for group in arb_varied_groups.values():
             for ap in group:
-                rg_rad = ap["roll_gradient"] * (3.14159 / 180.0)  # deg/g → rad/g
+                rg_rad = ap["roll_gradient"] * (3.14159265358979 / 180.0)
                 if rg_rad > 0.001:
-                    k_total = mg_h / rg_rad  # N·m/rad
+                    k_total_nm_per_rad = mg_h / rg_rad
+                    k_total = k_total_nm_per_rad / DEG_PER_RAD  # → N·m/deg
                     arb_k_totals.setdefault(ap["arb_key"], []).append(k_total)
 
         # Average K_total per ARB config
@@ -1145,15 +1151,39 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
         if len(arb_k_avg) >= 2:
             # K_springs is the same across all configs (we controlled for it).
-            # Use the softest ARB config as the baseline to infer K_springs.
+            # Use the softest measured config as the baseline to infer K_springs.
             sorted_configs = sorted(arb_k_avg.items(), key=lambda x: x[1])
-            # Stiffness deltas relative to softest config give ARB deltas
             k_min = sorted_configs[0][1]
             n_configs = len(sorted_configs)
 
+            # Estimate K_total measurement noise floor from REPLICATE sessions
+            # within the same ARB config.  std(K_total) at fixed ARB is pure
+            # roll-gradient noise (driver consistency, brake/throttle, line).
+            # IMPORTANT: `unique` is deduplicated by setup fingerprint, so replicate
+            # sessions of the same setup collapse to one entry — we must read
+            # noise from the FULL `points` list, not from `unique`.
+            raw_arb_k: dict[tuple, list[float]] = {}
+            for _p in points:
+                if (_p.aero_df_balance_pct > 0 and _p.front_arb_size
+                        and _p.front_arb_blade > 0
+                        and _p.roll_gradient_deg_per_g > 0.1):
+                    _rg_rad = _p.roll_gradient_deg_per_g * (3.14159265358979 / 180.0)
+                    if _rg_rad > 0.001:
+                        _ak = (_p.front_arb_size, _p.front_arb_blade,
+                               _p.rear_arb_size, _p.rear_arb_blade)
+                        # N·m/deg to match arb_k_totals units (see DEG_PER_RAD above)
+                        raw_arb_k.setdefault(_ak, []).append((mg_h / _rg_rad) / DEG_PER_RAD)
+            noise_samples: list[float] = []
+            for _vals in raw_arb_k.values():
+                if len(_vals) >= 2:
+                    noise_samples.append(float(np.std(_vals, ddof=1)))
+            noise_floor = (
+                float(np.sqrt(np.mean([s * s for s in noise_samples])))
+                if noise_samples else 0.0
+            )
+
             # Validate: compare measured K_total deltas against the car model's
-            # predicted ARB stiffness deltas.  Only set arb_calibrated=True if
-            # predicted and measured are consistent (within 20%).
+            # predicted ARB stiffness deltas.
             arb_model = _car_obj.arb
             baseline_key = sorted_configs[0][0]
             bf_size, bf_blade, br_size, br_blade = baseline_key
@@ -1163,6 +1193,7 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             )
 
             max_relative_error = 0.0
+            max_predicted_delta = 0.0
             n_compared = 0
             for arb_key, k_total in sorted_configs[1:]:
                 delta_k_measured = k_total - k_min
@@ -1175,9 +1206,29 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                 if delta_k_predicted > 0:
                     rel_err = abs(delta_k_measured - delta_k_predicted) / delta_k_predicted
                     max_relative_error = max(max_relative_error, rel_err)
+                    max_predicted_delta = max(max_predicted_delta, delta_k_predicted)
                     n_compared += 1
 
-            if n_compared > 0 and max_relative_error <= 0.20:
+            # Noise gate: if the largest predicted delta is below 2x the noise
+            # floor of the K_total measurement, the back-solve cannot resolve
+            # the signal.  Mark INCONCLUSIVE (None) so the gate treats this as
+            # "manual hand-cal trusted, no auto-validation possible" rather
+            # than as a contradiction.
+            if (
+                n_compared > 0
+                and noise_floor > 0
+                and max_predicted_delta < 2.0 * noise_floor
+            ):
+                models.status["arb_stiffness"] = (
+                    f"INCONCLUSIVE: roll-gradient noise floor "
+                    f"({noise_floor:.0f} N·m/deg) exceeds max predicted ARB "
+                    f"delta ({max_predicted_delta:.0f} N·m/deg) across "
+                    f"{n_configs} configs. Signal is below measurement noise — "
+                    f"cannot validate or invalidate cars.py manual values. "
+                    f"Trusting hand-calibration."
+                )
+                models.status["arb_calibrated"] = None
+            elif n_compared > 0 and max_relative_error <= 0.20:
                 models.status["arb_stiffness"] = (
                     f"roll gradient validated: {n_configs} ARB configs, "
                     f"{len(arb_varied_groups)} spring groups, "
@@ -1307,27 +1358,43 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             )
 
     # ─── 16. Measured LLTD target ───
-    # ── LLTD target from IBT telemetry ──────────────────────────────────
-    # BUG FIX (2026-04-01): Previously computed weight distribution (front axle
-    # weight / total weight ≈ 0.476 for Ferrari) and called it "LLTD target".
-    # Weight distribution ≠ LLTD. LLTD = lateral load transfer distribution =
-    # front roll stiffness / total roll stiffness (measured from IBT as lltd_measured).
+    # PHANTOM TARGET — DISABLED 2026-04-07
+    # The "lltd_measured" field stored in CalibrationPoint comes from
+    # analyzer/extract.py:roll_distribution_proxy, which is:
+    #     (front_RH_diff_mean × tw_f²) / (... + rear_RH_diff_mean × tw_r²)
+    # This is a GEOMETRIC PROXY, not LLTD. It collapses to t_f³/(t_f³+t_r³)
+    # for a rigid chassis and is essentially INSENSITIVE to spring stiffness.
     #
-    # Now uses the actual IBT-measured LLTD channel when available.
-    # Falls back to the car model's explicit measured_lltd_target if set.
-    # Only overwrites car value if we have real IBT LLTD data.
-    lltd_measured_values = []
-    for pt in unique:
-        _lltd_m = getattr(pt, "lltd_measured", None) or getattr(pt, "lltd", None)
-        if _lltd_m is not None and 0.30 < float(_lltd_m) < 0.70:
-            lltd_measured_values.append(float(_lltd_m))
-    if len(lltd_measured_values) >= 3:
-        models.measured_lltd_target = float(np.mean(lltd_measured_values))
-        models.status["lltd_target"] = (
-            f"calibrated from IBT lltd_measured ({len(lltd_measured_values)} sessions, "
-            f"mean {models.measured_lltd_target:.4f})"
-        )
-    # else: leave models.measured_lltd_target as None → car model's explicit value used
+    # Verified 2026-04-07 across 5 Porsche/Algarve IBTs with rear_third
+    # ranging 160→320 N/mm and rear coil 150→180: proxy varied 0.5047→0.5056
+    # (spread 0.09 pp). A real LLTD would shift 5–15 pp across this range.
+    #
+    # Storing this as `measured_lltd_target` and feeding it to the ARB solver
+    # caused a fake "11 pp model gap" against the model's true k_front/k_total
+    # calculation. Setup recommendations were chasing a phantom target.
+    #
+    # Fix: leave `measured_lltd_target` as None — the ARB solver will fall
+    # back to the OptimumG/Milliken physics formula in arb_solver.py:303
+    # (target_lltd = weight_dist_front + (tyre_sens/0.20) × 0.05 + speed_corr).
+    # If a future calibration computes TRUE LLTD from wheel-force telemetry
+    # (or a stiffness-aware proxy), revive this block with that data source.
+    lltd_measured_values: list[float] = []  # intentionally empty — see comment above
+    if False:  # gate disabled, kept for archaeology
+        for pt in unique:
+            _lltd_m = getattr(pt, "lltd_measured", None) or getattr(pt, "lltd", None)
+            if _lltd_m is not None and 0.30 < float(_lltd_m) < 0.70:
+                lltd_measured_values.append(float(_lltd_m))
+        if len(lltd_measured_values) >= 3:
+            models.measured_lltd_target = float(np.mean(lltd_measured_values))
+            models.status["lltd_target"] = (
+                f"calibrated from IBT lltd_measured ({len(lltd_measured_values)} sessions, "
+                f"mean {models.measured_lltd_target:.4f})"
+            )
+    # Always emit a status describing why this is None for downstream tools
+    models.status["lltd_target"] = (
+        "DISABLED — IBT 'lltd_measured' is a geometric proxy "
+        "(t_f³/(t_f³+t_r³)), not true LLTD. ARB solver uses OptimumG physics."
+    )
 
     # Build calibration completeness status
     fitted_count = sum(1 for attr in [

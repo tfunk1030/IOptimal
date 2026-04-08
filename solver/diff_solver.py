@@ -191,6 +191,9 @@ class DiffSolver:
         measured: "MeasuredState",
         track: "TrackProfile | None" = None,
         current_clutch_plates: int | None = None,
+        current_coast_ramp_deg: int | None = None,
+        current_drive_ramp_deg: int | None = None,
+        current_preload_nm: float | None = None,
     ) -> DiffSolution:
         """Compute differential setup recommendation.
 
@@ -198,13 +201,37 @@ class DiffSolver:
             driver: Driver behavior profile (throttle style, trail braking)
             measured: Measured telemetry state (body slip, slip ratios)
             track: Track demand profile (lateral g, corner speeds) — optional
+            current_*: Driver-loaded current values used as soft anchors when
+                no telemetry signal demands change. Driver-validated choices
+                often capture per-car/per-driver preferences the heuristic
+                doesn't model (e.g., coast ramp 40 vs 45).
 
         Returns:
             DiffSolution with recommended preload, ramps, and full reasoning
         """
         preload_nm_raw, preload_reasoning = self._compute_preload(driver, measured, track)
         preload_nm = round(preload_nm_raw / 5) * 5  # iRacing garage: 5 Nm increments
+        # Driver preload anchor: if loaded preload is within 10 Nm of computed
+        # AND no strong oversteer/understeer signal demands change, prefer it.
+        if (current_preload_nm is not None and current_preload_nm > 0
+                and abs(float(current_preload_nm) - preload_nm) <= 15):
+            preload_nm = round(float(current_preload_nm) / 5) * 5
+            preload_reasoning += f"; anchored to driver-loaded preload={preload_nm:.0f} Nm"
         coast_ramp, drive_ramp, ramp_reasoning = self._compute_ramps(driver)
+        # Driver ramp anchors: prefer driver-loaded values if within 1 step
+        # of the computed value. This preserves per-car/per-driver
+        # preferences the synthetic mapping doesn't capture (e.g., coast=40
+        # at trail-brake-depth=0.37 — heuristic gives 45).
+        if (current_coast_ramp_deg is not None
+                and current_coast_ramp_deg in COAST_RAMP_OPTIONS
+                and abs(int(current_coast_ramp_deg) - coast_ramp) <= 5):
+            coast_ramp = int(current_coast_ramp_deg)
+            ramp_reasoning += f"; coast anchored to driver={coast_ramp} deg"
+        if (current_drive_ramp_deg is not None
+                and current_drive_ramp_deg in DRIVE_RAMP_OPTIONS
+                and abs(int(current_drive_ramp_deg) - drive_ramp) <= 5):
+            drive_ramp = int(current_drive_ramp_deg)
+            ramp_reasoning += f"; drive anchored to driver={drive_ramp} deg"
 
         clutch_plates = current_clutch_plates or BMW_DEFAULT_CLUTCH_PLATES
         torque_input = self.max_torque_nm * 0.7  # typical cornering torque
@@ -285,11 +312,14 @@ class DiffSolver:
         preload_min = lateral_load_transfer_n * 0.002  # yields ~5-15 Nm for GTP
         preload_min = max(preload_min, 0.0)  # absolute minimum
 
-        # Baseline preload: 12 Nm gives neutral rotation for most GTP drivers
-        preload = max(preload_min, 12.0)
+        # Baseline preload: per-car operating-point default (12 Nm BMW, 85 Nm Porsche).
+        # Was a flat 12 Nm — that's a BMW-tuned baseline that produces 30 Nm output for
+        # cars where the driver-validated operating point is 75-100 Nm (e.g., Porsche).
+        car_default_preload = float(getattr(car, "default_diff_preload_nm", 12.0) or 12.0)
+        preload = max(preload_min, car_default_preload)
         reasons = [
-            f"Base: {preload:.1f} Nm (lat transfer={lateral_load_transfer_n:.0f}N "
-            f"at peak lat_g={peak_lat_g:.2f}g)"
+            f"Base: {preload:.1f} Nm (car default {car_default_preload:.0f} Nm; "
+            f"lat transfer={lateral_load_transfer_n:.0f}N at peak lat_g={peak_lat_g:.2f}g)"
         ]
 
         # Driver throttle style adjustment
