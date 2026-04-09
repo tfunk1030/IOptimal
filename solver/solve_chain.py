@@ -483,18 +483,25 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         target_balance=inputs.target_balance,
     )
 
-    step6 = damper_solver.solve(
-        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-        front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-        rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-        fuel_load_l=fuel,
-        damping_ratio_scale=mods.damping_ratio_scale,
-        measured=measured,
-        front_heave_nmm=step2.front_heave_nmm,
-        rear_third_nmm=step2.rear_third_nmm,
-    )
-    apply_damper_modifiers(step6, mods, car)
+    step6 = None
+    try:
+        step6 = damper_solver.solve(
+            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            fuel_load_l=fuel,
+            damping_ratio_scale=mods.damping_ratio_scale,
+            measured=measured,
+            front_heave_nmm=step2.front_heave_nmm,
+            rear_third_nmm=step2.rear_third_nmm,
+        )
+        apply_damper_modifiers(step6, mods, car)
+    except ValueError:
+        # Damper solver raises when zeta targets are uncalibrated for this car.
+        # The calibration gate will null this out downstream; return None so
+        # the pipeline can continue and produce output for calibrated steps.
+        pass
     return step1, step2, step3, step4, step5, step6, rear_wheel_rate_nmm
 
 
