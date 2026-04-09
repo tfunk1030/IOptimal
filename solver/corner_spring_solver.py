@@ -106,10 +106,6 @@ class CornerSpringSolution:
     rear_third_corner_ratio: float    # third_spring / corner_rate
     rear_mass_per_corner_kg: float
 
-    # Rear motion ratio — stored at solve time so consumers don't need the
-    # car model to compute wheel rate. See rear_wheel_rate_nmm property.
-    rear_motion_ratio: float = 1.0
-
     # Total heave stiffness (heave/third + 2 * corner)
     total_front_heave_nmm: float
     total_rear_heave_nmm: float
@@ -134,6 +130,9 @@ class CornerSpringSolution:
     rear_torsion_od_mm: float | None = None
     # Porsche: optimized front roll spring rate (0.0 for torsion bar cars)
     front_roll_spring_nmm: float = 0.0
+    # Rear motion ratio — stored at solve time so consumers don't need the
+    # car model to compute wheel rate. See rear_wheel_rate_nmm property.
+    rear_motion_ratio: float = 1.0
 
     # Torsion bar preload turns (Ferrari: -0.250 to +0.250 at all 4 corners).
     # For Ferrari these are authoritative solver outputs computed by
