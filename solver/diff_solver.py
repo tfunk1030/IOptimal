@@ -315,7 +315,7 @@ class DiffSolver:
         # Baseline preload: per-car operating-point default (12 Nm BMW, 85 Nm Porsche).
         # Was a flat 12 Nm — that's a BMW-tuned baseline that produces 30 Nm output for
         # cars where the driver-validated operating point is 75-100 Nm (e.g., Porsche).
-        car_default_preload = float(getattr(car, "default_diff_preload_nm", 12.0) or 12.0)
+        car_default_preload = float(car.default_diff_preload_nm)
         preload = max(preload_min, car_default_preload)
         reasons = [
             f"Base: {preload:.1f} Nm (car default {car_default_preload:.0f} Nm; "

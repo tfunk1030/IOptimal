@@ -45,9 +45,9 @@ This means the system is honest about what it knows and what it doesn't. An inco
 | Car | Primary Track | Tier | Observations | Calibrated Steps | Blocked Steps |
 |-----|--------------|------|-------------|-----------------|---------------|
 | BMW | Sebring | calibrated | 99 | 1-6 (all) | none |
+| Porsche | Algarve | calibrated | 35 unique + 88 zeta + 22 aero | 1-6 (all) | none |
 | Ferrari | Sebring | partial | 12 | 1-3 | 4 (ARB), 5 (Geometry), 6 (Dampers) |
 | Cadillac | Silverstone | exploratory | 4 | 2-3 | 1 (RH model), 4, 5, 6 |
-| Porsche | Sebring | unsupported | 2 | 1-3 | 4, 5, 6 |
 | Acura | Hockenheim | exploratory | 7 | — | 1-6 (all blocked; step 1 cascades) |
 
 ### Per-subsystem calibration matrix
@@ -55,14 +55,14 @@ This means the system is honest about what it knows and what it doesn't. An inco
 | Subsystem | BMW | Ferrari | Cadillac | Porsche | Acura |
 |-----------|-----|---------|----------|---------|-------|
 | Aero compression | calibrated | calibrated | calibrated | calibrated | uncalibrated |
-| Ride height model | calibrated | calibrated | uncalibrated | calibrated | uncalibrated |
-| Deflection model | calibrated | calibrated | uncalibrated | uncalibrated | uncalibrated |
+| Ride height model | calibrated | calibrated | uncalibrated | calibrated (R^2=1.00 front, 0.91 rear) | uncalibrated |
+| Deflection model | calibrated | calibrated | uncalibrated | calibrated (R^2=0.98) | uncalibrated |
 | Pushrod geometry | calibrated | calibrated | calibrated | calibrated | calibrated |
 | Spring rates | calibrated | calibrated | calibrated | calibrated | calibrated |
-| ARB stiffness | calibrated | uncalibrated | partial | uncalibrated | uncalibrated |
-| LLTD target | calibrated (0.41) | uncalibrated | uncalibrated | uncalibrated | uncalibrated |
-| Roll gains | calibrated | uncalibrated | uncalibrated | uncalibrated | uncalibrated |
-| Damper zeta | calibrated | uncalibrated | uncalibrated | uncalibrated | uncalibrated |
+| ARB stiffness | calibrated | uncalibrated | partial | MEDIUM hand-cal | uncalibrated |
+| LLTD target | calibrated (0.41) | uncalibrated | uncalibrated | 0.521 (OptimumG physics) | uncalibrated |
+| Roll gains | calibrated | uncalibrated | uncalibrated | calibrated | uncalibrated |
+| Damper zeta | calibrated | uncalibrated | uncalibrated | calibrated (88 sessions) | uncalibrated |
 
 ### Recent improvements (2026-04-04)
 

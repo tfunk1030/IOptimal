@@ -583,8 +583,12 @@ class CalibrationGate:
     # Step 2 needs Step 1's dynamic RH targets.
     # Step 3 needs Step 2's spring rates.
     # Step 4 needs Step 3's wheel rates.
-    # Steps 5 and 6 need Step 3's wheel rates (NOT Step 4's ARBs).
-    _DATA_PRIOR_STEP: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 3, 6: 3}
+    # Step 5 needs Step 3's wheel rates AND Step 4's roll stiffness (k_roll_total).
+    # Step 6 needs Step 3's wheel rates.
+    # Cascade tracks the HIGHEST dependency — if Step 4 is blocked, Step 5 is
+    # also blocked because solve.py:520 feeds step4.k_roll_front/rear_total
+    # into the geometry solver.
+    _DATA_PRIOR_STEP: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 4, 6: 3}
 
     def check_step(self, step_number: int) -> StepCalibrationReport:
         """Check if a solver step can run with calibrated data.
@@ -611,9 +615,7 @@ class CalibrationGate:
             prior = self.check_step(prior_num)
             # Only cascade if prior step is BLOCKED for a hard reason
             # (uncalibrated subsystem or its own dependency block).
-            prior_hard_blocked = prior.blocked and not getattr(
-                prior, "weak_block", False
-            )
+            prior_hard_blocked = prior.blocked and not prior.weak_block
             if prior_hard_blocked:
                 report.blocked = True
                 report.dependency_blocked = True

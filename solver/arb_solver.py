@@ -261,10 +261,10 @@ class ARBSolver:
         )
         # Front: depends on architecture
         csm = self.car.corner_spring
-        if getattr(csm, "front_is_roll_spring", False):
+        if csm.front_is_roll_spring:
             # Multimatic (Porsche): single roll spring, not a pair.
             # K_roll = k * IR² * (t/2)²  (no factor of 2)
-            ir = getattr(csm, "front_roll_spring_installation_ratio", 1.0)
+            ir = csm.front_roll_spring_installation_ratio
             k_wheel_nm = front_wheel_rate_nmm * 1000.0
             t_half_m = (arb.track_width_front_mm / 2) / 1000.0
             k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
@@ -300,12 +300,12 @@ class ARBSolver:
         # This matches the empirical +5.5–6.0% recommendation for fast tracks.
 
         # Use measured LLTD target if available (overrides theoretical formula)
-        if getattr(self.car, 'measured_lltd_target', None) is not None:
+        if self.car.measured_lltd_target is not None:
             target_lltd = self.car.measured_lltd_target + lltd_offset
         else:
             # Theoretical formula (physics-based from tyre load sensitivity + track speed)
             tyre_sens = self.car.tyre_load_sensitivity
-            pct_hs = getattr(self.track, "pct_above_200kph", 0.0)
+            pct_hs = self.track.pct_above_200kph
             hs_correction = 0.01 * pct_hs  # up to +1% at 100% high-speed track
             lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
             target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
@@ -558,12 +558,12 @@ class ARBSolver:
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )
         # Use measured LLTD target if available (overrides theoretical formula)
-        if getattr(self.car, 'measured_lltd_target', None) is not None:
+        if self.car.measured_lltd_target is not None:
             target_lltd = self.car.measured_lltd_target + lltd_offset
         else:
             # Theoretical formula (physics-based from tyre load sensitivity + track speed)
             tyre_sens = self.car.tyre_load_sensitivity
-            pct_hs = getattr(self.track, "pct_above_200kph", 0.0)
+            pct_hs = self.track.pct_above_200kph
             hs_correction = 0.01 * pct_hs
             lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
             target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset

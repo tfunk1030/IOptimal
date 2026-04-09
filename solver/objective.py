@@ -528,7 +528,7 @@ class ObjectiveFunction:
             return 1.0
         # Use car-specific coupling — defaults to 0.0 for uncalibrated cars.
         # Only BMW/Sebring (γ=0.25) has IBT validation for this term.
-        coupling = getattr(self.car, "torsion_arb_coupling", self.TORSION_ARB_COUPLING)
+        coupling = self.car.torsion_arb_coupling
         if coupling == 0.0:
             return 1.0  # no coupling for this car — standard parallel-element model
         # Relative stiffness ratio: (OD/OD_ref)^4 (same OD^4 law as wheel rate)
@@ -847,7 +847,7 @@ class ObjectiveFunction:
                          else track.shock_vel_p99_rear_mps)
 
             # Vortex excursion uses car-specific percentile (p95 by default)
-            _vortex_pctile = getattr(car, "vortex_excursion_pctile", "p95")
+            _vortex_pctile = car.vortex_excursion_pctile
             if _vortex_pctile == "p95":
                 v_vortex_front = (track.shock_vel_p95_front_clean_mps
                                   if getattr(track, "shock_vel_p95_front_clean_mps", 0) > 0
@@ -857,7 +857,8 @@ class ObjectiveFunction:
 
             m_eff_front = car.heave_spring.front_m_eff_kg
             m_eff_rear = car.heave_spring.rear_m_eff_kg
-            tyre_vr = getattr(car, "tyre_vertical_rate_nmm", None)
+            tyre_vr_front = car.tyre_vertical_rate_front_nmm
+            tyre_vr_rear = car.tyre_vertical_rate_rear_nmm
 
             # Front excursion at p99 — for bottoming margin (worst-case bump)
             # Guard against k=0 which returns 0 (wrong: should be ∞)
@@ -865,7 +866,7 @@ class ObjectiveFunction:
             front_heave_clamped = max(5.0, front_heave_nmm)  # prevent div/zero physics
             result.front_excursion_mm = damped_excursion_mm(
                 v_p99_front, m_eff_front, front_heave_clamped,
-                tyre_vertical_rate_nmm=tyre_vr,
+                tyre_vertical_rate_nmm=tyre_vr_front,
                 parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
             )
             # Override: if heave spring < 20 N/mm, cap excursion at full travel (30mm)
@@ -876,7 +877,7 @@ class ObjectiveFunction:
             # Front excursion at vortex percentile (p95) — for stall margin
             _front_vortex_excursion_mm = damped_excursion_mm(
                 v_vortex_front, m_eff_front, front_heave_clamped,
-                tyre_vertical_rate_nmm=tyre_vr,
+                tyre_vertical_rate_nmm=tyre_vr_front,
                 parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
             )
 
@@ -884,7 +885,7 @@ class ObjectiveFunction:
             rear_third_clamped = max(5.0, rear_third_nmm)
             result.rear_excursion_mm = damped_excursion_mm(
                 v_p99_rear, m_eff_rear, rear_third_clamped,
-                tyre_vertical_rate_nmm=tyre_vr,
+                tyre_vertical_rate_nmm=tyre_vr_rear,
                 parallel_wheel_rate_nmm=rear_wheel_rate * 0.5,
             )
 

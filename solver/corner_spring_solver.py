@@ -99,8 +99,10 @@ class CornerSpringSolution:
     front_heave_corner_ratio: float   # heave_spring / corner_wheel_rate
     front_mass_per_corner_kg: float
 
-    # Rear corner spring (coil rate in N/mm, or torsion bar OD in mm)
-    rear_spring_rate_nmm: float       # Wheel rate for coil; raw rate for torsion
+    # Rear corner spring — RAW spring rate (N/mm), NOT wheel rate.
+    # Consumers must multiply by car.corner_spring.rear_motion_ratio ** 2
+    # to get wheel rate. See solve_chain.py:422 and solve.py:454.
+    rear_spring_rate_nmm: float
     rear_natural_freq_hz: float
     rear_third_corner_ratio: float    # third_spring / corner_rate
     rear_mass_per_corner_kg: float
@@ -440,7 +442,7 @@ class CornerSpringSolver:
         # All other cars leave these at the 0.0 default.
         front_tb_turns = 0.0
         rear_tb_turns = 0.0
-        if getattr(self.car, 'canonical_name', '') == 'ferrari':
+        if self.car.canonical_name == 'ferrari':
             front_tb_turns, rear_tb_turns = _solve_ferrari_torsion_bar_turns(
                 self.car,
                 front_torsion_od_mm=front_torsion_od_mm,

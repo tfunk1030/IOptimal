@@ -501,10 +501,8 @@ def build_sensitivity_report(
     _m_eff_front: float = 0.0
     _m_eff_rear: float = 0.0
     if car is not None:
-        _hs = getattr(car, "heave_spring", None)
-        if _hs is not None:
-            _m_eff_front = float(getattr(_hs, "front_m_eff_kg", 0.0))
-            _m_eff_rear = float(getattr(_hs, "rear_m_eff_kg", 0.0))
+        _m_eff_front = float(car.heave_spring.front_m_eff_kg)
+        _m_eff_rear = float(car.heave_spring.rear_m_eff_kg)
     report.sensitivities.extend(compute_heave_sensitivities(
         v_p99_front_mps=step2.front_shock_vel_p99_mps,
         v_p99_rear_mps=step2.rear_shock_vel_p99_mps,

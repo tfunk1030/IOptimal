@@ -1358,42 +1358,14 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             )
 
     # ─── 16. Measured LLTD target ───
-    # PHANTOM TARGET — DISABLED 2026-04-07
-    # The "lltd_measured" field stored in CalibrationPoint comes from
-    # analyzer/extract.py:roll_distribution_proxy, which is:
-    #     (front_RH_diff_mean × tw_f²) / (... + rear_RH_diff_mean × tw_r²)
-    # This is a GEOMETRIC PROXY, not LLTD. It collapses to t_f³/(t_f³+t_r³)
-    # for a rigid chassis and is essentially INSENSITIVE to spring stiffness.
-    #
-    # Verified 2026-04-07 across 5 Porsche/Algarve IBTs with rear_third
-    # ranging 160→320 N/mm and rear coil 150→180: proxy varied 0.5047→0.5056
-    # (spread 0.09 pp). A real LLTD would shift 5–15 pp across this range.
-    #
-    # Storing this as `measured_lltd_target` and feeding it to the ARB solver
-    # caused a fake "11 pp model gap" against the model's true k_front/k_total
-    # calculation. Setup recommendations were chasing a phantom target.
-    #
-    # Fix: leave `measured_lltd_target` as None — the ARB solver will fall
-    # back to the OptimumG/Milliken physics formula in arb_solver.py:303
-    # (target_lltd = weight_dist_front + (tyre_sens/0.20) × 0.05 + speed_corr).
-    # If a future calibration computes TRUE LLTD from wheel-force telemetry
-    # (or a stiffness-aware proxy), revive this block with that data source.
-    lltd_measured_values: list[float] = []  # intentionally empty — see comment above
-    if False:  # gate disabled, kept for archaeology
-        for pt in unique:
-            _lltd_m = getattr(pt, "lltd_measured", None) or getattr(pt, "lltd", None)
-            if _lltd_m is not None and 0.30 < float(_lltd_m) < 0.70:
-                lltd_measured_values.append(float(_lltd_m))
-        if len(lltd_measured_values) >= 3:
-            models.measured_lltd_target = float(np.mean(lltd_measured_values))
-            models.status["lltd_target"] = (
-                f"calibrated from IBT lltd_measured ({len(lltd_measured_values)} sessions, "
-                f"mean {models.measured_lltd_target:.4f})"
-            )
-    # Always emit a status describing why this is None for downstream tools
+    # IBT 'lltd_measured' is actually roll_distribution_proxy — a geometric
+    # ratio (t_f^3/(t_f^3+t_r^3)) insensitive to spring stiffness. NOT usable
+    # as a calibration target. ARB solver uses OptimumG/Milliken physics formula
+    # instead. To calibrate real LLTD, need wheel-force telemetry or controlled
+    # per-axle ARB lap-time correlation (10+ sessions).
     models.status["lltd_target"] = (
         "DISABLED — IBT 'lltd_measured' is a geometric proxy "
-        "(t_f³/(t_f³+t_r³)), not true LLTD. ARB solver uses OptimumG physics."
+        "(t_f^3/(t_f^3+t_r^3)), not true LLTD. ARB solver uses OptimumG physics."
     )
 
     # Build calibration completeness status

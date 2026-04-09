@@ -76,15 +76,13 @@ _BMW_REAR_SPRING_REF = 160.0          # N/mm
 def _car_spring_refs(car: CarModel) -> tuple[float, float, float]:
     """Return (front_heave_ref, rear_third_ref, rear_spring_ref) for a car.
 
-    Uses the car's documented baseline spring rates as the reference points
-    for perch offset computation. Falls back to BMW values only if the car
-    doesn't define them.
+    Uses the car's baseline spring rates as reference points for perch offset
+    computation. All fields are required on CarModel — no BMW fallbacks.
     """
-    front_heave_ref = float(getattr(car, "front_heave_spring_nmm", _BMW_FRONT_HEAVE_SPRING_REF))
-    rear_third_ref = float(getattr(car, "rear_third_spring_nmm", _BMW_REAR_THIRD_SPRING_REF))
-    csm = getattr(car, "corner_spring", None)
-    if csm is not None and getattr(csm, "rear_spring_range_nmm", None):
-        rspr_lo, rspr_hi = csm.rear_spring_range_nmm
+    front_heave_ref = float(car.front_heave_spring_nmm)
+    rear_third_ref = float(car.rear_third_spring_nmm)
+    if car.corner_spring.rear_spring_range_nmm:
+        rspr_lo, rspr_hi = car.corner_spring.rear_spring_range_nmm
         rear_spring_ref = float((rspr_lo + rspr_hi) / 2.0)
     else:
         rear_spring_ref = _BMW_REAR_SPRING_REF

@@ -852,7 +852,7 @@ class HeaveSolver:
         # because it includes low-speed bumps that don't affect aero stability.
         # Bottoming constraint keeps the lap-wide value (safety — must not bottom anywhere).
         v_front_platform = v_front
-        if getattr(self.track, "shock_vel_p99_front_hs_mps", 0.0) > 0:
+        if self.track.shock_vel_p99_front_hs_mps > 0:
             v_front_platform = self.track.shock_vel_p99_front_hs_mps
         m_front = hsm.front_m_eff_kg
 
@@ -930,7 +930,7 @@ class HeaveSolver:
                   else self.track.shock_vel_p99_rear_mps)
         # High-speed filtered for platform sizing (same logic as front)
         v_rear_platform = v_rear
-        if getattr(self.track, "shock_vel_p99_rear_hs_mps", 0.0) > 0:
+        if self.track.shock_vel_p99_rear_hs_mps > 0:
             v_rear_platform = self.track.shock_vel_p99_rear_hs_mps
         m_rear = hsm.rear_m_eff_kg
         rear_corner_wheel_rate_nmm = self._rear_corner_wheel_rate_nmm(rear_spring_nmm)
