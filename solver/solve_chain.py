@@ -419,7 +419,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         current_rear_third_nmm=_k_rear_current,
         current_rear_spring_nmm=_curr_rear_coil,
     )
-    rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+    rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
     heave_solver.reconcile_solution(
         step1,
@@ -766,7 +766,7 @@ def materialize_overrides(
                 current_rear_third_nmm=_curr_rt,
                 current_rear_spring_nmm=_curr_rc,
             )
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+        rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
         heave_solver.reconcile_solution(
             step1,
             step2,
@@ -864,7 +864,7 @@ def materialize_overrides(
                 current_rear_third_nmm=_curr_rt,
                 current_rear_spring_nmm=_curr_rc,
             )
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+        rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
         heave_solver.reconcile_solution(
             step1,
             step2,
@@ -887,7 +887,7 @@ def materialize_overrides(
             target_balance=inputs.target_balance,
         )
     else:
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+        rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
     rebuild_step4 = earliest <= 4 or rebuild_step23
     if rebuild_step4:

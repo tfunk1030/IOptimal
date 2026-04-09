@@ -943,8 +943,8 @@ class ObjectiveFunction:
             _comp_f = car.aero_compression.front_at_speed(_op_speed)
             _rear_comp = car.aero_compression.rear_at_speed(_op_speed)
             # Clamp to sim minimums for safety
-            _static_f = max(_static_f, getattr(car, "min_front_rh_static", 0.0))
-            _rear_static = max(_rear_static, getattr(car, "min_rear_rh_static", 0.0))
+            _static_f = max(_static_f, car.min_front_rh_static)
+            _rear_static = max(_rear_static, car.min_rear_rh_static)
             dyn_front_rh = max(5.0, _static_f - _comp_f)
             dyn_rear_rh = max(5.0, _rear_static - _rear_comp)
             result.front_bottoming_margin_mm = dyn_front_rh - result.front_excursion_mm

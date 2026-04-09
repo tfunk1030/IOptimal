@@ -100,12 +100,15 @@ class CornerSpringSolution:
     front_mass_per_corner_kg: float
 
     # Rear corner spring — RAW spring rate (N/mm), NOT wheel rate.
-    # Consumers must multiply by car.corner_spring.rear_motion_ratio ** 2
-    # to get wheel rate. See solve_chain.py:422 and solve.py:454.
+    # Use rear_wheel_rate_nmm property for the MR^2-corrected wheel rate.
     rear_spring_rate_nmm: float
     rear_natural_freq_hz: float
     rear_third_corner_ratio: float    # third_spring / corner_rate
     rear_mass_per_corner_kg: float
+
+    # Rear motion ratio — stored at solve time so consumers don't need the
+    # car model to compute wheel rate. See rear_wheel_rate_nmm property.
+    rear_motion_ratio: float = 1.0
 
     # Total heave stiffness (heave/third + 2 * corner)
     total_front_heave_nmm: float
@@ -152,6 +155,11 @@ class CornerSpringSolution:
             }
         if self.parameter_search_evidence is None:
             self.parameter_search_evidence = {}
+
+    @property
+    def rear_wheel_rate_nmm(self) -> float:
+        """Rear wheel rate (N/mm) = raw spring rate * motion_ratio^2."""
+        return self.rear_spring_rate_nmm * self.rear_motion_ratio ** 2
 
     def summary(self) -> str:
         """Human-readable summary of the solution."""
@@ -459,6 +467,7 @@ class CornerSpringSolver:
             front_heave_corner_ratio=round(front_heave_ratio, 1),
             front_mass_per_corner_kg=round(m_f_corner, 0),
             rear_spring_rate_nmm=rear_rate,
+            rear_motion_ratio=csm.rear_motion_ratio,
             rear_natural_freq_hz=round(rear_freq, 2),
             rear_third_corner_ratio=round(rear_third_ratio, 1),
             rear_mass_per_corner_kg=round(m_r_corner, 0),

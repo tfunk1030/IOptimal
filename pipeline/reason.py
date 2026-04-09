@@ -3106,7 +3106,7 @@ def reason_and_solve(
             fuel_load_l=detected_fuel,
         )
 
-        _rear_wheel_rate_nmm = _step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+        _rear_wheel_rate_nmm = _step3.rear_wheel_rate_nmm
 
         heave_solver.reconcile_solution(
             _step1,
@@ -3200,7 +3200,7 @@ def reason_and_solve(
         step5 = optimized.step5
         step6 = optimized.step6
         _apply_damper_modifiers(step6, mods, car)
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+        rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
         solver_selection_note = "Selected BMW/Sebring constrained optimizer candidate."
     else:
         if optimized is not None and optimized.all_candidates_vetoed:
@@ -3224,7 +3224,7 @@ def reason_and_solve(
             step5 = optimized.step5
             step6 = optimized.step6
             _apply_damper_modifiers(step6, mods, car)
-            rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+            rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
             solver_selection_note = (
                 "Sequential fallback also matched the rejected setup; returning lowest-penalty optimizer candidate with warning."
             )

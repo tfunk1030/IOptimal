@@ -75,6 +75,10 @@ class StepCalibrationReport:
     # True when this step's block is "weak only" (low R² or manual
     # override). Weak blocks don't cascade to downstream steps.
     weak_block: bool = False
+    # True when an upstream step has weak calibration. This step still
+    # runs but its provenance should note reduced input confidence.
+    weak_upstream: bool = False
+    weak_upstream_step: int | None = None
 
     def instructions_text(self) -> str:
         """Format calibration instructions for all missing subsystems."""
@@ -414,10 +418,24 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     )
 
     # 5. Spring rates / torsion bar constants
+    # Check for unvalidated rear torsion bar (Ferrari has a 3.5x rate error flag)
+    rear_torsion_unvalidated = getattr(car.corner_spring, "rear_torsion_unvalidated", False)
+    spring_warnings: list[str] = []
+    if rear_torsion_unvalidated:
+        spring_status = "weak"
+        spring_source = "car-specific model (rear torsion bar UNVALIDATED — potential 3.5x rate error)"
+        spring_warnings.append(
+            "Rear torsion bar model may have 3.5x rate error. Verify rear spring "
+            "rates manually or collect 5+ garage screenshots to calibrate."
+        )
+    else:
+        spring_status = "calibrated"
+        spring_source = "car-specific model"
     subs["spring_rates"] = SubsystemCalibration(
         name="spring_rates",
-        status="calibrated",  # All 5 cars have car-specific spring models
-        source="car-specific model",
+        status=spring_status,
+        source=spring_source,
+        warnings=spring_warnings,
     )
 
     # 6. Damper zeta
@@ -621,6 +639,12 @@ class CalibrationGate:
                 report.dependency_blocked = True
                 report.blocked_by_step = prior_num
                 return report
+            # Propagate weak-upstream: if prior step has weak calibration
+            # or itself has weak upstream, flag this step so provenance
+            # reflects reduced confidence in input data.
+            if prior.weak_block or prior.weak_upstream:
+                report.weak_upstream = True
+                report.weak_upstream_step = prior_num
 
         # Check this step's own subsystems.
         # Strict-mode classification: any "weak" subsystem marks the step

@@ -384,7 +384,7 @@ class BMWSebringOptimizer:
             target_balance=target_balance,
         )
 
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * self.car.corner_spring.rear_motion_ratio ** 2
+        rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
         provisional_step6 = self.damper_solver.solve(
             front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
@@ -449,7 +449,7 @@ class BMWSebringOptimizer:
                 track=self.track,
                 target_balance=target_balance,
             )
-            rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * self.car.corner_spring.rear_motion_ratio ** 2
+            rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
         step4 = self.arb_solver.solve(
             front_wheel_rate_nmm=step3.front_wheel_rate_nmm,

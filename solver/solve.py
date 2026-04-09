@@ -257,8 +257,12 @@ def run_solver(args: "argparse.Namespace") -> None:
             notes = apply_to_car(car, cal_models)
             for note in notes:
                 log(f"  [calibration] {note}")
-    except Exception:
-        pass  # No calibration data — use defaults from cars.py
+    except FileNotFoundError:
+        pass  # No calibration data exists — use defaults from cars.py
+    except Exception as e:
+        # Calibration data exists but failed to parse — warn loudly
+        log(f"  [WARNING] Calibration loading failed: {e}")
+        log(f"  [WARNING] Using uncalibrated defaults from cars.py")
     log(f"Car: {car.name}")
 
     # Resolve DF balance target from car model if not explicitly set
@@ -382,7 +386,7 @@ def run_solver(args: "argparse.Namespace") -> None:
         step4 = optimized.step4
         step5 = optimized.step5
         step6 = optimized.step6
-        rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+        rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
     else:
         # ─── Step 1: Rake / Ride Heights ─────────────────────────────────
         if cal_gate.step_is_runnable(1):
@@ -450,8 +454,8 @@ def run_solver(args: "argparse.Namespace") -> None:
             if not args.json and not args.report_only:
                 print(step3.summary())
 
-            # Convert rear spring rate to wheel rate (MR^2) for downstream solvers
-            rear_wheel_rate_nmm = step3.rear_spring_rate_nmm * car.corner_spring.rear_motion_ratio ** 2
+            # Rear wheel rate from the Step 3 solution (MR^2 applied internally)
+            rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
             # ─── RH Reconciliation (after step2+step3 provide actual spring values) ──
             heave_solver.reconcile_solution(
@@ -697,8 +701,7 @@ def run_solver(args: "argparse.Namespace") -> None:
         try:
             from solver.multi_speed_solver import MultiSpeedSolver
             from car_model.cars import CarModel as _CM
-            rear_wheel_rate_nmm = (step3.rear_spring_rate_nmm
-                                   * car.corner_spring.rear_motion_ratio ** 2)
+            rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
             ms_result = MultiSpeedSolver(car, track).analyze(
                 front_heave_nmm=step2.front_heave_nmm,
                 rear_third_nmm=step2.rear_third_nmm,
