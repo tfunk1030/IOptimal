@@ -182,19 +182,20 @@ class CornerSpringSolution:
                 [f"    Torsion bar OD:      {self.rear_torsion_od_mm:6.2f} mm"]
                 if self.rear_torsion_od_mm else []
             ),
-            f"    {'Wheel rate' if self.rear_torsion_od_mm else 'Spring rate'}:"
-            f"         {self.rear_spring_rate_nmm:6.0f} N/mm",
+            f"    Spring rate:         {self.rear_spring_rate_nmm:6.0f} N/mm",
+            f"    Wheel rate:          {self.rear_wheel_rate_nmm:6.1f} N/mm"
+            f"  (MR={self.rear_motion_ratio:.3f})",
             f"    Natural frequency:   {self.rear_natural_freq_hz:6.2f} Hz",
             f"    Third/corner ratio:  {self.rear_third_corner_ratio:6.1f}x "
             f"(guideline: 1.5-3.5x)",
             f"    Freq isolation:      {self.rear_freq_isolation_ratio:6.1f}x",
             f"    Perch offset:        {self.rear_spring_perch_mm:6.1f} mm (baseline)",
             "",
-            "  TOTAL HEAVE STIFFNESS (heave/third + 2 * corner)",
+            "  TOTAL HEAVE STIFFNESS (heave/third + 2 * corner wheel rate)",
             f"    Front:  {self.total_front_heave_nmm:6.0f} N/mm "
             f"(heave alone: {self.total_front_heave_nmm - 2*self.front_wheel_rate_nmm:.0f})",
             f"    Rear:   {self.total_rear_heave_nmm:6.0f} N/mm "
-            f"(third alone: {self.total_rear_heave_nmm - 2*self.rear_spring_rate_nmm:.0f})",
+            f"(third alone: {self.total_rear_heave_nmm - 2*self.rear_wheel_rate_nmm:.0f})",
             "",
             "  TRACK SURFACE MATCHING",
             f"    Track bump frequency:  {self.track_bump_freq_hz:.1f} Hz",

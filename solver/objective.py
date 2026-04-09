@@ -1493,10 +1493,7 @@ class ObjectiveFunction:
         # Coast ramp controls corner-entry rotation (lower = more locking = more US)
         # Drive ramp controls exit traction (higher = less locking = more wheelspin)
         # Optimal: match to driver trail-brake depth and throttle progressiveness
-        ramp_options = getattr(
-            self.car.garage_ranges, "diff_coast_drive_ramp_options",
-            [(40, 65), (45, 70), (50, 75)]
-        )
+        ramp_options = self.car.garage_ranges.diff_coast_drive_ramp_options
         ramp_idx = int(round(params.get("diff_ramp_option_idx", 1)))
         ramp_idx = max(0, min(len(ramp_options) - 1, ramp_idx))
         coast_deg, drive_deg = ramp_options[ramp_idx]
@@ -1644,10 +1641,7 @@ class ObjectiveFunction:
         # arb_extreme_ms zeroed out — see _estimate_lap_gain() comment (2026-03-28)
         # detail.arb_extreme_ms += ...  (kept at 0.0 — calibration shows it adds noise)
 
-        ramp_options = getattr(
-            self.car.garage_ranges, "diff_coast_drive_ramp_options",
-            [(40, 65), (45, 70), (50, 75)]
-        )
+        ramp_options = self.car.garage_ranges.diff_coast_drive_ramp_options
         ramp_idx = int(round(params.get("diff_ramp_option_idx", 1)))
         ramp_idx = max(0, min(len(ramp_options) - 1, ramp_idx))
         trail_brake = getattr(self._driver, "trail_brake_depth_p95", 0.3) if self._driver else 0.3

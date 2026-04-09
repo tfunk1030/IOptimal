@@ -60,7 +60,7 @@ def _step_string_option(value: str, options: list[str], delta: int, *, default_i
 
 def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> None:
     """Snap all blended target values to valid iRacing garage increments."""
-    gr = car.garage_ranges if car is not None else None
+    gr = getattr(car, "garage_ranges", None) if car is not None else None
     s1 = targets["step1"]
     s2 = targets["step2"]
     s3 = targets["step3"]
@@ -107,16 +107,17 @@ def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> 
     rear_spring_perch_range = getattr(gr, "rear_spring_perch_mm", (25.0, 45.0)) if gr is not None else (25.0, 45.0)
     rear_spring_perch_step = getattr(gr, "rear_spring_perch_resolution_mm", 0.5) or 0.5
     if "front_torsion_od_mm" in s3 and isinstance(s3["front_torsion_od_mm"], (int, float)):
-        if car.canonical_name == "ferrari":
+        if getattr(car, "canonical_name", "") == "ferrari":
             s3["front_torsion_od_mm"] = _snap_step(s3["front_torsion_od_mm"], rear_spring_step, torsion_range[0], torsion_range[1])
         else:
             # Use car-specific torsion OD options. Cars without torsion bars
             # (Porsche, Acura) should have an empty list — leave the value
             # untouched rather than silently snapping to BMW options.
-            options = car.corner_spring.front_torsion_od_options if car is not None else None
+            csm = getattr(car, "corner_spring", None) if car is not None else None
+            options = getattr(csm, "front_torsion_od_options", None)
             if options:
                 s3["front_torsion_od_mm"] = _snap_nearest(s3["front_torsion_od_mm"], list(options))
-            elif car is not None and car.corner_spring.front_torsion_c > 0:
+            elif csm is not None and getattr(csm, "front_torsion_c", 0.0) > 0:
                 # Car has torsion bar physics but no explicit option list:
                 # fall back to the BMW grid (legacy behavior).
                 s3["front_torsion_od_mm"] = _snap_nearest(s3["front_torsion_od_mm"], _TORSION_OD_OPTIONS)
@@ -165,7 +166,7 @@ def _cluster_center_issues(car: Any | None, setup_cluster: Any | None) -> list[s
         return ["setup cluster has no center"]
     if car is None:
         return []
-    gr = car.garage_ranges if car is not None else None
+    gr = getattr(car, "garage_ranges", None) if car is not None else None
     issues: list[str] = []
     checks = [
         ("front_pushrod_mm", getattr(gr, "front_pushrod_mm", None)),
@@ -189,11 +190,11 @@ def _cluster_center_issues(car: Any | None, setup_cluster: Any | None) -> list[s
         if value < float(limits[0]) or value > float(limits[1]):
             issues.append(f"{key} center {value:.3f} is outside legal range {limits}")
     brake_bias = _safe_float(center.get("brake_bias_pct"))
-    baseline_bias = _safe_float(car.brake_bias_pct) if car is not None else None
+    baseline_bias = _safe_float(getattr(car, "brake_bias_pct", None)) if car is not None else None
     if brake_bias is not None and baseline_bias is not None:
         if brake_bias < baseline_bias - 10.0 or brake_bias > baseline_bias + 10.0:
             issues.append(
-                f"brake_bias_pct center {brake_bias:.3f} is implausible for {car.canonical_name}"
+                f"brake_bias_pct center {brake_bias:.3f} is implausible for {getattr(car, 'canonical_name', 'car')}"
             )
     return issues
 
@@ -295,7 +296,7 @@ def _extract_target_maps(base_result: SolveChainResult, car: Any | None = None) 
             "front_torsion_od_mm": public_output_value(car, "front_torsion_od_mm", base_result.step3.front_torsion_od_mm),
             "rear_spring_rate_nmm": public_output_value(car, "rear_spring_rate_nmm", base_result.step3.rear_spring_rate_nmm),
             "rear_spring_perch_mm": (
-                0.0 if car.canonical_name == "ferrari" else base_result.step3.rear_spring_perch_mm
+                0.0 if getattr(car, "canonical_name", "") == "ferrari" else base_result.step3.rear_spring_perch_mm
             ),
         },
         "step4": {
@@ -456,7 +457,7 @@ def canonical_params_to_overrides(
         if key in {"diff_ramp_angles", "rear_diff_ramp_label"}:
             current_idx = targets["supporting"].get("diff_ramp_option_idx", 1)
             targets["supporting"]["diff_ramp_option_idx"] = diff_ramp_option_index(
-                car.canonical_name,
+                getattr(car, "canonical_name", ""),
                 diff_ramp_angles=value,
                 default=int(round(float(current_idx))) if current_idx is not None else 1,
             )
@@ -603,7 +604,7 @@ def _apply_family_state_adjustments(
     )
     front_lock = _clamp(((_safe_float(_get_metric(measured, "front_braking_lock_ratio_p95")) or 0.0) - 0.06) / 0.05, 0.0, 1.0)
 
-    is_ferrari = car.canonical_name == "ferrari"
+    is_ferrari = getattr(car, "canonical_name", "") == "ferrari"
 
     _adjust_numeric(targets["step1"], "front_pushrod_offset_mm", 0.8 * front_support * family_intensity, decimals=3)
 
@@ -670,7 +671,7 @@ def _apply_family_state_adjustments(
     # (which was a BMW assumption). Porsche's rear ARB has blade range 1-16;
     # driver-validated operating point is blade=10 — unreachable with hi=6.
     _arb_hi = (
-        int(car.arb.rear_blade_count)
+        int(getattr(getattr(car, "arb", None), "rear_blade_count", 6))
         if car is not None else 6
     ) or 6
     _adjust_integer(targets["step4"], "rear_arb_blade_start", arb_delta, lo=1, hi=_arb_hi)
@@ -950,7 +951,7 @@ def generate_candidate_families(
         # how much to anchor back to a historical setup.
         cluster_seeded = family == "baseline_reset" and setup_cluster is not None
         if cluster_seeded:
-            _apply_cluster_center(targets, setup_cluster, car_name=car.canonical_name)
+            _apply_cluster_center(targets, setup_cluster, car_name=getattr(car, "canonical_name", "bmw"))
         _apply_family_state_adjustments(
             targets,
             car=car,

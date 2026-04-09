@@ -48,9 +48,11 @@ A comprehensive 3-agent audit (solver workflow, calibration system, code quality
 **Files**: All `solver/*.py`, `pipeline/*.py`
 **Effort**: Large (touches nearly every file, best done incrementally).
 
-### 1.4 Regression Test Baseline Regeneration
+### 1.4 Regression Test Baseline Regeneration (BLOCKING)
 
-**Problem**: The tyre compliance fix (`tyre_vertical_rate_front/rear_nmm` now passed to `damped_excursion_mm`) changes excursion/sigma calculations. For BMW with front heave ~50 N/mm and tyre ~300 N/mm, effective rate drops ~14%. This is physically correct but will shift baseline `.sto` fixtures.
+**Problem**: The tyre compliance fix (`tyre_vertical_rate_front/rear_nmm` now passed to `damped_excursion_mm`) changes excursion/sigma calculations. For BMW with front heave ~50 N/mm and tyre ~300 N/mm, the effective series rate becomes `1/(1/50 + 1/300) = 42.9 N/mm` — a ~14% reduction. This shifts the objective function's platform risk, sigma targets, and potentially spring recommendations. The change is physically correct (tyre compliance was always intended to be modeled — the parameter existed but was never populated), but **existing `.sto` baselines will not match** and `test_setup_regression.py` will fail until baselines are regenerated.
+
+**Impact**: `solver/objective.py:857-889` — front/rear excursion now uses softer effective rate → larger excursions → more conservative spring recommendations (springs move stiffer to compensate for tyre compliance).
 
 **Approach**: After verifying the physics is correct on a real IBT run, regenerate baselines:
 ```bash

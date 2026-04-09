@@ -230,10 +230,7 @@ def _enforce_ramp_pair(supporting: Any, car: Any = None) -> None:
     drive = getattr(supporting, "diff_ramp_drive", None)
     if coast is None or drive is None:
         return
-    valid_pairs = getattr(
-        car.garage_ranges, "diff_coast_drive_ramp_options",
-        [(40, 65), (45, 70), (50, 75)],
-    )
+    valid_pairs = car.garage_ranges.diff_coast_drive_ramp_options
     best = min(valid_pairs, key=lambda p: abs(p[0] - coast) + abs(p[1] - drive))
     supporting.diff_ramp_coast = best[0]
     supporting.diff_ramp_drive = best[1]
