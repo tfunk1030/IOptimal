@@ -231,7 +231,7 @@ def _enforce_ramp_pair(supporting: Any, car: Any = None) -> None:
     if coast is None or drive is None:
         return
     valid_pairs = getattr(
-        getattr(car, "garage_ranges", None), "diff_coast_drive_ramp_options",
+        car.garage_ranges, "diff_coast_drive_ramp_options",
         [(40, 65), (45, 70), (50, 75)],
     )
     best = min(valid_pairs, key=lambda p: abs(p[0] - coast) + abs(p[1] - drive))
@@ -250,7 +250,7 @@ def _enforce_ramp_pair(supporting: Any, car: Any = None) -> None:
     supporting.diff_ramp_angles = diff_ramp_string_for_option(
         car,
         getattr(supporting, "diff_ramp_option_idx", 1),
-        ferrari_label=getattr(car, "canonical_name", "") == "ferrari",
+        ferrari_label=car.canonical_name == "ferrari",
     )
 
 
@@ -269,7 +269,7 @@ def _apply_supporting_overrides(supporting: Any, overrides: dict[str, Any], car:
                 supporting.diff_ramp_angles = diff_ramp_string_for_option(
                     car,
                     option_idx,
-                    ferrari_label=getattr(car, "canonical_name", "") == "ferrari",
+                    ferrari_label=car.canonical_name == "ferrari",
                 )
             continue
         if hasattr(supporting, field_name):
@@ -352,7 +352,7 @@ def _decode_ferrari_indexed_setup(car: Any, setup: Any) -> None:
     as indices (0-18). The solver needs physical N/mm and mm values. This decoding
     MUST happen before any solver step reads current_setup values.
     """
-    if setup is None or getattr(car, "canonical_name", "") != "ferrari":
+    if setup is None or car.canonical_name != "ferrari":
         return
     _indexed_keys = [
         "front_heave_nmm",

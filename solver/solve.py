@@ -622,8 +622,8 @@ def run_solver(args: "argparse.Namespace") -> None:
                         f"(slack {c.slack_pct:+.1f}%)")
                     if c.binding_explanation:
                         log(f"     → {c.binding_explanation}")
-    except Exception:
-        pass  # constraint analysis is advisory
+    except Exception as e:
+        log(f"[constraints] Skipped: {e}")
 
     # ─── Extra analyses (stint, sector, sensitivity, space) ───────────
     stint_result = None
@@ -845,8 +845,8 @@ def run_solver(args: "argparse.Namespace") -> None:
             diff_clutch_plates = _diff.clutch_plates
 
         _supporting = _StandaloneSupporting()
-    except Exception:
-        pass
+    except Exception as e:
+        log(f"[supporting] Standalone solver failed: {e}")
 
     # ── RunTrace for track-only path ──
     try:
@@ -864,8 +864,8 @@ def run_solver(args: "argparse.Namespace") -> None:
             _rt.add_note("Track-only mode: no telemetry signals — solver used physics defaults for all targets.")
         _verbose = getattr(args, "verbose", False)
         _rt.print_report(verbose=_verbose)
-    except Exception:
-        pass  # RunTrace is non-critical — never break solver output
+    except Exception as e:
+        log(f"[run-trace] Skipped: {e}")
 
     # ─── Full Setup Report ─────────────────────────────────────────────
     # Only print full report if at least steps 1-3 ran (minimum useful output)
@@ -946,8 +946,8 @@ def run_solver(args: "argparse.Namespace") -> None:
                 _ramp_str = f"{int(round(_diff_def.coast_ramp_deg))}/{int(round(_diff_def.drive_ramp_deg))}"
                 _clutch = int(_diff_def.clutch_plates)
                 _preload_nm = float(_diff_def.preload_nm)
-            except Exception:
-                pass
+            except Exception as e:
+                log(f"[diff-defaults] Skipped: {e}")
             sto_path = write_sto(
                 car_name=car.name,
                 track_name=f"{track.track_name} — {track.track_config}",

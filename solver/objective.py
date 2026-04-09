@@ -347,7 +347,7 @@ class ObjectiveFunction:
         from solver.heave_calibration import HeaveCalibration
 
         # Resolve car slug: "bmw m hybrid v8" → "bmw", "cadillac v-series.r" → "cadillac"
-        _car_raw = getattr(car, "name", "") or getattr(car, "adapter_name", "") or str(car)
+        _car_raw = car.name if hasattr(car, "name") else str(car)
         _car_slug = _car_raw.lower().split()[0].replace("-", "").replace(".", "")
         self._car_slug = _car_slug
 
@@ -422,14 +422,13 @@ class ObjectiveFunction:
         # Read per-car realistic operating range instead of BMW-hardcoded (30, 100).
         # Falls back to garage range if no realistic range is defined.
         heave_opt_lo, heave_opt_hi = 30.0, 100.0  # ultimate fallback
-        _hs = getattr(self.car, "heave_spring", None)
-        if _hs is not None:
-            _realistic = getattr(_hs, "front_realistic_range_nmm", None)
-            if _realistic is not None and len(_realistic) >= 2:
-                heave_opt_lo, heave_opt_hi = _realistic[0], _realistic[1]
-            else:
-                _range = getattr(_hs, "front_spring_range_nmm", None)
-                if _range is not None and len(_range) >= 2:
+        _hs = self.car.heave_spring
+        _realistic = _hs.front_realistic_range_nmm
+        if _realistic is not None and len(_realistic) >= 2:
+            heave_opt_lo, heave_opt_hi = _realistic[0], _realistic[1]
+        else:
+            _range = _hs.front_spring_range_nmm
+            if _range is not None and len(_range) >= 2:
                     heave_opt_lo, heave_opt_hi = _range[0], _range[1]
         if front_heave > heave_opt_hi:
             excess = front_heave - heave_opt_hi
@@ -715,7 +714,7 @@ class ObjectiveFunction:
         # Use FerrariIndexedControlModel for both axles — calibrated from garage screenshots.
         # All other cars (BMW/Cadillac/Porsche/Acura): BMW path — c_torsion*OD^4 front,
         # rear_spring_nmm*MR^2 rear (Dallara coil spring architecture).
-        _ferrari_controls = getattr(car, "ferrari_indexed_controls", None)
+        _ferrari_controls = car.ferrari_indexed_controls
         if _ferrari_controls is not None:
             _ftb_idx = float(params.get("front_torsion_bar_index", 2.0))
             _rtb_idx = float(params.get("rear_torsion_bar_index", 2.0))
@@ -750,7 +749,7 @@ class ObjectiveFunction:
         # For fuel window analysis, we still model the shift with fuel load,
         # but anchor to the measured target instead of the theoretical formula.
         tyre_sens = car.tyre_load_sensitivity
-        _measured_lltd_target = getattr(car, "measured_lltd_target", None)
+        _measured_lltd_target = car.measured_lltd_target
         if _measured_lltd_target is not None:
             # Anchor to measured target; apply fuel-load shift on top
             _shift = front_pct_end - front_pct_start  # how much W_front changes
@@ -813,7 +812,7 @@ class ObjectiveFunction:
         # ── Wheel rates ─────────────────────────────────────────────────
         # Ferrari: indexed torsion bars at both ends — use FerrariIndexedControlModel.
         # Other cars: c_torsion*OD^4 front + rear_spring_nmm*MR^2 rear (Dallara coil).
-        _ferrari_controls = getattr(car, "ferrari_indexed_controls", None)
+        _ferrari_controls = car.ferrari_indexed_controls
         if _ferrari_controls is not None:
             _ftb_idx = float(params.get("front_torsion_bar_index", 2.0))
             _rtb_idx = float(params.get("rear_torsion_bar_index", 2.0))
@@ -1021,8 +1020,8 @@ class ObjectiveFunction:
         # The component calculation (torsion bars + ARBs) gives 0.35-0.43 — WRONG —
         # because the individual stiffness values can't be resolved from available data.
         # Use the measured constant directly when the car's LLTD doesn't vary with setup.
-        _measured_lltd_target = getattr(car, "measured_lltd_target", None)
-        _ferrari_controls = getattr(car, "ferrari_indexed_controls", None)
+        _measured_lltd_target = car.measured_lltd_target
+        _ferrari_controls = car.ferrari_indexed_controls
         if _ferrari_controls is not None and _measured_lltd_target is not None:
             # Ferrari: LLTD is a car constant — use measured value directly
             result.lltd = _measured_lltd_target
@@ -1495,7 +1494,7 @@ class ObjectiveFunction:
         # Drive ramp controls exit traction (higher = less locking = more wheelspin)
         # Optimal: match to driver trail-brake depth and throttle progressiveness
         ramp_options = getattr(
-            getattr(self.car, "garage_ranges", None), "diff_coast_drive_ramp_options",
+            self.car.garage_ranges, "diff_coast_drive_ramp_options",
             [(40, 65), (45, 70), (50, 75)]
         )
         ramp_idx = int(round(params.get("diff_ramp_option_idx", 1)))
@@ -1646,7 +1645,7 @@ class ObjectiveFunction:
         # detail.arb_extreme_ms += ...  (kept at 0.0 — calibration shows it adds noise)
 
         ramp_options = getattr(
-            getattr(self.car, "garage_ranges", None), "diff_coast_drive_ramp_options",
+            self.car.garage_ranges, "diff_coast_drive_ramp_options",
             [(40, 65), (45, 70), (50, 75)]
         )
         ramp_idx = int(round(params.get("diff_ramp_option_idx", 1)))
@@ -1752,7 +1751,7 @@ class ObjectiveFunction:
         # Ferrari's auto-calibrated deflection model was trained on INDEX inputs
         # (front_heave=0-8, torsion_od=0-18), not physical N/mm rates.
         # Convert N/mm → index before calling the deflection model.
-        _ferrari_controls = getattr(self.car, "ferrari_indexed_controls", None)
+        _ferrari_controls = self.car.ferrari_indexed_controls
         if _ferrari_controls is not None:
             # Convert front heave N/mm → index for deflection model
             _anchor = _hsm.front_setting_anchor_index or 1.0

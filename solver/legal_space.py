@@ -119,7 +119,7 @@ def compute_perch_offsets(params: dict, car: CarModel) -> dict:
     Returns:
         Dict with front_heave_perch_mm, rear_third_perch_mm, rear_spring_perch_mm
     """
-    if getattr(car, "canonical_name", "") == "ferrari":
+    if car is not None and car.canonical_name == "ferrari":
         preserved: dict[str, float] = {}
         for key in ("front_heave_perch_mm", "rear_third_perch_mm", "rear_spring_perch_mm"):
             value = params.get(key)

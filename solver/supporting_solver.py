@@ -254,7 +254,7 @@ class SupportingSolver:
                 "Static brake bias is solved from telemetry; brake target, migration, "
                 "master cylinders, and pad compound are preserved as legal seeded context."
             )
-        if getattr(self.car, "canonical_name", "") == "ferrari":
+        if self.car.canonical_name == "ferrari":
             live_bias = getattr(self.measured, "live_brake_bias_pct", None)
             setup_bias = getattr(self.current_setup, "brake_bias_pct", 0.0) or 0.0
             if live_bias is not None:
@@ -331,7 +331,7 @@ class SupportingSolver:
             sol.diff_ramp_angles = diff_ramp_string_for_option(
                 self.car,
                 sol.diff_ramp_option_idx,
-                ferrari_label=getattr(self.car, "canonical_name", "") == "ferrari",
+                ferrari_label=self.car.canonical_name == "ferrari",
             )
             # Store diff solution for reporting (optional attribute)
             sol._diff_solution = diff_sol
@@ -408,7 +408,7 @@ class SupportingSolver:
         sol.diff_ramp_angles = diff_ramp_string_for_option(
             self.car,
             sol.diff_ramp_option_idx,
-            ferrari_label=getattr(self.car, "canonical_name", "") == "ferrari",
+            ferrari_label=self.car.canonical_name == "ferrari",
         )
         sol.diff_clutch_plates = self.car.garage_ranges.diff_clutch_plates_options[-1]  # highest available
         sol.diff_reasoning = "; ".join(reasons)
@@ -496,7 +496,7 @@ class SupportingSolver:
             sol.tc_slip = int(_curr_tc_slip)
             reasons.append(f"anchored to driver-loaded slip={sol.tc_slip}")
         sol.tc_reasoning = "; ".join(reasons)
-        if getattr(self.car, "canonical_name", "") == "ferrari":
+        if self.car.canonical_name == "ferrari":
             live_gain = getattr(measured, "live_tc_gain", None)
             live_slip = getattr(measured, "live_tc_slip", None)
             ferrari_reasons: list[str] = []
@@ -618,7 +618,7 @@ class SupportingSolver:
 
     def _populate_pss(self, sol: SupportingSolution) -> None:
         """Classify every user-visible supporting parameter into parameter_search_status."""
-        is_ferrari = getattr(self.car, "canonical_name", "") == "ferrari"
+        is_ferrari = self.car.canonical_name == "ferrari"
 
         pss: dict[str, str] = {}
 

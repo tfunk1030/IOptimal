@@ -316,7 +316,7 @@ class RakeSolver:
                 # Ferrari RH model was calibrated with INDEX inputs (0-9 heave, 0-18 torsion),
                 # not physical N/mm. Convert physical baselines to index space.
                 # Also: Ferrari RH model feature 4 = rear_third_perch (not front_heave_perch).
-                if getattr(self.car, 'canonical_name', '') == 'ferrari':
+                if self.car.canonical_name == 'ferrari':
                     from car_model.setup_registry import public_output_value
                     baseline_third_nmm = float(public_output_value('ferrari', 'rear_third_nmm', baseline_third_nmm))
                     baseline_rear_spring = float(public_output_value('ferrari', 'rear_spring_rate_nmm', baseline_rear_spring))
@@ -1057,7 +1057,7 @@ def reconcile_ride_heights(
     if rh_model.front_is_calibrated:
         front_camber = car.geometry.front_camber_baseline_deg
         _heave_for_rh = step2.front_heave_nmm
-        if getattr(car, 'canonical_name', '') == 'ferrari':
+        if car.canonical_name == 'ferrari':
             from car_model.setup_registry import public_output_value
             _heave_for_rh = float(public_output_value('ferrari', 'front_heave_nmm', step2.front_heave_nmm))
 
@@ -1114,7 +1114,7 @@ def reconcile_ride_heights(
         _third_for_rh = actual_third_nmm
         _rear_spring_for_rh = actual_rear_spring
         _heave_perch_for_rh = actual_heave_perch
-        if getattr(car, 'canonical_name', '') == 'ferrari':
+        if car.canonical_name == 'ferrari':
             from car_model.setup_registry import public_output_value
             _third_for_rh = float(public_output_value('ferrari', 'rear_third_nmm', actual_third_nmm))
             _rear_spring_for_rh = float(public_output_value('ferrari', 'rear_spring_rate_nmm', actual_rear_spring))
