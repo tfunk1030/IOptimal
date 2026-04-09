@@ -504,11 +504,20 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     )
 
     # 8. LLTD target — requires measured_lltd_target to be set
+    # Source may be IBT observations (BMW), session averages (Ferrari),
+    # or physics formula (Porsche OptimumG/Milliken) — label accurately.
     lltd_set = car.measured_lltd_target is not None
+    lltd_from_models = raw_models.get("measured_lltd_target") is not None
+    if lltd_set and lltd_from_models:
+        lltd_source = f"IBT-derived (target={car.measured_lltd_target:.3f})"
+    elif lltd_set:
+        lltd_source = f"physics/hand-calibrated (target={car.measured_lltd_target:.3f})"
+    else:
+        lltd_source = "no measured data"
     subs["lltd_target"] = SubsystemCalibration(
         name="lltd_target",
         status="calibrated" if lltd_set else "uncalibrated",
-        source=f"IBT data (target={car.measured_lltd_target})" if lltd_set else "no measured data",
+        source=lltd_source,
         instructions=_fmt_instructions("lltd_target", cn, track_name),
     )
 
