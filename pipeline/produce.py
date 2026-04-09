@@ -261,6 +261,12 @@ def produce(
     free_mode = bool(getattr(args, "free", False))
     scenario_profile_name = _resolve_scenario_profile(args)
 
+    # ── Resolve car name early (multi-IBT branch needs it) ──
+    from car_model.registry import resolve_car as _resolve_car_name_fn
+    _car_id = _resolve_car_name_fn(args.car)
+    if _car_id:
+        args.car = _car_id.canonical
+
     # ── Normalize IBT path(s) ──
     ibt_arg = args.ibt
     if isinstance(ibt_arg, list):
