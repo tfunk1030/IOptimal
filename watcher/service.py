@@ -17,21 +17,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from car_model.registry import resolve_car
 from watcher.monitor import IBTWatcher, default_telemetry_dir
 
 logger = logging.getLogger(__name__)
-
-# Maps iRacing CarScreenName → IOptimal canonical_name.
-# Unknown cars get stored as raw observations.
-_CAR_SCREEN_NAME_MAP: dict[str, str] = {
-    # GTP / Hypercar (already in car_model)
-    "BMW M Hybrid V8": "bmw",
-    "Cadillac V-Series.R": "cadillac",
-    "Ferrari 499P": "ferrari",
-    "Porsche 963": "porsche",
-    "Acura ARX-06": "acura",
-    # These can be extended as car models are added.
-}
 
 
 @dataclass
@@ -164,7 +153,8 @@ class WatcherService:
             self._store_result(result)
             return result
 
-        car_canonical = _CAR_SCREEN_NAME_MAP.get(car_screen)
+        _car_identity = resolve_car(car_screen)
+        car_canonical = _car_identity.canonical if _car_identity else None
 
         # Step 2: Filter by car if configured
         if self._car_filter and car_canonical and car_canonical not in self._car_filter:

@@ -7,6 +7,7 @@ import hashlib
 from typing import Any
 
 from analyzer.sto_binary import DecodedSto
+from car_model.registry import resolve_car
 from car_model.setup_registry import DEFAULT_DIFF_RAMP_OPTIONS, get_car_spec, get_field
 
 _MM_TO_IN = 0.03937007874015748
@@ -15,14 +16,6 @@ _N_TO_LBF = 0.22480894387096
 _KPH_TO_MPH = 0.621371192237334
 _L_TO_GAL = 0.2641720523581484
 _NM_TO_LBFT = 0.7375621492772669
-
-_CAR_ID_TO_CANONICAL = {
-    "acuraarx06gtp": "acura",
-    "bmwlmdh": "bmw",
-    "cadillacvseriesr": "cadillac",
-    "ferrari499p": "ferrari",
-    "porsche963": "porsche",
-}
 
 
 @dataclass
@@ -98,8 +91,8 @@ class _RowDisplaySpec:
 def _canonical_car_name(car: str | None) -> str:
     if not car:
         return ""
-    value = car.lower().strip()
-    return _CAR_ID_TO_CANONICAL.get(value, value)
+    identity = resolve_car(car.strip())
+    return identity.canonical if identity else car.lower().strip()
 
 
 def _infer_tire_type(decoded: DecodedSto) -> str:
