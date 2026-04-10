@@ -81,25 +81,25 @@
   "heave_spring_defl_static": {
     "name": "heave_spring_defl_static",
     "feature_names": [
-      "front_heave_x_front_pushrod",
-      "rear_third_x_rear_pushrod",
-      "rear_pushrod",
-      "rear_pushrod_x_front_heave_perch",
-      "front_pushrod_x_front_heave_perch",
-      "inv_rear_third"
+      "front_heave",
+      "front_camber",
+      "rear_camber",
+      "front_pushrod",
+      "front_heave_perch",
+      "inv_front_heave"
     ],
     "coefficients": [
-      22.07511649855424,
-      -2.5083163185203377e-05,
-      0.0007485506751566609,
-      -0.7907720471446957,
-      0.010044427238016192,
-      0.01321610025133408,
-      41.93267107287904
+      78.24518065536625,
+      -0.001661951715801413,
+      0.07778982929616482,
+      2.849864999316112,
+      0.6304569828316574,
+      -0.914715261598288,
+      90.24346000875647
     ],
     "r_squared": 1.0,
-    "rmse": 1.7897291031339511e-13,
-    "loo_rmse": 0.6848597043332396,
+    "rmse": 6.340374731044118e-14,
+    "loo_rmse": 0.5588694618503997,
     "n_samples": 8,
     "is_calibrated": true
   },
@@ -108,23 +108,17 @@
     "feature_names": [
       "front_heave",
       "inv_front_heave",
-      "front_heave_sq",
-      "rear_third_perch_x_front_heave_perch",
-      "front_heave_x_rear_third_perch",
-      "inv_od4"
+      "rear_third"
     ],
     "coefficients": [
-      83.65366523880833,
-      -0.13207770835083923,
-      693.4589875632365,
-      0.0001041518439828721,
-      0.00028054098036779326,
-      -9.697965398177804e-05,
-      -1288.9645988111542
+      70.24397127705703,
+      -0.06531056395894776,
+      1457.932571357204,
+      0.00020662506045191238
     ],
-    "r_squared": 1.0,
-    "rmse": 1.3115159570389358e-09,
-    "loo_rmse": 0.03456589890732154,
+    "r_squared": 0.9998236972877366,
+    "rmse": 0.16040591817167726,
+    "loo_rmse": 0.36157770128775785,
     "n_samples": 8,
     "is_calibrated": true
   },
@@ -134,42 +128,42 @@
   "third_spring_defl_static": {
     "name": "third_spring_defl_static",
     "feature_names": [
-      "front_heave_x_rear_third_perch",
-      "inv_front_heave",
-      "front_heave_perch_sq",
-      "rear_camber"
+      "front_heave",
+      "inv_rear_third",
+      "front_heave_perch"
     ],
     "coefficients": [
-      33.6804774355351,
-      -0.001878756943117536,
-      -1614.631387974812,
-      0.00495078526776463,
-      -2.307411543275373
+      37.14936613240486,
+      -0.02339706678754172,
+      750.9537890336313,
+      -0.482887938633661
     ],
-    "r_squared": 0.9928641074695116,
-    "rmse": 0.6281518268225625,
-    "loo_rmse": 1.4249468984908753,
+    "r_squared": 0.8181911477707241,
+    "rmse": 3.1706477025183935,
+    "loo_rmse": 5.099651943222381,
     "n_samples": 8,
-    "is_calibrated": true
+    "is_calibrated": false
   },
   "third_spring_defl_max": {
     "name": "third_spring_defl_max",
     "feature_names": [
       "rear_third",
-      "rear_pushrod_sq",
-      "front_heave_perch",
-      "front_heave_perch_sq"
+      "inv_rear_third",
+      "inv_front_heave",
+      "rear_third_perch",
+      "rear_camber"
     ],
     "coefficients": [
-      98.92744003235694,
-      -0.19642072196706978,
-      -0.0038762324734017187,
-      0.7416301374176282,
-      -0.008122247823013391
+      93.00089925410417,
+      -0.12125035164940534,
+      880.2755836813218,
+      54.03023802777403,
+      0.00927823306278214,
+      -0.04941200665859803
     ],
-    "r_squared": 0.999670598748152,
-    "rmse": 0.16321107723992714,
-    "loo_rmse": 0.3270962165648491,
+    "r_squared": 0.999999998042565,
+    "rmse": 0.0003978603758137727,
+    "loo_rmse": 0.007041466664687514,
     "n_samples": 8,
     "is_calibrated": true
   },
@@ -179,19 +173,23 @@
     "feature_names": [
       "front_camber",
       "inv_front_heave",
-      "front_heave_x_front_heave_perch",
-      "rear_third_x_front_heave"
+      "front_heave",
+      "front_heave_perch",
+      "front_pushrod",
+      "inv_od4"
     ],
     "coefficients": [
-      -22.629223237965817,
-      2.546881834058606,
-      3975.873683670848,
-      0.0022467621623176353,
-      -0.0002301333577581801
+      -60.628480255028954,
+      1.7675046561883772,
+      3293.2783206371782,
+      0.034380031549919025,
+      0.7993449877665769,
+      -0.4471523305654203,
+      -95285.74514917115
     ],
-    "r_squared": 0.9898062154871557,
-    "rmse": 0.7446318375994239,
-    "loo_rmse": 2.021420045895802,
+    "r_squared": 1.0,
+    "rmse": 2.5983735047185786e-11,
+    "loo_rmse": 0.40771105521253775,
     "n_samples": 8,
     "is_calibrated": true
   },

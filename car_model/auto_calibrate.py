@@ -1050,23 +1050,10 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         # produces 0.000mm difference on ALL outputs). Excluded to prevent
         # spurious correlations from inflating feature count.
     ]
-    # Add pairwise interactions and quadratic terms for key variables.
-    # iRacing's garage model uses nonlinear terms (discovered via brute-force).
-    _interact_bases = [
-        (_rear_third, "rear_third"), (_rear_spring, "rear_spring"),
-        (heave, "front_heave"),
-        (col("rear_pushrod_mm"), "rear_pushrod"),
-        (col("rear_third_perch_mm"), "rear_third_perch"),
-        (col("rear_spring_perch_mm"), "rear_spring_perch"),
-        (col("front_pushrod_mm"), "front_pushrod"),
-        (col("front_heave_perch_mm"), "front_heave_perch"),
-    ]
-    for i, (arr1, name1) in enumerate(_interact_bases):
-        # Quadratic
-        _UNIVERSAL_POOL.append((arr1 ** 2, f"{name1}_sq"))
-        # Interactions with later bases (avoid duplicates)
-        for arr2, name2 in _interact_bases[i + 1:]:
-            _UNIVERSAL_POOL.append((arr1 * arr2, f"{name1}_x_{name2}"))
+    # Interaction/quadratic terms removed — they overfit on training data
+    # (0.000mm on calibration points) but fail on new setups (2.3mm on
+    # real IBTs). The physics features (linear + compliance 1/k) give
+    # 0.039mm on holdout data with honest generalization.
 
     def _pool_to_matrix(pool=None):
         """Build X matrix and names from feature pool, excluding constants."""
