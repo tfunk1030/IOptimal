@@ -1631,17 +1631,16 @@ class CarModel:
     # None for all non-Ferrari cars.
     ferrari_indexed_controls: FerrariIndexedControlModel | None = None
 
-    # Measured LLTD target from IBT data (optional per-car calibration).
-    # When set, this OVERRIDES the theoretical formula (W_front + λ*0.05).
-    # Set when IBT data shows the car consistently runs a different LLTD balance
-    # than the theoretical target predicts.
-    #
-    # BMW Sebring calibration (46 sessions, 2026):
-    #   Theoretical: 0.4727 + (0.22/0.20)*0.05 = 0.528
-    #   Measured IBT: 0.38-0.43 (rear-biased balance, rotation-optimised)
-    #   Override: 0.41 (midpoint of observed range)
-    #   Source: objective_validation.md Section 6
+    # Explicit track support for calibration authority. If non-empty, the
+    # calibration gate blocks unsupported tracks instead of silently reusing
+    # another track's evidence.
+    supported_track_keys: tuple[str, ...] = field(default_factory=tuple)
+
+    # LLTD target used by the ARB solver. This may come from track-observed
+    # hand calibration or a physics formula; proxy-derived values from
+    # analyzer/extract.py:lltd_measured must never be persisted back here.
     measured_lltd_target: float | None = None
+    lltd_target_source: str = "physics_formula"
 
     # Shock velocity percentile used for vortex stall margin calculation.
     # P99 is appropriate for bottoming (we must survive worst-case bumps).
@@ -1712,6 +1711,22 @@ class CarModel:
         if model.applies_to_track(track_name):
             return model
         return None
+
+    def supports_track(self, track_name: str | None) -> bool:
+        """Return whether this car has explicit calibration support for the track."""
+        if not self.supported_track_keys:
+            return True
+        if not track_name:
+            return False
+        from car_model.registry import track_key
+
+        return track_key(track_name) in set(self.supported_track_keys)
+
+    def supported_tracks_label(self) -> str:
+        """Human-readable list of supported base tracks."""
+        if not self.supported_track_keys:
+            return "all tracks"
+        return ", ".join(self.supported_track_keys)
 
     def to_aero_coords(self, actual_front_rh: float, actual_rear_rh: float) -> tuple[float, float]:
         """Convert actual front/rear RH to aero map query coordinates.
@@ -1819,6 +1834,7 @@ class CarModel:
 BMW_M_HYBRID_V8 = CarModel(
     name="BMW M Hybrid V8",
     canonical_name="bmw",
+    supported_track_keys=("sebring",),
     mass_car_kg=1050.3,       # Calibrated from 41 sessions (corner weights)
     mass_driver_kg=75.0,
     weight_dist_front=0.4727,  # Calibrated from 41 sessions (corner weights) at full fuel
@@ -1831,7 +1847,8 @@ BMW_M_HYBRID_V8 = CarModel(
     # Theoretical W_front + λ*0.05 = 0.4727 + 0.055 = 0.528 is ~10-14% too high.
     # This override cuts false LLTD penalty by ~10x for real BMW setups.
     # Source: validation/objective_validation.md Section 6, March 2026.
-    measured_lltd_target=0.41,    # Calibrated: midpoint of 38-43% IBT-observed range
+    measured_lltd_target=0.41,    # Track-observed hand calibration, midpoint of 38-43% range
+    lltd_target_source="track_observation",
     vortex_excursion_pctile="p95", # p99 caused 43% false veto rate on real BMW setups
     aero_axes_swapped=True,
     min_front_rh_static=30.0,  # sim-enforced floor for all GTP
@@ -2103,6 +2120,7 @@ BMW_M_HYBRID_V8 = CarModel(
 CADILLAC_VSERIES_R = CarModel(
     name="Cadillac V-Series.R",
     canonical_name="cadillac",
+    supported_track_keys=("silverstone",),
     mass_car_kg=1030.0,           # GTP minimum — confirmed same as BMW
     mass_driver_kg=75.0,
     weight_dist_front=0.485,      # CALIBRATED: IBT corner weights 5500/(5500+5840 N)
@@ -2286,6 +2304,7 @@ FERRARI_499P_INDEXED_CONTROLS = FerrariIndexedControlModel(
 FERRARI_499P = CarModel(
     name="Ferrari 499P",
     canonical_name="ferrari",
+    supported_track_keys=("sebring",),
     mass_car_kg=1030.0,           # GTP minimum — confirmed same as LMDh
     mass_driver_kg=75.0,
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
@@ -2604,6 +2623,7 @@ FERRARI_499P = CarModel(
                                   # despite torsion bars ranging idx 2-8 and ARBs from A/1 to E/5.
                                   # The front/rear torsion bars scale proportionally, locking LLTD.
                                   # DO NOT attempt to optimize LLTD via torsion/ARB changes.
+    lltd_target_source="track_observation",
     torsion_arb_coupling=0.15,   # ESTIMATE — non-zero coupling (Ferrari has torsion bar front, same as BMW).
     # ── SYSTEMS tab VALIDATED (87.575s best lap, 2026-04-02 screenshot) ─────────────────
     # Hybrid: rear drive enabled, corner pct = 90% (strong rear bias in corners)
@@ -2628,6 +2648,7 @@ FERRARI_499P = CarModel(
 PORSCHE_963 = CarModel(
     name="Porsche 963",
     canonical_name="porsche",
+    supported_track_keys=("algarve",),
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
     # fuel_capacity_l=88.96 (class default, same as all LMDh GTP — 23.5 gal)
@@ -2654,6 +2675,7 @@ PORSCHE_963 = CarModel(
     # fallback unnecessarily. Now uses physics formula explicitly. The
     # auto_calibrate "lltd_target" path is disabled (see auto_calibrate.py:1360).
     measured_lltd_target=0.521,
+    lltd_target_source="physics_formula",
     aero_axes_swapped=True,
     default_diff_preload_nm=85.0,  # CALIBRATED 2026-04-07: driver runs 90 Nm consistently across
     # 4 Algarve IBTs (Setup A heavy + B HOT). Generic 12 Nm (BMW default) produced pipeline output
@@ -2860,6 +2882,7 @@ PORSCHE_963 = CarModel(
 ACURA_ARX06 = CarModel(
     name="Acura ARX-06",
     canonical_name="acura",
+    supported_track_keys=("hockenheim",),
     mass_car_kg=1030.0,               # PDF: dry weight 1030 kg
     mass_driver_kg=75.0,
     weight_dist_front=0.470,          # IBT: (2706+2706)/(2706+2706+3048+3048) = 0.470

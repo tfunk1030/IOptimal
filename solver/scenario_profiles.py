@@ -203,8 +203,10 @@ def should_run_legal_manifold_search(
     search_mode: str | None = None,
     scenario_name: str | None = None,
 ) -> bool:
-    resolved = resolve_scenario_name(scenario_name)
-    return bool(free_mode or explicit_search or search_mode is not None or resolved != DEFAULT_SCENARIO)
+    _ = resolve_scenario_name(scenario_name)
+    # Search is an explicit opt-in. Scenario choice changes scoring/sanity
+    # policy but should not silently replace the base physics solve.
+    return bool(free_mode or explicit_search or search_mode is not None)
 
 
 def prediction_passes_sanity(

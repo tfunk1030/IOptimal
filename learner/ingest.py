@@ -313,9 +313,6 @@ def ingest_ibt(
                             cal_models.front_hs_zeta = existing_saved.front_hs_zeta
                             cal_models.rear_hs_zeta = existing_saved.rear_hs_zeta
                             cal_models.zeta_n_sessions = existing_saved.zeta_n_sessions
-                        # Preserve LLTD target (set by validation/calibrate_lltd.py)
-                        if existing_saved.measured_lltd_target is not None and cal_models.measured_lltd_target is None:
-                            cal_models.measured_lltd_target = existing_saved.measured_lltd_target
                         # Preserve spring lookup tables
                         if existing_saved.front_torsion_lookup and not cal_models.front_torsion_lookup:
                             cal_models.front_torsion_lookup = existing_saved.front_torsion_lookup

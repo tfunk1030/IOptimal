@@ -191,12 +191,17 @@ class TestCalibrationGateDependencyPropagation(unittest.TestCase):
         sr4 = gate.check_step(4)
         self.assertTrue(sr4.blocked)
         self.assertFalse(sr4.dependency_blocked)
-        # Steps 5-6 blocked by dependency cascade from step 4
-        for step_num in [5, 6]:
-            sr = gate.check_step(step_num)
-            self.assertTrue(sr.blocked, f"Ferrari step {step_num} should be blocked")
-            self.assertTrue(sr.dependency_blocked,
-                            f"Ferrari step {step_num} should be dependency-blocked")
+        # Step 5 cascades from blocked step 4.
+        sr5 = gate.check_step(5)
+        self.assertTrue(sr5.blocked, "Ferrari step 5 should be blocked")
+        self.assertTrue(sr5.dependency_blocked,
+                        "Ferrari step 5 should be dependency-blocked")
+        # Step 6 depends on step 3 wheel rates, so it blocks on its own
+        # uncalibrated damper_zeta subsystem rather than cascading from step 4.
+        sr6 = gate.check_step(6)
+        self.assertTrue(sr6.blocked, "Ferrari step 6 should be blocked")
+        self.assertFalse(sr6.dependency_blocked,
+                         "Ferrari step 6 should block on its own damper calibration")
 
     def test_dependency_blocked_instructions_text(self):
         """Dependency-blocked steps should reference the upstream blocker."""

@@ -253,7 +253,8 @@ class CarCalibrationModels:
     m_eff_rear_rate_table: list[dict] = field(default_factory=list)     # rear
     # Each entry: {"setting": float, "m_eff_kg": float}
 
-    # Calibrated LLTD target
+    # Calibrated LLTD target.
+    # Deprecated: proxy-derived LLTD targets are no longer persisted or applied.
     measured_lltd_target: float | None = None
 
     # Damper zeta targets (from fastest sessions)
@@ -318,6 +319,10 @@ def load_calibrated_models(car: str) -> CarCalibrationModels | None:
         return None
     with open(p, encoding="utf-8") as f:
         raw = json.load(f)
+    # Legacy migrations: proxy-derived LLTD targets must not override curated
+    # car definitions. Keep the status note for provenance, but clear the value.
+    if raw.get("status", {}).get("lltd_target", "").startswith("DISABLED"):
+        raw["measured_lltd_target"] = None
     return _dict_to_models(raw)
 
 
@@ -1777,8 +1782,9 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
         except (AttributeError, TypeError):
             pass
 
-    # Apply measured LLTD target
-    if models.measured_lltd_target is not None:
+    # Apply measured LLTD target only when explicitly allowed by the status.
+    lltd_status = models.status.get("lltd_target", "") if hasattr(models, "status") else ""
+    if models.measured_lltd_target is not None and not str(lltd_status).startswith("DISABLED"):
         try:
             car_obj.measured_lltd_target = models.measured_lltd_target
             applied.append(f"LLTD target updated: {models.measured_lltd_target:.3f}")
@@ -2418,9 +2424,6 @@ Examples:
                 if len(lut_r.entries) > n_before:
                     print(f"  Expanded rear torsion lookup: {n_before} -> {len(lut_r.entries)} entries")
                 models.rear_torsion_lookup = lut_r
-            # Preserve LLTD target from calibrate_lltd if not recomputed
-            if existing_saved.measured_lltd_target is not None and models.measured_lltd_target is None:
-                models.measured_lltd_target = existing_saved.measured_lltd_target
             # Merge status dict: preserve keys from previous runs that this run didn't compute
             # (e.g. roll_gains_calibrated from a previous run, arb status, etc.)
             for k, v in existing_saved.status.items():
