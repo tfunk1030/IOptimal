@@ -2,7 +2,7 @@
 
 ## Scope and baseline
 - Requested baseline branch: `codextwo`.
-- In this checkout, only branch `work` exists (`git branch -a`), with no configured remotes. So this audit uses the current tip of `work` as the nearest available baseline.
+- The requested `codextwo` baseline was not available in the repository snapshot used for this audit, so findings below are against the current HEAD.
 
 ## Executive findings
 1. **CI workflow is structurally incomplete for this repo layout.**
