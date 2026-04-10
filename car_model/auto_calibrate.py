@@ -1548,15 +1548,24 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _mk_direct(fitted_model) -> "DirectRegression | None":
-    """Build a DirectRegression from a FittedModel.
+    """Build a DirectRegression from a fitted model.
 
-    Uses ALL fitted models (even with R² < gate threshold) because the
-    DirectRegression bypasses the lossy DeflectionModel coefficient mapping.
-    A model with R²=0.60 as a DirectRegression is still more accurate than
-    the same model with coefficients mapped through DeflectionModel's fixed
-    interface (which drops unmapped features).
+    Accepts any model with R² > 0.30 (reasonable fit). The strict R² >= 0.85
+    calibration gate is for blocking SOLVER steps, not garage predictions.
+    A fitted model with R²=0.60 still gives better garage predictions than
+    the fallback coefficient path which may have stale/mismatched coefficients.
+
+    Returns None only when the model is absent, has no coefficients, or has
+    R² so low it would produce worse predictions than a constant.
     """
     if fitted_model is None or not fitted_model.coefficients:
+        return None
+    if fitted_model.r_squared < 0.30 and len(fitted_model.feature_names) > 0:
+        import logging
+        logging.getLogger(__name__).info(
+            "DirectRegression skipped for '%s' — R²=%.3f too low",
+            fitted_model.name, fitted_model.r_squared,
+        )
         return None
     from car_model.garage import DirectRegression
     return DirectRegression.from_model(fitted_model.coefficients, fitted_model.feature_names)
@@ -1598,26 +1607,26 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
         front_coeff_perch = rh.front_coeff_perch
         front_coeff_torsion_od = getattr(rh, "front_coeff_torsion_od", 0.0)
     else:
-        # Fallback: use mean front RH from calibration data as constant model.
-        # This handles cars (e.g. Acura) where front RH has near-zero variance
-        # and no regression can be fit.
+        # Front RH not calibrated.  If the calibration data shows near-constant
+        # front RH (e.g. Acura), use the mean as a constant intercept.  If there
+        # is NO data at all, return None — the calibration gate blocks this car.
         import logging
         _logger = logging.getLogger(__name__)
         car_name = getattr(car_obj, "canonical_name", "")
         pts = load_calibration_points(car_name) if car_name else []
         valid_rhs = [p.static_front_rh_mm for p in pts if p.static_front_rh_mm > 0]
-        if valid_rhs:
-            front_intercept = sum(valid_rhs) / len(valid_rhs)
-            _logger.info(
-                "Front RH uncalibrated for %s — using mean=%.1f mm from %d points",
-                car_name, front_intercept, len(valid_rhs),
-            )
-        else:
-            front_intercept = rh.front_intercept if rh.front_intercept > 0 else 30.0
-            _logger.info(
-                "Front RH uncalibrated for %s — using default=%.1f mm",
-                car_name, front_intercept,
-            )
+        if not valid_rhs:
+            _logger.warning(
+                "Front RH uncalibrated for %s and no calibration data — "
+                "cannot build GarageOutputModel", car_name)
+            return None
+        front_intercept = sum(valid_rhs) / len(valid_rhs)
+        _logger.info(
+            "Front RH uncalibrated for %s — constant model mean=%.1f mm "
+            "from %d points (std=%.3f mm)",
+            car_name, front_intercept, len(valid_rhs),
+            (sum((r - front_intercept)**2 for r in valid_rhs) / len(valid_rhs))**0.5,
+        )
         front_coeff_pushrod = 0.0
         front_coeff_heave = 0.0
         front_coeff_inv_heave = 0.0

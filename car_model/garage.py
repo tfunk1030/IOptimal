@@ -18,6 +18,22 @@ from typing import TYPE_CHECKING, Any, Callable
 if TYPE_CHECKING:
     from car_model.cars import DeflectionModel
 
+import logging as _logging
+
+_log = _logging.getLogger(__name__)
+
+
+def _extract_or_warn(setup: Any, attr: str, default: float) -> float:
+    """Extract a float attribute, warning if it falls back to default."""
+    val = getattr(setup, attr, None)
+    if val is None:
+        _log.debug(
+            "GarageSetupState: '%s' missing from setup object — using default %.1f",
+            attr, default,
+        )
+        return default
+    return float(val)
+
 
 @dataclass(frozen=True)
 class GarageSetupState:
@@ -81,9 +97,9 @@ class GarageSetupState:
             rear_spring_nmm=rear_spring_nmm,
             rear_spring_perch_mm=float(getattr(setup, "rear_spring_perch_mm", 0.0)),
             front_camber_deg=float(getattr(setup, "front_camber_deg", 0.0)),
-            rear_camber_deg=float(getattr(setup, "rear_camber_deg", 0.0)),
+            rear_camber_deg=_extract_or_warn(setup, "rear_camber_deg", 0.0),
             fuel_l=float(getattr(setup, "fuel_l", 0.0)),
-            wing_deg=float(getattr(setup, "wing_angle_deg", 0.0)),
+            wing_deg=_extract_or_warn(setup, "wing_angle_deg", 0.0),
             front_arb_blade=float(getattr(setup, "front_arb_blade", 0) or 0),
             rear_arb_blade=float(getattr(setup, "rear_arb_blade", 0) or 0),
         )
@@ -97,7 +113,9 @@ class GarageSetupState:
         step5: Any | None = None,
         fuel_l: float = 0.0,
         front_camber_deg: float | None = None,
-    ) -> "GarageSetupState":
+        rear_camber_deg: float | None = None,
+        wing_deg: float = 0.0,
+    ) -> "GarageSetupState | None":
         """Build from solver outputs.  Returns None if any required step is None."""
         if step1 is None or step2 is None or step3 is None:
             return None
@@ -105,6 +123,12 @@ class GarageSetupState:
             front_camber_deg = (
                 float(step5.front_camber_deg)
                 if step5 is not None and hasattr(step5, "front_camber_deg")
+                else 0.0
+            )
+        if rear_camber_deg is None:
+            rear_camber_deg = (
+                float(step5.rear_camber_deg)
+                if step5 is not None and hasattr(step5, "rear_camber_deg")
                 else 0.0
             )
         return cls(
@@ -118,7 +142,9 @@ class GarageSetupState:
             rear_spring_nmm=float(step3.rear_spring_rate_nmm),
             rear_spring_perch_mm=float(step3.rear_spring_perch_mm),
             front_camber_deg=float(front_camber_deg),
+            rear_camber_deg=float(rear_camber_deg),
             fuel_l=float(fuel_l),
+            wing_deg=float(wing_deg),
         )
 
 
@@ -143,6 +169,13 @@ class DirectRegression:
             extractor = self._EXTRACTORS.get(name)
             if extractor is not None:
                 val += coeff * extractor(setup)
+            else:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "DirectRegression: unknown feature '%s' (coeff=%.4f) — "
+                    "dropped from prediction. Add an extractor to from_model().",
+                    name, coeff,
+                )
         return max(0.0, val)
 
     @classmethod
@@ -662,7 +695,13 @@ class GarageOutputModel:
     ) -> GarageConstraintResult:
         """Validate hard garage and platform constraints for a candidate."""
         outputs = self.predict(setup, front_excursion_p99_mm=front_excursion_p99_mm)
-        front_static_raw = self.predict_front_static_rh_raw(setup)
+        # Use the SAME front RH source as predict() for the floor check.
+        # When _direct_front_rh is present, predict() uses it, so validate()
+        # must too — otherwise legality can disagree with reported outputs.
+        if self._direct_front_rh:
+            front_static_raw = self._direct_front_rh.predict(setup)
+        else:
+            front_static_raw = self.predict_front_static_rh_raw(setup)
         front_static_ok = front_static_raw >= self.front_rh_floor_mm - 1e-6
         slider_ok = outputs.heave_slider_defl_static_mm <= self.max_slider_mm + 1e-6
         torsion_limit = self.effective_torsion_bar_defl_limit_mm()
