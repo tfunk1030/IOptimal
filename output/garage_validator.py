@@ -103,9 +103,12 @@ def validate_and_fix_garage_correlation(
     # deep copies before Phase 1 clamping so the index-space range guards operate
     # on the correct numeric domain.  This mirrors the pattern already used in
     # setup_writer.py and legality_engine.py.
+    _ferrari_orig_step2 = None
+    _ferrari_orig_step3 = None
     if getattr(car, 'canonical_name', '') == 'ferrari':
         import copy as _copy
         from car_model.setup_registry import public_output_value as _pov
+        _ferrari_orig_step2, _ferrari_orig_step3 = step2, step3
         step2 = _copy.deepcopy(step2)
         step3 = _copy.deepcopy(step3)
         step2.front_heave_nmm = float(_pov(car, "front_heave_nmm", step2.front_heave_nmm))
@@ -120,6 +123,19 @@ def validate_and_fix_garage_correlation(
     warnings.extend(_clamp_step3(step3, gr))
     if step5 is not None:
         warnings.extend(_clamp_step5(step5, gr))
+
+    # --- Ferrari write-back: propagate clamped index-space corrections to physical objects ---
+    # _clamp_step2/_clamp_step3 operated on local deep copies in index space; write the
+    # corrected values back to the originals so callers receive the adjusted values.
+    if _ferrari_orig_step2 is not None:
+        from car_model.setup_registry import internal_solver_value as _isv
+        _ferrari_orig_step2.front_heave_nmm = float(_isv(car, "front_heave_nmm", step2.front_heave_nmm))
+        _ferrari_orig_step2.rear_third_nmm = float(_isv(car, "rear_third_nmm", step2.rear_third_nmm))
+        _ferrari_orig_step2.perch_offset_front_mm = step2.perch_offset_front_mm
+        _ferrari_orig_step2.perch_offset_rear_mm = step2.perch_offset_rear_mm
+        _ferrari_orig_step3.front_torsion_od_mm = float(_isv(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+        _ferrari_orig_step3.rear_spring_rate_nmm = float(_isv(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+        _ferrari_orig_step3.rear_spring_perch_mm = step3.rear_spring_perch_mm
 
     # --- Phase 2: Garage-model correlation check (BMW/Sebring only) ---
     garage_model = car.active_garage_output_model(track_name)

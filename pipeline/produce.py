@@ -723,6 +723,10 @@ def produce(
 
     # All solve orchestration is handled by run_base_solve() below.
 
+    # ── Calibration gate — track key (also used by veto cluster lookup below) ──
+    from car_model.registry import track_key as _track_key
+    _track_short = _track_key(track.track_name) if hasattr(track, "track_name") else args.track
+
     # ── Phase H.5: Multi-solve stint compromise (if --stint) ──
     # Load known-bad setup fingerprints from learner (if available)
     # Observations with validation_failed=True contribute hard-veto clusters
@@ -735,7 +739,7 @@ def produce(
         ks = KnowledgeStore()
         obs_list = ks.list_observations(
             car=car.canonical_name,
-            track=track.track_name.split()[0].lower(),
+            track=_track_short,
         )
         for obs_data in obs_list:
             if obs_data.get("validation_failed", False):
@@ -761,8 +765,6 @@ def produce(
         logging.getLogger(__name__).debug("Veto cluster loading skipped: %s", e)
 
     # ── Calibration gate ──
-    from car_model.registry import track_key as _track_key
-    _track_short = _track_key(track.track_name) if hasattr(track, "track_name") else args.track
     cal_gate = CalibrationGate(car, _track_short)
     cal_report = cal_gate.full_report()
     _steps_blocked: set[int] = set()
