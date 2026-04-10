@@ -7,19 +7,17 @@
   "rear_ride_height": {
     "name": "rear_ride_height",
     "feature_names": [
-      "rear_pushrod",
-      "inv_rear_third",
-      "rear_third_perch"
+      "rear_third_perch",
+      "inv_rear_third"
     ],
     "coefficients": [
-      49.47421953840179,
-      0.08056359145008515,
-      3.457684586209581,
-      -0.07294289123546802
+      44.253804005069526,
+      -0.02862261366355239,
+      59.09479132894336
     ],
-    "r_squared": 0.24241763877116362,
-    "rmse": 1.3300206064077853,
-    "loo_rmse": 7.904565329397503,
+    "r_squared": 0.20244712989008795,
+    "rmse": 1.3646559829153444,
+    "loo_rmse": 3.230482120804928,
     "n_samples": 8,
     "is_calibrated": false
   },
@@ -104,24 +102,18 @@
     "name": "third_spring_defl_static",
     "feature_names": [
       "inv_rear_third",
-      "inv_rear_spring",
-      "rear_third_perch",
-      "rear_spring_perch",
-      "rear_pushrod"
+      "inv_rear_spring"
     ],
     "coefficients": [
-      42.963418052638715,
-      243.44848975107988,
-      42.9634180526364,
-      -0.7497745535221878,
-      0.0,
-      1.1265032193737754
+      1.5822510037773587,
+      1370.3987321596067,
+      1.5822510037774513
     ],
-    "r_squared": 0.8860371398706723,
-    "rmse": 2.510279889586735,
-    "loo_rmse": 14.968469284386334,
+    "r_squared": 0.4762127137084182,
+    "rmse": 5.38168102254668,
+    "loo_rmse": 7.097825322527823,
     "n_samples": 8,
-    "is_calibrated": true
+    "is_calibrated": false
   },
   "third_spring_defl_max": {
     "name": "third_spring_defl_max",
