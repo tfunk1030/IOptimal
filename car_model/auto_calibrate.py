@@ -1156,13 +1156,8 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         "heave_slider_defl_static_mm", "heave_slider_defl_static")
 
     # ─── 8. Front Shock Deflection Static ───
-    # Use front-side features only — rear-side features create spurious fits
-    _front_pool = [(arr, nm) for arr, nm in _UNIVERSAL_POOL
-                   if nm in ("front_pushrod", "front_heave", "front_heave_perch",
-                             "torsion_od", "front_camber", "fuel",
-                             "inv_front_heave", "inv_od4")]
     models.front_shock_defl_static = _fit_from_pool(
-        "front_shock_defl_static_mm", "front_shock_defl_static", pool=_front_pool)
+        "front_shock_defl_static_mm", "front_shock_defl_static")
 
     # ─── 9. Rear Shock Deflection Static ───
     # Rear shock deflection depends on rear pushrod (geometric), rear third perch

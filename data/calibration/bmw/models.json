@@ -74,21 +74,23 @@
   "front_shock_defl_static": {
     "name": "front_shock_defl_static",
     "feature_names": [
-      "front_pushrod",
+      "front_pushrod_sq",
       "front_camber",
-      "fuel",
-      "torsion_od"
+      "rear_pushrod_x_rear_third_perch",
+      "rear_pushrod_x_front_pushrod",
+      "front_heave_x_front_heave_perch"
     ],
     "coefficients": [
-      32.118347999365,
-      0.5593467261683885,
-      1.319540088065434,
-      -0.002858004835469043,
-      0.05231295166232937
+      24.338901211378467,
+      -0.009809617212049813,
+      1.1836390653844275,
+      -0.00047526631373352935,
+      -0.000497459767859362,
+      9.059244317240856e-05
     ],
-    "r_squared": 0.9999838974143158,
-    "rmse": 0.004527251617746222,
-    "loo_rmse": 0.5906657114673114,
+    "r_squared": 0.9999843882297346,
+    "rmse": 0.004457721161666906,
+    "loo_rmse": 0.37712032030594345,
     "n_samples": 9,
     "is_calibrated": true
   },
