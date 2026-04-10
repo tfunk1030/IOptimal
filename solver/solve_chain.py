@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import copy
+import logging
 import math
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from car_model.setup_registry import (
     diff_ramp_option_index,
@@ -550,7 +553,8 @@ def _run_branching_solver(
             car, track, explore=False,
             scenario_profile=inputs.scenario_profile,
         )
-    except Exception:
+    except Exception as e:
+        logger.debug("ObjectiveFunction init failed in branching solver: %s", e)
         _branching_obj = None
 
     # Build telemetry-derived constraints from diagnosis (if available).
@@ -714,7 +718,8 @@ def _run_branching_solver(
                                     score = -1e6
                                 else:
                                     score -= _c_penalty
-                    except Exception:
+                    except Exception as e:
+                        logger.debug("Branching path scoring failed: %s", e)
                         score = float("-inf")
                 else:
                     # Fallback: minimal safety-only scoring when objective
@@ -777,7 +782,8 @@ def _iterative_coupling_refinement(
             car, track, explore=False,
             scenario_profile=inputs.scenario_profile,
         )
-    except Exception:
+    except Exception as e:
+        logger.debug("ObjectiveFunction init failed in refinement: %s", e)
         _refine_obj = None
 
     def _score_current() -> float:
@@ -788,7 +794,8 @@ def _iterative_coupling_refinement(
             _p = solver_steps_to_params(step1, step2, step3, step4, step5, step6, car=car)
             _phys = _refine_obj.evaluate_physics(_p)
             return _refine_obj._estimate_lap_gain(_p, _phys)
-        except Exception:
+        except Exception as e:
+            logger.debug("Refinement scoring failed: %s", e)
             return 0.0
 
     prev_score = _score_current()
@@ -804,7 +811,8 @@ def _iterative_coupling_refinement(
                     inputs.wing_angle,
                 )
                 df_residual = abs(actual_balance - inputs.target_balance)
-            except Exception:
+            except Exception as e:
+                logger.debug("DF balance check failed: %s", e)
                 df_residual = 0.0
         else:
             df_residual = 0.0
@@ -839,8 +847,8 @@ def _iterative_coupling_refinement(
                     pin_front_min=inputs.pin_front_min,
                 )
                 step1 = new_step1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Coupling re-solve Step 1 failed: %s", e)
 
         # ── Re-solve Step 4 (ARBs) with objective-driven blade selection ──
         # Instead of just re-solving for LLTD target, enumerate blade options
@@ -876,7 +884,8 @@ def _iterative_coupling_refinement(
                                 )
                                 _phys = _refine_obj.evaluate_physics(_p)
                                 _s = _refine_obj._estimate_lap_gain(_p, _phys)
-                            except Exception:
+                            except Exception as e:
+                                logger.debug("ARB candidate scoring failed: %s", e)
                                 _s = float("-inf")
                         else:
                             _s = -abs(arb_cand.lltd_error) * 500
@@ -893,8 +902,8 @@ def _iterative_coupling_refinement(
                         current_rear_arb_blade=_current_rear_arb_blade,
                     )
                     step4 = new_step4
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Coupling re-solve Step 4 (ARBs) failed: %s", e)
 
         # Re-run Steps 5-6 with updated inputs
         if step4 is not None:
@@ -908,8 +917,8 @@ def _iterative_coupling_refinement(
                     camber_confidence=inputs.camber_confidence,
                     measured=inputs.measured,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Coupling re-solve Step 5 (geometry) failed: %s", e)
 
         if step3 is not None:
             reconcile_ride_heights(
@@ -934,8 +943,8 @@ def _iterative_coupling_refinement(
                     rear_third_nmm=step2.rear_third_nmm,
                 )
                 apply_damper_modifiers(step6, mods, car)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Coupling re-solve Step 6 (dampers) failed: %s", e)
 
         # ── Check score improvement ──
         # Stop iterating if the objective score hasn't improved.
@@ -988,7 +997,8 @@ def run_base_solve(inputs: SolveChainInputs) -> SolveChainResult:
         try:
             step1, step2, step3, step4, step5, step6, _rear_wheel_rate = _run_branching_solver(inputs)
             _used_branching = True
-        except Exception:
+        except Exception as e:
+            logger.debug("Branching solver failed, falling back to sequential: %s", e)
             step1, step2, step3, step4, step5, step6, _rear_wheel_rate = _run_sequential_solver(inputs)
             _used_branching = False
         sequential_veto = _candidate_veto_for_solution(

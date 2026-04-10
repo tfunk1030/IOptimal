@@ -34,15 +34,20 @@ def _telemetry_lines(measured: Any, signal_names: list[str], *, allow_proxy: boo
 
 def _estimate_gain_ms(parameter: str, measured: Any) -> float:
     if parameter in {"front_heave_spring_nmm", "front_heave_perch_mm"}:
-        heave = getattr(measured, "front_heave_travel_used_pct", 0.0) or 0.0
-        bottoming = getattr(measured, "bottoming_event_count_front_clean", 0) or 0
+        _heave_raw = getattr(measured, "front_heave_travel_used_pct", None)
+        heave = float(_heave_raw) if _heave_raw is not None else 0.0
+        _bot_raw = getattr(measured, "bottoming_event_count_front_clean", None)
+        bottoming = int(_bot_raw) if _bot_raw is not None else 0
         return round(max(0.0, (heave - 85.0) * 1.5) + max(0.0, bottoming) * 8.0, 1)
     if parameter in {"rear_third_spring_nmm", "rear_third_perch_mm"}:
-        bottoming = getattr(measured, "bottoming_event_count_rear_clean", 0) or 0
-        slip = getattr(measured, "rear_power_slip_ratio_p95", 0.0) or 0.0
+        _bot_raw = getattr(measured, "bottoming_event_count_rear_clean", None)
+        bottoming = int(_bot_raw) if _bot_raw is not None else 0
+        _slip_raw = getattr(measured, "rear_power_slip_ratio_p95", None)
+        slip = float(_slip_raw) if _slip_raw is not None else 0.0
         return round(max(0.0, bottoming) * 6.0 + max(0.0, (slip - 0.08) * 4000.0), 1)
     if parameter in {"front_camber_deg", "rear_camber_deg", "front_toe_mm", "rear_toe_mm"}:
-        return round(abs(getattr(measured, "understeer_mean_deg", 0.0) or 0.0) * 35.0, 1)
+        _us_raw = getattr(measured, "understeer_mean_deg", None)
+        return round(abs(float(_us_raw) if _us_raw is not None else 0.0) * 35.0, 1)
     if parameter in {
         "front_ls_comp",
         "front_ls_rbd",
@@ -55,10 +60,12 @@ def _estimate_gain_ms(parameter: str, measured: Any) -> float:
         "rear_hs_rbd",
         "rear_hs_slope",
     }:
-        settle = getattr(measured, "front_rh_settle_time_ms", 125.0) or 125.0
+        _settle_raw = getattr(measured, "front_rh_settle_time_ms", None)
+        settle = float(_settle_raw) if _settle_raw is not None else 125.0
         return round(abs(settle - 125.0) * 0.4, 1)
     if parameter in {"brake_bias_pct", "brake_bias_target", "brake_bias_migration"}:
-        front_lock = getattr(measured, "front_braking_lock_ratio_p95", 0.0) or 0.0
+        _lock_raw = getattr(measured, "front_braking_lock_ratio_p95", None)
+        front_lock = float(_lock_raw) if _lock_raw is not None else 0.0
         return round(max(0.0, front_lock - 0.06) * 2000.0, 1)
     if parameter in {
         "diff_preload_nm",

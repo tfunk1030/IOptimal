@@ -40,11 +40,14 @@ Physics:
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 
 import numpy as np
 from scipy.optimize import minimize, brentq
+
+logger = logging.getLogger(__name__)
 
 from aero_model.interpolator import AeroSurface
 from car_model.garage import GarageSetupState
@@ -663,7 +666,8 @@ class RakeSolver:
                     if err < best_err:
                         best_err = err
                         best_rear = rear_candidate
-                except Exception:
+                except Exception as e:
+                    logger.debug("Rear RH search iteration failed: %s", e)
                     continue
             achieved_bal, _ = self._query_aero(dyn_front, best_rear)
             warnings.warn(
@@ -791,7 +795,8 @@ class RakeSolver:
                         if abs(bal - target_balance) <= balance_tolerance + 0.01:
                             best_ld = -result.fun
                             best_result = result
-                except Exception:
+                except Exception as e:
+                    logger.debug("Rear RH search iteration failed: %s", e)
                     continue
 
         if best_result is None:
@@ -881,8 +886,8 @@ def reconcile_ride_heights(
                 )
                 if corrected is not None:
                     corrected_dynamic_rear = corrected
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Rear RH balance correction failed: %s", e)
 
         target_rear_rh = max(
             car.min_rear_rh_static,
@@ -1045,8 +1050,8 @@ def reconcile_ride_heights(
                     )
                     step1.df_balance_pct = round(surface.df_balance(af, ar), 2)
                     step1.ld_ratio = round(surface.lift_drag(af, ar), 3)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Aero balance update failed: %s", e)
         return
 
     rh_model = car.ride_height_model

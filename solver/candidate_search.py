@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -9,6 +10,8 @@ from car_model.setup_registry import (
     public_output_value,
     snap_supporting_field_value,
 )
+
+logger = logging.getLogger(__name__)
 from solver.candidate_ranker import CandidateScore, score_from_prediction
 from solver.solve_chain import (
     SolveChainInputs,
@@ -61,6 +64,13 @@ def _step_string_option(value: str, options: list[str], delta: int, *, default_i
 def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> None:
     """Snap all blended target values to valid iRacing garage increments."""
     gr = getattr(car, "garage_ranges", None) if car is not None else None
+    _car_name = getattr(car, "canonical_name", "unknown") if car else "unknown"
+    if gr is None and _car_name != "unknown":
+        logger.warning(
+            "Car '%s' has no garage_ranges — candidate search will use BMW "
+            "fallback ranges which may be wrong for this car",
+            _car_name,
+        )
     s1 = targets["step1"]
     s2 = targets["step2"]
     s3 = targets["step3"]
@@ -131,7 +141,15 @@ def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> 
             rear_spring_perch_range[1],
         )
 
-    arb_range = getattr(gr, "arb_blade", (1, 5)) if gr is not None else (1, 5)
+    # Use car's actual ARB blade count when available (Porsche has 1-16, BMW 1-5)
+    _arb = getattr(car, "arb", None) if car is not None else None
+    _rear_blade_max = getattr(_arb, "rear_blade_count", None) if _arb else None
+    if _rear_blade_max is not None:
+        arb_range = (1, int(_rear_blade_max))
+    elif gr is not None:
+        arb_range = getattr(gr, "arb_blade", (1, 5))
+    else:
+        arb_range = (1, 5)
     for field in ("front_arb_blade_start", "rarb_blade_slow_corner", "rarb_blade_fast_corner", "rear_arb_blade_start", "farb_blade_locked"):
         target = targets["step4"]
         if field in target and isinstance(target[field], (int, float)):

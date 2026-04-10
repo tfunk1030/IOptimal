@@ -1,4 +1,5 @@
 import subprocess, sys
+from pathlib import Path
 
 result = subprocess.run(
     [sys.executable, '-m', 'pytest', 
@@ -14,7 +15,7 @@ result = subprocess.run(
      'tests/test_learner_sanity.py',
      'tests/test_prediction_feedback.py',
      '-v', '--tb=short'],
-    cwd=r'C:\Users\VYRAL\IOptimal',
+    cwd=str(Path(__file__).resolve().parent),
     capture_output=True, text=True, timeout=300
 )
 print(result.stdout[-5000:] if len(result.stdout) > 5000 else result.stdout)

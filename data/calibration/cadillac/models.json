@@ -1,0 +1,13 @@
+{
+  "car": "cadillac",
+  "n_sessions": 0,
+  "n_unique_setups": 0,
+  "calibration_complete": false,
+  "status": "uncalibrated",
+  "front_ride_height": null,
+  "rear_ride_height": null,
+  "front_deflection": null,
+  "rear_deflection": null,
+  "aero_compression": null,
+  "damper_zeta": null
+}

@@ -58,7 +58,16 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 _CALIBRATION_DIR = PROJECT_ROOT / "data" / "calibration"
-_MIN_SESSIONS_FOR_FIT = 5   # minimum unique-setup sessions before fitting
+_MIN_SESSIONS_FOR_FIT = 5   # absolute minimum unique-setup sessions before fitting
+
+
+def _min_sessions_for_features(n_features: int) -> int:
+    """Scale the minimum session count with feature count.
+
+    Rule of thumb: at least 3x the number of features, with a floor of 5.
+    A 6-feature model needs at least 18 sessions to avoid overfitting.
+    """
+    return max(_MIN_SESSIONS_FOR_FIT, 3 * n_features)
 _MIN_SESSIONS_FOR_SPRING_LOOKUP = 3  # sessions at different heave indices
 
 
@@ -432,8 +441,10 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         lap_time = measured.lap_time_s or 0.0
         roll_grad = getattr(measured, "roll_gradient_measured_deg_per_g", None) or 0.0
         lltd_m = getattr(measured, "lltd_measured", None) or 0.0
-    except Exception:
+    except Exception as e:
         # Telemetry extraction is optional for calibration; skip gracefully
+        import logging
+        logging.getLogger(__name__).debug("Telemetry extraction skipped: %s", e)
         roll_grad = 0.0
         lltd_m = 0.0
 
@@ -508,7 +519,9 @@ def _get_dummy_car(car_name: str):
     try:
         from car_model.cars import get_car
         return get_car(car_name or "bmw")
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug("Could not load car model '%s': %s", car_name, e)
         return None
 
 
@@ -595,6 +608,27 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
     ones = np.ones((X.shape[0], 1))
     X_aug = np.hstack([ones, X])
 
+    # Guard: underdetermined system (more parameters than samples) produces
+    # meaningless R² = 1.0 and unstable coefficients. Require n > n_params.
+    n_params = X_aug.shape[1]  # features + intercept
+    if X.shape[0] <= n_params:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Model '%s': underdetermined (%d samples, %d parameters) — "
+            "marking as uncalibrated",
+            model_name, X.shape[0], n_params,
+        )
+        return FittedModel(
+            name=model_name,
+            feature_names=feature_names,
+            coefficients=[0.0] * n_params,
+            r_squared=0.0,
+            rmse=float("inf"),
+            loo_rmse=float("inf"),
+            n_samples=X.shape[0],
+            is_calibrated=False,
+        )
+
     beta, *_ = np.linalg.lstsq(X_aug, y, rcond=None)
     y_pred = X_aug @ beta
     ss_res = np.sum((y - y_pred) ** 2)
@@ -623,6 +657,26 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
     # the next load before the gate re-checks. Guard here prevents that.
     from car_model.calibration_gate import R2_THRESHOLD_BLOCK
     is_cal = r2 >= R2_THRESHOLD_BLOCK
+
+    # Overfit warning: if LOO RMSE is more than 2x training RMSE, the model
+    # may not generalize. Also warn if sample-to-feature ratio is below 3:1.
+    n_features = X.shape[1]
+    _overfit_warnings: list[str] = []
+    if loo_rmse > 2.0 * max(rmse, 1e-6) and n >= 5:
+        _overfit_warnings.append(
+            f"LOO RMSE ({loo_rmse:.3f}) > 2x training RMSE ({rmse:.3f}) — "
+            f"possible overfit"
+        )
+    if n < _min_sessions_for_features(n_features):
+        _overfit_warnings.append(
+            f"Only {n} samples for {n_features} features (recommend "
+            f"{_min_sessions_for_features(n_features)}+)"
+        )
+    if _overfit_warnings:
+        import logging
+        _logger = logging.getLogger(__name__)
+        for w in _overfit_warnings:
+            _logger.warning("Model '%s': %s", model_name, w)
 
     return FittedModel(
         name=model_name,
@@ -808,7 +862,9 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     try:
         from car_model.cars import get_car
         _car_obj = get_car(car)
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug("Car model load failed in fit_models: %s", e)
         _car_obj = None
 
     # Deduplicate by unique setup configuration (exclude telemetry-only differences)
@@ -1914,8 +1970,9 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                         f"{old_C:.7f} → {C_calibrated:.7f} "
                         f"(from {len(entries)}-entry calibrated lookup)"
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug("Spring lookup application failed: %s", e)
 
     # Auto-build GarageOutputModel from calibration regressions if the car
     # doesn't already have one. This enables RH/pushrod reconciliation and
