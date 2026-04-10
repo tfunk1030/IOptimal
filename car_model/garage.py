@@ -40,20 +40,52 @@ class GarageSetupState:
     rear_arb_blade: float = 0.0
 
     @classmethod
-    def from_current_setup(cls, setup: Any) -> "GarageSetupState":
-        """Build from analyzer.setup_reader.CurrentSetup-like objects."""
+    def from_current_setup(cls, setup: Any, car: Any = None) -> "GarageSetupState":
+        """Build from analyzer.setup_reader.CurrentSetup-like objects.
+
+        If *car* is provided (a CarModel), indexed spring cars (Ferrari, Acura)
+        get their raw garage indices decoded to physical N/mm rates.
+        """
+        front_heave_nmm = float(getattr(setup, "front_heave_nmm", 0.0))
+        rear_third_nmm = float(getattr(setup, "rear_third_nmm", 0.0))
+        rear_spring_nmm = float(getattr(setup, "rear_spring_nmm", 0.0))
+        front_torsion_od_mm = float(getattr(setup, "front_torsion_od_mm", 0.0))
+
+        # Index decoding for indexed cars (Ferrari, Acura)
+        if car is not None:
+            hsm = car.heave_spring
+            csm = car.corner_spring
+            if (hsm.front_setting_index_range is not None
+                    and front_heave_nmm <= hsm.front_setting_index_range[1] + 0.5):
+                front_heave_nmm = hsm.front_rate_from_setting(front_heave_nmm)
+            if (hsm.rear_setting_index_range is not None
+                    and rear_third_nmm <= hsm.rear_setting_index_range[1] + 0.5):
+                rear_third_nmm = hsm.rear_rate_from_setting(rear_third_nmm)
+            if (hasattr(csm, 'rear_setting_index_range')
+                    and csm.rear_setting_index_range is not None
+                    and rear_spring_nmm <= csm.rear_setting_index_range[1] + 0.5):
+                rear_spring_nmm = csm.rear_bar_rate_from_setting(rear_spring_nmm)
+            if (hasattr(csm, 'front_setting_index_range')
+                    and csm.front_setting_index_range is not None
+                    and front_torsion_od_mm <= csm.front_setting_index_range[1] + 0.5):
+                front_torsion_od_mm = csm.front_torsion_od_from_setting(front_torsion_od_mm)
+
         return cls(
             front_pushrod_mm=float(getattr(setup, "front_pushrod_mm", 0.0)),
             rear_pushrod_mm=float(getattr(setup, "rear_pushrod_mm", 0.0)),
-            front_heave_nmm=float(getattr(setup, "front_heave_nmm", 0.0)),
+            front_heave_nmm=front_heave_nmm,
             front_heave_perch_mm=float(getattr(setup, "front_heave_perch_mm", 0.0)),
-            rear_third_nmm=float(getattr(setup, "rear_third_nmm", 0.0)),
+            rear_third_nmm=rear_third_nmm,
             rear_third_perch_mm=float(getattr(setup, "rear_third_perch_mm", 0.0)),
-            front_torsion_od_mm=float(getattr(setup, "front_torsion_od_mm", 0.0)),
-            rear_spring_nmm=float(getattr(setup, "rear_spring_nmm", 0.0)),
+            front_torsion_od_mm=front_torsion_od_mm,
+            rear_spring_nmm=rear_spring_nmm,
             rear_spring_perch_mm=float(getattr(setup, "rear_spring_perch_mm", 0.0)),
             front_camber_deg=float(getattr(setup, "front_camber_deg", 0.0)),
+            rear_camber_deg=float(getattr(setup, "rear_camber_deg", 0.0)),
             fuel_l=float(getattr(setup, "fuel_l", 0.0)),
+            wing_deg=float(getattr(setup, "wing_angle_deg", 0.0)),
+            front_arb_blade=float(getattr(setup, "front_arb_blade", 0) or 0),
+            rear_arb_blade=float(getattr(setup, "rear_arb_blade", 0) or 0),
         )
 
     @classmethod

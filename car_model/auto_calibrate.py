@@ -723,9 +723,10 @@ def _select_features(
     selected: list[int] = []
     remaining = list(range(n_features))
 
+    best_overall_loo = float("inf")
     for _ in range(max_features):
         best_idx = -1
-        best_score = float("inf")
+        best_loo = float("inf")
         for idx in remaining:
             trial = selected + [idx]
             X_trial = X[:, trial]
@@ -734,16 +735,27 @@ def _select_features(
             n_params = X_aug.shape[1]
             if n_samples <= n_params:
                 continue
-            b, *_ = np.linalg.lstsq(X_aug, y, rcond=None)
-            score = float(np.sqrt(np.mean((y - X_aug @ b) ** 2)))
-            if score < best_score:
-                best_score = score
+            # LOO RMSE — the honest generalization metric
+            loo_sq = 0.0
+            for i in range(n_samples):
+                mask = np.ones(n_samples, dtype=bool)
+                mask[i] = False
+                b, *_ = np.linalg.lstsq(X_aug[mask], y[mask], rcond=None)
+                loo_sq += (y[i] - X_aug[i] @ b) ** 2
+            loo_rmse = float(np.sqrt(loo_sq / n_samples))
+            if loo_rmse < best_loo:
+                best_loo = loo_rmse
                 best_idx = idx
         if best_idx < 0:
             break
+        # Stop if LOO is degrading — more features hurt generalization
+        if best_loo > best_overall_loo * 1.05 and len(selected) >= 3:
+            break
         selected.append(best_idx)
         remaining.remove(best_idx)
-        if best_score < 0.005:
+        if best_loo < best_overall_loo:
+            best_overall_loo = best_loo
+        if best_loo < 0.01:
             break
 
     if not selected:
