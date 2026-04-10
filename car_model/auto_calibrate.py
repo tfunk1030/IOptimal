@@ -714,10 +714,11 @@ def _select_features(
     """
     n_samples, n_features = X.shape
     if max_features is None:
-        # Allow up to n-2 features to maximize training accuracy while keeping
-        # at least 1 degree of freedom beyond the intercept. The LOO RMSE in
-        # _fit() catches genuine overfitting.
-        max_features = max(1, n_samples - 2)
+        # Cap at n-3 or 25 features (whichever is smaller) to maintain at
+        # least 2 degrees of freedom while allowing enough features to
+        # capture iRacing's nonlinear formulas. ARB blade and other
+        # confirmed zero-effect features are excluded from the pool.
+        max_features = max(1, min(n_samples - 3, 25))
     if n_features <= max_features:
         return X, feature_names
 
@@ -726,12 +727,9 @@ def _select_features(
     selected: list[int] = []
     remaining = list(range(n_features))
 
-    # Track the best LOO RMSE seen so far to detect when adding features
-    # starts hurting generalization.
-    best_overall_loo = float("inf")
     for _ in range(max_features):
         best_idx = -1
-        best_loo = float("inf")
+        best_score = float("inf")
         for idx in remaining:
             trial = selected + [idx]
             X_trial = X[:, trial]
@@ -740,28 +738,16 @@ def _select_features(
             n_params = X_aug.shape[1]
             if n_samples <= n_params:
                 continue
-            # LOO RMSE for generalization-aware selection
-            loo_sq = 0.0
-            for i in range(n_samples):
-                mask = np.ones(n_samples, dtype=bool)
-                mask[i] = False
-                b, *_ = np.linalg.lstsq(X_aug[mask], y[mask], rcond=None)
-                loo_sq += (y[i] - X_aug[i] @ b) ** 2
-            loo_rmse = float(np.sqrt(loo_sq / n_samples))
-            if loo_rmse < best_loo:
-                best_loo = loo_rmse
+            b, *_ = np.linalg.lstsq(X_aug, y, rcond=None)
+            score = float(np.sqrt(np.mean((y - X_aug @ b) ** 2)))
+            if score < best_score:
+                best_score = score
                 best_idx = idx
         if best_idx < 0:
             break
-        # Accept this feature if LOO improved or stayed within 10% of best
-        if best_loo > best_overall_loo * 1.10 and len(selected) >= 3:
-            break  # LOO degrading — stop adding features
         selected.append(best_idx)
         remaining.remove(best_idx)
-        if best_loo < best_overall_loo:
-            best_overall_loo = best_loo
-        # Stop early if LOO RMSE is excellent
-        if best_loo < 0.05:
+        if best_score < 0.005:
             break
 
     if not selected:

@@ -19,22 +19,22 @@
     "name": "rear_ride_height",
     "feature_names": [
       "inv_front_heave",
+      "front_heave_x_rear_third_perch",
       "inv_rear_third",
-      "torsion_od",
-      "front_heave_perch",
-      "inv_od4"
+      "inv_od4",
+      "front_heave_x_front_heave_perch"
     ],
     "coefficients": [
-      -154.31442374550744,
-      -765.1744744093901,
-      464.996986233341,
-      9.62032647359218,
-      0.19033345642840444,
-      2169755.4921285696
+      -5.310062393587944,
+      -550.7663831474657,
+      0.0012588006197717272,
+      1521.9471077920268,
+      1254612.9572457734,
+      -0.00034763989555404505
     ],
-    "r_squared": 0.9998477506911001,
-    "rmse": 0.018854764286016634,
-    "loo_rmse": 0.18138210882448488,
+    "r_squared": 0.9999833818461166,
+    "rmse": 0.006229236656118784,
+    "loo_rmse": 0.08297735991975577,
     "n_samples": 8,
     "is_calibrated": true
   },
@@ -81,25 +81,23 @@
   "heave_spring_defl_static": {
     "name": "heave_spring_defl_static",
     "feature_names": [
-      "front_heave_x_front_pushrod",
-      "rear_third_x_rear_pushrod",
-      "rear_pushrod",
-      "rear_pushrod_x_front_heave_perch",
-      "front_pushrod_x_front_heave_perch",
-      "inv_rear_third"
+      "rear_third_perch_x_front_pushrod",
+      "front_heave_perch",
+      "rear_third_perch",
+      "inv_front_heave",
+      "front_heave_perch_sq"
     ],
     "coefficients": [
-      22.07511649855424,
-      -2.5083163185203377e-05,
-      0.0007485506751566609,
-      -0.7907720471446957,
-      0.010044427238016192,
-      0.01321610025133408,
-      41.93267107287904
+      2591.7473781135327,
+      -0.026849214171896896,
+      -125.8081114903609,
+      -5.455202670320361,
+      11755.723948022598,
+      1.5601141416637954
     ],
-    "r_squared": 1.0,
-    "rmse": 1.7897291031339511e-13,
-    "loo_rmse": 0.6848597043332396,
+    "r_squared": 0.9995638563791769,
+    "rmse": 0.11195390704841478,
+    "loo_rmse": 8.978087457771021,
     "n_samples": 8,
     "is_calibrated": true
   },
@@ -109,20 +107,20 @@
       "front_heave",
       "inv_front_heave",
       "front_heave_sq",
-      "rear_third_perch_x_front_heave_perch",
-      "front_heave_x_rear_third_perch"
+      "wing",
+      "front_camber"
     ],
     "coefficients": [
-      83.55281611988478,
-      -0.13174233301559468,
-      697.4743919307543,
-      0.00010347676759845321,
-      0.0002739474950186624,
-      -9.410436018122221e-05
+      86.27043785164227,
+      -0.13665363485463697,
+      654.5475419480407,
+      0.00010192971464712432,
+      -0.148513902411386,
+      0.11260597124478645
     ],
-    "r_squared": 0.9999999067977606,
-    "rmse": 0.0036881116877883536,
-    "loo_rmse": 0.03491572778426066,
+    "r_squared": 0.9999997324482597,
+    "rmse": 0.006248773468721757,
+    "loo_rmse": 6.0414324964895,
     "n_samples": 8,
     "is_calibrated": true
   },
@@ -135,18 +133,20 @@
       "front_heave_x_rear_third_perch",
       "inv_front_heave",
       "front_heave_perch_sq",
-      "rear_camber"
+      "rear_camber",
+      "rear_third_x_front_heave_perch"
     ],
     "coefficients": [
-      33.6804774355351,
-      -0.001878756943117536,
-      -1614.631387974812,
-      0.00495078526776463,
-      -2.307411543275373
+      -18.104812128442678,
+      -0.0003308078262534227,
+      217.08410949417933,
+      0.006785443650125806,
+      -25.44487711231191,
+      -0.0028359973012469964
     ],
-    "r_squared": 0.9928641074695116,
-    "rmse": 0.6281518268225625,
-    "loo_rmse": 1.4249468984908753,
+    "r_squared": 0.99956051059917,
+    "rmse": 0.15588871587777578,
+    "loo_rmse": 3.841617442831212,
     "n_samples": 8,
     "is_calibrated": true
   },
@@ -154,20 +154,22 @@
     "name": "third_spring_defl_max",
     "feature_names": [
       "rear_third",
-      "rear_pushrod_sq",
-      "front_heave_perch",
-      "front_heave_perch_sq"
+      "inv_rear_third",
+      "rear_third_sq",
+      "rear_pushrod_x_rear_third_perch",
+      "front_pushrod_x_front_heave_perch"
     ],
     "coefficients": [
-      98.92744003235694,
-      -0.19642072196706978,
-      -0.0038762324734017187,
-      0.7416301374176282,
-      -0.008122247823013391
+      102.95837770421724,
+      -0.20872150708653098,
+      584.7525244155227,
+      0.0002449622904840868,
+      -0.0004592787892797088,
+      0.0002911288724648725
     ],
-    "r_squared": 0.999670598748152,
-    "rmse": 0.16321107723992714,
-    "loo_rmse": 0.3270962165648491,
+    "r_squared": 0.9999999334115561,
+    "rmse": 0.002320526014184397,
+    "loo_rmse": 0.025002538364866194,
     "n_samples": 8,
     "is_calibrated": true
   },
@@ -176,20 +178,22 @@
     "name": "torsion_bar_defl_direct",
     "feature_names": [
       "front_camber",
-      "inv_front_heave",
-      "front_heave_x_front_heave_perch",
-      "rear_third_x_front_heave"
+      "rear_camber",
+      "rear_third",
+      "torsion_od",
+      "front_heave_perch_sq"
     ],
     "coefficients": [
-      -22.629223237965817,
-      2.546881834058606,
-      3975.873683670848,
-      0.0022467621623176353,
-      -0.0002301333577581801
+      80.22934067892935,
+      28.495254733266023,
+      -39.90105397228219,
+      0.007226373396548363,
+      -5.812488976976345,
+      0.0069617930820852205
     ],
-    "r_squared": 0.9898062154871557,
-    "rmse": 0.7446318375994239,
-    "loo_rmse": 2.021420045895802,
+    "r_squared": 0.9992687109145022,
+    "rmse": 0.1994428274728722,
+    "loo_rmse": 2.53083447802245,
     "n_samples": 8,
     "is_calibrated": true
   },
