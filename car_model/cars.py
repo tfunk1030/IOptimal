@@ -271,6 +271,7 @@ class RideHeightModel:
     front_coeff_camber_deg: float = 0.0    # mm RH per deg front camber
     front_coeff_pushrod: float = 0.0       # mm RH per mm front pushrod offset
     front_coeff_perch: float = 0.0         # mm RH per mm front heave perch offset
+    front_coeff_torsion_od: float = 0.0   # mm RH per mm front torsion bar OD (Ferrari)
     front_pushrod_ref_mm: float = 0.0      # pushrod value at which intercept was measured
     front_perch_ref_mm: float = 0.0        # perch value at which intercept was measured
     front_loo_rmse_mm: float = 0.0
@@ -291,7 +292,11 @@ class RideHeightModel:
     @property
     def front_is_calibrated(self) -> bool:
         """Whether the front RH model has non-trivial calibration (coefficients non-zero)."""
-        return self.is_calibrated and abs(self.front_coeff_heave_nmm) + abs(self.front_coeff_camber_deg) > 1e-9
+        return self.is_calibrated and (
+            abs(self.front_coeff_heave_nmm) + abs(self.front_coeff_camber_deg)
+            + abs(self.front_coeff_inv_heave) + abs(self.front_coeff_pushrod)
+            + abs(self.front_coeff_torsion_od)
+        ) > 1e-9
 
     def predict_front_static_rh(
         self, heave_nmm: float, camber_deg: float,
