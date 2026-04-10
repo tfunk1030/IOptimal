@@ -33,7 +33,9 @@ class SubsystemCalibration:
       - "calibrated":    Real measurement, R² >= 0.85 (or no R² applicable),
                          auto-cal validated. Step runs.
       - "weak":          Calibrated but R² < 0.85, or manual override that
-                         disagrees with auto-cal. Step BLOCKS by default.
+                         disagrees with auto-cal. Step STILL RUNS but output
+                         carries [~~] flag and a WEAK CALIBRATION DETECTED banner.
+                         Weak blocks do NOT cascade to downstream steps.
       - "uncalibrated":  No measurement at all. Step BLOCKS and cascades.
     """
     name: str

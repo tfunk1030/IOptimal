@@ -607,7 +607,17 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
             X_train, y_train = X_aug[mask], y[mask]
             b, *_ = np.linalg.lstsq(X_train, y_train, rcond=None)
             loo_errors[i] = y[i] - X_aug[i] @ b
-    loo_rmse = float(np.sqrt(np.mean(loo_errors ** 2)))
+    # LOO RMSE: use NaN when skipped (n<5) to avoid misleading "0.0 = perfect" display
+    if n < 5:
+        loo_rmse = float("nan")
+    else:
+        loo_rmse = float(np.sqrt(np.mean(loo_errors ** 2)))
+
+    # A model is only considered calibrated if its R² meets the gate threshold.
+    # Writing an under-threshold model to disk would let it appear "calibrated" on
+    # the next load before the gate re-checks. Guard here prevents that.
+    from car_model.calibration_gate import R2_THRESHOLD_BLOCK
+    is_cal = r2 >= R2_THRESHOLD_BLOCK
 
     return FittedModel(
         name=model_name,
@@ -617,7 +627,7 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
         rmse=rmse,
         loo_rmse=loo_rmse,
         n_samples=n,
-        is_calibrated=True,
+        is_calibrated=is_cal,
     )
 
 

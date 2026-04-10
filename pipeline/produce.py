@@ -1083,7 +1083,7 @@ def produce(
                 )
                 # Pre-stash session telemetry for batch scoring
                 if measured is not None:
-                    objective.set_session_context(measured=measured, driver=driver_profile)
+                    objective.set_session_context(measured=measured, driver=driver)
 
                 engine = GridSearchEngine(
                     space=space,

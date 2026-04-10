@@ -258,7 +258,7 @@ class RideHeightModel:
 
     NOTE: This model is BMW-specific. Non-BMW cars should use uncalibrated().
     """
-    is_calibrated: bool = True  # True for BMW, False for uncalibrated cars
+    is_calibrated: bool = False  # Must be set True explicitly after fitting; defaults False so careless instantiation does not appear calibrated
 
     # --- Front static RH regression ---
     front_intercept: float = 30.0   # fallback: acts as pinned value when coeffs are 0
@@ -2004,6 +2004,7 @@ BMW_M_HYBRID_V8 = CarModel(
         zeta_target_hs_rear=0.20,
     ),
     ride_height_model=RideHeightModel(
+        is_calibrated=True,
         # Calibrated from 31 unique BMW Sebring configs (41 sessions, March 2026).
         # Front model (6 features): R²=0.15, RMSE=0.16mm — front nearly pinned at 30mm
         front_intercept=30.5834,

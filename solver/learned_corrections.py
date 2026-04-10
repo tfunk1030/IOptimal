@@ -62,15 +62,19 @@ class LearnedCorrections:
 
     # What was applied and why
     applied: list[str] = field(default_factory=list)
+    # What was skipped and why (e.g. proxy data that should not override physics target)
+    skipped: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
-        if not self.applied:
+        if not self.applied and not self.skipped:
             return "No learned corrections applied (insufficient data)."
         lines = [
             f"Learned Corrections ({self.session_count} sessions, {self.confidence} confidence):",
         ]
         for a in self.applied:
             lines.append(f"  • {a}")
+        for s in self.skipped:
+            lines.append(f"  ⚠ SKIPPED: {s}")
         return "\n".join(lines)
 
 
@@ -150,12 +154,25 @@ def apply_learned_corrections(
         )
 
     # ── Apply LLTD baseline ──
+    # IMPORTANT: "lltd_measured" in the learner is actually roll_distribution_proxy
+    # (a geometric constant from ride height differences), NOT true wheel-load LLTD.
+    # It is essentially insensitive to ARB/spring stiffness (verified: 0.09 pp spread
+    # across 5 Porsche IBTs with 100-300% rear stiffness variation).
+    # Applying this proxy as a target baseline overrides the OptimumG physics formula
+    # in cars.py (e.g. 0.521 for Porsche) with a meaningless ~0.50 constant.
+    # The guard below prevents this until true wheel-load telemetry is available.
     lltd_mean = corrections.get("lltd_measured_mean")
-    if lltd_mean is not None and lltd_mean > 0:
+    lltd_is_proxy = corrections.get("lltd_is_proxy", True)  # default True = proxy, do not apply
+    if lltd_mean is not None and lltd_mean > 0 and not lltd_is_proxy:
         result.lltd_measured_baseline = lltd_mean
         result.applied.append(
             f"LLTD baseline: {lltd_mean:.3f} (measured, "
             f"std={corrections.get('lltd_measured_std', 0):.3f})"
+        )
+    elif lltd_mean is not None and lltd_is_proxy:
+        result.skipped.append(
+            f"LLTD baseline: {lltd_mean:.3f} SKIPPED — source is roll_distribution_proxy "
+            f"(geometric constant, not true wheel-load LLTD). Use cars.py target instead."
         )
 
     # ── Apply aero compression ──

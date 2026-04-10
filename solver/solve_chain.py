@@ -830,7 +830,8 @@ def _iterative_coupling_refinement(
                     inputs.wing_angle,
                 )
                 correction = inputs.target_balance - actual_balance
-                corrected_target = inputs.target_balance + correction
+                # Damping factor 0.6 prevents full-gain overshoot in nonlinear aero maps
+                corrected_target = inputs.target_balance + 0.6 * correction
                 new_step1 = rake_solver.solve(
                     target_balance=corrected_target,
                     balance_tolerance=inputs.balance_tolerance,

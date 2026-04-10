@@ -562,8 +562,20 @@ def iter_fields(
     return results
 
 
-def yaml_path_to_canonical(yaml_path: str, car: str = "bmw") -> str | None:
-    """Look up canonical key from a YAML path for a given car."""
+def yaml_path_to_canonical(yaml_path: str, car: str | None = None) -> str | None:
+    """Look up canonical key from a YAML path for a given car.
+
+    Args:
+        yaml_path: YAML path string to look up.
+        car: Car canonical name (e.g. "bmw", "porsche"). Must be provided;
+             omitting it raises ValueError to prevent silent BMW fallback.
+    """
+    if car is None:
+        raise ValueError(
+            "yaml_path_to_canonical() requires an explicit car argument. "
+            "Pass car='bmw', car='porsche', etc. Omitting it previously defaulted "
+            "to BMW which silently applied wrong mappings to other cars."
+        )
     specs = CAR_FIELD_SPECS.get(car, {})
     for key, spec in specs.items():
         if spec.yaml_path == yaml_path:
@@ -571,8 +583,20 @@ def yaml_path_to_canonical(yaml_path: str, car: str = "bmw") -> str | None:
     return None
 
 
-def sto_param_id_to_canonical(sto_param_id: str, car: str = "bmw") -> str | None:
-    """Look up canonical key from a STO param ID for a given car."""
+def sto_param_id_to_canonical(sto_param_id: str, car: str | None = None) -> str | None:
+    """Look up canonical key from a STO param ID for a given car.
+
+    Args:
+        sto_param_id: STO parameter ID to look up.
+        car: Car canonical name (e.g. "bmw", "porsche"). Must be provided;
+             omitting it raises ValueError to prevent silent BMW fallback.
+    """
+    if car is None:
+        raise ValueError(
+            "sto_param_id_to_canonical() requires an explicit car argument. "
+            "Pass car='bmw', car='porsche', etc. Omitting it previously defaulted "
+            "to BMW which silently applied wrong mappings to other cars."
+        )
     specs = CAR_FIELD_SPECS.get(car, {})
     for key, spec in specs.items():
         if spec.sto_param_id == sto_param_id:
