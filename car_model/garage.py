@@ -432,7 +432,12 @@ class GarageOutputModel:
         third_spring_defl_max = 0.0
         third_slider_defl_static = 0.0
         if self.deflection is not None:
-            front_shock_defl_static = self.deflection.shock_defl_front(setup.front_pushrod_mm)
+            front_shock_defl_static = self.deflection.shock_defl_front(
+                setup.front_pushrod_mm,
+                heave_perch_mm=setup.front_heave_perch_mm,
+                torsion_od_mm=setup.front_torsion_od_mm,
+                heave_nmm=setup.front_heave_nmm,
+            )
             rear_shock_defl_static = self.deflection.shock_defl_rear(
                 setup.rear_pushrod_mm,
                 third_rate_nmm=setup.rear_third_nmm,

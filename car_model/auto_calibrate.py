@@ -1016,7 +1016,8 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # load is proportional to 1/k (compliance), not k. Using 1/heave as the
     # feature matches the underlying physics and dramatically improves fit
     # quality for cars with varied heave spring rates.
-    if np.std(col("static_front_rh_mm")) > 0.5:
+    _front_rh_std = np.std(col("static_front_rh_mm"))
+    if _front_rh_std > 0.5:
         _inv_heave = 1.0 / np.maximum(heave, 1.0)
         _front_rh_candidates = [
             (col("front_pushrod_mm"), "front_pushrod"),
@@ -1046,6 +1047,20 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                 _front_rh_names,
                 "front_ride_height",
             )
+
+    elif len(unique) >= _MIN_SESSIONS_FOR_FIT and _front_rh_std > 0:
+        # Near-constant front RH: create a constant model (intercept-only)
+        _mean_frh = float(np.mean(col("static_front_rh_mm")))
+        models.front_ride_height = FittedModel(
+            name="front_ride_height",
+            feature_names=[],
+            coefficients=[_mean_frh],
+            r_squared=1.0,
+            rmse=float(_front_rh_std),
+            loo_rmse=float(_front_rh_std),
+            n_samples=len(unique),
+            is_calibrated=True,
+        )
 
     # ─── 2. Rear Ride Height ───
     if np.std(col("static_rear_rh_mm")) > 0.5:
@@ -1086,7 +1101,9 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             )
 
     # ─── 3. Torsion Bar Turns ───
-    if np.std(col("torsion_bar_turns")) > 0.005:
+    _tb_turns = col("torsion_bar_turns")
+    _tb_valid = _tb_turns[_tb_turns > 0]
+    if len(_tb_valid) > 0 and np.std(_tb_turns) > 0.005:
         X = np.column_stack([
             1.0 / np.maximum(heave, 1.0),
             col("front_heave_perch_mm"),
@@ -1096,6 +1113,19 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             X, col("torsion_bar_turns"),
             ["1/front_heave", "front_heave_perch", "torsion_od"],
             "torsion_bar_turns",
+        )
+    elif len(_tb_valid) >= _MIN_SESSIONS_FOR_FIT:
+        # Near-constant torsion turns: use mean as constant model
+        _mean_turns = float(np.mean(_tb_valid))
+        models.torsion_bar_turns = FittedModel(
+            name="torsion_bar_turns",
+            feature_names=[],
+            coefficients=[_mean_turns],
+            r_squared=1.0,
+            rmse=float(np.std(_tb_valid)),
+            loo_rmse=float(np.std(_tb_valid)),
+            n_samples=len(unique),
+            is_calibrated=True,
         )
 
     # ─── 4. Torsion Bar Deflection ───
@@ -1847,34 +1877,26 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             defl = car_obj.deflection
             fs = models.front_shock_defl_static
             if fs and len(fs.coefficients) >= 2:
-                # The fitted model may include extra features beyond pushrod
-                # (heave_perch, heave, torsion_od). Since the DeflectionModel
-                # only supports intercept+pushrod, fold extra features into
-                # the intercept using mean calibration values.
-                _fs_intercept = fs.coefficients[0]
-                _fs_pushrod_coeff = 0.0
-                # Compute mean values from calibration data for folding
-                _mean_vals = {
-                    "front_heave_perch": -13.0,  # typical perch
-                    "front_heave": 50.0,          # typical heave rate
-                    "torsion_od": 13.9,           # typical torsion OD
+                _fs_map = {
+                    "front_pushrod": "shock_front_pushrod_coeff",
+                    "front_heave_perch": "front_shock_defl_heave_perch_coeff",
+                    "torsion_od": "front_shock_defl_torsion_od_coeff",
+                    "front_heave": "front_shock_defl_heave_coeff",
                 }
-                # Get car-specific means if available
-                if car_obj is not None:
-                    _mean_vals["front_heave_perch"] = car_obj.heave_spring.perch_offset_front_baseline_mm
-                    _mean_vals["front_heave"] = car_obj.front_heave_spring_nmm
-                    if car_obj.corner_spring.front_torsion_od_options:
-                        _mean_vals["torsion_od"] = sum(
-                            car_obj.corner_spring.front_torsion_od_options
-                        ) / len(car_obj.corner_spring.front_torsion_od_options)
+                defl.shock_front_intercept = fs.coefficients[0]
+                defl.shock_front_pushrod_coeff = 0.0
+                defl.front_shock_defl_heave_perch_coeff = 0.0
+                defl.front_shock_defl_torsion_od_coeff = 0.0
+                defl.front_shock_defl_heave_coeff = 0.0
+                _has_extra = False
                 for i, feat in enumerate(fs.feature_names):
                     coeff = fs.coefficients[i + 1] if i + 1 < len(fs.coefficients) else 0.0
-                    if feat == "front_pushrod":
-                        _fs_pushrod_coeff = coeff
-                    elif feat in _mean_vals:
-                        _fs_intercept += coeff * _mean_vals[feat]
-                defl.shock_front_intercept = _fs_intercept
-                defl.shock_front_pushrod_coeff = _fs_pushrod_coeff
+                    attr = _fs_map.get(feat)
+                    if attr:
+                        setattr(defl, attr, coeff)
+                        if feat != "front_pushrod":
+                            _has_extra = True
+                defl.front_shock_defl_direct = _has_extra
                 _defl_applied = True
             # Generic mapping helper: zero target attrs first, then apply
             # whichever named features exist in the fitted model.
@@ -2299,6 +2321,29 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             applied.append(
                 f"GarageOutputModel auto-built from calibration "
                 f"(front RH RMSE={car_obj.ride_height_model.front_loo_rmse_mm:.2f}mm)"
+            )
+    else:
+        # Existing GOM (e.g. BMW hand-calibrated): update its deflection model
+        # reference to the calibrated one so deflection predictions use fitted
+        # coefficients instead of empty defaults.
+        gom = car_obj.garage_output_model
+        _car_defl = car_obj.deflection
+        if _car_defl.is_calibrated:
+            # Always replace — car.deflection has fitted coefficients from
+            # calibration data while gom.deflection may be a default stub.
+            gom.deflection = _car_defl
+            applied.append("GarageOutputModel.deflection updated to calibrated model")
+        # Update heave_defl_max from calibration if available
+        if models.heave_spring_defl_max and models.heave_spring_defl_max.is_calibrated:
+            hdm = models.heave_spring_defl_max
+            gom.heave_spring_defl_max_intercept_mm = hdm.coefficients[0]
+            for i, feat in enumerate(hdm.feature_names):
+                if feat == "front_heave" and i + 1 < len(hdm.coefficients):
+                    gom.heave_spring_defl_max_slope = hdm.coefficients[i + 1]
+            applied.append(
+                f"GarageOutputModel heave_defl_max updated "
+                f"(intercept={gom.heave_spring_defl_max_intercept_mm:.2f}, "
+                f"slope={gom.heave_spring_defl_max_slope:.4f})"
             )
 
     return applied

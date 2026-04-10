@@ -51,7 +51,18 @@
     "n_samples": 23,
     "is_calibrated": false
   },
-  "torsion_bar_turns": null,
+  "torsion_bar_turns": {
+    "name": "torsion_bar_turns",
+    "feature_names": [],
+    "coefficients": [
+      0.09704347826086958
+    ],
+    "r_squared": 1.0,
+    "rmse": 0.004867623836611126,
+    "loo_rmse": 0.004867623836611126,
+    "n_samples": 23,
+    "is_calibrated": true
+  },
   "torsion_bar_defl": {
     "name": "torsion_bar_defl_load",
     "feature_names": [

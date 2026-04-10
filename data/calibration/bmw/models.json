@@ -3,7 +3,18 @@
   "n_sessions": 12,
   "n_unique_setups": 9,
   "calibration_complete": true,
-  "front_ride_height": null,
+  "front_ride_height": {
+    "name": "front_ride_height",
+    "feature_names": [],
+    "coefficients": [
+      30.011111111111113
+    ],
+    "r_squared": 1.0,
+    "rmse": 0.03142696805273589,
+    "loo_rmse": 0.03142696805273589,
+    "n_samples": 9,
+    "is_calibrated": true
+  },
   "rear_ride_height": {
     "name": "rear_ride_height",
     "feature_names": [
@@ -23,7 +34,18 @@
     "n_samples": 9,
     "is_calibrated": false
   },
-  "torsion_bar_turns": null,
+  "torsion_bar_turns": {
+    "name": "torsion_bar_turns",
+    "feature_names": [],
+    "coefficients": [
+      0.09755555555555556
+    ],
+    "r_squared": 1.0,
+    "rmse": 0.004139541335599367,
+    "loo_rmse": 0.004139541335599367,
+    "n_samples": 9,
+    "is_calibrated": true
+  },
   "torsion_bar_defl": {
     "name": "torsion_bar_defl_load",
     "feature_names": [
@@ -299,6 +321,6 @@
     "m_eff": "rate-dependent (6 points, range 67-138 kg)",
     "m_eff_rear": "rate-dependent (7 points, range 291-1307 kg)",
     "lltd_target": "DISABLED \u2014 IBT 'lltd_measured' is a geometric proxy (t_f^3/(t_f^3+t_r^3)), not true LLTD. ARB solver uses OptimumG physics.",
-    "deflection_model": "calibrated (9 unique setups, best R\u00b2=0.99)"
+    "deflection_model": "calibrated (9 unique setups, best R\u00b2=1.00)"
   }
 }

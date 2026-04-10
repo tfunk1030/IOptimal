@@ -2,8 +2,19 @@
   "car": "acura",
   "n_sessions": 15,
   "n_unique_setups": 8,
-  "calibration_complete": false,
-  "front_ride_height": null,
+  "calibration_complete": true,
+  "front_ride_height": {
+    "name": "front_ride_height",
+    "feature_names": [],
+    "coefficients": [
+      30.1125
+    ],
+    "r_squared": 1.0,
+    "rmse": 0.07806247497997959,
+    "loo_rmse": 0.07806247497997959,
+    "n_samples": 8,
+    "is_calibrated": true
+  },
   "rear_ride_height": {
     "name": "rear_ride_height",
     "feature_names": [
@@ -157,6 +168,6 @@
     "m_eff": "constant (5 points, mean 829 kg)",
     "m_eff_rear": "constant (5 points, mean 256 kg)",
     "lltd_target": "DISABLED \u2014 IBT 'lltd_measured' is a geometric proxy (t_f^3/(t_f^3+t_r^3)), not true LLTD. ARB solver uses OptimumG physics.",
-    "deflection_model": "partial (3/6 models fitted, 8 unique setups)"
+    "deflection_model": "calibrated (8 unique setups, best R\u00b2=1.00)"
   }
 }
