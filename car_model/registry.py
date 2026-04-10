@@ -156,6 +156,19 @@ def track_slug(display_name: str, config: str = "") -> str:
     return base
 
 
+def track_key(display_name: str) -> str:
+    """Return the canonical base track key without configuration suffix.
+
+    This is the stable key used for track-scoped calibration support checks.
+    Examples: ``Sebring International Raceway`` -> ``sebring``,
+    ``Autodromo Internacional do Algarve`` -> ``algarve``.
+    """
+    if not display_name:
+        return ""
+    key = display_name.lower().strip()
+    return _TRACK_ALIASES.get(key, key.replace(" ", "_"))
+
+
 def resolve_track_from_ibt(ibt: "IBTFile") -> TrackIdentity:
     """Extract track identity from an opened IBT file."""
     ti = ibt.track_info()

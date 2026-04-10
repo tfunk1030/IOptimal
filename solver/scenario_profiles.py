@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -185,7 +186,13 @@ def resolve_scenario_name(name: str | None) -> str:
         return DEFAULT_SCENARIO
     normalized = str(name).strip().lower().replace("-", "_").replace(" ", "_")
     normalized = _ALIASES.get(normalized, normalized)
-    return normalized if normalized in _SCENARIOS else DEFAULT_SCENARIO
+    if normalized in _SCENARIOS:
+        return normalized
+    warnings.warn(
+        f"Unknown scenario profile '{name}' — falling back to '{DEFAULT_SCENARIO}'.",
+        stacklevel=2,
+    )
+    return DEFAULT_SCENARIO
 
 
 def get_scenario_profile(name: str | None) -> ScenarioProfile:
@@ -203,8 +210,10 @@ def should_run_legal_manifold_search(
     search_mode: str | None = None,
     scenario_name: str | None = None,
 ) -> bool:
-    resolved = resolve_scenario_name(scenario_name)
-    return bool(free_mode or explicit_search or search_mode is not None or resolved != DEFAULT_SCENARIO)
+    _ = resolve_scenario_name(scenario_name)
+    # Search is an explicit opt-in. Scenario choice changes scoring/sanity
+    # policy but should not silently replace the base physics solve.
+    return bool(free_mode or explicit_search or search_mode is not None)
 
 
 def prediction_passes_sanity(

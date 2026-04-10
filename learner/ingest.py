@@ -82,6 +82,92 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     return track, measured, setup, driver, diag, corners, ibt
 
 
+def _update_auto_calibration(
+    *,
+    car_name: str,
+    ibt_path: str,
+    session_id: str,
+    assessment: str,
+    lap_time_s: float,
+    verbose: bool,
+) -> dict:
+    """Append one session-level calibration point and auto-fit models when ready."""
+    result: dict = {}
+    try:
+        from car_model.auto_calibrate import (
+            load_calibration_points,
+            extract_point_from_ibt,
+            save_calibration_points,
+            fit_models_from_points,
+            save_calibrated_models,
+            load_calibrated_models,
+        )
+        cal_points = load_calibration_points(car_name)
+        existing_ids = {pt.session_id for pt in cal_points}
+        if session_id in existing_ids:
+            return result
+
+        pt = extract_point_from_ibt(ibt_path, car_name)
+        if pt is None:
+            return result
+
+        pt.session_id = session_id
+        pt.assessment = assessment
+        pt.lap_time_s = lap_time_s
+        cal_points.append(pt)
+        save_calibration_points(car_name, cal_points)
+
+        unique: set[tuple] = set()
+        for p2 in cal_points:
+            key = (
+                round(p2.front_heave_setting, 1),
+                round(p2.rear_third_setting, 1),
+                round(p2.front_torsion_od_mm, 3),
+                round(p2.front_pushrod_mm, 1),
+                round(p2.rear_pushrod_mm, 1),
+            )
+            unique.add(key)
+
+        n_unique = len(unique)
+        result["cal_point_added"] = True
+        result["cal_unique_setups"] = n_unique
+
+        if n_unique >= 5:
+            cal_models = fit_models_from_points(car_name, cal_points)
+            existing_saved = load_calibrated_models(car_name)
+            if existing_saved:
+                if existing_saved.front_ls_zeta is not None and cal_models.front_ls_zeta is None:
+                    cal_models.front_ls_zeta = existing_saved.front_ls_zeta
+                    cal_models.rear_ls_zeta = existing_saved.rear_ls_zeta
+                    cal_models.front_hs_zeta = existing_saved.front_hs_zeta
+                    cal_models.rear_hs_zeta = existing_saved.rear_hs_zeta
+                    cal_models.zeta_n_sessions = existing_saved.zeta_n_sessions
+                if existing_saved.front_torsion_lookup and not cal_models.front_torsion_lookup:
+                    cal_models.front_torsion_lookup = existing_saved.front_torsion_lookup
+                if existing_saved.rear_torsion_lookup and not cal_models.rear_torsion_lookup:
+                    cal_models.rear_torsion_lookup = existing_saved.rear_torsion_lookup
+                for k, v in existing_saved.status.items():
+                    if k not in cal_models.status:
+                        cal_models.status[k] = v
+
+            save_calibrated_models(car_name, cal_models)
+            if cal_models.calibration_complete:
+                result["new_learning"] = (
+                    f"Auto-calibration complete: {n_unique} unique setups, "
+                    f"deflection model fitted. Run 'ioptimal calibrate --car {car_name} "
+                    f"--status' for details."
+                )
+            if verbose:
+                print(
+                    f"  [calibrate] {n_unique} unique setups — "
+                    f"models {'fitted' if cal_models.calibration_complete else 'pending'}"
+                )
+    except Exception as exc:
+        if verbose:
+            print(f"  [calibrate] Skipped: {exc}")
+    return result
+
+
 def ingest_ibt(
     car_name: str,
     ibt_path: str,
@@ -269,75 +355,17 @@ def ingest_ibt(
         result["new_learnings"].append(delta_result.key_finding)
 
     # ── Auto-calibration: add this session to per-car calibration dataset ──
-    # Runs silently (never blocks ingest). Once 5+ unique-setup sessions
-    # accumulate, models are auto-fitted and saved to data/calibration/{car}/.
-    try:
-        from car_model.auto_calibrate import (
-            load_calibration_points,
-            extract_point_from_ibt,
-            save_calibration_points,
-            fit_models_from_points,
-            save_calibrated_models,
-            load_calibrated_models,
-        )
-        cal_points = load_calibration_points(car_name)
-        existing_ids = {pt.session_id for pt in cal_points}
-        if session_id not in existing_ids:
-            pt = extract_point_from_ibt(ibt_path, car_name)
-            if pt is not None:
-                pt.session_id = session_id  # use same ID for consistency
-                pt.assessment = diag.assessment
-                pt.lap_time_s = diag.lap_time_s
-                cal_points.append(pt)
-                save_calibration_points(car_name, cal_points)
-                # Count unique setups to check if we can fit models
-                unique: set[tuple] = set()
-                for p2 in cal_points:
-                    key = (round(p2.front_heave_setting, 1), round(p2.rear_third_setting, 1),
-                           round(p2.front_torsion_od_mm, 3), round(p2.front_pushrod_mm, 1),
-                           round(p2.rear_pushrod_mm, 1))
-                    unique.add(key)
-                n_unique = len(unique)
-                result["cal_point_added"] = True
-                result["cal_unique_setups"] = n_unique
-                if n_unique >= 5:
-                    # Auto-fit models
-                    cal_models = fit_models_from_points(car_name, cal_points)
-                    # Preserve existing calibration fields that fit_models doesn't compute
-                    existing_saved = load_calibrated_models(car_name)
-                    if existing_saved:
-                        # Preserve damper zeta (set by validation/calibrate_dampers.py)
-                        if existing_saved.front_ls_zeta is not None and cal_models.front_ls_zeta is None:
-                            cal_models.front_ls_zeta = existing_saved.front_ls_zeta
-                            cal_models.rear_ls_zeta = existing_saved.rear_ls_zeta
-                            cal_models.front_hs_zeta = existing_saved.front_hs_zeta
-                            cal_models.rear_hs_zeta = existing_saved.rear_hs_zeta
-                            cal_models.zeta_n_sessions = existing_saved.zeta_n_sessions
-                        # Preserve LLTD target (set by validation/calibrate_lltd.py)
-                        if existing_saved.measured_lltd_target is not None and cal_models.measured_lltd_target is None:
-                            cal_models.measured_lltd_target = existing_saved.measured_lltd_target
-                        # Preserve spring lookup tables
-                        if existing_saved.front_torsion_lookup and not cal_models.front_torsion_lookup:
-                            cal_models.front_torsion_lookup = existing_saved.front_torsion_lookup
-                        if existing_saved.rear_torsion_lookup and not cal_models.rear_torsion_lookup:
-                            cal_models.rear_torsion_lookup = existing_saved.rear_torsion_lookup
-                        # Merge status dict: preserve keys that fresh model didn't compute
-                        for k, v in existing_saved.status.items():
-                            if k not in cal_models.status:
-                                cal_models.status[k] = v
-                    save_calibrated_models(car_name, cal_models)
-                    if cal_models.calibration_complete:
-                        result["new_learnings"].append(
-                            f"Auto-calibration complete: {n_unique} unique setups, "
-                            f"deflection model fitted. Run 'ioptimal calibrate --car {car_name} "
-                            f"--status' for details."
-                        )
-                    if verbose:
-                        print(f"  [calibrate] {n_unique} unique setups — "
-                              f"models {'fitted' if cal_models.calibration_complete else 'pending'}")
-    except Exception:
-        # Auto-calibration is never allowed to break normal ingest
-        pass
+    cal_update = _update_auto_calibration(
+        car_name=car_name,
+        ibt_path=ibt_path,
+        session_id=session_id,
+        assessment=diag.assessment,
+        lap_time_s=diag.lap_time_s,
+        verbose=verbose,
+    )
+    result.update({k: v for k, v in cal_update.items() if k != "new_learning"})
+    if cal_update.get("new_learning"):
+        result["new_learnings"].append(cal_update["new_learning"])
 
     if verbose:
         print(f"\n{'='*60}")
@@ -397,6 +425,8 @@ def ingest_all_laps(
     # Process each valid lap as a separate observation.
     base_session_id = store.session_id_from_ibt(ibt_path, car_name, track.track_name)
     results: list[dict] = []
+    best_diag = None
+    best_lap_time = float("inf")
 
     for lap_num, lap_time, _start, _end in valid_laps:
         if verbose:
@@ -439,6 +469,9 @@ def ingest_all_laps(
         if verbose:
             print(f"  Observation stored: {lap_session_id}")
             print(f"  Assessment: {diag.assessment}")
+        if lap_time < best_lap_time:
+            best_lap_time = lap_time
+            best_diag = diag
 
         # Update index.
         idx = store.load_index()
@@ -490,6 +523,18 @@ def ingest_all_laps(
     insights = _generate_insights(all_obs, all_deltas, models, car_name, track.track_name)
     insight_id = f"{car_name}_{track_key_short}_insights".lower()
     store.save_insights(insight_id, insights)
+
+    if best_diag is not None:
+        cal_update = _update_auto_calibration(
+            car_name=car_name,
+            ibt_path=ibt_path,
+            session_id=base_session_id,
+            assessment=best_diag.assessment,
+            lap_time_s=best_diag.lap_time_s,
+            verbose=verbose,
+        )
+        if cal_update and results:
+            results[-1].update(cal_update)
 
     stored_count = sum(1 for r in results if r.get("observation_stored"))
     if verbose:

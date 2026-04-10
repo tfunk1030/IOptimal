@@ -19,6 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from car_model.registry import track_key
+
 if TYPE_CHECKING:
     from car_model.cars import CarModel
 
@@ -33,7 +35,8 @@ class SubsystemCalibration:
       - "calibrated":    Real measurement, R² >= 0.85 (or no R² applicable),
                          auto-cal validated. Step runs.
       - "weak":          Calibrated but R² < 0.85, or manual override that
-                         disagrees with auto-cal. Step runs with explicit warning.
+                         disagrees with auto-cal. Step still runs with explicit
+                         warning, and propagates weak-upstream status.
       - "uncalibrated":  No measurement at all. Step BLOCKS and cascades.
     """
     name: str
@@ -264,10 +267,12 @@ TO CALIBRATE ARB STIFFNESS:
 
     "lltd_target": """\
 TO CALIBRATE LLTD TARGET:
-1. Accumulate 10+ IBT sessions with varied ARB and spring settings
-2. Run: python -m learner.ingest --car {car} --ibt <each_file>
-3. After 10+ sessions: python -m validation.calibrate_lltd --car {car} --track {track}
-4. This identifies the LLTD range that correlates with fastest lap times""",
+1. Do NOT use IBT lltd_measured / roll_distribution_proxy as a calibration target.
+2. Establish a car/track LLTD target from either:
+   - wheel-force telemetry that exposes true LF/RF/LR/RR load channels, or
+   - an explicit engineering hand-calibration documented in cars.py.
+3. Until true LLTD telemetry exists, keep the car's physics-derived or
+   hand-calibrated target and treat ARB output as lower-authority.""",
 
     "roll_gains": """\
 TO CALIBRATE ROLL GAINS:
@@ -309,8 +314,10 @@ def _load_raw_calibration_models(car_canonical: str) -> dict:
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
-        return {}
+    except Exception as exc:
+        return {
+            "__load_error__": f"{type(exc).__name__}: {exc}",
+        }
 
 
 def _classify_r_squared(r2: float | None, threshold_high: float = 0.90,
@@ -330,6 +337,27 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     cn = car.canonical_name
     raw_models = _load_raw_calibration_models(cn)
     subs: dict[str, SubsystemCalibration] = {}
+    track_supported = car.supports_track(track_name)
+    subs["track_support"] = SubsystemCalibration(
+        name="track_support",
+        status="calibrated" if track_supported else "uncalibrated",
+        source=(
+            f"supported track '{track_key(track_name)}'"
+            if track_supported
+            else (
+                f"unsupported track '{track_key(track_name)}' "
+                f"(supported: {car.supported_tracks_label()})"
+            )
+        ),
+        instructions=(
+            ""
+            if track_supported
+            else (
+                f"This car's calibration is only validated for {car.supported_tracks_label()}. "
+                f"Collect dedicated telemetry and garage-truth data for {track_name} before trusting Step 1."
+            )
+        ),
+    )
 
     # 1. Aero compression — check the is_calibrated flag on the car's AeroCompression
     aero_cal = getattr(car.aero_compression, "is_calibrated", False)
@@ -538,10 +566,15 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     # or physics formula (Porsche OptimumG/Milliken) — label accurately.
     lltd_set = car.measured_lltd_target is not None
     lltd_from_models = raw_models.get("measured_lltd_target") is not None
-    if lltd_set and lltd_from_models:
-        lltd_source = f"IBT-derived (target={car.measured_lltd_target:.3f})"
+    lltd_source_type = getattr(car, "lltd_target_source", "physics_formula")
+    if lltd_set and lltd_source_type == "track_observation":
+        lltd_source = f"track-observed hand calibration (target={car.measured_lltd_target:.3f})"
+    elif lltd_set and lltd_source_type == "physics_formula":
+        lltd_source = f"physics formula (target={car.measured_lltd_target:.3f})"
+    elif lltd_set and lltd_from_models:
+        lltd_source = f"legacy model file target (target={car.measured_lltd_target:.3f})"
     elif lltd_set:
-        lltd_source = f"physics/hand-calibrated (target={car.measured_lltd_target:.3f})"
+        lltd_source = f"hand-calibrated (target={car.measured_lltd_target:.3f})"
     else:
         lltd_source = "no measured data"
     subs["lltd_target"] = SubsystemCalibration(
@@ -568,7 +601,7 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
 # Each solver step maps to required subsystems.
 # "calibrated" runs cleanly, "weak" runs with warnings, "uncalibrated" blocks.
 STEP_REQUIREMENTS: dict[int, tuple[str, list[str]]] = {
-    1: ("Rake / Ride Heights", ["aero_compression", "ride_height_model", "pushrod_geometry"]),
+    1: ("Rake / Ride Heights", ["track_support", "aero_compression", "ride_height_model", "pushrod_geometry"]),
     2: ("Heave / Third Springs", ["spring_rates"]),
     3: ("Corner Springs", ["spring_rates"]),
     4: ("Anti-Roll Bars", ["arb_stiffness", "lltd_target"]),
@@ -650,9 +683,9 @@ class CalibrationGate:
     def check_step(self, step_number: int) -> StepCalibrationReport:
         """Check if a solver step can run with calibrated data.
 
-        Strict mode: a step blocks when required subsystems are uncalibrated.
+        A step blocks when any required subsystem is uncalibrated.
         Weak subsystems (R² below threshold, manual override disagreements)
-        are surfaced as warnings and flagged on the report, but remain runnable.
+        do not block, but are surfaced loudly on the report.
 
         Cascade: only TRUE data blocks (uncalibrated, dependency-blocked)
         propagate to downstream steps. A "weak" block does NOT cascade —

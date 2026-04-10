@@ -338,6 +338,7 @@ def run_solver(args: "argparse.Namespace") -> None:
     # Blocked steps output calibration instructions instead of setup values.
     cal_gate = CalibrationGate(car, args.track)
     cal_report = cal_gate.full_report()
+    _confidence_text = cal_report.format_confidence_report(cal_gate.subsystems())
 
     if _track_is_generic:
         log()
@@ -358,6 +359,8 @@ def run_solver(args: "argparse.Namespace") -> None:
         log("WEAK CALIBRATION DETECTED — output is produced but verify before use")
         log("=" * 60)
         log(cal_report.format_header())
+    if _confidence_text:
+        log(_confidence_text)
         log()
 
     _camber_conf = ("calibrated"

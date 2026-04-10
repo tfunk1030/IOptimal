@@ -3409,12 +3409,24 @@ def reason_and_solve(
             stint_report_result = None
 
     # ── Legal-manifold search (--explore-legal-space) ──
-    if should_run_legal_manifold_search(
+    _search_ready = all(s is not None for s in (step1, step2, step3, step4, step5, step6))
+    _should_run_search = should_run_legal_manifold_search(
         free_mode=False,
         explicit_search=explore_legal_space,
         search_mode=search_mode,
         scenario_name=resolved_scenario,
-    ):
+    )
+    if _should_run_search and not _search_ready:
+        _search_reason = (
+            f"blocked steps {sorted(state.calibration_blocked_steps)}"
+            if state.calibration_blocked_steps
+            else "base solve did not materialize all 6 steps"
+        )
+        log(f"[legal-search] Skipped: requires all 6 calibrated solver steps ({_search_reason}).")
+        state.solver_notes.append(
+            f"Skipped legal-manifold search because not all 6 calibrated steps were available ({_search_reason})."
+        )
+    elif _should_run_search:
         try:
             from solver.legal_search import run_legal_search
 
