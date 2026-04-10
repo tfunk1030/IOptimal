@@ -344,6 +344,77 @@ class HeaveSolver:
             best = hi
         return best
 
+    def min_rate_for_constraint_set(
+        self,
+        bottoming_events: list[dict],
+        m_eff_kg: float,
+        dynamic_rh_mm: float,
+        max_allowed_events: int = 3,
+        *,
+        axle: str = "front",
+        damper_coeff_nsm: float = 0.0,
+        parallel_wheel_rate_nmm: float = 0.0,
+    ) -> float:
+        """Minimum spring rate satisfying a set of per-point bottoming constraints.
+
+        Instead of using the lap-wide p99 shock velocity (which may be driven
+        by a single extreme event), this method evaluates each observed
+        bottoming event individually and finds the minimum rate where at most
+        *max_allowed_events* events would still bottom.
+
+        This is tighter than a binary floor: a 140 N/mm spring might prevent
+        11 of 12 events where the binary floor demands 150 N/mm.
+
+        Args:
+            bottoming_events: List of dicts with at least 'shock_vel_mps' key.
+                Each entry is one observed bottoming event from the IBT.
+            m_eff_kg: Effective sprung mass for this axle.
+            dynamic_rh_mm: Dynamic ride height at this axle.
+            max_allowed_events: Max events that may still bottom (default 3).
+            axle: "front" or "rear".
+            damper_coeff_nsm: HS damper coefficient (N·s/m).
+            parallel_wheel_rate_nmm: Parallel corner spring wheel rate (N/mm).
+
+        Returns:
+            Minimum spring rate (N/mm) where at most *max_allowed_events*
+            of the observed events would exceed the ride height.
+        """
+        if not bottoming_events:
+            return 0.0
+
+        lo, hi = (
+            self._heave_hard_bounds()
+            if axle == "front"
+            else self.car.heave_spring.rear_spring_range_nmm
+        )
+        lo_search = max(10.0, math.ceil(lo / 10.0) * 10)
+        hsm = self.car.heave_spring
+
+        for rate in range(int(lo_search), int(hi) + 10, 10):
+            m_eff_at_rate = hsm.m_eff_at_rate(axle, float(rate))
+            if m_eff_at_rate <= 0:
+                m_eff_at_rate = m_eff_kg
+
+            # Count how many events would still bottom at this rate
+            events_still_bottoming = 0
+            for evt in bottoming_events:
+                v_evt = float(evt.get("shock_vel_mps", 0.0))
+                if v_evt <= 0:
+                    continue
+                excursion = self.excursion(
+                    v_evt, m_eff_at_rate, float(rate),
+                    axle=axle,
+                    damper_coeff_nsm=damper_coeff_nsm,
+                    parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
+                )
+                if excursion > dynamic_rh_mm:
+                    events_still_bottoming += 1
+
+            if events_still_bottoming <= max_allowed_events:
+                return float(rate)
+
+        return hi  # Can't satisfy constraint — return stiffest legal
+
     def min_rate_for_sigma(
         self,
         v_p99_mps: float,
@@ -356,6 +427,7 @@ class HeaveSolver:
         current_rate_nmm: float | None = None,
         current_meas_sigma_mm: float | None = None,
         target_margin: float = 1.05,
+        prediction_correction_mm: float = 0.0,
     ) -> float:
         """Minimum spring rate (N/mm) to keep sigma below target.
 
@@ -387,6 +459,12 @@ class HeaveSolver:
         effective_meas_target = 6.57, effective_model_target = 7.71,
         algorithm returns 140-160 N/mm — within 1 step of driver-validated.
         """
+        # Apply learner prediction correction: if the solver systematically
+        # over-predicts σ (correction > 0), tighten the target to compensate.
+        # Clamped to ±2.0mm to prevent runaway corrections.
+        correction = max(-2.0, min(2.0, prediction_correction_mm))
+        sigma_target_mm = max(2.0, sigma_target_mm - correction)
+
         excursion_limit = sigma_target_mm * 2.33
         if excursion_limit <= 0:
             return float("inf")
@@ -813,6 +891,7 @@ class HeaveSolver:
         measured: object | None = None,
         front_heave_current_nmm: float | None = None,
         rear_third_current_nmm: float | None = None,
+        prediction_corrections: dict[str, float] | None = None,
     ) -> HeaveSolution:
         """Find minimum safe heave/third spring rates.
 
@@ -885,6 +964,7 @@ class HeaveSolver:
             float(getattr(measured, "front_rh_std_mm", 0.0) or 0.0)
             if measured is not None else 0.0
         )
+        _pcorr = prediction_corrections or {}
         k_front_sigma = self.min_rate_for_sigma(
             v_front_platform,
             m_front,
@@ -893,6 +973,7 @@ class HeaveSolver:
             damper_coeff_nsm=front_damper_coeff,
             current_rate_nmm=front_heave_current_nmm,
             current_meas_sigma_mm=_front_meas_sigma,
+            prediction_correction_mm=_pcorr.get("prediction_correction_front_rh_std_mm", 0.0),
         )
 
         if k_front_bottoming >= k_front_sigma:
@@ -960,6 +1041,7 @@ class HeaveSolver:
             parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
             current_rate_nmm=rear_third_current_nmm,
             current_meas_sigma_mm=_rear_meas_sigma,
+            prediction_correction_mm=_pcorr.get("prediction_correction_rear_rh_std_mm", 0.0),
         )
 
         if k_rear_bottoming >= k_rear_sigma:
@@ -1203,6 +1285,158 @@ class HeaveSolver:
             garage_constraints_ok=garage_constraints_ok,
             garage_constraint_notes=garage_constraint_notes,
         )
+
+    def solve_candidates(
+        self,
+        dynamic_front_rh_mm: float,
+        dynamic_rear_rh_mm: float,
+        front_heave_floor_nmm: float = 0.0,
+        rear_third_floor_nmm: float = 0.0,
+        front_heave_perch_target_mm: float | None = None,
+        front_pushrod_mm: float | None = None,
+        rear_pushrod_mm: float | None = None,
+        front_torsion_od_mm: float | None = None,
+        rear_spring_nmm: float | None = None,
+        rear_spring_perch_mm: float | None = None,
+        rear_third_perch_mm: float | None = None,
+        fuel_load_l: float = 0.0,
+        front_camber_deg: float | None = None,
+        front_hs_damper_nsm: float | None = None,
+        rear_hs_damper_nsm: float | None = None,
+        measured: object | None = None,
+        front_heave_current_nmm: float | None = None,
+        rear_third_current_nmm: float | None = None,
+        n_candidates: int = 4,
+    ) -> list[HeaveSolution]:
+        """Generate Pareto frontier of heave/third spring candidates.
+
+        Returns *n_candidates* solutions spanning the trade-off between
+        maximum mechanical grip (softest safe rate) and maximum platform
+        stability (stiffest rate within range). Each solution carries full
+        constraint analysis so downstream steps can evaluate all paths.
+
+        The first candidate is always the same as ``solve()`` (the binding-
+        constraint minimum). Additional candidates add 10 N/mm steps above
+        the minimum (front and rear together), up to the stiffest candidate
+        that still has meaningful grip benefit over the range ceiling.
+
+        Also includes the driver's current rate if it differs from the
+        physics candidates (and is legal).
+        """
+        # Get the baseline solution (physics minimum) via the existing solve()
+        base = self.solve(
+            dynamic_front_rh_mm=dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=dynamic_rear_rh_mm,
+            front_heave_floor_nmm=front_heave_floor_nmm,
+            rear_third_floor_nmm=rear_third_floor_nmm,
+            front_heave_perch_target_mm=front_heave_perch_target_mm,
+            front_pushrod_mm=front_pushrod_mm,
+            rear_pushrod_mm=rear_pushrod_mm,
+            front_torsion_od_mm=front_torsion_od_mm,
+            rear_spring_nmm=rear_spring_nmm,
+            rear_spring_perch_mm=rear_spring_perch_mm,
+            rear_third_perch_mm=rear_third_perch_mm,
+            fuel_load_l=fuel_load_l,
+            front_camber_deg=front_camber_deg,
+            front_hs_damper_nsm=front_hs_damper_nsm,
+            rear_hs_damper_nsm=rear_hs_damper_nsm,
+            measured=measured,
+            front_heave_current_nmm=front_heave_current_nmm,
+            rear_third_current_nmm=rear_third_current_nmm,
+        )
+        candidates = [base]
+        seen_rates: set[tuple[float, float]] = {(base.front_heave_nmm, base.rear_third_nmm)}
+
+        # Compute bounds
+        lo_front, hi_front = self._heave_hard_bounds()
+        hsm = self.car.heave_spring
+        lo_rear, hi_rear = hsm.rear_spring_range_nmm
+
+        # Helper: quick-evaluate a (front, rear) pair and build a lightweight
+        # HeaveSolution with constraint analysis (skip the expensive garage
+        # travel-budget path — that's only needed for the final selected candidate).
+        front_damper_coeff = (
+            self.car.damper.front_hs_coefficient_nsm
+            if front_hs_damper_nsm is None
+            else float(front_hs_damper_nsm)
+        )
+        rear_damper_coeff = (
+            self.car.damper.rear_hs_coefficient_nsm
+            if rear_hs_damper_nsm is None
+            else float(rear_hs_damper_nsm)
+        )
+        v_front = (self.track.shock_vel_p99_front_clean_mps
+                   if self.track.shock_vel_p99_front_clean_mps > 0
+                   else self.track.shock_vel_p99_front_mps)
+        v_rear = (self.track.shock_vel_p99_rear_clean_mps
+                  if self.track.shock_vel_p99_rear_clean_mps > 0
+                  else self.track.shock_vel_p99_rear_mps)
+        m_front = hsm.front_m_eff_kg
+        m_rear = hsm.rear_m_eff_kg
+        rear_corner_wrate = self._rear_corner_wheel_rate_nmm(rear_spring_nmm)
+
+        def _quick_solution(k_f: float, k_r: float, label: str) -> HeaveSolution:
+            f_exc = self.excursion(v_front, m_front, k_f, axle="front",
+                                  damper_coeff_nsm=front_damper_coeff)
+            f_sig = self.sigma_from_excursion(f_exc)
+            r_exc = self.excursion(v_rear, m_rear, k_r, axle="rear",
+                                  damper_coeff_nsm=rear_damper_coeff,
+                                  parallel_wheel_rate_nmm=rear_corner_wrate)
+            r_sig = self.sigma_from_excursion(r_exc)
+            return HeaveSolution(
+                front_heave_nmm=k_f,
+                rear_third_nmm=k_r,
+                front_dynamic_rh_mm=round(dynamic_front_rh_mm, 1),
+                front_shock_vel_p99_mps=v_front,
+                front_excursion_at_rate_mm=round(f_exc, 1),
+                front_bottoming_margin_mm=round(dynamic_front_rh_mm - f_exc, 1),
+                front_sigma_at_rate_mm=round(f_sig, 1),
+                front_binding_constraint=label,
+                rear_dynamic_rh_mm=round(dynamic_rear_rh_mm, 1),
+                rear_shock_vel_p99_mps=v_rear,
+                rear_excursion_at_rate_mm=round(r_exc, 1),
+                rear_bottoming_margin_mm=round(dynamic_rear_rh_mm - r_exc, 1),
+                rear_sigma_at_rate_mm=round(r_sig, 1),
+                rear_binding_constraint=label,
+                perch_offset_front_mm=base.perch_offset_front_mm,
+                perch_offset_rear_mm=base.perch_offset_rear_mm,
+            )
+
+        # Generate stiffness steps above the minimum (+10, +20, +30 N/mm)
+        step = 10.0  # iRacing garage increment
+        for i in range(1, n_candidates):
+            kf = base.front_heave_nmm + i * step
+            kr = base.rear_third_nmm + i * step
+            # Clamp to legal range
+            kf = min(kf, hi_front)
+            kr = min(kr, hi_rear)
+            kf = math.ceil(kf / step) * step
+            kr = math.ceil(kr / step) * step
+            key = (kf, kr)
+            if key in seen_rates:
+                continue
+            # Stop if we've hit the ceiling on both
+            if kf >= hi_front and kr >= hi_rear:
+                break
+            seen_rates.add(key)
+            candidates.append(_quick_solution(kf, kr, f"pareto_{i}"))
+
+        # Include driver's current rate as a candidate (if legal and different)
+        if front_heave_current_nmm is not None and rear_third_current_nmm is not None:
+            kf_drv = math.ceil(front_heave_current_nmm / step) * step
+            kr_drv = math.ceil(rear_third_current_nmm / step) * step
+            kf_drv = max(lo_front, min(hi_front, kf_drv))
+            kr_drv = max(lo_rear, min(hi_rear, kr_drv))
+            key = (kf_drv, kr_drv)
+            if key not in seen_rates:
+                drv_sol = _quick_solution(kf_drv, kr_drv, "driver_current")
+                # Only include if safe (no bottoming)
+                if (drv_sol.front_bottoming_margin_mm >= 0.0
+                        and drv_sol.rear_bottoming_margin_mm >= 0.0):
+                    seen_rates.add(key)
+                    candidates.append(drv_sol)
+
+        return candidates
 
     def solution_from_explicit_settings(
         self,

@@ -414,7 +414,8 @@ def generate_report(
     a("")
 
     # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
-    a(print_full_setup_report(
+    try:
+        _setup_report = print_full_setup_report(
         car_name=car.name,
         track_name=f"{track.track_name} — {track.track_config}",
         wing=wing,
@@ -439,10 +440,16 @@ def generate_report(
         hybrid_corner_pct=_hybrid_corner_pct,
         front_diff_preload_nm=_front_diff_preload_nm,
         bias_migration_gain=_bias_migration_gain,
-    ))
+    )
+        a(_setup_report)
+    except (AttributeError, TypeError) as exc:
+        # Some steps are None (blocked by calibration gate). Print partial report.
+        a(f"  [Report truncated — blocked steps: {exc}]")
+        a(f"  Steps 1-3 produced output; steps 4-6 blocked by calibration gate.")
+        a(f"  .sto will use garage defaults for those steps.")
 
     # ── CURRENT vs RECOMMENDED ────────────────────────────────────────
-    if current_setup is not None:
+    if current_setup is not None and step4 is not None and step5 is not None:
         a("")
         a(_hdr("CURRENT vs RECOMMENDED"))
         a(f"  {'Parameter':<22}  {'Current':>8}  {'Recomm':>8}  {'Change':>9}")

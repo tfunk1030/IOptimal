@@ -267,8 +267,12 @@ def _legacy_build_parameter_decisions(
         legality_text = "garage validated" if legality.valid else "garage validation warning"
 
     for spec in _legacy_parameter_spec(car_name):
-        current_value = spec["current"](current_setup, step1, step2, step3, step4, step5, supporting)
-        proposed_value = spec["proposed"](current_setup, step1, step2, step3, step4, step5, supporting)
+        try:
+            current_value = spec["current"](current_setup, step1, step2, step3, step4, step5, supporting)
+            proposed_value = spec["proposed"](current_setup, step1, step2, step3, step4, step5, supporting)
+        except (AttributeError, TypeError):
+            # Step is None (blocked by calibration gate) — skip this parameter
+            continue
         if current_value == proposed_value:
             continue
         signal_names = list(spec["signals"])

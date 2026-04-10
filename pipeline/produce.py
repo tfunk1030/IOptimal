@@ -433,12 +433,22 @@ def produce(
         run_trace.record_calibration()
 
         # Auto-save track profile for future runs (avoids rebuilding each time)
-        _track_slug = track.track_name.lower().replace(" ", "_")
-        _config_slug = (track.track_config or "default").lower().replace(" ", "_")
-        _save_path = Path("data/tracks") / f"{_track_slug}_{_config_slug}.json"
+        from car_model.registry import track_slug as _reg_track_slug
+        _save_slug = _reg_track_slug(track.track_name, track.track_config or "default")
+        _save_path = Path("data/tracks") / f"{_save_slug}.json"
         _save_path.parent.mkdir(parents=True, exist_ok=True)
-        # Only overwrite stubs (<2 KB) or missing files; preserve richer existing profiles
-        if not _save_path.exists() or _save_path.stat().st_size < 2000:
+        # Overwrite when: missing, stub (<2 KB), or new profile has a faster lap
+        _should_save = not _save_path.exists() or _save_path.stat().st_size < 2000
+        if not _should_save and _save_path.exists():
+            try:
+                import json as _json
+                _existing = _json.loads(_save_path.read_text())
+                _existing_lap = _existing.get("best_lap_time_s", float("inf"))
+                if track.best_lap_time_s < _existing_lap:
+                    _should_save = True
+            except Exception:
+                pass
+        if _should_save:
             track.save(_save_path)
             log(f"  Track profile saved: {_save_path}")
 
@@ -767,6 +777,7 @@ def produce(
         camber_confidence=_camber_conf,
         failed_validation_clusters=failed_clusters,
         corners=corners,
+        optimization_mode=getattr(args, "opt_mode", "driver") or "driver",
     )
     base_solve_result = run_base_solve(solve_inputs)
     step1 = base_solve_result.step1
@@ -1846,6 +1857,10 @@ def main():
     parser.add_argument("--scenario-profile", type=str, default=None,
                         choices=["single_lap_safe", "quali", "sprint", "race"],
                         help="Scenario objective and sanity profile to use for legal-manifold search")
+    parser.add_argument("--opt-mode", type=str, default="driver",
+                        choices=["driver", "physics"], dest="opt_mode",
+                        help="Optimization mode: 'driver' (anchor to driver's setup, default) "
+                             "or 'physics' (pure physics-optimal, ignore driver anchors)")
     parser.add_argument("--objective-profile", type=str, default="balanced",
                         choices=["robust", "aggressive", "balanced"],
                         help="Legacy objective alias. 'balanced' maps to the default single-lap-safe scenario.")

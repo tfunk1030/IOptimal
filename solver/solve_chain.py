@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,6 +21,7 @@ from solver.full_setup_optimizer import optimize_if_supported
 from solver.heave_solver import HeaveSolver
 from solver.legality_engine import LegalValidation, validate_solution_legality
 from solver.modifiers import SolverModifiers
+from solver.params_util import solver_steps_to_params
 from solver.predictor import PredictedTelemetry, PredictionConfidence, predict_candidate_telemetry
 from solver.rake_solver import RakeSolver, reconcile_ride_heights
 from solver.setup_fingerprint import CandidateVeto, fingerprint_from_solver_steps, match_failed_cluster
@@ -51,6 +53,7 @@ class SolveChainInputs:
     supporting_measured: Any | None = None
     supporting_diagnosis: Any | None = None
     corners: list[Any] | None = None
+    optimization_mode: str = "driver"  # "driver" or "physics"
 
     def resolved_supporting_driver(self) -> Any:
         return self.supporting_driver if self.supporting_driver is not None else self.driver
@@ -378,6 +381,10 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     # Decode Ferrari indexed controls BEFORE any solver step reads them
     _decode_ferrari_indexed_setup(car, inputs.current_setup)
 
+    # In physics mode, disable all driver anchors — find the physics-optimal
+    # setup regardless of what the driver loaded.
+    _physics_mode = inputs.optimization_mode == "physics"
+
     rake_solver = RakeSolver(car, inputs.surface, track)
     step1 = rake_solver.solve(
         target_balance=inputs.target_balance,
@@ -387,8 +394,8 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     )
 
     heave_solver = HeaveSolver(car, track)
-    _k_current = getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None
-    _k_rear_current = getattr(inputs.current_setup, "rear_third_nmm", None) if inputs.current_setup else None
+    _k_current = None if _physics_mode else (getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None)
+    _k_rear_current = None if _physics_mode else (getattr(inputs.current_setup, "rear_third_nmm", None) if inputs.current_setup else None)
     step2 = heave_solver.solve(
         dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
         dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
@@ -402,10 +409,11 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         measured=inputs.measured,
         front_heave_current_nmm=_k_current,
         rear_third_current_nmm=_k_rear_current,
+        prediction_corrections=inputs.prediction_corrections or None,
     )
 
     corner_solver = CornerSpringSolver(car, track)
-    _curr_rear_coil = (
+    _curr_rear_coil = None if _physics_mode else (
         getattr(inputs.current_setup, "rear_spring_nmm", None)
         if inputs.current_setup else None
     )
@@ -413,7 +421,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         front_heave_nmm=step2.front_heave_nmm,
         rear_third_nmm=step2.rear_third_nmm,
         fuel_load_l=fuel,
-        current_rear_third_nmm=_k_rear_current,
+        current_rear_third_nmm=None if _physics_mode else _k_rear_current,
         current_rear_spring_nmm=_curr_rear_coil,
     )
     rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
@@ -446,10 +454,10 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     damper_solver = DamperSolver(car, track)
 
     arb_solver = ARBSolver(car, track)
-    _current_rear_arb = getattr(inputs.current_setup, "rear_arb_size", None) if inputs.current_setup else None
-    _current_rear_arb_blade = getattr(inputs.current_setup, "rear_arb_blade", None) if inputs.current_setup else None
-    _current_front_arb = getattr(inputs.current_setup, "front_arb_size", None) if inputs.current_setup else None
-    _current_front_arb_blade = getattr(inputs.current_setup, "front_arb_blade", None) if inputs.current_setup else None
+    _current_rear_arb = None if _physics_mode else (getattr(inputs.current_setup, "rear_arb_size", None) if inputs.current_setup else None)
+    _current_rear_arb_blade = None if _physics_mode else (getattr(inputs.current_setup, "rear_arb_blade", None) if inputs.current_setup else None)
+    _current_front_arb = None if _physics_mode else (getattr(inputs.current_setup, "front_arb_size", None) if inputs.current_setup else None)
+    _current_front_arb_blade = None if _physics_mode else (getattr(inputs.current_setup, "front_arb_blade", None) if inputs.current_setup else None)
     step4 = arb_solver.solve(
         front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
         rear_wheel_rate_nmm=rear_wheel_rate_nmm,
@@ -505,6 +513,439 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     return step1, step2, step3, step4, step5, step6, rear_wheel_rate_nmm
 
 
+def _run_branching_solver(
+    inputs: SolveChainInputs,
+    max_heave: int = 4,
+    max_corner: int = 5,
+    max_arb: int = 3,
+) -> tuple[Any, Any, Any, Any, Any, Any, float]:
+    """Multi-candidate branching solver.
+
+    Instead of the sequential solver's single-answer-per-step approach, this
+    generates candidate sets at Steps 2, 3, and 4, evaluates the cross-product
+    of top candidates through Steps 5-6, and picks the best path based on a
+    lightweight physics composite score.
+
+    The branching is bounded: max_heave × max_corner × max_arb paths are
+    evaluated (default 4×5×3 = 60 paths). Steps 5 and 6 are fast (pure
+    calculation), so the total time is ~2-10s depending on car complexity.
+
+    Falls back to ``_run_sequential_solver`` if any step fails.
+    """
+    mods = _default_modifiers(inputs.modifiers)
+    car = inputs.car
+    track = inputs.track
+    measured = inputs.measured
+    fuel = inputs.fuel_load_l
+
+    _decode_ferrari_indexed_setup(car, inputs.current_setup)
+
+    # Build objective function for scoring branching paths.
+    # Uses evaluate_physics() + _estimate_lap_gain() instead of the old
+    # lightweight heuristic (which rewarded softer springs -- wrong for GTP).
+    from solver.objective import ObjectiveFunction
+    from solver.constraints import constraints_from_diagnosis
+    try:
+        _branching_obj = ObjectiveFunction(
+            car, track, explore=False,
+            scenario_profile=inputs.scenario_profile,
+        )
+    except Exception:
+        _branching_obj = None
+
+    # Build telemetry-derived constraints from diagnosis (if available).
+    _telemetry_constraints = constraints_from_diagnosis(
+        getattr(inputs, "diagnosis", None),
+        getattr(inputs, "measured", None),
+    )
+
+    # ── Step 1: Rake (single answer — Brent root-find, no branching) ──
+    rake_solver = RakeSolver(car, inputs.surface, track)
+    step1 = rake_solver.solve(
+        target_balance=inputs.target_balance,
+        balance_tolerance=inputs.balance_tolerance,
+        fuel_load_l=fuel,
+        pin_front_min=inputs.pin_front_min,
+    )
+
+    # ── Step 2: Heave candidates ──
+    _physics_mode = inputs.optimization_mode == "physics"
+    heave_solver = HeaveSolver(car, track)
+    _k_current = None if _physics_mode else (getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None)
+    _k_rear_current = None if _physics_mode else (getattr(inputs.current_setup, "rear_third_nmm", None) if inputs.current_setup else None)
+    heave_candidates = heave_solver.solve_candidates(
+        dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+        dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+        front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
+        rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+        front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
+        front_pushrod_mm=step1.front_pushrod_offset_mm,
+        rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+        fuel_load_l=fuel,
+        front_camber_deg=_front_camber(inputs),
+        measured=inputs.measured,
+        front_heave_current_nmm=_k_current,
+        rear_third_current_nmm=_k_rear_current,
+        n_candidates=max_heave,
+    )
+
+    corner_solver = CornerSpringSolver(car, track)
+    _curr_rear_coil = None if _physics_mode else (
+        getattr(inputs.current_setup, "rear_spring_nmm", None)
+        if inputs.current_setup else None
+    )
+    geom_solver = WheelGeometrySolver(car, track)
+    damper_solver = DamperSolver(car, track)
+    arb_solver_inst = ARBSolver(car, track)
+
+    _current_rear_arb = None if _physics_mode else (getattr(inputs.current_setup, "rear_arb_size", None) if inputs.current_setup else None)
+    _current_rear_arb_blade = None if _physics_mode else (getattr(inputs.current_setup, "rear_arb_blade", None) if inputs.current_setup else None)
+    _current_front_arb = None if _physics_mode else (getattr(inputs.current_setup, "front_arb_size", None) if inputs.current_setup else None)
+    _current_front_arb_blade = None if _physics_mode else (getattr(inputs.current_setup, "front_arb_blade", None) if inputs.current_setup else None)
+
+    # ── Evaluate paths ──
+    best_score = float("-inf")
+    best_path = None
+
+    for s2 in heave_candidates:
+        # Step 3: corner spring candidates for this heave setting
+        corner_candidates = corner_solver.solve_candidates(
+            front_heave_nmm=s2.front_heave_nmm,
+            rear_third_nmm=s2.rear_third_nmm,
+            fuel_load_l=fuel,
+            current_rear_third_nmm=_k_rear_current,
+            current_rear_spring_nmm=_curr_rear_coil,
+            max_candidates=max_corner,
+        )
+
+        for s3 in corner_candidates:
+            rwr = s3.rear_wheel_rate_nmm
+
+            # Work on copies so reconciliation doesn't mutate originals
+            # across iterations. step1/s2/s3 are mutable dataclasses.
+            s1_copy = copy.copy(step1)
+            s2_copy = copy.copy(s2)
+            s3_copy = copy.copy(s3)
+
+            # Reconcile ride heights with this spring combo
+            heave_solver.reconcile_solution(s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
+                                           front_camber_deg=_front_camber(inputs),
+                                           verbose=False)
+            reconcile_ride_heights(car, s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
+                                  track_name=track.track_name, verbose=False,
+                                  surface=inputs.surface, track=track,
+                                  target_balance=inputs.target_balance)
+
+            # Step 4: ARB candidates for this spring combo
+            arb_candidates = arb_solver_inst.solve_candidates(
+                front_wheel_rate_nmm=s3_copy.front_wheel_rate_nmm,
+                rear_wheel_rate_nmm=rwr,
+                lltd_offset=mods.lltd_offset,
+                current_rear_arb_size=_current_rear_arb,
+                current_rear_arb_blade=_current_rear_arb_blade,
+                current_front_arb_size=_current_front_arb,
+                current_front_arb_blade=_current_front_arb_blade,
+                max_candidates=max_arb,
+            )
+
+            for s4 in arb_candidates:
+                # Step 5: geometry (fast, deterministic)
+                s5 = geom_solver.solve(
+                    k_roll_total_nm_deg=s4.k_roll_front_total + s4.k_roll_rear_total,
+                    front_wheel_rate_nmm=s3_copy.front_wheel_rate_nmm,
+                    rear_wheel_rate_nmm=rwr,
+                    fuel_load_l=fuel,
+                    camber_confidence=inputs.camber_confidence,
+                    measured=inputs.measured,
+                )
+
+                # Second reconciliation (post-geometry, same as sequential solver)
+                reconcile_ride_heights(
+                    car, s1_copy, s2_copy, s3_copy, step5=s5,
+                    fuel_load_l=fuel, track_name=track.track_name,
+                    verbose=False, surface=inputs.surface, track=track,
+                    target_balance=inputs.target_balance,
+                )
+
+                # Step 6: dampers (fast, deterministic)
+                s6 = None
+                try:
+                    s6 = damper_solver.solve(
+                        front_wheel_rate_nmm=s3_copy.front_wheel_rate_nmm,
+                        rear_wheel_rate_nmm=rwr,
+                        front_dynamic_rh_mm=s1_copy.dynamic_front_rh_mm,
+                        rear_dynamic_rh_mm=s1_copy.dynamic_rear_rh_mm,
+                        fuel_load_l=fuel,
+                        damping_ratio_scale=mods.damping_ratio_scale,
+                        measured=measured,
+                        front_heave_nmm=s2_copy.front_heave_nmm,
+                        rear_third_nmm=s2_copy.rear_third_nmm,
+                    )
+                    apply_damper_modifiers(s6, mods, car)
+                except ValueError:
+                    pass
+
+                # ── Score this path ──
+                # Use the full ObjectiveFunction.evaluate_physics() +
+                # _estimate_lap_gain() for scoring.  This replaces the old
+                # lightweight heuristic that rewarded softer springs (wrong
+                # for ground-effect cars where platform stability dominates).
+                if _branching_obj is not None:
+                    try:
+                        _params = solver_steps_to_params(
+                            s1_copy, s2_copy, s3_copy, s4, s5, s6, car=car,
+                        )
+                        _physics = _branching_obj.evaluate_physics(_params)
+                        # Hard veto: negative bottoming or vortex stall margin
+                        if _physics.front_bottoming_margin_mm < 0 or _physics.rear_bottoming_margin_mm < 0:
+                            score = -1e6
+                        elif _physics.stall_margin_mm is not None and _physics.stall_margin_mm < 0:
+                            score = -1e6
+                        else:
+                            # Primary score: lap gain from calibrated physics hierarchy
+                            score = _branching_obj._estimate_lap_gain(_params, _physics)
+                            # Platform risk bonus: more bottoming margin is good (diminishing)
+                            score += math.log1p(max(_physics.front_bottoming_margin_mm, 0)) * 5
+                            score += math.log1p(max(_physics.rear_bottoming_margin_mm, 0)) * 5
+                            # Telemetry-derived constraint penalties
+                            if _telemetry_constraints.constraints:
+                                _c_penalty, _, _c_veto = _telemetry_constraints.evaluate(_physics)
+                                if _c_veto:
+                                    score = -1e6
+                                else:
+                                    score -= _c_penalty
+                    except Exception:
+                        score = float("-inf")
+                else:
+                    # Fallback: minimal safety-only scoring when objective
+                    # cannot be instantiated (e.g. missing aero data).
+                    front_margin = s2_copy.front_bottoming_margin_mm
+                    rear_margin = s2_copy.rear_bottoming_margin_mm
+                    if front_margin < 0 or rear_margin < 0:
+                        score = -1e6
+                    else:
+                        score = (
+                            math.log1p(max(front_margin, 0)) * 10
+                            + math.log1p(max(rear_margin, 0)) * 10
+                            - s4.lltd_error * 500
+                        )
+                if score > best_score:
+                    best_score = score
+                    best_path = (s1_copy, s2_copy, s3_copy, s4, s5, s6, rwr)
+
+    if best_path is None:
+        # Fallback to sequential solver
+        return _run_sequential_solver(inputs)
+
+    # Apply iterative coupling refinement to the best path
+    s1, s2, s3, s4, s5, s6, rwr = best_path
+    return _iterative_coupling_refinement(inputs, s1, s2, s3, s4, s5, s6, rwr)
+
+
+def _iterative_coupling_refinement(
+    inputs: SolveChainInputs,
+    step1, step2, step3, step4, step5, step6,
+    rear_wheel_rate_nmm: float,
+    max_iterations: int = 3,
+    df_tol: float = 0.001,
+    lltd_tol: float = 0.002,
+    sigma_tol_mm: float = 0.1,
+) -> tuple[Any, Any, Any, Any, Any, Any, float]:
+    """Objective-driven iterative coupling resolution.
+
+    After the initial solver pass, re-optimizes each step against the full
+    objective while resolving inter-step coupling residuals:
+
+    - **DF balance drift**: Step 1 ↔ Steps 2-3 spring compliance coupling.
+    - **LLTD drift**: Step 3 wheel rates → Step 4 roll stiffness.
+    - **Step 4 re-optimization**: Enumerate all ARB blade options and pick
+      the one that maximizes the objective (not just closest to LLTD target).
+
+    Uses ``ObjectiveFunction.evaluate_physics()`` + ``_estimate_lap_gain()``
+    to score each iteration.  Stops when score stops improving or residuals
+    converge.  Max 3 iterations to bound runtime.
+    """
+    mods = _default_modifiers(inputs.modifiers)
+    car = inputs.car
+    track = inputs.track
+    fuel = inputs.fuel_load_l
+
+    # Build objective for scoring iterations.
+    from solver.objective import ObjectiveFunction
+    try:
+        _refine_obj = ObjectiveFunction(
+            car, track, explore=False,
+            scenario_profile=inputs.scenario_profile,
+        )
+    except Exception:
+        _refine_obj = None
+
+    def _score_current() -> float:
+        """Score the current step1-6 combination using the full objective."""
+        if _refine_obj is None:
+            return 0.0
+        try:
+            _p = solver_steps_to_params(step1, step2, step3, step4, step5, step6, car=car)
+            _phys = _refine_obj.evaluate_physics(_p)
+            return _refine_obj._estimate_lap_gain(_p, _phys)
+        except Exception:
+            return 0.0
+
+    prev_score = _score_current()
+
+    for iteration in range(max_iterations):
+        # ── Check DF balance residual ──
+        aero_surface = inputs.surface
+        if aero_surface is not None and hasattr(aero_surface, "df_balance"):
+            try:
+                actual_balance = aero_surface.df_balance(
+                    step1.dynamic_front_rh_mm,
+                    step1.dynamic_rear_rh_mm,
+                    inputs.wing_angle,
+                )
+                df_residual = abs(actual_balance - inputs.target_balance)
+            except Exception:
+                df_residual = 0.0
+        else:
+            df_residual = 0.0
+
+        # ── Check LLTD residual ──
+        if step4 is not None:
+            lltd_residual = abs(step4.lltd_error)
+        else:
+            lltd_residual = 0.0
+
+        # ── Check convergence ──
+        converged = (df_residual <= df_tol and lltd_residual <= lltd_tol)
+        if converged:
+            break
+
+        # ── Re-solve Step 1 if DF balance drifted ──
+        if df_residual > df_tol and aero_surface is not None:
+            rake_solver = RakeSolver(car, inputs.surface, track)
+            try:
+                actual_balance = aero_surface.df_balance(
+                    step1.dynamic_front_rh_mm,
+                    step1.dynamic_rear_rh_mm,
+                    inputs.wing_angle,
+                )
+                correction = inputs.target_balance - actual_balance
+                corrected_target = inputs.target_balance + correction
+                new_step1 = rake_solver.solve(
+                    target_balance=corrected_target,
+                    balance_tolerance=inputs.balance_tolerance,
+                    fuel_load_l=fuel,
+                    pin_front_min=inputs.pin_front_min,
+                )
+                step1 = new_step1
+            except Exception:
+                pass
+
+        # ── Re-solve Step 4 (ARBs) with objective-driven blade selection ──
+        # Instead of just re-solving for LLTD target, enumerate blade options
+        # and pick the one that maximizes the objective score.
+        if step3 is not None and step4 is not None:
+            _physics_mode = inputs.optimization_mode == "physics"
+            _current_rear_arb = None if _physics_mode else (
+                getattr(inputs.current_setup, "rear_arb_size", None) if inputs.current_setup else None
+            )
+            _current_rear_arb_blade = None if _physics_mode else (
+                getattr(inputs.current_setup, "rear_arb_blade", None) if inputs.current_setup else None
+            )
+            arb_solver = ARBSolver(car, track)
+            try:
+                # Try multi-candidate ARB solve if available, else single solve.
+                if hasattr(arb_solver, "solve_candidates"):
+                    arb_candidates = arb_solver.solve_candidates(
+                        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+                        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+                        lltd_offset=mods.lltd_offset,
+                        current_rear_arb_size=_current_rear_arb,
+                        current_rear_arb_blade=_current_rear_arb_blade,
+                        max_candidates=5,
+                    )
+                    # Score each ARB candidate via the objective.
+                    best_arb_score = float("-inf")
+                    best_arb = step4
+                    for arb_cand in arb_candidates:
+                        if _refine_obj is not None:
+                            try:
+                                _p = solver_steps_to_params(
+                                    step1, step2, step3, arb_cand, step5, step6, car=car,
+                                )
+                                _phys = _refine_obj.evaluate_physics(_p)
+                                _s = _refine_obj._estimate_lap_gain(_p, _phys)
+                            except Exception:
+                                _s = float("-inf")
+                        else:
+                            _s = -abs(arb_cand.lltd_error) * 500
+                        if _s > best_arb_score:
+                            best_arb_score = _s
+                            best_arb = arb_cand
+                    step4 = best_arb
+                else:
+                    new_step4 = arb_solver.solve(
+                        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+                        rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+                        lltd_offset=mods.lltd_offset,
+                        current_rear_arb_size=_current_rear_arb,
+                        current_rear_arb_blade=_current_rear_arb_blade,
+                    )
+                    step4 = new_step4
+            except Exception:
+                pass
+
+        # Re-run Steps 5-6 with updated inputs
+        if step4 is not None:
+            geom_solver = WheelGeometrySolver(car, track)
+            try:
+                step5 = geom_solver.solve(
+                    k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
+                    front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+                    rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+                    fuel_load_l=fuel,
+                    camber_confidence=inputs.camber_confidence,
+                    measured=inputs.measured,
+                )
+            except Exception:
+                pass
+
+        if step3 is not None:
+            reconcile_ride_heights(
+                car, step1, step2, step3, step5=step5,
+                fuel_load_l=fuel, track_name=track.track_name,
+                verbose=False, surface=inputs.surface, track=track,
+                target_balance=inputs.target_balance,
+            )
+
+        if step6 is not None:
+            damper_solver = DamperSolver(car, track)
+            try:
+                step6 = damper_solver.solve(
+                    front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+                    rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+                    front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+                    rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+                    fuel_load_l=fuel,
+                    damping_ratio_scale=mods.damping_ratio_scale,
+                    measured=inputs.measured,
+                    front_heave_nmm=step2.front_heave_nmm,
+                    rear_third_nmm=step2.rear_third_nmm,
+                )
+                apply_damper_modifiers(step6, mods, car)
+            except Exception:
+                pass
+
+        # ── Check score improvement ──
+        # Stop iterating if the objective score hasn't improved.
+        current_score = _score_current()
+        if current_score <= prev_score + 0.01:  # need at least 0.01ms gain
+            break
+        prev_score = current_score
+
+    return step1, step2, step3, step4, step5, step6, rear_wheel_rate_nmm
+
+
 def run_base_solve(inputs: SolveChainInputs) -> SolveChainResult:
     # Decode Ferrari indexed controls early — before optimizer or sequential solver
     _decode_ferrari_indexed_setup(inputs.car, inputs.current_setup)
@@ -541,7 +982,14 @@ def run_base_solve(inputs: SolveChainInputs) -> SolveChainResult:
         apply_damper_modifiers(step6, mods, inputs.car)
         notes.append("Selected constrained optimizer candidate.")
     else:
-        step1, step2, step3, step4, step5, step6, _rear_wheel_rate = _run_sequential_solver(inputs)
+        # Try branching solver first (evaluates multi-candidate paths),
+        # fall back to sequential if branching raises or returns None.
+        try:
+            step1, step2, step3, step4, step5, step6, _rear_wheel_rate = _run_branching_solver(inputs)
+            _used_branching = True
+        except Exception:
+            step1, step2, step3, step4, step5, step6, _rear_wheel_rate = _run_sequential_solver(inputs)
+            _used_branching = False
         sequential_veto = _candidate_veto_for_solution(
             inputs=inputs,
             step1=step1,
@@ -552,8 +1000,9 @@ def run_base_solve(inputs: SolveChainInputs) -> SolveChainResult:
             step6=step6,
         )
         if sequential_veto is None:
+            _solver_label = "branching" if _used_branching else "sequential"
             notes.append(
-                "Selected sequential fallback." if optimized is not None else "Selected sequential solver path."
+                f"Selected {_solver_label} fallback." if optimized is not None else f"Selected {_solver_label} solver path."
             )
         elif optimized is None:
             candidate_vetoes.append(sequential_veto)

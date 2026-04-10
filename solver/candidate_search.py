@@ -279,48 +279,53 @@ def _adjust_integer(mapping: dict[str, Any], field: str, delta: int, *, lo: int 
 
 
 def _extract_target_maps(base_result: SolveChainResult, car: Any | None = None) -> dict[str, Any]:
+    # Guard against None steps (blocked by calibration gate)
+    s1, s2, s3, s4, s5, s6 = (
+        base_result.step1, base_result.step2, base_result.step3,
+        base_result.step4, base_result.step5, base_result.step6,
+    )
     return {
         "step1": {
-            "front_pushrod_offset_mm": base_result.step1.front_pushrod_offset_mm,
-            "rear_pushrod_offset_mm": base_result.step1.rear_pushrod_offset_mm,
-            "static_front_rh_mm": base_result.step1.static_front_rh_mm,
-            "static_rear_rh_mm": base_result.step1.static_rear_rh_mm,
-        },
+            "front_pushrod_offset_mm": s1.front_pushrod_offset_mm,
+            "rear_pushrod_offset_mm": s1.rear_pushrod_offset_mm,
+            "static_front_rh_mm": s1.static_front_rh_mm,
+            "static_rear_rh_mm": s1.static_rear_rh_mm,
+        } if s1 is not None else {},
         "step2": {
-            "front_heave_nmm": public_output_value(car, "front_heave_nmm", base_result.step2.front_heave_nmm),
-            "rear_third_nmm": public_output_value(car, "rear_third_nmm", base_result.step2.rear_third_nmm),
-            "perch_offset_front_mm": base_result.step2.perch_offset_front_mm,
-            "perch_offset_rear_mm": base_result.step2.perch_offset_rear_mm,
-        },
+            "front_heave_nmm": public_output_value(car, "front_heave_nmm", s2.front_heave_nmm),
+            "rear_third_nmm": public_output_value(car, "rear_third_nmm", s2.rear_third_nmm),
+            "perch_offset_front_mm": s2.perch_offset_front_mm,
+            "perch_offset_rear_mm": s2.perch_offset_rear_mm,
+        } if s2 is not None else {},
         "step3": {
-            "front_torsion_od_mm": public_output_value(car, "front_torsion_od_mm", base_result.step3.front_torsion_od_mm),
-            "rear_spring_rate_nmm": public_output_value(car, "rear_spring_rate_nmm", base_result.step3.rear_spring_rate_nmm),
+            "front_torsion_od_mm": public_output_value(car, "front_torsion_od_mm", s3.front_torsion_od_mm),
+            "rear_spring_rate_nmm": public_output_value(car, "rear_spring_rate_nmm", s3.rear_spring_rate_nmm),
             "rear_spring_perch_mm": (
-                0.0 if getattr(car, "canonical_name", "") == "ferrari" else base_result.step3.rear_spring_perch_mm
+                0.0 if getattr(car, "canonical_name", "") == "ferrari" else s3.rear_spring_perch_mm
             ),
-        },
+        } if s3 is not None else {},
         "step4": {
-            "front_arb_size": base_result.step4.front_arb_size,
-            "front_arb_blade_start": base_result.step4.front_arb_blade_start,
-            "rear_arb_size": base_result.step4.rear_arb_size,
-            "rear_arb_blade_start": base_result.step4.rear_arb_blade_start,
-            "rarb_blade_slow_corner": base_result.step4.rarb_blade_slow_corner,
-            "rarb_blade_fast_corner": base_result.step4.rarb_blade_fast_corner,
-            "farb_blade_locked": base_result.step4.farb_blade_locked,
-        },
+            "front_arb_size": s4.front_arb_size,
+            "front_arb_blade_start": s4.front_arb_blade_start,
+            "rear_arb_size": s4.rear_arb_size,
+            "rear_arb_blade_start": s4.rear_arb_blade_start,
+            "rarb_blade_slow_corner": s4.rarb_blade_slow_corner,
+            "rarb_blade_fast_corner": s4.rarb_blade_fast_corner,
+            "farb_blade_locked": s4.farb_blade_locked,
+        } if s4 is not None else {},
         "step5": {
-            "front_camber_deg": base_result.step5.front_camber_deg,
-            "rear_camber_deg": base_result.step5.rear_camber_deg,
-            "front_toe_mm": base_result.step5.front_toe_mm,
-            "rear_toe_mm": base_result.step5.rear_toe_mm,
-        },
-        "step6": {
+            "front_camber_deg": s5.front_camber_deg,
+            "rear_camber_deg": s5.rear_camber_deg,
+            "front_toe_mm": s5.front_toe_mm,
+            "rear_toe_mm": s5.rear_toe_mm,
+        } if s5 is not None else {},
+        "step6": ({
             corner_name: {
-                field: getattr(getattr(base_result.step6, corner_name), field)
+                field: getattr(getattr(s6, corner_name), field)
                 for field in STEP6_FIELDS
             }
             for corner_name in ("lf", "rf", "lr", "rr")
-        },
+        } if s6 is not None else {}),
         "supporting": {
             "brake_bias_pct": base_result.supporting.brake_bias_pct,
             "brake_bias_target": getattr(base_result.supporting, "brake_bias_target", 0.0),
@@ -340,10 +345,10 @@ def _extract_target_maps(base_result: SolveChainResult, car: Any | None = None) 
             "gear_stack": getattr(base_result.supporting, "gear_stack", ""),
             "roof_light_color": getattr(base_result.supporting, "roof_light_color", ""),
         },
-        "step4_arb_size": {
-            "front_arb_size": base_result.step4.front_arb_size,
-            "rear_arb_size": base_result.step4.rear_arb_size,
-        },
+        "step4_arb_size": ({
+            "front_arb_size": s4.front_arb_size,
+            "rear_arb_size": s4.rear_arb_size,
+        } if s4 is not None else {}),
     }
 
 
@@ -682,12 +687,15 @@ def _apply_family_state_adjustments(
     _adjust_numeric(targets["step5"], "rear_camber_deg", -0.08 * exit_instability * family_intensity, decimals=3)
     _adjust_numeric(targets["step5"], "front_toe_mm", -0.05 * entry_push * family_intensity, decimals=3)
 
-    for corner_name in ("lf", "rf"):
-        _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * front_support * family_intensity)), lo=0, hi=20)
-        _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round((front_support + front_lock) * family_intensity)), lo=0, hi=20)
-    for corner_name in ("lr", "rr"):
-        _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * rear_support * family_intensity)), lo=0, hi=20)
-        _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round(rear_support * family_intensity)), lo=0, hi=20)
+    if targets.get("step6"):
+        for corner_name in ("lf", "rf"):
+            if corner_name in targets["step6"]:
+                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * front_support * family_intensity)), lo=0, hi=20)
+                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round((front_support + front_lock) * family_intensity)), lo=0, hi=20)
+        for corner_name in ("lr", "rr"):
+            if corner_name in targets["step6"]:
+                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * rear_support * family_intensity)), lo=0, hi=20)
+                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round(rear_support * family_intensity)), lo=0, hi=20)
 
     _adjust_numeric(targets["supporting"], "brake_bias_pct", -0.3 * front_lock * family_intensity, decimals=3)
     _adjust_numeric(targets["supporting"], "brake_bias_target", -0.5 * front_lock * family_intensity, decimals=3)
@@ -760,28 +768,34 @@ def _target_overrides(base_result: SolveChainResult, targets: dict[str, Any], *,
         base_value = public_output_value(car, field_name, getattr(base_result.step3, field_name))
         if base_value != value:
             overrides.step3[field_name] = value
-    for field_name, value in targets["step4"].items():
-        if getattr(base_result.step4, field_name) != value:
-            overrides.step4[field_name] = value
-    for field_name, value in targets["step5"].items():
-        if getattr(base_result.step5, field_name) != value:
-            overrides.step5[field_name] = value
-    for corner_name, fields in targets["step6"].items():
-        corner_overrides: dict[str, Any] = {}
-        base_corner = getattr(base_result.step6, corner_name)
-        for field_name, value in fields.items():
-            if getattr(base_corner, field_name) != value:
-                corner_overrides[field_name] = value
-        if corner_overrides:
-            overrides.step6[corner_name] = corner_overrides
+    if base_result.step4 is not None:
+        for field_name, value in targets["step4"].items():
+            if getattr(base_result.step4, field_name) != value:
+                overrides.step4[field_name] = value
+    if base_result.step5 is not None:
+        for field_name, value in targets["step5"].items():
+            if getattr(base_result.step5, field_name) != value:
+                overrides.step5[field_name] = value
+    if base_result.step6 is not None:
+        for corner_name, fields in targets["step6"].items():
+            corner_overrides: dict[str, Any] = {}
+            base_corner = getattr(base_result.step6, corner_name, None)
+            if base_corner is None:
+                continue
+            for field_name, value in fields.items():
+                if getattr(base_corner, field_name) != value:
+                    corner_overrides[field_name] = value
+            if corner_overrides:
+                overrides.step6[corner_name] = corner_overrides
     for field_name, value in targets["supporting"].items():
         if hasattr(base_result.supporting, field_name):
             if getattr(base_result.supporting, field_name) != value:
                 overrides.supporting[field_name] = value
-    # ARB size changes go into step4 overrides
-    for field_name, value in targets.get("step4_arb_size", {}).items():
-        if getattr(base_result.step4, field_name, None) != value:
-            overrides.step4[field_name] = value
+    # ARB size changes go into step4 overrides (only if step4 is present)
+    if base_result.step4 is not None:
+        for field_name, value in targets.get("step4_arb_size", {}).items():
+            if getattr(base_result.step4, field_name, None) != value:
+                overrides.step4[field_name] = value
     return overrides
 
 

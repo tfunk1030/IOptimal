@@ -358,8 +358,9 @@ class GarageModelBuilder:
 
     @staticmethod
     def _model_path(car: str, track: str) -> Path:
-        track_slug = re.sub(r"[^a-z0-9]+", "_", track.lower()).strip("_")
-        return _MODELS_DIR / car.lower() / f"{track_slug}.json"
+        from car_model.registry import track_slug
+        slug = track_slug(track)
+        return _MODELS_DIR / car.lower() / f"{slug}.json"
 
     @classmethod
     def load(cls, car: str, track: str) -> GarageModel:

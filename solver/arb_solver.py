@@ -528,6 +528,103 @@ class ARBSolver:
             parameter_search_status=pss,
         )
 
+    def solve_candidates(
+        self,
+        front_wheel_rate_nmm: float,
+        rear_wheel_rate_nmm: float,
+        lltd_offset: float = 0.0,
+        current_rear_arb_size: str | None = None,
+        current_rear_arb_blade: int | None = None,
+        current_front_arb_size: str | None = None,
+        current_front_arb_blade: int | None = None,
+        lltd_tolerance: float = 0.005,
+        max_candidates: int = 10,
+    ) -> list[ARBSolution]:
+        """Return all ARB combos achieving LLTD within *lltd_tolerance*.
+
+        Unlike ``solve()`` which picks the single closest combo, this method
+        enumerates every legal (rear_size, rear_blade) combination (front ARB
+        is locked at baseline) and returns all that land within ±lltd_tolerance
+        of the physics target. The combos are sorted by |LLTD_error| ascending.
+
+        The first element is always the ``solve()`` result.
+
+        Returns:
+            List of :class:`ARBSolution` objects, closest-LLTD first.
+        """
+        # Always include the standard single-answer solve as first candidate
+        base = self.solve(
+            front_wheel_rate_nmm=front_wheel_rate_nmm,
+            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+            lltd_offset=lltd_offset,
+            current_rear_arb_size=current_rear_arb_size,
+            current_rear_arb_blade=current_rear_arb_blade,
+            current_front_arb_size=current_front_arb_size,
+            current_front_arb_blade=current_front_arb_blade,
+        )
+
+        arb = self.car.arb
+        csm = self.car.corner_spring
+
+        # Compute spring roll stiffness (same as solve())
+        k_springs_rear = self._corner_spring_roll_stiffness(
+            rear_wheel_rate_nmm, arb.track_width_rear_mm,
+        )
+        if getattr(csm, "front_is_roll_spring", False):
+            ir = csm.front_roll_spring_installation_ratio
+            k_wheel_nm = front_wheel_rate_nmm * 1000.0
+            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
+            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
+        else:
+            k_springs_front = self._corner_spring_roll_stiffness(
+                front_wheel_rate_nmm, arb.track_width_front_mm,
+            )
+
+        target_lltd = base.lltd_target
+        farb_size = arb.front_baseline_size
+        farb_blade = arb.front_baseline_blade
+
+        # Enumerate all rear size/blade combos within tolerance
+        scored: list[tuple[float, str, int]] = []
+        for rear_size in arb.rear_size_labels:
+            if rear_size.lower() == "disconnected":
+                continue
+            for blade in range(1, arb.rear_blade_count + 1):
+                lltd, _, _, _, _ = self._compute_lltd(
+                    farb_size, farb_blade, rear_size, blade,
+                    k_springs_front, k_springs_rear,
+                )
+                err = abs(lltd - target_lltd)
+                if err <= lltd_tolerance:
+                    scored.append((err, rear_size, blade))
+
+        scored.sort(key=lambda x: x[0])
+
+        # Build solutions
+        base_key = (base.rear_arb_size, base.rear_arb_blade_start)
+        results = [base]
+        seen: set[tuple[str, int]] = {base_key}
+
+        for err, r_size, r_blade in scored:
+            if len(results) >= max_candidates:
+                break
+            key = (r_size, r_blade)
+            if key in seen:
+                continue
+            seen.add(key)
+            sol = self.solution_from_explicit_settings(
+                front_wheel_rate_nmm=front_wheel_rate_nmm,
+                rear_wheel_rate_nmm=rear_wheel_rate_nmm,
+                front_arb_size=farb_size,
+                front_arb_blade_start=farb_blade,
+                rear_arb_size=r_size,
+                rear_arb_blade_start=r_blade,
+                lltd_offset=lltd_offset,
+            )
+            results.append(sol)
+
+        return results
+
     def solution_from_explicit_settings(
         self,
         *,

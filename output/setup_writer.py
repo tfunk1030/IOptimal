@@ -558,18 +558,22 @@ def _validate_setup_values(
     _clamp_field(step3, "rear_spring_perch_mm", *gr.rear_spring_perch_mm, "rear_spring_perch", "mm")
 
     # ARB blades
-    _clamp_int_field(step4, "front_arb_blade_start", *gr.arb_blade, "front_arb_blade")
-    _clamp_int_field(step4, "rear_arb_blade_start", *gr.arb_blade, "rear_arb_blade")
+    if step4 is not None:
+        _clamp_int_field(step4, "front_arb_blade_start", *gr.arb_blade, "front_arb_blade")
+        _clamp_int_field(step4, "rear_arb_blade_start", *gr.arb_blade, "rear_arb_blade")
 
     # Wheel geometry
-    _clamp_field(step5, "front_camber_deg", *gr.camber_front_deg, "front_camber", " deg")
-    _clamp_field(step5, "rear_camber_deg", *gr.camber_rear_deg, "rear_camber", " deg")
-    _clamp_field(step5, "front_toe_mm", *gr.toe_front_mm, "front_toe", "mm")
-    _clamp_field(step5, "rear_toe_mm", *gr.toe_rear_mm, "rear_toe", "mm")
+    if step5 is not None:
+        _clamp_field(step5, "front_camber_deg", *gr.camber_front_deg, "front_camber", " deg")
+        _clamp_field(step5, "rear_camber_deg", *gr.camber_rear_deg, "rear_camber", " deg")
+        _clamp_field(step5, "front_toe_mm", *gr.toe_front_mm, "front_toe", "mm")
+        _clamp_field(step5, "rear_toe_mm", *gr.toe_rear_mm, "rear_toe", "mm")
 
     # Damper clicks — use per-parameter ranges from DamperModel when available
     # (Ferrari has 0-40 comp/rbd but 0-11 slope; BMW is 0-11 all)
     d = car.damper if car is not None else None
+    if step6 is None:
+        return warnings
     for corner_name, corner in [
         ("lf", step6.lf), ("rf", step6.rf), ("lr", step6.lr), ("rr", step6.rr)
     ]:
@@ -1023,55 +1027,58 @@ def write_sto(
         _w_num("rr_corner_weight", _rr_cw, "N")
 
     # === ARBs ===
-    _w_str("front_arb_size",   step4.front_arb_size)
-    _w_num("front_arb_blades", step4.front_arb_blade_start, "")
-    _w_str("rear_arb_size",    step4.rear_arb_size)
-    _w_num("rear_arb_blades",  step4.rear_arb_blade_start, "")
+    if step4 is not None:
+        _w_str("front_arb_size",   step4.front_arb_size)
+        _w_num("front_arb_blades", step4.front_arb_blade_start, "")
+        _w_str("rear_arb_size",    step4.rear_arb_size)
+        _w_num("rear_arb_blades",  step4.rear_arb_blade_start, "")
 
     # === Cross weight (computed by iRacing) ===
     if include_computed:
         _w_num("cross_weight", 50, "%")
 
     # === Wheel geometry ===
-    _w_num("lf_camber",  step5.front_camber_deg, "deg")
-    _w_num("rf_camber",  step5.front_camber_deg, "deg")
-    _w_num("lr_camber",  step5.rear_camber_deg,  "deg")
-    _w_num("rr_camber",  step5.rear_camber_deg,  "deg")
-    _w_num("front_toe",  step5.front_toe_mm,     "mm")
-    if is_acura:
-        _w_num("rear_toe", step5.rear_toe_mm, "mm")
-    else:
-        _w_num("lr_toe",     step5.rear_toe_mm,      "mm")
-        _w_num("rr_toe",     step5.rear_toe_mm,      "mm")
+    if step5 is not None:
+        _w_num("lf_camber",  step5.front_camber_deg, "deg")
+        _w_num("rf_camber",  step5.front_camber_deg, "deg")
+        _w_num("lr_camber",  step5.rear_camber_deg,  "deg")
+        _w_num("rr_camber",  step5.rear_camber_deg,  "deg")
+        _w_num("front_toe",  step5.front_toe_mm,     "mm")
+        if is_acura:
+            _w_num("rear_toe", step5.rear_toe_mm, "mm")
+        else:
+            _w_num("lr_toe",     step5.rear_toe_mm,      "mm")
+            _w_num("rr_toe",     step5.rear_toe_mm,      "mm")
 
     # === Dampers ===
-    _w_num("lf_ls_comp",  step6.lf.ls_comp,  "clicks")
-    _w_num("lf_ls_rbd",   step6.lf.ls_rbd,   "clicks")
-    _w_num("lf_hs_comp",  step6.lf.hs_comp,  "clicks")
-    _w_num("lf_hs_rbd",   step6.lf.hs_rbd,   "clicks")
-    _w_num("lf_hs_slope", step6.lf.hs_slope, "clicks")
-    _w_num("rf_ls_comp",  step6.rf.ls_comp,  "clicks")
-    _w_num("rf_ls_rbd",   step6.rf.ls_rbd,   "clicks")
-    _w_num("rf_hs_comp",  step6.rf.hs_comp,  "clicks")
-    _w_num("rf_hs_rbd",   step6.rf.hs_rbd,   "clicks")
-    _w_num("rf_hs_slope", step6.rf.hs_slope, "clicks")
-    _w_num("lr_ls_comp",  step6.lr.ls_comp,  "clicks")
-    _w_num("lr_ls_rbd",   step6.lr.ls_rbd,   "clicks")
-    _w_num("lr_hs_comp",  step6.lr.hs_comp,  "clicks")
-    _w_num("lr_hs_rbd",   step6.lr.hs_rbd,   "clicks")
-    _w_num("lr_hs_slope", step6.lr.hs_slope, "clicks")
-    _w_num("rr_ls_comp",  step6.rr.ls_comp,  "clicks")
-    _w_num("rr_ls_rbd",   step6.rr.ls_rbd,   "clicks")
-    _w_num("rr_hs_comp",  step6.rr.hs_comp,  "clicks")
-    _w_num("rr_hs_rbd",   step6.rr.hs_rbd,   "clicks")
-    _w_num("rr_hs_slope", step6.rr.hs_slope, "clicks")
+    if step6 is not None:
+        _w_num("lf_ls_comp",  step6.lf.ls_comp,  "clicks")
+        _w_num("lf_ls_rbd",   step6.lf.ls_rbd,   "clicks")
+        _w_num("lf_hs_comp",  step6.lf.hs_comp,  "clicks")
+        _w_num("lf_hs_rbd",   step6.lf.hs_rbd,   "clicks")
+        _w_num("lf_hs_slope", step6.lf.hs_slope, "clicks")
+        _w_num("rf_ls_comp",  step6.rf.ls_comp,  "clicks")
+        _w_num("rf_ls_rbd",   step6.rf.ls_rbd,   "clicks")
+        _w_num("rf_hs_comp",  step6.rf.hs_comp,  "clicks")
+        _w_num("rf_hs_rbd",   step6.rf.hs_rbd,   "clicks")
+        _w_num("rf_hs_slope", step6.rf.hs_slope, "clicks")
+        _w_num("lr_ls_comp",  step6.lr.ls_comp,  "clicks")
+        _w_num("lr_ls_rbd",   step6.lr.ls_rbd,   "clicks")
+        _w_num("lr_hs_comp",  step6.lr.hs_comp,  "clicks")
+        _w_num("lr_hs_rbd",   step6.lr.hs_rbd,   "clicks")
+        _w_num("lr_hs_slope", step6.lr.hs_slope, "clicks")
+        _w_num("rr_ls_comp",  step6.rr.ls_comp,  "clicks")
+        _w_num("rr_ls_rbd",   step6.rr.ls_rbd,   "clicks")
+        _w_num("rr_hs_comp",  step6.rr.hs_comp,  "clicks")
+        _w_num("rr_hs_rbd",   step6.rr.hs_rbd,   "clicks")
+        _w_num("rr_hs_slope", step6.rr.hs_slope, "clicks")
 
     # === Roll dampers (Porsche / Acura — heave+roll architecture) ===
     # Per-axle gating: Porsche has FRONT roll damper but NO rear roll damper
     # (rear roll motion is implicit in per-corner shocks). Acura ARX-06 has
     # both. Writing CarSetup_Dampers_RearRoll_* for Porsche emits XML IDs
     # that don't exist in iRacing's Porsche garage schema — phantom output.
-    if has_roll_dampers:
+    if has_roll_dampers and step6 is not None:
         _has_front_roll = bool(getattr(getattr(_car, "damper", None), "has_front_roll_damper", False))
         _has_rear_roll = bool(getattr(getattr(_car, "damper", None), "has_rear_roll_damper", False))
         # Backward-compat: if neither per-axle flag is set on a has_roll_dampers car,
@@ -1094,7 +1101,7 @@ def write_sto(
             _w_num("rear_roll_hs",  _roll_hs_r,  "clicks")
 
     # === Rear 3rd damper (Porsche only) ===
-    if is_porsche:
+    if is_porsche and step6 is not None:
         _3rd_ls = getattr(step6, 'rear_3rd_ls_comp', None)
         _3rd_hs = getattr(step6, 'rear_3rd_hs_comp', None)
         _3rd_ls_rbd = getattr(step6, 'rear_3rd_ls_rbd', None)

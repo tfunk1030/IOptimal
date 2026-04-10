@@ -98,17 +98,58 @@ def supported_car_names() -> list[str]:
     return [c.display_name for c in _CAR_REGISTRY]
 
 
-# ─── Track registry ────────────────────────────────────────────────────────
+# ─── Track registry ────��───────────────────────────────────────────────────
+
+# Maps iRacing TrackDisplayName (lowercased) → short canonical base slug.
+# Only needed for deduplication of known problematic names (long names,
+# unicode issues, renamed tracks).  Unknown tracks fall through to the
+# default slug generator: display_name.lower().replace(" ", "_").
+_TRACK_ALIASES: dict[str, str] = {
+    "autodromo internacional do algarve": "algarve",
+    "algarve international circuit": "algarve",
+    "hockenheimring baden-württemberg": "hockenheim",
+    "hockenheimring baden-w\u00fcrttemberg": "hockenheim",  # explicit unicode
+    "sebring international raceway": "sebring",
+    "daytona international speedway": "daytona",
+    "silverstone circuit": "silverstone",
+    "long beach street circuit": "long_beach",
+    "circuit de barcelona-catalunya": "barcelona",
+    "circuit des 24 heures du mans": "le_mans",
+    "nürburgring": "nurburgring",
+    "suzuka international racing course": "suzuka",
+    "circuit de spa-francorchamps": "spa",
+    "indianapolis motor speedway": "indianapolis",
+    "twin ring motegi": "motegi",
+    "road america": "road_america",
+    "watkins glen international": "watkins_glen",
+    "mount panorama circuit": "bathurst",
+    "fuji international speedway": "fuji",
+    "imola": "imola",
+    "autódromo josé carlos pace": "interlagos",
+}
+
 
 def track_slug(display_name: str, config: str = "") -> str:
     """Generate a stable filesystem slug from track display name + config.
 
-    Example::
+    Checks ``_TRACK_ALIASES`` first for known short-name mappings, then
+    falls back to ``display_name.lower().replace(" ", "_")``.
+
+    Examples::
+
+        track_slug("Autodromo Internacional do Algarve", "Grand Prix")
+        # → "algarve_grand_prix"
 
         track_slug("Sebring International Raceway", "International")
-        # → "sebring_international_raceway_international"
+        # → "sebring_international"
+
+        track_slug("Some New Track")
+        # → "some_new_track"
     """
-    base = display_name.lower().replace(" ", "_")
+    key = display_name.lower().strip()
+    base = _TRACK_ALIASES.get(key)
+    if base is None:
+        base = key.replace(" ", "_")
     if config:
         suffix = config.lower().replace(" ", "_")
         return f"{base}_{suffix}"

@@ -2396,6 +2396,11 @@ FERRARI_499P = CarModel(
         front_torsion_c=0.001282,           # CALIBRATED: 6-pt front + 4-pt rear share same C
         front_torsion_od_ref_mm=22.0,       # Midpoint of calibrated front OD range
         front_torsion_od_range_mm=(20.0, 24.0),  # CALIBRATED: 6-pt fit (max err 5.2%)
+        # 19 discrete ODs for indices 0-18, from k^(1/4) = 3.7829 + 0.04201×idx
+        front_torsion_od_options=[
+            19.99, 20.21, 20.44, 20.66, 20.88, 21.10, 21.32, 21.55, 21.77, 21.99,
+            22.21, 22.43, 22.66, 22.88, 23.10, 23.32, 23.54, 23.77, 23.99,
+        ],
         # Rear torsion bar: k_bar(idx) from 4-pt fit, same C=0.001282, OD range 23.1–26.0mm
         # Wheel rate = k_bar × rear_motion_ratio^2 (applied in LLTD and ζ calculations)
         rear_spring_range_nmm=(364.0, 590.0),   # CALIBRATED: bar rates idx 0→18 (4-pt fit)
@@ -2413,6 +2418,11 @@ FERRARI_499P = CarModel(
         # k^(1/4) = 4.3685 + 0.03108×idx → C = 0.001282, OD range 23.1–26.0 mm.
         rear_torsion_c=0.001282,                    # CALIBRATED: same C as front
         rear_torsion_od_range_mm=(23.1, 26.0),      # CALIBRATED: from 4-pt rear fit
+        # 19 discrete ODs for indices 0-18, from k^(1/4) = 4.3685 + 0.03108×idx
+        rear_torsion_od_options=[
+            23.09, 23.25, 23.42, 23.58, 23.74, 23.91, 24.07, 24.24, 24.40, 24.56,
+            24.73, 24.89, 25.06, 25.22, 25.39, 25.55, 25.71, 25.88, 26.04,
+        ],
     ),
     arb=ARBModel(
         # Ferrari uses: Disconnected, A, B, C, D, E (6 sizes)

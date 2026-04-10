@@ -16,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import itertools
 import random
 from dataclasses import dataclass, field
 
@@ -423,6 +424,20 @@ def run_legal_search(
     # Determine search mode
     search_mode = mode if mode is not None else _budget_to_mode(budget)
 
+    # ── Sensitivity-directed path ─────────────────────────────────
+    if search_mode == "directed":
+        return _run_directed_search(
+            car=car,
+            track=track,
+            baseline_params=baseline_params,
+            budget=budget,
+            measured=measured,
+            driver_profile=driver_profile,
+            session_count=session_count,
+            scenario_profile=scenario_profile,
+            seed=seed,
+        )
+
     # ── Grid engine path (exhaustive / maximum) ────────────────────
     if search_mode in ("exhaustive", "maximum"):
         return _run_grid_search(
@@ -503,6 +518,208 @@ def _run_grid_search(
         layer_times=grid_result.layer_times,
         layer_best_scores=grid_result.layer_best_scores,
         locally_optimal=grid_result.layer4_candidates > 0,
+    )
+
+
+def _run_directed_search(
+    car: CarModel,
+    track: TrackProfile | str,
+    baseline_params: dict[str, float],
+    budget: int = 1000,
+    measured=None,
+    driver_profile=None,
+    session_count: int = 0,
+    scenario_profile: str | None = None,
+    seed: int = 42,
+) -> LegalSearchResult:
+    """Sensitivity-directed search: prioritize high-impact dimensions.
+
+    Instead of uniform random sampling, this search:
+    1. Ranks dimensions by estimated lap-time sensitivity
+    2. Searches the top-3 most sensitive discrete dimensions combinatorially
+    3. Applies coordinate descent on remaining dimensions
+    4. Finishes with ±1-step local polish on all dimensions
+
+    Uses the same total budget as the sampling search but allocates it
+    proportionally to parameter sensitivity. Typically finds better solutions
+    than Sobol sampling at the same budget.
+    """
+    track_name = track if isinstance(track, str) else getattr(track, "name", "")
+    track_obj = track if isinstance(track, TrackProfile) else None
+    resolved_scenario = resolve_scenario_name(scenario_profile)
+
+    space = LegalSpace.from_car(car, track_name=track_name)
+    objective = ObjectiveFunction(
+        car,
+        track_obj if track_obj is not None else track_name,
+        scenario_profile=resolved_scenario,
+    )
+    if measured is not None:
+        objective.set_session_context(measured=measured, driver=driver_profile)
+
+    tier_a = space.tier_a()
+    dim_names = [d.name for d in tier_a]
+
+    # ── Step 1: Rank dimensions by estimated sensitivity ──
+    # Use the lap-time sensitivity constants from the objective function's
+    # penalty model. Higher |ms/unit| = more important to search.
+    # These are approximate but good enough to prioritize search order.
+    _SENSITIVITY_MAP = {
+        "front_heave_spring_nmm": 3.5,    # ~35 ms per 10 N/mm
+        "rear_third_spring_nmm": 2.5,     # ~25 ms per 10 N/mm
+        "front_torsion_od_mm": 2.0,       # ~15-40 ms per OD step
+        "rear_spring_rate_nmm": 2.0,      # ~20 ms per 10 N/mm
+        "rear_arb_blade": 1.5,            # ~10 ms per click
+        "front_arb_blade": 1.0,
+        "front_camber_deg": 0.8,
+        "rear_camber_deg": 0.6,
+        "front_pushrod_offset_mm": 1.2,   # ~55 ms/mm (high, but continuous)
+        "rear_pushrod_offset_mm": 0.5,
+    }
+
+    ranked_dims = sorted(
+        tier_a,
+        key=lambda d: _SENSITIVITY_MAP.get(d.name, 0.3),
+        reverse=True,
+    )
+
+    # ── Step 2: Combinatorial on top-3 discrete dims ──
+    top_n = min(3, len(ranked_dims))
+    top_dims = ranked_dims[:top_n]
+    rest_dims = ranked_dims[top_n:]
+
+    # Build value lists for top dims
+    dim_values: dict[str, list[float]] = {}
+    for d in top_dims:
+        if d.discrete_values:
+            dim_values[d.name] = list(d.discrete_values)
+        else:
+            vals = []
+            v = d.lo
+            while v <= d.hi + 1e-9:
+                vals.append(d.snap(v))
+                v += d.resolution
+            dim_values[d.name] = vals
+
+    # Generate combinatorial candidates from top dims
+    top_keys = [d.name for d in top_dims]
+    combos = list(itertools.product(*(dim_values[k] for k in top_keys)))
+
+    # Budget allocation: 60% to combinatorial, 20% to coordinate descent, 20% to polish
+    combo_budget = max(1, int(budget * 0.6))
+    # If combos exceed budget, subsample uniformly
+    rng = random.Random(seed)
+    if len(combos) > combo_budget:
+        combos = rng.sample(combos, combo_budget)
+
+    all_evals: list[CandidateEvaluation] = []
+
+    for combo in combos:
+        params = dict(baseline_params)
+        for i, key in enumerate(top_keys):
+            params[key] = combo[i]
+        # Fill rest from baseline
+        perches = compute_perch_offsets(params, car)
+        params.update(perches)
+
+        ev = objective.evaluate(
+            params=params,
+            family="directed_combinatorial",
+            measured=measured,
+            driver_profile=driver_profile,
+            session_count=session_count,
+        )
+        all_evals.append(ev)
+
+    # Find best from combinatorial phase
+    valid_evals = [e for e in all_evals if not e.hard_vetoed]
+    if valid_evals:
+        best_so_far = max(valid_evals, key=lambda e: e.score)
+        best_params = dict(best_so_far.params)
+    else:
+        best_params = dict(baseline_params)
+
+    # ── Step 3: Coordinate descent on remaining dims ──
+    descent_budget = max(1, int(budget * 0.2))
+    steps_per_dim = max(1, descent_budget // max(len(rest_dims), 1))
+
+    for d in rest_dims:
+        current_val = best_params.get(d.name, (d.lo + d.hi) / 2)
+        best_val = current_val
+        best_score = float("-inf")
+
+        # Try ± steps around current
+        for delta in range(-steps_per_dim // 2, steps_per_dim // 2 + 1):
+            trial_val = d.snap(current_val + delta * d.resolution)
+            trial_val = max(d.lo, min(d.hi, trial_val))
+            trial_params = dict(best_params)
+            trial_params[d.name] = trial_val
+            perches = compute_perch_offsets(trial_params, car)
+            trial_params.update(perches)
+
+            ev = objective.evaluate(
+                params=trial_params,
+                family="directed_descent",
+                measured=measured,
+                driver_profile=driver_profile,
+                session_count=session_count,
+            )
+            all_evals.append(ev)
+            if not ev.hard_vetoed and ev.score > best_score:
+                best_score = ev.score
+                best_val = trial_val
+
+        best_params[d.name] = best_val
+
+    # ── Step 4: ±1 polish on ALL dims ──
+    polish_improved = True
+    polish_rounds = 0
+    max_polish_rounds = 2
+
+    while polish_improved and polish_rounds < max_polish_rounds:
+        polish_improved = False
+        polish_rounds += 1
+
+        for d in ranked_dims:
+            current_val = best_params.get(d.name, (d.lo + d.hi) / 2)
+            for delta in [-1, +1]:
+                trial_val = d.snap(current_val + delta * d.resolution)
+                trial_val = max(d.lo, min(d.hi, trial_val))
+                if trial_val == current_val:
+                    continue
+                trial_params = dict(best_params)
+                trial_params[d.name] = trial_val
+                perches = compute_perch_offsets(trial_params, car)
+                trial_params.update(perches)
+
+                ev = objective.evaluate(
+                    params=trial_params,
+                    family="directed_polish",
+                    measured=measured,
+                    driver_profile=driver_profile,
+                    session_count=session_count,
+                )
+                all_evals.append(ev)
+                if not ev.hard_vetoed and ev.score > best_score:
+                    best_score = ev.score
+                    best_params[d.name] = trial_val
+                    polish_improved = True
+
+    # ── Package results ──
+    valid = [e for e in all_evals if not e.hard_vetoed]
+    valid.sort(key=lambda e: e.score, reverse=True)
+    vetoed = sum(1 for e in all_evals if e.hard_vetoed)
+    families_seen = sorted(set(e.family for e in all_evals))
+
+    return LegalSearchResult(
+        all_evaluations=all_evals,
+        best_robust=valid[0] if valid else None,
+        best_aggressive=valid[0] if valid else None,
+        scenario_profile=resolved_scenario,
+        vetoed_count=vetoed,
+        total_evaluated=len(all_evals),
+        families_searched=families_seen,
+        locally_optimal=polish_rounds > 0 and not polish_improved,
     )
 
 

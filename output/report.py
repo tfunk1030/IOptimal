@@ -427,16 +427,25 @@ def print_full_setup_report(
         a(_setting("Torsion bar deflection", torsion_limit_str, torsion_note))
     a(_blank())
     a(_full("  ARBS / GEOMETRY"))
-    a(_setting("Front ARB size / blade", f"{step4.front_arb_size} / {step4.front_arb_blade_start}", changed=_changed_marker("front_arb_blade", step4.front_arb_blade_start, current_params)))
-    a(_setting("Rear ARB size / blade", f"{step4.rear_arb_size} / {step4.rear_arb_blade_start}", changed=_changed_marker("rear_arb_blade", step4.rear_arb_blade_start, current_params)))
-    a(_setting("Rear ARB live slow", f"blade {step4.rarb_blade_slow_corner}"))
-    a(_setting("Rear ARB live fast", f"blade {step4.rarb_blade_fast_corner}"))
-    _eff_front_camber = front_camber_override if front_camber_override is not None else step5.front_camber_deg
-    _eff_rear_camber = rear_camber_override if rear_camber_override is not None else step5.rear_camber_deg
-    a(_setting("Front camber", f"{_eff_front_camber:+.1f} deg", changed=_changed_marker("front_camber_deg", _eff_front_camber, current_params)))
-    a(_setting("Rear camber", f"{_eff_rear_camber:+.1f} deg", changed=_changed_marker("rear_camber_deg", _eff_rear_camber, current_params)))
-    a(_setting("Front toe", f"{step5.front_toe_mm:+.1f} mm", changed=_changed_marker("front_toe_mm", step5.front_toe_mm, current_params)))
-    a(_setting("Rear toe", f"{step5.rear_toe_mm:+.1f} mm", changed=_changed_marker("rear_toe_mm", step5.rear_toe_mm, current_params)))
+    if step4 is not None:
+        a(_setting("Front ARB size / blade", f"{step4.front_arb_size} / {step4.front_arb_blade_start}", changed=_changed_marker("front_arb_blade", step4.front_arb_blade_start, current_params)))
+        a(_setting("Rear ARB size / blade", f"{step4.rear_arb_size} / {step4.rear_arb_blade_start}", changed=_changed_marker("rear_arb_blade", step4.rear_arb_blade_start, current_params)))
+        a(_setting("Rear ARB live slow", f"blade {step4.rarb_blade_slow_corner}"))
+        a(_setting("Rear ARB live fast", f"blade {step4.rarb_blade_fast_corner}"))
+    else:
+        a(_setting("ARBs", "(blocked — uncalibrated)"))
+    if step5 is not None:
+        _eff_front_camber = front_camber_override if front_camber_override is not None else step5.front_camber_deg
+        _eff_rear_camber = rear_camber_override if rear_camber_override is not None else step5.rear_camber_deg
+        a(_setting("Front camber", f"{_eff_front_camber:+.1f} deg", changed=_changed_marker("front_camber_deg", _eff_front_camber, current_params)))
+        a(_setting("Rear camber", f"{_eff_rear_camber:+.1f} deg", changed=_changed_marker("rear_camber_deg", _eff_rear_camber, current_params)))
+        a(_setting("Front toe", f"{step5.front_toe_mm:+.1f} mm", changed=_changed_marker("front_toe_mm", step5.front_toe_mm, current_params)))
+        a(_setting("Rear toe", f"{step5.rear_toe_mm:+.1f} mm", changed=_changed_marker("rear_toe_mm", step5.rear_toe_mm, current_params)))
+    else:
+        # Defaults for blocked geometry — use car baselines or overrides
+        _eff_front_camber = front_camber_override if front_camber_override is not None else -3.0
+        _eff_rear_camber = rear_camber_override if rear_camber_override is not None else -2.0
+        a(_setting("Geometry", "(blocked — uncalibrated)"))
     a(_blank())
     a(_full("  BRAKES / DIFF / TC / TYRES"))
     if _is_ferrari and hybrid_enabled is not None:
@@ -476,7 +485,9 @@ def print_full_setup_report(
     a(_setting("Tyre cold RL / RR", f"{tyre_rl:.0f} / {tyre_rr:.0f} kPa"))
     a(_blank())
     a(_full("  DAMPERS"))
-    if _has_roll_dampers:
+    if step6 is None:
+        a(_setting("Dampers", "(blocked — uncalibrated)"))
+    elif _has_roll_dampers:
         # ORECA heave+roll architecture: front/rear heave + roll dampers
         a(_setting("Front Heave LS comp / rbd", f"{step6.lf.ls_comp} / {step6.lf.ls_rbd} clicks"))
         a(_setting("Front Heave HS comp / rbd / slope", f"{step6.lf.hs_comp} / {step6.lf.hs_rbd} / {step6.lf.hs_slope}"))
@@ -507,7 +518,10 @@ def print_full_setup_report(
     a(_blank())
     a(_full("  TARGETS / LIMITS"))
     a(_setting("DF balance", f"{step1.df_balance_pct:.2f}% (target {target_balance:.2f}%)", _ok(df_ok)))
-    a(_setting("LLTD", f"{step4.lltd_achieved:.1%} (target {step4.lltd_target:.1%})"))
+    if step4 is not None:
+        a(_setting("LLTD", f"{step4.lltd_achieved:.1%} (target {step4.lltd_target:.1%})"))
+    else:
+        a(_setting("LLTD", "(uncalibrated)"))
     a(_setting("Dynamic RH front / rear", f"{step1.dynamic_front_rh_mm:.1f} / {step1.dynamic_rear_rh_mm:.1f} mm"))
     a(_setting(
         "Heave travel margin",
@@ -554,7 +568,8 @@ def print_full_setup_report(
                 f"  Heave slider: {step2.slider_static_front_mm:.1f} mm"
                 f"    Travel margin: {step2.travel_margin_front_mm:.1f} mm"
             ))
-        a(_full(f"  Stall margin: {step1.vortex_burst_margin_mm:+.1f} mm  {_ok(stall_ok)}    LLTD: {step4.lltd_achieved:.1%}"))
+        _lltd_str = f"LLTD: {step4.lltd_achieved:.1%}" if step4 is not None else "LLTD: [blocked]"
+        a(_full(f"  Stall margin: {step1.vortex_burst_margin_mm:+.1f} mm  {_ok(stall_ok)}    {_lltd_str}"))
         a(_full(
             f"  Brake target/mig: {brake_target_str} / {brake_migration_str}    Master cyl: {master_cyl_str}"
         ))
@@ -567,9 +582,10 @@ def print_full_setup_report(
             a(_full(
                 f"  Diff lock coast/drive: {diff_solution.lock_pct_coast:.1f}% / {diff_solution.lock_pct_drive:.1f}%"
             ))
-        a(_full(
-            f"  RARB live: blade {step4.rarb_blade_slow_corner} slow  ->  blade {step4.rarb_blade_fast_corner} fast"
-        ))
+        if step4 is not None:
+            a(_full(
+                f"  RARB live: blade {step4.rarb_blade_slow_corner} slow  ->  blade {step4.rarb_blade_fast_corner} fast"
+            ))
         for line in _rotation_search_lines(step3, step4, step5, supporting):
             a(_full(f"  {line}"))
         a(_box_bot())
@@ -605,15 +621,27 @@ def print_full_setup_report(
                f"  Rear perch:  {step3.rear_spring_perch_mm:5.1f} mm"))
     a(_blank())
     a(_row("  ANTI-ROLL BARS", "  WHEEL GEOMETRY"))
-    a(_row(f"  FARB: {step4.front_arb_size:<6s} Blade {step4.front_arb_blade_start}  (locked)",
-           f"  Front camber: {_eff_front_camber:+.1f}°"))
-    live = f"[{step4.rarb_blade_slow_corner}→{step4.rarb_blade_fast_corner}]"
-    a(_row(f"  RARB: {step4.rear_arb_size:<6s} Blade {step4.rear_arb_blade_start}  {live}",
-           f"  Rear camber:  {_eff_rear_camber:+.1f}°"))
-    a(_row("",
-           f"  Front toe:  {step5.front_toe_mm:+.1f} mm"))
-    a(_row("",
-           f"  Rear toe:   {step5.rear_toe_mm:+.1f} mm"))
+    if step4 is not None:
+        a(_row(f"  FARB: {step4.front_arb_size:<6s} Blade {step4.front_arb_blade_start}  (locked)",
+               f"  Front camber: {_eff_front_camber:+.1f}°"))
+        live = f"[{step4.rarb_blade_slow_corner}→{step4.rarb_blade_fast_corner}]"
+        a(_row(f"  RARB: {step4.rear_arb_size:<6s} Blade {step4.rear_arb_blade_start}  {live}",
+               f"  Rear camber:  {_eff_rear_camber:+.1f}°"))
+    else:
+        a(_row("  FARB: [blocked — uncalibrated]",
+               f"  Front camber: {_eff_front_camber:+.1f}°"))
+        a(_row("  RARB: [blocked — uncalibrated]",
+               f"  Rear camber:  {_eff_rear_camber:+.1f}°"))
+    if step5 is not None:
+        a(_row("",
+               f"  Front toe:  {step5.front_toe_mm:+.1f} mm"))
+        a(_row("",
+               f"  Rear toe:   {step5.rear_toe_mm:+.1f} mm"))
+    else:
+        a(_row("",
+               "  Front toe:  [blocked]"))
+        a(_row("",
+               "  Rear toe:   [blocked]"))
     a(_blank())
     # Diff & brakes row
     diff_str = ""
@@ -658,7 +686,18 @@ def print_full_setup_report(
     a(_blank())
 
     # Dampers
-    if _has_roll_dampers:
+    _lltd_line = f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})" if step4 is not None else "  LLTD:   [blocked]"
+    _camber_conf = step5.camber_confidence if step5 is not None else "blocked"
+    _camber_line = f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{_camber_conf}]"
+    if step6 is None:
+        a(_full("  DAMPERS (blocked — uncalibrated)     AERO STATUS"))
+        a(_row("", f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
+        a(_row("", f"  L/D:    {step1.ld_ratio:.3f}"))
+        a(_row("", f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
+        a(_row("", _lltd_line))
+        a(_row("", f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
+        a(_row("", _camber_line))
+    elif _has_roll_dampers:
         a(_full("  DAMPERS (clicks)                     AERO STATUS"))
         a(_row(f"           FH   FR   RH   RR",
                f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
@@ -667,11 +706,11 @@ def print_full_setup_report(
         a(_row(f"  LS Rbd:  {step6.lf.ls_rbd:3d}    -  {step6.lr.ls_rbd:3d}    -",
                f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
         a(_row(f"  HS Comp: {step6.lf.hs_comp:3d}    -  {step6.lr.hs_comp:3d}    -",
-               f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})"))
+               _lltd_line))
         a(_row(f"  Roll LS: {step6.front_roll_ls or '-':>3}    -  {step6.rear_roll_ls or '-':>3}    -",
                f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
         a(_row(f"  Roll HS: {step6.front_roll_hs or '-':>3}    -  {step6.rear_roll_hs or '-':>3}    -",
-               f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{step5.camber_confidence}]"))
+               _camber_line))
     else:
         a(_full("  DAMPERS (clicks)                     AERO STATUS"))
         a(_row(f"            LF   RF   LR   RR",
@@ -681,11 +720,11 @@ def print_full_setup_report(
         a(_row(f"  LS Rbd:  {step6.lf.ls_rbd:3d}  {step6.rf.ls_rbd:3d}  {step6.lr.ls_rbd:3d}  {step6.rr.ls_rbd:3d}",
                f"  Stall:  {step1.vortex_burst_margin_mm:+.1f}mm  {_ok(stall_ok)}"))
         a(_row(f"  HS Comp: {step6.lf.hs_comp:3d}  {step6.rf.hs_comp:3d}  {step6.lr.hs_comp:3d}  {step6.rr.hs_comp:3d}",
-               f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})"))
+               _lltd_line))
         a(_row(f"  HS Rbd:  {step6.lf.hs_rbd:3d}  {step6.rf.hs_rbd:3d}  {step6.lr.hs_rbd:3d}  {step6.rr.hs_rbd:3d}",
                f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
         a(_row(f"  HS Slope:{step6.lf.hs_slope:3d}  {step6.rf.hs_slope:3d}  {step6.lr.hs_slope:3d}  {step6.rr.hs_slope:3d}",
-               f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{step5.camber_confidence}]"))
+               _camber_line))
     a(_blank())
     a(_box_bot())
     a("")
@@ -713,14 +752,15 @@ def print_full_setup_report(
         except Exception:
             pass
 
-    # Always add RARB live strategy
-    live_action = (
-        f"RARB live: blade {step4.rear_arb_blade_start} start  →  "
-        f"{step4.rarb_blade_slow_corner} slow / {step4.rarb_blade_fast_corner} fast",
-        "live adjustment"
-    )
-    if not any("RARB" in a[0] or "arb" in a[0].lower() for a in top_actions):
-        top_actions.insert(0, live_action)
+    # Always add RARB live strategy (if step4 is available)
+    if step4 is not None:
+        live_action = (
+            f"RARB live: blade {step4.rear_arb_blade_start} start  →  "
+            f"{step4.rarb_blade_slow_corner} slow / {step4.rarb_blade_fast_corner} fast",
+            "live adjustment"
+        )
+        if not any("RARB" in a[0] or "arb" in a[0].lower() for a in top_actions):
+            top_actions.insert(0, live_action)
 
     # Add stint recommendation
     if stint_result is not None:
@@ -890,9 +930,12 @@ def print_full_setup_report(
 
     # ── BALANCE & PLATFORM CHECKS ─────────────────────────────────────
     a(_hdr("BALANCE & PLATFORM"))
-    a(f"  LLTD achieved: {step4.lltd_achieved:.1%}  target: {step4.lltd_target:.1%}  "
-      f"RARB sensitivity: {step4.rarb_sensitivity_per_blade:+.1%}/blade")
-    a(f"  RARB 1→{step4.rarb_blade_fast_corner} range: {step4.lltd_at_rarb_min:.1%}→{step4.lltd_at_rarb_max:.1%}")
+    if step4 is not None:
+        a(f"  LLTD achieved: {step4.lltd_achieved:.1%}  target: {step4.lltd_target:.1%}  "
+          f"RARB sensitivity: {step4.rarb_sensitivity_per_blade:+.1%}/blade")
+        a(f"  RARB 1→{step4.rarb_blade_fast_corner} range: {step4.lltd_at_rarb_min:.1%}→{step4.lltd_at_rarb_max:.1%}")
+    else:
+        a("  LLTD: [blocked — ARB uncalibrated]")
     if _is_ferrari:
         a(f"  Heave: {display_front_heave:.0f} idx  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
     else:
@@ -910,10 +953,13 @@ def print_full_setup_report(
           f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
         a(f"  Rear coil: {step3.rear_spring_rate_nmm:.0f} N/mm  {step3.rear_natural_freq_hz:.2f}Hz  "
           f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
-    a(f"  Roll at peak {step5.peak_lat_g:.2f}g: {step5.body_roll_at_peak_deg:.1f}°  "
-      f"Fcamber dynamic: {step5.front_dynamic_camber_at_peak_deg:+.2f}°  [{step5.camber_confidence}]")
-    a(f"  Tyres to op temp: fronts ~{step5.expected_conditioning_laps_front:.0f} laps  "
-      f"rears ~{step5.expected_conditioning_laps_rear:.0f} laps")
+    if step5 is not None:
+        a(f"  Roll at peak {step5.peak_lat_g:.2f}g: {step5.body_roll_at_peak_deg:.1f}°  "
+          f"Fcamber dynamic: {step5.front_dynamic_camber_at_peak_deg:+.2f}°  [{step5.camber_confidence}]")
+        a(f"  Tyres to op temp: fronts ~{step5.expected_conditioning_laps_front:.0f} laps  "
+          f"rears ~{step5.expected_conditioning_laps_rear:.0f} laps")
+    else:
+        a("  Roll / camber / conditioning: [blocked — geometry uncalibrated]")
     a("")
 
     # ── VALIDATION CHECKLIST ──────────────────────────────────────────
@@ -923,7 +969,10 @@ def print_full_setup_report(
     a(f"  [ ] Stall margin {step1.vortex_burst_margin_mm:.1f}mm — watch if RH drops on bumps")
     a("  [ ] Shock vel p99 >800mm/s → stiffen HS comp +1 click")
     a("  [ ] Tyre temp spread (inner-outer) → flag for camber calibration")
-    a(f"  [ ] RARB live: blade {step4.rarb_blade_slow_corner} (slow) ↔ blade {step4.rarb_blade_fast_corner} (fast)")
+    if step4 is not None:
+        a(f"  [ ] RARB live: blade {step4.rarb_blade_slow_corner} (slow) ↔ blade {step4.rarb_blade_fast_corner} (fast)")
+    else:
+        a("  [ ] RARB live: [calibrate ARBs first]")
     a("  [ ] Do NOT touch dampers until Steps 1-5 validated")
     a("")
     a("  Starting points only. Validate every step on track.")

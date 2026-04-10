@@ -301,6 +301,70 @@ class MeasuredState:
     telemetry_bundle: dict[str, object] = field(default_factory=dict, repr=False)
 
 
+def extract_bottoming_events(
+    ibt,
+    front_rh,
+    rear_rh,
+    speed_kph,
+    shock_vel_front=None,
+    shock_vel_rear=None,
+    threshold_sigma: float = 3.0,
+    min_speed_kph: float = 80.0,
+) -> dict[str, list[dict]]:
+    """Extract individual bottoming events with per-event context.
+
+    Instead of returning a scalar count, returns a list of event dicts
+    for each axle. Each event carries the shock velocity and speed at that
+    point, enabling per-event constraint evaluation in the heave solver.
+
+    Args:
+        ibt: IBT file handle (or None — arrays are passed directly).
+        front_rh: Array of front ride height samples (mm).
+        rear_rh: Array of rear ride height samples (mm).
+        speed_kph: Array of speed samples (km/h).
+        shock_vel_front: Array of front shock velocity (m/s), or None.
+        shock_vel_rear: Array of rear shock velocity (m/s), or None.
+        threshold_sigma: Number of sigma below mean to define bottoming.
+        min_speed_kph: Minimum speed to consider (filter out pit/grid).
+
+    Returns:
+        dict with keys "front" and "rear", each a list of event dicts:
+        ``{"sample_idx": int, "rh_mm": float, "speed_kph": float,
+           "shock_vel_mps": float}``
+    """
+    import numpy as np
+
+    at_speed = speed_kph >= min_speed_kph
+    result: dict[str, list[dict]] = {"front": [], "rear": []}
+
+    for axle, rh, sv in [
+        ("front", front_rh, shock_vel_front),
+        ("rear", rear_rh, shock_vel_rear),
+    ]:
+        rh_speed = rh[at_speed]
+        if len(rh_speed) == 0:
+            continue
+        mean_rh = float(np.mean(rh_speed))
+        std_rh = float(np.std(rh_speed))
+        threshold = mean_rh - threshold_sigma * std_rh
+
+        # Find samples where RH dropped below threshold
+        bottoming_mask = rh < threshold
+        combined_mask = bottoming_mask & at_speed
+        indices = np.where(combined_mask)[0]
+
+        for idx in indices:
+            evt = {
+                "sample_idx": int(idx),
+                "rh_mm": float(rh[idx]),
+                "speed_kph": float(speed_kph[idx]),
+                "shock_vel_mps": float(sv[idx]) if sv is not None and idx < len(sv) else 0.0,
+            }
+            result[axle].append(evt)
+
+    return result
+
+
 def extract_measurements(
     ibt_path: str | Path,
     car: CarModel,

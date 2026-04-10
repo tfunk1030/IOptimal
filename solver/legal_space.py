@@ -444,6 +444,64 @@ class LegalSpace:
 
         return candidates
 
+    def sample_lhs(
+        self,
+        base_params: dict[str, float],
+        n: int = 200,
+        perturbation: float = 0.25,
+        seed: int | None = None,
+    ) -> list[LegalCandidate]:
+        """Sample n candidates using Latin Hypercube Sampling around a seed.
+
+        LHS provides better space-filling coverage than uniform random
+        perturbation.  Each dimension's range is divided into n equal
+        strata, and exactly one sample is drawn from each stratum.
+
+        Falls back to ``sample_seeded`` if scipy is not available.
+
+        Args:
+            base_params: Seed parameter set (e.g., from physics solver)
+            n: Number of candidates to generate
+            perturbation: Fraction of range to explore around seed (0.25 = ±25%)
+            seed: Random seed for reproducibility
+        """
+        dims = self.tier_a()
+        if not dims:
+            return []
+
+        try:
+            from scipy.stats.qmc import LatinHypercube
+        except ImportError:
+            return self.sample_seeded(base_params, n=n, perturbation=perturbation, seed=seed)
+
+        sampler = LatinHypercube(d=len(dims), seed=seed)
+        # LHS produces samples in [0, 1]^d — scale to dimension ranges.
+        unit_samples = sampler.random(n=n)
+
+        candidates: list[LegalCandidate] = []
+        # Always include the base as candidate 0.
+        snapped_base = self.snap(
+            {k: v for k, v in base_params.items() if k in self._dim_map}
+        )
+        candidates.append(LegalCandidate(
+            params=snapped_base,
+            family="physics_baseline",
+        ))
+
+        for i in range(n):
+            params: dict[str, float] = {}
+            for j, dim in enumerate(dims):
+                base_val = base_params.get(dim.name, (dim.lo + dim.hi) / 2)
+                span = (dim.hi - dim.lo) * perturbation
+                lo_bound = max(dim.lo, base_val - span)
+                hi_bound = min(dim.hi, base_val + span)
+                # Map [0,1] sample to [lo_bound, hi_bound]
+                raw = lo_bound + unit_samples[i, j] * (hi_bound - lo_bound)
+                params[dim.name] = dim.snap(raw)
+            candidates.append(LegalCandidate(params=params, family="lhs"))
+
+        return candidates
+
     def enumerate_discrete_subspace(
         self,
         fixed: dict[str, float] | None = None,

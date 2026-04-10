@@ -489,6 +489,133 @@ class CornerSpringSolver:
             rear_torsion_bar_turns=rear_tb_turns,
         )
 
+    def solve_candidates(
+        self,
+        front_heave_nmm: float,
+        rear_third_nmm: float,
+        fuel_load_l: float = 89.0,
+        current_rear_third_nmm: float | None = None,
+        current_rear_spring_nmm: float | None = None,
+        max_candidates: int = 20,
+    ) -> list[CornerSpringSolution]:
+        """Evaluate all legal (front_OD, rear_spring) combos and return top-N.
+
+        Exhaustively enumerates the discrete front torsion bar OD options and
+        the rear spring rate range, builds a :class:`CornerSpringSolution` for
+        each via :meth:`solution_from_explicit_rates`, and returns the top
+        *max_candidates* ranked by a quick composite score that balances:
+
+        - Frequency isolation (higher = better bump absorption = more grip)
+        - Heave-to-corner ratio within the 1.5-3.5× guideline
+        - Constraint satisfaction count
+
+        The first element is always the ``solve()`` result (the physics-targeted
+        single answer) so existing callers can use ``solve_candidates()[0]`` as
+        a drop-in replacement.
+
+        For Porsche (no front torsion bars), front rate candidates are drawn from
+        the roll spring range in 10 N/mm steps.
+
+        Returns:
+            List of up to *max_candidates* CornerSpringSolution objects, scored
+            best-first.
+        """
+        csm = self.car.corner_spring
+
+        # Always include the physics-targeted solve as the first candidate
+        base = self.solve(
+            front_heave_nmm=front_heave_nmm,
+            rear_third_nmm=rear_third_nmm,
+            fuel_load_l=fuel_load_l,
+            current_rear_third_nmm=current_rear_third_nmm,
+            current_rear_spring_nmm=current_rear_spring_nmm,
+        )
+
+        # Build list of front options (torsion OD or roll spring)
+        if csm.front_torsion_c > 0 and csm.front_torsion_od_options:
+            front_ods = list(csm.front_torsion_od_options)
+        elif csm.front_roll_spring_range_nmm[1] > 0:
+            # Porsche roll spring — sample in 10 N/mm steps
+            lo, hi = csm.front_roll_spring_range_nmm
+            step = 10.0
+            front_ods = []
+            v = lo
+            while v <= hi:
+                front_ods.append(v)
+                v += step
+        else:
+            front_ods = [base.front_torsion_od_mm]
+
+        # Build list of rear options
+        if csm.rear_is_torsion_bar and hasattr(csm, 'rear_torsion_od_options') and csm.rear_torsion_od_options:
+            rear_opts = list(csm.rear_torsion_od_options)
+            use_rear_torsion = True
+        else:
+            r_lo, r_hi = csm.rear_spring_range_nmm
+            r_step = getattr(csm, 'rear_spring_resolution_nmm', 5.0) or 5.0
+            rear_opts = []
+            v = r_lo
+            while v <= r_hi:
+                rear_opts.append(v)
+                v += r_step
+            use_rear_torsion = False
+
+        # Pre-compute reference values for scoring
+        ratio_lo, ratio_hi = csm.heave_corner_ratio_range
+        ratio_mid = (ratio_lo + ratio_hi) / 2
+        bump_freq = self.car.rh_variance.dominant_bump_freq_hz
+
+        # Enumerate all combos, build quick score
+        scored: list[tuple[float, CornerSpringSolution]] = []
+        seen: set[tuple[float, float]] = set()
+
+        for f_od in front_ods:
+            for r_opt in rear_opts:
+                rear_torsion_od = r_opt if use_rear_torsion else None
+                rear_rate = r_opt if not use_rear_torsion else 0.0  # will be recomputed
+                sol = self.solution_from_explicit_rates(
+                    front_heave_nmm=front_heave_nmm,
+                    rear_third_nmm=rear_third_nmm,
+                    front_torsion_od_mm=f_od,
+                    rear_spring_rate_nmm=rear_rate,
+                    fuel_load_l=fuel_load_l,
+                    rear_torsion_od_mm=rear_torsion_od,
+                )
+                key = (sol.front_torsion_od_mm, sol.rear_spring_rate_nmm)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                # Quick composite score (higher = better)
+                # Frequency isolation: more is better for grip
+                iso_score = min(sol.front_freq_isolation_ratio, 5.0) + min(sol.rear_freq_isolation_ratio, 5.0)
+                # Heave-corner ratio: penalize distance from guideline midpoint
+                f_ratio_penalty = abs(sol.front_heave_corner_ratio - ratio_mid)
+                r_ratio_penalty = abs(sol.rear_third_corner_ratio - ratio_mid)
+                ratio_penalty = f_ratio_penalty + r_ratio_penalty
+                # Constraint satisfaction bonus
+                ok_count = sum(1 for c in sol.constraints if c.satisfied)
+                # Score
+                score = iso_score * 10 - ratio_penalty * 5 + ok_count * 2
+                scored.append((score, sol))
+
+        # Sort descending by score
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # Ensure base solution is included and first
+        base_key = (base.front_torsion_od_mm, base.rear_spring_rate_nmm)
+        results = [base]
+        seen_keys: set[tuple[float, float]] = {base_key}
+        for _, sol in scored:
+            if len(results) >= max_candidates:
+                break
+            key = (sol.front_torsion_od_mm, sol.rear_spring_rate_nmm)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                results.append(sol)
+
+        return results
+
     def _surface_severity_to_freq_ratio(self, shock_vel_p99_mps: float) -> float:
         """Map track surface severity to frequency isolation ratio.
 
