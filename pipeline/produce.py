@@ -227,6 +227,34 @@ def _stint_lap_payload(dataset) -> list[dict]:
     ]
 
 
+def _apply_calibration_step_blocks(
+    *,
+    step1,
+    step2,
+    step3,
+    step4,
+    step5,
+    step6,
+    blocked_steps: set[int],
+) -> tuple[object, object, object, object, object, object]:
+    """Null blocked solver steps so uncalibrated values never leak to outputs."""
+    if not blocked_steps:
+        return step1, step2, step3, step4, step5, step6
+    if 1 in blocked_steps:
+        step1 = None
+    if 2 in blocked_steps:
+        step2 = None
+    if 3 in blocked_steps:
+        step3 = None
+    if 4 in blocked_steps:
+        step4 = None
+    if 5 in blocked_steps:
+        step5 = None
+    if 6 in blocked_steps:
+        step6 = None
+    return step1, step2, step3, step4, step5, step6
+
+
 def _resolve_scenario_profile(args: argparse.Namespace) -> str:
     explicit = getattr(args, "scenario_profile", None)
     if explicit:
@@ -313,8 +341,12 @@ def produce(
             notes = apply_to_car(car, cal_models)
             for note in notes:
                 log(f"  [calibration] {note}")
-    except Exception:
-        pass  # No calibration data — use defaults from cars.py
+    except FileNotFoundError:
+        pass  # No calibration data exists — use defaults from cars.py
+    except Exception as exc:
+        # Keep pipeline behavior resilient but never swallow calibration failures.
+        log(f"  [WARNING] Calibration loading failed: {exc}")
+        log("  [WARNING] Using car defaults from cars.py")
     log(f"Car: {car.name}")
 
     # ── Run trace (data provenance) ──
@@ -747,6 +779,11 @@ def produce(
                     log(f"    {sub.name}: {sub.confidence_label()} {sub.source}")
                     for w in sub.warnings:
                         log(f"      ! {w}")
+            elif sr.weak_upstream:
+                log(
+                    f"  Step {sr.step_number} ({sr.step_name}): "
+                    f"inherits weak upstream input from Step {sr.weak_upstream_step}"
+                )
         log("=" * 70)
         log()
 
@@ -804,19 +841,15 @@ def produce(
         log()
         _steps_blocked = set()  # clear so nothing gets nulled
 
-    for sn in _steps_blocked:
-        if sn == 1:
-            step1 = None
-        elif sn == 2:
-            step2 = None
-        elif sn == 3:
-            step3 = None
-        elif sn == 4:
-            step4 = None
-        elif sn == 5:
-            step5 = None
-        elif sn == 6:
-            step6 = None
+    step1, step2, step3, step4, step5, step6 = _apply_calibration_step_blocks(
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+        blocked_steps=_steps_blocked,
+    )
     legal_validation = base_solve_result.legal_validation
     decision_trace = base_solve_result.decision_trace
     solve_notes = list(base_solve_result.notes)
@@ -858,6 +891,16 @@ def produce(
         decision_trace = stint_solve.result.decision_trace
         base_solve_result = stint_solve.result
         stint_compromise_info = list(stint_solve.notes)
+        # Re-apply gate after stint rematerialization so blocked steps stay blocked.
+        step1, step2, step3, step4, step5, step6 = _apply_calibration_step_blocks(
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step4=step4,
+            step5=step5,
+            step6=step6,
+            blocked_steps=_steps_blocked,
+        )
         log(f"  Objective: {stint_solve.objective['total']:.4f}")
         for info in stint_compromise_info[:5]:
             log(f"  {info}")
@@ -1021,6 +1064,15 @@ def produce(
             supporting = selected_candidate_result.supporting
             legal_validation = selected_candidate_result.legal_validation
             decision_trace = selected_candidate_result.decision_trace
+            step1, step2, step3, step4, step5, step6 = _apply_calibration_step_blocks(
+                step1=step1,
+                step2=step2,
+                step3=step3,
+                step4=step4,
+                step5=step5,
+                step6=step6,
+                blocked_steps=_steps_blocked,
+            )
             selected_candidate_family_output = selected_candidate.family
             selected_candidate_score_output = (
                 selected_candidate.score.total if selected_candidate.score is not None else None
@@ -1074,22 +1126,23 @@ def produce(
                 from solver.legal_space import LegalSpace
                 from solver.objective import ObjectiveFunction
 
-                space = LegalSpace.from_car(car, track_name=getattr(track, "name", ""))
+                _track_name = getattr(track, "track_name", "") or getattr(track, "name", "")
+                space = LegalSpace.from_car(car, track_name=_track_name)
                 objective = ObjectiveFunction(
                     car,
-                    track if hasattr(track, "name") else None,
+                    track,
                     explore=getattr(args, "explore", False),
                     scenario_profile=scenario_profile_name,
                 )
                 # Pre-stash session telemetry for batch scoring
                 if measured is not None:
-                    objective.set_session_context(measured=measured, driver=driver_profile)
+                    objective.set_session_context(measured=measured, driver=driver)
 
                 engine = GridSearchEngine(
                     space=space,
                     objective=objective,
                     car=car,
-                    track=track if hasattr(track, "name") else None,
+                    track=track,
                     progress_cb=log,
                 )
                 search_family = getattr(args, "search_family", None)
@@ -1134,6 +1187,15 @@ def produce(
                             supporting = _gs_materialized.supporting
                             legal_validation = _gs_materialized.legal_validation
                             decision_trace = _gs_materialized.decision_trace
+                            step1, step2, step3, step4, step5, step6 = _apply_calibration_step_blocks(
+                                step1=step1,
+                                step2=step2,
+                                step3=step3,
+                                step4=step4,
+                                step5=step5,
+                                step6=step6,
+                                blocked_steps=_steps_blocked,
+                            )
                             selected_candidate_family_output = (
                                 f"{scenario_profile_name}:grid_{_gs_best.family}"
                             )
@@ -1239,6 +1301,15 @@ def produce(
                     supporting = accepted_result.supporting
                     legal_validation = accepted_result.legal_validation
                     decision_trace = accepted_result.decision_trace
+                    step1, step2, step3, step4, step5, step6 = _apply_calibration_step_blocks(
+                        step1=step1,
+                        step2=step2,
+                        step3=step3,
+                        step4=step4,
+                        step5=step5,
+                        step6=step6,
+                        blocked_steps=_steps_blocked,
+                    )
                     selected_candidate_family_output = f"{scenario_profile_name}:{ls_result.accepted_best.family}"
                     selected_candidate_score_output = ls_result.accepted_best.score
                     selected_candidate_applied = True
@@ -1447,6 +1518,12 @@ def produce(
             # User can audit exactly what's data-derived vs what's weak/missing.
             "calibration_provenance": cal_gate.provenance(),
             "calibration_weak_steps": cal_report.weak_steps,
+            "calibration_weak_upstream_steps": cal_report.weak_upstream_steps,
+            "calibration_weak_upstream_by_step": {
+                str(sr.step_number): sr.weak_upstream_step
+                for sr in cal_report.step_reports
+                if sr.weak_upstream and sr.weak_upstream_step is not None
+            },
         }
         with open(json_path, "w") as f:
             json.dump(output, f, indent=2, default=str)

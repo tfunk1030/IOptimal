@@ -30,6 +30,13 @@ from solver.solve_chain import SolveChainInputs, SolveChainResult, materialize_o
 from track_model.profile import TrackProfile
 
 
+def _resolve_track_inputs(track: TrackProfile | str) -> tuple[str, TrackProfile | None]:
+    """Return normalized (track_name, track_obj) for scoring/search helpers."""
+    if isinstance(track, TrackProfile):
+        return track.track_name, track
+    return str(track), None
+
+
 # ── Edge-anchor family definitions ─────────────────────────────────────────
 # Each family pushes parameters toward a specific extreme to explore
 # unconventional but legal parts of the manifold.
@@ -483,8 +490,7 @@ def _run_grid_search(
     """Dispatch to the GridSearchEngine for exhaustive/maximum modes."""
     from solver.grid_search import GridSearchEngine, GridSearchResult
 
-    track_name = track if isinstance(track, str) else getattr(track, "name", "")
-    track_obj = track if isinstance(track, TrackProfile) else None
+    track_name, track_obj = _resolve_track_inputs(track)
 
     space = LegalSpace.from_car(car, track_name=track_name)
     objective = ObjectiveFunction(
@@ -544,8 +550,7 @@ def _run_directed_search(
     proportionally to parameter sensitivity. Typically finds better solutions
     than Sobol sampling at the same budget.
     """
-    track_name = track if isinstance(track, str) else getattr(track, "name", "")
-    track_obj = track if isinstance(track, TrackProfile) else None
+    track_name, track_obj = _resolve_track_inputs(track)
     resolved_scenario = resolve_scenario_name(scenario_profile)
 
     space = LegalSpace.from_car(car, track_name=track_name)
@@ -740,8 +745,7 @@ def _run_sampling_search(
     accept_top_n: int = 12,
 ) -> LegalSearchResult:
     """Original two-stage Sobol + edge-family sampling search."""
-    track_name = track if isinstance(track, str) else getattr(track, "name", "")
-    track_obj = track if isinstance(track, TrackProfile) else None
+    track_name, track_obj = _resolve_track_inputs(track)
     rng = random.Random(seed)
     resolved_scenario = resolve_scenario_name(scenario_profile)
     profile = get_scenario_profile(resolved_scenario)

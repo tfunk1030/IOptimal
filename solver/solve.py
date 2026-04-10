@@ -351,6 +351,14 @@ def run_solver(args: "argparse.Namespace") -> None:
         log()
         log(cal_report.format_header())
         log()
+    elif cal_report.any_weak:
+        # Weak steps remain runnable but should be surfaced loudly.
+        log()
+        log("=" * 60)
+        log("WEAK CALIBRATION DETECTED — output is produced but verify before use")
+        log("=" * 60)
+        log(cal_report.format_header())
+        log()
 
     _camber_conf = ("calibrated"
                     if learned and learned.calibrated_front_roll_gain is not None
@@ -597,6 +605,9 @@ def run_solver(args: "argparse.Namespace") -> None:
                 output = {
                     "calibration_blocked": sorted(_steps_blocked),
                     "calibration_instructions": cal_report.format_header(),
+                    "calibration_weak_steps": cal_report.weak_steps,
+                    "calibration_weak_upstream_steps": cal_report.weak_upstream_steps,
+                    "calibration_provenance": cal_gate.provenance(),
                 }
                 print(json.dumps(output, indent=2))
             return
@@ -986,6 +997,9 @@ def run_solver(args: "argparse.Namespace") -> None:
         if _steps_blocked:
             output["calibration_blocked"] = sorted(_steps_blocked)
             output["calibration_instructions"] = cal_report.format_header()
+        output["calibration_weak_steps"] = cal_report.weak_steps
+        output["calibration_weak_upstream_steps"] = cal_report.weak_upstream_steps
+        output["calibration_provenance"] = cal_gate.provenance()
         print(json.dumps(output, indent=2))
 
 

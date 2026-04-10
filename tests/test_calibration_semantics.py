@@ -177,6 +177,20 @@ class TestCalibrationGateDependencyPropagation(unittest.TestCase):
         self.assertEqual(report.blocked_steps, [])
         self.assertEqual(len(report.solved_steps), 6)
 
+    def test_weak_upstream_steps_property_matches_step_reports(self):
+        """weak_upstream_steps should mirror per-step weak_upstream flags."""
+        from car_model.cars import get_car
+        from car_model.calibration_gate import CalibrationGate
+        car = get_car("bmw")
+        gate = CalibrationGate(car, "sebring")
+        report = gate.full_report()
+        expected = [
+            sr.step_number
+            for sr in report.step_reports
+            if sr.weak_upstream
+        ]
+        self.assertEqual(report.weak_upstream_steps, expected)
+
     def test_ferrari_partial_blocks_steps_4_through_6(self):
         """Ferrari has calibrated steps 1-3 but blocked steps 4-6."""
         from car_model.cars import get_car
@@ -191,12 +205,15 @@ class TestCalibrationGateDependencyPropagation(unittest.TestCase):
         sr4 = gate.check_step(4)
         self.assertTrue(sr4.blocked)
         self.assertFalse(sr4.dependency_blocked)
-        # Steps 5-6 blocked by dependency cascade from step 4
-        for step_num in [5, 6]:
-            sr = gate.check_step(step_num)
-            self.assertTrue(sr.blocked, f"Ferrari step {step_num} should be blocked")
-            self.assertTrue(sr.dependency_blocked,
-                            f"Ferrari step {step_num} should be dependency-blocked")
+        # Step 5 blocked by dependency cascade from step 4.
+        sr5 = gate.check_step(5)
+        self.assertTrue(sr5.blocked)
+        self.assertTrue(sr5.dependency_blocked)
+        # Step 6 is independently blocked by uncalibrated damper_zeta
+        # (its direct dependency is Step 3, which is runnable on Ferrari).
+        sr6 = gate.check_step(6)
+        self.assertTrue(sr6.blocked)
+        self.assertFalse(sr6.dependency_blocked)
 
     def test_dependency_blocked_instructions_text(self):
         """Dependency-blocked steps should reference the upstream blocker."""

@@ -1,11 +1,44 @@
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
+import sys
+import types
+
+# Minimal scipy stubs so solver import chain works in slim CI image.
+if "scipy" not in sys.modules:
+    scipy_mod = types.ModuleType("scipy")
+    scipy_optimize = types.ModuleType("scipy.optimize")
+    scipy_stats = types.ModuleType("scipy.stats")
+    scipy_qmc = types.ModuleType("scipy.stats.qmc")
+    scipy_spatial = types.ModuleType("scipy.spatial")
+    scipy_distance = types.ModuleType("scipy.spatial.distance")
+    scipy_interp = types.ModuleType("scipy.interpolate")
+    scipy_optimize.minimize = lambda *args, **kwargs: None
+    scipy_optimize.brentq = lambda func, a, b, *args, **kwargs: (a + b) / 2.0
+    scipy_stats.norm = SimpleNamespace(cdf=lambda *_a, **_k: 0.5, pdf=lambda *_a, **_k: 0.0)
+    scipy_qmc.LatinHypercube = object
+    scipy_qmc.Sobol = object
+    scipy_distance.cdist = lambda *args, **kwargs: None
+    scipy_interp.RegularGridInterpolator = object
+    scipy_mod.optimize = scipy_optimize
+    scipy_mod.stats = scipy_stats
+    scipy_mod.spatial = scipy_spatial
+    scipy_mod.interpolate = scipy_interp
+    scipy_stats.qmc = scipy_qmc
+    scipy_spatial.distance = scipy_distance
+    sys.modules["scipy"] = scipy_mod
+    sys.modules["scipy.optimize"] = scipy_optimize
+    sys.modules["scipy.stats"] = scipy_stats
+    sys.modules["scipy.stats.qmc"] = scipy_qmc
+    sys.modules["scipy.spatial"] = scipy_spatial
+    sys.modules["scipy.spatial.distance"] = scipy_distance
+    sys.modules["scipy.interpolate"] = scipy_interp
 
 from car_model.cars import get_car
-from solver.legal_search import run_legal_search
+from solver.legal_search import _resolve_track_inputs, run_legal_search
 from solver.legal_space import LegalCandidate
 from solver.objective import CandidateEvaluation, ObjectiveBreakdown
+from track_model.profile import TrackProfile
 
 
 def _eval(family: str, score: float, front_heave: float) -> CandidateEvaluation:
@@ -146,6 +179,18 @@ class LegalSearchScenarioTests(unittest.TestCase):
 
         self.assertEqual(result.accepted_candidates_count, 1)
         self.assertEqual(result.accepted_best.family, "backup_family")
+
+    def test_resolve_track_inputs_prefers_track_name_field(self) -> None:
+        track_obj = TrackProfile(
+            track_name="Sebring International Raceway",
+            track_config="International",
+            track_length_m=6000.0,
+            car="bmw",
+            best_lap_time_s=120.0,
+        )
+        track_name, resolved_obj = _resolve_track_inputs(track_obj)
+        self.assertEqual(track_name, "Sebring International Raceway")
+        self.assertIs(resolved_obj, track_obj)
 
 
 if __name__ == "__main__":
