@@ -1586,6 +1586,29 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
             if i + 1 < len(dm.coefficients) and feat == "front_heave":
                 defl_max_slope = dm.coefficients[i + 1]
 
+    # Torsion turns from calibration
+    torsion_turns_intercept = 0.0
+    torsion_turns_coeff_heave_nmm = 0.0
+    torsion_turns_coeff_heave_perch_mm = 0.0
+    torsion_turns_coeff_torsion_od_mm = 0.0
+    if models.torsion_bar_turns:
+        tt = models.torsion_bar_turns
+        torsion_turns_intercept = tt.coefficients[0] if len(tt.coefficients) > 0 else 0.0
+        for i, feat in enumerate(tt.feature_names):
+            if i + 1 < len(tt.coefficients):
+                if feat == "1/front_heave":
+                    # The fitted model uses 1/heave as a feature but GOM's
+                    # predict_torsion_turns uses heave_nmm (linear). Fold the
+                    # inverse-heave contribution into the intercept at the
+                    # car's baseline heave rate.
+                    baseline_heave = car_obj.front_heave_spring_nmm
+                    if baseline_heave > 0:
+                        torsion_turns_intercept += tt.coefficients[i + 1] / baseline_heave
+                elif feat == "front_heave_perch":
+                    torsion_turns_coeff_heave_perch_mm = tt.coefficients[i + 1]
+                elif feat == "torsion_od":
+                    torsion_turns_coeff_torsion_od_mm = tt.coefficients[i + 1]
+
     # Slider from calibration
     slider_intercept = 0.0
     slider_coeff_heave = 0.0
@@ -1647,6 +1670,11 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
         heave_defl_coeff_heave_perch_mm=heave_defl_coeff_perch,
         heave_defl_coeff_inv_heave_nmm=heave_defl_coeff_inv_heave,
         heave_defl_coeff_inv_od4=heave_defl_coeff_inv_od4,
+        # Torsion turns
+        torsion_turns_intercept=torsion_turns_intercept,
+        torsion_turns_coeff_heave_nmm=torsion_turns_coeff_heave_nmm,
+        torsion_turns_coeff_heave_perch_mm=torsion_turns_coeff_heave_perch_mm,
+        torsion_turns_coeff_torsion_od_mm=torsion_turns_coeff_torsion_od_mm,
         # Slider
         slider_intercept=slider_intercept,
         slider_coeff_heave_nmm=slider_coeff_heave,
