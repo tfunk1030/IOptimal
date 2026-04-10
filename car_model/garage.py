@@ -266,6 +266,7 @@ class GarageOutputModel:
     # When set, these override the corresponding DeflectionModel method calls.
     _direct_front_rh: DirectRegression | None = None
     _direct_rear_rh: DirectRegression | None = None
+    _direct_front_shock: DirectRegression | None = None
     _direct_heave_defl_static: DirectRegression | None = None
     _direct_heave_slider: DirectRegression | None = None
     _direct_heave_defl_max: DirectRegression | None = None
@@ -526,7 +527,9 @@ class GarageOutputModel:
                     third_perch_mm=setup.rear_third_perch_mm,
                     spring_perch_mm=setup.rear_spring_perch_mm,
                 )
-            if self.deflection:
+            if self._direct_front_shock:
+                front_shock_defl_static = self._direct_front_shock.predict(setup)
+            elif self.deflection:
                 front_shock_defl_static = self.deflection.shock_defl_front(
                     setup.front_pushrod_mm,
                     heave_perch_mm=setup.front_heave_perch_mm,
