@@ -663,9 +663,11 @@ def extract_measurements(
                 state.lltd_measured = state.roll_distribution_proxy
 
         # --- Speed-dependent roll distribution proxy ---
+        # Use 150 kph as the boundary to eliminate the 120-180 kph gap that
+        # previously left mid-speed corners untracked in either band.
         if np.sum(corner_mask) > 100:
-            low_speed_corner = corner_mask & (speed_kph < 120)
-            high_speed_corner = corner_mask & (speed_kph > 180)
+            low_speed_corner = corner_mask & (speed_kph <= 150)
+            high_speed_corner = corner_mask & (speed_kph > 150)
 
             if np.sum(low_speed_corner) > 30:
                 f_defl_ls = np.abs(lf_rh[low_speed_corner] - rf_rh[low_speed_corner])

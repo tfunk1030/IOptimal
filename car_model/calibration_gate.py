@@ -80,6 +80,22 @@ class StepCalibrationReport:
     weak_upstream: bool = False
     weak_upstream_step: int | None = None
 
+    @property
+    def confidence_weight(self) -> float:
+        """Confidence weight for this step's output.
+
+        1.0 = fully calibrated, 0.7 = weak calibration,
+        0.5 = weak upstream (input data has reduced confidence),
+        0.0 = blocked (no output).
+        """
+        if self.blocked:
+            return 0.0
+        if self.weak_block:
+            return 0.7
+        if self.weak_upstream:
+            return 0.5
+        return 1.0
+
     def instructions_text(self) -> str:
         """Format calibration instructions for all missing subsystems."""
         if self.dependency_blocked:
@@ -131,6 +147,11 @@ class CalibrationReport:
     @property
     def blocked_steps(self) -> list[int]:
         return [r.step_number for r in self.step_reports if r.blocked]
+
+    @property
+    def step_confidence(self) -> dict[int, float]:
+        """Confidence weight per step (1.0=calibrated, 0.7=weak, 0.5=weak_upstream, 0.0=blocked)."""
+        return {r.step_number: r.confidence_weight for r in self.step_reports}
 
     def format_header(self) -> str:
         """Format the calibration status header for report output."""
@@ -422,11 +443,12 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     rear_torsion_unvalidated = getattr(car.corner_spring, "rear_torsion_unvalidated", False)
     spring_warnings: list[str] = []
     if rear_torsion_unvalidated:
-        spring_status = "weak"
+        spring_status = "uncalibrated"
         spring_source = "car-specific model (rear torsion bar UNVALIDATED — potential 3.5x rate error)"
         spring_warnings.append(
-            "Rear torsion bar model may have 3.5x rate error. Verify rear spring "
-            "rates manually or collect 5+ garage screenshots to calibrate."
+            "Rear torsion bar model has potential 3.5x rate error — corner spring "
+            "output BLOCKED until validated. Collect 5+ garage screenshots with "
+            "varied rear spring indices to calibrate."
         )
     else:
         spring_status = "calibrated"

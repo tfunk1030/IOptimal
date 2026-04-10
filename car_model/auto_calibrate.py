@@ -58,7 +58,16 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 _CALIBRATION_DIR = PROJECT_ROOT / "data" / "calibration"
-_MIN_SESSIONS_FOR_FIT = 5   # minimum unique-setup sessions before fitting
+_MIN_SESSIONS_FOR_FIT = 5   # absolute minimum unique-setup sessions before fitting
+
+
+def _min_sessions_for_features(n_features: int) -> int:
+    """Scale the minimum session count with feature count.
+
+    Rule of thumb: at least 3x the number of features, with a floor of 5.
+    A 6-feature model needs at least 18 sessions to avoid overfitting.
+    """
+    return max(_MIN_SESSIONS_FOR_FIT, 3 * n_features)
 _MIN_SESSIONS_FOR_SPRING_LOOKUP = 3  # sessions at different heave indices
 
 
@@ -608,6 +617,26 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
             b, *_ = np.linalg.lstsq(X_train, y_train, rcond=None)
             loo_errors[i] = y[i] - X_aug[i] @ b
     loo_rmse = float(np.sqrt(np.mean(loo_errors ** 2)))
+
+    # Overfit warning: if LOO RMSE is more than 2x training RMSE, the model
+    # may not generalize. Also warn if sample-to-feature ratio is below 3:1.
+    n_features = X.shape[1]
+    _overfit_warnings: list[str] = []
+    if loo_rmse > 2.0 * max(rmse, 1e-6) and n >= 5:
+        _overfit_warnings.append(
+            f"LOO RMSE ({loo_rmse:.3f}) > 2x training RMSE ({rmse:.3f}) — "
+            f"possible overfit"
+        )
+    if n < _min_sessions_for_features(n_features):
+        _overfit_warnings.append(
+            f"Only {n} samples for {n_features} features (recommend "
+            f"{_min_sessions_for_features(n_features)}+)"
+        )
+    if _overfit_warnings:
+        import logging
+        _logger = logging.getLogger(__name__)
+        for w in _overfit_warnings:
+            _logger.warning("Model '%s': %s", model_name, w)
 
     return FittedModel(
         name=model_name,

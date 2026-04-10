@@ -473,7 +473,7 @@ class DamperSolver:
         # for blocking Step 6 BEFORE this is called. If we get here, the gate
         # was bypassed (likely by a track-only direct solver call) and the
         # caller needs to know.
-        if not getattr(d, "zeta_is_calibrated", True):
+        if not getattr(d, "zeta_is_calibrated", False):
             raise ValueError(
                 f"DamperSolver refuses to produce clicks without calibrated "
                 f"zeta targets for {self.car.name}. Run "

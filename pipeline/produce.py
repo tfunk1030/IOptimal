@@ -1447,6 +1447,7 @@ def produce(
             # User can audit exactly what's data-derived vs what's weak/missing.
             "calibration_provenance": cal_gate.provenance(),
             "calibration_weak_steps": cal_report.weak_steps,
+            "step_confidence": cal_report.step_confidence,
         }
         with open(json_path, "w") as f:
             json.dump(output, f, indent=2, default=str)

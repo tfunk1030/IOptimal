@@ -858,6 +858,20 @@ class ObjectiveFunction:
             m_eff_rear = car.heave_spring.rear_m_eff_kg
             tyre_vr_front = car.tyre_vertical_rate_front_nmm
             tyre_vr_rear = car.tyre_vertical_rate_rear_nmm
+            if tyre_vr_front is None or tyre_vr_front <= 0:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "tyre_vertical_rate_front_nmm is %s — excursion uses "
+                    "suspension-only model (no tyre compliance in series)",
+                    tyre_vr_front,
+                )
+            if tyre_vr_rear is None or tyre_vr_rear <= 0:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "tyre_vertical_rate_rear_nmm is %s — excursion uses "
+                    "suspension-only model (no tyre compliance in series)",
+                    tyre_vr_rear,
+                )
 
             # Front excursion at p99 — for bottoming margin (worst-case bump)
             # Guard against k=0 which returns 0 (wrong: should be ∞)

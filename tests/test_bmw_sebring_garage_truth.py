@@ -16,8 +16,10 @@ from pipeline.produce import produce_result
 from track_model.ibt_parser import IBTFile
 
 
-MARCH_11 = Path(r"C:\Users\tfunk\IOptimal\ibtfiles\bmwlmdh_sebring international 2026-03-11 20-40-35.ibt")
-MARCH_14 = Path(r"C:\Users\tfunk\IOptimal\ibtfiles\bmwlmdh_sebring international 2026-03-14 09-44-24.ibt")
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_IBT_DIR = _REPO_ROOT / "ibtfiles"
+MARCH_11 = _IBT_DIR / "bmwlmdh_sebring international 2026-03-11 20-40-35.ibt"
+MARCH_14 = _IBT_DIR / "bmwlmdh_sebring international 2026-03-14 09-44-24.ibt"
 
 
 @unittest.skipUnless(MARCH_11.exists() and MARCH_14.exists(), "BMW/Sebring IBT fixtures not available")

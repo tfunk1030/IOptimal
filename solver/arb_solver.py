@@ -310,6 +310,16 @@ class ARBSolver:
             lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
             target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
 
+        # Bounds-check: LLTD must be in a physically reasonable range
+        if target_lltd < 0.30 or target_lltd > 0.75:
+            import logging
+            logging.getLogger(__name__).warning(
+                "LLTD target %.3f is outside [0.30, 0.75] — clamping "
+                "(lltd_offset=%.3f may be too extreme)",
+                target_lltd, lltd_offset,
+            )
+            target_lltd = max(0.30, min(0.75, target_lltd))
+
         # ─── BMW ARB strategy ────────────────────────────────────────────────
         # Per SKILL.md and per-car-quirks.md:
         # - Keep FARB at blade 1 (minimum). Front ARB blades at/near 1 for

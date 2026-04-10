@@ -697,11 +697,17 @@ def write_sto(
             _ferrari_front_perch_phys = step2.perch_offset_front_mm
             _ferrari_rear_third_phys = step2.rear_third_nmm
             _ferrari_rear_perch_phys = step2.perch_offset_rear_mm
-            _ferrari_front_torsion_rate = (
-                _car.corner_spring.torsion_bar_rate(step3.front_torsion_od_mm)
-                if _car.corner_spring.front_torsion_c > 0 and step3.front_torsion_od_mm > 1.0
-                else 250.0  # fallback mid-range
-            )
+            if _car.corner_spring.front_torsion_c > 0 and step3.front_torsion_od_mm > 1.0:
+                _ferrari_front_torsion_rate = _car.corner_spring.torsion_bar_rate(step3.front_torsion_od_mm)
+            else:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Ferrari front torsion rate unavailable (c=%.4f, od=%.1f) "
+                    "— using mid-range estimate 250 N/mm for index lookup",
+                    _car.corner_spring.front_torsion_c,
+                    step3.front_torsion_od_mm if step3 else 0.0,
+                )
+                _ferrari_front_torsion_rate = 250.0
             _ferrari_rear_torsion_rate = step3.rear_spring_rate_nmm
             step2 = copy.deepcopy(step2)
             step3 = copy.deepcopy(step3)
@@ -1109,11 +1115,15 @@ def write_sto(
     if has_roll_dampers and step6 is not None:
         _has_front_roll = bool(getattr(getattr(_car, "damper", None), "has_front_roll_damper", False))
         _has_rear_roll = bool(getattr(getattr(_car, "damper", None), "has_rear_roll_damper", False))
-        # Backward-compat: if neither per-axle flag is set on a has_roll_dampers car,
-        # assume both (legacy Acura behavior) so we don't silently drop output.
+        # Backward-compat: if has_roll_dampers is True but neither per-axle flag
+        # is explicitly set, assume both (legacy Acura before per-axle flags were added).
+        # Only apply when the car's DamperModel has has_roll_dampers=True — a car
+        # missing all three flags gets neither (fail-safe).
         if not _has_front_roll and not _has_rear_roll:
-            _has_front_roll = True
-            _has_rear_roll = True
+            _legacy_roll = bool(getattr(getattr(_car, "damper", None), "has_roll_dampers", False))
+            if _legacy_roll:
+                _has_front_roll = True
+                _has_rear_roll = True
         _roll_ls_f = getattr(step6, 'front_roll_ls', None)
         _roll_hs_f = getattr(step6, 'front_roll_hs', None)
         _roll_ls_r = getattr(step6, 'rear_roll_ls', None)
