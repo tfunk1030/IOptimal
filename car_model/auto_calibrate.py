@@ -726,9 +726,12 @@ def _select_features(
     selected: list[int] = []
     remaining = list(range(n_features))
 
+    # Track the best LOO RMSE seen so far to detect when adding features
+    # starts hurting generalization.
+    best_overall_loo = float("inf")
     for _ in range(max_features):
         best_idx = -1
-        best_score = float("inf")
+        best_loo = float("inf")
         for idx in remaining:
             trial = selected + [idx]
             X_trial = X[:, trial]
@@ -737,21 +740,28 @@ def _select_features(
             n_params = X_aug.shape[1]
             if n_samples <= n_params:
                 continue
-            b, *_ = np.linalg.lstsq(X_aug, y, rcond=None)
-            pred = X_aug @ b
-            # Use training RMSE for selection — maximize accuracy on
-            # the calibration points themselves. LOO warnings in _fit()
-            # flag generalization risk separately.
-            train_rmse = float(np.sqrt(np.mean((y - pred) ** 2)))
-            if train_rmse < best_score:
-                best_score = train_rmse
+            # LOO RMSE for generalization-aware selection
+            loo_sq = 0.0
+            for i in range(n_samples):
+                mask = np.ones(n_samples, dtype=bool)
+                mask[i] = False
+                b, *_ = np.linalg.lstsq(X_aug[mask], y[mask], rcond=None)
+                loo_sq += (y[i] - X_aug[i] @ b) ** 2
+            loo_rmse = float(np.sqrt(loo_sq / n_samples))
+            if loo_rmse < best_loo:
+                best_loo = loo_rmse
                 best_idx = idx
         if best_idx < 0:
             break
+        # Accept this feature if LOO improved or stayed within 10% of best
+        if best_loo > best_overall_loo * 1.10 and len(selected) >= 3:
+            break  # LOO degrading — stop adding features
         selected.append(best_idx)
         remaining.remove(best_idx)
-        # Stop early if we've achieved near-perfect fit
-        if best_score < 0.01:
+        if best_loo < best_overall_loo:
+            best_overall_loo = best_loo
+        # Stop early if LOO RMSE is excellent
+        if best_loo < 0.05:
             break
 
     if not selected:
@@ -1041,8 +1051,10 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         (1.0 / np.maximum(od4, 1.0), "inv_od4"),
         (col("rear_camber_deg"), "rear_camber"),
         (col("wing_deg"), "wing"),
-        (np.array([float(r.get("front_arb_blade", 0) or 0) for r in rows]), "front_arb_blade"),
-        (np.array([float(r.get("rear_arb_blade", 0) or 0) for r in rows]), "rear_arb_blade"),
+        # ARB blade has zero effect on any garage output (confirmed via
+        # isolated-change analysis: blade 6 vs 8 with everything else constant
+        # produces 0.000mm difference on ALL outputs). Excluded to prevent
+        # spurious correlations from inflating feature count.
     ]
     # Add pairwise interactions and quadratic terms for key variables.
     # iRacing's garage model uses nonlinear terms (discovered via brute-force).
