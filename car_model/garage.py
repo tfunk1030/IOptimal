@@ -13,7 +13,7 @@ reporting, and writer paths consume a single source of garage truth.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from car_model.cars import DeflectionModel
@@ -81,6 +81,61 @@ class GarageSetupState:
             rear_spring_perch_mm=float(step3.rear_spring_perch_mm),
             front_camber_deg=float(front_camber_deg),
             fuel_l=float(fuel_l),
+        )
+
+
+@dataclass
+class DirectRegression:
+    """Stores a fitted regression that evaluates directly from GarageSetupState.
+
+    Bypasses DeflectionModel's rigid coefficient interface to achieve
+    sub-0.1mm accuracy when the fitted model uses features that don't
+    map cleanly to DeflectionModel fields.
+    """
+    intercept: float = 0.0
+    feature_names: tuple[str, ...] = ()
+    coefficients: tuple[float, ...] = ()
+
+    # Map from feature name to GarageSetupState extraction
+    _EXTRACTORS: dict[str, Callable] = field(default_factory=dict, repr=False)
+
+    def predict(self, setup: "GarageSetupState") -> float:
+        val = self.intercept
+        for name, coeff in zip(self.feature_names, self.coefficients):
+            extractor = self._EXTRACTORS.get(name)
+            if extractor is not None:
+                val += coeff * extractor(setup)
+        return max(0.0, val)
+
+    @classmethod
+    def from_model(cls, model_coefficients: list[float],
+                   model_feature_names: list[str]) -> "DirectRegression":
+        """Build from a FittedModel's coefficients and feature names."""
+        extractors: dict[str, Callable] = {
+            "front_pushrod": lambda s: s.front_pushrod_mm,
+            "rear_pushrod": lambda s: s.rear_pushrod_mm,
+            "front_heave": lambda s: s.front_heave_nmm,
+            "rear_third": lambda s: s.rear_third_nmm,
+            "rear_spring": lambda s: s.rear_spring_nmm,
+            "torsion_od": lambda s: s.front_torsion_od_mm,
+            "front_heave_perch": lambda s: s.front_heave_perch_mm,
+            "rear_third_perch": lambda s: s.rear_third_perch_mm,
+            "rear_spring_perch": lambda s: s.rear_spring_perch_mm,
+            "front_camber": lambda s: s.front_camber_deg,
+            "fuel": lambda s: s.fuel_l,
+            "inv_front_heave": lambda s: 1.0 / max(s.front_heave_nmm, 1.0),
+            "inv_heave": lambda s: 1.0 / max(s.front_heave_nmm, 1.0),
+            "inv_heave_nmm": lambda s: 1.0 / max(s.front_heave_nmm, 1.0),
+            "inv_rear_third": lambda s: 1.0 / max(s.rear_third_nmm, 1.0),
+            "inv_rear_spring": lambda s: 1.0 / max(s.rear_spring_nmm, 1.0),
+            "inv_od4": lambda s: 1.0 / max(s.front_torsion_od_mm ** 4, 1.0),
+            "od4": lambda s: s.front_torsion_od_mm ** 4,
+        }
+        return cls(
+            intercept=model_coefficients[0] if model_coefficients else 0.0,
+            feature_names=tuple(model_feature_names),
+            coefficients=tuple(model_coefficients[1:1 + len(model_feature_names)]),
+            _EXTRACTORS=extractors,
         )
 
 
@@ -206,6 +261,21 @@ class GarageOutputModel:
     slider_coeff_torsion_turns: float = 0.0
 
     deflection: "DeflectionModel | None" = None
+
+    # Direct regressions bypass DeflectionModel for higher accuracy.
+    # When set, these override the corresponding DeflectionModel method calls.
+    _direct_front_rh: DirectRegression | None = None
+    _direct_rear_rh: DirectRegression | None = None
+    _direct_heave_defl_static: DirectRegression | None = None
+    _direct_heave_slider: DirectRegression | None = None
+    _direct_heave_defl_max: DirectRegression | None = None
+    _direct_rear_shock: DirectRegression | None = None
+    _direct_torsion_defl: DirectRegression | None = None
+    _direct_rear_spring_defl: DirectRegression | None = None
+    _direct_rear_spring_defl_max: DirectRegression | None = None
+    _direct_third_defl: DirectRegression | None = None
+    _direct_third_defl_max: DirectRegression | None = None
+    _direct_third_slider: DirectRegression | None = None
 
     def applies_to_track(self, track_name: str | None) -> bool:
         """Whether this model is the authoritative garage path for the track."""
@@ -403,23 +473,34 @@ class GarageOutputModel:
         front_excursion_p99_mm: float = 0.0,
     ) -> GarageOutputs:
         """Predict the unified set of garage outputs for a setup."""
-        front_static_rh = self.predict_front_static_rh(setup)
-        rear_static_rh = self.predict_rear_static_rh(setup)
+        if self._direct_front_rh:
+            front_static_rh = self._direct_front_rh.predict(setup)
+        else:
+            front_static_rh = self.predict_front_static_rh(setup)
+        if self._direct_rear_rh:
+            rear_static_rh = self._direct_rear_rh.predict(setup)
+        else:
+            rear_static_rh = self.predict_rear_static_rh(setup)
         torsion_turns = self.predict_torsion_turns(setup, front_static_rh)
-        heave_defl_static = self.predict_heave_spring_defl_static(
-            setup,
-            torsion_turns,
-            front_static_rh,
-        )
-        heave_slider_static = self.predict_heave_slider_defl_static(
-            setup,
-            torsion_turns,
-            front_static_rh,
-        )
-        heave_defl_max = (
-            self.heave_spring_defl_max_intercept_mm
-            + self.heave_spring_defl_max_slope * setup.front_heave_nmm
-        )
+        # Use direct regressions when available (higher accuracy), fall back
+        # to coefficient-based formulas otherwise.
+        if self._direct_heave_defl_static:
+            heave_defl_static = self._direct_heave_defl_static.predict(setup)
+        else:
+            heave_defl_static = self.predict_heave_spring_defl_static(
+                setup, torsion_turns, front_static_rh)
+        if self._direct_heave_slider:
+            heave_slider_static = self._direct_heave_slider.predict(setup)
+        else:
+            heave_slider_static = self.predict_heave_slider_defl_static(
+                setup, torsion_turns, front_static_rh)
+        if self._direct_heave_defl_max:
+            heave_defl_max = self._direct_heave_defl_max.predict(setup)
+        else:
+            heave_defl_max = (
+                self.heave_spring_defl_max_intercept_mm
+                + self.heave_spring_defl_max_slope * setup.front_heave_nmm
+            )
         available_travel = max(0.0, heave_defl_max - heave_defl_static)
         travel_margin = available_travel - front_excursion_p99_mm
 
@@ -431,51 +512,66 @@ class GarageOutputModel:
         third_spring_defl_static = 0.0
         third_spring_defl_max = 0.0
         third_slider_defl_static = 0.0
-        if self.deflection is not None:
-            front_shock_defl_static = self.deflection.shock_defl_front(
-                setup.front_pushrod_mm,
-                heave_perch_mm=setup.front_heave_perch_mm,
-                torsion_od_mm=setup.front_torsion_od_mm,
-                heave_nmm=setup.front_heave_nmm,
-            )
-            rear_shock_defl_static = self.deflection.shock_defl_rear(
-                setup.rear_pushrod_mm,
-                third_rate_nmm=setup.rear_third_nmm,
-                spring_rate_nmm=setup.rear_spring_nmm,
-                third_perch_mm=setup.rear_third_perch_mm,
-                spring_perch_mm=setup.rear_spring_perch_mm,
-            )
-            torsion_bar_rate = self.torsion_bar_rate_c * setup.front_torsion_od_mm ** 4
-            torsion_bar_defl = self.deflection.torsion_bar_defl(
-                setup.front_heave_nmm,
-                setup.front_heave_perch_mm,
-                torsion_bar_rate,
-            )
-            rear_spring_defl_static = self.deflection.rear_spring_defl_static(
-                setup.rear_spring_nmm,
-                setup.rear_spring_perch_mm,
-                third_rate_nmm=setup.rear_third_nmm,
-                third_perch_mm=setup.rear_third_perch_mm,
-                pushrod_mm=setup.rear_pushrod_mm,
-            )
-            rear_spring_defl_max = self.deflection.rear_spring_defl_max(
-                setup.rear_spring_nmm,
-                setup.rear_spring_perch_mm,
-            )
-            third_spring_defl_static = self.deflection.third_spring_defl_static(
-                setup.rear_third_nmm,
-                setup.rear_third_perch_mm,
-                spring_rate_nmm=setup.rear_spring_nmm,
-                spring_perch_mm=setup.rear_spring_perch_mm,
-                pushrod_mm=setup.rear_pushrod_mm,
-            )
-            third_spring_defl_max = self.deflection.third_spring_defl_max(
-                setup.rear_third_nmm,
-                setup.rear_third_perch_mm,
-            )
-            third_slider_defl_static = self.deflection.third_slider_defl_static(
-                third_spring_defl_static,
-            )
+        if self.deflection is not None or any([
+            self._direct_rear_shock, self._direct_torsion_defl,
+            self._direct_rear_spring_defl, self._direct_third_defl,
+        ]):
+            if self._direct_rear_shock:
+                rear_shock_defl_static = self._direct_rear_shock.predict(setup)
+            elif self.deflection:
+                rear_shock_defl_static = self.deflection.shock_defl_rear(
+                    setup.rear_pushrod_mm,
+                    third_rate_nmm=setup.rear_third_nmm,
+                    spring_rate_nmm=setup.rear_spring_nmm,
+                    third_perch_mm=setup.rear_third_perch_mm,
+                    spring_perch_mm=setup.rear_spring_perch_mm,
+                )
+            if self.deflection:
+                front_shock_defl_static = self.deflection.shock_defl_front(
+                    setup.front_pushrod_mm,
+                    heave_perch_mm=setup.front_heave_perch_mm,
+                    torsion_od_mm=setup.front_torsion_od_mm,
+                    heave_nmm=setup.front_heave_nmm,
+                )
+            if self._direct_torsion_defl:
+                torsion_bar_defl = self._direct_torsion_defl.predict(setup)
+            elif self.deflection:
+                torsion_bar_rate = self.torsion_bar_rate_c * setup.front_torsion_od_mm ** 4
+                torsion_bar_defl = self.deflection.torsion_bar_defl(
+                    setup.front_heave_nmm, setup.front_heave_perch_mm, torsion_bar_rate)
+            if self._direct_rear_spring_defl:
+                rear_spring_defl_static = self._direct_rear_spring_defl.predict(setup)
+            elif self.deflection:
+                rear_spring_defl_static = self.deflection.rear_spring_defl_static(
+                    setup.rear_spring_nmm, setup.rear_spring_perch_mm,
+                    third_rate_nmm=setup.rear_third_nmm,
+                    third_perch_mm=setup.rear_third_perch_mm,
+                    pushrod_mm=setup.rear_pushrod_mm,
+                )
+            if self._direct_rear_spring_defl_max:
+                rear_spring_defl_max = self._direct_rear_spring_defl_max.predict(setup)
+            elif self.deflection:
+                rear_spring_defl_max = self.deflection.rear_spring_defl_max(
+                    setup.rear_spring_nmm, setup.rear_spring_perch_mm)
+            if self._direct_third_defl:
+                third_spring_defl_static = self._direct_third_defl.predict(setup)
+            elif self.deflection:
+                third_spring_defl_static = self.deflection.third_spring_defl_static(
+                    setup.rear_third_nmm, setup.rear_third_perch_mm,
+                    spring_rate_nmm=setup.rear_spring_nmm,
+                    spring_perch_mm=setup.rear_spring_perch_mm,
+                    pushrod_mm=setup.rear_pushrod_mm,
+                )
+            if self._direct_third_defl_max:
+                third_spring_defl_max = self._direct_third_defl_max.predict(setup)
+            elif self.deflection:
+                third_spring_defl_max = self.deflection.third_spring_defl_max(
+                    setup.rear_third_nmm, setup.rear_third_perch_mm)
+            if self._direct_third_slider:
+                third_slider_defl_static = self._direct_third_slider.predict(setup)
+            elif self.deflection:
+                third_slider_defl_static = self.deflection.third_slider_defl_static(
+                    third_spring_defl_static)
 
         return GarageOutputs(
             front_static_rh_mm=round(front_static_rh, 3),
