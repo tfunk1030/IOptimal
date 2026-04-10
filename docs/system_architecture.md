@@ -43,12 +43,16 @@ This ensures the system **never outputs a setup value from an uncalibrated model
 - How many data points are needed for reliable calibration
 
 Per-step calibration requirements:
-- **Step 1 (Rake/RH):** aero_compression, ride_height_model, pushrod_geometry
+- **Step 1 (Rake/RH):** track_support, aero_compression, ride_height_model, pushrod_geometry
 - **Step 2 (Heave/Third):** spring_rates
 - **Step 3 (Corner Springs):** spring_rates
 - **Step 4 (ARBs):** arb_stiffness, lltd_target
 - **Step 5 (Geometry):** roll_gains
 - **Step 6 (Dampers):** damper_zeta
+
+Dependency cascade follows data flow, not simple step order: Step 5 depends on
+Step 4 because geometry consumes total roll stiffness from the ARB solve, while
+Step 6 depends on Step 3 wheel rates rather than Step 4/5.
 
 ### 1.3 System Boundary Diagram
 
@@ -651,7 +655,7 @@ Solving out of order produces internally inconsistent setups. The refinement pas
 
 **Rationale:** Calibration evidence showed that `single_lap_safe` with `lap_gain_only` (w_lap_gain=1.0, all penalties=0.0) outperforms the full multi-term objective by 3.4x in Spearman correlation against actual lap times. Penalty terms added noise rather than signal at the current observation count.
 
-**Implementation:** `scenario_profiles.py` defines `ObjectiveWeightProfile` and `PredictionSanityProfile` per scenario. The pipeline resolves a profile from CLI flags and passes it through every scoring layer.
+**Implementation:** `scenario_profiles.py` defines `ObjectiveWeightProfile` and `PredictionSanityProfile` per scenario. The pipeline resolves a profile from CLI flags and passes it through every scoring layer. Scenario choice affects scoring/sanity policy only; legal-manifold search remains an explicit opt-in via `--free`, `--explore-legal-space`, or `--search-mode`.
 
 ### 4.4 Legal Manifold Search (Not Free Optimization)
 

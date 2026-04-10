@@ -187,7 +187,7 @@ class TestCalibrationGateDependencyPropagation(unittest.TestCase):
         for step_num in range(1, 4):
             self.assertTrue(gate.step_is_runnable(step_num),
                             f"Ferrari step {step_num} should be runnable")
-        # Step 4 blocked by its own subsystems (arb_stiffness, lltd_target)
+        # Step 4 is blocked by its own ARB calibration, not by cascade.
         sr4 = gate.check_step(4)
         self.assertTrue(sr4.blocked)
         self.assertFalse(sr4.dependency_blocked)

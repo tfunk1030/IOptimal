@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -185,7 +186,13 @@ def resolve_scenario_name(name: str | None) -> str:
         return DEFAULT_SCENARIO
     normalized = str(name).strip().lower().replace("-", "_").replace(" ", "_")
     normalized = _ALIASES.get(normalized, normalized)
-    return normalized if normalized in _SCENARIOS else DEFAULT_SCENARIO
+    if normalized in _SCENARIOS:
+        return normalized
+    warnings.warn(
+        f"Unknown scenario profile '{name}' — falling back to '{DEFAULT_SCENARIO}'.",
+        stacklevel=2,
+    )
+    return DEFAULT_SCENARIO
 
 
 def get_scenario_profile(name: str | None) -> ScenarioProfile:

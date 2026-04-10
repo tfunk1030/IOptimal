@@ -2163,6 +2163,7 @@ def calibration_status(car: str) -> dict[str, Any]:
         status["spring_lookups"] = lookup_info
         status["m_eff_front_kg"] = models.m_eff_front_kg
         status["lltd_target"] = models.measured_lltd_target
+        status["lltd_target_status"] = models.status.get("lltd_target")
 
     # Recommendations
     recommendations = []
@@ -2212,8 +2213,10 @@ def print_status(car: str) -> None:
 
     if s.get("m_eff_front_kg"):
         print(f"\n  m_eff_front:    {s['m_eff_front_kg']:.0f} kg (calibrated)")
-    if s.get("lltd_target"):
+    if s.get("lltd_target") is not None:
         print(f"  LLTD target:    {s['lltd_target']:.3f} (calibrated)")
+    elif s.get("lltd_target_status"):
+        print(f"  LLTD target:    {s['lltd_target_status']}")
 
     if s.get("component_status"):
         print(f"\n  Component status:")

@@ -444,9 +444,14 @@ def generate_report(
         a(_setup_report)
     except (AttributeError, TypeError) as exc:
         # Some steps are None (blocked by calibration gate). Print partial report.
+        produced_steps = [str(n) for n, s in enumerate((step1, step2, step3, step4, step5, step6), start=1) if s is not None]
+        blocked_steps = [str(n) for n, s in enumerate((step1, step2, step3, step4, step5, step6), start=1) if s is None]
         a(f"  [Report truncated — blocked steps: {exc}]")
-        a(f"  Steps 1-3 produced output; steps 4-6 blocked by calibration gate.")
-        a(f"  .sto will use garage defaults for those steps.")
+        if produced_steps:
+            a(f"  Produced steps: {', '.join(produced_steps)}")
+        if blocked_steps:
+            a(f"  Blocked/defaulted steps: {', '.join(blocked_steps)}")
+            a(f"  .sto will use garage defaults for blocked steps.")
 
     # ── CURRENT vs RECOMMENDED ────────────────────────────────────────
     if current_setup is not None and step4 is not None and step5 is not None:

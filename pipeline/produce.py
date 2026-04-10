@@ -1049,7 +1049,21 @@ def produce(
         search_mode=search_mode,
         scenario_name=scenario_profile_name,
     )
-    if do_legal_search:
+    _search_ready = all(s is not None for s in (step1, step2, step3, step4, step5, step6))
+    if do_legal_search and not _search_ready:
+        _search_reason = (
+            f"blocked steps {sorted(_steps_blocked)}"
+            if _steps_blocked
+            else "base solve did not materialize all 6 steps"
+        )
+        log(f"[legal-search] Skipped: requires all 6 calibrated solver steps ({_search_reason}).")
+        run_trace.add_warning(
+            f"Legal-manifold search skipped: requires all 6 calibrated steps ({_search_reason})."
+        )
+        solve_notes.append(
+            f"Skipped legal-manifold search because not all 6 calibrated steps were available ({_search_reason})."
+        )
+    elif do_legal_search:
         try:
             baseline_params = {
                 key: value

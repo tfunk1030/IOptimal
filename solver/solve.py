@@ -338,6 +338,7 @@ def run_solver(args: "argparse.Namespace") -> None:
     # Blocked steps output calibration instructions instead of setup values.
     cal_gate = CalibrationGate(car, args.track)
     cal_report = cal_gate.full_report()
+    _confidence_text = cal_report.format_confidence_report(cal_gate.subsystems())
 
     if _track_is_generic:
         log()
@@ -350,6 +351,9 @@ def run_solver(args: "argparse.Namespace") -> None:
         log(f"[calibration] {cal_gate.summary_line()}")
         log()
         log(cal_report.format_header())
+        log()
+    if _confidence_text:
+        log(_confidence_text)
         log()
 
     _camber_conf = ("calibrated"
@@ -597,6 +601,7 @@ def run_solver(args: "argparse.Namespace") -> None:
                 output = {
                     "calibration_blocked": sorted(_steps_blocked),
                     "calibration_instructions": cal_report.format_header(),
+                    "calibration_provenance": cal_gate.provenance(),
                 }
                 print(json.dumps(output, indent=2))
             return
@@ -986,6 +991,7 @@ def run_solver(args: "argparse.Namespace") -> None:
         if _steps_blocked:
             output["calibration_blocked"] = sorted(_steps_blocked)
             output["calibration_instructions"] = cal_report.format_header()
+        output["calibration_provenance"] = cal_gate.provenance()
         print(json.dumps(output, indent=2))
 
 
