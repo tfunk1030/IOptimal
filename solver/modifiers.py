@@ -357,15 +357,23 @@ def compute_modifiers(
     # Re-apply safety floors AFTER confidence scaling.
     # These are based on directly measured physical facts (not inferred diagnoses),
     # so they must not be eroded by confidence weighting.
+    # Floors are expressed as multiples of _heave_min (car-relative) to work
+    # correctly across BMW (range 0-900, _heave_min=90), Porsche (150-600, 45),
+    # and Acura (90-1800, 171). Hardcoded absolute N/mm values would be either
+    # too tight for Porsche or meaningless for BMW.
     travel_pct = measured.front_heave_travel_used_pct or 0.0
     if travel_pct >= 90.0:
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 60.0)
+        _travel_floor_post = _heave_min * 2.0   # same ratio as diagnosis block above
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
     elif travel_pct >= 80.0:
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 50.0)
+        _travel_floor_post = _heave_min * 1.67
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
     elif travel_pct >= 70.0:
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 40.0)
+        _travel_floor_post = _heave_min * 1.33
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
     if pitch_range_deg > 1.5:
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 38.0)
+        _pitch_floor_post = _heave_min * 1.27   # same ratio as diagnosis block above
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _pitch_floor_post)
 
     # Clamp cumulative offsets to reasonable ranges
     mods.lltd_offset = max(-0.05, min(0.05, mods.lltd_offset))

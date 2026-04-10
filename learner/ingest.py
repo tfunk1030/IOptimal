@@ -74,7 +74,14 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     setup = CurrentSetup.from_ibt(ibt, car_canonical=car.canonical_name)
     apply_live_control_overrides(setup, measured)
     corners = segment_lap(ibt, start, end, car=car, tick_rate=ibt.tick_rate)
-    driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
+    # Pass the same lap indices to analyze_driver so throttle/steering analysis
+    # is computed on the same lap as corners, extract_measurements, and segment_lap.
+    driver = analyze_driver(
+        ibt, corners, car,
+        tick_rate=ibt.tick_rate,
+        selected_lap_start=start,
+        selected_lap_end=end,
+    )
     refine_driver_with_measured(driver, measured)
     thresholds = compute_adaptive_thresholds(track, car, driver)
     diag = diagnose(measured, setup, car, thresholds)
@@ -250,7 +257,7 @@ def ingest_ibt(
 
     # ── 4. Delta detection against prior sessions ────────────────────
     delta_result = None
-    track_key_short = track.track_name.lower().split()[0]  # "sebring"
+    track_key_short = track.track_name.lower().split()[0]
 
     prior_obs = store.list_observations(car=car_name, track=track.track_name)
     # Filter to sessions BEFORE this one (by timestamp or position)

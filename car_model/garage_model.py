@@ -209,18 +209,43 @@ class GarageModel:
                 self._update_physics_stat("lltd_measured", lltd_f)
 
         # m_eff back-calculation from shock velocity + spring rate + RH std
-        # Only valid when all three are available
-        k_front_idx = setup.get("front_heave_index") or setup.get("front_heave_nmm")
+        # Only valid when all three are available AND the spring rate is a real
+        # physical value in N/mm (not a raw garage index like Ferrari/Acura use).
+        # The observation dict stores "front_heave_nmm" (decoded N/mm) when
+        # available and "front_heave_index" (raw index) for indexed cars.
+        # We only compute m_eff when we have a real N/mm value; raw indices like
+        # Ferrari's 0–10 scale would produce wildly wrong mass estimates.
+        k_front_nmm_raw = setup.get("front_heave_nmm")
+        k_front_idx = setup.get("front_heave_index")
         frh_std = telem.get("front_rh_std_mm")
-        if vp99f and k_front_idx and frh_std and float(frh_std) > 0:
-            # m_eff = k * (excursion / vp99)^2 where excursion = std * 2.33
-            # k in N/m, excursion in m
-            k_nmm = float(k_front_idx)  # store raw index for car to decode
-            excursion_m = float(frh_std) * 2.33 / 1000.0
-            # Only store the ratio (excursion/vp99)^2 — car model applies k
-            ratio_sq = (excursion_m / float(vp99f)) ** 2
-            self._update_physics_stat("m_eff_front_ratio", ratio_sq)
-            self._update_physics_stat("m_eff_front_input_k", k_nmm)
+
+        # Use decoded N/mm if available and looks physically plausible (>5 N/mm).
+        # Reject raw indices: a Ferrari index of 5 would give m_eff ~ 0.3 kg
+        # instead of ~500 kg.  If front_heave_nmm is actually an index value
+        # (same as front_heave_index), skip the computation.
+        _use_k = None
+        if k_front_nmm_raw is not None:
+            k_val = float(k_front_nmm_raw)
+            # Index values are typically integers ≤ 20; real spring rates ≥ 30 N/mm.
+            # Guard: only accept values that are plausibly spring rates.
+            is_likely_index = (
+                k_front_idx is not None and abs(k_val - float(k_front_idx)) < 0.5
+            )
+            if k_val > 20.0 and not is_likely_index:
+                _use_k = k_val
+
+        if _use_k is not None and frh_std and float(frh_std) > 0:
+            vp99f_val = telem.get("front_shock_vel_p99_mps")
+            if vp99f_val is not None and float(vp99f_val) > 0.001:
+                # m_eff = k_N/m * (excursion_m / vp99)^2, excursion = std * 2.33
+                # k_N/m = k_nmm * 1000
+                excursion_m = float(frh_std) * 2.33 / 1000.0
+                ratio_sq = (excursion_m / float(vp99f_val)) ** 2
+                m_eff_kg = _use_k * 1000.0 * ratio_sq
+                # Plausibility gate: GTP sprung mass per corner ~ 100–600 kg
+                if 80.0 < m_eff_kg < 700.0:
+                    self._update_physics_stat("m_eff_front_ratio", ratio_sq)
+                    self._update_physics_stat("m_eff_front_input_k_nmm", _use_k)
 
         # ── Best lap ──────────────────────────────────────────────────
         perf = obs.get("performance", {})

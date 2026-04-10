@@ -830,7 +830,8 @@ def _iterative_coupling_refinement(
                     inputs.wing_angle,
                 )
                 correction = inputs.target_balance - actual_balance
-                corrected_target = inputs.target_balance + correction
+                # Damping factor 0.6 prevents full-gain overshoot in nonlinear aero maps
+                corrected_target = inputs.target_balance + 0.6 * correction
                 new_step1 = rake_solver.solve(
                     target_balance=corrected_target,
                     balance_tolerance=inputs.balance_tolerance,
@@ -1242,16 +1243,21 @@ def materialize_overrides(
         )
 
         damper_solver = DamperSolver(car, track)
-        provisional_step6 = damper_solver.solve(
-            front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=rear_wheel_rate_nmm,
-            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
-            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
-            fuel_load_l=inputs.fuel_load_l,
-            damping_ratio_scale=mods.damping_ratio_scale,
-            measured=inputs.measured,
-            front_heave_nmm=step2.front_heave_nmm,
-            rear_third_nmm=step2.rear_third_nmm,
+        # COUPLING APPROXIMATION: The heave excursion model has a weak dependency
+        # on HS damping coefficient (HS dampers reduce effective excursion by ~5–10%
+        # at typical GTP speeds). We use the base solve's step6 HS values as the
+        # coupling estimate rather than re-solving step6 here (which would violate
+        # the 1→2→3→4→5→6 workflow ordering — steps 4 and 5 have not been rebuilt
+        # yet at this point in materialize_overrides).
+        # If step6 from the base result exists, borrow its HS coefficients.
+        # If not (first solve, uncalibrated zeta), use 0 which is physics-correct
+        # for the undamped excursion bound.
+        _prev_step6 = base_result.step6
+        _prov_hs_front = (
+            _prev_step6.c_hs_front if _prev_step6 is not None else 0.0
+        )
+        _prov_hs_rear = (
+            _prev_step6.c_hs_rear if _prev_step6 is not None else 0.0
         )
 
         if explicit_step2:
@@ -1269,8 +1275,8 @@ def materialize_overrides(
                 rear_spring_perch_mm=step3.rear_spring_perch_mm,
                 fuel_load_l=inputs.fuel_load_l,
                 front_camber_deg=_front_camber(inputs),
-                front_hs_damper_nsm=provisional_step6.c_hs_front,
-                rear_hs_damper_nsm=provisional_step6.c_hs_rear,
+                front_hs_damper_nsm=_prov_hs_front,
+                rear_hs_damper_nsm=_prov_hs_rear,
             )
         else:
             step2 = heave_solver.solve(
@@ -1287,8 +1293,8 @@ def materialize_overrides(
                 rear_third_perch_mm=step2.perch_offset_rear_mm,
                 fuel_load_l=inputs.fuel_load_l,
                 front_camber_deg=_front_camber(inputs),
-                front_hs_damper_nsm=provisional_step6.c_hs_front,
-                rear_hs_damper_nsm=provisional_step6.c_hs_rear,
+                front_hs_damper_nsm=_prov_hs_front,
+                rear_hs_damper_nsm=_prov_hs_rear,
             )
 
         if overrides.step3:
@@ -1324,7 +1330,7 @@ def materialize_overrides(
             step3,
             fuel_load_l=inputs.fuel_load_l,
             front_camber_deg=_front_camber(inputs),
-            front_hs_damper_nsm=provisional_step6.c_hs_front,
+            front_hs_damper_nsm=_prov_hs_front,
             verbose=False,
         )
         reconcile_ride_heights(

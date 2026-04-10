@@ -248,6 +248,17 @@ class ARBSolver:
         Args:
             front_wheel_rate_nmm: Front corner wheel rate from Step 3 (N/mm)
             rear_wheel_rate_nmm: Rear corner wheel rate from Step 3 (N/mm)
+            lltd_offset: Offset added to LLTD target (from SolverModifiers)
+            current_rear_arb_size: Driver-loaded rear ARB size (for driver anchor fallback)
+            current_rear_arb_blade: Driver-loaded rear ARB blade (for driver anchor fallback)
+            current_front_arb_size: Driver-loaded front ARB size.
+                ACCEPTED BUT NOT CURRENTLY USED IN SEARCH — the front ARB is fixed
+                at the start of the rear search loop (``farb_size``, ``farb_blade``
+                selected by LLTD proximity). A symmetrical front anchor (like the
+                rear anchor) would require an additional search pass. Retained in
+                the API for future implementation.
+            current_front_arb_blade: Driver-loaded front ARB blade.
+                ACCEPTED BUT NOT CURRENTLY USED — same reason as current_front_arb_size.
 
         Returns:
             ARBSolution with recommended ARB setup and live blade strategy

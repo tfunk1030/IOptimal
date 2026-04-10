@@ -562,8 +562,20 @@ def iter_fields(
     return results
 
 
-def yaml_path_to_canonical(yaml_path: str, car: str = "bmw") -> str | None:
-    """Look up canonical key from a YAML path for a given car."""
+def yaml_path_to_canonical(yaml_path: str, car: str | None = None) -> str | None:
+    """Look up canonical key from a YAML path for a given car.
+
+    Args:
+        yaml_path: YAML path string to look up.
+        car: Car canonical name (e.g. "bmw", "porsche"). Must be provided;
+             omitting it raises ValueError to prevent silent BMW fallback.
+    """
+    if car is None:
+        raise ValueError(
+            "yaml_path_to_canonical() requires an explicit car argument. "
+            "Pass car='bmw', car='porsche', etc. Omitting it previously defaulted "
+            "to BMW which silently applied wrong mappings to other cars."
+        )
     specs = CAR_FIELD_SPECS.get(car, {})
     for key, spec in specs.items():
         if spec.yaml_path == yaml_path:
@@ -571,8 +583,20 @@ def yaml_path_to_canonical(yaml_path: str, car: str = "bmw") -> str | None:
     return None
 
 
-def sto_param_id_to_canonical(sto_param_id: str, car: str = "bmw") -> str | None:
-    """Look up canonical key from a STO param ID for a given car."""
+def sto_param_id_to_canonical(sto_param_id: str, car: str | None = None) -> str | None:
+    """Look up canonical key from a STO param ID for a given car.
+
+    Args:
+        sto_param_id: STO parameter ID to look up.
+        car: Car canonical name (e.g. "bmw", "porsche"). Must be provided;
+             omitting it raises ValueError to prevent silent BMW fallback.
+    """
+    if car is None:
+        raise ValueError(
+            "sto_param_id_to_canonical() requires an explicit car argument. "
+            "Pass car='bmw', car='porsche', etc. Omitting it previously defaulted "
+            "to BMW which silently applied wrong mappings to other cars."
+        )
     specs = CAR_FIELD_SPECS.get(car, {})
     for key, spec in specs.items():
         if spec.sto_param_id == sto_param_id:
@@ -586,6 +610,14 @@ def detect_car_adapter(yaml_keys: set[str]) -> str:
     Acura (ORECA): Dampers.FrontHeave / Dampers.FrontRoll
     Ferrari:       Dampers.LeftFrontDamper or Systems.*
     BMW/Cadillac:  Chassis.LeftFront.LsCompDamping (no Dampers section)
+
+    Returns the detected car name or "bmw" as the BMW/Cadillac fallback.
+    Callers that need to distinguish "actually detected BMW" from "unrecognised"
+    should check the returned value against their expected car list.
+
+    NOTE: This function is a structural heuristic only and is not guaranteed
+    to be accurate for all car/schema combinations. It is only appropriate for
+    bootstrapping setups where the car is truly unknown from context.
     """
     if any("FrontHeave" in k or "RearHeave" in k or "FrontRoll" in k for k in yaml_keys):
         return "acura"

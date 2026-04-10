@@ -461,8 +461,23 @@ def extract_measurements(
         lr_sv = np.abs(tr + rroll)
         rr_sv = np.abs(tr - rroll)
 
-    front_sv = np.concatenate([lf_sv, rf_sv])
-    rear_sv = np.concatenate([lr_sv, rr_sv])
+    if has_corner_shocks:
+        # Direct per-corner measurements: pool LF+RF and LR+RR.
+        # The two sides are excited by independent inputs (left vs right kerbs,
+        # directional track features) so concatenation gives the true combined
+        # front/rear axle demand distribution.
+        front_sv = np.concatenate([lf_sv, rf_sv])
+        rear_sv = np.concatenate([lr_sv, rr_sv])
+    else:
+        # Synthesised heave+roll architecture: lf_sv = |hf + froll|,
+        # rf_sv = |hf - froll|. These share the SAME heave signal, so
+        # concatenating them double-counts every heave excursion and produces
+        # a bimodal distribution that is neither "worst corner" nor "average".
+        # Use the element-wise maximum instead — this represents the actual
+        # worst-case demand seen by the suspension at each sample instant and
+        # is the correct input for heave spring and damper calibration.
+        front_sv = np.maximum(lf_sv, rf_sv)
+        rear_sv = np.maximum(lr_sv, rr_sv)
 
     state.front_shock_vel_p95_mps = float(np.percentile(front_sv, 95))
     state.front_shock_vel_p99_mps = float(np.percentile(front_sv, 99))

@@ -223,8 +223,8 @@ _CAR_OVERRIDES: dict[str, dict] = {
         "params": {
             "front_heave_min": 20.0,
             "front_heave_max": 200.0,
-            "rear_heave_min": 100.0,
-            "rear_heave_max": 1000.0,
+            "rear_heave_min": 80.0,   # Porsche rear third (heave): garage range 80–800 N/mm
+            "rear_heave_max": 800.0,  # Matches cars.py rear_spring_range_nmm=(80,800) per CLAUDE.md (real: 105-280 N/mm tested range)
             # Porsche DSSV dampers — click count unknown, using conservative default
             "damper_max_clicks_ls": 20,
             "damper_max_clicks_hs": 20,

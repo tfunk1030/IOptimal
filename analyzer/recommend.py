@@ -412,7 +412,7 @@ def _recommend_balance(
                 confidence="medium",
             ))
 
-    elif "lltd" in problem.symptom.lower():
+    elif "lltd" in problem.symptom.lower() or "roll distribution proxy" in problem.symptom.lower():
         if "too high" in problem.cause.lower():
             # LLTD too high -> soften front ARB or stiffen rear
             current_blade = setup.front_arb_blade
@@ -648,7 +648,7 @@ def _recommend_thermal(
     changes = []
     geo = car.geometry
 
-    if "inner hot" in problem.symptom.lower():
+    if "inside too hot" in problem.symptom.lower() or "inner hot" in problem.symptom.lower():
         # Too much negative camber -> reduce magnitude
         corner = problem.symptom[:2]  # "LF", "RF", "LR", "RR"
         axle = "front" if corner[1] == "F" else "rear"
@@ -703,7 +703,7 @@ def _recommend_thermal(
                     confidence="high",
                 ))
 
-    elif "outer hot" in problem.symptom.lower():
+    elif "too flat / outer loaded" in problem.symptom.lower() or "outer hot" in problem.symptom.lower():
         # Not enough negative camber -> increase magnitude
         corner = problem.symptom[:2]
         axle = "front" if corner[1] == "F" else "rear"
