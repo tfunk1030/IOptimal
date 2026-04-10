@@ -55,7 +55,7 @@
 ## Enhancement plan
 
 ### Phase 0 (Immediate hardening: 1 day)
-- Set `PYTHONPATH=.` in CI test step (or package the repo and install with `pip install -e .`).
+- Set `PYTHONPATH=.` in the CI test step (or otherwise bootstrap repo-root imports explicitly). Only use `pip install -e .` as an alternative if packaging is updated to include the top-level packages imported by tests (for example `car_model`, `analyzer`, and `aero_model`), because the current editable install does not guarantee those imports will resolve.
 - Add a first-stage smoke suite (small deterministic tests) before full test collection.
 - Add a CI preflight that prints Python version, working directory, and key import checks.
 
