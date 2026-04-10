@@ -127,7 +127,7 @@ def validate_and_fix_garage_correlation(
     # --- Ferrari write-back: propagate clamped index-space corrections to physical objects ---
     # _clamp_step2/_clamp_step3 operated on local deep copies in index space; write the
     # corrected values back to the originals so callers receive the adjusted values.
-    if _ferrari_orig_step2 is not None:
+    if _ferrari_orig_step2 is not None and _ferrari_orig_step3 is not None:
         from car_model.setup_registry import internal_solver_value as _isv
         _ferrari_orig_step2.front_heave_nmm = float(_isv(car, "front_heave_nmm", step2.front_heave_nmm))
         _ferrari_orig_step2.rear_third_nmm = float(_isv(car, "rear_third_nmm", step2.rear_third_nmm))

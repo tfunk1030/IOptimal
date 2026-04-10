@@ -725,7 +725,7 @@ def produce(
 
     # ── Calibration gate — track key (also used by veto cluster lookup below) ──
     from car_model.registry import track_key as _track_key
-    _track_short = _track_key(track.track_name) if hasattr(track, "track_name") else args.track
+    _track_short = _track_key(track.track_name) if hasattr(track, "track_name") else _track_key(args.track)
 
     # ── Phase H.5: Multi-solve stint compromise (if --stint) ──
     # Load known-bad setup fingerprints from learner (if available)
