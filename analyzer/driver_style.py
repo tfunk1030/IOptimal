@@ -134,6 +134,8 @@ def analyze_driver(
     corners: list[CornerAnalysis],
     car: CarModel,
     tick_rate: int = 60,
+    selected_lap_start: int | None = None,
+    selected_lap_end: int | None = None,
 ) -> DriverProfile:
     """Extract a DriverProfile from IBT telemetry and corner segmentation.
 
@@ -147,6 +149,12 @@ def analyze_driver(
         Car model for physics parameters.
     tick_rate : int
         Sample rate (Hz).
+    selected_lap_start : int | None
+        Start sample index of the analysis lap. When provided, throttle/steering
+        analysis uses this lap rather than the raw IBT best lap, ensuring
+        consistency with the lap used for extract_measurements() / segment_lap().
+    selected_lap_end : int | None
+        End sample index of the analysis lap (inclusive).
 
     Returns
     -------
@@ -192,7 +200,11 @@ def analyze_driver(
             pass  # Will use corner-level data below
 
     # Use best lap for detailed throttle analysis
-    best = ibt.best_lap_indices()
+    # Prefer caller-provided indices (same lap as extract/segment) for consistency.
+    if selected_lap_start is not None and selected_lap_end is not None:
+        best = (selected_lap_start, selected_lap_end)
+    else:
+        best = ibt.best_lap_indices()
     if best is not None:
         bstart, bend = best
         throttle_lap = ibt.channel("Throttle")[bstart:bend + 1]

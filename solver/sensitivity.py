@@ -148,7 +148,10 @@ def _classify_slack(slack_pct: float) -> ConstraintStatus:
     return ConstraintStatus.SLACK
 
 
-def analyze_step1_constraints(step1: RakeSolution) -> list[ConstraintProximity]:
+def analyze_step1_constraints(
+    step1: RakeSolution,
+    target_df_balance_pct: float = 50.14,
+) -> list[ConstraintProximity]:
     """Analyze Step 1 (rake) constraint proximity."""
     constraints = []
 
@@ -174,13 +177,14 @@ def analyze_step1_constraints(step1: RakeSolution) -> list[ConstraintProximity]:
         ))
 
     # DF balance target (how close achieved balance is to target)
-    # Use a ±1% window as the "limit"
-    balance_error = abs(step1.df_balance_pct - 50.14)  # default target
+    # Use a ±1% window as the "limit". target_df_balance_pct comes from the
+    # caller (scenario/solve_inputs) rather than being hardcoded to 50.14.
+    balance_error = abs(step1.df_balance_pct - target_df_balance_pct)
     constraints.append(ConstraintProximity(
         name="DF balance accuracy",
         description="Achieved DF balance vs target",
         actual_value=step1.df_balance_pct,
-        limit_value=50.14,
+        limit_value=target_df_balance_pct,
         units="%",
         slack=1.0 - balance_error,
         slack_pct=(1.0 - balance_error) / 1.0 * 100,
@@ -191,8 +195,22 @@ def analyze_step1_constraints(step1: RakeSolution) -> list[ConstraintProximity]:
     return constraints
 
 
-def analyze_step2_constraints(step2: HeaveSolution) -> list[ConstraintProximity]:
-    """Analyze Step 2 (heave/third) constraint proximity."""
+def analyze_step2_constraints(
+    step2: HeaveSolution,
+    sigma_target_front_mm: float = 8.0,
+    sigma_target_rear_mm: float = 10.0,
+) -> list[ConstraintProximity]:
+    """Analyze Step 2 (heave/third) constraint proximity.
+
+    Parameters
+    ----------
+    step2 : HeaveSolution
+    sigma_target_front_mm : float
+        Target front RH std dev (mm). Default 8.0 is typical BMW/Sebring.
+        Pass from SolveChainInputs.heave_sigma_target when available.
+    sigma_target_rear_mm : float
+        Target rear RH std dev (mm). Default 10.0. Pass from solve inputs.
+    """
     constraints = []
 
     # Front bottoming margin
@@ -238,7 +256,7 @@ def analyze_step2_constraints(step2: HeaveSolution) -> list[ConstraintProximity]
     ))
 
     # Front sigma vs target
-    sigma_target = 8.0  # mm default
+    sigma_target = sigma_target_front_mm
     slack = sigma_target - step2.front_sigma_at_rate_mm
     slack_pct = (slack / sigma_target * 100) if sigma_target > 0 else 0
     constraints.append(ConstraintProximity(
@@ -254,7 +272,7 @@ def analyze_step2_constraints(step2: HeaveSolution) -> list[ConstraintProximity]
     ))
 
     # Rear sigma vs target
-    sigma_target_rear = 10.0  # mm default
+    sigma_target_rear = sigma_target_rear_mm
     slack = sigma_target_rear - step2.rear_sigma_at_rate_mm
     slack_pct = (slack / sigma_target_rear * 100) if sigma_target_rear > 0 else 0
     constraints.append(ConstraintProximity(
@@ -457,6 +475,9 @@ def build_sensitivity_report(
     arb_lltd_target: float = 0.0,
     rarb_sensitivity: float = 0.0,
     car: "CarModel | None" = None,
+    target_df_balance_pct: float = 50.14,
+    sigma_target_front_mm: float = 8.0,
+    sigma_target_rear_mm: float = 10.0,
 ) -> SensitivityReport:
     """Build complete sensitivity report from solver solutions.
 
@@ -467,14 +488,24 @@ def build_sensitivity_report(
         arb_lltd_target: Target LLTD from Step 4 (optional)
         rarb_sensitivity: ΔLLTD per RARB blade step (optional)
         car: Car model for per-car m_eff values (optional, falls back to BMW defaults)
+        target_df_balance_pct: DF balance target from solve inputs (default 50.14).
+            Pass solve_inputs.target_balance to get a car/track-correct value.
+        sigma_target_front_mm: Front RH sigma target from heave solver inputs.
+        sigma_target_rear_mm: Rear RH sigma target from heave solver inputs.
     """
     report = SensitivityReport()
 
     # Step 1 constraints
-    report.constraints.extend(analyze_step1_constraints(step1))
+    report.constraints.extend(analyze_step1_constraints(
+        step1, target_df_balance_pct=target_df_balance_pct
+    ))
 
     # Step 2 constraints
-    report.constraints.extend(analyze_step2_constraints(step2))
+    report.constraints.extend(analyze_step2_constraints(
+        step2,
+        sigma_target_front_mm=sigma_target_front_mm,
+        sigma_target_rear_mm=sigma_target_rear_mm,
+    ))
 
     # Step 4 LLTD constraint (if provided)
     if arb_lltd > 0 and arb_lltd_target > 0:

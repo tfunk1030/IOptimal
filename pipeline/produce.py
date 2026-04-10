@@ -555,7 +555,14 @@ def produce(
 
     # ── Phase D: Analyze driver style ──
     log("Analyzing driver style...")
-    driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
+    # Pass start/end so throttle/steering analysis uses the same lap as
+    # extract_measurements() and segment_lap() — avoids metric mismatch.
+    driver = analyze_driver(
+        ibt, corners, car,
+        tick_rate=ibt.tick_rate,
+        selected_lap_start=start,
+        selected_lap_end=end,
+    )
     # Refine consistency using in-car adjustment counts from telemetry
     refine_driver_with_measured(driver, measured)
     from analyzer.driver_style import separate_driver_noise

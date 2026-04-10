@@ -24,7 +24,7 @@ import json
 import sys
 from pathlib import Path
 
-from learner.knowledge_store import KnowledgeStore
+from learner.knowledge_store import KnowledgeStore, track_key_from_name
 from learner.observation import Observation, build_observation
 from learner.delta_detector import detect_delta, SessionDelta
 from learner.empirical_models import fit_models
@@ -74,7 +74,14 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     setup = CurrentSetup.from_ibt(ibt, car_canonical=car.canonical_name)
     apply_live_control_overrides(setup, measured)
     corners = segment_lap(ibt, start, end, car=car, tick_rate=ibt.tick_rate)
-    driver = analyze_driver(ibt, corners, car, tick_rate=ibt.tick_rate)
+    # Pass the same lap indices to analyze_driver so throttle/steering analysis
+    # is computed on the same lap as corners, extract_measurements, and segment_lap.
+    driver = analyze_driver(
+        ibt, corners, car,
+        tick_rate=ibt.tick_rate,
+        selected_lap_start=start,
+        selected_lap_end=end,
+    )
     refine_driver_with_measured(driver, measured)
     thresholds = compute_adaptive_thresholds(track, car, driver)
     diag = diagnose(measured, setup, car, thresholds)
@@ -164,7 +171,7 @@ def ingest_ibt(
 
     # ── 4. Delta detection against prior sessions ────────────────────
     delta_result = None
-    track_key_short = track.track_name.lower().split()[0]  # "sebring"
+    track_key_short = track_key_from_name(track.track_name)
 
     prior_obs = store.list_observations(car=car_name, track=track.track_name)
     # Filter to sessions BEFORE this one (by timestamp or position)
@@ -461,7 +468,7 @@ def ingest_all_laps(
                 if prev_obs_data:
                     obs_before = Observation.from_dict(prev_obs_data)
                     delta_result = detect_delta(obs_before, obs)
-                    track_key_short = track.track_name.lower().split()[0]
+                    track_key_short = track_key_from_name(track.track_name)
                     delta_id = f"{car_name}_{track_key_short}_delta_lap_{lap_num:03d}"
                     store.save_delta(delta_id, delta_result.to_dict())
                     if verbose:
@@ -481,7 +488,7 @@ def ingest_all_laps(
     # Fit models with all accumulated observations for this car/track.
     all_obs = store.list_observations(car=car_name, track=track.track_name)
     all_deltas = store.list_deltas(car=car_name, track=track.track_name)
-    track_key_short = track.track_name.lower().split()[0]
+    track_key_short = track_key_from_name(track.track_name)
 
     models = fit_models(all_obs, all_deltas, car_name, track.track_name)
     model_id = f"{car_name}_{track_key_short}_empirical".lower()
@@ -574,7 +581,7 @@ def rebuild_track_learnings(
         if verbose:
             print(f"Rebuilt observation: {existing['session_id']} ({diag.lap_time_s:.3f}s)")
 
-    track_key_short = track.lower().split()[0]
+    track_key_short = track_key_from_name(track)
     for delta_path in (store.base / "deltas").glob(f"{car_name}_{track_key_short}_delta_*.json"):
         delta_path.unlink()
 

@@ -116,6 +116,20 @@ class Observation:
                              if k in Observation.__dataclass_fields__})
 
 
+def _ibt_file_timestamp(ibt_path: str) -> str | None:
+    """Return the IBT file's modification time as an ISO-8601 UTC string.
+
+    The file modification time is a reliable proxy for when the session was
+    recorded — iRacing writes the IBT incrementally and closes it at session end,
+    so the mtime is typically within seconds of the session finish time.
+    """
+    try:
+        mtime = Path(ibt_path).stat().st_mtime
+        return datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+    except (OSError, ValueError):
+        return None
+
+
 def build_observation(
     session_id: str,
     ibt_path: str,
@@ -467,7 +481,21 @@ def build_observation(
         car=car_name,
         track=tp.track_name,
         track_config=tp.track_config,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        # Use IBT session time from the track profile (telemetry source timestamp)
+        # rather than the current wall-clock time. This ensures time-decay weighting
+        # in empirical models is based on when the session happened, not when it was
+        # ingested. Bulk-importing old IBTs will correctly assign old timestamps.
+        # Priority:
+        #   1. TrackProfile.session_timestamp (when available)
+        #   2. MeasuredState.session_start_time_utc (when available)
+        #   3. IBT file modification timestamp (reliable OS-level proxy)
+        #   4. Current wall-clock time (last resort)
+        timestamp=(
+            getattr(tp, "session_timestamp", None)
+            or getattr(m, "session_start_time_utc", None)
+            or _ibt_file_timestamp(ibt_path)
+            or datetime.now(timezone.utc).isoformat()
+        ),
         setup=setup,
         performance=performance,
         telemetry=telemetry,

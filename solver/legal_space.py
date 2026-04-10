@@ -135,11 +135,30 @@ def compute_perch_offsets(params: dict, car: CarModel) -> dict:
     rear_nmm = float(params.get("rear_spring_rate_nmm", rear_spring_ref))
 
     # Front heave perch:
-    # Stiffer heave spring raises front RH (model coeff +0.001614).
-    # To compensate and keep the same RH, perch must be reduced (more negative).
+    # The front static RH model is: front_rh = intercept + k_heave*heave + k_perch*perch + ...
+    # To maintain the same static RH as heave changes by delta_heave:
+    #   Δperch = -(k_heave / k_perch) × delta_heave
+    # Read coefficients from the car's calibrated RideHeightModel if available.
+    # For compliance-only models (inv_heave term), the effect is nonlinear but
+    # for the perch offset computation in legal search we use the linear approximation
+    # since the delta_heave is small relative to the spring rate magnitude.
     front_perch_ref = float(getattr(gr, "front_heave_perch_ref_mm", 0.0))
+    rh_model = getattr(car, "ride_height_model", None)
+    if rh_model is not None:
+        k_heave_to_rh = getattr(rh_model, "front_coeff_heave_nmm", 0.0)
+        k_perch_to_rh = getattr(rh_model, "front_coeff_perch", 0.0)
+        if abs(k_heave_to_rh) > 1e-6 and abs(k_perch_to_rh) > 1e-6:
+            # Δperch = -(k_heave / k_perch) × delta_heave
+            perch_sensitivity = -(k_heave_to_rh / k_perch_to_rh)
+        else:
+            # For compliance-only models or cars without perch coefficient,
+            # perch has minimal effect on RH — leave at reference value
+            perch_sensitivity = 0.0
+    else:
+        # Fall back to empirical BMW constant only when no model is available
+        perch_sensitivity = FRONT_HEAVE_PERCH_K * 100.0  # ~0.1614 mm_perch per N/mm delta
     delta_heave = heave_nmm - front_heave_ref
-    front_heave_perch = front_perch_ref - delta_heave * 0.08
+    front_heave_perch = front_perch_ref + perch_sensitivity * delta_heave
     if hasattr(gr, "front_heave_perch_mm"):
         lo, hi = gr.front_heave_perch_mm
         front_heave_perch = max(lo, min(hi, front_heave_perch))

@@ -22,13 +22,42 @@ Directory structure:
 
 from __future__ import annotations
 
+import fcntl
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
 LEARNINGS_DIR = Path(__file__).parent.parent / "data" / "learnings"
+
+
+def track_key_from_name(track_name: str) -> str:
+    """Convert a full track name to a stable, collision-resistant slug.
+
+    Previously the codebase used only the first word (``track.lower().split()[0]``),
+    which caused collisions between tracks sharing a common first word (e.g.
+    "Sebring International" vs "Sebring Motorcycle").  This function produces a
+    full lowercase hyphenated slug so each distinct track name maps to a unique key.
+
+    Examples
+    --------
+    >>> track_key_from_name("Sebring International Raceway")
+    'sebring-international-raceway'
+    >>> track_key_from_name("Circuit de Spa-Francorchamps")
+    'circuit-de-spa-francorchamps'
+
+    The function also tolerates partial/short track names that the old first-word
+    logic handled, preserving backward compatibility for single-word track names:
+    >>> track_key_from_name("Sebring")
+    'sebring'
+    """
+    import re
+    # Lower-case, replace any run of non-alphanumeric chars with a single dash,
+    # and strip leading/trailing dashes.
+    slug = re.sub(r"[^a-z0-9]+", "-", track_name.lower().strip()).strip("-")
+    return slug
 
 
 class KnowledgeStore:
@@ -62,9 +91,27 @@ class KnowledgeStore:
             "tracks_seen": [],
         }
 
+    def _atomic_write(self, path: Path, data: dict) -> None:
+        """Write JSON to path with exclusive file lock to prevent concurrent corruption.
+
+        Uses a separate .lock sentinel file rather than locking the target file
+        itself — this allows concurrent readers (which do not lock) to always see
+        a complete, valid JSON file.
+        """
+        lock_path = path.with_suffix(".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(lock_path, "w") as lf:
+                fcntl.flock(lf, fcntl.LOCK_EX)
+                path.write_text(json.dumps(data, indent=2))
+                fcntl.flock(lf, fcntl.LOCK_UN)
+        except OSError:
+            # fcntl not available (Windows) or lock file error — write without lock
+            path.write_text(json.dumps(data, indent=2))
+
     def save_index(self, idx: dict) -> None:
         idx["last_updated"] = datetime.now(timezone.utc).isoformat()
-        self._index_path().write_text(json.dumps(idx, indent=2))
+        self._atomic_write(self._index_path(), idx)
 
     # ── Observations ──────────────────────────────────────────────
 
@@ -73,7 +120,7 @@ class KnowledgeStore:
 
     def save_observation(self, session_id: str, obs: dict) -> Path:
         p = self.observation_path(session_id)
-        p.write_text(json.dumps(obs, indent=2))
+        self._atomic_write(p, obs)
         return p
 
     def load_observation(self, session_id: str) -> dict | None:
@@ -101,7 +148,7 @@ class KnowledgeStore:
 
     def save_delta(self, delta_id: str, delta: dict) -> Path:
         p = self.base / "deltas" / f"{delta_id}.json"
-        p.write_text(json.dumps(delta, indent=2))
+        self._atomic_write(p, delta)
         return p
 
     def list_deltas(self, car: str = "", track: str = "") -> list[dict]:
@@ -122,7 +169,7 @@ class KnowledgeStore:
 
     def save_model(self, model_id: str, model: dict) -> Path:
         p = self.model_path(model_id)
-        p.write_text(json.dumps(model, indent=2))
+        self._atomic_write(p, model)
         return p
 
     def load_model(self, model_id: str) -> dict | None:
@@ -135,7 +182,7 @@ class KnowledgeStore:
 
     def save_insights(self, insight_id: str, insights: dict) -> Path:
         p = self.base / "insights" / f"{insight_id}.json"
-        p.write_text(json.dumps(insights, indent=2))
+        self._atomic_write(p, insights)
         return p
 
     def load_insights(self, insight_id: str) -> dict | None:
@@ -152,7 +199,7 @@ class KnowledgeStore:
         if p.exists():
             history = json.loads(p.read_text())
         history.append(update)
-        p.write_text(json.dumps(history, indent=2))
+        self._atomic_write(p, history)
         return p
 
     def load_calibration_history(self, car: str) -> list[dict]:

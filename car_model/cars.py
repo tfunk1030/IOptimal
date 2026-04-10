@@ -203,6 +203,10 @@ class PushrodGeometry:
     # Heave perch reference at which front_base_rh_mm was measured.
     front_heave_perch_ref_mm: float = 0.0
 
+    # Calibration flag: True when pushrod coefficients come from measured
+    # garage data (screenshots or IBT analysis), False when estimated/default.
+    is_calibrated: bool = False
+
     def front_offset_for_rh(self, target_rh: float,
                              heave_perch_mm: float | None = None) -> float:
         """Front pushrod offset to achieve target static RH at the given heave perch.
@@ -1870,6 +1874,7 @@ BMW_M_HYBRID_V8 = CarModel(
         front_pushrod_default_mm=-25.5,
         rear_base_rh_mm=46.52,
         rear_pushrod_to_rh=-0.096,
+        is_calibrated=True,
     ),
     rh_variance=RideHeightVariance(
         # Sebring dominant bump frequency estimated at ~5 Hz
@@ -2326,6 +2331,7 @@ FERRARI_499P = CarModel(
         front_pushrod_default_mm=2.0,   # VALIDATED: best lap (87.575s) garage screenshot 2026-04-02 → pushrod=+2.0mm, RH=30.1mm
         rear_base_rh_mm=42.5,           # CALIBRATED: intercept from 2 IBTs (12→47.9, 14→48.8)
         rear_pushrod_to_rh=0.45,        # CALIBRATED: slope = (48.8-47.9)/(14-12) = 0.45
+        is_calibrated=True,
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
@@ -2686,6 +2692,7 @@ PORSCHE_963 = CarModel(
         rear_pushrod_to_rh=0.0,        # Porsche rear RH does NOT depend on pushrod (regression coefficient ~0). RH controlled by rear_spring + third via RideHeightModel.
         rear_pushrod_default_mm=24.0,  # Porsche baseline from user's Algarve setup (class default -29.0 is BMW)
         front_pushrod_to_rh=0.549,     # CALIBRATED: 0.549 mm_RH / mm_pushrod from 3-point sweep (R^2=1.0)
+        is_calibrated=True,
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(

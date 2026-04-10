@@ -1267,27 +1267,31 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     else:
         models.status["arb_stiffness"] = "insufficient data (need sessions with varied ARB settings and driving telemetry)"
 
-    # ─── 14. Roll gain calibration ────────────────────────────────────────────
-    # Roll gain = camber change per degree of body roll.
-    # Measured from roll_gradient and lateral-g response across sessions.
-    # If we have 3+ sessions with varied speeds (giving varied lateral-g / roll),
-    # we can fit roll gain from the relationship between body roll and camber change.
-    # For now, use roll gradient consistency as a proxy for calibration confidence.
+    # ─── 14. Roll gradient consistency check ───────────────────────────────────
+    # We measure whether roll gradient is stable across sessions (low CV).
+    # A stable roll gradient validates the total roll stiffness model, but does
+    # NOT constitute a calibration of the front/rear roll gain split.
+    # Roll gains require per-corner suspension geometry data (camber change vs
+    # body roll) which is not available from IBT telemetry alone.
+    # Therefore: we track gradient stability for informational purposes only;
+    # we do NOT set roll_gains_calibrated=True or copy cars.py defaults as if
+    # they were measured — that would misrepresent unfit values as "calibrated".
     roll_grads = [pt.roll_gradient_deg_per_g for pt in unique if pt.roll_gradient_deg_per_g > 0.1]
     if len(roll_grads) >= 3:
         rg_mean = float(np.mean(roll_grads))
         rg_std = float(np.std(roll_grads))
-        # Roll gain is approximately: camber_recovery / roll_per_g
-        # With sufficient consistency (CV < 30%), we can trust the measurement
+        models.status["roll_gradient_mean"] = rg_mean
+        models.status["roll_gradient_n_sessions"] = len(roll_grads)
+        models.status["roll_gradient_cv"] = float(rg_std / max(rg_mean, 0.01))
+        # Only flag as stable (not "calibrated") when CV < 30%
         if rg_std / max(rg_mean, 0.01) < 0.30:
-            # Estimate roll gains from geometry: typical GTP front recovery ~0.6, rear ~0.5
-            # The measured roll gradient constrains the total roll stiffness, which
-            # validates the geometry model's roll gain values.
-            models.status["roll_gains_calibrated"] = True
-            models.status["roll_gain_front"] = _car_obj.geometry.front_roll_gain if _car_obj else 0.6
-            models.status["roll_gain_rear"] = _car_obj.geometry.rear_roll_gain if _car_obj else 0.5
-            models.status["roll_gradient_mean"] = rg_mean
-            models.status["roll_gradient_n_sessions"] = len(roll_grads)
+            models.status["roll_gradient_stable"] = True
+            # Explicitly NOT setting roll_gains_calibrated: the roll gradient
+            # constrains total roll stiffness but cannot split front/rear gains.
+            # Roll gains require geometry measurements (camber-per-g sweep) or
+            # direct kinematic data from suspension geometry models.
+        else:
+            models.status["roll_gradient_stable"] = False
 
     # ─── 15. m_eff from telemetry ───
     # m_eff = k_nmm * (sigma_mm / shock_vel_p99)^2

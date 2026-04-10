@@ -180,9 +180,8 @@ class WheelGeometrySolver:
         mass_kg = self.car.total_mass(fuel_load_l=fuel_load_l)
         ay_ms2 = lat_g * 9.81
         h_cg_m = self.car.corner_spring.cg_height_mm / 1000.0
-        t_avg_m = (
-            self.car.arb.track_width_front_mm + self.car.arb.track_width_rear_mm
-        ) / 2.0 / 1000.0
+        # t_avg_m computed here for potential future split-axle roll model
+        # but the current single-DOF formula uses only h_cg and k_roll_total.
 
         # Roll moment: m * ay * h_cg (N·m)
         roll_moment = mass_kg * ay_ms2 * h_cg_m

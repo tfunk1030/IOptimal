@@ -610,6 +610,14 @@ def detect_car_adapter(yaml_keys: set[str]) -> str:
     Acura (ORECA): Dampers.FrontHeave / Dampers.FrontRoll
     Ferrari:       Dampers.LeftFrontDamper or Systems.*
     BMW/Cadillac:  Chassis.LeftFront.LsCompDamping (no Dampers section)
+
+    Returns the detected car name or "bmw" as the BMW/Cadillac fallback.
+    Callers that need to distinguish "actually detected BMW" from "unrecognised"
+    should check the returned value against their expected car list.
+
+    NOTE: This function is a structural heuristic only and is not guaranteed
+    to be accurate for all car/schema combinations. It is only appropriate for
+    bootstrapping setups where the car is truly unknown from context.
     """
     if any("FrontHeave" in k or "RearHeave" in k or "FrontRoll" in k for k in yaml_keys):
         return "acura"

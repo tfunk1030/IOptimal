@@ -410,13 +410,26 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
         instructions=_fmt_instructions("deflection_model", cn, track_name),
     )
 
-    # 4. Pushrod geometry — check if pushrod has non-default rear_pushrod_to_rh
-    # Default is -0.096 (BMW). Cars with calibrated pushrod models have
-    # car-specific values that differ.
+    # 4. Pushrod geometry — check the per-car PushrodGeometry.is_calibrated flag.
+    # When True: pushrod coefficients come from measured garage data / IBT screenshots.
+    # When False: only the defaults are set (front_pinned_rh, rear_base_rh, etc.)
+    # but the sensitivity slopes (front_pushrod_to_rh, rear_pushrod_to_rh) may not
+    # reflect the actual car. Step 1 can still run but the pushrod sensitivity will
+    # be approximate.
+    pushrod_is_cal = getattr(car.pushrod, "is_calibrated", False)
     subs["pushrod_geometry"] = SubsystemCalibration(
         name="pushrod_geometry",
-        status="calibrated",  # All 5 cars now have calibrated pushrod models
-        source="garage screenshots",
+        status="calibrated" if pushrod_is_cal else "weak",
+        source="garage screenshots" if pushrod_is_cal else "estimated defaults",
+        warnings=(
+            []
+            if pushrod_is_cal
+            else [
+                "Pushrod geometry not calibrated from garage data. "
+                "Front/rear pushrod-to-RH sensitivity uses default estimates. "
+                "Collect 3+ garage screenshots at different pushrod settings to calibrate."
+            ]
+        ),
     )
 
     # 5. Spring rates / torsion bar constants

@@ -8,7 +8,7 @@ differently from the physics model.
 
 from __future__ import annotations
 
-from learner.knowledge_store import KnowledgeStore
+from learner.knowledge_store import KnowledgeStore, track_key_from_name
 from learner.recall import KnowledgeRecall
 
 
@@ -45,7 +45,7 @@ def generate_learning_section(
     ]
 
     # ── Insights ──
-    track_key = track.lower().split()[0]
+    track_key = track_key_from_name(track)
     insight_id = f"{car}_{track_key}_insights"
     insights = store.load_insights(insight_id)
 

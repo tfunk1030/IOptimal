@@ -177,7 +177,27 @@ class BayesianOptimizer:
         return result
 
     def _score(self, params: dict[str, float]) -> float:
-        """Physics-based lap time proxy. Higher is better."""
+        """Synthetic lap-time proxy score. Higher is better.
+
+        IMPORTANT LIMITATION:
+        This is a hand-built heuristic, NOT the real physics objective function.
+        It approximates three factors (aero excursion, mechanical grip, balance)
+        using simplified formulas that do not call the 6-step solver or the
+        ObjectiveFunction.  As a result:
+
+          - ``BayesianResult.improvement_pct`` is relative to this proxy, not
+            to any real physical or lap-time metric.  A 10% "improvement" here
+            may be meaningless in actual setup performance.
+          - The LLTD estimate (``0.03*f_arb - 0.03*r_arb + 0.05``) is
+            arbitrary and unvalidated.
+          - Camber peaks (-3.5 front / -2.5 rear) are BMW/Sebring references and
+            are wrong for other cars.
+
+        This optimizer is useful only for qualitative exploration of the setup
+        space topology.  For production use, replace _score() with a call to
+        ObjectiveFunction.evaluate() or pipeline.produce() on a reduced candidate
+        list.
+        """
         heave = params.get("front_heave_nmm", 50)
         rear_sp = params.get("rear_spring_nmm", 170)
         f_cam = params.get("front_camber_deg", -3.4)
