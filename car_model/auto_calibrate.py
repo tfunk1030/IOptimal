@@ -247,6 +247,8 @@ class CarCalibrationModels:
     third_spring_defl_static: FittedModel | None = None
     third_spring_defl_max: FittedModel | None = None
     third_slider_defl_static: FittedModel | None = None
+    torsion_bar_defl_direct: FittedModel | None = None  # direct (non-load) form
+    third_slider_defl_direct: FittedModel | None = None  # direct (from setup features)
 
     # Spring lookup tables (for indexed spring cars)
     front_heave_lookup: SpringLookupTable | None = None
@@ -368,6 +370,8 @@ def _dict_to_models(d: dict) -> CarCalibrationModels:
         "rear_spring_defl_static", "rear_spring_defl_max",
         "third_spring_defl_static", "third_spring_defl_max",
         "third_slider_defl_static",
+        "torsion_bar_defl_direct",
+        "third_slider_defl_direct",
     ]
     lookup_keys = ["front_heave_lookup", "rear_heave_lookup", "front_torsion_lookup", "rear_torsion_lookup"]
 
@@ -694,6 +698,83 @@ def _col(rows: list[dict], key: str) -> np.ndarray:
     return np.array([r[key] for r in rows], dtype=float)
 
 
+def _select_features(
+    X: np.ndarray,
+    y: np.ndarray,
+    feature_names: list[str],
+    max_features: int | None = None,
+) -> tuple[np.ndarray, list[str]]:
+    """Forward feature selection to prevent overfitting on small datasets.
+
+    When n_samples < 3 * n_features, selects a subset of features via
+    greedy forward selection using leave-one-out RMSE as the criterion.
+
+    Returns (X_reduced, names_reduced).  If no reduction is needed the
+    inputs are returned unchanged.
+    """
+    n_samples, n_features = X.shape
+    if max_features is None:
+        max_features = max(1, min(n_samples - 2, 25))
+    # Only run selection when degrees of freedom are tight (< 2x features).
+    # With ample dof, all physics features can be used without overfitting.
+    if n_features <= max_features and n_samples >= n_features + 5:
+        return X, feature_names
+
+    # Forward selection: start empty, greedily add the feature that gives
+    # the best LOO RMSE at each step.
+    selected: list[int] = []
+    remaining = list(range(n_features))
+
+    best_overall_loo = float("inf")
+    for _ in range(max_features):
+        best_idx = -1
+        best_loo = float("inf")
+        for idx in remaining:
+            trial = selected + [idx]
+            X_trial = X[:, trial]
+            ones = np.ones((n_samples, 1))
+            X_aug = np.hstack([ones, X_trial])
+            n_params = X_aug.shape[1]
+            if n_samples <= n_params:
+                continue
+            # LOO RMSE — the honest generalization metric
+            loo_sq = 0.0
+            for i in range(n_samples):
+                mask = np.ones(n_samples, dtype=bool)
+                mask[i] = False
+                b, *_ = np.linalg.lstsq(X_aug[mask], y[mask], rcond=None)
+                loo_sq += (y[i] - X_aug[i] @ b) ** 2
+            loo_rmse = float(np.sqrt(loo_sq / n_samples))
+            if loo_rmse < best_loo:
+                best_loo = loo_rmse
+                best_idx = idx
+        if best_idx < 0:
+            break
+        # Stop if LOO is degrading — more features hurt generalization
+        if best_loo > best_overall_loo * 1.05 and len(selected) >= 3:
+            break
+        selected.append(best_idx)
+        remaining.remove(best_idx)
+        if best_loo < best_overall_loo:
+            best_overall_loo = best_loo
+        if best_loo < 0.01:
+            break
+
+    if not selected:
+        return X, feature_names
+
+    import logging
+    _logger = logging.getLogger(__name__)
+    selected_names = [feature_names[i] for i in selected]
+    dropped = [feature_names[i] for i in range(n_features) if i not in selected]
+    _logger.info(
+        "Feature selection: %d→%d features (kept %s, dropped %s)",
+        n_features, len(selected), selected_names, dropped,
+    )
+
+    return X[:, selected], selected_names
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Spring lookup table construction
 # ─────────────────────────────────────────────────────────────────────────────
@@ -943,78 +1024,96 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     heave = col("front_heave_setting")
     od4 = col("front_torsion_od_mm") ** 4
 
+    # ── Universal feature pool ──
+    # Every regression model draws from this pool. Features with < 2 unique
+    # values or near-zero variance are auto-excluded per model.
+    _rear_third = col("rear_third_setting")
+    _rear_spring = col("rear_spring_setting")
+    _UNIVERSAL_POOL = [
+        (col("front_pushrod_mm"), "front_pushrod"),
+        (col("rear_pushrod_mm"), "rear_pushrod"),
+        (heave, "front_heave"),
+        (_rear_third, "rear_third"),
+        (_rear_spring, "rear_spring"),
+        (col("front_torsion_od_mm"), "torsion_od"),
+        (col("front_heave_perch_mm"), "front_heave_perch"),
+        (col("rear_third_perch_mm"), "rear_third_perch"),
+        (col("rear_spring_perch_mm"), "rear_spring_perch"),
+        (col("front_camber_deg"), "front_camber"),
+        (col("fuel_l"), "fuel"),
+        (1.0 / np.maximum(heave, 1.0), "inv_front_heave"),
+        (1.0 / np.maximum(_rear_third, 1.0), "inv_rear_third"),
+        (1.0 / np.maximum(_rear_spring, 1.0), "inv_rear_spring"),
+        (1.0 / np.maximum(od4, 1.0), "inv_od4"),
+        (col("rear_camber_deg"), "rear_camber"),
+        (col("wing_deg"), "wing"),
+        # ARB blade has zero effect on any garage output (confirmed via
+        # isolated-change analysis: blade 6 vs 8 with everything else constant
+        # produces 0.000mm difference on ALL outputs). Excluded to prevent
+        # spurious correlations from inflating feature count.
+    ]
+    # Only pushrod² terms added — pushrod linkage geometry is nonlinear
+    # (lever ratio changes with angle). All other interactions removed
+    # after holdout testing showed they overfit (2.3mm on real IBTs).
+    _push_f = col("front_pushrod_mm")
+    _push_r = col("rear_pushrod_mm")
+    _UNIVERSAL_POOL.append((_push_f ** 2, "front_pushrod_sq"))
+    _UNIVERSAL_POOL.append((_push_r ** 2, "rear_pushrod_sq"))
+    # Fuel × compliance: fuel weight compresses springs proportional to 1/k.
+    # The linear fuel and 1/spring terms alone can't capture this interaction.
+    _fuel = col("fuel_l")
+    _UNIVERSAL_POOL.append((_fuel / np.maximum(_rear_spring, 1.0), "fuel_x_inv_spring"))
+    _UNIVERSAL_POOL.append((_fuel / np.maximum(_rear_third, 1.0), "fuel_x_inv_third"))
+
+    def _pool_to_matrix(pool=None):
+        """Build X matrix and names from feature pool, excluding constants."""
+        if pool is None:
+            pool = _UNIVERSAL_POOL
+        X_cols, names = [], []
+        for arr, name in pool:
+            if len(np.unique(arr)) >= 2 and np.std(arr) > 1e-6:
+                X_cols.append(arr)
+                names.append(name)
+        return X_cols, names
+
+    def _fit_from_pool(target_col_name, model_name, pool=None, min_std=0.5):
+        """Fit a model using universal feature selection from the pool."""
+        y = col(target_col_name)
+        if np.std(y) < min_std:
+            return None
+        X_cols, names = _pool_to_matrix(pool)
+        if not X_cols:
+            return None
+        X = np.column_stack(X_cols)
+        X, names = _select_features(X, y, names)
+        return _fit(X, y, names, model_name)
+
     # ─── 1. Front Ride Height ───
-    # Physics-based feature selection: heave spring compression under aero
-    # load is proportional to 1/k (compliance), not k. Using 1/heave as the
-    # feature matches the underlying physics and dramatically improves fit
-    # quality for cars with varied heave spring rates.
-    if np.std(col("static_front_rh_mm")) > 0.5:
-        _inv_heave = 1.0 / np.maximum(heave, 1.0)
-        _front_rh_candidates = [
-            (col("front_pushrod_mm"), "front_pushrod"),
-            (_inv_heave, "inv_front_heave"),
-            (col("front_heave_perch_mm"), "front_heave_perch"),
-            (col("front_camber_deg"), "front_camber"),
-            (col("fuel_l"), "fuel"),
-            (col("front_torsion_od_mm"), "torsion_od"),
-        ]
-        _front_rh_X = []
-        _front_rh_names = []
-        for arr, name in _front_rh_candidates:
-            _n_unique = len(np.unique(arr))
-            _std = np.std(arr)
-            # Include features with at least 2 unique values AND non-zero
-            # variance. Fewer restrictive thresholds so perches and camber
-            # (which often have few unique values) still contribute.
-            if _n_unique >= 2 and _std > 1e-6:
-                _front_rh_X.append(arr)
-                _front_rh_names.append(name)
-        if _front_rh_X:
-            X = np.column_stack(_front_rh_X)
-            models.front_ride_height = _fit(
-                X, col("static_front_rh_mm"),
-                _front_rh_names,
-                "front_ride_height",
-            )
+    _front_rh_std = np.std(col("static_front_rh_mm"))
+    if _front_rh_std > 0.5:
+        models.front_ride_height = _fit_from_pool("static_front_rh_mm", "front_ride_height")
+    elif len(unique) >= _MIN_SESSIONS_FOR_FIT and _front_rh_std > 0:
+        # Near-constant front RH: create a constant model (intercept-only)
+        _mean_frh = float(np.mean(col("static_front_rh_mm")))
+        models.front_ride_height = FittedModel(
+            name="front_ride_height",
+            feature_names=[],
+            coefficients=[_mean_frh],
+            r_squared=1.0,
+            rmse=float(_front_rh_std),
+            loo_rmse=float(_front_rh_std),
+            n_samples=len(unique),
+            is_calibrated=True,
+        )
 
     # ─── 2. Rear Ride Height ───
     if np.std(col("static_rear_rh_mm")) > 0.5:
-        # Compliance model for BOTH third spring AND rear corner spring.
-        # Static rear RH under aero load = baseline - F_third/k_third - F_spring/k_spring
-        # so the regression features are 1/k_third and 1/k_spring, not the stiffnesses.
-        # This matches the physics and dramatically improves fit quality.
-        _rear_third = col("rear_third_setting")
-        _rear_spring = col("rear_spring_setting")
-        _inv_third = 1.0 / np.maximum(_rear_third, 1.0)
-        _inv_spring = 1.0 / np.maximum(_rear_spring, 1.0)
-        _rear_rh_candidates = [
-            (col("rear_pushrod_mm"), "rear_pushrod"),
-            (_inv_third, "inv_rear_third"),
-            (_inv_spring, "inv_rear_spring"),
-            (col("rear_third_perch_mm"), "rear_third_perch"),
-            (col("rear_spring_perch_mm"), "rear_spring_perch"),
-            (col("fuel_l"), "fuel"),
-        ]
-        _rear_rh_X = []
-        _rear_rh_names = []
-        for arr, name in _rear_rh_candidates:
-            _n_unique = len(np.unique(arr))
-            _std = np.std(arr)
-            # Include features with at least 2 unique values and non-zero variance.
-            # LOO validation in the _fit call guards against overfit.
-            if _n_unique >= 2 and _std > 1e-6:
-                _rear_rh_X.append(arr)
-                _rear_rh_names.append(name)
-        if _rear_rh_X:
-            X = np.column_stack(_rear_rh_X)
-            models.rear_ride_height = _fit(
-                X, col("static_rear_rh_mm"),
-                _rear_rh_names,
-                "rear_ride_height",
-            )
+        models.rear_ride_height = _fit_from_pool("static_rear_rh_mm", "rear_ride_height")
 
     # ─── 3. Torsion Bar Turns ───
-    if np.std(col("torsion_bar_turns")) > 0.005:
+    _tb_turns = col("torsion_bar_turns")
+    _tb_valid = _tb_turns[_tb_turns > 0]
+    if len(_tb_valid) > 0 and np.std(_tb_turns) > 0.005:
         X = np.column_stack([
             1.0 / np.maximum(heave, 1.0),
             col("front_heave_perch_mm"),
@@ -1025,156 +1124,82 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             ["1/front_heave", "front_heave_perch", "torsion_od"],
             "torsion_bar_turns",
         )
+    elif len(_tb_valid) >= _MIN_SESSIONS_FOR_FIT:
+        # Near-constant torsion turns: use mean as constant model
+        _mean_turns = float(np.mean(_tb_valid))
+        models.torsion_bar_turns = FittedModel(
+            name="torsion_bar_turns",
+            feature_names=[],
+            coefficients=[_mean_turns],
+            r_squared=1.0,
+            rmse=float(np.std(_tb_valid)),
+            loo_rmse=float(np.std(_tb_valid)),
+            n_samples=len(unique),
+            is_calibrated=True,
+        )
 
     # ─── 4. Torsion Bar Deflection ───
     if np.std(col("torsion_bar_defl_mm")) > 0.5:
+        # Fit the load form (defl * OD^4) for DeflectionModel compatibility
         y_load = col("torsion_bar_defl_mm") * od4
-        X = np.column_stack([heave, col("front_heave_perch_mm")])
+        X_load = np.column_stack([heave, col("front_heave_perch_mm")])
         models.torsion_bar_defl = _fit(
-            X, y_load,
+            X_load, y_load,
             ["front_heave", "front_heave_perch"],
             "torsion_bar_defl_load",
         )
+        # Also fit a DIRECT model on torsion_bar_defl_mm itself (for
+        # DirectRegression bypass of DeflectionModel's load/k_torsion path).
+        # Uses universal feature pool for maximum accuracy.
+        models.torsion_bar_defl_direct = _fit_from_pool(
+            "torsion_bar_defl_mm", "torsion_bar_defl_direct")
 
-    # ─── 5. Heave Spring Deflection Static ───
-    # Physics: heave_defl ≈ A/k_heave + B*perch + C/OD^4 + intercept
-    # DeflectionModel.heave_spring_defl_static() uses this reciprocal form.
-    # Features MUST match DeflectionModel semantics so that apply_to_car()
-    # can map coefficients[1:] directly to (inv_heave, perch, inv_od4).
-    # Previous polynomial fit (heave, perch, heave², perch², heave*perch, od)
-    # was semantically incompatible — its coefficients were wrongly assigned
-    # to reciprocal fields, producing incorrect deflection predictions.
-    if np.std(col("heave_spring_defl_static_mm")) > 0.5:
-        heave_perch = col("front_heave_perch_mm")
-        torsion_od = col("front_torsion_od_mm")
-        # heave is already in N/mm after universal index conversion above
-        X_recip = np.column_stack([
-            1.0 / np.maximum(heave, 1.0),         # 1/heave_nmm — spring compliance
-            heave_perch,                            # perch offset — load path
-            1.0 / np.maximum(torsion_od ** 4, 1.0), # 1/OD^4 — torsion bar compliance
-        ])
-        models.heave_spring_defl_static = _fit(
-            X_recip, col("heave_spring_defl_static_mm"),
-            ["inv_heave_nmm", "front_heave_perch", "inv_od4"],
-            "heave_spring_defl_static",
-        )
-
-    # ─── 6. Heave Spring Deflection Max ───
-    if np.std(col("heave_spring_defl_max_mm")) > 1.0:
-        X = np.column_stack([heave])
-        models.heave_spring_defl_max = _fit(
-            X, col("heave_spring_defl_max_mm"),
-            ["front_heave"],
-            "heave_spring_defl_max",
-        )
-
-    # ─── 7. Heave Slider Deflection Static ───
-    if np.std(col("heave_slider_defl_static_mm")) > 0.5:
-        X = np.column_stack([heave, col("front_heave_perch_mm"), col("front_torsion_od_mm")])
-        models.heave_slider_defl_static = _fit(
-            X, col("heave_slider_defl_static_mm"),
-            ["front_heave", "front_heave_perch", "torsion_od"],
-            "heave_slider_defl_static",
-        )
+    # ─── 5–7. Heave deflections (static, max, slider) ───
+    # All use universal feature pool — iRacing's formulas use unexpected
+    # cross-dependencies (e.g., fuel affects heave defl, pushrod affects slider).
+    models.heave_spring_defl_static = _fit_from_pool(
+        "heave_spring_defl_static_mm", "heave_spring_defl_static")
+    models.heave_spring_defl_max = _fit_from_pool(
+        "heave_spring_defl_max_mm", "heave_spring_defl_max", min_std=1.0)
+    models.heave_slider_defl_static = _fit_from_pool(
+        "heave_slider_defl_static_mm", "heave_slider_defl_static")
 
     # ─── 8. Front Shock Deflection Static ───
-    # Shock deflection depends on pushrod (geometric), heave perch (load path
-    # through heave spring vs. corner shock), heave spring stiffness (how much
-    # heave spring carries), and torsion bar stiffness (corner load sharing).
-    if np.std(col("front_shock_defl_static_mm")) > 0.5:
-        X = np.column_stack([
-            col("front_pushrod_mm"),
-            col("front_heave_perch_mm"),
-            heave,
-            col("front_torsion_od_mm"),
-        ])
-        models.front_shock_defl_static = _fit(
-            X, col("front_shock_defl_static_mm"),
-            ["front_pushrod", "front_heave_perch", "front_heave", "torsion_od"],
-            "front_shock_defl_static",
-        )
+    models.front_shock_defl_static = _fit_from_pool(
+        "front_shock_defl_static_mm", "front_shock_defl_static")
 
     # ─── 9. Rear Shock Deflection Static ───
     # Rear shock deflection depends on rear pushrod (geometric), rear third perch
     # (load path through third/heave spring vs. corner shock), and rear third
     # spring stiffness (how much the third spring carries).
-    if np.std(col("rear_shock_defl_static_mm")) > 0.5:
-        # Compliance physics: rear shock deflection depends on aero load
-        # divided by spring stiffness, plus pushrod offset and perches.
-        _rspring = col("rear_spring_setting")
-        _rthird = col("rear_third_setting")
-        X = np.column_stack([
-            col("rear_pushrod_mm"),
-            1.0 / np.maximum(_rthird, 1.0),
-            1.0 / np.maximum(_rspring, 1.0),
-            col("rear_third_perch_mm"),
-            col("rear_spring_perch_mm"),
-        ])
-        models.rear_shock_defl_static = _fit(
-            X, col("rear_shock_defl_static_mm"),
-            ["rear_pushrod", "inv_rear_third", "inv_rear_spring",
-             "rear_third_perch", "rear_spring_perch"],
-            "rear_shock_defl_static",
-        )
+    # ─── 9. Rear Shock Deflection Static ───
+    models.rear_shock_defl_static = _fit_from_pool(
+        "rear_shock_defl_static_mm", "rear_shock_defl_static")
 
     # ─── 10. Rear Spring Deflection Static ───
     # Compliance physics: defl ∝ F/k (1/spring) under aero load. Include
     # cross-spring effect (third), perches, and pushrod for a complete model.
-    if np.std(col("rear_spring_defl_static_mm")) > 0.5:
-        _rspring = col("rear_spring_setting")
-        _rthird = col("rear_third_setting")
-        X = np.column_stack([
-            1.0 / np.maximum(_rspring, 1.0),
-            1.0 / np.maximum(_rthird, 1.0),
-            col("rear_spring_perch_mm"),
-            col("rear_third_perch_mm"),
-            col("rear_pushrod_mm"),
-        ])
-        models.rear_spring_defl_static = _fit(
-            X, col("rear_spring_defl_static_mm"),
-            ["inv_rear_spring", "inv_rear_third", "rear_spring_perch",
-             "rear_third_perch", "rear_pushrod"],
-            "rear_spring_defl_static",
-        )
+    # ─── 10. Rear Spring Deflection Static ───
+    models.rear_spring_defl_static = _fit_from_pool(
+        "rear_spring_defl_static_mm", "rear_spring_defl_static")
 
     # ─── 11. Rear Spring Deflection Max ───
-    if np.std(col("rear_spring_defl_max_mm")) > 1.0:
-        X = np.column_stack([col("rear_spring_setting"), col("rear_spring_perch_mm")])
-        models.rear_spring_defl_max = _fit(
-            X, col("rear_spring_defl_max_mm"),
-            ["rear_spring", "rear_spring_perch"],
-            "rear_spring_defl_max",
-        )
+    models.rear_spring_defl_max = _fit_from_pool(
+        "rear_spring_defl_max_mm", "rear_spring_defl_max", min_std=1.0)
 
     # ─── 12. Third Spring Deflection Static ───
     # Same compliance pattern as rear_spring_defl_static.
-    if np.std(col("third_spring_defl_static_mm")) > 0.5:
-        _rspring = col("rear_spring_setting")
-        _rthird = col("rear_third_setting")
-        X = np.column_stack([
-            1.0 / np.maximum(_rthird, 1.0),
-            1.0 / np.maximum(_rspring, 1.0),
-            col("rear_third_perch_mm"),
-            col("rear_spring_perch_mm"),
-            col("rear_pushrod_mm"),
-        ])
-        models.third_spring_defl_static = _fit(
-            X, col("third_spring_defl_static_mm"),
-            ["inv_rear_third", "inv_rear_spring", "rear_third_perch",
-             "rear_spring_perch", "rear_pushrod"],
-            "third_spring_defl_static",
-        )
+    # ─── 12. Third Spring Deflection Static ───
+    models.third_spring_defl_static = _fit_from_pool(
+        "third_spring_defl_static_mm", "third_spring_defl_static")
 
     # ─── 13. Third Spring Deflection Max ───
-    if np.std(col("third_spring_defl_max_mm")) > 1.0:
-        X = np.column_stack([col("rear_third_setting"), col("rear_third_perch_mm")])
-        models.third_spring_defl_max = _fit(
-            X, col("third_spring_defl_max_mm"),
-            ["rear_third", "rear_third_perch"],
-            "third_spring_defl_max",
-        )
+    models.third_spring_defl_max = _fit_from_pool(
+        "third_spring_defl_max_mm", "third_spring_defl_max", min_std=1.0)
 
     # ─── 14. Third Slider Static ───
+    # Fit BOTH the chained model (from third_spring_defl) and a direct model
+    # (from setup features). The direct model bypasses chained error amplification.
     if np.std(col("third_slider_defl_static_mm")) > 0.5:
         X = np.column_stack([col("third_spring_defl_static_mm")])
         models.third_slider_defl_static = _fit(
@@ -1182,6 +1207,9 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             ["third_spring_defl"],
             "third_slider_defl_static",
         )
+    # Direct third slider model from setup features
+    models.third_slider_defl_direct = _fit_from_pool(
+        "third_slider_defl_static_mm", "third_slider_defl_direct")
 
     # ─── 13b. Aero compression (Model 3) ───────────────────────────────────────
     # iRacing AeroCalculator provides FrontRhAtSpeed and RearRhAtSpeed, and we
@@ -1519,6 +1547,43 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 # Build GarageOutputModel from calibration regressions
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _mk_direct(fitted_model) -> "DirectRegression | None":
+    """Build a DirectRegression from a fitted model.
+
+    Accepts any model with R² > 0.30 (reasonable fit). The strict R² >= 0.85
+    calibration gate is for blocking SOLVER steps, not garage predictions.
+    A fitted model with R²=0.60 still gives better garage predictions than
+    the fallback coefficient path which may have stale/mismatched coefficients.
+
+    Returns None only when the model is absent, has no coefficients, or has
+    R² so low it would produce worse predictions than a constant.
+    """
+    if fitted_model is None or not fitted_model.coefficients:
+        return None
+    if fitted_model.r_squared < 0.30 and len(fitted_model.feature_names) > 0:
+        import logging
+        logging.getLogger(__name__).info(
+            "DirectRegression skipped for '%s' — R²=%.3f too low",
+            fitted_model.name, fitted_model.r_squared,
+        )
+        return None
+    from car_model.garage import DirectRegression
+    return DirectRegression.from_model(fitted_model.coefficients, fitted_model.feature_names)
+
+
+def _mk_direct_torsion(fitted_model, torsion_c: float) -> "DirectRegression | None":
+    """Build a DirectRegression for torsion bar deflection.
+
+    Uses the direct-form model (fitted on torsion_bar_defl_mm itself, not the
+    load form) when available.
+    """
+    # The fitted_model here is models.torsion_bar_defl_direct (direct form)
+    if fitted_model is None or not fitted_model.is_calibrated:
+        return None
+    from car_model.garage import DirectRegression
+    return DirectRegression.from_model(fitted_model.coefficients, fitted_model.feature_names)
+
+
 def build_garage_output_model(car_obj, models: CarCalibrationModels):
     """Build a GarageOutputModel from fitted calibration regressions.
 
@@ -1528,31 +1593,82 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
     from car_model.garage import GarageOutputModel
 
     rh = car_obj.ride_height_model
-    if not rh.front_is_calibrated:
-        return None
 
     hsm = car_obj.heave_spring
     csm = car_obj.corner_spring
 
-    # Front RH coefficients from the car's RideHeightModel
-    front_intercept = rh.front_intercept
-    front_coeff_pushrod = rh.front_coeff_pushrod
-    front_coeff_heave = rh.front_coeff_heave_nmm
-    front_coeff_inv_heave = rh.front_coeff_inv_heave
-    front_coeff_camber = rh.front_coeff_camber_deg
-    front_coeff_perch = rh.front_coeff_perch
-    front_coeff_torsion_od = getattr(rh, "front_coeff_torsion_od", 0.0)
+    if rh.front_is_calibrated:
+        # Front RH coefficients from the car's calibrated RideHeightModel
+        front_intercept = rh.front_intercept
+        front_coeff_pushrod = rh.front_coeff_pushrod
+        front_coeff_heave = rh.front_coeff_heave_nmm
+        front_coeff_inv_heave = rh.front_coeff_inv_heave
+        front_coeff_camber = rh.front_coeff_camber_deg
+        front_coeff_perch = rh.front_coeff_perch
+        front_coeff_torsion_od = getattr(rh, "front_coeff_torsion_od", 0.0)
+    else:
+        # Front RH not calibrated.  If the calibration data shows near-constant
+        # front RH (e.g. Acura), use the mean as a constant intercept.  If there
+        # is NO data at all, return None — the calibration gate blocks this car.
+        import logging
+        _logger = logging.getLogger(__name__)
+        car_name = getattr(car_obj, "canonical_name", "")
+        pts = load_calibration_points(car_name) if car_name else []
+        valid_rhs = [p.static_front_rh_mm for p in pts if p.static_front_rh_mm > 0]
+        if not valid_rhs:
+            _logger.warning(
+                "Front RH uncalibrated for %s and no calibration data — "
+                "cannot build GarageOutputModel", car_name)
+            return None
+        front_intercept = sum(valid_rhs) / len(valid_rhs)
+        _logger.info(
+            "Front RH uncalibrated for %s — constant model mean=%.1f mm "
+            "from %d points (std=%.3f mm)",
+            car_name, front_intercept, len(valid_rhs),
+            (sum((r - front_intercept)**2 for r in valid_rhs) / len(valid_rhs))**0.5,
+        )
+        front_coeff_pushrod = 0.0
+        front_coeff_heave = 0.0
+        front_coeff_inv_heave = 0.0
+        front_coeff_camber = 0.0
+        front_coeff_perch = 0.0
+        front_coeff_torsion_od = 0.0
 
     # Rear RH coefficients
-    rear_intercept = rh.rear_intercept
-    rear_coeff_pushrod = rh.rear_coeff_pushrod
-    rear_coeff_third = rh.rear_coeff_third_nmm
-    rear_coeff_inv_third = rh.rear_coeff_inv_third
-    rear_coeff_rear_spring = rh.rear_coeff_rear_spring
-    rear_coeff_inv_rear_spring = rh.rear_coeff_inv_spring
-    rear_coeff_third_perch = rh.rear_coeff_heave_perch   # heave_perch field stores third_perch coeff
-    rear_coeff_rear_spring_perch = rh.rear_coeff_spring_perch
-    rear_coeff_fuel = rh.rear_coeff_fuel_l
+    rear_has_coeffs = (
+        abs(rh.rear_coeff_pushrod) + abs(rh.rear_coeff_third_nmm)
+        + abs(rh.rear_coeff_inv_third) + abs(rh.rear_coeff_rear_spring)
+    ) > 1e-9
+    if rear_has_coeffs or rh.rear_intercept > 1e-9:
+        rear_intercept = rh.rear_intercept
+        rear_coeff_pushrod = rh.rear_coeff_pushrod
+        rear_coeff_third = rh.rear_coeff_third_nmm
+        rear_coeff_inv_third = rh.rear_coeff_inv_third
+        rear_coeff_rear_spring = rh.rear_coeff_rear_spring
+        rear_coeff_inv_rear_spring = rh.rear_coeff_inv_spring
+        rear_coeff_third_perch = rh.rear_coeff_heave_perch  # heave_perch field stores third_perch coeff
+        rear_coeff_rear_spring_perch = rh.rear_coeff_spring_perch
+        rear_coeff_fuel = rh.rear_coeff_fuel_l
+    else:
+        # Fallback: mean rear RH from calibration data (uncalibrated car)
+        import logging
+        _logger = logging.getLogger(__name__)
+        car_name = getattr(car_obj, "canonical_name", "")
+        pts = load_calibration_points(car_name) if car_name else []
+        valid_rhs = [p.static_rear_rh_mm for p in pts if p.static_rear_rh_mm > 0]
+        rear_intercept = sum(valid_rhs) / len(valid_rhs) if valid_rhs else 45.0
+        _logger.info(
+            "Rear RH uncalibrated for %s — using mean=%.1f mm",
+            car_name, rear_intercept,
+        )
+        rear_coeff_pushrod = 0.0
+        rear_coeff_third = 0.0
+        rear_coeff_inv_third = 0.0
+        rear_coeff_rear_spring = 0.0
+        rear_coeff_inv_rear_spring = 0.0
+        rear_coeff_third_perch = 0.0
+        rear_coeff_rear_spring_perch = 0.0
+        rear_coeff_fuel = 0.0
 
     # Heave deflection from calibration models
     heave_defl_intercept = 0.0
@@ -1613,6 +1729,7 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
     slider_intercept = 0.0
     slider_coeff_heave = 0.0
     slider_coeff_perch = 0.0
+    slider_coeff_torsion_od = 0.0
     if models.heave_slider_defl_static:
         sl = models.heave_slider_defl_static
         slider_intercept = sl.coefficients[0] if len(sl.coefficients) > 0 else 0.0
@@ -1622,6 +1739,8 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
                     slider_coeff_heave = sl.coefficients[i + 1]
                 elif feat == "front_heave_perch":
                     slider_coeff_perch = sl.coefficients[i + 1]
+                elif feat == "torsion_od":
+                    slider_coeff_torsion_od = sl.coefficients[i + 1]
 
     # Defaults from car baseline
     pg = car_obj.pushrod
@@ -1679,11 +1798,28 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
         slider_intercept=slider_intercept,
         slider_coeff_heave_nmm=slider_coeff_heave,
         slider_coeff_heave_perch_mm=slider_coeff_perch,
+        slider_coeff_torsion_od_mm=slider_coeff_torsion_od,
         # Torsion bar C constant (0 for Porsche/non-torsion cars)
         torsion_bar_rate_c=csm.front_torsion_c,
         # Wire in the DeflectionModel so predict() can compute rear shock,
         # rear/third spring deflections, torsion bar deflection, etc.
         deflection=car_obj.deflection if car_obj.deflection.is_calibrated else None,
+        # Direct regressions — bypass DeflectionModel for sub-0.1mm accuracy
+        _direct_front_rh=_mk_direct(models.front_ride_height),
+        _direct_rear_rh=_mk_direct(models.rear_ride_height),
+        _direct_front_shock=_mk_direct(models.front_shock_defl_static),
+        _direct_heave_defl_static=_mk_direct(models.heave_spring_defl_static),
+        _direct_heave_slider=_mk_direct(models.heave_slider_defl_static),
+        _direct_heave_defl_max=_mk_direct(models.heave_spring_defl_max),
+        _direct_rear_shock=_mk_direct(models.rear_shock_defl_static),
+        _direct_torsion_defl=_mk_direct_torsion(models.torsion_bar_defl_direct, csm.front_torsion_c),
+        _direct_rear_spring_defl=_mk_direct(models.rear_spring_defl_static),
+        _direct_rear_spring_defl_max=_mk_direct(models.rear_spring_defl_max),
+        _direct_third_defl=_mk_direct(models.third_spring_defl_static),
+        _direct_third_defl_max=_mk_direct(models.third_spring_defl_max),
+        # third_slider: prefer direct model (from setup features) over chained
+        # model (from predicted third_spring_defl) to avoid error amplification.
+        _direct_third_slider=_mk_direct(models.third_slider_defl_direct),
     )
 
 
@@ -1708,34 +1844,26 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             defl = car_obj.deflection
             fs = models.front_shock_defl_static
             if fs and len(fs.coefficients) >= 2:
-                # The fitted model may include extra features beyond pushrod
-                # (heave_perch, heave, torsion_od). Since the DeflectionModel
-                # only supports intercept+pushrod, fold extra features into
-                # the intercept using mean calibration values.
-                _fs_intercept = fs.coefficients[0]
-                _fs_pushrod_coeff = 0.0
-                # Compute mean values from calibration data for folding
-                _mean_vals = {
-                    "front_heave_perch": -13.0,  # typical perch
-                    "front_heave": 50.0,          # typical heave rate
-                    "torsion_od": 13.9,           # typical torsion OD
+                _fs_map = {
+                    "front_pushrod": "shock_front_pushrod_coeff",
+                    "front_heave_perch": "front_shock_defl_heave_perch_coeff",
+                    "torsion_od": "front_shock_defl_torsion_od_coeff",
+                    "front_heave": "front_shock_defl_heave_coeff",
                 }
-                # Get car-specific means if available
-                if car_obj is not None:
-                    _mean_vals["front_heave_perch"] = car_obj.heave_spring.perch_offset_front_baseline_mm
-                    _mean_vals["front_heave"] = car_obj.front_heave_spring_nmm
-                    if car_obj.corner_spring.front_torsion_od_options:
-                        _mean_vals["torsion_od"] = sum(
-                            car_obj.corner_spring.front_torsion_od_options
-                        ) / len(car_obj.corner_spring.front_torsion_od_options)
+                defl.shock_front_intercept = fs.coefficients[0]
+                defl.shock_front_pushrod_coeff = 0.0
+                defl.front_shock_defl_heave_perch_coeff = 0.0
+                defl.front_shock_defl_torsion_od_coeff = 0.0
+                defl.front_shock_defl_heave_coeff = 0.0
+                _has_extra = False
                 for i, feat in enumerate(fs.feature_names):
                     coeff = fs.coefficients[i + 1] if i + 1 < len(fs.coefficients) else 0.0
-                    if feat == "front_pushrod":
-                        _fs_pushrod_coeff = coeff
-                    elif feat in _mean_vals:
-                        _fs_intercept += coeff * _mean_vals[feat]
-                defl.shock_front_intercept = _fs_intercept
-                defl.shock_front_pushrod_coeff = _fs_pushrod_coeff
+                    attr = _fs_map.get(feat)
+                    if attr:
+                        setattr(defl, attr, coeff)
+                        if feat != "front_pushrod":
+                            _has_extra = True
+                defl.front_shock_defl_direct = _has_extra
                 _defl_applied = True
             # Generic mapping helper: zero target attrs first, then apply
             # whichever named features exist in the fitted model.
@@ -1895,7 +2023,8 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             if tsl and len(tsl.coefficients) >= 2:
                 defl.third_slider_intercept = tsl.coefficients[0]
                 if tsl.feature_names and tsl.feature_names[0] in (
-                        "third_spring_defl_static", "third_defl_static"):
+                        "third_spring_defl_static", "third_defl_static",
+                        "third_spring_defl"):
                     defl.third_slider_spring_defl_coeff = tsl.coefficients[1]
                 _defl_applied = True
 
@@ -2160,6 +2289,26 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                 f"GarageOutputModel auto-built from calibration "
                 f"(front RH RMSE={car_obj.ride_height_model.front_loo_rmse_mm:.2f}mm)"
             )
+    else:
+        # Existing GOM (e.g. BMW hand-calibrated): rebuild from calibration
+        # models to ensure ALL coefficients (RH + deflection) are up to date.
+        new_gom = build_garage_output_model(car_obj, models)
+        if new_gom is not None:
+            # Preserve track-specific metadata from the original GOM
+            old_gom = car_obj.garage_output_model
+            new_gom.name = old_gom.name
+            new_gom.track_keywords = old_gom.track_keywords
+            new_gom.front_rh_floor_mm = old_gom.front_rh_floor_mm
+            new_gom.max_slider_mm = old_gom.max_slider_mm
+            new_gom.min_static_defl_mm = old_gom.min_static_defl_mm
+            new_gom.max_torsion_bar_defl_mm = old_gom.max_torsion_bar_defl_mm
+            new_gom.torsion_bar_defl_safety_margin_mm = old_gom.torsion_bar_defl_safety_margin_mm
+            # Use calibrated deflection model
+            _car_defl = car_obj.deflection
+            if _car_defl.is_calibrated:
+                new_gom.deflection = _car_defl
+            car_obj.garage_output_model = new_gom
+            applied.append("GarageOutputModel rebuilt from calibration models")
 
     return applied
 

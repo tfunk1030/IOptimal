@@ -625,6 +625,14 @@ class DeflectionModel:
     # Calibrated from 31 unique setups across 41 BMW sessions (March 2026)
     shock_front_intercept: float = 21.228
     shock_front_pushrod_coeff: float = 0.226
+    # Direct front-shock model with heave_perch and torsion_od terms (used when
+    # front_shock_defl_direct=True). Captures load sharing between heave spring
+    # and corner shock via perch offset and torsion bar stiffness.
+    front_shock_defl_direct: bool = False
+    front_shock_defl_heave_perch_coeff: float = 0.0
+    front_shock_defl_torsion_od_coeff: float = 0.0
+    front_shock_defl_heave_coeff: float = 0.0
+
     shock_rear_intercept: float = 25.924
     shock_rear_pushrod_coeff: float = 0.266
     # Direct rear-shock model with compliance + perches (used when
@@ -726,8 +734,17 @@ class DeflectionModel:
     third_spring_defl_max_rate_coeff: float = -0.072
     third_spring_defl_max_perch_coeff: float = -0.036
 
-    def shock_defl_front(self, pushrod_offset_mm: float) -> float:
-        return self.shock_front_intercept + self.shock_front_pushrod_coeff * pushrod_offset_mm
+    def shock_defl_front(self, pushrod_offset_mm: float,
+                        heave_perch_mm: float = 0.0,
+                        torsion_od_mm: float = 0.0,
+                        heave_nmm: float = 0.0) -> float:
+        base = (self.shock_front_intercept
+                + self.shock_front_pushrod_coeff * pushrod_offset_mm)
+        if self.front_shock_defl_direct:
+            base += self.front_shock_defl_heave_perch_coeff * heave_perch_mm
+            base += self.front_shock_defl_torsion_od_coeff * torsion_od_mm
+            base += self.front_shock_defl_heave_coeff * heave_nmm
+        return base
 
     def shock_defl_rear(self, pushrod_offset_mm: float,
                         third_rate_nmm: float = 0.0,

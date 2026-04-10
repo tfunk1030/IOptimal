@@ -110,6 +110,9 @@ def validate_and_fix_garage_correlation(
         step3.rear_spring_perch_mm = 0.0
 
     # --- Phase 1: Range-clamp and quantise individual parameters ---
+    if step1 is None or step2 is None or step3 is None:
+        warnings.append("solver steps blocked — skipping garage validation")
+        return warnings
     warnings.extend(_clamp_step1(step1, gr))
     warnings.extend(_clamp_step2(step2, gr))
     warnings.extend(_clamp_step3(step3, gr))

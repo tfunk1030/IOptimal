@@ -1,14 +1,14 @@
 {
   "car": "ferrari",
-  "total_sessions": 3,
+  "total_sessions": 4,
   "tracks_included": [
-    "Autodromo Internacional do Algarve"
+    "Hockenheimring Baden-W\u00fcrttemberg"
   ],
-  "aero_compression_front_mm": 7.72178955078125,
-  "aero_compression_rear_mm": 16.772163645426435,
-  "roll_gradient_global_deg_per_g": 0.1735,
+  "aero_compression_front_mm": 7.552802658081056,
+  "aero_compression_rear_mm": 19.085276412963868,
+  "roll_gradient_global_deg_per_g": 0.32749999999999996,
   "m_eff_front_global_kg": null,
   "anomalies": [],
-  "confidence": "low",
-  "last_updated": "2026-04-10T01:11:04.624690+00:00"
+  "confidence": "medium",
+  "last_updated": "2026-04-10T11:36:36.210407+00:00"
 }

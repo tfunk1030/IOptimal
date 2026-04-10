@@ -212,15 +212,13 @@ def generate_report(
     report_fuel_l = fuel_l if fuel_l is not None else getattr(current_setup, "fuel_l", 0.0)
     garage_outputs = None
     garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
-    if garage_model is not None:
+    _solver_state = GarageSetupState.from_solver_steps(
+        step1=step1, step2=step2, step3=step3, step5=step5,
+        fuel_l=report_fuel_l,
+    ) if step1 is not None and step2 is not None and step3 is not None else None
+    if garage_model is not None and _solver_state is not None:
         garage_outputs = garage_model.predict(
-            GarageSetupState.from_solver_steps(
-                step1=step1,
-                step2=step2,
-                step3=step3,
-                step5=step5,
-                fuel_l=report_fuel_l,
-            ),
+            _solver_state,
             front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
         )
 
