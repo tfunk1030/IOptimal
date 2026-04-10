@@ -792,6 +792,18 @@ def produce(
     # Null-out any steps that were blocked by calibration.  run_base_solve()
     # runs unconditionally (it doesn't know about the gate), so we must
     # prevent uncalibrated step values from reaching .sto / JSON output.
+    # --force bypasses this: all steps pass through with UNCALIBRATED warnings.
+    _force = getattr(args, "force", False)
+    if _force and _steps_blocked:
+        log()
+        log("=" * 70)
+        log("⚠  --force: BYPASSING CALIBRATION GATE")
+        log(f"   Steps {sorted(_steps_blocked)} are UNCALIBRATED — output is ESTIMATE ONLY")
+        log("   Do NOT trust these values without independent verification.")
+        log("=" * 70)
+        log()
+        _steps_blocked = set()  # clear so nothing gets nulled
+
     for sn in _steps_blocked:
         if sn == 1:
             step1 = None
@@ -1790,6 +1802,9 @@ def main():
                         help="Disable auto-learning (skip empirical corrections and session ingest)")
     parser.add_argument("--legacy-solver", action="store_true",
                         help="Force the legacy sequential solver path for BMW/Sebring validation")
+    parser.add_argument("--force", action="store_true",
+                        help="Bypass calibration gate — output all solver steps even if uncalibrated. "
+                             "Values are ESTIMATES only, marked with [UNCALIBRATED] warnings.")
     # Lap selection / filtering
     parser.add_argument("--min-lap-time", type=float, default=None, dest="min_lap_time",
                         help="Minimum valid lap time in seconds (default: auto-detected as "

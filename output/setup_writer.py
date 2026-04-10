@@ -691,6 +691,18 @@ def write_sto(
             or 1.0
         )
         if getattr(_car, "canonical_name", "") == "ferrari":
+            # Save physical values for torsion bar turns computation before
+            # converting to index space.
+            _ferrari_front_heave_phys = step2.front_heave_nmm
+            _ferrari_front_perch_phys = step2.perch_offset_front_mm
+            _ferrari_rear_third_phys = step2.rear_third_nmm
+            _ferrari_rear_perch_phys = step2.perch_offset_rear_mm
+            _ferrari_front_torsion_rate = (
+                _car.corner_spring.torsion_bar_rate(step3.front_torsion_od_mm)
+                if _car.corner_spring.front_torsion_c > 0 and step3.front_torsion_od_mm > 1.0
+                else 250.0  # fallback mid-range
+            )
+            _ferrari_rear_torsion_rate = step3.rear_spring_rate_nmm
             step2 = copy.deepcopy(step2)
             step3 = copy.deepcopy(step3)
             step2.front_heave_nmm = float(public_output_value(_car, "front_heave_nmm", step2.front_heave_nmm))
@@ -865,9 +877,15 @@ def write_sto(
     elif garage_outputs is not None:
         _tb_turns = round(garage_outputs.torsion_bar_turns, 3)
     elif car_canonical.lower() == "ferrari":
-        # Ferrari torsion bar turns are user-settable (+-0.250, 0.125 steps).
-        # Solver outputs neutral (0.0) -- user adjusts in garage.
-        _tb_turns = 0.0
+        # Ferrari torsion bar turns: calibrated from 59 indexed sessions.
+        # turns = f(1/heave_rate, perch, 1/torsion_rate), R^2=0.51, RMSE=0.003
+        _tb_turns = round(
+            0.1364
+            + 0.3292 / max(_ferrari_front_heave_phys, 1)
+            + 0.000484 * _ferrari_front_perch_phys
+            + -8.4804 / max(_ferrari_front_torsion_rate, 1),
+            3,
+        )
     elif car_canonical.lower() in ("bmw", "cadillac"):
         # Dallara chassis torsion bar turns formula (calibrated from BMW Sebring)
         _tb_turns = round(
@@ -889,8 +907,18 @@ def write_sto(
     if "lr_torsion_turns" in ids:
         if rear_tb_turns is not None:
             _rear_tb_turns = round(rear_tb_turns, 3)
-        elif hasattr(step3, 'rear_torsion_bar_turns'):
+        elif hasattr(step3, 'rear_torsion_bar_turns') and step3.rear_torsion_bar_turns != 0.0:
             _rear_tb_turns = round(step3.rear_torsion_bar_turns, 3)
+        elif car_canonical.lower() == "ferrari":
+            # Rear turns: calibrated from 59 indexed sessions using rear-specific
+            # features (1/third_rate, rear_perch, 1/rear_torsion_rate). R^2=0.55
+            _rear_tb_turns = round(
+                0.1239
+                + 4.5102 / max(_ferrari_rear_third_phys, 1)
+                + 0.000964 * _ferrari_rear_perch_phys
+                + 7.1109 / max(_ferrari_rear_torsion_rate, 1),
+                3,
+            )
         else:
             _rear_tb_turns = round(_tb_turns * 0.55, 3)
         _w_num("lr_torsion_turns", _rear_tb_turns, "Turns")

@@ -343,6 +343,7 @@ def _build_produce_args(
     delta_card: bool = False,
     mode: str = "safe",
     fresh_profile: bool = False,
+    force: bool = False,
 ) -> argparse.Namespace:
     """Build an argparse.Namespace matching produce()'s expected interface."""
     from analyzer.setup_reader import CurrentSetup
@@ -387,6 +388,7 @@ def _build_produce_args(
         free=free,
         opt_mode=opt_mode,
         fresh_profile=fresh_profile,
+        force=force,
     )
     return args
 
@@ -593,6 +595,7 @@ def optimize(
     delta_card: bool = False,
     mode: str = "safe",
     fresh_profile: bool = False,
+    force: bool = False,
 ) -> None:
     """Run the full optimize pipeline: validate → calibrate → solve → output.
 
@@ -615,6 +618,7 @@ def optimize(
         delta_card: Output delta card (changes vs current).
         mode: "safe" or "aggressive" output mode.
         fresh_profile: Force rebuild of track profile even if cached.
+        force: Bypass calibration gate — output all steps even if uncalibrated.
     """
     # ── Step 1: Validate IBTs ──
     print("Scanning IBT files...")
@@ -689,6 +693,7 @@ def optimize(
         delta_card=delta_card,
         mode=mode,
         fresh_profile=fresh_profile,
+        force=force,
     )
 
     from pipeline.produce import produce
@@ -796,6 +801,11 @@ def main():
         "--fresh-profile", action="store_true", dest="fresh_profile",
         help="Force rebuild of track profile even if cached",
     )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Bypass calibration gate — output all solver steps even if "
+             "uncalibrated. Values are ESTIMATES only.",
+    )
 
     # ── Status mode ──
     parser.add_argument(
@@ -846,6 +856,7 @@ def main():
             delta_card=args.delta_card,
             mode=args.mode,
             fresh_profile=args.fresh_profile,
+            force=args.force,
         )
     except OptimizeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

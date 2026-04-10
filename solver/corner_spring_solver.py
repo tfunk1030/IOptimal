@@ -60,32 +60,49 @@ def _solve_ferrari_torsion_bar_turns(
     rear_spring_rate_nmm: float,
     front_heave_nmm: float,
     rear_third_nmm: float,
+    front_heave_perch_mm: float = -16.5,
+    rear_third_perch_mm: float = -104.0,
 ) -> tuple[float, float]:
     """Compute Ferrari front/rear torsion bar preload turns.
 
-    Ferrari 499P exposes bar preload turns (-0.250 to +0.250, resolution 0.125)
-    as read-only display values correlated to the indexed spring selection.
-    For the solver we use 0.0 (neutral preload) as the canonical output —
-    setup_writer.py applies the physical fallback formula when building the
-    final STO file.
+    Calibrated from 59 indexed Ferrari sessions.  Turns represent static
+    torsion-bar twist under the car's weight — a function of corner weight
+    (driven by heave spring preload/perch) and bar stiffness (OD^4).
 
-    Args:
-        car: CarModel for the Ferrari 499P
-        front_torsion_od_mm: Selected front torsion bar OD (index or physical mm)
-        rear_spring_rate_nmm: Selected rear spring rate (index or N/mm)
-        front_heave_nmm: Front heave spring rate from Step 2
-        rear_third_nmm: Rear third spring rate from Step 2
+    Front model (R²=0.51, RMSE=0.003):
+        turns = 0.1364 + 0.3292/heave + 0.000484*perch − 8.4804/torsion_rate
+
+    Rear model (R²=0.55, RMSE=0.004):
+        turns = 0.1239 + 4.5102/third + 0.000964*perch + 7.1109/torsion_rate
 
     Returns:
-        (front_turns, rear_turns) — both 0.0 (neutral preload).
-        Neutral preload: solver does not add pre-twist; STO writer handles it.
+        (front_turns, rear_turns) — calibrated preload turns.
     """
-    # Neutral preload is the safe default for the solver pass.
-    # The actual in-garage torsion bar turns are a function of the indexed
-    # spring selection and are constrained to ±0.250 in 0.125 increments.
-    # We return 0.0 here; setup_writer.py will apply the appropriate
-    # formula (or fallback) based on the public output index values.
-    return 0.0, 0.0
+    csm = car.corner_spring
+
+    # Front torsion bar rate from physical OD
+    front_torsion_rate = (
+        csm.torsion_bar_rate(front_torsion_od_mm)
+        if csm.front_torsion_c > 0 and front_torsion_od_mm > 1.0
+        else 250.0
+    )
+    front_turns = (
+        0.1364
+        + 0.3292 / max(front_heave_nmm, 1.0)
+        + 0.000484 * front_heave_perch_mm
+        - 8.4804 / max(front_torsion_rate, 1.0)
+    )
+
+    # Rear torsion bar rate (already a physical rate in the solver)
+    rear_torsion_rate = max(rear_spring_rate_nmm, 1.0)
+    rear_turns = (
+        0.1239
+        + 4.5102 / max(rear_third_nmm, 1.0)
+        + 0.000964 * rear_third_perch_mm
+        + 7.1109 / rear_torsion_rate
+    )
+
+    return round(front_turns, 3), round(rear_turns, 3)
 
 
 @dataclass
@@ -391,6 +408,8 @@ class CornerSpringSolver:
         fuel_load_l: float = 89.0,
         rear_spring_perch_mm: float | None = None,
         rear_torsion_od_mm: float | None = None,
+        front_heave_perch_mm: float | None = None,
+        rear_third_perch_mm: float | None = None,
     ) -> CornerSpringSolution:
         """Build a corner-spring solution from explicit garage selections."""
         csm = self.car.corner_spring
@@ -451,12 +470,16 @@ class CornerSpringSolver:
         front_tb_turns = 0.0
         rear_tb_turns = 0.0
         if self.car.canonical_name == 'ferrari':
+            _f_perch = front_heave_perch_mm if front_heave_perch_mm is not None else -16.5
+            _r_perch = rear_third_perch_mm if rear_third_perch_mm is not None else -104.0
             front_tb_turns, rear_tb_turns = _solve_ferrari_torsion_bar_turns(
                 self.car,
                 front_torsion_od_mm=front_torsion_od_mm,
                 rear_spring_rate_nmm=rear_spring_rate_nmm,
                 front_heave_nmm=front_heave_nmm,
                 rear_third_nmm=rear_third_nmm,
+                front_heave_perch_mm=_f_perch,
+                rear_third_perch_mm=_r_perch,
             )
 
         return CornerSpringSolution(
