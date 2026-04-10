@@ -170,6 +170,8 @@ class DirectRegression:
             "wing": lambda s: s.wing_deg,
             "front_pushrod_sq": lambda s: s.front_pushrod_mm ** 2,
             "rear_pushrod_sq": lambda s: s.rear_pushrod_mm ** 2,
+            "fuel_x_inv_spring": lambda s: s.fuel_l / max(s.rear_spring_nmm, 1.0),
+            "fuel_x_inv_third": lambda s: s.fuel_l / max(s.rear_third_nmm, 1.0),
         }
         return cls(
             intercept=model_coefficients[0] if model_coefficients else 0.0,

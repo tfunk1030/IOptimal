@@ -1059,6 +1059,11 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     _push_r = col("rear_pushrod_mm")
     _UNIVERSAL_POOL.append((_push_f ** 2, "front_pushrod_sq"))
     _UNIVERSAL_POOL.append((_push_r ** 2, "rear_pushrod_sq"))
+    # Fuel × compliance: fuel weight compresses springs proportional to 1/k.
+    # The linear fuel and 1/spring terms alone can't capture this interaction.
+    _fuel = col("fuel_l")
+    _UNIVERSAL_POOL.append((_fuel / np.maximum(_rear_spring, 1.0), "fuel_x_inv_spring"))
+    _UNIVERSAL_POOL.append((_fuel / np.maximum(_rear_third, 1.0), "fuel_x_inv_third"))
 
     def _pool_to_matrix(pool=None):
         """Build X matrix and names from feature pool, excluding constants."""
