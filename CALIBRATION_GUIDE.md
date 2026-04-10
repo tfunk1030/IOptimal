@@ -7,7 +7,7 @@
 
 iOptimal predicts iRacing's garage display values (ride heights, spring deflections, torsion bar turns, slider positions) using regression models fitted from YOUR telemetry. Each car needs its own calibration because iRacing's internal formulas differ per chassis.
 
-**After calibration, the pipeline predicts every garage value to within 0.1mm of iRacing's display.** This means:
+**After calibration with sufficient data (25+ unique setups), the pipeline predicts most garage values to within 0.5mm of iRacing's display.** The accuracy depends on sample size and the car's physics complexity. This means:
 - Ride height predictions match iRacing exactly
 - Deflection values in saved .sto files load correctly in-game
 - The solver can trust its RH targeting for pushrod reconciliation
@@ -17,17 +17,17 @@ The system reads the `CarSetup` block embedded in every IBT file — the same da
 
 ---
 
-## Current Calibration Status (2026-04-10)
+## Current Calibration Status (2026-04-10, post-overfitting-fix)
 
-| Car | Unique Setups | Holdout Accuracy | Status |
-|-----|:---:|:---:|------|
-| **BMW** | 9 | all fields < 0.09mm | Calibrated (Sebring) |
-| **Porsche** | 36 | all fields < 0.07mm (3 real IBTs) | Calibrated (Algarve) |
-| **Ferrari** | 23 | all fields < 0.06mm (4 real IBTs) | Calibrated (Hockenheim) |
-| **Acura** | 8 | RH < 0.11mm, some deflections limited | Partial (Hockenheim) |
-| **Cadillac** | 0 | — | No data |
+| Car | Unique Setups | Features/Model | Training RMSE | LOO/Train Ratio | Status |
+|-----|:---:|:---:|:---:|:---:|------|
+| **BMW** | 9 | 0-3 | < 0.09mm | 1.0-3.5x | Calibrated, 6/6 steps (Sebring) |
+| **Porsche** | 36 | 7-12 | < 0.5mm | 1.3-3.2x | Calibrated, 5/6 steps (Algarve) |
+| **Ferrari** | 23 | 6-7 | 0.09-0.82mm | 1.1-1.7x | Partial, 1/6 steps (Hockenheim) |
+| **Acura** | 8 | 0-3 | RH < 0.11mm | 1.0-2.7x | Partial, 3/6 steps (Hockenheim) |
+| **Cadillac** | 0 | — | — | — | No data |
 
-**Verified on real IBT files:** 77/77 blind predictions within 0.1mm across 7 holdout IBTs (4 Ferrari, 3 Porsche).
+**Note on accuracy claims:** Previous claims of "< 0.06mm" for Ferrari and "< 0.07mm" for Porsche were based on overfit models (18 features on 23-36 samples, LOO/train ratios of 272-579x). The models memorized training data but did not generalize to new setups. After fixing the feature selection threshold to enforce a 3:1 sample-to-feature ratio, the models are honest about their accuracy. BMW's accuracy (< 0.09mm) was always reliable because its models used 0-3 features.
 
 ---
 
@@ -50,9 +50,10 @@ The regression models use physically motivated features:
 
 1. IBT files are ingested → setup parameters + iRacing's computed garage values extracted
 2. Duplicate setups (same springs/pushrods/perches) are merged
-3. Forward feature selection (LOO RMSE) picks the best subset from the physics pool
+3. Forward feature selection (LOO RMSE) picks the best subset from the physics pool — **capped at `n_samples // 3` features** (3:1 ratio prevents overfitting). Selection is skipped only when `n_samples >= 3 * n_features`.
 4. DirectRegression models are built — they evaluate directly from setup state, bypassing the rigid DeflectionModel interface for maximum accuracy
-5. Models are stored in `data/calibration/{car}/models.json`
+5. Defense-in-depth: models with LOO/train RMSE ratio > 10x are marked uncalibrated despite high training R²
+6. Models are stored in `data/calibration/{car}/models.json`
 
 ---
 
@@ -187,20 +188,21 @@ When starting a new Claude Code session to calibrate a car:
    # Compare out.front_static_rh_mm vs setup.static_front_rh_mm etc.
    ```
 
-**Target accuracy:** < 0.1mm on holdout IBTs for calibrated cars (Porsche/Ferrari achieve this with 23-36 unique setups).
+**Target accuracy:** < 0.5mm RMSE on holdout IBTs for calibrated cars. BMW achieves < 0.09mm with 9 setups. Porsche achieves < 0.5mm on most outputs with 36 setups. More data improves accuracy — the feature selection enforces a 3:1 sample-to-feature ratio, so more setups unlock more features.
 
 ---
 
 ## How Many IBTs Do I Need?
 
-| Unique Setups | Expected Accuracy | Notes |
-|:---:|:---:|-------|
-| 5-8 | 1-3mm | Minimum for basic models. Enough for RH direction but not precision. |
-| 9-15 | 0.5-1mm | Good accuracy. Most fields within 0.5mm. |
-| 16-25 | 0.1-0.5mm | Excellent. Enough features for physics formula discovery. |
-| 25-36 | < 0.1mm | Near-perfect. All fields match iRacing within display resolution. |
+| Unique Setups | Max Features (3:1 rule) | Expected Accuracy | Notes |
+|:---:|:---:|:---:|-------|
+| 5-8 | 1-2 | 1-3mm | Minimum for basic models. Constant or 1-feature fits only. |
+| 9-15 | 3-5 | 0.5-1mm | Good accuracy. Enough to capture main physics terms. |
+| 16-25 | 5-8 | 0.2-0.8mm | Good. Most compliance/nonlinear features accessible. |
+| 25-36 | 8-12 | 0.1-0.5mm | Excellent. Most of the 20-feature physics pool available. |
+| 54+ | 18 (all) | < 0.1mm | Full pool — no feature selection needed. |
 
-"Unique setups" means setups with different spring rates, pushrods, or perches. Running the same setup 10 times counts as 1 unique setup.
+"Unique setups" means setups with different spring rates, pushrods, or perches. Running the same setup 10 times counts as 1 unique setup. The 3:1 rule (`max_features = n_samples // 3`) prevents overfitting by limiting model complexity to what the data can support.
 
 ---
 
