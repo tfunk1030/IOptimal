@@ -341,8 +341,10 @@ class SupportingSolver:
                 f"drive={diff_sol.lock_pct_drive:.1f}% "
                 f"(preload {diff_sol.preload_contribution_pct:.1f}% + plates {diff_sol.plate_contribution_pct:.1f}%)"
             )
-        except Exception:
+        except Exception as e:
             # Fallback: simplified calculation (original implementation)
+            import logging
+            logging.getLogger(__name__).debug("DiffSolver failed, using fallback: %s", e)
             self._solve_diff_fallback(sol)
 
     def _solve_diff_fallback(self, sol: SupportingSolution) -> None:

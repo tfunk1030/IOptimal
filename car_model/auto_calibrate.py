@@ -436,8 +436,10 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         lap_time = measured.lap_time_s or 0.0
         roll_grad = getattr(measured, "roll_gradient_measured_deg_per_g", None) or 0.0
         lltd_m = getattr(measured, "lltd_measured", None) or 0.0
-    except Exception:
+    except Exception as e:
         # Telemetry extraction is optional for calibration; skip gracefully
+        import logging
+        logging.getLogger(__name__).debug("Telemetry extraction skipped: %s", e)
         roll_grad = 0.0
         lltd_m = 0.0
 
@@ -512,7 +514,9 @@ def _get_dummy_car(car_name: str):
     try:
         from car_model.cars import get_car
         return get_car(car_name or "bmw")
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug("Could not load car model '%s': %s", car_name, e)
         return None
 
 
@@ -598,6 +602,27 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
     """Fit y = X @ beta via least squares with LOO cross-validation."""
     ones = np.ones((X.shape[0], 1))
     X_aug = np.hstack([ones, X])
+
+    # Guard: underdetermined system (more parameters than samples) produces
+    # meaningless R² = 1.0 and unstable coefficients. Require n > n_params.
+    n_params = X_aug.shape[1]  # features + intercept
+    if X.shape[0] <= n_params:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Model '%s': underdetermined (%d samples, %d parameters) — "
+            "marking as uncalibrated",
+            model_name, X.shape[0], n_params,
+        )
+        return FittedModel(
+            name=model_name,
+            feature_names=feature_names,
+            coefficients=[0.0] * n_params,
+            r_squared=0.0,
+            rmse=float("inf"),
+            loo_rmse=float("inf"),
+            n_samples=X.shape[0],
+            is_calibrated=False,
+        )
 
     beta, *_ = np.linalg.lstsq(X_aug, y, rcond=None)
     y_pred = X_aug @ beta
@@ -822,7 +847,9 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     try:
         from car_model.cars import get_car
         _car_obj = get_car(car)
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug("Car model load failed in fit_models: %s", e)
         _car_obj = None
 
     # Deduplicate by unique setup configuration (exclude telemetry-only differences)
@@ -1923,8 +1950,9 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                         f"{old_C:.7f} → {C_calibrated:.7f} "
                         f"(from {len(entries)}-entry calibrated lookup)"
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug("Spring lookup application failed: %s", e)
 
     # Auto-build GarageOutputModel from calibration regressions if the car
     # doesn't already have one. This enables RH/pushrod reconciliation and

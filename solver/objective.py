@@ -31,8 +31,11 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 from solver.scenario_profiles import get_scenario_profile
 from track_model.profile import TrackProfile
@@ -383,7 +386,8 @@ class ObjectiveFunction:
             self._session_db: "SessionDatabase | None" = SessionDatabase.load(
                 self._car_slug, self._track_slug
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("Session DB init failed: %s", e)
             self._session_db = None
 
     def _new_breakdown(self) -> ObjectiveBreakdown:
@@ -496,7 +500,8 @@ class ObjectiveFunction:
                 best = min(surfaces.keys(), key=lambda w: abs(w - default_wing))
                 self._surface = surfaces[best]
             return self._surface
-        except Exception:
+        except Exception as e:
+            logger.debug("Aero surface lookup failed: %s", e)
             return None
 
     def _torsion_arb_coupling_factor(self, front_torsion_od: float) -> float:
@@ -631,8 +636,8 @@ class ObjectiveFunction:
                     threshold = max(6.0, 6.0 + 2.0 * max_gradient)
                     threshold = min(threshold, 12.0)  # cap at 12mm (physical limit)
 
-        except Exception:
-            pass  # any error → return fallback
+        except Exception as e:
+            logger.debug("Vortex threshold computation failed: %s", e)
 
         self._vortex_threshold_cache[wing_deg] = threshold
         return threshold
@@ -877,6 +882,10 @@ class ObjectiveFunction:
             # Guard against k=0 which returns 0 (wrong: should be ∞)
             # GTP heave spring ≥ 20 N/mm in practice. k=0 is physically degenerate.
             front_heave_clamped = max(5.0, front_heave_nmm)  # prevent div/zero physics
+            # parallel_wheel_rate is halved because front_wheel_rate is the
+            # per-axle total (2 corners), but the excursion model computes
+            # per-corner dynamics. Each corner sees half the axle wheel rate
+            # in parallel with the heave spring.
             result.front_excursion_mm = damped_excursion_mm(
                 v_p99_front, m_eff_front, front_heave_clamped,
                 tyre_vertical_rate_nmm=tyre_vr_front,
@@ -943,7 +952,8 @@ class ObjectiveFunction:
                     )
                     _static_f = float(_gom.predict_front_static_rh(_state))
                     _rear_static = float(_gom.predict_rear_static_rh(_state))
-                except Exception:
+                except Exception as e:
+                    logger.debug("Garage model RH prediction failed: %s", e)
                     _static_f = car.pushrod.front_pinned_rh_mm
                     _rear_static = car.pushrod.rear_rh_for_offset(
                         float(params.get("rear_pushrod_offset_mm", 0.0))
@@ -1161,8 +1171,8 @@ class ObjectiveFunction:
                 result.df_balance_error_pct = abs(
                     result.df_balance_pct - car.default_df_balance_pct
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Aero balance/L:D scoring failed: %s", e)
 
         return result
 
@@ -1251,8 +1261,8 @@ class ObjectiveFunction:
                         f"Empirical k-NN ({emp_pred.k_used} sessions): "
                         f"penalty={emp_result.total_penalty_ms:.0f}ms — {issues}"
                     )
-            except Exception:
-                pass  # empirical scoring is non-critical — never break the pipeline
+            except Exception as e:
+                logger.debug("Empirical scoring failed: %s", e)
 
         return CandidateEvaluation(
             params=params,
@@ -1876,8 +1886,8 @@ class ObjectiveFunction:
                 # Cap the fuel LLTD drift penalty at 20ms — it's secondary to
                 # the static LLTD error which is already in lap_gain
                 risk.rh_collapse_risk_ms += min(20.0, drift_penalty)
-        except Exception:
-            pass  # fuel window LLTD is non-critical — never let it break scoring
+        except Exception as e:
+            logger.debug("Fuel window LLTD scoring failed: %s", e)
 
         return risk
 

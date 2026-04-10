@@ -313,8 +313,14 @@ def produce(
             notes = apply_to_car(car, cal_models)
             for note in notes:
                 log(f"  [calibration] {note}")
-    except Exception:
-        pass  # No calibration data — use defaults from cars.py
+    except FileNotFoundError:
+        pass  # No calibration data file — use defaults from cars.py
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Calibration data exists but failed to load for %s: %s",
+            car.canonical_name, e,
+        )
     log(f"Car: {car.name}")
 
     # ── Run trace (data provenance) ──
@@ -446,8 +452,11 @@ def produce(
                 _existing_lap = _existing.get("best_lap_time_s", float("inf"))
                 if track.best_lap_time_s < _existing_lap:
                     _should_save = True
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).debug(
+                    "Could not compare track profile JSON: %s", e
+                )
         if _should_save:
             track.save(_save_path)
             log(f"  Track profile saved: {_save_path}")
@@ -713,9 +722,10 @@ def produce(
                         pass  # Malformed fingerprint data — skip
         if failed_clusters:
             log(f"[veto] Loaded {len(failed_clusters)} hard-veto clusters from learner store")
-    except Exception:
+    except Exception as e:
         # Learner not available or no data — skip veto mechanism gracefully
-        pass
+        import logging
+        logging.getLogger(__name__).debug("Veto cluster loading skipped: %s", e)
 
     # ── Calibration gate ──
     _track_short = track.track_name.split()[0].lower() if hasattr(track, "track_name") else args.track

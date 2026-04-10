@@ -279,7 +279,7 @@ def _safe_float(value: Any, default: float | None = None) -> float | None:
 def _car_name(car: Any | None) -> str:
     if isinstance(car, str):
         return car.lower()
-    return str(getattr(car, "canonical_name", "bmw") or "bmw").lower()
+    return str(getattr(car, "canonical_name", "unknown") or "unknown").lower()
 
 
 def _arb_size_index(labels: list[str] | tuple[str, ...] | None, value: Any) -> int | None:
