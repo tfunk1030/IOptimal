@@ -975,15 +975,22 @@ def produce(
         raise  # re-raise programming errors — don't hide bugs
 
     # ── Phase J: Output ──
-    legal_validation = validate_solution_legality(
-        car=car,
-        track_name=track.track_name,
-        step1=step1,
-        step2=step2,
-        step3=step3,
-        fuel_l=fuel,
-        step5=step5,
-    )
+    if step1 is None or step2 is None or step3 is None:
+        from solver.legality_engine import LegalValidation
+        legal_validation = LegalValidation(
+            valid=False, messages=["solver steps blocked"],
+            validation_tier="none", hard_veto=True,
+            hard_veto_reasons=["solver steps blocked"])
+    else:
+        legal_validation = validate_solution_legality(
+            car=car,
+            track_name=track.track_name,
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            fuel_l=fuel,
+            step5=step5,
+        )
     decision_trace = build_parameter_decisions(
         car_name=car.canonical_name,
         current_setup=current_setup,
@@ -1561,33 +1568,38 @@ def produce(
     if _emit_report and not quiet:
         print()
         print()
-    report = generate_report(
-        car=car,
-        track=track,
-        measured=measured,
-        driver=driver,
-        diagnosis=diagnosis,
-        corners=corners,
-        aero_grad=aero_grad,
-        modifiers=modifiers,
-        step1=step1, step2=step2, step3=step3,
-        step4=step4, step5=step5, step6=step6,
-        supporting=supporting,
-        current_setup=current_setup,
-        wing=wing,
-        fuel_l=fuel,
-        target_balance=target_balance,
-        stint_result=stint_result,
-        sector_result=sector_result,
-        sensitivity_result=sensitivity_result,
-        stint_evolution=stint_evolution,
-        stint_compromise_info=stint_compromise_info,
-        prediction_corrections={},
-        selected_candidate_family=selected_candidate_family_output,
-        selected_candidate_score=selected_candidate_score_output,
-        solve_context_lines=solve_notes,
-        compact=report_compact,
-    )
+    if step1 is None or step2 is None or step3 is None:
+        report = "Solver steps blocked — no setup report available."
+        if _emit_report and not quiet:
+            print(report)
+    else:
+        report = generate_report(
+            car=car,
+            track=track,
+            measured=measured,
+            driver=driver,
+            diagnosis=diagnosis,
+            corners=corners,
+            aero_grad=aero_grad,
+            modifiers=modifiers,
+            step1=step1, step2=step2, step3=step3,
+            step4=step4, step5=step5, step6=step6,
+            supporting=supporting,
+            current_setup=current_setup,
+            wing=wing,
+            fuel_l=fuel,
+            target_balance=target_balance,
+            stint_result=stint_result,
+            sector_result=sector_result,
+            sensitivity_result=sensitivity_result,
+            stint_evolution=stint_evolution,
+            stint_compromise_info=stint_compromise_info,
+            prediction_corrections={},
+            selected_candidate_family=selected_candidate_family_output,
+            selected_candidate_score=selected_candidate_score_output,
+            solve_context_lines=solve_notes,
+            compact=report_compact,
+        )
     if _emit_report:
         print(report)
         if _steps_blocked:

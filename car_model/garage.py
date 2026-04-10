@@ -98,7 +98,9 @@ class GarageSetupState:
         fuel_l: float = 0.0,
         front_camber_deg: float | None = None,
     ) -> "GarageSetupState":
-        """Build from solver outputs."""
+        """Build from solver outputs.  Returns None if any required step is None."""
+        if step1 is None or step2 is None or step3 is None:
+            return None
         if front_camber_deg is None:
             front_camber_deg = (
                 float(step5.front_camber_deg)

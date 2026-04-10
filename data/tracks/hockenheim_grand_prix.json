@@ -1,56 +1,893 @@
 {
-  "track_name": "Hockenheim Grand Prix",
+  "track_name": "Hockenheimring Baden-W\u00fcrttemberg",
   "track_config": "Grand Prix",
-  "track_length_m": 4574.0,
-  "car": "acura",
-  "best_lap_time_s": 102.74372302403621,
-  "speed_bands_kph": {},
-  "median_speed_kph": 160.26672496720596,
-  "max_speed_kph": 224.37341495408833,
-  "min_speed_kph": 0.0,
-  "pct_above_200kph": 0.0,
-  "pct_below_120kph": 0.0,
-  "peak_lat_g": 0.0,
-  "peak_braking_g": 0.0,
-  "peak_accel_g": 0.0,
-  "peak_vertical_g": 0.0,
-  "braking_zones": [],
-  "corners": [],
-  "shock_vel_histogram_front": {},
-  "shock_vel_histogram_rear": {},
-  "shock_vel_by_sector": {},
-  "shock_vel_p50_front_mps": 0.015,
-  "shock_vel_p95_front_mps": 0.08,
-  "shock_vel_p99_front_mps": 0.14,
+  "track_length_m": 4529.8,
+  "car": "Ferrari 499P",
+  "best_lap_time_s": 87.68,
+  "speed_bands_kph": {
+    "40-60": 1.3,
+    "60-80": 2.0,
+    "80-100": 6.3,
+    "100-120": 7.9,
+    "120-140": 8.3,
+    "140-160": 11.4,
+    "160-180": 8.2,
+    "180-200": 11.3,
+    "200-220": 9.7,
+    "220-240": 10.5,
+    "240-260": 10.0,
+    "260-280": 6.9,
+    "280-300": 4.9,
+    "300-320": 1.3
+  },
+  "median_speed_kph": 188.3,
+  "max_speed_kph": 303.0,
+  "min_speed_kph": 54.3,
+  "pct_above_200kph": 0.4321,
+  "pct_below_120kph": 0.1764,
+  "peak_lat_g": 3.64,
+  "peak_braking_g": 3.05,
+  "peak_accel_g": 1.38,
+  "peak_vertical_g": 2.48,
+  "braking_zones": [
+    {
+      "lap_dist_m": 152.0,
+      "entry_speed_kph": 265.3,
+      "min_speed_kph": 188.7,
+      "peak_decel_g": 1.97,
+      "braking_dist_m": 102.6
+    },
+    {
+      "lap_dist_m": 676.3,
+      "entry_speed_kph": 271.5,
+      "min_speed_kph": 86.5,
+      "peak_decel_g": 2.83,
+      "braking_dist_m": 140.3
+    },
+    {
+      "lap_dist_m": 1893.4,
+      "entry_speed_kph": 302.9,
+      "min_speed_kph": 58.0,
+      "peak_decel_g": 2.97,
+      "braking_dist_m": 186.6
+    },
+    {
+      "lap_dist_m": 2650.8,
+      "entry_speed_kph": 268.0,
+      "min_speed_kph": 96.0,
+      "peak_decel_g": 2.54,
+      "braking_dist_m": 137.9
+    },
+    {
+      "lap_dist_m": 3287.7,
+      "entry_speed_kph": 247.4,
+      "min_speed_kph": 189.8,
+      "peak_decel_g": 1.95,
+      "braking_dist_m": 81.6
+    },
+    {
+      "lap_dist_m": 3621.7,
+      "entry_speed_kph": 231.5,
+      "min_speed_kph": 120.6,
+      "peak_decel_g": 2.3,
+      "braking_dist_m": 108.1
+    },
+    {
+      "lap_dist_m": 3734.3,
+      "entry_speed_kph": 118.0,
+      "min_speed_kph": 111.5,
+      "peak_decel_g": 0.57,
+      "braking_dist_m": 11.9
+    },
+    {
+      "lap_dist_m": 3975.3,
+      "entry_speed_kph": 195.1,
+      "min_speed_kph": 150.1,
+      "peak_decel_g": 1.54,
+      "braking_dist_m": 65.0
+    },
+    {
+      "lap_dist_m": 4067.6,
+      "entry_speed_kph": 141.9,
+      "min_speed_kph": 139.1,
+      "peak_decel_g": 0.51,
+      "braking_dist_m": 6.7
+    },
+    {
+      "lap_dist_m": 4077.6,
+      "entry_speed_kph": 137.2,
+      "min_speed_kph": 130.1,
+      "peak_decel_g": 0.59,
+      "braking_dist_m": 13.5
+    },
+    {
+      "lap_dist_m": 4164.5,
+      "entry_speed_kph": 151.1,
+      "min_speed_kph": 147.7,
+      "peak_decel_g": 0.72,
+      "braking_dist_m": 8.2
+    }
+  ],
+  "corners": [
+    {
+      "lap_dist_m": 263.2,
+      "speed_kph": 186.6,
+      "peak_lat_g": 3.75,
+      "radius_m": 124.1,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 440.2,
+      "speed_kph": 234.3,
+      "peak_lat_g": 0.65,
+      "radius_m": 844.5,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 833.2,
+      "speed_kph": 81.0,
+      "peak_lat_g": 2.0,
+      "radius_m": 31.2,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 924.7,
+      "speed_kph": 150.5,
+      "peak_lat_g": 2.61,
+      "radius_m": 363.4,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 1255.9,
+      "speed_kph": 253.6,
+      "peak_lat_g": 0.59,
+      "radius_m": 1016.7,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 1303.6,
+      "speed_kph": 260.4,
+      "peak_lat_g": 1.51,
+      "radius_m": 1113.0,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 2087.0,
+      "speed_kph": 54.3,
+      "peak_lat_g": 1.75,
+      "radius_m": 16.0,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 2429.3,
+      "speed_kph": 239.2,
+      "peak_lat_g": 2.98,
+      "radius_m": 928.1,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 2806.4,
+      "speed_kph": 88.9,
+      "peak_lat_g": 3.35,
+      "radius_m": 40.7,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 3420.4,
+      "speed_kph": 175.6,
+      "peak_lat_g": 3.45,
+      "radius_m": 109.0,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 3637.6,
+      "speed_kph": 221.6,
+      "peak_lat_g": 0.7,
+      "radius_m": 729.5,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 3778.3,
+      "speed_kph": 102.2,
+      "peak_lat_g": 2.44,
+      "radius_m": 39.3,
+      "direction": "left"
+    },
+    {
+      "lap_dist_m": 4104.4,
+      "speed_kph": 126.3,
+      "peak_lat_g": 2.77,
+      "radius_m": 69.1,
+      "direction": "right"
+    },
+    {
+      "lap_dist_m": 4390.0,
+      "speed_kph": 202.9,
+      "peak_lat_g": 0.83,
+      "radius_m": 594.8,
+      "direction": "left"
+    }
+  ],
+  "shock_vel_histogram_front": {
+    "0-5": 1626,
+    "5-10": 1545,
+    "10-20": 2620,
+    "20-50": 3582,
+    "50-100": 865,
+    "100-200": 204,
+    "200+": 78
+  },
+  "shock_vel_histogram_rear": {
+    "0-5": 1472,
+    "5-10": 1418,
+    "10-20": 2374,
+    "20-50": 3235,
+    "50-100": 1606,
+    "100-200": 287,
+    "200+": 128
+  },
+  "shock_vel_by_sector": {
+    "S1": {
+      "dist_range_m": [
+        0.0,
+        453.0
+      ],
+      "front_p50_mps": 0.023,
+      "front_p95_mps": 0.1549,
+      "front_p99_mps": 0.2842,
+      "rear_p50_mps": 0.0356,
+      "rear_p95_mps": 0.197,
+      "rear_p99_mps": 0.4508
+    },
+    "S2": {
+      "dist_range_m": [
+        453.0,
+        906.0
+      ],
+      "front_p50_mps": 0.016,
+      "front_p95_mps": 0.0511,
+      "front_p99_mps": 0.0764,
+      "rear_p50_mps": 0.0181,
+      "rear_p95_mps": 0.0712,
+      "rear_p99_mps": 0.1098
+    },
+    "S3": {
+      "dist_range_m": [
+        906.0,
+        1359.0
+      ],
+      "front_p50_mps": 0.0206,
+      "front_p95_mps": 0.0876,
+      "front_p99_mps": 0.1762,
+      "rear_p50_mps": 0.0302,
+      "rear_p95_mps": 0.0949,
+      "rear_p99_mps": 0.1701
+    },
+    "S4": {
+      "dist_range_m": [
+        1359.0,
+        1812.0
+      ],
+      "front_p50_mps": 0.0286,
+      "front_p95_mps": 0.0678,
+      "front_p99_mps": 0.0831,
+      "rear_p50_mps": 0.047,
+      "rear_p95_mps": 0.0939,
+      "rear_p99_mps": 0.1127
+    },
+    "S5": {
+      "dist_range_m": [
+        1812.0,
+        2265.0
+      ],
+      "front_p50_mps": 0.0132,
+      "front_p95_mps": 0.0556,
+      "front_p99_mps": 0.0719,
+      "rear_p50_mps": 0.0126,
+      "rear_p95_mps": 0.066,
+      "rear_p99_mps": 0.0965
+    },
+    "S6": {
+      "dist_range_m": [
+        2265.0,
+        2718.0
+      ],
+      "front_p50_mps": 0.0169,
+      "front_p95_mps": 0.0605,
+      "front_p99_mps": 0.0989,
+      "rear_p50_mps": 0.0224,
+      "rear_p95_mps": 0.0852,
+      "rear_p99_mps": 0.1775
+    },
+    "S7": {
+      "dist_range_m": [
+        2718.0,
+        3171.0
+      ],
+      "front_p50_mps": 0.0131,
+      "front_p95_mps": 0.0642,
+      "front_p99_mps": 0.1689,
+      "rear_p50_mps": 0.0136,
+      "rear_p95_mps": 0.071,
+      "rear_p99_mps": 0.2081
+    },
+    "S8": {
+      "dist_range_m": [
+        3171.0,
+        3624.0
+      ],
+      "front_p50_mps": 0.0212,
+      "front_p95_mps": 0.1218,
+      "front_p99_mps": 0.2935,
+      "rear_p50_mps": 0.0278,
+      "rear_p95_mps": 0.1424,
+      "rear_p99_mps": 0.3683
+    },
+    "S9": {
+      "dist_range_m": [
+        3624.0,
+        4077.0
+      ],
+      "front_p50_mps": 0.018,
+      "front_p95_mps": 0.067,
+      "front_p99_mps": 0.2085,
+      "rear_p50_mps": 0.0171,
+      "rear_p95_mps": 0.0851,
+      "rear_p99_mps": 0.2605
+    },
+    "S10": {
+      "dist_range_m": [
+        4077.0,
+        4530.0
+      ],
+      "front_p50_mps": 0.0188,
+      "front_p95_mps": 0.0756,
+      "front_p99_mps": 0.1699,
+      "rear_p50_mps": 0.0198,
+      "rear_p95_mps": 0.0779,
+      "rear_p99_mps": 0.1699
+    }
+  },
+  "shock_vel_p50_front_mps": 0.0176,
+  "shock_vel_p95_front_mps": 0.0723,
+  "shock_vel_p99_front_mps": 0.181,
   "shock_vel_p50_rear_mps": 0.02,
-  "shock_vel_p95_rear_mps": 0.1,
-  "shock_vel_p99_rear_mps": 0.18,
-  "shock_vel_p50_front_clean_mps": 0.015,
-  "shock_vel_p95_front_clean_mps": 0.08,
-  "shock_vel_p99_front_clean_mps": 0.14,
-  "shock_vel_p50_rear_clean_mps": 0.02,
-  "shock_vel_p95_rear_clean_mps": 0.1,
-  "shock_vel_p99_rear_clean_mps": 0.18,
-  "shock_vel_p99_front_hs_mps": 0.0,
-  "shock_vel_p99_rear_hs_mps": 0.0,
-  "shock_vel_p95_front_kerb_mps": 0.0,
-  "shock_vel_p99_front_kerb_mps": 0.0,
-  "shock_vel_p95_rear_kerb_mps": 0.0,
-  "shock_vel_p99_rear_kerb_mps": 0.0,
-  "kerb_sample_pct": 0.0,
-  "kerb_events": [],
-  "elevation_profile": [],
-  "elevation_change_m": 0.0,
-  "lateral_g": {},
-  "body_roll_deg": {},
-  "ride_heights_mm": {},
-  "roll_gradient_deg_per_g": 0.0,
-  "lltd_measured": 0.0,
-  "surface_profile": {},
-  "splitter_rh_mean_mm": 0.0,
-  "splitter_rh_min_mm": 0.0,
-  "air_temp_c": 0.0,
-  "track_temp_c": 0.0,
-  "air_density_kg_m3": 0.0,
-  "telemetry_source": ""
+  "shock_vel_p95_rear_mps": 0.0894,
+  "shock_vel_p99_rear_mps": 0.2287,
+  "shock_vel_p50_front_clean_mps": 0.016,
+  "shock_vel_p95_front_clean_mps": 0.0551,
+  "shock_vel_p99_front_clean_mps": 0.0824,
+  "shock_vel_p50_rear_clean_mps": 0.0186,
+  "shock_vel_p95_rear_clean_mps": 0.0746,
+  "shock_vel_p99_rear_clean_mps": 0.11,
+  "shock_vel_p99_front_hs_mps": 0.1932,
+  "shock_vel_p99_rear_hs_mps": 0.2799,
+  "shock_vel_p95_front_kerb_mps": 0.1813,
+  "shock_vel_p99_front_kerb_mps": 0.3637,
+  "shock_vel_p95_rear_kerb_mps": 0.2245,
+  "shock_vel_p99_rear_kerb_mps": 0.4935,
+  "kerb_sample_pct": 18.5,
+  "kerb_events": [
+    {
+      "lap_dist_m": 259.8,
+      "severity": 0.39,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 302.2,
+      "severity": 1.43,
+      "side": "both"
+    },
+    {
+      "lap_dist_m": 361.1,
+      "severity": 1.15,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 834.4,
+      "severity": 0.42,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 957.8,
+      "severity": 0.58,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 1020.6,
+      "severity": 0.89,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 1080.2,
+      "severity": 0.71,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 2082.3,
+      "severity": 0.12,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 2130.4,
+      "severity": 0.14,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 2421.6,
+      "severity": 0.19,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 3066.4,
+      "severity": 1.26,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 3107.9,
+      "severity": 0.84,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 3496.9,
+      "severity": 1.34,
+      "side": "both"
+    },
+    {
+      "lap_dist_m": 3857.2,
+      "severity": 0.83,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 3932.0,
+      "severity": 0.87,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 4167.9,
+      "severity": 0.21,
+      "side": "left"
+    },
+    {
+      "lap_dist_m": 4239.9,
+      "severity": 0.35,
+      "side": "right"
+    },
+    {
+      "lap_dist_m": 4322.3,
+      "severity": 1.3,
+      "side": "both"
+    }
+  ],
+  "elevation_profile": [
+    {
+      "dist_m": 0,
+      "alt_m": 99.81
+    },
+    {
+      "dist_m": 50,
+      "alt_m": 99.81
+    },
+    {
+      "dist_m": 100,
+      "alt_m": 99.82
+    },
+    {
+      "dist_m": 150,
+      "alt_m": 99.91
+    },
+    {
+      "dist_m": 200,
+      "alt_m": 99.95
+    },
+    {
+      "dist_m": 250,
+      "alt_m": 100.06
+    },
+    {
+      "dist_m": 300,
+      "alt_m": 100.36
+    },
+    {
+      "dist_m": 350,
+      "alt_m": 100.89
+    },
+    {
+      "dist_m": 400,
+      "alt_m": 101.68
+    },
+    {
+      "dist_m": 450,
+      "alt_m": 102.22
+    },
+    {
+      "dist_m": 500,
+      "alt_m": 102.4
+    },
+    {
+      "dist_m": 550,
+      "alt_m": 102.41
+    },
+    {
+      "dist_m": 600,
+      "alt_m": 102.43
+    },
+    {
+      "dist_m": 650,
+      "alt_m": 102.53
+    },
+    {
+      "dist_m": 700,
+      "alt_m": 103.01
+    },
+    {
+      "dist_m": 750,
+      "alt_m": 103.83
+    },
+    {
+      "dist_m": 800,
+      "alt_m": 103.9
+    },
+    {
+      "dist_m": 850,
+      "alt_m": 103.31
+    },
+    {
+      "dist_m": 900,
+      "alt_m": 102.19
+    },
+    {
+      "dist_m": 950,
+      "alt_m": 101.13
+    },
+    {
+      "dist_m": 1000,
+      "alt_m": 101.11
+    },
+    {
+      "dist_m": 1050,
+      "alt_m": 101.13
+    },
+    {
+      "dist_m": 1100,
+      "alt_m": 101.07
+    },
+    {
+      "dist_m": 1150,
+      "alt_m": 100.98
+    },
+    {
+      "dist_m": 1200,
+      "alt_m": 100.91
+    },
+    {
+      "dist_m": 1250,
+      "alt_m": 100.82
+    },
+    {
+      "dist_m": 1300,
+      "alt_m": 100.81
+    },
+    {
+      "dist_m": 1350,
+      "alt_m": 100.81
+    },
+    {
+      "dist_m": 1400,
+      "alt_m": 100.81
+    },
+    {
+      "dist_m": 1450,
+      "alt_m": 100.81
+    },
+    {
+      "dist_m": 1500,
+      "alt_m": 100.81
+    },
+    {
+      "dist_m": 1550,
+      "alt_m": 100.81
+    },
+    {
+      "dist_m": 1600,
+      "alt_m": 100.81
+    },
+    {
+      "dist_m": 1650,
+      "alt_m": 100.81
+    },
+    {
+      "dist_m": 1700,
+      "alt_m": 100.87
+    },
+    {
+      "dist_m": 1750,
+      "alt_m": 100.9
+    },
+    {
+      "dist_m": 1800,
+      "alt_m": 100.91
+    },
+    {
+      "dist_m": 1850,
+      "alt_m": 101.04
+    },
+    {
+      "dist_m": 1900,
+      "alt_m": 101.57
+    },
+    {
+      "dist_m": 1950,
+      "alt_m": 102.44
+    },
+    {
+      "dist_m": 2000,
+      "alt_m": 103.44
+    },
+    {
+      "dist_m": 2050,
+      "alt_m": 103.81
+    },
+    {
+      "dist_m": 2100,
+      "alt_m": 103.82
+    },
+    {
+      "dist_m": 2150,
+      "alt_m": 103.23
+    },
+    {
+      "dist_m": 2200,
+      "alt_m": 102.78
+    },
+    {
+      "dist_m": 2250,
+      "alt_m": 102.66
+    },
+    {
+      "dist_m": 2300,
+      "alt_m": 102.61
+    },
+    {
+      "dist_m": 2350,
+      "alt_m": 102.61
+    },
+    {
+      "dist_m": 2400,
+      "alt_m": 102.61
+    },
+    {
+      "dist_m": 2450,
+      "alt_m": 102.47
+    },
+    {
+      "dist_m": 2500,
+      "alt_m": 102.09
+    },
+    {
+      "dist_m": 2550,
+      "alt_m": 101.61
+    },
+    {
+      "dist_m": 2600,
+      "alt_m": 101.49
+    },
+    {
+      "dist_m": 2650,
+      "alt_m": 101.39
+    },
+    {
+      "dist_m": 2700,
+      "alt_m": 101.31
+    },
+    {
+      "dist_m": 2750,
+      "alt_m": 101.17
+    },
+    {
+      "dist_m": 2800,
+      "alt_m": 101.13
+    },
+    {
+      "dist_m": 2850,
+      "alt_m": 101.29
+    },
+    {
+      "dist_m": 2900,
+      "alt_m": 101.92
+    },
+    {
+      "dist_m": 2950,
+      "alt_m": 102.16
+    },
+    {
+      "dist_m": 3000,
+      "alt_m": 102.77
+    },
+    {
+      "dist_m": 3050,
+      "alt_m": 103.08
+    },
+    {
+      "dist_m": 3100,
+      "alt_m": 103.07
+    },
+    {
+      "dist_m": 3150,
+      "alt_m": 102.97
+    },
+    {
+      "dist_m": 3200,
+      "alt_m": 102.86
+    },
+    {
+      "dist_m": 3250,
+      "alt_m": 102.78
+    },
+    {
+      "dist_m": 3300,
+      "alt_m": 102.71
+    },
+    {
+      "dist_m": 3350,
+      "alt_m": 102.6
+    },
+    {
+      "dist_m": 3400,
+      "alt_m": 102.11
+    },
+    {
+      "dist_m": 3450,
+      "alt_m": 101.55
+    },
+    {
+      "dist_m": 3500,
+      "alt_m": 101.08
+    },
+    {
+      "dist_m": 3550,
+      "alt_m": 100.55
+    },
+    {
+      "dist_m": 3600,
+      "alt_m": 100.3
+    },
+    {
+      "dist_m": 3650,
+      "alt_m": 100.13
+    },
+    {
+      "dist_m": 3700,
+      "alt_m": 99.89
+    },
+    {
+      "dist_m": 3750,
+      "alt_m": 99.72
+    },
+    {
+      "dist_m": 3800,
+      "alt_m": 100.44
+    },
+    {
+      "dist_m": 3850,
+      "alt_m": 100.8
+    },
+    {
+      "dist_m": 3900,
+      "alt_m": 101.02
+    },
+    {
+      "dist_m": 3950,
+      "alt_m": 101.53
+    },
+    {
+      "dist_m": 4000,
+      "alt_m": 101.23
+    },
+    {
+      "dist_m": 4050,
+      "alt_m": 100.67
+    },
+    {
+      "dist_m": 4100,
+      "alt_m": 101.04
+    },
+    {
+      "dist_m": 4150,
+      "alt_m": 100.8
+    },
+    {
+      "dist_m": 4200,
+      "alt_m": 100.1
+    },
+    {
+      "dist_m": 4250,
+      "alt_m": 99.96
+    },
+    {
+      "dist_m": 4300,
+      "alt_m": 100.2
+    },
+    {
+      "dist_m": 4350,
+      "alt_m": 100.01
+    },
+    {
+      "dist_m": 4400,
+      "alt_m": 99.82
+    },
+    {
+      "dist_m": 4450,
+      "alt_m": 99.81
+    },
+    {
+      "dist_m": 4500,
+      "alt_m": 99.81
+    }
+  ],
+  "elevation_change_m": 4.5,
+  "lateral_g": {
+    "mean_abs": 0.95,
+    "p90": 1.98,
+    "p95": 2.18,
+    "p99": 2.56,
+    "max": 3.64
+  },
+  "body_roll_deg": {
+    "mean_abs": 1.09,
+    "p95": 2.42,
+    "max": 4.67
+  },
+  "ride_heights_mm": {
+    "LF": {
+      "mean_mm": 23.4,
+      "min_mm": -22.7,
+      "max_mm": 103.9,
+      "p05_mm": 12.6,
+      "p95_mm": 35.3,
+      "std_mm": 8.0
+    },
+    "RF": {
+      "mean_mm": 24.9,
+      "min_mm": -2.3,
+      "max_mm": 81.3,
+      "p05_mm": 12.2,
+      "p95_mm": 36.3,
+      "std_mm": 8.0
+    },
+    "LR": {
+      "mean_mm": 31.2,
+      "min_mm": -13.6,
+      "max_mm": 98.5,
+      "p05_mm": 16.1,
+      "p95_mm": 46.6,
+      "std_mm": 10.2
+    },
+    "RR": {
+      "mean_mm": 32.8,
+      "min_mm": -22.9,
+      "max_mm": 85.6,
+      "p05_mm": 14.3,
+      "p95_mm": 48.6,
+      "std_mm": 10.7
+    }
+  },
+  "roll_gradient_deg_per_g": 0.301,
+  "lltd_measured": 0.486,
+  "surface_profile": {
+    "front_p50_mmps": 17.6,
+    "front_p95_mmps": 72.3,
+    "front_p99_mmps": 181.0,
+    "rear_p50_mmps": 20.0,
+    "rear_p95_mmps": 89.4,
+    "rear_p99_mmps": 228.7,
+    "front_p99_p95_ratio": 2.5,
+    "rear_p99_p95_ratio": 2.56
+  },
+  "splitter_rh_mean_mm": 56.7,
+  "splitter_rh_min_mm": 20.7,
+  "air_temp_c": 18.5,
+  "track_temp_c": 22.0,
+  "air_density_kg_m3": 1.1821,
+  "telemetry_source": "ferrari499p_hockenheim gp 2026-03-31 19-50-02.ibt \u2014 best lap 87.680s"
 }

@@ -100,6 +100,17 @@ def validate_solution_legality(
             constraint_violations=[support_note],
         )
 
+    if validation_step1 is None or validation_step2 is None or validation_step3 is None:
+        return LegalValidation(
+            valid=False,
+            messages=["solver steps blocked — skipping legality validation"],
+            snapped_or_corrected=False,
+            validation_tier="none",
+            hard_veto=True,
+            hard_veto_reasons=["solver steps blocked"],
+            constraint_violations=["solver steps blocked"],
+        )
+
     state = GarageSetupState.from_solver_steps(
         step1=validation_step1,
         step2=validation_step2,
