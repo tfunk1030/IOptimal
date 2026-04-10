@@ -33,7 +33,7 @@ class SubsystemCalibration:
       - "calibrated":    Real measurement, R² >= 0.85 (or no R² applicable),
                          auto-cal validated. Step runs.
       - "weak":          Calibrated but R² < 0.85, or manual override that
-                         disagrees with auto-cal. Step BLOCKS by default.
+                         disagrees with auto-cal. Step runs with explicit warning.
       - "uncalibrated":  No measurement at all. Step BLOCKS and cascades.
     """
     name: str
@@ -55,9 +55,9 @@ class SubsystemCalibration:
         return "[" + " ".join(parts) + "]" if parts else ""
 
 
-# Quality thresholds (strict mode — values below these BLOCK the gate)
-R2_THRESHOLD_BLOCK = 0.85   # below this, model is too weak to trust
-R2_THRESHOLD_WARN = 0.95    # below this, surface a warning
+# Quality thresholds (strict mode)
+R2_THRESHOLD_BLOCK = 0.85   # below this, model is too weak to trust (status=weak)
+R2_THRESHOLD_WARN = 0.95    # below this, calibrated model still gets warning
 
 
 # ─── Per-step calibration check result ───────────────────────────────────────
@@ -132,6 +132,11 @@ class CalibrationReport:
     def blocked_steps(self) -> list[int]:
         return [r.step_number for r in self.step_reports if r.blocked]
 
+    @property
+    def weak_upstream_steps(self) -> list[int]:
+        """Steps that run with weak upstream dependency inputs."""
+        return [r.step_number for r in self.step_reports if r.weak_upstream]
+
     def format_header(self) -> str:
         """Format the calibration status header for report output."""
         lines = []
@@ -155,6 +160,18 @@ class CalibrationReport:
                     lines.append(f"    - {sub.name}: {sub.confidence_label()} {sub.source}")
                     for w in sub.warnings:
                         lines.append(f"      ! {w}")
+        weak_upstream = self.weak_upstream_steps
+        if weak_upstream and not blocked:
+            lines.append("")
+            lines.append("WEAK-UPSTREAM STEPS (ran using weaker upstream calibration):")
+            for s in weak_upstream:
+                r = self.step_reports[s - 1]
+                if r.weak_upstream_step is not None:
+                    lines.append(
+                        f"  Step {s} ({r.step_name}): upstream dependency from Step {r.weak_upstream_step} is weak"
+                    )
+                else:
+                    lines.append(f"  Step {s} ({r.step_name}): upstream dependency is weak")
         if blocked:
             lines.append("")
             lines.append("UNCALIBRATED STEPS (calibration required):")
@@ -347,9 +364,17 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     rh_warnings: list[str] = []
     if front_r2 is not None and front_r2 < R2_THRESHOLD_BLOCK:
         rh_warnings.append(f"Front RH model weak: R²={front_r2:.2f} < {R2_THRESHOLD_BLOCK}")
+    elif front_r2 is not None and front_r2 < R2_THRESHOLD_WARN:
+        rh_warnings.append(
+            f"Front RH model below warn threshold: R²={front_r2:.2f} < {R2_THRESHOLD_WARN}"
+        )
     if rear_r2 is not None and rear_r2 < R2_THRESHOLD_BLOCK:
         rh_warnings.append(f"Rear RH model weak: R²={rear_r2:.2f} < {R2_THRESHOLD_BLOCK}")
-    # Strict mode: weak fits BLOCK rather than just warn
+    elif rear_r2 is not None and rear_r2 < R2_THRESHOLD_WARN:
+        rh_warnings.append(
+            f"Rear RH model below warn threshold: R²={rear_r2:.2f} < {R2_THRESHOLD_WARN}"
+        )
+    # Strict mode: weak fits are surfaced with warnings and marked weak.
     if not rh_cal:
         rh_status = "uncalibrated"
     elif weaker_r2 is not None and weaker_r2 < R2_THRESHOLD_BLOCK:
@@ -387,6 +412,11 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     if weakest_defl_r2 is not None and weakest_defl_r2 < R2_THRESHOLD_BLOCK:
         defl_warnings.append(
             f"Weakest deflection sub-model R²={weakest_defl_r2:.2f} < {R2_THRESHOLD_BLOCK}"
+        )
+    elif weakest_defl_r2 is not None and weakest_defl_r2 < R2_THRESHOLD_WARN:
+        defl_warnings.append(
+            f"Weakest deflection sub-model below warn threshold: "
+            f"R²={weakest_defl_r2:.2f} < {R2_THRESHOLD_WARN}"
         )
     if not defl_cal:
         defl_status = "uncalibrated"
@@ -536,7 +566,7 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
 # ─── Step-level calibration requirements ─────────────────────────────────────
 
 # Each solver step maps to required subsystems.
-# "calibrated" or "partial" status is acceptable; "uncalibrated" blocks the step.
+# "calibrated" runs cleanly, "weak" runs with warnings, "uncalibrated" blocks.
 STEP_REQUIREMENTS: dict[int, tuple[str, list[str]]] = {
     1: ("Rake / Ride Heights", ["aero_compression", "ride_height_model", "pushrod_geometry"]),
     2: ("Heave / Third Springs", ["spring_rates"]),
@@ -620,9 +650,9 @@ class CalibrationGate:
     def check_step(self, step_number: int) -> StepCalibrationReport:
         """Check if a solver step can run with calibrated data.
 
-        Strict mode: a step blocks when ANY required subsystem is
-        "uncalibrated" OR "weak" (R² below threshold, manual override
-        disagreement, etc.).
+        Strict mode: a step blocks when required subsystems are uncalibrated.
+        Weak subsystems (R² below threshold, manual override disagreements)
+        are surfaced as warnings and flagged on the report, but remain runnable.
 
         Cascade: only TRUE data blocks (uncalibrated, dependency-blocked)
         propagate to downstream steps. A "weak" block does NOT cascade —
