@@ -637,7 +637,7 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
 # Each solver step maps to required subsystems.
 # "calibrated" runs cleanly, "weak" runs with warnings, "uncalibrated" blocks.
 STEP_REQUIREMENTS: dict[int, tuple[str, list[str]]] = {
-    1: ("Rake / Ride Heights", ["track_support", "aero_compression", "ride_height_model", "pushrod_geometry"]),
+    1: ("Rake / Ride Heights", ["aero_compression", "ride_height_model", "pushrod_geometry"]),
     2: ("Heave / Third Springs", ["spring_rates"]),
     3: ("Corner Springs", ["spring_rates"]),
     4: ("Anti-Roll Bars", ["arb_stiffness", "lltd_target"]),

@@ -676,6 +676,15 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
             f"Only {n} samples for {n_features} features (recommend "
             f"{_min_sessions_for_features(n_features)}+)"
         )
+    # Defense-in-depth: if LOO is catastrophically worse than training (>10x),
+    # the model is memorizing noise and won't generalize. Mark uncalibrated
+    # even if R² looks great on the training set.
+    if is_cal and n >= 5 and not np.isnan(loo_rmse) and loo_rmse > 10.0 * max(rmse, 1e-6):
+        is_cal = False
+        _overfit_warnings.append(
+            f"LOO/train ratio {loo_rmse / max(rmse, 1e-6):.0f}x — "
+            f"marking uncalibrated despite R²={r2:.3f}"
+        )
     if _overfit_warnings:
         import logging
         _logger = logging.getLogger(__name__)
@@ -714,10 +723,12 @@ def _select_features(
     """
     n_samples, n_features = X.shape
     if max_features is None:
-        max_features = max(1, min(n_samples - 2, 25))
-    # Only run selection when degrees of freedom are tight (< 2x features).
-    # With ample dof, all physics features can be used without overfitting.
-    if n_features <= max_features and n_samples >= n_features + 5:
+        # Cap features at 1/3 of samples — matches _min_sessions_for_features()
+        # which requires 3 * n_features samples for a healthy fit.
+        max_features = max(1, min(n_samples // 3, 25))
+    # Only skip selection when we have 3x more samples than features —
+    # the standard statistical threshold for stable linear regression.
+    if n_features <= max_features and n_samples >= 3 * n_features:
         return X, feature_names
 
     # Forward selection: start empty, greedily add the feature that gives

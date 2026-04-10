@@ -761,7 +761,8 @@ def produce(
         logging.getLogger(__name__).debug("Veto cluster loading skipped: %s", e)
 
     # ── Calibration gate ──
-    _track_short = track.track_name.split()[0].lower() if hasattr(track, "track_name") else args.track
+    from car_model.registry import track_key as _track_key
+    _track_short = _track_key(track.track_name) if hasattr(track, "track_name") else args.track
     cal_gate = CalibrationGate(car, _track_short)
     cal_report = cal_gate.full_report()
     _steps_blocked: set[int] = set()

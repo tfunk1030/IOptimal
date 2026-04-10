@@ -452,7 +452,8 @@ def generate_report(
             a(f"  .sto will use garage defaults for blocked steps.")
 
     # ── CURRENT vs RECOMMENDED ────────────────────────────────────────
-    if current_setup is not None and step4 is not None and step5 is not None:
+    if (current_setup is not None and step2 is not None and step3 is not None
+            and step4 is not None and step5 is not None and step6 is not None):
         a("")
         a(_hdr("CURRENT vs RECOMMENDED"))
         a(f"  {'Parameter':<22}  {'Current':>8}  {'Recomm':>8}  {'Change':>9}")
@@ -502,7 +503,7 @@ def generate_report(
         a("")
 
     # ── HEAVE TRAVEL BUDGET ────────────────────────────────────────────
-    if step2.defl_max_front_mm > 0:
+    if step2 is not None and step2.defl_max_front_mm > 0:
         budget_slider = (
             garage_outputs.heave_slider_defl_static_mm
             if garage_outputs is not None else
