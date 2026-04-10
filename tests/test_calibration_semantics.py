@@ -210,10 +210,19 @@ class TestCalibrationGateDependencyPropagation(unittest.TestCase):
         sr2 = gate.check_step(2)
         self.assertTrue(sr2.blocked, "Ferrari step 2 should be blocked")
         self.assertFalse(sr2.dependency_blocked)
-        # Steps 3-6 cascade from Step 2
+        # Steps 3-6 should be blocked specifically by cascading from Step 2
         for step_num in range(3, 7):
             sr = gate.check_step(step_num)
             self.assertTrue(sr.blocked, f"Ferrari step {step_num} should be blocked")
+            self.assertTrue(
+                sr.dependency_blocked,
+                f"Ferrari step {step_num} should be dependency-blocked by Step 2",
+            )
+            self.assertEqual(
+                sr.blocked_by_step,
+                2,
+                f"Ferrari step {step_num} should be blocked by Step 2",
+            )
 
     def test_dependency_blocked_instructions_text(self):
         """Dependency-blocked steps should reference the upstream blocker."""
