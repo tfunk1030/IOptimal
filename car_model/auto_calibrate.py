@@ -1050,10 +1050,13 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         # produces 0.000mm difference on ALL outputs). Excluded to prevent
         # spurious correlations from inflating feature count.
     ]
-    # Interaction/quadratic terms removed — they overfit on training data
-    # (0.000mm on calibration points) but fail on new setups (2.3mm on
-    # real IBTs). The physics features (linear + compliance 1/k) give
-    # 0.039mm on holdout data with honest generalization.
+    # Only pushrod² terms added — pushrod linkage geometry is nonlinear
+    # (lever ratio changes with angle). All other interactions removed
+    # after holdout testing showed they overfit (2.3mm on real IBTs).
+    _push_f = col("front_pushrod_mm")
+    _push_r = col("rear_pushrod_mm")
+    _UNIVERSAL_POOL.append((_push_f ** 2, "front_pushrod_sq"))
+    _UNIVERSAL_POOL.append((_push_r ** 2, "rear_pushrod_sq"))
 
     def _pool_to_matrix(pool=None):
         """Build X matrix and names from feature pool, excluding constants."""

@@ -168,6 +168,8 @@ class DirectRegression:
             "od4": lambda s: s.front_torsion_od_mm ** 4,
             "rear_camber": lambda s: s.rear_camber_deg,
             "wing": lambda s: s.wing_deg,
+            "front_pushrod_sq": lambda s: s.front_pushrod_mm ** 2,
+            "rear_pushrod_sq": lambda s: s.rear_pushrod_mm ** 2,
         }
         return cls(
             intercept=model_coefficients[0] if model_coefficients else 0.0,

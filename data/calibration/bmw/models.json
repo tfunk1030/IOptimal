@@ -68,27 +68,19 @@
   "front_shock_defl_static": {
     "name": "front_shock_defl_static",
     "feature_names": [
-      "front_pushrod",
-      "torsion_od",
-      "rear_third_perch",
-      "front_camber",
+      "front_pushrod_sq",
       "inv_od4",
-      "inv_rear_third",
-      "rear_pushrod"
+      "rear_camber"
     ],
     "coefficients": [
-      44.46865837933088,
-      0.5130434782523922,
-      -0.7972807228485487,
-      0.01739130434909678,
-      1.0978260869634286,
-      -120046.3039853979,
-      6.207536268681421e-09,
-      2.381721925844906e-13
+      123.81893646739549,
+      -0.02730723897785911,
+      -1033707.4777185944,
+      36.530002483441905
     ],
-    "r_squared": 1.0,
-    "rmse": 1.3021545143643581e-12,
-    "loo_rmse": 0.35099162586951893,
+    "r_squared": 0.9894075048611093,
+    "rmse": 0.11611436724937997,
+    "loo_rmse": 0.3380373873087473,
     "n_samples": 9,
     "is_calibrated": true
   },
@@ -162,19 +154,19 @@
   "heave_slider_defl_static": {
     "name": "heave_slider_defl_static",
     "feature_names": [
+      "front_pushrod_sq",
       "front_pushrod",
-      "torsion_od",
-      "rear_third_perch"
+      "torsion_od"
     ],
     "coefficients": [
-      65.16324510956444,
-      1.3100197602264398,
-      0.11990426105911516,
-      0.18230438764608323
+      -316.3509704902142,
+      -0.5676837184387231,
+      -26.63890980514079,
+      3.4514437796408144
     ],
-    "r_squared": 0.9449461587067285,
-    "rmse": 0.7364753097271732,
-    "loo_rmse": 1.2351065649617177,
+    "r_squared": 0.985243076161871,
+    "rmse": 0.3812960413211836,
+    "loo_rmse": 0.8851393337649616,
     "n_samples": 9,
     "is_calibrated": true
   },
@@ -207,18 +199,18 @@
       "rear_spring",
       "inv_rear_spring",
       "rear_pushrod",
-      "front_pushrod"
+      "front_pushrod_sq"
     ],
     "coefficients": [
-      80.75876471271098,
-      -0.0802862247824061,
-      1888.9677643293762,
-      0.0012592514107419579,
-      -0.0006827016816211011
+      80.76542889094158,
+      -0.0802825590030988,
+      1889.1489084942689,
+      0.0012565864372651335,
+      1.3704783682026104e-05
     ],
-    "r_squared": 0.9999999735200247,
-    "rmse": 0.0007505838962111205,
-    "loo_rmse": 0.0014029488145862288,
+    "r_squared": 0.9999999739899295,
+    "rmse": 0.0007438942800939386,
+    "loo_rmse": 0.001377820589745365,
     "n_samples": 9,
     "is_calibrated": true
   },
