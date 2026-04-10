@@ -714,11 +714,7 @@ def _select_features(
     """
     n_samples, n_features = X.shape
     if max_features is None:
-        # Cap at n-3 or 25 features (whichever is smaller) to maintain at
-        # least 2 degrees of freedom while allowing enough features to
-        # capture iRacing's nonlinear formulas. ARB blade and other
-        # confirmed zero-effect features are excluded from the pool.
-        max_features = max(1, min(n_samples - 3, 25))
+        max_features = max(1, min(n_samples - 2, 25))
     if n_features <= max_features:
         return X, feature_names
 
