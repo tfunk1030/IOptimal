@@ -33,7 +33,11 @@ class GarageSetupState:
     rear_spring_nmm: float
     rear_spring_perch_mm: float
     front_camber_deg: float
+    rear_camber_deg: float = 0.0
     fuel_l: float = 0.0
+    wing_deg: float = 0.0
+    front_arb_blade: float = 0.0
+    rear_arb_blade: float = 0.0
 
     @classmethod
     def from_current_setup(cls, setup: Any) -> "GarageSetupState":
@@ -130,6 +134,48 @@ class DirectRegression:
             "inv_rear_spring": lambda s: 1.0 / max(s.rear_spring_nmm, 1.0),
             "inv_od4": lambda s: 1.0 / max(s.front_torsion_od_mm ** 4, 1.0),
             "od4": lambda s: s.front_torsion_od_mm ** 4,
+            "rear_camber": lambda s: s.rear_camber_deg,
+            "wing": lambda s: s.wing_deg,
+            "front_arb_blade": lambda s: s.front_arb_blade,
+            "rear_arb_blade": lambda s: s.rear_arb_blade,
+            # Quadratic terms
+            "rear_third_sq": lambda s: s.rear_third_nmm ** 2,
+            "rear_spring_sq": lambda s: s.rear_spring_nmm ** 2,
+            "front_heave_sq": lambda s: s.front_heave_nmm ** 2,
+            "rear_pushrod_sq": lambda s: s.rear_pushrod_mm ** 2,
+            "rear_third_perch_sq": lambda s: s.rear_third_perch_mm ** 2,
+            "rear_spring_perch_sq": lambda s: s.rear_spring_perch_mm ** 2,
+            "front_pushrod_sq": lambda s: s.front_pushrod_mm ** 2,
+            "front_heave_perch_sq": lambda s: s.front_heave_perch_mm ** 2,
+            # Interaction terms
+            "rear_third_x_rear_spring": lambda s: s.rear_third_nmm * s.rear_spring_nmm,
+            "rear_third_x_front_heave": lambda s: s.rear_third_nmm * s.front_heave_nmm,
+            "rear_third_x_rear_pushrod": lambda s: s.rear_third_nmm * s.rear_pushrod_mm,
+            "rear_third_x_rear_third_perch": lambda s: s.rear_third_nmm * s.rear_third_perch_mm,
+            "rear_third_x_rear_spring_perch": lambda s: s.rear_third_nmm * s.rear_spring_perch_mm,
+            "rear_third_x_front_pushrod": lambda s: s.rear_third_nmm * s.front_pushrod_mm,
+            "rear_third_x_front_heave_perch": lambda s: s.rear_third_nmm * s.front_heave_perch_mm,
+            "rear_spring_x_front_heave": lambda s: s.rear_spring_nmm * s.front_heave_nmm,
+            "rear_spring_x_rear_pushrod": lambda s: s.rear_spring_nmm * s.rear_pushrod_mm,
+            "rear_spring_x_rear_third_perch": lambda s: s.rear_spring_nmm * s.rear_third_perch_mm,
+            "rear_spring_x_rear_spring_perch": lambda s: s.rear_spring_nmm * s.rear_spring_perch_mm,
+            "rear_spring_x_front_pushrod": lambda s: s.rear_spring_nmm * s.front_pushrod_mm,
+            "rear_spring_x_front_heave_perch": lambda s: s.rear_spring_nmm * s.front_heave_perch_mm,
+            "front_heave_x_rear_pushrod": lambda s: s.front_heave_nmm * s.rear_pushrod_mm,
+            "front_heave_x_rear_third_perch": lambda s: s.front_heave_nmm * s.rear_third_perch_mm,
+            "front_heave_x_rear_spring_perch": lambda s: s.front_heave_nmm * s.rear_spring_perch_mm,
+            "front_heave_x_front_pushrod": lambda s: s.front_heave_nmm * s.front_pushrod_mm,
+            "front_heave_x_front_heave_perch": lambda s: s.front_heave_nmm * s.front_heave_perch_mm,
+            "rear_pushrod_x_rear_third_perch": lambda s: s.rear_pushrod_mm * s.rear_third_perch_mm,
+            "rear_pushrod_x_rear_spring_perch": lambda s: s.rear_pushrod_mm * s.rear_spring_perch_mm,
+            "rear_pushrod_x_front_pushrod": lambda s: s.rear_pushrod_mm * s.front_pushrod_mm,
+            "rear_pushrod_x_front_heave_perch": lambda s: s.rear_pushrod_mm * s.front_heave_perch_mm,
+            "rear_third_perch_x_rear_spring_perch": lambda s: s.rear_third_perch_mm * s.rear_spring_perch_mm,
+            "rear_third_perch_x_front_pushrod": lambda s: s.rear_third_perch_mm * s.front_pushrod_mm,
+            "rear_third_perch_x_front_heave_perch": lambda s: s.rear_third_perch_mm * s.front_heave_perch_mm,
+            "rear_spring_perch_x_front_pushrod": lambda s: s.rear_spring_perch_mm * s.front_pushrod_mm,
+            "rear_spring_perch_x_front_heave_perch": lambda s: s.rear_spring_perch_mm * s.front_heave_perch_mm,
+            "front_pushrod_x_front_heave_perch": lambda s: s.front_pushrod_mm * s.front_heave_perch_mm,
         }
         return cls(
             intercept=model_coefficients[0] if model_coefficients else 0.0,

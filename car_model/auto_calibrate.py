@@ -1039,7 +1039,28 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         (1.0 / np.maximum(_rear_third, 1.0), "inv_rear_third"),
         (1.0 / np.maximum(_rear_spring, 1.0), "inv_rear_spring"),
         (1.0 / np.maximum(od4, 1.0), "inv_od4"),
+        (col("rear_camber_deg"), "rear_camber"),
+        (col("wing_deg"), "wing"),
+        (np.array([float(r.get("front_arb_blade", 0) or 0) for r in rows]), "front_arb_blade"),
+        (np.array([float(r.get("rear_arb_blade", 0) or 0) for r in rows]), "rear_arb_blade"),
     ]
+    # Add pairwise interactions and quadratic terms for key variables.
+    # iRacing's garage model uses nonlinear terms (discovered via brute-force).
+    _interact_bases = [
+        (_rear_third, "rear_third"), (_rear_spring, "rear_spring"),
+        (heave, "front_heave"),
+        (col("rear_pushrod_mm"), "rear_pushrod"),
+        (col("rear_third_perch_mm"), "rear_third_perch"),
+        (col("rear_spring_perch_mm"), "rear_spring_perch"),
+        (col("front_pushrod_mm"), "front_pushrod"),
+        (col("front_heave_perch_mm"), "front_heave_perch"),
+    ]
+    for i, (arr1, name1) in enumerate(_interact_bases):
+        # Quadratic
+        _UNIVERSAL_POOL.append((arr1 ** 2, f"{name1}_sq"))
+        # Interactions with later bases (avoid duplicates)
+        for arr2, name2 in _interact_bases[i + 1:]:
+            _UNIVERSAL_POOL.append((arr1 * arr2, f"{name1}_x_{name2}"))
 
     def _pool_to_matrix(pool=None):
         """Build X matrix and names from feature pool, excluding constants."""
