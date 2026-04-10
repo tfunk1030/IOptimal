@@ -715,7 +715,9 @@ def _select_features(
     n_samples, n_features = X.shape
     if max_features is None:
         max_features = max(1, min(n_samples - 2, 25))
-    if n_features <= max_features:
+    # Only run selection when degrees of freedom are tight (< 2x features).
+    # With ample dof, all physics features can be used without overfitting.
+    if n_features <= max_features and n_samples >= n_features + 5:
         return X, feature_names
 
     # Forward selection: start empty, greedily add the feature that gives
