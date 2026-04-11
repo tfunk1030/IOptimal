@@ -54,8 +54,9 @@ class GarageValidatorTests(unittest.TestCase):
         self.assertFalse(any("torsion bar defl" in w for w in warnings))
         # Perch should be unchanged since no torsion bar fix was triggered.
         self.assertEqual(step2.perch_offset_front_mm, -7.0)
-        # Garage constraints should be valid after validation.
-        self.assertTrue(getattr(step2, "garage_constraints_ok", True))
+        # Garage constraints should be populated and valid after validation.
+        self.assertTrue(hasattr(step2, "garage_constraints_ok"))
+        self.assertTrue(step2.garage_constraints_ok)
 
     def test_bmw_validator_guards_soft_front_bar_full_race_edge_case(self) -> None:
         car = get_car("bmw")
