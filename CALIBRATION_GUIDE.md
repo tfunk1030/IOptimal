@@ -84,7 +84,7 @@ The regression models use physically motivated features:
 
 **Minimum for basic calibration:** 8 unique setups with at least 3 different values for each of pushrod, third, and spring.
 
-**For best accuracy:** 20+ unique setups with ALL of the above parameters varied. This is what Porsche (36 setups) and Ferrari (23 setups) have — they achieve 0.06mm accuracy.
+**For best accuracy:** 20+ unique setups with ALL of the above parameters varied. This is what Porsche (36 setups) and Ferrari (23 setups) have — they achieve 0.1-0.5mm accuracy on most outputs (honest post-overfitting-fix numbers; older claims of "0.06mm" were from overfit models).
 
 **Important:** You DON'T need to vary ARB blade, ARB size, or TC/diff settings. These have zero effect on garage display values.
 
