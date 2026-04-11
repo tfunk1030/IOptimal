@@ -287,6 +287,7 @@ class GarageOutputModel:
     default_rear_spring_nmm: float = 170.0
     default_rear_spring_perch_mm: float = 30.0
     default_front_camber_deg: float = -2.9
+    default_rear_camber_deg: float = -1.9
     default_front_shock_defl_max_mm: float = 100.0
     default_rear_shock_defl_max_mm: float = 150.0
     front_rh_floor_mm: float = 30.0
@@ -389,6 +390,7 @@ class GarageOutputModel:
             rear_spring_nmm=self.default_rear_spring_nmm,
             rear_spring_perch_mm=self.default_rear_spring_perch_mm,
             front_camber_deg=self.default_front_camber_deg,
+            rear_camber_deg=self.default_rear_camber_deg,
             fuel_l=fuel_l,
         )
 
@@ -411,15 +413,25 @@ class GarageOutputModel:
     def predict_front_static_rh(self, setup: GarageSetupState) -> float:
         """Predict front static ride height.
 
-        Returns the raw prediction without floor clamping so that downstream
-        code can detect when a setup combination would produce a sub-legal
-        ride height.  Callers that need the floor-clamped value should use
+        Delegates to the DirectRegression when available, otherwise falls back
+        to the legacy linear coefficient model.  Returns the raw prediction
+        without floor clamping so that downstream code can detect when a setup
+        combination would produce a sub-legal ride height.  Callers that need
+        the floor-clamped value should use
         ``max(model.front_rh_floor_mm, prediction)`` explicitly.
         """
+        if self._direct_front_rh is not None:
+            return self._direct_front_rh.predict(setup)
         return self.predict_front_static_rh_raw(setup)
 
     def predict_rear_static_rh(self, setup: GarageSetupState) -> float:
-        """Predict rear static ride height."""
+        """Predict rear static ride height.
+
+        Delegates to the DirectRegression when available (Porsche/Algarve path),
+        otherwise falls back to the legacy linear coefficient model.
+        """
+        if self._direct_rear_rh is not None:
+            return self._direct_rear_rh.predict(setup)
         inv_third = 0.0
         if abs(self.rear_coeff_inv_third_nmm) > 1e-9 and setup.rear_third_nmm > 0:
             inv_third = 1.0 / setup.rear_third_nmm

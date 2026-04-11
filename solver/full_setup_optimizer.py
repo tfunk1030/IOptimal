@@ -239,6 +239,7 @@ class BMWSebringOptimizer:
                 rear_spring_nmm=seed.rear_spring_nmm,
                 rear_spring_perch_mm=float(x[3]),
                 front_camber_deg=float(x[4]),
+                rear_camber_deg=seed.rear_camber_deg,
                 fuel_l=fuel_load_l,
             )
             outputs = self.garage_model.predict(state)
@@ -288,6 +289,7 @@ class BMWSebringOptimizer:
             rear_spring_nmm=seed.rear_spring_nmm,
             rear_spring_perch_mm=round(float(x[3]) * 2) / 2,
             front_camber_deg=round(float(x[4]) / 0.1) * 0.1,
+            rear_camber_deg=seed.rear_camber_deg,
             fuel_l=fuel_load_l,
         )
 

@@ -948,6 +948,7 @@ class ObjectiveFunction:
                         rear_spring_nmm=float(params.get("rear_spring_rate_nmm", _baseline.rear_spring_nmm)),
                         rear_spring_perch_mm=_baseline.rear_spring_perch_mm,
                         front_camber_deg=_baseline.front_camber_deg,
+                        rear_camber_deg=_baseline.rear_camber_deg,
                         fuel_l=0.0,
                     )
                     _static_f = float(_gom.predict_front_static_rh(_state))

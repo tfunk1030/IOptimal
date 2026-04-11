@@ -702,6 +702,7 @@ class HeaveSolver:
         rear_spring_perch_mm: float,
         fuel_load_l: float,
         front_camber_deg: float,
+        rear_camber_deg: float | None = None,
     ) -> GarageSetupState:
         return GarageSetupState(
             front_pushrod_mm=float(front_pushrod_mm),
@@ -714,6 +715,11 @@ class HeaveSolver:
             rear_spring_nmm=float(rear_spring_nmm),
             rear_spring_perch_mm=float(rear_spring_perch_mm),
             front_camber_deg=float(front_camber_deg),
+            rear_camber_deg=float(
+                rear_camber_deg
+                if rear_camber_deg is not None
+                else self.car.geometry.rear_camber_baseline_deg
+            ),
             fuel_l=float(fuel_load_l),
         )
 

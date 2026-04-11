@@ -301,6 +301,7 @@ class RakeSolver:
                 rear_spring_nmm=baseline.rear_spring_nmm,
                 rear_spring_perch_mm=baseline.rear_spring_perch_mm,
                 front_camber_deg=baseline.front_camber_deg,
+                rear_camber_deg=baseline.rear_camber_deg,
                 fuel_l=fuel_load_l,
             ))
             static_front = max(outputs.front_static_rh_mm, self.car.min_front_rh_static)
@@ -519,6 +520,7 @@ class RakeSolver:
                     rear_spring_nmm=baseline.rear_spring_nmm,
                     rear_spring_perch_mm=baseline.rear_spring_perch_mm,
                     front_camber_deg=baseline.front_camber_deg,
+                    rear_camber_deg=baseline.rear_camber_deg,
                     fuel_l=fuel_load_l,
                 ))
                 static_front = max(float(outputs_f.front_static_rh_mm), self.car.min_front_rh_static)
@@ -536,6 +538,7 @@ class RakeSolver:
                     rear_spring_nmm=baseline.rear_spring_nmm,
                     rear_spring_perch_mm=baseline.rear_spring_perch_mm,
                     front_camber_deg=baseline.front_camber_deg,
+                    rear_camber_deg=baseline.rear_camber_deg,
                     fuel_l=fuel_load_l,
                 ))
                 static_rear = max(float(outputs_r.rear_static_rh_mm), self.car.min_rear_rh_static)
@@ -868,6 +871,11 @@ def reconcile_ride_heights(
             if step5 is not None and hasattr(step5, "front_camber_deg")
             else float(car.geometry.front_camber_baseline_deg)
         )
+        rear_camber = (
+            float(step5.rear_camber_deg)
+            if step5 is not None and hasattr(step5, "rear_camber_deg")
+            else float(car.geometry.rear_camber_baseline_deg)
+        )
         target_front_rh = max(
             car.min_front_rh_static,
             round(step1.dynamic_front_rh_mm + step1.aero_compression_front_mm, 3),
@@ -918,6 +926,7 @@ def reconcile_ride_heights(
                 rear_spring_nmm=float(step3.rear_spring_rate_nmm),
                 rear_spring_perch_mm=float(step3.rear_spring_perch_mm),
                 front_camber_deg=float(car.geometry.front_camber_baseline_deg),
+                rear_camber_deg=rear_camber,
                 fuel_l=float(fuel_load_l),
             )
             _max_rear_rh = garage_model.predict(_test_state).rear_static_rh_mm
@@ -967,6 +976,7 @@ def reconcile_ride_heights(
                         rear_spring_nmm=step3.rear_spring_rate_nmm,
                         rear_spring_perch_mm=step3.rear_spring_perch_mm,
                         front_camber_deg=front_camber,
+                        rear_camber_deg=rear_camber,
                         fuel_l=fuel_load_l,
                     )
                 )
@@ -1008,6 +1018,7 @@ def reconcile_ride_heights(
                 rear_spring_nmm=float(step3.rear_spring_rate_nmm),
                 rear_spring_perch_mm=float(step3.rear_spring_perch_mm),
                 front_camber_deg=float(front_camber),
+                rear_camber_deg=float(rear_camber),
                 fuel_l=float(fuel_load_l),
             ),
             front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
