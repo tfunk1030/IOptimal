@@ -39,19 +39,17 @@ def calibrate_dampers(car_name: str, track_name: str) -> dict | None:
 
     store = KnowledgeStore()
     track_key = track_name.lower().split()[0]
-    obs_ids = store.list_observations(car=car_name, track=track_key)
+    # list_observations returns full observation dicts — use them directly.
+    observations = store.list_observations(car=car_name, track=track_key)
 
-    if len(obs_ids) < 5:
-        print(f"Need 5+ sessions for damper calibration, have {len(obs_ids)}")
+    if len(observations) < 5:
+        print(f"Need 5+ sessions for damper calibration, have {len(observations)}")
         return None
 
-    # Load observations and extract damper settings + platform metrics
+    # Extract damper settings + platform metrics from each observation
     records: list[dict] = []
-    for oid in obs_ids:
-        # list_observations returns dicts with 'session_id'; load_observation expects a string
-        obs_key = oid.get("session_id", oid) if isinstance(oid, dict) else oid
-        obs = store.load_observation(obs_key)
-        if obs is None:
+    for obs in observations:
+        if not isinstance(obs, dict):
             continue
 
         setup = obs.get("setup", {})
@@ -138,24 +136,27 @@ def calibrate_dampers(car_name: str, track_name: str) -> dict | None:
     # Use the car's DamperModel click range to normalize
     from car_model.cars import get_car
     car = get_car(car_name, apply_calibration=False)
-    ls_range = car.damper.ls_comp_range[1] - car.damper.ls_comp_range[0]
-    hs_range = car.damper.hs_comp_range[1] - car.damper.hs_comp_range[0]
+    ls_min = car.damper.ls_comp_range[0]
+    ls_range = car.damper.ls_comp_range[1] - ls_min
+    hs_min = car.damper.hs_comp_range[0]
+    hs_range = car.damper.hs_comp_range[1] - hs_min
 
     # Normalize click position to [0, 1], then map to zeta range
     # LS zeta: 0.30 (click 0) to 0.80 (max click)
     # HS zeta: 0.10 (click 0) to 0.30 (max click)
-    def _click_to_zeta(click: float, click_range: int, zeta_min: float, zeta_max: float) -> float:
+    def _click_to_zeta(click: float, click_min: int, click_range: int,
+                       zeta_min: float, zeta_max: float) -> float:
         if click_range <= 0:
             return (zeta_min + zeta_max) / 2.0
-        frac = (click - car.damper.ls_comp_range[0]) / click_range
+        frac = (click - click_min) / click_range
         frac = max(0.0, min(1.0, frac))
         return zeta_min + frac * (zeta_max - zeta_min)
 
     result = {
-        "front_ls_zeta": round(_click_to_zeta(front_ls_best, ls_range, 0.30, 0.80), 3),
-        "rear_ls_zeta": round(_click_to_zeta(rear_ls_best, ls_range, 0.30, 0.80), 3),
-        "front_hs_zeta": round(_click_to_zeta(front_hs_best, hs_range, 0.10, 0.30), 3),
-        "rear_hs_zeta": round(_click_to_zeta(rear_hs_best, hs_range, 0.10, 0.30), 3),
+        "front_ls_zeta": round(_click_to_zeta(front_ls_best, ls_min, ls_range, 0.30, 0.80), 3),
+        "rear_ls_zeta": round(_click_to_zeta(rear_ls_best, ls_min, ls_range, 0.30, 0.80), 3),
+        "front_hs_zeta": round(_click_to_zeta(front_hs_best, hs_min, hs_range, 0.10, 0.30), 3),
+        "rear_hs_zeta": round(_click_to_zeta(rear_hs_best, hs_min, hs_range, 0.10, 0.30), 3),
         "n_sessions": len(records),
         "n_top_sessions": n_top,
     }
