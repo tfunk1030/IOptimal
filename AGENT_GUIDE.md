@@ -24,7 +24,7 @@ The CalibrationGate enforces per-car, per-step blocking. Each solver step requir
 | Car | Tier | Unique Setups | Calibrated Steps | Blocked Steps | What User Sees |
 |-----|------|:---:|:---:|:---:|----------------|
 | BMW M Hybrid V8 | **Exploratory** | 9 (Sebring) | 1-6 (all) | none | Full setup output (sequential solver; optimizer gated on BMW only) |
-| Ferrari 499P | **Calibrated** | 60 sessions, 23 unique setups (Hockenheim) | 1 | 2-6 (spring_rates uncalibrated) | Step 1 rake + calibration instructions for steps 2-6 |
+| Ferrari 499P | **Calibrated** | 60 sessions, 23 unique setups (Hockenheim) | 1-6 (all) | none | Full 6-step output; rear torsion bar validated from IBT controlled-group analysis |
 | Cadillac V-Series.R | **Unsupported** | <5 (Silverstone) | — | 1-6 | Calibration instructions only |
 | Porsche 963 | **Calibrated** | 62 sessions, 36 unique setups (Algarve) | 1-5 | 6 (damper_zeta not set) | 5-step setup; Step 6 blocked until `zeta_is_calibrated=True` |
 | Acura ARX-06 | **Partial** | 15 sessions, 8 unique setups (Hockenheim) | 1-3 | 4-6 (ARB/LLTD/geometry/damper uncalibrated) | Steps 1-3 output + instructions for steps 4-6 |
@@ -66,7 +66,7 @@ BMW/Sebring correlation:
 
 ### Active Goals
 
-1. **Ferrari steps 2-6**: Collect 5+ garage screenshots with varied rear torsion bar indices to calibrate `spring_rates`. This unblocks Steps 2-6 for Ferrari at Hockenheim.
+1. **Ferrari steps 2-6**: Unblocked — rear torsion bar validated from IBT controlled-group analysis; `spring_rates` now calibrated from 60 IBT sessions. Collect more sessions with varied rear corner settings to further reduce the ~20% rate uncertainty at extreme indices.
 2. **Porsche Step 6**: Run damper click-sweep procedure → set `zeta_is_calibrated=True` in `car_model/cars.py`.
 3. **Cadillac**: Collect everything from scratch (0 calibration points, 0 unique setups).
 4. **BMW/Sebring objective hardening**: Spearman -0.298 is approaching actionable. Continue improving holdout stability (worst fold currently +0.121).

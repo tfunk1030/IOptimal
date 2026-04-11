@@ -202,9 +202,11 @@ class TestCalibrationGateDependencyPropagation(unittest.TestCase):
         """Ferrari steps 1-6 are all runnable after rear_torsion_unvalidated was cleared.
 
         The rear torsion bar model was previously flagged as unvalidated (blocking
-        Steps 2–6).  After IBT-controlled-group analysis validated the model to
-        within ~10–22% of measured wheel rates (PR #57 fixed the domain-mismatch
-        bug that caused the original 3.5x apparent error), the flag was cleared.
+        Steps 2–6).  PR #57 fixed the index/physical-OD domain-mismatch bug in
+        garage_validator._clamp_step3 that caused the original 3.5x apparent error.
+        Subsequently, IBT controlled-group analysis (60 sessions, same turns+pushrod,
+        different spring index) validated the bar model to within ~4–22% of measured
+        wheel rates, and the stale flag was cleared in this PR.
         """
         from car_model.cars import get_car
         from car_model.calibration_gate import CalibrationGate
