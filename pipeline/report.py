@@ -452,9 +452,11 @@ def generate_report(
             a(f"  .sto will use garage defaults for blocked steps.")
 
     # ── CURRENT vs RECOMMENDED ────────────────────────────────────────
+    # Most rows depend on step1-step5; only the damper rows need step6.
+    # When Step 6 is blocked (e.g. Porsche damper_zeta), still show the rest
+    # of the comparison and emit a short note for dampers.
     if (current_setup is not None and step1 is not None and step2 is not None
-            and step3 is not None and step4 is not None and step5 is not None
-            and step6 is not None):
+            and step3 is not None and step4 is not None and step5 is not None):
         a("")
         a(_hdr("CURRENT vs RECOMMENDED"))
         a(f"  {'Parameter':<22}  {'Current':>8}  {'Recomm':>8}  {'Change':>9}")
@@ -497,10 +499,13 @@ def generate_report(
                 a(f"  Pad: {_brake_sol.pad_compound_note}")
         a(_cmp("Diff preload",       current_setup.diff_preload_nm,      supporting.diff_preload_nm,     "Nm",  ".0f"))
         a(_cmp("TC gain",            current_setup.tc_gain,              supporting.tc_gain,             "",    ".0f"))
-        a(_cmp("F LS Comp",          current_setup.front_ls_comp,        step6.lf.ls_comp,               "cl",  ".0f"))
-        a(_cmp("F HS Comp",          current_setup.front_hs_comp,        step6.lf.hs_comp,               "cl",  ".0f"))
-        a(_cmp("R LS Comp",          current_setup.rear_ls_comp,         step6.lr.ls_comp,               "cl",  ".0f"))
-        a(_cmp("R HS Comp",          current_setup.rear_hs_comp,         step6.lr.hs_comp,               "cl",  ".0f"))
+        if step6 is not None:
+            a(_cmp("F LS Comp",          current_setup.front_ls_comp,        step6.lf.ls_comp,               "cl",  ".0f"))
+            a(_cmp("F HS Comp",          current_setup.front_hs_comp,        step6.lf.hs_comp,               "cl",  ".0f"))
+            a(_cmp("R LS Comp",          current_setup.rear_ls_comp,         step6.lr.ls_comp,               "cl",  ".0f"))
+            a(_cmp("R HS Comp",          current_setup.rear_hs_comp,         step6.lr.hs_comp,               "cl",  ".0f"))
+        else:
+            a("  Dampers:              Step 6 blocked — see calibration instructions")
         a("")
 
     # ── HEAVE TRAVEL BUDGET ────────────────────────────────────────────

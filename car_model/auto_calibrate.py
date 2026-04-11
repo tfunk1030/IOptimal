@@ -1558,6 +1558,32 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 # Build GarageOutputModel from calibration regressions
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Threshold matches the defense-in-depth guard in _fit(): if a model's
+# leave-one-out RMSE is more than 10x its training RMSE it has memorized
+# noise and won't generalize. Skip applying such models to the car.
+_OVERFIT_LOO_TRAIN_RATIO = 10.0
+
+
+def _is_overfit(model) -> bool:
+    """Return True if a fitted model fails the LOO/train generalization check.
+
+    Mirrors the defense-in-depth guard in `_fit()`. Used by `_mk_direct()` and
+    `apply_to_car()` to refuse using catastrophically overfit models for
+    garage prediction or .sto serialization, even when the model has high
+    training R².
+    """
+    if model is None:
+        return False
+    rmse = getattr(model, "rmse", None)
+    loo_rmse = getattr(model, "loo_rmse", None)
+    n = getattr(model, "n_samples", 0)
+    if rmse is None or loo_rmse is None or n is None or n < 5:
+        return False
+    if np.isnan(loo_rmse):
+        return False
+    return loo_rmse > _OVERFIT_LOO_TRAIN_RATIO * max(rmse, 1e-6)
+
+
 def _mk_direct(fitted_model) -> "DirectRegression | None":
     """Build a DirectRegression from a fitted model.
 
@@ -1566,8 +1592,10 @@ def _mk_direct(fitted_model) -> "DirectRegression | None":
     A fitted model with R²=0.60 still gives better garage predictions than
     the fallback coefficient path which may have stale/mismatched coefficients.
 
-    Returns None only when the model is absent, has no coefficients, or has
-    R² so low it would produce worse predictions than a constant.
+    Returns None when the model is absent, has no coefficients, has R² so low
+    it would produce worse predictions than a constant, OR is flagged as
+    overfit by the LOO/train ratio guard (defense-in-depth: high training R²
+    on memorized data still fails generalization).
     """
     if fitted_model is None or not fitted_model.coefficients:
         return None
@@ -1576,6 +1604,14 @@ def _mk_direct(fitted_model) -> "DirectRegression | None":
         logging.getLogger(__name__).info(
             "DirectRegression skipped for '%s' — R²=%.3f too low",
             fitted_model.name, fitted_model.r_squared,
+        )
+        return None
+    if _is_overfit(fitted_model):
+        import logging
+        ratio = fitted_model.loo_rmse / max(fitted_model.rmse, 1e-6)
+        logging.getLogger(__name__).warning(
+            "DirectRegression skipped for '%s' — LOO/train ratio %.0fx exceeds %.0fx threshold",
+            fitted_model.name, ratio, _OVERFIT_LOO_TRAIN_RATIO,
         )
         return None
     from car_model.garage import DirectRegression
@@ -1841,20 +1877,38 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
     """Apply fitted models to a car object from car_model/cars.py.
 
     Modifies the car object in-place. Returns list of applied correction notes.
+
+    Models flagged as overfit (LOO/train RMSE ratio > 10x) are skipped and
+    their names recorded for a single combined warning. Skipping prevents
+    catastrophically non-generalizing fits from driving deflection
+    predictions or .sto serialization.
     """
     applied = []
+    _skipped_overfit: list[str] = []
 
     if not models:
         return applied
 
+    def _ok(m, min_coefs: int = 1) -> bool:
+        """Return True if model is usable (present, has enough coefs, not overfit)."""
+        if m is None or len(m.coefficients) < min_coefs:
+            return False
+        if _is_overfit(m):
+            if m.name not in _skipped_overfit:
+                _skipped_overfit.append(m.name)
+            return False
+        return True
+
     # Apply DeflectionModel coefficients — apply whatever is available
     # (Porsche has no front torsion bar, so front_shock_defl_static may be None)
     _defl_applied = False
-    if models.heave_spring_defl_static or models.front_shock_defl_static or models.rear_shock_defl_static:
+    if (_ok(models.heave_spring_defl_static)
+            or _ok(models.front_shock_defl_static)
+            or _ok(models.rear_shock_defl_static)):
         try:
             defl = car_obj.deflection
             fs = models.front_shock_defl_static
-            if fs and len(fs.coefficients) >= 2:
+            if _ok(fs, 2):
                 _fs_map = {
                     "front_pushrod": "shock_front_pushrod_coeff",
                     "front_heave_perch": "front_shock_defl_heave_perch_coeff",
@@ -1906,7 +1960,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                 "rear_third_perch": "rear_shock_defl_third_perch_coeff",
                 "rear_spring_perch": "rear_shock_defl_spring_perch_coeff",
             }
-            if rs and len(rs.coefficients) >= 2:
+            if _ok(rs, 2):
                 _has_compliance = any(
                     f in (rs.feature_names or [])
                     for f in ("inv_rear_third", "inv_rear_spring",
@@ -1925,7 +1979,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
 
             # Heave spring deflection static (reciprocal fit)
             hs = models.heave_spring_defl_static
-            if hs and len(hs.coefficients) >= 4:
+            if _ok(hs, 4):
                 defl.heave_defl_intercept = hs.coefficients[0]
                 defl.heave_defl_inv_heave_coeff = hs.coefficients[1]
                 defl.heave_defl_perch_coeff = hs.coefficients[2]
@@ -1943,7 +1997,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                 "rear_pushrod": "rear_spring_defl_pushrod_coeff",
             }
             rsd = models.rear_spring_defl_static
-            if rsd:
+            if _ok(rsd):
                 # Only enable direct mode when the fit includes the
                 # compliance terms; otherwise fall back to legacy load-balance.
                 _has_compliance = any(
@@ -1973,7 +2027,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                 "rear_pushrod": "third_spring_defl_pushrod_coeff",
             }
             tsd = models.third_spring_defl_static
-            if tsd:
+            if _ok(tsd):
                 _has_compliance = any(
                     f in (tsd.feature_names or [])
                     for f in ("inv_rear_third", "inv_rear_spring")
@@ -1993,7 +2047,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             # The fit stores y = defl * OD^4; the DeflectionModel uses
             # load / (C * OD^4), so coefficients must be scaled by C_torsion.
             tbd = models.torsion_bar_defl
-            if tbd and len(tbd.coefficients) >= 3:
+            if _ok(tbd, 3):
                 C_torsion = car_obj.corner_spring.front_torsion_c
                 if C_torsion > 0:
                     defl.tb_load_intercept = tbd.coefficients[0] * C_torsion
@@ -2007,7 +2061,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
 
             # Rear spring deflection max (intercept + rate_coeff * rate + perch_coeff * perch)
             rsm = models.rear_spring_defl_max
-            if rsm and len(rsm.coefficients) >= 2:
+            if _ok(rsm, 2):
                 defl.rear_spring_defl_max_intercept = rsm.coefficients[0]
                 for i, feat in enumerate(rsm.feature_names):
                     if i + 1 < len(rsm.coefficients):
@@ -2019,7 +2073,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
 
             # Third spring deflection max
             tsm = models.third_spring_defl_max
-            if tsm and len(tsm.coefficients) >= 2:
+            if _ok(tsm, 2):
                 defl.third_spring_defl_max_intercept = tsm.coefficients[0]
                 for i, feat in enumerate(tsm.feature_names):
                     if i + 1 < len(tsm.coefficients):
@@ -2031,7 +2085,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
 
             # Third slider deflection static
             tsl = models.third_slider_defl_static
-            if tsl and len(tsl.coefficients) >= 2:
+            if _ok(tsl, 2):
                 defl.third_slider_intercept = tsl.coefficients[0]
                 if tsl.feature_names and tsl.feature_names[0] in (
                         "third_spring_defl_static", "third_defl_static",
@@ -2041,7 +2095,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
 
             # Heave spring deflection max
             hdm = models.heave_spring_defl_max
-            if hdm and len(hdm.coefficients) >= 2:
+            if _ok(hdm, 2):
                 defl_max_intercept_val = hdm.coefficients[0]
                 defl_max_slope_val = 0.0
                 for i, feat in enumerate(hdm.feature_names):
@@ -2076,7 +2130,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
         "fuel": "rear_coeff_fuel_l",
         "rear_spring_perch": "rear_coeff_spring_perch",
     }
-    if models.front_ride_height and models.rear_ride_height:
+    if _ok(models.front_ride_height) and _ok(models.rear_ride_height):
         try:
             rh = car_obj.ride_height_model
             fr = models.front_ride_height
@@ -2320,6 +2374,22 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                 new_gom.deflection = _car_defl
             car_obj.garage_output_model = new_gom
             applied.append("GarageOutputModel rebuilt from calibration models")
+
+    # Surface any models that were skipped because they failed the LOO/train
+    # generalization guard. Users need to know which submodels were dropped so
+    # they can either collect more data or accept the reduced coverage.
+    if _skipped_overfit:
+        import logging as _logging
+        _logger = _logging.getLogger(__name__)
+        _logger.warning(
+            "apply_to_car: skipped %d overfit model(s) (LOO/train > %.0fx): %s",
+            len(_skipped_overfit), _OVERFIT_LOO_TRAIN_RATIO,
+            ", ".join(sorted(_skipped_overfit)),
+        )
+        applied.append(
+            f"⚠ skipped {len(_skipped_overfit)} overfit model(s): "
+            f"{', '.join(sorted(_skipped_overfit))}"
+        )
 
     return applied
 
