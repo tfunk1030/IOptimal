@@ -112,19 +112,19 @@
   "third_spring_defl_static": {
     "name": "third_spring_defl_static",
     "feature_names": [
-      "front_heave",
-      "inv_rear_third"
+      "rear_third",
+      "rear_camber"
     ],
     "coefficients": [
-      15.73766586705393,
-      -0.033172736238492886,
-      885.3400765596003
+      -7.743174489430331,
+      -0.17238624149050544,
+      -29.559297742744548
     ],
-    "r_squared": 0.6971594695574653,
-    "rmse": 4.092111662148093,
-    "loo_rmse": 5.977158102295332,
+    "r_squared": 0.973719290883266,
+    "rmse": 1.2054772437365235,
+    "loo_rmse": 1.9397897287424344,
     "n_samples": 8,
-    "is_calibrated": false
+    "is_calibrated": true
   },
   "third_spring_defl_max": {
     "name": "third_spring_defl_max",

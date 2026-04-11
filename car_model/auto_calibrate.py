@@ -1076,6 +1076,37 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     _UNIVERSAL_POOL.append((_fuel / np.maximum(_rear_spring, 1.0), "fuel_x_inv_spring"))
     _UNIVERSAL_POOL.append((_fuel / np.maximum(_rear_third, 1.0), "fuel_x_inv_third"))
 
+    # ── Physics-aware per-output feature pools ──
+    # Each garage output is driven by features from a specific axle. The
+    # universal forward selection (LOO RMSE-driven, physics-blind) was picking
+    # cross-axis features as proxies due to multicollinearity in the small
+    # calibration datasets — e.g. Ferrari front_ride_height picked
+    # `inv_rear_spring` (coefficient -21934!) instead of `torsion_od`/`inv_od4`
+    # despite Ferrari having a front torsion bar. Per-output pools eliminate
+    # this by construction: front outputs only see front-axis features.
+    _FRONT_AXIS_NAMES = {
+        "front_pushrod", "front_pushrod_sq",
+        "front_heave", "inv_front_heave",
+        "front_heave_perch",
+        "torsion_od", "inv_od4",
+        "front_camber",
+    }
+    _REAR_AXIS_NAMES = {
+        "rear_pushrod", "rear_pushrod_sq",
+        "rear_third", "inv_rear_third",
+        "rear_spring", "inv_rear_spring",
+        "rear_third_perch", "rear_spring_perch",
+        "rear_camber",
+        "fuel_x_inv_spring", "fuel_x_inv_third",
+    }
+    _GLOBAL_NAMES = {"fuel", "wing"}
+
+    def _filter_pool(allowed_names: set[str]) -> list[tuple]:
+        return [(arr, name) for (arr, name) in _UNIVERSAL_POOL if name in allowed_names]
+
+    _FRONT_POOL = _filter_pool(_FRONT_AXIS_NAMES | _GLOBAL_NAMES)
+    _REAR_POOL = _filter_pool(_REAR_AXIS_NAMES | _GLOBAL_NAMES)
+
     def _pool_to_matrix(pool=None):
         """Build X matrix and names from feature pool, excluding constants."""
         if pool is None:
@@ -1087,8 +1118,8 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                 names.append(name)
         return X_cols, names
 
-    def _fit_from_pool(target_col_name, model_name, pool=None, min_std=0.5):
-        """Fit a model using universal feature selection from the pool."""
+    def _fit_one_pool(target_col_name, model_name, pool, min_std=0.5):
+        """Internal: fit a single pool. Returns FittedModel or None."""
         y = col(target_col_name)
         if np.std(y) < min_std:
             return None
@@ -1099,10 +1130,46 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         X, names = _select_features(X, y, names)
         return _fit(X, y, names, model_name)
 
+    def _fit_from_pool(target_col_name, model_name, pool=None, min_std=0.5,
+                       fallback_pool=None):
+        """Fit a model from a feature pool with optional fallback.
+
+        When ``fallback_pool`` is provided, fit BOTH pools and return whichever
+        gives lower LOO RMSE. This implements the "physics-aware first, fall
+        back to universal if it generalizes better" strategy: per-output pools
+        eliminate cross-axis pollution where it helps (Ferrari front_ride_height),
+        but the universal pool wins for outputs where cross-axis features were
+        serving as effective regularization (e.g. Porsche, Acura small datasets
+        with multicollinear physics terms).
+        """
+        primary = _fit_one_pool(target_col_name, model_name, pool, min_std)
+        if fallback_pool is None or primary is None:
+            return primary
+        fallback = _fit_one_pool(target_col_name, model_name + "_fallback",
+                                 fallback_pool, min_std)
+        if fallback is None:
+            return primary
+        # Compare LOO RMSE — the honest generalization metric
+        p_loo = primary.loo_rmse
+        f_loo = fallback.loo_rmse
+        if not np.isnan(p_loo) and not np.isnan(f_loo) and f_loo < p_loo:
+            import logging
+            logging.getLogger(__name__).info(
+                "Pool fallback for '%s': universal pool LOO=%.3f beats "
+                "physics-aware LOO=%.3f",
+                model_name, f_loo, p_loo,
+            )
+            # Fallback wins — restore the original model name
+            fallback.name = model_name
+            return fallback
+        return primary
+
     # ─── 1. Front Ride Height ───
     _front_rh_std = np.std(col("static_front_rh_mm"))
     if _front_rh_std > 0.5:
-        models.front_ride_height = _fit_from_pool("static_front_rh_mm", "front_ride_height")
+        models.front_ride_height = _fit_from_pool(
+            "static_front_rh_mm", "front_ride_height",
+            pool=_FRONT_POOL, fallback_pool=_UNIVERSAL_POOL)
     elif len(unique) >= _MIN_SESSIONS_FOR_FIT and _front_rh_std > 0:
         # Near-constant front RH: create a constant model (intercept-only)
         _mean_frh = float(np.mean(col("static_front_rh_mm")))
@@ -1119,7 +1186,9 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
     # ─── 2. Rear Ride Height ───
     if np.std(col("static_rear_rh_mm")) > 0.5:
-        models.rear_ride_height = _fit_from_pool("static_rear_rh_mm", "rear_ride_height")
+        models.rear_ride_height = _fit_from_pool(
+            "static_rear_rh_mm", "rear_ride_height",
+            pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL)
 
     # ─── 3. Torsion Bar Turns ───
     _tb_turns = col("torsion_bar_turns")
@@ -1162,22 +1231,29 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         # Also fit a DIRECT model on torsion_bar_defl_mm itself (for
         # DirectRegression bypass of DeflectionModel's load/k_torsion path).
         # Uses universal feature pool for maximum accuracy.
+        # Front torsion bar — front-axis only (Ferrari/BMW have a front torsion bar)
         models.torsion_bar_defl_direct = _fit_from_pool(
-            "torsion_bar_defl_mm", "torsion_bar_defl_direct")
+            "torsion_bar_defl_mm", "torsion_bar_defl_direct",
+            pool=_FRONT_POOL, fallback_pool=_UNIVERSAL_POOL)
 
     # ─── 5–7. Heave deflections (static, max, slider) ───
-    # All use universal feature pool — iRacing's formulas use unexpected
-    # cross-dependencies (e.g., fuel affects heave defl, pushrod affects slider).
+    # Heave spring is on the front axle for all 4 cars (BMW/Porsche/Ferrari/Acura),
+    # so heave outputs use the front-axis pool first; fall back to universal if
+    # the universal pool generalizes better (LOO RMSE).
     models.heave_spring_defl_static = _fit_from_pool(
-        "heave_spring_defl_static_mm", "heave_spring_defl_static")
+        "heave_spring_defl_static_mm", "heave_spring_defl_static",
+        pool=_FRONT_POOL, fallback_pool=_UNIVERSAL_POOL)
     models.heave_spring_defl_max = _fit_from_pool(
-        "heave_spring_defl_max_mm", "heave_spring_defl_max", min_std=1.0)
+        "heave_spring_defl_max_mm", "heave_spring_defl_max",
+        pool=_FRONT_POOL, fallback_pool=_UNIVERSAL_POOL, min_std=1.0)
     models.heave_slider_defl_static = _fit_from_pool(
-        "heave_slider_defl_static_mm", "heave_slider_defl_static")
+        "heave_slider_defl_static_mm", "heave_slider_defl_static",
+        pool=_FRONT_POOL, fallback_pool=_UNIVERSAL_POOL)
 
     # ─── 8. Front Shock Deflection Static ───
     models.front_shock_defl_static = _fit_from_pool(
-        "front_shock_defl_static_mm", "front_shock_defl_static")
+        "front_shock_defl_static_mm", "front_shock_defl_static",
+        pool=_FRONT_POOL, fallback_pool=_UNIVERSAL_POOL)
 
     # ─── 9. Rear Shock Deflection Static ───
     # Rear shock deflection depends on rear pushrod (geometric), rear third perch
@@ -1185,28 +1261,31 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # spring stiffness (how much the third spring carries).
     # ─── 9. Rear Shock Deflection Static ───
     models.rear_shock_defl_static = _fit_from_pool(
-        "rear_shock_defl_static_mm", "rear_shock_defl_static")
+        "rear_shock_defl_static_mm", "rear_shock_defl_static",
+        pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL)
 
     # ─── 10. Rear Spring Deflection Static ───
     # Compliance physics: defl ∝ F/k (1/spring) under aero load. Include
     # cross-spring effect (third), perches, and pushrod for a complete model.
-    # ─── 10. Rear Spring Deflection Static ───
     models.rear_spring_defl_static = _fit_from_pool(
-        "rear_spring_defl_static_mm", "rear_spring_defl_static")
+        "rear_spring_defl_static_mm", "rear_spring_defl_static",
+        pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL)
 
     # ─── 11. Rear Spring Deflection Max ───
     models.rear_spring_defl_max = _fit_from_pool(
-        "rear_spring_defl_max_mm", "rear_spring_defl_max", min_std=1.0)
+        "rear_spring_defl_max_mm", "rear_spring_defl_max",
+        pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL, min_std=1.0)
 
     # ─── 12. Third Spring Deflection Static ───
     # Same compliance pattern as rear_spring_defl_static.
-    # ─── 12. Third Spring Deflection Static ───
     models.third_spring_defl_static = _fit_from_pool(
-        "third_spring_defl_static_mm", "third_spring_defl_static")
+        "third_spring_defl_static_mm", "third_spring_defl_static",
+        pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL)
 
     # ─── 13. Third Spring Deflection Max ───
     models.third_spring_defl_max = _fit_from_pool(
-        "third_spring_defl_max_mm", "third_spring_defl_max", min_std=1.0)
+        "third_spring_defl_max_mm", "third_spring_defl_max",
+        pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL, min_std=1.0)
 
     # ─── 14. Third Slider Static ───
     # Fit BOTH the chained model (from third_spring_defl) and a direct model
@@ -1218,9 +1297,10 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             ["third_spring_defl"],
             "third_slider_defl_static",
         )
-    # Direct third slider model from setup features
+    # Direct third slider model from setup features (third spring is on the rear axle)
     models.third_slider_defl_direct = _fit_from_pool(
-        "third_slider_defl_static_mm", "third_slider_defl_direct")
+        "third_slider_defl_static_mm", "third_slider_defl_direct",
+        pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL)
 
     # ─── 13b. Aero compression (Model 3) ───────────────────────────────────────
     # iRacing AeroCalculator provides FrontRhAtSpeed and RearRhAtSpeed, and we

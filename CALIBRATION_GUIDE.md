@@ -51,9 +51,10 @@ The regression models use physically motivated features:
 1. IBT files are ingested → setup parameters + iRacing's computed garage values extracted
 2. Duplicate setups (same springs/pushrods/perches) are merged
 3. Forward feature selection (LOO RMSE) picks the best subset from the physics pool — **capped at `n_samples // 3` features** (3:1 ratio prevents overfitting). Selection is skipped only when `n_samples >= 3 * n_features`.
-4. DirectRegression models are built — they evaluate directly from setup state, bypassing the rigid DeflectionModel interface for maximum accuracy
-5. Defense-in-depth: models with LOO/train RMSE ratio > 10x are marked uncalibrated despite high training R²
-6. Models are stored in `data/calibration/{car}/models.json`
+4. **Physics-aware feature pools (per-output)**: each garage output is fit twice — once with a *physics-restricted pool* (front-axis features for front outputs, rear-axis for rear outputs, both for global outputs) and once with the universal pool. Whichever fit gives the lower **LOO RMSE** wins. This eliminates spurious cross-axis correlations (Ferrari `front_ride_height` was picking `inv_rear_spring` with coefficient -21934!) where they hurt, while preserving genuine cross-axis effects (Porsche chassis flex coupling) where they help.
+5. DirectRegression models are built — they evaluate directly from setup state, bypassing the rigid DeflectionModel interface for maximum accuracy
+6. Defense-in-depth: models with LOO/train RMSE ratio > 10x are marked uncalibrated despite high training R²
+7. Models are stored in `data/calibration/{car}/models.json`
 
 ---
 
