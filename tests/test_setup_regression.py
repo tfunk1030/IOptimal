@@ -123,6 +123,13 @@ def test_porsche_algarve_regression(tmp_path: Path) -> None:
 
 if __name__ == "__main__":
     # Run directly: python tests/test_setup_regression.py
+    # Import pytest's skip exception so missing baselines print [SKIP] rather
+    # than crashing with an unhandled BaseException.
+    try:
+        from _pytest.outcomes import Skipped as _PytestSkipped
+    except ImportError:
+        _PytestSkipped = type(None)  # type: ignore[misc,assignment]
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         try:
@@ -130,8 +137,12 @@ if __name__ == "__main__":
             print("[OK] BMW/Sebring regression")
         except AssertionError as e:
             print(f"[FAIL] BMW/Sebring: {e}")
+        except _PytestSkipped as e:  # type: ignore[misc]
+            print(f"[SKIP] BMW/Sebring: {e}")
         try:
             test_porsche_algarve_regression(tmp_path)
             print("[OK] Porsche/Algarve regression")
         except AssertionError as e:
             print(f"[FAIL] Porsche/Algarve: {e}")
+        except _PytestSkipped as e:  # type: ignore[misc]
+            print(f"[SKIP] Porsche/Algarve: {e}")

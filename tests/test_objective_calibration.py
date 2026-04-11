@@ -1,7 +1,5 @@
 import unittest
 
-import pytest
-
 from car_model.cars import get_car
 from solver.objective import ObjectiveFunction, PhysicsResult
 from validation.objective_calibration import (
@@ -18,7 +16,7 @@ def _load_report() -> dict:
     try:
         return build_calibration_report(include_search=False)
     except (RuntimeError, FileNotFoundError) as exc:
-        pytest.skip(f"{_SKIP_REASON}: {exc}")
+        raise unittest.SkipTest(f"{_SKIP_REASON}: {exc}") from exc
 
 
 class ObjectiveCalibrationTests(unittest.TestCase):
