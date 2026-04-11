@@ -297,8 +297,15 @@ def _clamp_step3(step3, gr) -> list[str]:
 
     old = step3.front_torsion_od_mm
     clamped = _clamp(old, *gr.front_torsion_od_mm)
-    # Snap to discrete options if available, otherwise round to 2 dp
-    if gr.front_torsion_od_discrete:
+    # Snap to discrete options if available and they live in the same numeric
+    # domain as the range.  For Ferrari the range is in index space (0–18) but
+    # the discrete list contains physical OD values (19.99–23.99 mm), so the
+    # two spaces are incompatible — fall back to rounding in that case.
+    discrete_in_range = (
+        gr.front_torsion_od_discrete
+        and gr.front_torsion_od_discrete[0] <= gr.front_torsion_od_mm[1]
+    )
+    if discrete_in_range:
         val = min(gr.front_torsion_od_discrete, key=lambda x: abs(x - clamped))
     else:
         val = round(clamped, 2)

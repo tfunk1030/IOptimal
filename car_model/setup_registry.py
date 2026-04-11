@@ -512,8 +512,21 @@ _ACURA_SPECS: dict[str, CarFieldSpec] = {
     # Roll dampers (Dampers.FrontRoll / Dampers.RearRoll — LS+HS only, no comp/rbd split)
     "front_roll_ls":            _S("Dampers.FrontRoll.LsDamping",                    "CarSetup_Dampers_FrontRoll_LsDamping",              range_min=1, range_max=10, parse_fn="int"),
     "front_roll_hs":            _S("Dampers.FrontRoll.HsDamping",                    "CarSetup_Dampers_FrontRoll_HsDamping",              range_min=1, range_max=10, parse_fn="int"),
+    "front_roll_hs_slope":      _S("Dampers.FrontRoll.HsDampSlope",                  "CarSetup_Dampers_FrontRoll_HsDampSlope",            range_min=1, range_max=10, parse_fn="int"),
     "rear_roll_ls":             _S("Dampers.RearRoll.LsDamping",                     "CarSetup_Dampers_RearRoll_LsDamping",               range_min=1, range_max=10, parse_fn="int"),
     "rear_roll_hs":             _S("Dampers.RearRoll.HsDamping",                     "CarSetup_Dampers_RearRoll_HsDamping",               range_min=1, range_max=10, parse_fn="int"),
+    # Rear 3rd dampers (Acura ORECA has Rear3rd channel)
+    "rear_3rd_ls_comp":         _S("Dampers.Rear3rd.LsCompDamping",                  "CarSetup_Dampers_Rear3rd_LsCompDamping",            range_min=1, range_max=10, parse_fn="int"),
+    "rear_3rd_hs_comp":         _S("Dampers.Rear3rd.HsCompDamping",                  "CarSetup_Dampers_Rear3rd_HsCompDamping",            range_min=1, range_max=10, parse_fn="int"),
+    "rear_3rd_ls_rbd":          _S("Dampers.Rear3rd.LsRbdDamping",                   "CarSetup_Dampers_Rear3rd_LsRbdDamping",             range_min=1, range_max=10, parse_fn="int"),
+    "rear_3rd_hs_rbd":          _S("Dampers.Rear3rd.HsRbdDamping",                   "CarSetup_Dampers_Rear3rd_HsRbdDamping",             range_min=1, range_max=10, parse_fn="int"),
+    # Front roll spring and perch (Acura ORECA chassis has a separate roll spring)
+    "front_roll_spring_nmm":    _S("Chassis.Front.RollSpring",                       "CarSetup_Chassis_Front_RollSpring",                 range_min=50.0, range_max=300.0, resolution=10.0),
+    "front_roll_perch_mm":      _S("Chassis.Front.RollPerchOffset",                  "CarSetup_Chassis_Front_RollPerchOffset",            range_min=0.0, range_max=50.0, resolution=0.5),
+    # Front ARB setting (Connected/Disconnected)
+    "front_arb_setting":        _S("Chassis.Front.ArbSetting",                       "CarSetup_Chassis_Front_ArbSetting",                 options=["Disconnected", "Connected"]),
+    # Rear coil spring (alias for rear_spring_rate_nmm as a settable key)
+    "rear_spring_nmm":          _S("Chassis.LeftRear.SpringRate",                    "CarSetup_Chassis_LeftRear_SpringRate",              range_min=100.0, range_max=400.0, resolution=10.0),
     # Diff ramp angles (Acura uses "DiffRampAngles" key, not "CoastDriveRampAngles")
     "diff_ramp_angles":         _S("Systems.RearDiffSpec.DiffRampAngles",             "CarSetup_Systems_RearDiffSpec_DiffRampAngles",      parse_fn="string"),
     # Brakes

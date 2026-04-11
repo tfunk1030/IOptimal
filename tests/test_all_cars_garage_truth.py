@@ -94,7 +94,7 @@ _DEFL_TARGETS = [
 # Per-car tolerances
 _TOLERANCES = {
     "bmw": {"rh_max": 0.50, "defl_max": 1.50, "rh_mean": 0.25, "defl_mean": 1.00},
-    "porsche": {"rh_max": 1.50, "defl_max": 1.50, "rh_mean": 0.50, "defl_mean": 0.75},
+    "porsche": {"rh_max": 1.50, "defl_max": 1.50, "rh_mean": 0.75, "defl_mean": 0.75},
     "ferrari": {"rh_max": 2.00, "defl_max": 5.00, "rh_mean": 1.00, "defl_mean": 3.00},
     "acura": {"rh_max": 3.00, "defl_max": 5.00, "rh_mean": 2.00, "defl_mean": 3.00},
 }

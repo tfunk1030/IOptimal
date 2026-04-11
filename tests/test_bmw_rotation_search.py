@@ -287,6 +287,7 @@ class SequentialSolveTelemetryTests(unittest.TestCase):
                     front_torsion_od_mm=13.9,
                     rear_spring_rate_nmm=160.0,
                     rear_spring_perch_mm=30.0,
+                    rear_wheel_rate_nmm=160.0,
                 )
 
         class FakeDamperSolver:

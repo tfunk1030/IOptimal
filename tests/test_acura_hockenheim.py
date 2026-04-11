@@ -186,11 +186,12 @@ class AcuraSolverSmokeTests(unittest.TestCase):
         self.assertIn("calibration_instructions", data)
         self.assertIsInstance(data["calibration_blocked"], list)
         self.assertGreater(len(data["calibration_blocked"]), 0)
-        # All 6 steps should be blocked for Acura
-        self.assertEqual(data["calibration_blocked"], [1, 2, 3, 4, 5, 6])
-        # No step outputs should be present
-        for key in ["step1_rake", "step2_heave", "step3_corner",
-                     "step4_arb", "step5_geometry", "step6_dampers"]:
+        # Steps 4-6 should be blocked for Acura (ARB, geometry, dampers uncalibrated).
+        # Steps 1-3 are now runnable (aero compression and spring rates calibrated).
+        for blocked_step in [4, 5, 6]:
+            self.assertIn(blocked_step, data["calibration_blocked"])
+        # Step outputs for blocked steps should not be present
+        for key in ["step4_arb", "step5_geometry", "step6_dampers"]:
             self.assertNotIn(key, data)
 
 

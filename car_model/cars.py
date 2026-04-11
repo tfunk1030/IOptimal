@@ -2653,7 +2653,7 @@ FERRARI_499P = CarModel(
                                   # The front/rear torsion bars scale proportionally, locking LLTD.
                                   # DO NOT attempt to optimize LLTD via torsion/ARB changes.
     lltd_target_source="track_observation",
-    torsion_arb_coupling=0.15,   # ESTIMATE — non-zero coupling (Ferrari has torsion bar front, same as BMW).
+    torsion_arb_coupling=0.0,    # Ferrari torsion bars scale proportionally front/rear — LLTD effectively constant.
     # ── SYSTEMS tab VALIDATED (87.575s best lap, 2026-04-02 screenshot) ─────────────────
     # Hybrid: rear drive enabled, corner pct = 90% (strong rear bias in corners)
     # Brake: pad=Low, front MC=17.8mm, rear MC=19.1mm, bias=49.0%, migration=1, gain=0.00

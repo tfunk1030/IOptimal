@@ -132,24 +132,25 @@ _TRACK_ALIASES: dict[str, str] = {
 def track_slug(display_name: str, config: str = "") -> str:
     """Generate a stable filesystem slug from track display name + config.
 
-    Checks ``_TRACK_ALIASES`` first for known short-name mappings, then
-    falls back to ``display_name.lower().replace(" ", "_")``.
+    Uses the full display name (lowercased, spaces replaced with underscores)
+    without any alias substitution.  This is the slug used for filesystem paths
+    such as ``data/garage_models/{car}/{slug}.json``.
+
+    For the canonical short key used in calibration support checks use
+    ``track_key()`` instead.
 
     Examples::
 
-        track_slug("Autodromo Internacional do Algarve", "Grand Prix")
-        # → "algarve_grand_prix"
-
         track_slug("Sebring International Raceway", "International")
-        # → "sebring_international"
+        # → "sebring_international_raceway_international"
+
+        track_slug("Algarve International Circuit", "Grand Prix")
+        # → "algarve_international_circuit_grand_prix"
 
         track_slug("Some New Track")
         # → "some_new_track"
     """
-    key = display_name.lower().strip()
-    base = _TRACK_ALIASES.get(key)
-    if base is None:
-        base = key.replace(" ", "_")
+    base = display_name.lower().strip().replace(" ", "_")
     if config:
         suffix = config.lower().replace(" ", "_")
         return f"{base}_{suffix}"

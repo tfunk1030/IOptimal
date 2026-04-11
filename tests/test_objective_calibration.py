@@ -1,5 +1,7 @@
 import unittest
 
+import pytest
+
 from car_model.cars import get_car
 from solver.objective import ObjectiveFunction, PhysicsResult
 from validation.objective_calibration import (
@@ -7,6 +9,16 @@ from validation.objective_calibration import (
     build_calibration_report,
     search_weight_profiles,
 )
+
+_SKIP_REASON = "BMW/Sebring observation data not available in this checkout"
+
+
+def _load_report() -> dict:
+    """Load calibration report, skipping test if data is missing."""
+    try:
+        return build_calibration_report(include_search=False)
+    except (RuntimeError, FileNotFoundError) as exc:
+        pytest.skip(f"{_SKIP_REASON}: {exc}")
 
 
 class ObjectiveCalibrationTests(unittest.TestCase):
@@ -72,7 +84,7 @@ class ObjectiveCalibrationTests(unittest.TestCase):
         self.assertEqual(guarded, defaulted)
 
     def test_build_calibration_report_includes_track_modes(self) -> None:
-        report = build_calibration_report(include_search=False)
+        report = _load_report()
         track_aware = report["modes"]["track_aware"]
 
         self.assertGreaterEqual(report["bmw_sebring_samples"], 70)
@@ -111,7 +123,7 @@ class ObjectiveCalibrationTests(unittest.TestCase):
         A positive in-sample correlation means the objective ranks worse setups
         higher than better ones. This gate fires if that regression occurs.
         """
-        report = build_calibration_report(include_search=False)
+        report = _load_report()
         track_aware = report["modes"]["track_aware"]
         r = track_aware["score_correlation"]["spearman_r"]
         self.assertLess(
@@ -126,7 +138,7 @@ class ObjectiveCalibrationTests(unittest.TestCase):
         The current mean is -0.172. If it drifts to ≥ 0.0 the objective has
         lost predictive directionality on out-of-sample BMW/Sebring data.
         """
-        report = build_calibration_report(include_search=False)
+        report = _load_report()
         hv = report["modes"]["track_aware"]["holdout_validation"]
         mean_r = hv["current_runtime"]["mean_spearman_r"]
         self.assertLess(
@@ -147,7 +159,7 @@ class ObjectiveCalibrationTests(unittest.TestCase):
             'Worst-fold holdout no longer flips strongly positive.'
         Tighten this threshold as the objective improves.
         """
-        report = build_calibration_report(include_search=False)
+        report = _load_report()
         hv = report["modes"]["track_aware"]["holdout_validation"]
         worst_r = hv["current_runtime"]["worst_spearman_r"]
         threshold = 0.40
@@ -164,7 +176,7 @@ class ObjectiveCalibrationTests(unittest.TestCase):
         The best fold sits at -0.543. If it rises above -0.30 the objective
         has lost its strongest predictive signal on at least one data split.
         """
-        report = build_calibration_report(include_search=False)
+        report = _load_report()
         hv = report["modes"]["track_aware"]["holdout_validation"]
         best_r = hv["current_runtime"]["best_spearman_r"]
         threshold = -0.30
