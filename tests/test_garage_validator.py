@@ -8,10 +8,11 @@ from solver.legality_engine import validate_solution_legality
 
 class GarageValidatorTests(unittest.TestCase):
     def test_bmw_validator_reconciles_ride_heights(self) -> None:
-        """Validator reconciles ride heights when the garage model prediction
-        disagrees with the solver's static values.  With low fuel (8 L) and
-        these spring rates the calibrated torsion bar deflection model does not
-        predict a constraint violation, so only RH reconciliation is expected."""
+        """Validator reconciles ride heights when garage model disagrees with solver.
+
+        With low fuel (8 L) and these spring rates the calibrated torsion bar
+        deflection model does not predict a constraint violation, so only RH
+        reconciliation is expected."""
         car = get_car("bmw")
         step1 = SimpleNamespace(
             front_pushrod_offset_mm=-25.5,

@@ -303,7 +303,7 @@ def _clamp_step3(step3, gr) -> list[str]:
     # two spaces are incompatible — fall back to rounding in that case.
     discrete_in_range = (
         gr.front_torsion_od_discrete
-        and gr.front_torsion_od_discrete[0] <= gr.front_torsion_od_mm[1]
+        and min(gr.front_torsion_od_discrete) <= gr.front_torsion_od_mm[1]
     )
     if discrete_in_range:
         val = min(gr.front_torsion_od_discrete, key=lambda x: abs(x - clamped))
