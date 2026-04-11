@@ -1075,6 +1075,15 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     _fuel = col("fuel_l")
     _UNIVERSAL_POOL.append((_fuel / np.maximum(_rear_spring, 1.0), "fuel_x_inv_spring"))
     _UNIVERSAL_POOL.append((_fuel / np.maximum(_rear_third, 1.0), "fuel_x_inv_third"))
+    # Torsion bar preload (Ferrari/Acura only; zero for BMW/Porsche → auto-excluded
+    # by the std-check in _pool_to_matrix).
+    # Physics: the torsion bar preload turns add an angular offset to the bar.
+    # iRacing reports TOTAL bar deflection (preload + elastic), so preload turns
+    # directly affect the reported defl value. They also govern load-sharing:
+    # more front preload → torsion bar carries more corner load → heave spring
+    # carries less → heave_spring_defl_static decreases (r = −0.83 from IBT).
+    _UNIVERSAL_POOL.append((col("torsion_bar_turns"), "torsion_turns"))
+    _UNIVERSAL_POOL.append((col("rear_torsion_bar_turns"), "rear_torsion_turns"))
 
     # ── Physics-aware per-output feature pools ──
     # Each garage output is driven by features from a specific axle. The
@@ -1090,6 +1099,7 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         "front_heave_perch",
         "torsion_od", "inv_od4",
         "front_camber",
+        "torsion_turns",       # front torsion bar preload (Ferrari/Acura; 0→excluded on BMW/Porsche)
     }
     _REAR_AXIS_NAMES = {
         "rear_pushrod", "rear_pushrod_sq",
@@ -1098,6 +1108,7 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         "rear_third_perch", "rear_spring_perch",
         "rear_camber",
         "fuel_x_inv_spring", "fuel_x_inv_third",
+        "rear_torsion_turns",  # rear torsion bar preload (Ferrari/Acura; 0→excluded on BMW/Porsche)
     }
     _GLOBAL_NAMES = {"fuel", "wing"}
 

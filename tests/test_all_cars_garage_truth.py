@@ -75,6 +75,8 @@ def _decode_and_build_state(car_obj, pt: CalibrationPoint) -> GarageSetupState:
         wing_deg=pt.wing_deg,
         front_arb_blade=float(pt.front_arb_blade or 0),
         rear_arb_blade=float(pt.rear_arb_blade or 0),
+        torsion_bar_turns=float(getattr(pt, "torsion_bar_turns", 0.0)),
+        rear_torsion_bar_turns=float(getattr(pt, "rear_torsion_bar_turns", 0.0)),
     )
 
 

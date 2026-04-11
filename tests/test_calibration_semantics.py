@@ -198,34 +198,21 @@ class TestCalibrationGateDependencyPropagation(unittest.TestCase):
         ]
         self.assertEqual(report.weak_upstream_steps, expected)
 
-    def test_ferrari_step1_runnable_steps_2_through_6_blocked(self):
-        """Ferrari Step 1 runnable, Step 2 blocked (spring_rates uncalibrated), 3-6 cascade."""
+    def test_ferrari_step1_runnable_steps_2_through_6_runnable(self):
+        """Ferrari steps 1-6 are all runnable after rear_torsion_unvalidated was cleared.
+
+        The rear torsion bar model was previously flagged as unvalidated (blocking
+        Steps 2–6).  After IBT-controlled-group analysis validated the model to
+        within ~10–22% of measured wheel rates (PR #57 fixed the domain-mismatch
+        bug that caused the original 3.5x apparent error), the flag was cleared.
+        """
         from car_model.cars import get_car
         from car_model.calibration_gate import CalibrationGate
         car = get_car("ferrari")
         gate = CalibrationGate(car, "sebring")
-        # Step 1 is runnable (aero calibrated, RH model weak but not blocked)
+        # Steps 1 and 2 should now both be runnable
         self.assertTrue(gate.step_is_runnable(1), "Ferrari step 1 should be runnable")
-        # Step 2 is blocked by its own spring_rates (rear torsion bar unvalidated)
-        sr2 = gate.check_step(2)
-        self.assertTrue(sr2.blocked, "Ferrari step 2 should be blocked")
-        self.assertFalse(sr2.dependency_blocked)
-        # Steps 3-6 should be dependency-blocked cascading from Step 2
-        # blocked_by_step is the DIRECT upstream blocker (not the root cause):
-        # Step 3→2, Step 4→3, Step 5→4, Step 6→3 (per _DATA_PRIOR_STEP chain)
-        _direct_upstream = {3: 2, 4: 3, 5: 4, 6: 3}
-        for step_num in range(3, 7):
-            sr = gate.check_step(step_num)
-            self.assertTrue(sr.blocked, f"Ferrari step {step_num} should be blocked")
-            self.assertTrue(
-                sr.dependency_blocked,
-                f"Ferrari step {step_num} should be dependency-blocked",
-            )
-            self.assertEqual(
-                sr.blocked_by_step,
-                _direct_upstream[step_num],
-                f"Ferrari step {step_num} should be directly blocked by Step {_direct_upstream[step_num]}",
-            )
+        self.assertTrue(gate.step_is_runnable(2), "Ferrari step 2 should be runnable after flag cleared")
 
     def test_dependency_blocked_instructions_text(self):
         """Dependency-blocked steps should reference the upstream blocker."""
