@@ -136,15 +136,21 @@ def validate_and_fix_garage_correlation(
         _ferrari_orig_step3.front_torsion_od_mm = float(_isv(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
         _ferrari_orig_step3.rear_spring_rate_nmm = float(_isv(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
         _ferrari_orig_step3.rear_spring_perch_mm = step3.rear_spring_perch_mm
+        # Restore local references to the physical objects so Phase 2 garage-model
+        # validation (GarageSetupState.from_solver_steps) receives physical units
+        # (N/mm, mm OD) rather than the index-space values used for Phase 1 clamping.
+        step2 = _ferrari_orig_step2
+        step3 = _ferrari_orig_step3
 
-    # --- Phase 2: Garage-model correlation check (BMW/Sebring only) ---
+    # --- Phase 2: Garage-model correlation check ---
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is None:
         canonical = getattr(car, 'canonical_name', '')
         if canonical not in ('bmw', 'ferrari'):
-            # Ferrari uses indexed controls and intentionally has no garage model —
-            # suppress the warning so reports stay clean.  Other unknown cars get
-            # the informational note below.
+            # BMW and Ferrari have calibrated GarageOutputModels when auto-calibration
+            # data is present — suppress the warning for those cars to keep reports
+            # clean when calibration hasn't loaded yet.  Other unknown cars get the
+            # informational note below.
             warnings.append(
                 f"NOTE: Garage correlation validation skipped for {canonical} — "
                 f"no calibrated GarageOutputModel. Skipped checks: "
@@ -297,8 +303,15 @@ def _clamp_step3(step3, gr) -> list[str]:
 
     old = step3.front_torsion_od_mm
     clamped = _clamp(old, *gr.front_torsion_od_mm)
-    # Snap to discrete options if available, otherwise round to 2 dp
-    if gr.front_torsion_od_discrete:
+    # Snap to discrete options if available and they live in the same numeric
+    # domain as the range.  For Ferrari the range is in index space (0–18) but
+    # the discrete list contains physical OD values (19.99–23.99 mm), so the
+    # two spaces are incompatible — fall back to rounding in that case.
+    discrete_in_range = (
+        gr.front_torsion_od_discrete
+        and min(gr.front_torsion_od_discrete) <= gr.front_torsion_od_mm[1]
+    )
+    if discrete_in_range:
         val = min(gr.front_torsion_od_discrete, key=lambda x: abs(x - clamped))
     else:
         val = round(clamped, 2)

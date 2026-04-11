@@ -333,29 +333,23 @@ REAR 3rd:     4 params (LS comp, HS comp, LS rbd, HS rbd) -- NO HS slope
 - Only 4% force degradation across temperature range (vs 14-16% for shim-stack)
 - Click range: 1-20 (vs BMW 1-11, Ferrari 1-40, Acura 1-10)
 
-### Calibration Status (2026-04-03)
+### Calibration Status (2026-04-10, post-overfitting-fix)
 
-**What's known from 2 Sebring sessions + Algarve screenshots:**
-- Roll gradient: 0.84 deg/g (2 sessions, low confidence)
-- Aero compression: front ~12mm, rear ~23mm (rough, from telemetry)
-- m_eff: front ~498kg (1 session estimate, unreliable)
-- Front RH floor: 30.0mm (warning shown in garage)
-- Rear RH: 50.0mm with 20mm rake
-- Corner weights: F 2689N / R 3015N at 58L fuel
+**Calibrated from 36 unique setups (Algarve IBTs + garage screenshots):**
+- Front RH: R²=0.999, LOO RMSE = 0.078mm (12 features, 3:1 ratio enforced)
+- Rear RH: R²=0.605, LOO RMSE ≈ 0.99mm (7 features — honest post-overfitting; model needs more data or better rear-chassis features to improve)
+- Deflection models: R²=0.93-0.98 (7-10 features, LOO/train 1.3-3.2x)
+- Aero compression: front ~12mm, rear ~23mm (from 24 sessions, V²-RMS at 200 kph)
+- LLTD target: **0.521** (from OptimumG/Milliken physics formula, NOT from IBT proxy — see Known Limitations)
+- All 6 steps runnable except Step 6 (damper zeta needs `zeta_is_calibrated=True`)
 
-**What's ESTIMATED (needs calibration):**
-- All deflection model coefficients (16 regressions = zeros)
-- RH model (zeros — no pushrod/spring-to-RH relationship)
-- Damper force per click (using generic 18N LS, 80N HS)
-- ARB stiffness values
-- Torsion bar C constant (using BMW value)
-- Motion ratios (rear=0.60 estimate)
-- LLTD target
-- Damper zeta targets
+**Steps 1-5 run cleanly. Step 6 blocked:**
+- `damper_zeta` model: `zeta_is_calibrated=False` in `cars.py`. To unlock Step 6, run the damper click-sweep procedure (see `CALIBRATION_GUIDE.md`) with 5+ sessions at varied HS comp settings, then set `zeta_is_calibrated=True` in `car_model/cars.py`.
 
-**Known bugs:**
-- Setup reader fails to parse Porsche dampers (all read as 0 in observations)
-- Roll spring system not modeled in car_model or solver
+**Known issues:**
+- Rear RH R²=0.605 is honest — the rear model needs more varied pushrod/spring/camber data to improve beyond the current 7-feature fit. Predictions are within ~1mm which is adequate for pushrod reconciliation but not for fine-tuned rear-RH targeting.
+- LLTD target (0.521) is from the OptimumG/Milliken formula, not from wheel-load telemetry. The true LLTD is unverifiable from IBT. See Known Limitations in CLAUDE.md.
+- Roll perch offset (14–16) not modeled. Individual L/R rear spring perch offsets (−150 to +150) not modeled.
 
 ---
 
@@ -387,29 +381,25 @@ REAR 3rd:     4 params (LS comp, HS comp, LS rbd, HS rbd) -- NO HS slope
 **Diff ramp angles** (not separate coast/drive ramp like BMW):
 - Single "DiffRampAngles" field in iRacing garage
 
-### Calibration Status (2026-03-30)
+### Calibration Status (2026-04-10, post-overfitting-fix)
 
-**What's calibrated from telemetry (Hockenheim IBT):**
-- Front heave effective mass: 600 kg
-- Rear heave effective mass: 186 kg
-- Heave spring baselines: front 180 N/mm, rear 120 N/mm
-- Heave perch offsets: front 34.5 mm, rear 35.0 mm
-- Roll damper baselines: front LS=2/HS=3, rear LS=9/HS=6
-- Heave damper baselines from garage screenshots
+**Calibrated from 8 unique setups (Hockenheim IBTs + garage screenshots):**
+- Front RH: < 0.11mm training RMSE (0-2 features, 3:1 ratio enforced)
+- Rear RH: < 0.11mm training RMSE
+- Deflection models: some limited by rear torsion bar architecture (indexed, hard to vary independently)
+- Aero compression: calibrated from telemetry
+- Steps 1-3 run cleanly. Steps 4-6 blocked by calibration gate (ARB stiffness, LLTD, roll gains, damper zeta uncalibrated).
 
-**What's estimated (needs ORECA-specific data):**
-- Torsion bar C constant: using BMW value (0.0008036) — ORECA likely differs
-- Front torsion OD capped at 14.76 mm because higher ODs cause front heave damper deflection to go negative (bottoming). The relationship between torsion OD, heave spring rate, and heave damper travel is not yet modeled.
-- Aero compression: front 15 mm, rear 8 mm (rough estimates)
-- Damper force per click: LS 18 N, HS 80 N (Dallara estimate, ORECA may differ)
-- ARB stiffness values are estimates
+**Settable fields now fully registered in `car_model/setup_registry.py`:**
+- `front_roll_hs_slope`, `rear_3rd_ls_comp`, `rear_3rd_hs_comp`, `rear_3rd_ls_rbd`, `rear_3rd_hs_rbd`
+- `front_roll_spring_nmm`, `front_roll_perch_mm`, `front_arb_setting`, `rear_spring_nmm`
 
 **Known issues requiring more garage data:**
-1. **Front heave damper bottoming:** At OD ≥ 14.76 mm, heave damper defl goes to -1.7 mm. The OD-to-heave-travel interaction needs a multi-variable model (heave spring + OD + camber + pushrod).
-2. **Rear ride height misses target:** Solver targets 48.2 mm rear RH (from aero maps), but actual rear RH is 37–44 mm. Pushrod-to-RH model is single-variable but the Acura's RH depends on multiple parameters. Aero map targets themselves may be wrong (calibrated for BMW, not Acura).
-3. **Heave perch offset slider disabled:** Not calibrated for ORECA chassis — perch offset changes don't reliably predict RH changes.
-4. **Roll dampers not physics-tuned:** Using baseline values only. Need lateral g spectrum data for proper roll damping calculation.
-5. **Need 5+ varied garage screenshots** with different spring/pushrod/camber combos to build multi-variable RH regression models (like BMW's front/rear RideHeightModel).
+1. **Front heave damper bottoming:** At OD ≥ 14.76 mm, heave damper defl goes to −1.7 mm. The OD-to-heave-travel interaction needs a multi-variable model (heave spring + OD + camber + pushrod). Until this is modeled, front torsion OD is capped at 14.76 mm.
+2. **Rear ride height misses target:** Solver targets ~48mm rear RH (from aero maps), but actual rear RH is 37–44 mm. Pushrod-to-RH model is limited to 2 features (8 setups only support 2 features at 3:1 ratio). Aero map targets may themselves need Acura-specific calibration.
+3. **Roll dampers not physics-tuned:** Using baseline values only. Need lateral g spectrum data for proper roll damping calculation.
+4. **Torsion bar C constant:** Currently borrowed from BMW (0.0008036). ORECA likely differs; collect 5+ varied OD garage screenshots to calibrate.
+5. **Front ARB setting (Connected/Disconnected):** Field registered but not yet physics-modeled in the solver. The `front_arb_setting` field selects between two modes; the ARB solver currently treats this as always-connected.
 
 ---
 

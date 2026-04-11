@@ -12,7 +12,7 @@ reporting, and writer paths consume a single source of garage truth.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
@@ -54,6 +54,12 @@ class GarageSetupState:
     wing_deg: float = 0.0
     front_arb_blade: float = 0.0
     rear_arb_blade: float = 0.0
+    # Torsion bar preload turns (Ferrari/Acura only; 0.0 for BMW/Porsche).
+    # Used as regression features in DirectRegression models fitted with
+    # `torsion_turns` / `rear_torsion_turns` pool features.  Populated from
+    # IBT observation data when available; defaults to 0.0 in solver-path.
+    torsion_bar_turns: float = 0.0
+    rear_torsion_bar_turns: float = 0.0
 
     @classmethod
     def from_current_setup(cls, setup: Any, car: Any = None) -> "GarageSetupState":
@@ -102,6 +108,8 @@ class GarageSetupState:
             wing_deg=_extract_or_warn(setup, "wing_angle_deg", 0.0),
             front_arb_blade=float(getattr(setup, "front_arb_blade", 0) or 0),
             rear_arb_blade=float(getattr(setup, "rear_arb_blade", 0) or 0),
+            torsion_bar_turns=float(getattr(setup, "torsion_bar_turns", 0.0)),
+            rear_torsion_bar_turns=float(getattr(setup, "rear_torsion_bar_turns", 0.0)),
         )
 
     @classmethod
@@ -207,6 +215,10 @@ class DirectRegression:
             "rear_pushrod_sq": lambda s: s.rear_pushrod_mm ** 2,
             "fuel_x_inv_spring": lambda s: s.fuel_l / max(s.rear_spring_nmm, 1.0),
             "fuel_x_inv_third": lambda s: s.fuel_l / max(s.rear_third_nmm, 1.0),
+            # Torsion bar preload turns (Ferrari/Acura; zero for BMW/Porsche, so the
+            # feature is auto-excluded when fitting those cars — see _pool_to_matrix).
+            "torsion_turns": lambda s: s.torsion_bar_turns,
+            "rear_torsion_turns": lambda s: s.rear_torsion_bar_turns,
         }
         return cls(
             intercept=model_coefficients[0] if model_coefficients else 0.0,
@@ -560,6 +572,17 @@ class GarageOutputModel:
         else:
             rear_static_rh = self.predict_rear_static_rh(setup)
         torsion_turns = self.predict_torsion_turns(setup, front_static_rh)
+        # Augment the setup state with the predicted front torsion bar turns so
+        # that DirectRegression models using the `torsion_turns` feature receive
+        # the correct value.  In the IBT-observation path, `setup.torsion_bar_turns`
+        # is already set from the measured data; `predict_torsion_turns()` would
+        # produce a similar value.  In the solver path (no measured turns), this
+        # ensures models that depend on `torsion_turns` are evaluated correctly.
+        # `rear_torsion_bar_turns` is left as-is: actual measurements populate it
+        # in the IBT path; solver path keeps 0.0 (conservative, feature excluded
+        # at zero contribution).
+        if setup.torsion_bar_turns == 0.0 and torsion_turns != 0.0:
+            setup = replace(setup, torsion_bar_turns=torsion_turns)
         # Use direct regressions when available (higher accuracy), fall back
         # to coefficient-based formulas otherwise.
         if self._direct_heave_defl_static:

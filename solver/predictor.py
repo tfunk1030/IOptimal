@@ -25,6 +25,11 @@ class PredictedTelemetry:
     def to_dict(self) -> dict[str, float | None]:
         return asdict(self)
 
+    @property
+    def rear_power_slip_p95(self) -> float | None:
+        """Backward-compatible alias for rear_power_slip_ratio_p95."""
+        return self.rear_power_slip_ratio_p95
+
 
 @dataclass
 class PredictionConfidence:

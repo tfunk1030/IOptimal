@@ -1,7 +1,7 @@
 # IOptimal Agent Guide
 
 > Master reference for all AI agents working on this codebase.  
-> Last updated: 2026-04-04
+> Last updated: 2026-04-11
 
 ---
 
@@ -15,63 +15,62 @@ IOptimal is a **physics-based car setup calculator for iRacing GTP/Hypercar**. I
 
 This is enforced by the **CalibrationGate** (`car_model/calibration_gate.py`), which sits between input loading and the solver. Each solver step is checked against per-car, per-subsystem calibration status. Blocked steps output calibration instructions telling the user exactly what data to collect and what CLI commands to run. Runnable steps produce validated output.
 
-## Current State (2026-04-04)
+## Current State (2026-04-11)
 
 ### Calibration Gate Status
 
 The CalibrationGate enforces per-car, per-step blocking. Each solver step requires specific calibrated subsystems. If ANY required subsystem is uncalibrated, the step is **blocked** and outputs calibration instructions.
 
-| Car | Tier | Observations | Calibrated Steps | Blocked Steps | What User Sees |
-|-----|------|-------------|-----------------|---------------|----------------|
-| BMW M Hybrid V8 | **Calibrated** | 99 (Sebring) | 1-6 (all) | none | Full setup output |
-| Ferrari 499P | **Partial** | ~25 (Hock+Seb) | 1-3 | 4, 5, 6 | Partial setup + calibration instructions for ARB/geometry/dampers |
-| Cadillac V-Series.R | **Exploratory** | 4 (Silverstone) | 2-3 | 1, 4, 5, 6 | Heave/spring output + instructions for RH model, ARB, geometry, dampers |
-| Porsche 963 | **Unsupported** | 2 (Sebring) | 1-3 | 4, 5, 6 | Partial setup + calibration instructions |
-| Acura ARX-06 | **Exploratory** | 7 (Hockenheim) | — | 1-6 (all) | Calibration instructions only (step 1 blocked cascades) |
+| Car | Tier | Unique Setups | Calibrated Steps | Blocked Steps | What User Sees |
+|-----|------|:---:|:---:|:---:|----------------|
+| BMW M Hybrid V8 | **Exploratory** | 9 (Sebring) | 1-6 (all) | none | Full setup output (sequential solver; optimizer gated on BMW only) |
+| Ferrari 499P | **Calibrated** | 60 sessions, 23 unique setups (Hockenheim) | 1-6 (all) | none | Full 6-step output; rear torsion bar validated from IBT controlled-group analysis |
+| Cadillac V-Series.R | **Unsupported** | <5 (Silverstone) | — | 1-6 | Calibration instructions only |
+| Porsche 963 | **Calibrated** | 62 sessions, 36 unique setups (Algarve) | 1-5 | 6 (damper_zeta not set) | 5-step setup; Step 6 blocked until `zeta_is_calibrated=True` |
+| Acura ARX-06 | **Partial** | 15 sessions, 8 unique setups (Hockenheim) | 1-3 | 4-6 (ARB/LLTD/geometry/damper uncalibrated) | Steps 1-3 output + instructions for steps 4-6 |
 
 ### Per-Subsystem Calibration Matrix
 
 | Subsystem | BMW | Ferrari | Cadillac | Porsche | Acura |
 |-----------|-----|---------|----------|---------|-------|
 | Aero maps | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Aero compression | ✅ | ✅ | ✅ | ✅ | ❌ ESTIMATE |
-| Ride height model | ✅ | ✅ | ⚠️ borrowed | ✅ | ❌ uncalibrated |
-| Deflection model | ✅ | ✅ | ✅ | ❌ uncalibrated | ❌ uncalibrated |
-| Damper zeta | ✅ (0.68/0.23/0.47/0.20) | ❌ estimate | ❌ estimate | ❌ estimate | ❌ uncalibrated |
-| ARB stiffness | ✅ | ❌ estimate | ⚠️ inherited BMW | ❌ estimate | ❌ estimate |
-| LLTD target | ✅ (0.41) | ❌ not set | ❌ not set | ❌ not set | ❌ not set |
+| Aero compression | ✅ | ✅ | ⚠️ stub | ✅ | ✅ calibrated |
+| Ride height model | ✅ 0-3 features | ✅ R²=0.72 (front) | ⚠️ no data | ✅ R²=0.999 (front) | ✅ R²>0.9 |
+| Deflection model | ✅ <0.09mm | ✅ 0.09-0.82mm | ⚠️ no data | ✅ R²=0.93-0.98 | ✅ R²>0.85 |
+| spring_rates | ✅ | ❌ uncalibrated | ❌ uncalibrated | ✅ | ✅ |
+| Damper zeta | ✅ (0.68/0.23/0.47/0.20) | ❌ estimate | ❌ estimate | ❌ not set | ❌ uncalibrated |
+| ARB stiffness | ✅ hand-cal | ❌ estimate | ❌ estimate | ⚠️ hand-cal (medium) | ❌ estimate |
+| LLTD target | ✅ (0.41) | ⚠️ torsion_arb_coupling=0.0 | ❌ not set | ✅ (0.521 physics formula) | ❌ not set |
 | Roll gains | ✅ | ✅ | ❌ estimate | ❌ estimate | ❌ estimate |
 | Pushrod geometry | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Garage model | ✅ full | ✅ full | ❌ none | ✅ full | ✅ partial |
 
 ### Per-Step Calibration Requirements
 
 | Step | Name | Required Subsystems |
 |------|------|-------------------|
 | 1 | Rake/RH | aero_maps, aero_compression, ride_height_model, pushrod_geometry |
-| 2 | Heave/Third | Step 1 output, m_eff, track_profile |
-| 3 | Corner Springs | Step 2 output, torsion_constants, spring_rates |
+| 2 | Heave/Third | Step 1 output, m_eff, track_profile, **spring_rates** |
+| 3 | Corner Springs | Step 2 output, torsion_constants, **spring_rates** |
 | 4 | ARBs | Step 3 output, arb_stiffness, lltd_target |
 | 5 | Geometry | Step 4 output, roll_gains, camber/toe ranges |
 | 6 | Dampers | Step 5 output, damper_zeta, force_per_click |
 
-### Objective Function Status (2026-04-04)
+### Objective Function Status (2026-04-11)
 
-BMW/Sebring correlation improved significantly:
-- **Spearman**: -0.06 → **-0.298** (5× improvement)
-- **Pearson**: ~0.003 → **~0.226**
-
-Key fixes applied:
-- Zero-variance physics resolved (variable ordering bug in `_estimate_lap_gain()`)
-- Damper compression signal added (front LS comp r=-0.447, strongest predictor), gated on `zeta_is_calibrated`
-- `w_driver=0.0` when no driver profile present (prevents wasted weight budget)
-- k-NN gated on ≥10 sessions (was globally disabled)
-- DeflectionModel gate: uncalibrated cars skip deflection veto entirely
+BMW/Sebring correlation:
+- **Spearman**: **-0.298** (in-sample); **-0.080** (5-fold holdout mean)
+- **Pearson**: **~0.226**
+- Holdout worst fold: +0.121 (known weakness — one fold flips positive)
+- Status: improving but not yet authoritative for automatic runtime weight application
 
 ### Active Goals
 
-1. **BMW/Sebring objective hardening** -- Spearman -0.298 is approaching actionable but not yet authoritative. Continue improving signal extraction and holdout stability.
-2. **Collect calibration data for non-BMW cars** -- The calibration gate tells users exactly what to collect. Priority: Ferrari steps 4-6, Cadillac step 1, Acura step 1.
-3. **k-NN integration** -- Data quality gate (≥10 sessions) implemented. Set `w_empirical > 0` in `single_lap_safe` after holdout validation confirms it doesn't worsen BMW correlation.
+1. **Ferrari steps 2-6**: Unblocked — rear torsion bar validated from IBT controlled-group analysis; `spring_rates` now calibrated from 60 IBT sessions. Collect more sessions with varied rear corner settings to further reduce the ~20% rate uncertainty at extreme indices.
+2. **Porsche Step 6**: Run damper click-sweep procedure → set `zeta_is_calibrated=True` in `car_model/cars.py`.
+3. **Cadillac**: Collect everything from scratch (0 calibration points, 0 unique setups).
+4. **BMW/Sebring objective hardening**: Spearman -0.298 is approaching actionable. Continue improving holdout stability (worst fold currently +0.121).
+5. **Acura steps 4-6**: Collect ARB stiffness, LLTD data, and geometry measurements (need 10+ sessions with varied ARB settings).
 
 ## Architecture Quick Reference
 

@@ -690,6 +690,22 @@ def write_sto(
             or getattr(_car.garage_ranges, "perch_resolution_mm", 1.0)
             or 1.0
         )
+
+    # ── Pre-write validation: garage correlation fix + range clamping ─────
+    # Run BEFORE the Ferrari index conversion so the validator always receives
+    # physical units (N/mm, mm OD).  The validator handles its own Ferrari
+    # conversion internally and writes corrected physical values back to the
+    # caller-supplied step objects.
+    from output.garage_validator import validate_and_fix_garage_correlation
+    if _car is not None:
+        garage_warnings = validate_and_fix_garage_correlation(
+            _car, step1, step2, step3, step5,
+            fuel_l=fuel_l, track_name=track_name,
+        )
+        for w in garage_warnings:
+            print(f"[garage] {w}")
+
+    if _car is not None:
         if getattr(_car, "canonical_name", "") == "ferrari":
             # Save physical values for torsion bar turns computation before
             # converting to index space.
@@ -716,16 +732,6 @@ def write_sto(
             step3.front_torsion_od_mm = float(public_output_value(_car, "front_torsion_od_mm", step3.front_torsion_od_mm))
             step3.rear_spring_rate_nmm = float(public_output_value(_car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
             step3.rear_spring_perch_mm = 0.0
-
-    # ── Pre-write validation: garage correlation fix + range clamping ─────
-    from output.garage_validator import validate_and_fix_garage_correlation
-    if _car is not None:
-        garage_warnings = validate_and_fix_garage_correlation(
-            _car, step1, step2, step3, step5,
-            fuel_l=fuel_l, track_name=track_name,
-        )
-        for w in garage_warnings:
-            print(f"[garage] {w}")
     clamp_warnings = _validate_setup_values(
         step1, step2, step3, step4, step5, step6, car=_car,
     )

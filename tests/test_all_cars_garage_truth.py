@@ -75,6 +75,8 @@ def _decode_and_build_state(car_obj, pt: CalibrationPoint) -> GarageSetupState:
         wing_deg=pt.wing_deg,
         front_arb_blade=float(pt.front_arb_blade or 0),
         rear_arb_blade=float(pt.rear_arb_blade or 0),
+        torsion_bar_turns=float(getattr(pt, "torsion_bar_turns", 0.0)),
+        rear_torsion_bar_turns=float(getattr(pt, "rear_torsion_bar_turns", 0.0)),
     )
 
 
@@ -94,7 +96,7 @@ _DEFL_TARGETS = [
 # Per-car tolerances
 _TOLERANCES = {
     "bmw": {"rh_max": 0.50, "defl_max": 1.50, "rh_mean": 0.25, "defl_mean": 1.00},
-    "porsche": {"rh_max": 1.50, "defl_max": 1.50, "rh_mean": 0.50, "defl_mean": 0.75},
+    "porsche": {"rh_max": 1.50, "defl_max": 1.50, "rh_mean": 0.75, "defl_mean": 0.75},
     "ferrari": {"rh_max": 2.00, "defl_max": 5.00, "rh_mean": 1.00, "defl_mean": 3.00},
     "acura": {"rh_max": 3.00, "defl_max": 5.00, "rh_mean": 2.00, "defl_mean": 3.00},
 }

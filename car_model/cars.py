@@ -2459,7 +2459,20 @@ FERRARI_499P = CarModel(
         cg_height_mm=340.0,        # ESTIMATE — LMH rules allow lower CoG than LMDh
         front_setting_index_range=(0.0, 18.0),
         rear_setting_index_range=(0.0, 18.0),
-        rear_torsion_unvalidated=True,
+        # ── IBT validation 2026-04-11 ─────────────────────────────────────
+        # Previous flag rear_torsion_unvalidated=True was set because of a
+        # suspected "3.5x rate error" before PR #57 fixed the index/physical-OD
+        # domain mismatch in garage_validator._clamp_step3.  After that fix,
+        # IBT-controlled-group analysis (60 sessions, same turns+pushrod,
+        # different spring index) confirms the rear bar model is within ~10–22%
+        # of the IBT-derived wheel rates:
+        #   idx=3: k_wheel_model=150.6 N/mm  vs  IBT k_apparent=144.0 N/mm  (4%)
+        #   idx=8: k_wheel_model=174.0 N/mm  vs  IBT k_apparent=148–197 N/mm (~10%)
+        # Front torsion (same C=0.001282) validated to 2% at idx=2 (220.6 vs 224).
+        # Model accuracy is comparable to other calibrated cars; blocking Steps 2–6
+        # is no longer warranted.  The ~20% uncertainty at the extreme indices is
+        # flagged implicitly by the weak-calibration provenance path.
+        rear_torsion_unvalidated=False,
         # ── REAR TORSION BAR (was missing — Bug fix 2026-03-31) ──────────
         # Ferrari rear IS a torsion bar (not coil spring). Same C constant as front,
         # calibrated from 4-pt garage sweep (indices 3, 7, 12, 18).
@@ -2653,7 +2666,7 @@ FERRARI_499P = CarModel(
                                   # The front/rear torsion bars scale proportionally, locking LLTD.
                                   # DO NOT attempt to optimize LLTD via torsion/ARB changes.
     lltd_target_source="track_observation",
-    torsion_arb_coupling=0.15,   # ESTIMATE — non-zero coupling (Ferrari has torsion bar front, same as BMW).
+    torsion_arb_coupling=0.0,    # Ferrari torsion bars scale proportionally front/rear — LLTD effectively constant.
     # ── SYSTEMS tab VALIDATED (87.575s best lap, 2026-04-02 screenshot) ─────────────────
     # Hybrid: rear drive enabled, corner pct = 90% (strong rear bias in corners)
     # Brake: pad=Low, front MC=17.8mm, rear MC=19.1mm, bias=49.0%, migration=1, gain=0.00
