@@ -1,14 +1,14 @@
 {
   "car": "porsche",
-  "total_sessions": 3,
+  "total_sessions": 8,
   "tracks_included": [
     "Autodromo Internacional do Algarve"
   ],
-  "aero_compression_front_mm": 12.944966634114584,
-  "aero_compression_rear_mm": 19.863951365152996,
-  "roll_gradient_global_deg_per_g": 0.24133333333333332,
-  "m_eff_front_global_kg": 1325.5235518676766,
+  "aero_compression_front_mm": 13.017099142074585,
+  "aero_compression_rear_mm": 19.92660093307495,
+  "roll_gradient_global_deg_per_g": 0.230375,
+  "m_eff_front_global_kg": 1293.3891851146045,
   "anomalies": [],
-  "confidence": "low",
-  "last_updated": "2026-04-10T11:36:46.502860+00:00"
+  "confidence": "medium",
+  "last_updated": "2026-04-11T14:51:46.054071+00:00"
 }
