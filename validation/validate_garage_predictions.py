@@ -125,6 +125,7 @@ def _build_garage_state(car_obj, pt: CalibrationPoint) -> GarageSetupState:
         rear_spring_nmm=decoded["rear_spring_nmm"],
         rear_spring_perch_mm=pt.rear_spring_perch_mm,
         front_camber_deg=pt.front_camber_deg,
+        rear_camber_deg=pt.rear_camber_deg,
         fuel_l=pt.fuel_l,
     )
 

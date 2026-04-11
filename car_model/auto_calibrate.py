@@ -1897,6 +1897,7 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
         default_rear_spring_nmm=csm.rear_spring_range_nmm[0],
         default_rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
         default_front_camber_deg=car_obj.geometry.front_camber_baseline_deg,
+        default_rear_camber_deg=car_obj.geometry.rear_camber_baseline_deg,
         front_rh_floor_mm=car_obj.min_front_rh_static,
         max_slider_mm=45.0,
         heave_spring_defl_max_intercept_mm=defl_max_intercept,
