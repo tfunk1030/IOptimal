@@ -153,7 +153,67 @@ class GarageValidatorTests(unittest.TestCase):
         self.assertEqual(step3.rear_spring_rate_nmm, 475.0)
         self.assertEqual(step3.rear_spring_perch_mm, 30.0)
 
-    def test_no_garage_model_hard_veto(self) -> None:
+    def test_ferrari_validate_uses_physical_units_not_index_space(self) -> None:
+        """Phase 2 garage-model validation must use physical units after Ferrari write-back.
+
+        Before the fix, local step2/step3 references still pointed at the index-space
+        deep copies after the Phase 1 write-back, so GarageSetupState received indices
+        (e.g. heave=3 instead of 90 N/mm) and the garage model produced nonsensical
+        predictions.  After the fix, step2/step3 are reassigned to the physical originals
+        before any GarageSetupState is built in Phase 2.
+
+        Concretely: calling validate_and_fix_garage_correlation with a Ferrari setup
+        must NOT alter the physical step objects to index-space values.
+        """
+        car = get_car("ferrari")
+        step1 = SimpleNamespace(
+            front_pushrod_offset_mm=1.0,
+            rear_pushrod_offset_mm=5.0,
+            static_front_rh_mm=30.1,
+            static_rear_rh_mm=44.1,
+            rake_static_mm=14.0,
+        )
+        step2 = SimpleNamespace(
+            front_heave_nmm=90.0,    # physical N/mm (index=3)
+            rear_third_nmm=590.0,    # physical N/mm (index=3)
+            perch_offset_front_mm=-10.5,
+            perch_offset_rear_mm=-104.0,
+            front_excursion_at_rate_mm=3.0,
+        )
+        step3 = SimpleNamespace(
+            front_torsion_od_mm=20.667,   # physical OD mm (index=3)
+            rear_spring_rate_nmm=401.7,   # physical N/mm (index=3)
+            rear_spring_perch_mm=0.0,
+        )
+        step5 = SimpleNamespace(
+            front_camber_deg=-1.2,
+            rear_camber_deg=-1.1,
+            front_toe_mm=-2.2,
+            rear_toe_mm=0.3,
+        )
+
+        warnings = validate_and_fix_garage_correlation(
+            car=car,
+            step1=step1,
+            step2=step2,
+            step3=step3,
+            step5=step5,
+            fuel_l=58.0,
+            track_name="Hockenheimring Baden-Württemberg",
+        )
+
+        # After Phase 1 write-back, step2/step3 must retain physical units.
+        # If Phase 2 used index-space objects it would corrupt these to small numbers.
+        self.assertGreater(step2.front_heave_nmm, 50.0,
+            "front_heave_nmm must remain physical N/mm, not an index (~3)")
+        self.assertGreater(step2.rear_third_nmm, 100.0,
+            "rear_third_nmm must remain physical N/mm, not an index (~3)")
+        self.assertGreater(step3.front_torsion_od_mm, 15.0,
+            "front_torsion_od_mm must remain physical OD mm, not an index (~3)")
+        self.assertGreater(step3.rear_spring_rate_nmm, 50.0,
+            "rear_spring_rate_nmm must remain physical N/mm, not an index (~3)")
+
+
         """When a car has no active garage model the legality gate hard-vetos."""
         # BMW does not have a garage model for Hockenheim.
         car = get_car("bmw")
