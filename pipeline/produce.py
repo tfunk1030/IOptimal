@@ -473,28 +473,25 @@ def produce(
         run_trace.record_car_track(car.canonical_name, track.track_name, wing_angle=getattr(args, "wing", None))
         run_trace.record_calibration()
 
-        # Auto-save track profile for future runs (avoids rebuilding each time)
+        # Accumulate into per-(track, car) store
         from car_model.registry import track_slug as _reg_track_slug
+        from track_model.track_store import TrackProfileStore
         _save_slug = _reg_track_slug(track.track_name, track.track_config or "default")
+        _car_slug = car.canonical_name.lower().replace(" ", "_")
+        _store = TrackProfileStore(_save_slug, _car_slug)
+        _accepted, _reason = _store.add_session(track, session_id=Path(ibt_path).stem)
+        if _accepted:
+            log(f"  Track store: accepted ({_store.n_sessions} session{'s' if _store.n_sessions != 1 else ''} total)")
+        else:
+            log(f"  Track store: skipped — {_reason}")
+
+        # Use consensus for solvers (more precise with accumulated data)
+        track = _store.consensus()
+
+        # Also save consensus as standard JSON for --track backward compat
         _save_path = Path("data/tracks") / f"{_save_slug}.json"
-        _save_path.parent.mkdir(parents=True, exist_ok=True)
-        # Overwrite when: missing, stub (<2 KB), or new profile has a faster lap
-        _should_save = not _save_path.exists() or _save_path.stat().st_size < 2000
-        if not _should_save and _save_path.exists():
-            try:
-                import json as _json
-                _existing = _json.loads(_save_path.read_text())
-                _existing_lap = _existing.get("best_lap_time_s", float("inf"))
-                if track.best_lap_time_s < _existing_lap:
-                    _should_save = True
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).debug(
-                    "Could not compare track profile JSON: %s", e
-                )
-        if _should_save:
-            track.save(_save_path)
-            log(f"  Track profile saved: {_save_path}")
+        track.save(_save_path)
+        log(f"  Track profile saved: {_save_path}")
 
     # ── Phase B: Extract telemetry ──
     log("Extracting telemetry measurements...")

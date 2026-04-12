@@ -1,15 +1,15 @@
 {
   "car": "acura",
-  "total_sessions": 26,
+  "total_sessions": 7,
   "tracks_included": [
     "Daytona International Speedway",
     "Hockenheimring Baden-W\u00fcrttemberg"
   ],
-  "aero_compression_front_mm": 11.292032755338228,
-  "aero_compression_rear_mm": 16.160800038851225,
-  "roll_gradient_global_deg_per_g": 0.37576190476190474,
-  "m_eff_front_global_kg": 314.8975568271911,
+  "aero_compression_front_mm": 11.484264510018486,
+  "aero_compression_rear_mm": 16.07955976213728,
+  "roll_gradient_global_deg_per_g": 0.3832,
+  "m_eff_front_global_kg": 230.05154660988393,
   "anomalies": [],
-  "confidence": "high",
-  "last_updated": "2026-04-04T02:57:09.249923+00:00"
+  "confidence": "medium",
+  "last_updated": "2026-04-12T14:08:13.469594+00:00"
 }

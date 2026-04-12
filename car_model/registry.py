@@ -75,15 +75,25 @@ for _car in _CAR_REGISTRY:
 def resolve_car(name: str) -> CarIdentity | None:
     """Resolve any form of car name to a ``CarIdentity``.
 
-    Tries, in order: canonical, screen name, STO ID, then case-insensitive
-    fallback across all known strings.  Returns ``None`` for unknown cars.
+    Tries, in order: canonical, screen name, STO ID, case-insensitive
+    fallback across all known strings, then substring containment
+    (handles iRacing appending suffixes like "GTP" to screen names).
+    Returns ``None`` for unknown cars.
     """
     if not name:
         return None
     hit = _BY_CANONICAL.get(name) or _BY_SCREEN_NAME.get(name) or _BY_STO_ID.get(name)
     if hit:
         return hit
-    return _BY_LOWER.get(name.lower())
+    hit = _BY_LOWER.get(name.lower())
+    if hit:
+        return hit
+    # Substring fallback: "Porsche 963 GTP" contains "Porsche 963"
+    name_lower = name.lower()
+    for key, car in _BY_LOWER.items():
+        if key in name_lower or name_lower in key:
+            return car
+    return None
 
 
 def resolve_car_from_ibt(ibt: "IBTFile") -> CarIdentity | None:
@@ -112,6 +122,7 @@ _TRACK_ALIASES: dict[str, str] = {
     "sebring international raceway": "sebring",
     "daytona international speedway": "daytona",
     "silverstone circuit": "silverstone",
+    "weathertech raceway laguna seca": "laguna_seca",
     "long beach street circuit": "long_beach",
     "circuit de barcelona-catalunya": "barcelona",
     "circuit des 24 heures du mans": "le_mans",

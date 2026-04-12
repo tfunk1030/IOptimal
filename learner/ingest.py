@@ -61,6 +61,17 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     ibt = IBTFile(ibt_path)
     track = build_profile(ibt_path)
 
+    # Accumulate into per-(track, car) store (non-critical for ingest)
+    try:
+        from track_model.track_store import TrackProfileStore
+        from car_model.registry import track_slug as _track_slug
+        _slug = _track_slug(track.track_name, track.track_config or "default")
+        _car_slug = car_name.lower().replace(" ", "_")
+        _store = TrackProfileStore(_slug, _car_slug)
+        _store.add_session(track, session_id=Path(ibt_path).stem)
+    except Exception:
+        pass
+
     lap_num, start, end, _lap_time = select_valid_lap(
         ibt,
         car=car_name,
@@ -124,24 +135,37 @@ def _update_auto_calibration(
         cal_points.append(pt)
         save_calibration_points(car_name, cal_points)
 
-        unique: set[tuple] = set()
-        for p2 in cal_points:
-            key = (
-                round(p2.front_heave_setting, 1),
-                round(p2.rear_third_setting, 1),
-                round(p2.front_torsion_od_mm, 3),
-                round(p2.front_pushrod_mm, 1),
-                round(p2.rear_pushrod_mm, 1),
-            )
-            unique.add(key)
-
-        n_unique = len(unique)
         result["cal_point_added"] = True
-        result["cal_unique_setups"] = n_unique
 
-        if n_unique >= 5:
-            cal_models = fit_models_from_points(car_name, cal_points)
-            existing_saved = load_calibrated_models(car_name)
+        # ── Per-track calibration ──
+        # Group points by track to avoid cross-track contamination.
+        # Same setup at different tracks produces different ride heights /
+        # deflections due to aero load, surface, and speed profile differences.
+        # Pooling cross-track data causes 27x-103x LOO/train overfitting.
+        from car_model.auto_calibrate import _setup_key
+        from car_model.registry import track_key as _track_key
+
+        track_groups: dict[str, list] = {}
+        for p2 in cal_points:
+            tk = _track_key(p2.track) if p2.track else ""
+            if tk:
+                track_groups.setdefault(tk, []).append(p2)
+
+        n_unique_total = len({_setup_key(p2) for p2 in cal_points})
+        result["cal_unique_setups"] = n_unique_total
+
+        for tk, track_pts in track_groups.items():
+            tk_unique = len({_setup_key(p2) for p2 in track_pts})
+            if tk_unique < 5:
+                continue
+
+            cal_models = fit_models_from_points(car_name, track_pts)
+            cal_models.track = tk
+
+            # Preserve zeta and torsion lookups from existing models
+            existing_saved = load_calibrated_models(car_name, track=tk)
+            if not existing_saved:
+                existing_saved = load_calibrated_models(car_name)
             if existing_saved:
                 if existing_saved.front_ls_zeta is not None and cal_models.front_ls_zeta is None:
                     cal_models.front_ls_zeta = existing_saved.front_ls_zeta
@@ -157,16 +181,15 @@ def _update_auto_calibration(
                     if k not in cal_models.status:
                         cal_models.status[k] = v
 
-            save_calibrated_models(car_name, cal_models)
+            save_calibrated_models(car_name, cal_models, track=tk)
             if cal_models.calibration_complete:
                 result["new_learning"] = (
-                    f"Auto-calibration complete: {n_unique} unique setups, "
-                    f"deflection model fitted. Run 'ioptimal calibrate --car {car_name} "
-                    f"--status' for details."
+                    f"Auto-calibration complete for {tk}: {tk_unique} unique setups, "
+                    f"deflection model fitted."
                 )
             if verbose:
                 print(
-                    f"  [calibrate] {n_unique} unique setups — "
+                    f"  [calibrate] {tk}: {tk_unique} unique setups — "
                     f"models {'fitted' if cal_models.calibration_complete else 'pending'}"
                 )
     except Exception as exc:

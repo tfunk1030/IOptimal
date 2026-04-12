@@ -88,6 +88,10 @@ def _setup_key(pt) -> tuple:
     - Load: fuel level
     """
     return (
+        # Track — different tracks produce different ride heights and deflections
+        # at the same setup due to aero load, surface, and speed profile differences.
+        # Pooling cross-track data causes 27x-103x LOO/train overfitting ratios.
+        str(getattr(pt, "track", "") or ""),
         round(pt.front_heave_setting, 1),
         round(pt.rear_third_setting, 1),
         round(pt.front_heave_perch_mm, 1),
@@ -856,7 +860,10 @@ def _select_features(
                     remaining.remove(idx)
 
     best_overall_loo = float("inf")
-    for _ in range(max_features):
+    # Seeds count against the feature budget — otherwise seeding 3 features
+    # on 7 samples (max_features=2) produces a 5-feature model that overfits.
+    budget_remaining = max(0, max_features - len(selected))
+    for _ in range(budget_remaining):
         best_idx = -1
         best_loo = float("inf")
         for idx in remaining:

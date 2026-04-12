@@ -1,6 +1,7 @@
 {
   "car": "porsche",
-  "n_sessions": 76,
+  "track": "",
+  "n_sessions": 119,
   "n_unique_setups": 40,
   "calibration_complete": true,
   "front_ride_height": {
@@ -32,7 +33,8 @@
     "rmse": 0.7540842231948693,
     "loo_rmse": 0.8570029786148439,
     "n_samples": 40,
-    "is_calibrated": false
+    "is_calibrated": false,
+    "q_squared": 0.005478530325368602
   },
   "rear_ride_height": {
     "name": "rear_ride_height",
@@ -65,7 +67,8 @@
     "rmse": 0.3802826651091164,
     "loo_rmse": 0.5210039389166397,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.839475986019077
   },
   "torsion_bar_turns": null,
   "torsion_bar_defl": null,
@@ -102,7 +105,8 @@
     "rmse": 0.36646864038487115,
     "loo_rmse": 0.4990499085228291,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.96372558891429
   },
   "rear_shock_defl_max": null,
   "heave_spring_defl_static": {
@@ -130,7 +134,8 @@
     "rmse": 0.014445341243701395,
     "loo_rmse": 0.022247532466024282,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.9998736396500947
   },
   "heave_spring_defl_max": {
     "name": "heave_spring_defl_max",
@@ -157,7 +162,8 @@
     "rmse": 0.015214162484094445,
     "loo_rmse": 0.023881245524662385,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.9999433103083356
   },
   "heave_slider_defl_static": {
     "name": "heave_slider_defl_static",
@@ -184,7 +190,8 @@
     "rmse": 0.014445341243702246,
     "loo_rmse": 0.02224753243964377,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.9997989626498227
   },
   "rear_spring_defl_static": {
     "name": "rear_spring_defl_static",
@@ -221,7 +228,8 @@
     "rmse": 0.34040098426826293,
     "loo_rmse": 0.4924911433114171,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.9663046244800773
   },
   "rear_spring_defl_max": {
     "name": "rear_spring_defl_max",
@@ -252,7 +260,8 @@
     "rmse": 0.03790145722318349,
     "loo_rmse": 0.06893171573128308,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.9997686770573023
   },
   "third_spring_defl_static": {
     "name": "third_spring_defl_static",
@@ -281,7 +290,8 @@
     "rmse": 0.4631961824426643,
     "loo_rmse": 0.5751527278508926,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.9741666805819066
   },
   "third_spring_defl_max": {
     "name": "third_spring_defl_max",
@@ -310,7 +320,8 @@
     "rmse": 0.38121557439256454,
     "loo_rmse": 0.6952823493145455,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.9966862034962002
   },
   "third_slider_defl_static": {
     "name": "third_slider_defl_static",
@@ -325,7 +336,8 @@
     "rmse": 1.1858484516400887,
     "loo_rmse": 1.4601137862796838,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.7785682670939998
   },
   "torsion_bar_defl_direct": null,
   "third_slider_defl_direct": {
@@ -357,7 +369,8 @@
     "rmse": 0.5262975087329455,
     "loo_rmse": 0.6864382257316558,
     "n_samples": 40,
-    "is_calibrated": true
+    "is_calibrated": true,
+    "q_squared": 0.9510593902518777
   },
   "front_heave_lookup": null,
   "rear_heave_lookup": null,
@@ -533,7 +546,7 @@
   "aero_n_sessions": 28,
   "status": {
     "aero_compression": "calibrated from IBT AeroCalculator (28 sessions, front=16.1mm rear=21.2mm)",
-    "arb_stiffness": "INCONCLUSIVE: roll-gradient noise floor (6092 N\u00b7m/deg) exceeds max predicted ARB delta (210 N\u00b7m/deg) across 5 configs. Signal is below measurement noise \u2014 cannot validate or invalidate cars.py manual values. Trusting hand-calibration.",
+    "arb_stiffness": "INCONCLUSIVE: roll-gradient noise floor (5370 N\u00b7m/deg) exceeds max predicted ARB delta (210 N\u00b7m/deg) across 5 configs. Signal is below measurement noise \u2014 cannot validate or invalidate cars.py manual values. Trusting hand-calibration.",
     "arb_calibrated": null,
     "roll_gradient_mean": 0.48835294117647055,
     "roll_gradient_n_sessions": 17,

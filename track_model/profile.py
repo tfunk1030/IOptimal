@@ -177,6 +177,9 @@ class TrackProfile:
     # Telemetry source description
     telemetry_source: str = ""
 
+    # Consensus metadata (0 = single-session, >0 = consensus from N sessions)
+    consensus_n_sessions: int = 0
+
     @property
     def aero_reference_speed_kph(self) -> float:
         """V²-RMS speed for aero compression sizing.

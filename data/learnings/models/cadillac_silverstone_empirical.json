@@ -2,22 +2,8 @@
   "car": "cadillac",
   "track": "Silverstone Circuit",
   "relationships": {},
-  "last_updated": "2026-03-18T05:06:30.531186+00:00",
-  "observation_count": 3,
+  "last_updated": "2026-04-12T14:07:44.001087+00:00",
+  "observation_count": 1,
   "most_sensitive_parameters": [],
-  "corrections": {
-    "aero_compression_front_mean_mm": 11.149962870279948,
-    "aero_compression_front_std_mm": 1.1991618853017378,
-    "aero_compression_rear_mean_mm": 25.92843364079793,
-    "aero_compression_rear_std_mm": 10.459977883130978,
-    "lap_time_surrogate_regularized": 1.0,
-    "lap_time_surrogate_sample_weight": 0.0,
-    "m_eff_front_values": [
-      330.8,
-      202.0,
-      327.8
-    ],
-    "m_eff_front_empirical_mean": 286.8666666666666,
-    "m_eff_front_empirical_std": 60.022292155128135
-  }
+  "corrections": {}
 }
