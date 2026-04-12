@@ -469,7 +469,13 @@ def _refit_per_track(ibts: list[IBTInfo]) -> None:
 
 
 def _rebuild_consensus(ibts: list[IBTInfo]) -> None:
-    """Rebuild consensus track profiles from accumulated stores."""
+    """Verify track stores and report consensus health.
+
+    Does NOT write to shared track profile files — those are car-specific
+    and the produce pipeline loads from the per-car store directly.
+    Writing to a shared file would overwrite one car's data with another's
+    (e.g., Porsche shock velocities overwriting Ferrari's at Algarve).
+    """
     from track_model.track_store import TrackProfileStore
     from car_model.registry import track_slug as _track_slug
 
@@ -481,21 +487,17 @@ def _rebuild_consensus(ibts: list[IBTInfo]) -> None:
         seen.add((ts, cs))
 
     print(f"\n{'=' * 55}")
-    print(f"  TRACK CONSENSUS REBUILD")
+    print(f"  TRACK STORE STATUS")
     print(f"{'=' * 55}")
 
-    rebuilt = 0
     for ts, cs in sorted(seen):
         store = TrackProfileStore(ts, cs)
         if store.n_sessions == 0:
+            print(f"  {ts} ({cs}): empty")
             continue
         consensus = store.consensus()
-        save_path = Path("data/tracks") / f"{ts}.json"
-        consensus.save(save_path)
-        rebuilt += 1
-        print(f"  {ts} ({cs}): {store.n_sessions} sessions -> {save_path.name}")
-
-    print(f"  Rebuilt {rebuilt} consensus profiles")
+        p99 = consensus.shock_vel_p99_front_mps
+        print(f"  {ts} ({cs}): {store.n_sessions} sessions, p99={p99:.4f} m/s")
 
 
 if __name__ == "__main__":

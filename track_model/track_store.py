@@ -241,9 +241,20 @@ def _filter_mad(values: list[float], n_total: int) -> list[float]:
 
     filtered = [v for v in values if abs(v - median) / scale <= threshold]
 
-    # Safety: if filtering removed >50%, fall back to range check
+    # Safety: if filtering removed >50%, fall back to range check.
+    # Handle edge cases: near-zero medians (use absolute tolerance) and
+    # negative values (use symmetric bounds around median).
     if len(filtered) < 0.5 * len(values):
-        filtered = [v for v in values if 0.5 * median <= v <= 2.0 * median]
+        if abs(median) < 1e-6:
+            # Near-zero median: use absolute tolerance from std instead of ratio
+            std = float(np.std(arr))
+            bound = max(std * 3.0, 1e-6)
+            filtered = [v for v in values if abs(v - median) <= bound]
+        else:
+            # Use symmetric ±50% around median (works for both positive and negative)
+            lo = min(0.5 * median, 2.0 * median)
+            hi = max(0.5 * median, 2.0 * median)
+            filtered = [v for v in values if lo <= v <= hi]
 
     return filtered if filtered else list(values)  # never return empty
 
@@ -297,13 +308,21 @@ def _merge_spatial_events(
     if n_sessions == 1:
         return list(all_events[0])
 
-    # Reference events: start with first session
-    reference: list[dict] = []
-    # For each reference event, track all matched numeric values
+    # Initialize reference set from first session (all events become refs)
+    reference: list[dict] = [dict(e) for e in all_events[0]]
     matched_values: list[dict[str, list[float]]] = []
     matched_counts: list[int] = []
+    for ref_event in reference:
+        vals: dict[str, list[float]] = {}
+        for nf in numeric_fields:
+            val = ref_event.get(nf)
+            if val is not None and isinstance(val, (int, float)):
+                vals[nf] = [float(val)]
+        matched_values.append(vals)
+        matched_counts.append(1)
 
-    for session_events in all_events:
+    # Match subsequent sessions against the reference set
+    for session_events in all_events[1:]:
         used_refs = set()
         for event in session_events:
             event_dist = event.get("lap_dist_m", 0.0)
@@ -334,11 +353,13 @@ def _merge_spatial_events(
                 matched_values.append(vals)
                 matched_counts.append(1)
 
-    # Filter by occurrence and aggregate
+    # Filter by occurrence and aggregate.
+    # Require at least 2 sessions for small N to avoid noise from single-occurrence events.
+    effective_min = max(min_occurrence_frac, 2.0 / n_sessions) if n_sessions >= 2 else min_occurrence_frac
     result = []
     for i, ref in enumerate(reference):
         frac = matched_counts[i] / n_sessions
-        if frac < min_occurrence_frac:
+        if frac < effective_min:
             continue
         merged = dict(ref)
         for nf in numeric_fields:

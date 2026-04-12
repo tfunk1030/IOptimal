@@ -89,10 +89,19 @@ def resolve_car(name: str) -> CarIdentity | None:
     if hit:
         return hit
     # Substring fallback: "Porsche 963 GTP" contains "Porsche 963"
+    # Require minimum 4 chars to avoid false positives from short inputs
     name_lower = name.lower()
-    for key, car in _BY_LOWER.items():
-        if key in name_lower or name_lower in key:
-            return car
+    if len(name_lower) >= 4:
+        best_match: CarIdentity | None = None
+        best_len = 0
+        for key, car in _BY_LOWER.items():
+            if key in name_lower or name_lower in key:
+                # Prefer longest matching key (most specific)
+                if len(key) > best_len:
+                    best_len = len(key)
+                    best_match = car
+        if best_match is not None:
+            return best_match
     return None
 
 

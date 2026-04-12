@@ -2119,8 +2119,13 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
         return applied
 
     def _ok(m, min_coefs: int = 1) -> bool:
-        """Return True if model is usable (present, has enough coefs, not overfit)."""
+        """Return True if model is usable (present, calibrated, has enough coefs, not overfit)."""
         if m is None or len(m.coefficients) < min_coefs:
+            return False
+        # Never apply a model that the fitting process itself flagged as uncalibrated.
+        # A model with R²=0.23 and is_calibrated=False would silently corrupt the car
+        # object (e.g., front RH becomes a flat constant if features don't map).
+        if not getattr(m, "is_calibrated", True):
             return False
         if _is_overfit(m):
             if m.name not in _skipped_overfit:

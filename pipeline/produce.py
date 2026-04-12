@@ -442,14 +442,28 @@ def produce(
     saved_profile_path = None
     if track_hint:
         from track_model.profile import TrackProfile
-        # Try both naming conventions: "{slug}.json" (legacy) and "{slug}_{config}.json" (autosave)
-        _hint_slug = track_hint.lower().replace(" ", "_")
-        for _pattern in [f"{_hint_slug}_*.json", f"{_hint_slug}.json"]:
-            _matches = sorted(Path("data/tracks").glob(_pattern))
-            if _matches:
-                saved_profile_path = _matches[0]
-                break
-    if saved_profile_path:
+        from track_model.track_store import TrackProfileStore
+        from car_model.registry import track_slug as _hint_track_slug
+        # Try car-specific store first (correct shock velocities for this car)
+        _hint_slug = _hint_track_slug(track_hint, "default")
+        _hint_car_slug = car.canonical_name.lower().replace(" ", "_")
+        _hint_store = TrackProfileStore(_hint_slug, _hint_car_slug)
+        if _hint_store.n_sessions > 0:
+            saved_profile_path = "__from_store__"  # sentinel
+        else:
+            # Fallback: try generic profile files (legacy, may be from different car)
+            _hint_slug_simple = track_hint.lower().replace(" ", "_")
+            for _pattern in [f"{_hint_slug_simple}_*.json", f"{_hint_slug_simple}.json"]:
+                _matches = sorted(Path("data/tracks").glob(_pattern))
+                if _matches:
+                    saved_profile_path = _matches[0]
+                    break
+    if saved_profile_path == "__from_store__":
+        track = _hint_store.consensus()
+        log(f"\nLoaded track profile from store: {_hint_store.n_sessions} sessions ({_hint_car_slug})")
+        log(f"  Track: {track.track_name} — {track.track_config}")
+        log(f"  Best lap: {track.best_lap_time_s:.3f}s")
+    elif saved_profile_path:
         log(f"\nLoading saved track profile: {saved_profile_path}")
         track = TrackProfile.load(saved_profile_path)
         log(f"  Track: {track.track_name} — {track.track_config}")
