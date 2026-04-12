@@ -748,7 +748,18 @@ class HeaveSolver:
         if front_heave_perch_target_mm is not None:
             perch_candidates = [round(front_heave_perch_target_mm * 2) / 2]
         else:
-            perch_candidates = [x / 2.0 for x in range(-60, 11)]
+            # Use garage range bounds for perch search instead of hardcoded range.
+            # BMW: (-100, 100), Porsche: (40, 90), etc.
+            gr = self.car.garage_ranges
+            lo, hi = gr.front_heave_perch_mm
+            step = getattr(gr, "front_heave_perch_resolution_mm", None) or 1.0
+            perch_candidates = []
+            v = lo
+            while v <= hi + 1e-6:
+                perch_candidates.append(round(v, 1))
+                v += step
+            if not perch_candidates:
+                perch_candidates = [lo]
 
         best_valid: tuple[float, object, object] | None = None
         best_valid_score = -float("inf")

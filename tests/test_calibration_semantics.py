@@ -239,5 +239,215 @@ class TestCalibrationGateDependencyPropagation(unittest.TestCase):
         self.assertEqual(report.blocked_steps, [4, 5, 6])
 
 
+class TestPerTrackCalibration(unittest.TestCase):
+    """Tests for per-track calibration model save/load and safety."""
+
+    def _make_models(self, car: str = "bmw", n_unique: int = 5, track: str = "") -> object:
+        """Return a minimal CarCalibrationModels instance."""
+        from car_model.auto_calibrate import CarCalibrationModels
+        return CarCalibrationModels(
+            car=car,
+            track=track,
+            n_sessions=n_unique,
+            n_unique_setups=n_unique,
+        )
+
+    # ── filename safety ──────────────────────────────────────────────────────
+
+    def test_safe_track_slug_allows_clean_names(self):
+        from car_model.auto_calibrate import _safe_track_slug
+        self.assertEqual(_safe_track_slug("algarve"), "algarve")
+        self.assertEqual(_safe_track_slug("sebring_international_raceway"), "sebring_international_raceway")
+        self.assertEqual(_safe_track_slug("laguna_seca"), "laguna_seca")
+
+    def test_safe_track_slug_replaces_spaces_and_dots(self):
+        from car_model.auto_calibrate import _safe_track_slug
+        slug = _safe_track_slug("Laguna Seca 2.0")
+        self.assertRegex(slug, r"^[a-z0-9_]+$", "slug should contain only [a-z0-9_]")
+        self.assertNotIn(" ", slug)
+        self.assertNotIn(".", slug)
+
+    def test_safe_track_slug_strips_path_separators(self):
+        """Path traversal characters must be removed."""
+        from car_model.auto_calibrate import _safe_track_slug
+        slug = _safe_track_slug("../../etc/passwd")
+        self.assertRegex(slug, r"^[a-z0-9_]+$")
+        self.assertNotIn("/", slug)
+        self.assertNotIn(".", slug)
+        self.assertNotIn("..", slug)
+
+    def test_safe_track_slug_windows_separators(self):
+        from car_model.auto_calibrate import _safe_track_slug
+        slug = _safe_track_slug(r"..\windows\system32")
+        self.assertRegex(slug, r"^[a-z0-9_]+$")
+        self.assertNotIn("\\", slug)
+
+    def test_safe_track_slug_empty_string_returns_unknown(self):
+        from car_model.auto_calibrate import _safe_track_slug
+        self.assertEqual(_safe_track_slug(""), "unknown")
+
+    def test_models_path_for_track_uses_slug(self):
+        """_models_path_for_track must not embed raw path separators."""
+        from car_model.auto_calibrate import _models_path_for_track
+        p = _models_path_for_track("bmw", "../../evil")
+        # The resulting path must still be inside the car data directory
+        self.assertNotIn("..", str(p.name))
+        self.assertRegex(p.name, r"^models_[a-z0-9_]+\.json$")
+
+    # ── load preference ──────────────────────────────────────────────────────
+
+    def test_per_track_preferred_when_sufficient(self):
+        """load_calibrated_models prefers per-track file when it has enough setups."""
+        import tempfile
+        from pathlib import Path
+        from car_model.auto_calibrate import (
+            load_calibrated_models, save_calibrated_models,
+            _MIN_SESSIONS_FOR_FIT, CarCalibrationModels,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Patch _data_dir to point at tmpdir
+            from car_model import auto_calibrate as _ac
+            original = _ac._data_dir
+
+            def _patched(car):
+                return Path(tmpdir)
+
+            _ac._data_dir = _patched
+            try:
+                # Write pooled model with n_unique = _MIN_SESSIONS_FOR_FIT
+                pooled = self._make_models(n_unique=_MIN_SESSIONS_FOR_FIT)
+                pooled.status["source"] = "pooled"
+                save_calibrated_models("bmw", pooled)
+
+                # Write per-track model with n_unique = _MIN_SESSIONS_FOR_FIT
+                per_track = self._make_models(n_unique=_MIN_SESSIONS_FOR_FIT, track="algarve")
+                per_track.status["source"] = "per_track"
+                save_calibrated_models("bmw", per_track, track="algarve")
+
+                loaded = load_calibrated_models("bmw", track="algarve")
+                self.assertIsNotNone(loaded)
+                self.assertEqual(loaded.status.get("source"), "per_track",
+                                 "Per-track model should be preferred when sufficient")
+            finally:
+                _ac._data_dir = original
+
+    def test_pooled_fallback_when_per_track_insufficient(self):
+        """load_calibrated_models falls back to pooled when per-track has too few setups."""
+        import tempfile
+        from car_model.auto_calibrate import (
+            load_calibrated_models, save_calibrated_models,
+            _MIN_SESSIONS_FOR_FIT, CarCalibrationModels,
+        )
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from car_model import auto_calibrate as _ac
+            original = _ac._data_dir
+
+            def _patched(car):
+                return Path(tmpdir)
+
+            _ac._data_dir = _patched
+            try:
+                # Write pooled model with sufficient setups
+                pooled = self._make_models(n_unique=_MIN_SESSIONS_FOR_FIT)
+                pooled.status["source"] = "pooled"
+                save_calibrated_models("bmw", pooled)
+
+                # Write per-track model with INSUFFICIENT setups (below threshold)
+                per_track = self._make_models(n_unique=_MIN_SESSIONS_FOR_FIT - 1, track="algarve")
+                per_track.status["source"] = "per_track"
+                save_calibrated_models("bmw", per_track, track="algarve")
+
+                loaded = load_calibrated_models("bmw", track="algarve")
+                self.assertIsNotNone(loaded)
+                self.assertEqual(loaded.status.get("source"), "pooled",
+                                 "Pooled fallback should be used when per-track is insufficient")
+            finally:
+                _ac._data_dir = original
+
+    def test_pooled_fallback_when_per_track_missing(self):
+        """load_calibrated_models falls back to pooled when no per-track file exists."""
+        import tempfile
+        from car_model.auto_calibrate import (
+            load_calibrated_models, save_calibrated_models,
+            _MIN_SESSIONS_FOR_FIT,
+        )
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from car_model import auto_calibrate as _ac
+            original = _ac._data_dir
+
+            def _patched(car):
+                return Path(tmpdir)
+
+            _ac._data_dir = _patched
+            try:
+                pooled = self._make_models(n_unique=_MIN_SESSIONS_FOR_FIT)
+                pooled.status["source"] = "pooled"
+                save_calibrated_models("bmw", pooled)
+
+                # No per-track file written
+                loaded = load_calibrated_models("bmw", track="nonexistent_track")
+                self.assertIsNotNone(loaded)
+                self.assertEqual(loaded.status.get("source"), "pooled")
+            finally:
+                _ac._data_dir = original
+
+    # ── car-wide field merging ───────────────────────────────────────────────
+
+    def test_merge_car_wide_fields_copies_zeta(self):
+        """_merge_car_wide_fields should copy zeta from source when dest has none."""
+        from car_model.auto_calibrate import _merge_car_wide_fields, CarCalibrationModels
+        source = self._make_models()
+        source.front_ls_zeta = 0.35
+        source.rear_ls_zeta = 0.38
+        source.front_hs_zeta = 0.55
+        source.rear_hs_zeta = 0.60
+        source.zeta_n_sessions = 7
+
+        dest = self._make_models(track="algarve")
+        self.assertIsNone(dest.front_ls_zeta)
+
+        _merge_car_wide_fields("bmw", dest, source, verbose=False)
+        self.assertEqual(dest.front_ls_zeta, 0.35)
+        self.assertEqual(dest.rear_ls_zeta, 0.38)
+        self.assertEqual(dest.zeta_n_sessions, 7)
+
+    def test_merge_car_wide_fields_does_not_overwrite_existing_zeta(self):
+        """_merge_car_wide_fields should NOT overwrite zeta already present in dest."""
+        from car_model.auto_calibrate import _merge_car_wide_fields
+        source = self._make_models()
+        source.front_ls_zeta = 0.99
+
+        dest = self._make_models(track="algarve")
+        dest.front_ls_zeta = 0.40  # already set
+
+        _merge_car_wide_fields("bmw", dest, source, verbose=False)
+        self.assertEqual(dest.front_ls_zeta, 0.40, "Existing zeta must not be overwritten")
+
+    def test_merge_car_wide_fields_copies_status_keys(self):
+        """_merge_car_wide_fields merges missing status keys."""
+        from car_model.auto_calibrate import _merge_car_wide_fields
+        source = self._make_models()
+        source.status["arb_calibrated"] = "True"
+        source.status["roll_gains_calibrated"] = "True"
+
+        dest = self._make_models(track="algarve")
+        dest.status["arb_calibrated"] = "False"  # already present, must not be overwritten
+
+        _merge_car_wide_fields("bmw", dest, source, verbose=False)
+        self.assertEqual(dest.status["arb_calibrated"], "False", "Existing status key must not be overwritten")
+        self.assertEqual(dest.status["roll_gains_calibrated"], "True", "Missing key should be copied")
+
+    def test_merge_car_wide_fields_handles_none_source(self):
+        """_merge_car_wide_fields with None source should be a no-op."""
+        from car_model.auto_calibrate import _merge_car_wide_fields
+        dest = self._make_models(track="algarve")
+        _merge_car_wide_fields("bmw", dest, None, verbose=False)  # must not raise
+
+
 if __name__ == "__main__":
     unittest.main()
