@@ -278,6 +278,14 @@ class RakeSolver:
                 front_torsion_od_mm=baseline.front_torsion_od_mm,
                 front_camber_deg=baseline.front_camber_deg,
                 fuel_l=fuel_load_l,
+                # Provide rear-axis context for DirectRegression bisection
+                rear_pushrod_mm=baseline.rear_pushrod_mm,
+                rear_third_nmm=baseline.rear_third_nmm,
+                rear_third_perch_mm=baseline.rear_third_perch_mm,
+                rear_spring_nmm=baseline.rear_spring_nmm,
+                rear_spring_perch_mm=baseline.rear_spring_perch_mm,
+                rear_camber_deg=baseline.rear_camber_deg,
+                wing_deg=baseline.wing_deg,
             )
             rear_pushrod = garage_model.rear_pushrod_for_static_rh(
                 static_rear,
@@ -287,6 +295,13 @@ class RakeSolver:
                 rear_spring_perch_mm=baseline.rear_spring_perch_mm,
                 front_heave_perch_mm=baseline.front_heave_perch_mm,
                 fuel_l=fuel_load_l,
+                # Provide front-axis context for DirectRegression bisection
+                front_pushrod_mm=front_pushrod,
+                front_heave_nmm=baseline.front_heave_nmm,
+                front_torsion_od_mm=baseline.front_torsion_od_mm,
+                front_camber_deg=baseline.front_camber_deg,
+                rear_camber_deg=baseline.rear_camber_deg,
+                wing_deg=baseline.wing_deg,
             )
             front_pushrod = round(front_pushrod * 2) / 2
             rear_pushrod = round(rear_pushrod * 2) / 2
@@ -476,6 +491,13 @@ class RakeSolver:
                         front_torsion_od_mm=baseline.front_torsion_od_mm,
                         front_camber_deg=baseline.front_camber_deg,
                         fuel_l=fuel_load_l,
+                        rear_pushrod_mm=baseline.rear_pushrod_mm,
+                        rear_third_nmm=baseline.rear_third_nmm,
+                        rear_third_perch_mm=baseline.rear_third_perch_mm,
+                        rear_spring_nmm=baseline.rear_spring_nmm,
+                        rear_spring_perch_mm=baseline.rear_spring_perch_mm,
+                        rear_camber_deg=baseline.rear_camber_deg,
+                        wing_deg=baseline.wing_deg,
                     ) * 2.0
                 ) / 2.0
             )
@@ -491,6 +513,12 @@ class RakeSolver:
                         rear_spring_perch_mm=baseline.rear_spring_perch_mm,
                         front_heave_perch_mm=baseline.front_heave_perch_mm,
                         fuel_l=fuel_load_l,
+                        front_pushrod_mm=front_pushrod,
+                        front_heave_nmm=baseline.front_heave_nmm,
+                        front_torsion_od_mm=baseline.front_torsion_od_mm,
+                        front_camber_deg=baseline.front_camber_deg,
+                        rear_camber_deg=baseline.rear_camber_deg,
+                        wing_deg=baseline.wing_deg,
                     ) * 2.0
                 ) / 2.0
             )
@@ -912,6 +940,12 @@ def reconcile_ride_heights(
             rear_spring_perch_mm=step3.rear_spring_perch_mm,
             front_heave_perch_mm=step2.perch_offset_front_mm,
             fuel_l=fuel_load_l,
+            # Provide full context for DirectRegression bisection
+            front_pushrod_mm=step1.front_pushrod_offset_mm,
+            front_heave_nmm=step2.front_heave_nmm,
+            front_torsion_od_mm=step3.front_torsion_od_mm,
+            front_camber_deg=float(car.geometry.front_camber_baseline_deg),
+            rear_camber_deg=rear_camber,
         )
         if _test_rear_pushrod > _pushrod_hi or _test_rear_pushrod < _pushrod_lo:
             _clamped_pushrod = max(_pushrod_lo, min(_pushrod_hi, _test_rear_pushrod))
@@ -949,7 +983,11 @@ def reconcile_ride_heights(
         # When the heave spring changes (e.g., 180→600 N/mm), the pushrod alone
         # may not have enough range to compensate. In that case, adjust the perch.
         new_front_pushrod = step1.front_pushrod_offset_mm
-        if abs(garage_model.front_coeff_pushrod) >= 0.05:
+        # When DirectRegression is available, always use bisection (the linear
+        # front_coeff_pushrod may be zero because the feature is named differently
+        # or the full model uses pushrod_sq instead of linear pushrod).
+        _has_direct_front = garage_model._direct_front_rh is not None
+        if _has_direct_front or abs(garage_model.front_coeff_pushrod) >= 0.05:
             new_front_pushrod = garage_model.front_pushrod_for_static_rh(
                 target_front_rh,
                 front_heave_nmm=step2.front_heave_nmm,
@@ -957,6 +995,13 @@ def reconcile_ride_heights(
                 front_torsion_od_mm=step3.front_torsion_od_mm,
                 front_camber_deg=front_camber,
                 fuel_l=fuel_load_l,
+                # Provide full context for DirectRegression bisection
+                rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+                rear_third_nmm=step2.rear_third_nmm,
+                rear_third_perch_mm=step2.perch_offset_rear_mm,
+                rear_spring_nmm=step3.rear_spring_rate_nmm,
+                rear_spring_perch_mm=step3.rear_spring_perch_mm,
+                rear_camber_deg=rear_camber,
             )
             # If pushrod is out of range, adjust perch to compensate
             pushrod_lo, pushrod_hi = car.garage_ranges.front_pushrod_mm
@@ -1002,6 +1047,12 @@ def reconcile_ride_heights(
             rear_spring_perch_mm=step3.rear_spring_perch_mm,
             front_heave_perch_mm=step2.perch_offset_front_mm,
             fuel_l=fuel_load_l,
+            # Provide full context for DirectRegression bisection
+            front_pushrod_mm=new_front_pushrod,
+            front_heave_nmm=step2.front_heave_nmm,
+            front_torsion_od_mm=step3.front_torsion_od_mm,
+            front_camber_deg=front_camber,
+            rear_camber_deg=rear_camber,
         )
         new_front_pushrod = round(new_front_pushrod * 2) / 2
         new_rear_pushrod = round(new_rear_pushrod * 2) / 2

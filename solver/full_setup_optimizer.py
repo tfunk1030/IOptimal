@@ -46,6 +46,7 @@ class BMWSebringSeed:
     rear_pushrod_mm: float
     front_heave_perch_mm: float
     front_camber_deg: float
+    rear_camber_deg: float = -1.9
 
 
 @dataclass

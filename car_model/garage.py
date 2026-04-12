@@ -394,8 +394,99 @@ class GarageOutputModel:
             fuel_l=fuel_l,
         )
 
+    @staticmethod
+    def _bisect_pushrod(
+        model: DirectRegression,
+        template: GarageSetupState,
+        target: float,
+        pushrod_field: str,
+        *,
+        lo: float = -60.0,
+        hi: float = 60.0,
+        tol: float = 0.01,
+        max_iter: int = 60,
+        fallback: float = 0.0,
+    ) -> float:
+        """Numerical search for the pushrod value that achieves *target* RH.
+
+        Uses a sample-then-bisect strategy that handles:
+        - Monotone models (linear pushrod): standard bisection
+        - Non-monotone models (pushrod_sq only): samples 5 points, picks the
+          interval containing the target, then bisects within it
+        - Constant models (zero features): returns fallback immediately
+        """
+        def _predict_at(pushrod_val: float) -> float:
+            state = replace(template, **{pushrod_field: pushrod_val})
+            return model.predict(state)
+
+        # Sample the function at several points to handle non-monotone models
+        # (e.g., quadratic pushrod_sq where f(-60) == f(60) by symmetry).
+        n_samples = 7
+        sample_pts = [lo + (hi - lo) * i / (n_samples - 1) for i in range(n_samples)]
+        sample_vals = [_predict_at(p) for p in sample_pts]
+
+        # Constant model guard — if all samples give the same value, pushrod
+        # has no effect (e.g. BMW zero-feature constant model).
+        val_range = max(sample_vals) - min(sample_vals)
+        if val_range < tol:
+            _log.debug(
+                "_bisect_pushrod: model insensitive to %s "
+                "(range=%.4f < tol=%.3f) — returning fallback=%.1f",
+                pushrod_field, val_range, tol, fallback,
+            )
+            return fallback
+
+        # Find adjacent sample pair that brackets the target.
+        # For quadratic models, multiple intervals may bracket it — pick the
+        # one closest to the fallback (expected operating region).
+        best_pair = None
+        best_dist = float("inf")
+        for i in range(len(sample_pts) - 1):
+            a, b = sample_vals[i], sample_vals[i + 1]
+            if (a - target) * (b - target) <= 0:
+                mid_pt = (sample_pts[i] + sample_pts[i + 1]) / 2.0
+                dist = abs(mid_pt - fallback)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_pair = (i, i + 1)
+
+        if best_pair is None:
+            # Target unreachable — return sample point closest to target
+            closest_idx = min(range(len(sample_vals)),
+                              key=lambda i: abs(sample_vals[i] - target))
+            _log.debug(
+                "_bisect_pushrod: target=%.2f unreachable in [%.1f, %.1f] "
+                "(range [%.2f, %.2f]) — returning closest=%.1f",
+                target, lo, hi, min(sample_vals), max(sample_vals),
+                sample_pts[closest_idx],
+            )
+            return sample_pts[closest_idx]
+
+        # Bisect within the bracketing interval
+        lo_b = sample_pts[best_pair[0]]
+        hi_b = sample_pts[best_pair[1]]
+        y_lo_b = sample_vals[best_pair[0]]
+
+        for _ in range(max_iter):
+            mid = (lo_b + hi_b) / 2.0
+            y_mid = _predict_at(mid)
+            if abs(y_mid - target) < tol:
+                return mid
+            if (y_lo_b - target) * (y_mid - target) <= 0:
+                hi_b = mid
+            else:
+                lo_b = mid
+                y_lo_b = y_mid
+        return (lo_b + hi_b) / 2.0
+
     def predict_front_static_rh_raw(self, setup: GarageSetupState) -> float:
-        """Predict unclamped front static ride height from the garage state."""
+        """Predict unclamped front static ride height from the garage state.
+
+        Uses DirectRegression when available (same path as predict_front_static_rh)
+        so that solver, validator, and inverse all share the same model.
+        """
+        if self._direct_front_rh is not None:
+            return self._direct_front_rh.predict(setup)
         inv_heave = 0.0
         if abs(self.front_coeff_inv_heave_nmm) > 1e-9 and setup.front_heave_nmm > 0:
             inv_heave = 1.0 / setup.front_heave_nmm
@@ -523,11 +614,54 @@ class GarageOutputModel:
         front_torsion_od_mm: float,
         front_camber_deg: float,
         fuel_l: float = 0.0,
+        rear_pushrod_mm: float | None = None,
+        rear_third_nmm: float | None = None,
+        rear_third_perch_mm: float | None = None,
+        rear_spring_nmm: float | None = None,
+        rear_spring_perch_mm: float | None = None,
+        rear_camber_deg: float | None = None,
+        wing_deg: float | None = None,
     ) -> float:
-        """Invert the front RH regression to a pushrod offset."""
+        """Invert the front RH regression to a pushrod offset.
+
+        When a DirectRegression is available (e.g. Porsche with 12 features
+        including rear-axis terms), uses bisection search so that ALL features
+        participate in the inversion — not just the 6 that map to linear
+        coefficient slots.  Falls back to analytic linear inversion otherwise.
+        """
+        target = max(target_rh_mm, self.front_rh_floor_mm)
+
+        # --- DirectRegression path: bisection search ---
+        # Only use bisection when the DirectRegression actually depends on pushrod.
+        # BMW's constant model (zero features, R²=1.0) would produce garbage.
+        _dr_has_pushrod = (
+            self._direct_front_rh is not None
+            and any("front_pushrod" in f for f in self._direct_front_rh.feature_names)
+        )
+        if _dr_has_pushrod:
+            template = GarageSetupState(
+                front_pushrod_mm=0.0,  # will be varied
+                rear_pushrod_mm=rear_pushrod_mm if rear_pushrod_mm is not None else self.default_rear_pushrod_mm,
+                front_heave_nmm=front_heave_nmm,
+                front_heave_perch_mm=front_heave_perch_mm,
+                rear_third_nmm=rear_third_nmm if rear_third_nmm is not None else self.default_rear_third_nmm,
+                rear_third_perch_mm=rear_third_perch_mm if rear_third_perch_mm is not None else self.default_rear_third_perch_mm,
+                front_torsion_od_mm=front_torsion_od_mm,
+                rear_spring_nmm=rear_spring_nmm if rear_spring_nmm is not None else self.default_rear_spring_nmm,
+                rear_spring_perch_mm=rear_spring_perch_mm if rear_spring_perch_mm is not None else self.default_rear_spring_perch_mm,
+                front_camber_deg=front_camber_deg,
+                rear_camber_deg=rear_camber_deg if rear_camber_deg is not None else self.default_rear_camber_deg,
+                fuel_l=fuel_l,
+                wing_deg=wing_deg if wing_deg is not None else 0.0,
+            )
+            return self._bisect_pushrod(
+                self._direct_front_rh, template, target, "front_pushrod_mm",
+                fallback=self.default_front_pushrod_mm,
+            )
+
+        # --- Legacy linear coefficient path ---
         if abs(self.front_coeff_pushrod) < 1e-9:
             return self.default_front_pushrod_mm
-        target = max(target_rh_mm, self.front_rh_floor_mm)
         inv_heave = 1.0 / front_heave_nmm if (abs(self.front_coeff_inv_heave_nmm) > 1e-9 and front_heave_nmm > 0) else 0.0
         other = (
             self.front_intercept
@@ -550,8 +684,46 @@ class GarageOutputModel:
         rear_spring_perch_mm: float,
         front_heave_perch_mm: float,
         fuel_l: float = 0.0,
+        front_pushrod_mm: float | None = None,
+        front_heave_nmm: float | None = None,
+        front_torsion_od_mm: float | None = None,
+        front_camber_deg: float | None = None,
+        rear_camber_deg: float | None = None,
+        wing_deg: float | None = None,
     ) -> float:
-        """Invert the rear RH regression to a pushrod offset."""
+        """Invert the rear RH regression to a pushrod offset.
+
+        When a DirectRegression is available, uses bisection search so that ALL
+        features participate — not just the subset that maps to linear coeff slots.
+        """
+        # --- DirectRegression path: bisection search ---
+        # Only use bisection when the DirectRegression actually depends on rear pushrod.
+        _dr_has_pushrod = (
+            self._direct_rear_rh is not None
+            and any("rear_pushrod" in f for f in self._direct_rear_rh.feature_names)
+        )
+        if _dr_has_pushrod:
+            template = GarageSetupState(
+                front_pushrod_mm=front_pushrod_mm if front_pushrod_mm is not None else self.default_front_pushrod_mm,
+                rear_pushrod_mm=0.0,  # will be varied
+                front_heave_nmm=front_heave_nmm if front_heave_nmm is not None else self.default_front_heave_nmm,
+                front_heave_perch_mm=front_heave_perch_mm,
+                rear_third_nmm=rear_third_nmm,
+                rear_third_perch_mm=rear_third_perch_mm,
+                front_torsion_od_mm=front_torsion_od_mm if front_torsion_od_mm is not None else self.default_front_torsion_od_mm,
+                rear_spring_nmm=rear_spring_nmm,
+                rear_spring_perch_mm=rear_spring_perch_mm,
+                front_camber_deg=front_camber_deg if front_camber_deg is not None else self.default_front_camber_deg,
+                rear_camber_deg=rear_camber_deg if rear_camber_deg is not None else self.default_rear_camber_deg,
+                fuel_l=fuel_l,
+                wing_deg=wing_deg if wing_deg is not None else 0.0,
+            )
+            return self._bisect_pushrod(
+                self._direct_rear_rh, template, target_rh_mm, "rear_pushrod_mm",
+                fallback=self.default_rear_pushrod_mm,
+            )
+
+        # --- Legacy linear coefficient path ---
         if abs(self.rear_coeff_pushrod) < 1e-9:
             return self.default_rear_pushrod_mm
         inv_third = 1.0 / rear_third_nmm if (abs(self.rear_coeff_inv_third_nmm) > 1e-9 and rear_third_nmm > 0) else 0.0

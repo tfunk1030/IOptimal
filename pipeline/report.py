@@ -508,6 +508,29 @@ def generate_report(
             a("  Dampers:              Step 6 blocked — see calibration instructions")
         a("")
 
+    # ── INVERSE VALIDATION (garage round-trip check) ─────────────────
+    # Verify that the setup the solver chose actually produces the
+    # target ride heights when fed back through the garage model.
+    if garage_outputs is not None and step1 is not None:
+        f_target = step1.static_front_rh_mm
+        r_target = step1.static_rear_rh_mm
+        f_actual = garage_outputs.front_static_rh_mm
+        r_actual = garage_outputs.rear_static_rh_mm
+        f_err = abs(f_actual - f_target)
+        r_err = abs(r_actual - r_target)
+        if f_err > 0.5 or r_err > 0.5:
+            a(_hdr("GARAGE ROUND-TRIP CHECK"))
+            a(f"  {'Axis':<8}  {'Target':>8}  {'Predicted':>9}  {'Error':>7}")
+            a(f"  {'Front':<8}  {f_target:>7.1f}mm  {f_actual:>8.1f}mm  {f_err:>6.1f}mm"
+              f"{'  WARN' if f_err > 1.0 else ''}")
+            a(f"  {'Rear':<8}  {r_target:>7.1f}mm  {r_actual:>8.1f}mm  {r_err:>6.1f}mm"
+              f"{'  WARN' if r_err > 1.0 else ''}")
+            if f_err > 1.0 or r_err > 1.0:
+                a(f"  NOTE: Garage model prediction differs from solver target")
+                a(f"  by >{1.0}mm. iRacing may show different values than expected.")
+                a(f"  Consider more calibration data or verify in-garage.")
+            a("")
+
     # ── HEAVE TRAVEL BUDGET ────────────────────────────────────────────
     if step2 is not None and step2.defl_max_front_mm > 0:
         budget_slider = (

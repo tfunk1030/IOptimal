@@ -712,11 +712,19 @@ def _select_features(
     y: np.ndarray,
     feature_names: list[str],
     max_features: int | None = None,
+    seed_features: list[str] | None = None,
 ) -> tuple[np.ndarray, list[str]]:
     """Forward feature selection to prevent overfitting on small datasets.
 
     When n_samples < 3 * n_features, selects a subset of features via
     greedy forward selection using leave-one-out RMSE as the criterion.
+
+    *seed_features*: names of features that MUST be included before
+    greedy selection begins — these are physics-critical features (e.g.
+    compliance terms) that the greedy search might drop due to
+    multicollinearity but that are essential for correct extrapolation.
+    Only features that exist in *feature_names* and have non-zero
+    variance are seeded.
 
     Returns (X_reduced, names_reduced).  If no reduction is needed the
     inputs are returned unchanged.
@@ -731,10 +739,20 @@ def _select_features(
     if n_features <= max_features and n_samples >= 3 * n_features:
         return X, feature_names
 
-    # Forward selection: start empty, greedily add the feature that gives
-    # the best LOO RMSE at each step.
+    # Forward selection: start with seed features, then greedily add.
     selected: list[int] = []
     remaining = list(range(n_features))
+
+    # Seed physics-critical features before greedy search
+    if seed_features:
+        name_to_idx = {n: i for i, n in enumerate(feature_names)}
+        for sf in seed_features:
+            idx = name_to_idx.get(sf)
+            if idx is not None and idx in remaining:
+                # Only seed if the feature has variance (not constant)
+                if np.std(X[:, idx]) > 1e-9:
+                    selected.append(idx)
+                    remaining.remove(idx)
 
     best_overall_loo = float("inf")
     for _ in range(max_features):
@@ -1129,7 +1147,8 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                 names.append(name)
         return X_cols, names
 
-    def _fit_one_pool(target_col_name, model_name, pool, min_std=0.5):
+    def _fit_one_pool(target_col_name, model_name, pool, min_std=0.5,
+                      seed_features=None):
         """Internal: fit a single pool. Returns FittedModel or None."""
         y = col(target_col_name)
         if np.std(y) < min_std:
@@ -1138,11 +1157,11 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         if not X_cols:
             return None
         X = np.column_stack(X_cols)
-        X, names = _select_features(X, y, names)
+        X, names = _select_features(X, y, names, seed_features=seed_features)
         return _fit(X, y, names, model_name)
 
     def _fit_from_pool(target_col_name, model_name, pool=None, min_std=0.5,
-                       fallback_pool=None):
+                       fallback_pool=None, seed_features=None):
         """Fit a model from a feature pool with optional fallback.
 
         When ``fallback_pool`` is provided, fit BOTH pools and return whichever
@@ -1153,11 +1172,12 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         serving as effective regularization (e.g. Porsche, Acura small datasets
         with multicollinear physics terms).
         """
-        primary = _fit_one_pool(target_col_name, model_name, pool, min_std)
+        primary = _fit_one_pool(target_col_name, model_name, pool, min_std,
+                               seed_features=seed_features)
         if fallback_pool is None or primary is None:
             return primary
         fallback = _fit_one_pool(target_col_name, model_name + "_fallback",
-                                 fallback_pool, min_std)
+                                 fallback_pool, min_std, seed_features=seed_features)
         if fallback is None:
             return primary
         # Compare LOO RMSE — the honest generalization metric
@@ -1196,10 +1216,16 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         )
 
     # ─── 2. Rear Ride Height ───
+    # Seed compliance features: rear RH depends on 1/k_third and 1/k_spring
+    # via compliance physics (defl ∝ F/k). Without these seeds, forward
+    # selection can drop them due to multicollinearity with other features,
+    # causing 3mm+ errors at extreme spring settings.
+    _REAR_RH_SEEDS = ["inv_rear_third", "inv_rear_spring", "rear_pushrod"]
     if np.std(col("static_rear_rh_mm")) > 0.5:
         models.rear_ride_height = _fit_from_pool(
             "static_rear_rh_mm", "rear_ride_height",
-            pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL)
+            pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL,
+            seed_features=_REAR_RH_SEEDS)
 
     # ─── 3. Torsion Bar Turns ───
     _tb_turns = col("torsion_bar_turns")
@@ -2793,6 +2819,253 @@ def print_status(car: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Calibration sweep generator
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_generate_sweep(car_name: str, ibt_path_str: str) -> None:
+    """Generate calibration sweep .sto files from a baseline IBT session.
+
+    Reads the driver's current setup from the IBT, then creates 7-9 varied
+    setups (each changing ONE parameter) that maximise calibration information.
+    Each .sto can be loaded in iRacing — a single outlap generates one
+    calibration point (the IBT header contains all the garage ground truth).
+    """
+    from car_model.cars import get_car
+    from analyzer.setup_reader import CurrentSetup
+    from track_model.ibt_parser import IBTFile
+
+    ibt_path = Path(ibt_path_str)
+    if not ibt_path.exists():
+        print(f"  [error] IBT file not found: {ibt_path}", file=sys.stderr)
+        return
+
+    car = get_car(car_name)
+    ibt = IBTFile(str(ibt_path))
+    setup = CurrentSetup.from_ibt(ibt, car_canonical=car_name)
+    gr = car.garage_ranges
+
+    out_dir = Path("output") / "calibration_sweep" / car_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build variation plan: each entry = (name, field_to_change, new_value)
+    variations: list[tuple[str, dict]] = [("baseline", {})]
+
+    # Heave spring sweep (3 levels spanning the range)
+    heave_lo, heave_hi = gr.front_heave_nmm
+    heave_base = setup.front_heave_nmm
+    heave_step = gr.heave_spring_resolution_nmm
+    heave_vals = sorted(set([
+        max(heave_lo, round((heave_lo + (heave_hi - heave_lo) * 0.15) / heave_step) * heave_step),
+        round(heave_base / heave_step) * heave_step,
+        min(heave_hi, round((heave_lo + (heave_hi - heave_lo) * 0.85) / heave_step) * heave_step),
+    ]))
+    for i, h in enumerate(heave_vals):
+        if abs(h - heave_base) > heave_step * 0.5:
+            variations.append((f"heave_{int(h)}", {"front_heave_nmm": h}))
+
+    # Rear spring sweep (for cars with coil springs)
+    if gr.rear_spring_nmm[1] > gr.rear_spring_nmm[0]:
+        rs_lo, rs_hi = gr.rear_spring_nmm
+        rs_base = setup.rear_spring_nmm
+        rs_step = gr.rear_spring_resolution_nmm
+        rs_vals = sorted(set([
+            max(rs_lo, round((rs_lo + (rs_hi - rs_lo) * 0.2) / rs_step) * rs_step),
+            min(rs_hi, round((rs_lo + (rs_hi - rs_lo) * 0.8) / rs_step) * rs_step),
+        ]))
+        for r in rs_vals:
+            if abs(r - rs_base) > rs_step * 0.5:
+                variations.append((f"rspring_{int(r)}", {"rear_spring_nmm": r}))
+
+    # Rear third/heave sweep
+    if gr.rear_third_nmm[1] > gr.rear_third_nmm[0]:
+        rt_lo, rt_hi = gr.rear_third_nmm
+        rt_base = setup.rear_third_nmm
+        rt_step = heave_step
+        rt_vals = sorted(set([
+            max(rt_lo, round((rt_lo + (rt_hi - rt_lo) * 0.2) / rt_step) * rt_step),
+            min(rt_hi, round((rt_lo + (rt_hi - rt_lo) * 0.8) / rt_step) * rt_step),
+        ]))
+        for r in rt_vals:
+            if abs(r - rt_base) > rt_step * 0.5:
+                variations.append((f"third_{int(r)}", {"rear_third_nmm": r}))
+
+    # Pushrod sweep (front ±4mm)
+    push_res = gr.pushrod_resolution_mm
+    push_lo, push_hi = gr.front_pushrod_mm
+    for delta in [-4.0, 4.0]:
+        new_push = round((setup.front_pushrod_mm + delta) / push_res) * push_res
+        new_push = max(push_lo, min(push_hi, new_push))
+        if abs(new_push - setup.front_pushrod_mm) > push_res * 0.5:
+            label = "push_neg4" if delta < 0 else "push_pos4"
+            variations.append((label, {"front_pushrod_mm": new_push}))
+
+    # Camber sweep (front +0.5, -0.5 from base)
+    cam_lo, cam_hi = gr.camber_front_deg
+    for delta in [-0.5, 0.5]:
+        new_cam = round((setup.front_camber_deg + delta) * 10) / 10
+        new_cam = max(cam_lo, min(cam_hi, new_cam))
+        if abs(new_cam - setup.front_camber_deg) > 0.05:
+            label = f"camber_{new_cam:.1f}".replace("-", "neg").replace(".", "p")
+            variations.append((label, {"front_camber_deg": new_cam}))
+
+    # Write .sto files
+    print(f"\n  Generating {len(variations)} calibration sweep setups:")
+    print(f"  Output directory: {out_dir}\n")
+
+    try:
+        from output.setup_writer import write_sto_from_setup
+    except ImportError:
+        write_sto_from_setup = None
+
+    for name, overrides in variations:
+        sto_path = out_dir / f"cal_{name}.sto"
+        # Build the modified setup description
+        changes = []
+        for field, val in overrides.items():
+            base_val = getattr(setup, field, "?")
+            changes.append(f"{field}: {base_val} -> {val}")
+
+        if write_sto_from_setup is not None:
+            try:
+                write_sto_from_setup(setup, sto_path, overrides=overrides, car=car)
+                print(f"    {sto_path.name:30s} {'(baseline)' if not overrides else ', '.join(changes)}")
+            except Exception as e:
+                print(f"    {sto_path.name:30s} [SKIP] {e}")
+        else:
+            # Fallback: just print the instructions
+            print(f"    {name:30s} {'(baseline)' if not overrides else ', '.join(changes)}")
+
+    print(f"\n  -- Calibration Protocol --")
+    print(f"  1. Copy .sto files to: ~/Documents/iRacing/setups/{car_name}/")
+    print(f"  2. In iRacing, go to the track and open the garage")
+    print(f"  3. For each .sto file:")
+    print(f"     a. Load the setup")
+    print(f"     b. Drive 1 outlap (exit pit, complete 1 lap, pit in)")
+    print(f"     c. This creates an IBT file with complete garage ground truth")
+    print(f"  4. After all sessions, run:")
+    print(f"     python -m car_model.auto_calibrate --car {car_name} --ibt-dir <your_telemetry_dir>")
+    print(f"  5. Verify accuracy:")
+    print(f"     python -m car_model.auto_calibrate --car {car_name} --verify")
+
+
+def _run_verify(car_name: str) -> None:
+    """Verify garage model accuracy against all calibration points.
+
+    For each CalibrationPoint, runs the GarageOutputModel forward prediction
+    and compares against the IBT ground truth. Reports per-field RMSE and
+    max error so the user can see exactly where accuracy is good/bad.
+    """
+    from car_model.cars import get_car
+    from car_model.garage import GarageSetupState
+
+    car = get_car(car_name)
+    points = load_calibration_points(car_name)
+    if not points:
+        print(f"  No calibration data for {car_name}. Run calibration first.")
+        return
+
+    garage_model = car.active_garage_output_model(None)
+    if garage_model is None:
+        print(f"  No garage model for {car_name}. Run calibration first.")
+        return
+
+    # Decode indices for indexed cars
+    _hsm = car.heave_spring
+    _csm = car.corner_spring
+
+    fields = [
+        ("front_static_rh_mm", "static_front_rh_mm"),
+        ("rear_static_rh_mm", "static_rear_rh_mm"),
+        ("heave_spring_defl_static_mm", "heave_spring_defl_static_mm"),
+        ("rear_spring_defl_static_mm", "rear_spring_defl_static_mm"),
+        ("third_spring_defl_static_mm", "third_spring_defl_static_mm"),
+        ("front_shock_defl_static_mm", "front_shock_defl_static_mm"),
+        ("rear_shock_defl_static_mm", "rear_shock_defl_static_mm"),
+    ]
+
+    import numpy as np
+    errors: dict[str, list[float]] = {f[0]: [] for f in fields}
+    n_valid = 0
+
+    for pt in points:
+        # Decode settings for indexed cars
+        heave = pt.front_heave_setting
+        third = pt.rear_third_setting
+        rspring = pt.rear_spring_setting
+        torsion_od = pt.front_torsion_od_mm
+
+        if _hsm.front_setting_index_range and heave <= _hsm.front_setting_index_range[1] + 0.5:
+            heave = _hsm.front_rate_from_setting(heave)
+        if _hsm.rear_setting_index_range and third <= _hsm.rear_setting_index_range[1] + 0.5:
+            third = _hsm.rear_rate_from_setting(third)
+        if hasattr(_csm, 'rear_setting_index_range') and _csm.rear_setting_index_range and rspring <= _csm.rear_setting_index_range[1] + 0.5:
+            rspring = _csm.rear_bar_rate_from_setting(rspring)
+        if hasattr(_csm, 'front_setting_index_range') and _csm.front_setting_index_range and torsion_od <= _csm.front_setting_index_range[1] + 0.5:
+            torsion_od = _csm.front_torsion_od_from_setting(torsion_od)
+
+        state = GarageSetupState(
+            front_pushrod_mm=pt.front_pushrod_mm,
+            rear_pushrod_mm=pt.rear_pushrod_mm,
+            front_heave_nmm=heave,
+            front_heave_perch_mm=pt.front_heave_perch_mm,
+            rear_third_nmm=third,
+            rear_third_perch_mm=pt.rear_third_perch_mm,
+            front_torsion_od_mm=torsion_od,
+            rear_spring_nmm=rspring,
+            rear_spring_perch_mm=pt.rear_spring_perch_mm,
+            front_camber_deg=pt.front_camber_deg,
+            rear_camber_deg=pt.rear_camber_deg,
+            fuel_l=pt.fuel_l,
+            wing_deg=pt.wing_deg,
+            torsion_bar_turns=pt.torsion_bar_turns,
+            rear_torsion_bar_turns=pt.rear_torsion_bar_turns,
+        )
+
+        predicted = garage_model.predict(state)
+        n_valid += 1
+
+        for pred_field, truth_field in fields:
+            truth = getattr(pt, truth_field, 0.0)
+            pred = getattr(predicted, pred_field, 0.0)
+            if truth > 0:
+                errors[pred_field].append(pred - truth)
+
+    if n_valid == 0:
+        print(f"  No valid points for verification.")
+        return
+
+    print(f"\n{'=' * 63}")
+    print(f"  GARAGE MODEL VERIFICATION — {car_name.upper()} ({n_valid} points)")
+    print(f"{'=' * 63}")
+    print(f"  {'Output':<35s} {'RMSE':>7s} {'MaxErr':>7s} {'Bias':>7s}  Status")
+    print(f"  {'-'*35} {'-'*7} {'-'*7} {'-'*7}  ------")
+
+    all_ok = True
+    for pred_field, _ in fields:
+        errs = errors[pred_field]
+        if not errs:
+            print(f"  {pred_field:<35s} {'N/A':>7s}")
+            continue
+        arr = np.array(errs)
+        rmse = float(np.sqrt(np.mean(arr ** 2)))
+        max_err = float(np.max(np.abs(arr)))
+        bias = float(np.mean(arr))
+        is_rh = "rh" in pred_field
+        threshold = 1.0 if is_rh else 2.0
+        status = "OK" if max_err < threshold else "WARN"
+        if status == "WARN":
+            all_ok = False
+        print(f"  {pred_field:<35s} {rmse:>6.2f}mm {max_err:>6.2f}mm {bias:>+6.2f}mm  {status}")
+
+    print(f"{'=' * 63}")
+    if all_ok:
+        print(f"  All outputs within tolerance.")
+    else:
+        print(f"  Some outputs exceed tolerance — consider more calibration data.")
+    print()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CLI entrypoint
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2832,6 +3105,10 @@ Examples:
                         help="Clear all calibration data for the car")
     parser.add_argument("--protocol", action="store_true",
                         help="Generate per-car calibration sweep instructions (what to do in iRacing)")
+    parser.add_argument("--generate-sweep", default=None, metavar="IBT",
+                        help="Generate calibration sweep .sto files from a baseline IBT session")
+    parser.add_argument("--verify", action="store_true",
+                        help="Verify garage model accuracy against all IBT calibration points")
     args = parser.parse_args()
 
     car = args.car
@@ -2852,6 +3129,14 @@ Examples:
 
     if args.protocol:
         print(generate_protocol(car))
+        return
+
+    if args.generate_sweep:
+        _run_generate_sweep(car, args.generate_sweep)
+        return
+
+    if args.verify:
+        _run_verify(car)
         return
 
     # Collect IBT files to process

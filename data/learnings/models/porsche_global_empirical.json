@@ -1,14 +1,25 @@
 {
   "car": "porsche",
-  "total_sessions": 3,
+  "total_sessions": 43,
   "tracks_included": [
-    "Autodromo Internacional do Algarve"
+    "Autodromo Internacional do Algarve",
+    "WeatherTech Raceway Laguna Seca"
   ],
-  "aero_compression_front_mm": 12.588527806599934,
-  "aero_compression_rear_mm": 20.0306396484375,
-  "roll_gradient_global_deg_per_g": 0.158,
-  "m_eff_front_global_kg": 930.8322702892787,
-  "anomalies": [],
-  "confidence": "low",
-  "last_updated": "2026-04-12T04:02:55.413217+00:00"
+  "aero_compression_front_mm": 11.64108192088992,
+  "aero_compression_rear_mm": 16.727013104460962,
+  "roll_gradient_global_deg_per_g": 0.7469117647058824,
+  "m_eff_front_global_kg": 860.7516931798534,
+  "anomalies": [
+    {
+      "track": "WeatherTech Raceway Laguna Seca",
+      "metric": "aero_compression_front_mm",
+      "global_mean": 11.6411,
+      "track_mean": 8.9194,
+      "deviation_sigma": -1.67,
+      "sample_count": 11,
+      "interpretation": "WeatherTech Raceway Laguna Seca shows less compression \u2014 lower speeds or less efficient floor seal"
+    }
+  ],
+  "confidence": "high",
+  "last_updated": "2026-04-12T06:00:33.382811+00:00"
 }

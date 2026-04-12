@@ -457,6 +457,10 @@ def _fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> 
         float(step5.front_camber_deg) if step5 is not None else
         float(car.geometry.front_camber_baseline_deg)
     )
+    rear_camber = (
+        float(step5.rear_camber_deg) if step5 is not None else
+        float(car.geometry.rear_camber_baseline_deg)
+    )
     new_pushrod = garage_model.front_pushrod_for_static_rh(
         floor + margin,
         front_heave_nmm=step2.front_heave_nmm,
@@ -464,6 +468,13 @@ def _fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> 
         front_torsion_od_mm=step3.front_torsion_od_mm,
         front_camber_deg=front_camber,
         fuel_l=fuel_l,
+        # Provide full context for DirectRegression bisection
+        rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+        rear_third_nmm=step2.rear_third_nmm,
+        rear_third_perch_mm=step2.perch_offset_rear_mm,
+        rear_spring_nmm=step3.rear_spring_rate_nmm,
+        rear_spring_perch_mm=step3.rear_spring_perch_mm,
+        rear_camber_deg=rear_camber,
     )
     new_pushrod = _snap(
         _clamp(new_pushrod, *gr.front_pushrod_mm),
