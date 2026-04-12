@@ -312,6 +312,11 @@ _FERRARI_PARAM_IDS: dict[str, str] = {
 
 _PORSCHE_PARAM_IDS: dict[str, str] = {
     "wing_angle":               "CarSetup_TiresAero_AeroSettings_RearWingAngle",
+    # Aero calculator display values (same XML IDs as BMW)
+    "front_rh_at_speed":        "CarSetup_TiresAero_AeroCalculator_FrontRhAtSpeed",
+    "rear_rh_at_speed":         "CarSetup_TiresAero_AeroCalculator_RearRhAtSpeed",
+    "df_balance":               "CarSetup_TiresAero_AeroCalculator_DownforceBalance",
+    "ld_ratio":                 "CarSetup_TiresAero_AeroCalculator_LD",
     "lf_ride_height":           "CarSetup_Chassis_LeftFront_RideHeight",
     "rf_ride_height":           "CarSetup_Chassis_RightFront_RideHeight",
     "lr_ride_height":           "CarSetup_Chassis_LeftRear_RideHeight",
@@ -386,14 +391,21 @@ _PORSCHE_PARAM_IDS: dict[str, str] = {
     "rear_3rd_hs_comp":         "CarSetup_Dampers_Rear3rd_HsCompDamping",
     "rear_3rd_ls_rbd":          "CarSetup_Dampers_Rear3rd_LsRbdDamping",
     "rear_3rd_hs_rbd":          "CarSetup_Dampers_Rear3rd_HsRbdDamping",
-    # Tyre pressures (same XML IDs as BMW)
+    # Tyre pressures + type (same XML IDs as BMW)
     "lf_pressure":              "CarSetup_TiresAero_LeftFront_StartingPressure",
     "rf_pressure":              "CarSetup_TiresAero_RightFront_StartingPressure",
     "lr_pressure":              "CarSetup_TiresAero_LeftRearTire_StartingPressure",
     "rr_pressure":              "CarSetup_TiresAero_RightRearTire_StartingPressure",
+    "tyre_type":                "CarSetup_TiresAero_TireType_TireType",
     # Brakes / fuel (same as BMW)
     "fuel_level":               "CarSetup_BrakesDriveUnit_Fuel_FuelLevel",
+    "fuel_low_warning":         "CarSetup_BrakesDriveUnit_Fuel_FuelLowWarning",
     "brake_bias":               "CarSetup_BrakesDriveUnit_BrakeSpec_BrakePressureBias",
+    "brake_bias_migration":     "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasMigration",
+    "brake_bias_target":        "CarSetup_BrakesDriveUnit_BrakeSpec_BrakeBiasTarget",
+    "pad_compound":             "CarSetup_BrakesDriveUnit_BrakeSpec_PadCompound",
+    "front_master_cyl":         "CarSetup_BrakesDriveUnit_BrakeSpec_FrontMasterCyl",
+    "rear_master_cyl":          "CarSetup_BrakesDriveUnit_BrakeSpec_RearMasterCyl",
     "tc_gain":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain",
     "tc_slip":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip",
     # Diff (same XML IDs as BMW — verify from garage screenshots)
@@ -401,6 +413,9 @@ _PORSCHE_PARAM_IDS: dict[str, str] = {
     "diff_coast_ramp":          "CarSetup_BrakesDriveUnit_DiffSpec_CoastRampAngle",
     "diff_drive_ramp":          "CarSetup_BrakesDriveUnit_DiffSpec_DriveRampAngle",
     "diff_clutch_plates":       "CarSetup_BrakesDriveUnit_DiffSpec_ClutchPlates",
+    # Gears / lighting (same as BMW)
+    "gear_stack":               "CarSetup_BrakesDriveUnit_GearRatios_GearStack",
+    "roof_light_color":         "CarSetup_BrakesDriveUnit_Lighting_RoofIdLightColor",
 }
 
 
