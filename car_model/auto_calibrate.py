@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -311,7 +312,6 @@ def _safe_track_slug(track: str) -> str:
     (including path separators, spaces, dots, and ``..`` sequences) is replaced
     with ``_``, so user-supplied track names cannot cause path traversal.
     """
-    import re
     slug = re.sub(r"[^a-z0-9_]", "_", track.lower())
     # Collapse consecutive underscores and strip leading/trailing ones
     slug = re.sub(r"_+", "_", slug).strip("_")
