@@ -226,6 +226,7 @@ class SpringLookupTable:
 class CarCalibrationModels:
     """All fitted calibration models for one car."""
     car: str
+    track: str = ""  # "" = pooled/all-tracks (legacy default)
     n_sessions: int = 0
     n_unique_setups: int = 0
     calibration_complete: bool = False
@@ -303,6 +304,11 @@ def _models_path(car: str) -> Path:
     return _data_dir(car) / "models.json"
 
 
+def _models_path_for_track(car: str, track: str) -> Path:
+    """Per-track model file: models_{track}.json."""
+    return _data_dir(car) / f"models_{track}.json"
+
+
 def load_calibration_points(car: str) -> list[CalibrationPoint]:
     p = _points_path(car)
     if not p.exists():
@@ -323,8 +329,24 @@ def save_calibration_points(car: str, points: list[CalibrationPoint]) -> None:
         json.dump([asdict(pt) for pt in points], f, indent=2)
 
 
-def load_calibrated_models(car: str) -> CarCalibrationModels | None:
-    """Load fitted models. Returns None if no calibration data exists."""
+def load_calibrated_models(car: str, track: str = "") -> CarCalibrationModels | None:
+    """Load fitted models.
+
+    When *track* is provided, try the per-track model file first
+    (``models_{track}.json``).  Fall back to the pooled model if the
+    per-track file doesn't exist or has insufficient data.
+
+    Returns None if no calibration data exists at all.
+    """
+    if track:
+        p_track = _models_path_for_track(car, track)
+        if p_track.exists():
+            with open(p_track, encoding="utf-8") as f:
+                raw = json.load(f)
+            m = _dict_to_models(raw)
+            if m.n_unique_setups >= _MIN_SESSIONS_FOR_FIT:
+                return m
+    # Pooled / fallback
     p = _models_path(car)
     if not p.exists():
         return None
@@ -337,8 +359,11 @@ def load_calibrated_models(car: str) -> CarCalibrationModels | None:
     return _dict_to_models(raw)
 
 
-def save_calibrated_models(car: str, models: CarCalibrationModels) -> None:
-    p = _models_path(car)
+def save_calibrated_models(car: str, models: CarCalibrationModels, track: str = "") -> None:
+    if track:
+        p = _models_path_for_track(car, track)
+    else:
+        p = _models_path(car)
     with open(p, "w", encoding="utf-8") as f:
         json.dump(_models_to_dict(models), f, indent=2)
 
@@ -3282,6 +3307,40 @@ Examples:
 
         save_calibrated_models(car, models)
         print(f"  [OK] Models saved to {_models_path(car)}")
+
+        # ── Per-track models ──
+        # Partition points by track and fit separate models per track.
+        # This prevents cross-track contamination (e.g. Laguna Seca sessions
+        # corrupting Algarve ride height models).
+        from car_model.registry import track_key as _track_key
+        track_groups: dict[str, list[CalibrationPoint]] = {}
+        for pt in new_points:
+            tk = _track_key(pt.track) if pt.track else ""
+            if tk:
+                track_groups.setdefault(tk, []).append(pt)
+
+        if len(track_groups) > 1:
+            print(f"\n  Fitting per-track models ({len(track_groups)} tracks)...")
+            for tk, track_pts in sorted(track_groups.items()):
+                tk_unique = set()
+                for pt in track_pts:
+                    tk_unique.add(_setup_key(pt))
+                if len(tk_unique) < _MIN_SESSIONS_FOR_FIT:
+                    print(f"    {tk}: {len(tk_unique)} unique setups (need {_MIN_SESSIONS_FOR_FIT}) — skipped")
+                    continue
+                tk_models = fit_models_from_points(car, track_pts)
+                tk_models.track = tk
+                save_calibrated_models(car, tk_models, track=tk)
+                _best_r2 = max(
+                    (m.r_squared for m in [tk_models.front_ride_height, tk_models.rear_ride_height] if m is not None),
+                    default=0.0,
+                )
+                print(f"    {tk}: {len(tk_unique)} setups, best R²={_best_r2:.3f} -> {_models_path_for_track(car, tk)}")
+        elif len(track_groups) == 1:
+            # Single track — pooled model IS the per-track model, save alias
+            tk = next(iter(track_groups))
+            save_calibrated_models(car, models, track=tk)
+            print(f"  [OK] Per-track model saved to {_models_path_for_track(car, tk)}")
     else:
         remaining = _MIN_SESSIONS_FOR_FIT - n_unique
         print(f"\n  ⏳ Need {remaining} more unique-setup sessions before fitting (have {n_unique}/{_MIN_SESSIONS_FOR_FIT})")

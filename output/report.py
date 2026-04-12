@@ -613,8 +613,12 @@ def print_full_setup_report(
                f"  Heave F:    {step2.front_heave_nmm:5.0f} N/mm  perch {step2.perch_offset_front_mm:+.0f}mm"))
         a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
                f"  Third R:    {step2.rear_third_nmm:5.0f} N/mm  perch {step2.perch_offset_rear_mm:+.0f}mm"))
-        a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
-               f"  Torsion:   {step3.front_torsion_od_mm:6.2f} mm OD  {_tb_turns:.3f} Turns"))
+        if _no_front_torsion:
+            a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
+                   f"  Roll spr:  {step3.front_roll_spring_nmm:5.0f} N/mm  {step3.front_natural_freq_hz:.2f}Hz"))
+        else:
+            a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
+                   f"  Torsion:   {step3.front_torsion_od_mm:6.2f} mm OD  {_tb_turns:.3f} Turns"))
         a(_row(f"  Front pushrod: {step1.front_pushrod_offset_mm:5.1f} mm",
                f"  Rear coil:  {step3.rear_spring_rate_nmm:5.0f} N/mm"))
         a(_row(f"  Rear pushrod:  {step1.rear_pushrod_offset_mm:5.1f} mm",
@@ -947,6 +951,11 @@ def print_full_setup_report(
         a(f"  F TB OD: {display_front_torsion:.0f} idx  {step3.front_natural_freq_hz:.2f}Hz  "
           f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
         a(f"  R TB OD: {display_rear_torsion:.0f} idx  {step3.rear_natural_freq_hz:.2f}Hz  "
+          f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
+    elif _no_front_torsion:
+        a(f"  Roll spr: {step3.front_roll_spring_nmm:.0f} N/mm  {step3.front_natural_freq_hz:.2f}Hz  "
+          f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
+        a(f"  Rear coil: {step3.rear_spring_rate_nmm:.0f} N/mm  {step3.rear_natural_freq_hz:.2f}Hz  "
           f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
     else:
         a(f"  Torsion: {step3.front_torsion_od_mm:.2f}mm OD  {step3.front_natural_freq_hz:.2f}Hz  "

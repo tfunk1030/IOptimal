@@ -46,8 +46,11 @@ Validated against BMW Sebring:
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
@@ -358,8 +361,17 @@ class CornerSpringSolver:
         # driver runs coil=180/ARB Stiff blade 10 — synthetic ratio
         # heuristic gave coil=105 which forced rear ARB to collapse to
         # blade 1 (LLTD missed target by 4.3pp).
+        _physics_rear_rate: float | None = None
         if current_rear_spring_nmm is not None and current_rear_spring_nmm > 0:
+            # Compute what physics alone would have given (for trace)
+            _physics_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
+            _physics_rear_rate = rear_third_nmm / _physics_ratio
             rear_target_rate = float(current_rear_spring_nmm)
+            logger.info(
+                "Rear spring anchored to driver-loaded %.0f N/mm "
+                "(physics target: %.0f N/mm)",
+                rear_target_rate, _physics_rear_rate,
+            )
             # Use the driver's empirical ratio for the FREQUENCY check that
             # follows (kept symmetric with the synthetic path).
             if current_rear_third_nmm and current_rear_third_nmm > 0:
@@ -389,7 +401,7 @@ class CornerSpringSolver:
 
         rear_freq = self.natural_freq(rear_rate, m_r_corner)
 
-        return self.solution_from_explicit_rates(
+        sol = self.solution_from_explicit_rates(
             front_heave_nmm=front_heave_nmm,
             rear_third_nmm=rear_third_nmm,
             front_torsion_od_mm=front_od,
@@ -398,6 +410,16 @@ class CornerSpringSolver:
             rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
             rear_torsion_od_mm=rear_od,
         )
+        # Annotate solution with anchor provenance so trace consumers see final values
+        if _physics_rear_rate is not None:
+            sol.parameter_search_status["rear_spring_rate_nmm"] = "anchored_to_driver"
+            if sol.parameter_search_evidence is None:
+                sol.parameter_search_evidence = {}
+            sol.parameter_search_evidence["rear_spring_rate_nmm"] = {
+                "driver_value": current_rear_spring_nmm,
+                "physics_value": round(_physics_rear_rate, 1),
+            }
+        return sol
 
     def solution_from_explicit_rates(
         self,
