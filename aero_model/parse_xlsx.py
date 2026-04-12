@@ -74,6 +74,12 @@ def _align_ld_to_balance(
     is missing leading columns that the balance block has, extrapolate them
     linearly from the first two available L/D columns.
     """
+    if len(rear_rh_ld) < 2 or ld.shape[1] < 2:
+        raise ValueError(
+            f"L/D block needs at least 2 rear-RH columns for extrapolation "
+            f"(got shape {ld.shape}, rear_rh_ld len={len(rear_rh_ld)})"
+        )
+
     ld_rh_to_idx = {rh: i for i, rh in enumerate(rear_rh_ld)}
     bal_rh = list(rear_rh_balance)
     if all(rh in ld_rh_to_idx for rh in bal_rh):
@@ -299,6 +305,15 @@ def _validate_parsed_data(
     ld = data["ld"]
     balance = data["balance"]
 
+    if np.all(np.isnan(ld)):
+        raise ValueError(
+            f"Aero map {car} wing {wing} ({filepath.name}): L/D grid is entirely NaN"
+        )
+    if np.all(np.isnan(balance)):
+        raise ValueError(
+            f"Aero map {car} wing {wing} ({filepath.name}): balance grid is entirely NaN"
+        )
+
     ld_min, ld_max = float(np.nanmin(ld)), float(np.nanmax(ld))
     if ld_min < 1.0 or ld_max > 6.0:
         raise ValueError(
@@ -378,6 +393,17 @@ def parse_all_cars() -> None:
             if shared_front_rh is None:
                 shared_front_rh = parsed["front_rh"]
                 shared_rear_rh = parsed["rear_rh"]
+            else:
+                if not np.array_equal(parsed["front_rh"], shared_front_rh):
+                    raise ValueError(
+                        f"{car_name} wing {wing}: front_rh axis {parsed['front_rh'].tolist()} "
+                        f"!= shared {shared_front_rh.tolist()} (from first file)"
+                    )
+                if not np.array_equal(parsed["rear_rh"], shared_rear_rh):
+                    raise ValueError(
+                        f"{car_name} wing {wing}: rear_rh axis {parsed['rear_rh'].tolist()} "
+                        f"!= shared {shared_rear_rh.tolist()} (from first file)"
+                    )
 
         arrays["front_rh"] = shared_front_rh
         arrays["rear_rh"] = shared_rear_rh

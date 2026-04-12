@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -86,15 +87,23 @@ class IBTHandler(FileSystemEventHandler):
         logger.info("IBT file stable (%s bytes): %s", p.stat().st_size, p.name)
         try:
             self._on_new_ibt(p)
+            self._retry_counts.pop(key, None)  # clear on success
         except Exception:
             retries = self._retry_counts.get(key, 0) + 1
             self._retry_counts[key] = retries
             if retries >= _MAX_RETRIES:
                 logger.error("IBT %s failed %d times — giving up", p.name, retries)
+                self._retry_counts.pop(key, None)  # clear when giving up
             else:
-                logger.exception("Error processing IBT %s (attempt %d/%d — will retry)",
-                                 p.name, retries, _MAX_RETRIES)
+                delay = 2.0 ** (retries - 1)  # exponential backoff: 1s, 2s, …
+                logger.exception(
+                    "Error processing IBT %s (attempt %d/%d — retrying in %.0fs)",
+                    p.name, retries, _MAX_RETRIES, delay,
+                )
                 self._seen.discard(key)
+                t = threading.Timer(delay, self._maybe_dispatch, args=(src_path,))
+                t.daemon = True
+                t.start()
 
     @staticmethod
     def _wait_until_stable(path: Path, timeout: float = 300.0) -> bool:

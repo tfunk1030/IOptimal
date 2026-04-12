@@ -1606,7 +1606,8 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
     # ─── 15b. Rear m_eff from telemetry ───
     _rear_uses_index = _heave_model is not None and _heave_model.rear_setting_index_range is not None
-    # Fix: use rear-specific validation flag (was copy-paste of _front_index_unvalidated)
+    # heave_index_unvalidated is a shared (front+rear) validation flag: when True,
+    # the index→N/mm mapping has not been verified and index-space settings must be skipped.
     _rear_index_unvalidated = _heave_model is not None and getattr(_heave_model, "heave_index_unvalidated", False)
     m_effs_rear: list[tuple[float, float]] = []  # (setting, m_eff) tuples
     for pt in unique:
