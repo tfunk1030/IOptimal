@@ -1,6 +1,6 @@
 {
   "car": "porsche",
-  "n_sessions": 71,
+  "n_sessions": 72,
   "n_unique_setups": 38,
   "calibration_complete": true,
   "front_ride_height": {
@@ -521,7 +521,7 @@
   "aero_n_sessions": 26,
   "status": {
     "aero_compression": "calibrated from IBT AeroCalculator (26 sessions, front=16.2mm rear=22.1mm)",
-    "arb_stiffness": "INCONCLUSIVE: roll-gradient noise floor (5449 N\u00b7m/deg) exceeds max predicted ARB delta (210 N\u00b7m/deg) across 5 configs. Signal is below measurement noise \u2014 cannot validate or invalidate cars.py manual values. Trusting hand-calibration.",
+    "arb_stiffness": "INCONCLUSIVE: roll-gradient noise floor (5736 N\u00b7m/deg) exceeds max predicted ARB delta (210 N\u00b7m/deg) across 5 configs. Signal is below measurement noise \u2014 cannot validate or invalidate cars.py manual values. Trusting hand-calibration.",
     "arb_calibrated": null,
     "roll_gradient_mean": 0.2588666666666667,
     "roll_gradient_n_sessions": 15,
