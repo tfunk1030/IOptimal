@@ -182,19 +182,37 @@ class CornerSpringSolution:
 
     def summary(self) -> str:
         """Human-readable summary of the solution."""
+        # Detect roll spring car: OD=0 and roll spring rate set
+        _is_roll_spring = (self.front_torsion_od_mm == 0.0 and self.front_roll_spring_nmm > 0)
         lines = [
             "===========================================================",
             "  STEP 3: CORNER SPRING SOLUTION",
             "===========================================================",
             "",
-            "  FRONT TORSION BAR",
-            f"    Torsion bar OD:      {self.front_torsion_od_mm:6.2f} mm",
-            f"    Wheel rate:          {self.front_wheel_rate_nmm:6.1f} N/mm",
-            f"    Natural frequency:   {self.front_natural_freq_hz:6.2f} Hz",
-            f"    Heave/corner ratio:  {self.front_heave_corner_ratio:6.1f}x "
-            f"(guideline: 1.5-3.5x)",
-            f"    Freq isolation:      {self.front_freq_isolation_ratio:6.1f}x "
-            f"(target: >2.5x)",
+        ]
+        if _is_roll_spring:
+            lines += [
+                "  FRONT ROLL SPRING",
+                f"    Roll spring rate:    {self.front_roll_spring_nmm:6.0f} N/mm",
+                f"    Wheel rate:          {self.front_wheel_rate_nmm:6.1f} N/mm",
+                f"    Natural frequency:   {self.front_natural_freq_hz:6.2f} Hz",
+                f"    Heave/corner ratio:  {self.front_heave_corner_ratio:6.1f}x "
+                f"(guideline: 1.5-3.5x)",
+                f"    Freq isolation:      {self.front_freq_isolation_ratio:6.1f}x "
+                f"(target: >2.5x)",
+            ]
+        else:
+            lines += [
+                "  FRONT TORSION BAR",
+                f"    Torsion bar OD:      {self.front_torsion_od_mm:6.2f} mm",
+                f"    Wheel rate:          {self.front_wheel_rate_nmm:6.1f} N/mm",
+                f"    Natural frequency:   {self.front_natural_freq_hz:6.2f} Hz",
+                f"    Heave/corner ratio:  {self.front_heave_corner_ratio:6.1f}x "
+                f"(guideline: 1.5-3.5x)",
+                f"    Freq isolation:      {self.front_freq_isolation_ratio:6.1f}x "
+                f"(target: >2.5x)",
+            ]
+        lines += [
             "",
             f"  REAR {'TORSION BAR' if self.rear_torsion_od_mm else 'COIL SPRING'}",
             *(
@@ -268,7 +286,7 @@ class CornerSpringSolver:
         self,
         front_heave_nmm: float,
         rear_third_nmm: float,
-        fuel_load_l: float = 89.0,
+        fuel_load_l: float | None = None,
         current_rear_third_nmm: float | None = None,
         current_rear_spring_nmm: float | None = None,
     ) -> CornerSpringSolution:
@@ -277,7 +295,8 @@ class CornerSpringSolver:
         Args:
             front_heave_nmm: Front heave spring rate from Step 2
             rear_third_nmm: Rear third spring rate from Step 2
-            fuel_load_l: Fuel load (affects corner mass)
+            fuel_load_l: Fuel load (affects corner mass). If None, uses
+                car.fuel_capacity_l (all LMDh GTP = 88.96L).
             current_rear_third_nmm: Driver's currently-loaded rear third
                 (anchor for the third/coil ratio calibration)
             current_rear_spring_nmm: Driver's currently-loaded rear coil
@@ -286,6 +305,8 @@ class CornerSpringSolver:
         Returns:
             CornerSpringSolution with torsion bar OD and rear rate
         """
+        if fuel_load_l is None:
+            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
         csm = self.car.corner_spring
         total_mass = self.car.total_mass(fuel_load_l)
         m_f_corner = total_mass * self.car.weight_dist_front / 2
@@ -331,6 +352,17 @@ class CornerSpringSolver:
             # Porsche: front corner stiffness comes from adjustable roll spring (100-320 N/mm)
             # Snap computed rate to the roll spring garage range and step
             front_rate = csm.snap_front_roll_spring(front_rate)
+
+            # ── LLTD-aware floor for roll-spring cars ──
+            # Step 3 picks the softest legal roll spring for ride quality, but
+            # Step 4 (ARBs) may not have enough authority to reach the LLTD
+            # target if the front roll stiffness is too low.  Compute the
+            # approximate achievable LLTD at maximum ARB stiffness and bump
+            # the roll spring rate if the gap exceeds 5 pp.
+            front_rate = self._apply_lltd_floor(
+                front_rate, rear_third_nmm, front_heave_nmm, fuel_load_l,
+            )
+
             # Update the car model so downstream solvers (ARB, geometry) use the optimized value
             csm.front_roll_spring_rate_nmm = front_rate
             front_od = 0.0
@@ -363,15 +395,24 @@ class CornerSpringSolver:
         # blade 1 (LLTD missed target by 4.3pp).
         _physics_rear_rate: float | None = None
         if current_rear_spring_nmm is not None and current_rear_spring_nmm > 0:
-            # Compute what physics alone would have given (for trace)
+            # Compute what physics alone would give
             _physics_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
             _physics_rear_rate = rear_third_nmm / _physics_ratio
-            rear_target_rate = float(current_rear_spring_nmm)
-            logger.info(
-                "Rear spring anchored to driver-loaded %.0f N/mm "
-                "(physics target: %.0f N/mm)",
-                rear_target_rate, _physics_rear_rate,
-            )
+            # Soft preference: use driver's value only if within 20% of physics
+            if abs(float(current_rear_spring_nmm) - _physics_rear_rate) / _physics_rear_rate <= 0.20:
+                rear_target_rate = float(current_rear_spring_nmm)
+                logger.info(
+                    "Rear spring anchored to driver-loaded %.0f N/mm "
+                    "(physics target: %.0f N/mm, within 20%%)",
+                    rear_target_rate, _physics_rear_rate,
+                )
+            else:
+                rear_target_rate = _physics_rear_rate
+                logger.info(
+                    "Rear spring using physics target %.0f N/mm "
+                    "(driver-loaded: %.0f N/mm, differs by >20%%)",
+                    rear_target_rate, float(current_rear_spring_nmm),
+                )
             # Use the driver's empirical ratio for the FREQUENCY check that
             # follows (kept symmetric with the synthetic path).
             if current_rear_third_nmm and current_rear_third_nmm > 0:
@@ -409,6 +450,7 @@ class CornerSpringSolver:
             fuel_load_l=fuel_load_l,
             rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
             rear_torsion_od_mm=rear_od,
+            front_roll_spring_nmm=front_rate if (csm.front_is_roll_spring or csm.front_torsion_c == 0.0) else None,
         )
         # Annotate solution with anchor provenance so trace consumers see final values
         if _physics_rear_rate is not None:
@@ -427,16 +469,34 @@ class CornerSpringSolver:
         rear_third_nmm: float,
         front_torsion_od_mm: float,
         rear_spring_rate_nmm: float,
-        fuel_load_l: float = 89.0,
+        fuel_load_l: float | None = None,
         rear_spring_perch_mm: float | None = None,
         rear_torsion_od_mm: float | None = None,
         front_heave_perch_mm: float | None = None,
         rear_third_perch_mm: float | None = None,
+        front_roll_spring_nmm: float | None = None,
     ) -> CornerSpringSolution:
-        """Build a corner-spring solution from explicit garage selections."""
+        """Build a corner-spring solution from explicit garage selections.
+
+        Args:
+            front_roll_spring_nmm: For roll-spring cars (Porsche), the explicit
+                front roll spring rate (N/mm). When provided, overrides the
+                torsion bar path entirely. Ignored for torsion bar cars.
+        """
+        if fuel_load_l is None:
+            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
         csm = self.car.corner_spring
-        # Snap torsion OD to discrete garage option
-        front_torsion_od_mm = csm.snap_torsion_od(front_torsion_od_mm)
+        # Roll spring cars: skip torsion bar entirely
+        if csm.front_is_roll_spring or csm.front_torsion_c == 0.0:
+            if front_roll_spring_nmm is not None and front_roll_spring_nmm > 0:
+                front_rate = csm.snap_front_roll_spring(front_roll_spring_nmm)
+            else:
+                front_rate = csm.front_roll_spring_rate_nmm
+            front_torsion_od_mm = 0.0
+        else:
+            # Torsion bar car: snap OD to discrete garage option
+            front_torsion_od_mm = csm.snap_torsion_od(front_torsion_od_mm)
+            front_rate = csm.torsion_bar_rate(front_torsion_od_mm)
         # Snap rear spring/torsion to garage step
         if csm.rear_is_torsion_bar and rear_torsion_od_mm is not None:
             rear_torsion_od_mm = csm.snap_rear_torsion_od(rear_torsion_od_mm)
@@ -448,7 +508,6 @@ class CornerSpringSolver:
         m_r_corner = total_mass * (1 - self.car.weight_dist_front) / 2
 
         bump_freq = self.car.rh_variance.dominant_bump_freq_hz
-        front_rate = csm.torsion_bar_rate(front_torsion_od_mm)
         front_freq = self.natural_freq(front_rate, m_f_corner)
         rear_rate = rear_spring_rate_nmm
         rear_freq = self.natural_freq(rear_rate, m_r_corner)
@@ -538,7 +597,7 @@ class CornerSpringSolver:
         self,
         front_heave_nmm: float,
         rear_third_nmm: float,
-        fuel_load_l: float = 89.0,
+        fuel_load_l: float | None = None,
         current_rear_third_nmm: float | None = None,
         current_rear_spring_nmm: float | None = None,
         max_candidates: int = 20,
@@ -565,6 +624,8 @@ class CornerSpringSolver:
             List of up to *max_candidates* CornerSpringSolution objects, scored
             best-first.
         """
+        if fuel_load_l is None:
+            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
         csm = self.car.corner_spring
 
         # Always include the physics-targeted solve as the first candidate
@@ -577,9 +638,10 @@ class CornerSpringSolver:
         )
 
         # Build list of front options (torsion OD or roll spring)
-        if csm.front_torsion_c > 0 and csm.front_torsion_od_options:
+        use_front_roll_spring = (csm.front_is_roll_spring or csm.front_torsion_c == 0.0)
+        if not use_front_roll_spring and csm.front_torsion_od_options:
             front_ods = list(csm.front_torsion_od_options)
-        elif csm.front_roll_spring_range_nmm[1] > 0:
+        elif use_front_roll_spring and csm.front_roll_spring_range_nmm[1] > 0:
             # Porsche roll spring — sample in 10 N/mm steps
             lo, hi = csm.front_roll_spring_range_nmm
             step = 10.0
@@ -621,10 +683,11 @@ class CornerSpringSolver:
                 sol = self.solution_from_explicit_rates(
                     front_heave_nmm=front_heave_nmm,
                     rear_third_nmm=rear_third_nmm,
-                    front_torsion_od_mm=f_od,
+                    front_torsion_od_mm=0.0 if use_front_roll_spring else f_od,
                     rear_spring_rate_nmm=rear_rate,
                     fuel_load_l=fuel_load_l,
                     rear_torsion_od_mm=rear_torsion_od,
+                    front_roll_spring_nmm=f_od if use_front_roll_spring else None,
                 )
                 key = (sol.front_torsion_od_mm, sol.rear_spring_rate_nmm)
                 if key in seen:
@@ -660,6 +723,108 @@ class CornerSpringSolver:
                 results.append(sol)
 
         return results
+
+    def _apply_lltd_floor(
+        self,
+        front_rate: float,
+        rear_third_nmm: float,
+        front_heave_nmm: float,
+        fuel_load_l: float,
+    ) -> float:
+        """Bump front roll spring rate if needed to make LLTD target achievable.
+
+        Only applies to roll-spring cars (Porsche).  Computes the approximate
+        LLTD that Step 4 could achieve with the proposed front rate at maximum
+        ARB stiffness.  If that LLTD is more than 5 pp below the car's target,
+        the front rate is raised until the gap closes (or the garage ceiling is
+        hit).
+
+        Returns the (possibly increased) front roll spring rate, snapped to
+        garage step.
+        """
+        csm = self.car.corner_spring
+        arb = self.car.arb
+
+        # Determine the LLTD target (same logic as arb_solver.py)
+        if self.car.measured_lltd_target is not None:
+            lltd_target = self.car.measured_lltd_target
+        else:
+            tyre_sens = self.car.tyre_load_sensitivity
+            pct_hs = self.track.pct_above_200kph
+            hs_correction = 0.01 * pct_hs
+            lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
+            lltd_target = self.car.weight_dist_front + lltd_physics_offset
+
+        # Rear corner wheel rate (raw spring → wheel rate via MR^2)
+        # Use the rear spring from the third/corner ratio targeting
+        # (at this point in solve(), rear hasn't been computed yet — use
+        #  an approximate rear rate from the ratio heuristic).
+        rear_sv_p99 = (self.track.shock_vel_p99_rear_clean_mps
+                       if self.track.shock_vel_p99_rear_clean_mps > 0
+                       else self.track.shock_vel_p99_rear_mps)
+        rear_target_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
+        approx_rear_rate = rear_third_nmm / max(rear_target_ratio, 0.5)
+        approx_rear_rate = max(approx_rear_rate, csm.rear_spring_range_nmm[0])
+        approx_rear_rate = min(approx_rear_rate, csm.rear_spring_range_nmm[1])
+        rear_wheel_rate = approx_rear_rate * csm.rear_motion_ratio ** 2
+
+        # Rear spring roll stiffness: K = 2 * k_wheel(N/m) * (t/2)^2 * (pi/180)
+        t_half_rear_m = (arb.track_width_rear_mm / 2) / 1000.0
+        k_roll_rear_springs = 2.0 * (rear_wheel_rate * 1000.0) * (t_half_rear_m ** 2) * (math.pi / 180)
+
+        # Maximum rear ARB stiffness (stiffest size, highest blade)
+        max_rear_arb_k = 0.0
+        for i, label in enumerate(arb.rear_size_labels):
+            if label.lower() == "disconnected":
+                continue
+            k = arb.rear_stiffness_nmm_deg[i] * arb.blade_factor(arb.rear_blade_count, arb.rear_blade_count)
+            max_rear_arb_k = max(max_rear_arb_k, k)
+
+        k_roll_rear_total = k_roll_rear_springs + max_rear_arb_k
+
+        # Front ARB stiffness at baseline (locked — not the live variable)
+        k_farb = arb.front_roll_stiffness(arb.front_baseline_size, arb.front_baseline_blade)
+
+        # Roll spring roll stiffness: K = k(N/m) * IR^2 * (t/2)^2 * (pi/180)
+        ir = csm.front_roll_spring_installation_ratio
+        t_half_front_m = (arb.track_width_front_mm / 2) / 1000.0
+
+        def _front_roll_k(rate_nmm: float) -> float:
+            return (rate_nmm * 1000.0) * (ir ** 2) * (t_half_front_m ** 2) * (math.pi / 180)
+
+        k_roll_front = _front_roll_k(front_rate) + k_farb
+        k_total = k_roll_front + k_roll_rear_total
+        if k_total > 0:
+            achievable_lltd = k_roll_front / k_total
+        else:
+            achievable_lltd = 0.5
+
+        lltd_gap = lltd_target - achievable_lltd
+        if lltd_gap <= 0.05:
+            # Within 5 pp — no floor needed
+            return front_rate
+
+        # Need to bump front roll spring to close the LLTD gap.
+        # From LLTD = K_f / (K_f + K_r), solving for K_f:
+        #   K_f = LLTD_target * K_r / (1 - LLTD_target)
+        # Then k_roll_spring = (K_f_needed - K_farb) and rate = k / (IR^2 * (t/2)^2 * pi/180)
+        k_front_needed = lltd_target * k_roll_rear_total / max(1.0 - lltd_target, 0.01)
+        k_spring_needed = k_front_needed - k_farb
+        divisor = (ir ** 2) * (t_half_front_m ** 2) * (math.pi / 180)
+        if divisor > 0 and k_spring_needed > 0:
+            rate_needed_nmm = k_spring_needed / divisor / 1000.0
+        else:
+            return front_rate
+
+        new_rate = csm.snap_front_roll_spring(rate_needed_nmm)
+        if new_rate > front_rate:
+            logger.info(
+                "LLTD floor: bumping front roll spring %.0f -> %.0f N/mm "
+                "(achievable LLTD %.1f%% -> target %.1f%%)",
+                front_rate, new_rate, achievable_lltd * 100, lltd_target * 100,
+            )
+            return new_rate
+        return front_rate
 
     def _surface_severity_to_freq_ratio(self, shock_vel_p99_mps: float) -> float:
         """Map track surface severity to frequency isolation ratio.
@@ -753,22 +918,31 @@ class CornerSpringSolver:
             detail=f"Total heave {total_front:.0f} < heave spring {front_heave_nmm:.0f}",
         ))
 
-        # 6. Front torsion bar OD in valid range and matches discrete option
-        od = csm.torsion_bar_od_for_rate(front_rate)
-        od_lo, od_hi = csm.front_torsion_od_range_mm
-        if csm.front_torsion_od_options:
-            snapped = csm.snap_torsion_od(od)
+        # 6. Front torsion bar OD / roll spring in valid range
+        if csm.front_is_roll_spring or csm.front_torsion_c == 0.0:
+            # Roll spring car — check roll spring rate is in garage range
+            rs_lo, rs_hi = csm.front_roll_spring_range_nmm
             checks.append(CornerSpringCheck(
-                name=f"Torsion bar OD valid ({snapped:.2f}mm)",
-                satisfied=snapped in csm.front_torsion_od_options,
-                detail=f"OD {od:.2f}mm not in discrete garage options",
+                name=f"Roll spring rate in range ({front_rate:.0f} N/mm)",
+                satisfied=rs_lo <= front_rate <= rs_hi,
+                detail=f"Rate {front_rate:.0f} outside range {rs_lo}-{rs_hi} N/mm",
             ))
         else:
-            checks.append(CornerSpringCheck(
-                name=f"Torsion bar OD in range ({od:.1f}mm)",
-                satisfied=od_lo <= od <= od_hi,
-                detail=f"OD {od:.1f}mm outside range {od_lo}-{od_hi}mm",
-            ))
+            od = csm.torsion_bar_od_for_rate(front_rate)
+            od_lo, od_hi = csm.front_torsion_od_range_mm
+            if csm.front_torsion_od_options:
+                snapped = csm.snap_torsion_od(od)
+                checks.append(CornerSpringCheck(
+                    name=f"Torsion bar OD valid ({snapped:.2f}mm)",
+                    satisfied=snapped in csm.front_torsion_od_options,
+                    detail=f"OD {od:.2f}mm not in discrete garage options",
+                ))
+            else:
+                checks.append(CornerSpringCheck(
+                    name=f"Torsion bar OD in range ({od:.1f}mm)",
+                    satisfied=od_lo <= od <= od_hi,
+                    detail=f"OD {od:.1f}mm outside range {od_lo}-{od_hi}mm",
+                ))
 
         # 7. Rear spring rate in valid range
         r_lo, r_hi = csm.rear_spring_range_nmm

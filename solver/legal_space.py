@@ -425,7 +425,7 @@ class LegalSpace:
         self,
         base_params: dict[str, float],
         n: int = 500,
-        perturbation: float = 0.15,
+        perturbation: float = 0.40,
         seed: int | None = None,
     ) -> list[LegalCandidate]:
         """Sample n candidates around a seed (base solver result).
@@ -436,7 +436,7 @@ class LegalSpace:
         Args:
             base_params: Seed parameter set (e.g., from physics solver)
             n: Number of candidates to generate
-            perturbation: Fraction of range to perturb (0.15 = ±15%)
+            perturbation: Fraction of range to perturb (0.40 = ±40%)
             seed: Random seed for reproducibility
         """
         rng = random.Random(seed)
@@ -467,7 +467,7 @@ class LegalSpace:
         self,
         base_params: dict[str, float],
         n: int = 200,
-        perturbation: float = 0.25,
+        perturbation: float = 0.45,
         seed: int | None = None,
     ) -> list[LegalCandidate]:
         """Sample n candidates using Latin Hypercube Sampling around a seed.
@@ -481,7 +481,7 @@ class LegalSpace:
         Args:
             base_params: Seed parameter set (e.g., from physics solver)
             n: Number of candidates to generate
-            perturbation: Fraction of range to explore around seed (0.25 = ±25%)
+            perturbation: Fraction of range to explore around seed (0.45 = ±45%)
             seed: Random seed for reproducibility
         """
         dims = self.tier_a()

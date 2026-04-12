@@ -436,9 +436,9 @@ _PORSCHE_SPECS: dict[str, CarFieldSpec] = {
     "front_roll_perch_mm":      _S("Chassis.Front.RollPerchOffset",                  "CarSetup_Chassis_Front_RollPerchOffset",            range_min=0.0, range_max=50.0, resolution=0.5),
     # --- ARBs ---
     "front_arb_setting":        _S("Chassis.Front.ArbSetting",                       "CarSetup_Chassis_Front_ArbSetting",                 options=["Disconnected", "Connected"]),
-    "front_arb_blade":          _S("Chassis.Front.ArbAdj",                           "CarSetup_Chassis_Front_ArbAdj",                     range_min=1, range_max=5, parse_fn="int"),
+    "front_arb_blade":          _S("Chassis.Front.ArbAdj",                           "CarSetup_Chassis_Front_ArbAdj",                     range_min=1, range_max=13, parse_fn="int"),
     "rear_arb_size":            _S("Chassis.Rear.ArbSize",                           "CarSetup_Chassis_Rear_ArbSize",                     options=["Disconnected", "Soft", "Medium", "Stiff"]),
-    "rear_arb_blade":           _S("Chassis.Rear.ArbAdj",                            "CarSetup_Chassis_Rear_ArbAdj",                      range_min=1, range_max=5, parse_fn="int"),
+    "rear_arb_blade":           _S("Chassis.Rear.ArbAdj",                            "CarSetup_Chassis_Rear_ArbAdj",                      range_min=1, range_max=16, parse_fn="int"),
     # --- Geometry ---
     "front_camber_deg":         _S("Chassis.LeftFront.Camber",                       "CarSetup_Chassis_LeftFront_Camber"),
     "rear_camber_deg":          _S("Chassis.LeftRear.Camber",                        "CarSetup_Chassis_LeftRear_Camber"),

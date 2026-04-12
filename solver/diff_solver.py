@@ -211,10 +211,10 @@ class DiffSolver:
         """
         preload_nm_raw, preload_reasoning = self._compute_preload(driver, measured, track)
         preload_nm = round(preload_nm_raw / 5) * 5  # iRacing garage: 5 Nm increments
-        # Driver preload anchor: if loaded preload is within 10 Nm of computed
+        # Driver preload anchor: if loaded preload is within 8 Nm of computed
         # AND no strong oversteer/understeer signal demands change, prefer it.
         if (current_preload_nm is not None and current_preload_nm > 0
-                and abs(float(current_preload_nm) - preload_nm) <= 15):
+                and abs(float(current_preload_nm) - preload_nm) <= 8):
             preload_nm = round(float(current_preload_nm) / 5) * 5
             preload_reasoning += f"; anchored to driver-loaded preload={preload_nm:.0f} Nm"
         coast_ramp, drive_ramp, ramp_reasoning = self._compute_ramps(driver)
@@ -224,20 +224,22 @@ class DiffSolver:
         # at trail-brake-depth=0.37 — heuristic gives 45).
         if (current_coast_ramp_deg is not None
                 and current_coast_ramp_deg in COAST_RAMP_OPTIONS
-                and abs(int(current_coast_ramp_deg) - coast_ramp) <= 5):
+                and abs(int(current_coast_ramp_deg) - coast_ramp) <= 2):
             coast_ramp = int(current_coast_ramp_deg)
             ramp_reasoning += f"; coast anchored to driver={coast_ramp} deg"
         if (current_drive_ramp_deg is not None
                 and current_drive_ramp_deg in DRIVE_RAMP_OPTIONS
-                and abs(int(current_drive_ramp_deg) - drive_ramp) <= 5):
+                and abs(int(current_drive_ramp_deg) - drive_ramp) <= 2):
             drive_ramp = int(current_drive_ramp_deg)
             ramp_reasoning += f"; drive anchored to driver={drive_ramp} deg"
 
-        clutch_plates = current_clutch_plates or BMW_DEFAULT_CLUTCH_PLATES
+        default_plates = getattr(self.car, 'default_clutch_plates', BMW_DEFAULT_CLUTCH_PLATES)
+        clutch_plates = current_clutch_plates or default_plates
         torque_input = self.max_torque_nm * 0.7  # typical cornering torque
 
-        lock_pct_coast = self._lock_pct(preload_nm, clutch_plates, coast_ramp, torque_input)
-        lock_pct_drive = self._lock_pct(preload_nm, clutch_plates, drive_ramp, torque_input)
+        clutch_torque = getattr(self.car, 'clutch_torque_per_plate', CLUTCH_TORQUE_PER_PLATE)
+        lock_pct_coast = self._lock_pct(preload_nm, clutch_plates, coast_ramp, torque_input, clutch_torque)
+        lock_pct_drive = self._lock_pct(preload_nm, clutch_plates, drive_ramp, torque_input, clutch_torque)
 
         # Exit understeer index: how much the diff tends to push on exit.
         # Higher drive lock -> more understeer tendency on exit.
@@ -421,15 +423,16 @@ class DiffSolver:
         n_plates: int,
         ramp_deg: int,
         torque_input: float,
+        clutch_torque_per_plate: float = CLUTCH_TORQUE_PER_PLATE,
     ) -> float:
         """Compute differential lock percentage.
 
         Formula:
-            lock_torque = preload + (n_plates × CLUTCH_TORQUE_PER_PLATE) / tan(ramp_angle)
-            lock_pct = min(100, lock_torque / torque_input × 100)
+            lock_torque = preload + (n_plates x clutch_torque_per_plate) / tan(ramp_angle)
+            lock_pct = min(100, lock_torque / torque_input x 100)
 
-        Note: lower ramp_deg → larger 1/tan() → more locking.
+        Note: lower ramp_deg -> larger 1/tan() -> more locking.
         """
         ramp_rad = math.radians(ramp_deg)
-        lock_torque = preload + (n_plates * CLUTCH_TORQUE_PER_PLATE) / math.tan(ramp_rad)
+        lock_torque = preload + (n_plates * clutch_torque_per_plate) / math.tan(ramp_rad)
         return min(100.0, (lock_torque / max(torque_input, 1.0)) * 100.0)

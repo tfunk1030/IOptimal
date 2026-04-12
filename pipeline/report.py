@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from car_model.garage import GarageSetupState
 from car_model.setup_registry import public_output_value
-from analyzer.telemetry_truth import get_signal, summarize_signal_quality
+from analyzer.telemetry_truth import build_signal_map, get_signal, summarize_signal_quality
 from solver.predictor import predict_candidate_telemetry
 
 if TYPE_CHECKING:
@@ -301,9 +301,9 @@ def generate_report(
     # ── CONFIDENCE & EVIDENCE ────────────────────────────────────────
     _car_slug = getattr(car, "canonical_name", "bmw")
     _tier_info = _load_support_tier(_car_slug, track.track_name)
-    _sig_quality = summarize_signal_quality(measured)
-    _direct_count = _sig_quality.get("direct", 0) if isinstance(_sig_quality, dict) else 0
-    _total_count = sum(_sig_quality.values()) if isinstance(_sig_quality, dict) else 0
+    _signal_map = build_signal_map(measured) if measured else {}
+    _direct_count = sum(1 for s in _signal_map.values() if s is not None and getattr(s, "quality", None) == "trusted")
+    _total_count = len(_signal_map)
     if _tier_info is not None:
         _tier = _tier_info.get("confidence_tier", "unknown")
         _samples = _tier_info.get("samples", 0)

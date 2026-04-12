@@ -541,7 +541,11 @@ def detect_delta(obs_before: Observation, obs_after: Observation) -> SessionDelt
     wind_changed = abs(wind_before - wind_after) > 3.0
 
     # ── 8. Confidence and summary ─────────────────────────────────────
-    if delta.controlled_experiment and not delta.driver_style_changed and not high_in_car_tuning:
+    if delta.num_setup_changes == 0:
+        # No setup changes — this is a baseline comparison (e.g., lap-to-lap
+        # within the same IBT), not a meaningful experiment.
+        delta.confidence_level = "trivial"
+    elif delta.controlled_experiment and not delta.driver_style_changed and not high_in_car_tuning:
         delta.confidence_level = "high"
     elif delta.num_setup_changes <= 3 and not delta.driver_style_changed and not high_in_car_tuning:
         delta.confidence_level = "medium"

@@ -490,6 +490,39 @@ def _torsion_bar_sensitivity(
     )
 
 
+def _front_roll_spring_sensitivity(
+    step3: "CornerSpringSolution",
+    step4: "ARBSolution",
+    track: "TrackProfile",
+) -> ParameterSensitivity:
+    """Front roll spring (weight 0.55): 10 N/mm -> LLTD -> balance -> lap time."""
+    # Each N/mm front roll spring rate ≈ small LLTD increase
+    lltd_per_nmm = TORSION_LLTD_PER_NMM
+    lltd_shift_per_10 = 10.0 * lltd_per_nmm
+
+    dt_ms_per_10 = _lltd_to_laptime_delta_ms(lltd_shift_per_10, track)
+    dt_ms_per_nmm = dt_ms_per_10 / 10.0
+
+    return ParameterSensitivity(
+        parameter="front_roll_spring_nmm",
+        current_value=step3.front_roll_spring_nmm,
+        units="N/mm",
+        delta_per_unit_ms=round(dt_ms_per_nmm, 1),
+        confidence="medium",
+        mechanism=(
+            f"10 N/mm roll spring -> {lltd_shift_per_10*100:.2f}% LLTD -> "
+            f"{abs(dt_ms_per_10):.0f}ms/lap per 10 N/mm step"
+        ),
+        justification=(
+            f"Front roll spring {step3.front_roll_spring_nmm:.0f} N/mm sets front roll "
+            f"stiffness to target LLTD. Front wheel rate = {step3.front_wheel_rate_nmm:.1f} N/mm."
+        ),
+        telemetry_evidence=f"front wheel rate = {step3.front_wheel_rate_nmm:.1f} N/mm",
+        consequence_plus="+10 N/mm: stiffer front -> more front roll stiffness -> understeer shift",
+        consequence_minus="-10 N/mm: softer front -> more compliance -> oversteer shift",
+    )
+
+
 def _brake_bias_sensitivity(
     supporting_bias_pct: float,
     track: "TrackProfile",
@@ -1350,9 +1383,14 @@ def compute_laptime_sensitivity(
         # ── Springs ──
         _front_heave_sensitivity(step2, track, measured),
         _rear_third_sensitivity(step2, track, measured),
-        _torsion_bar_sensitivity(step3, step4, track),
+        # Front corner spring: torsion bar OR roll spring depending on car architecture
+        *(
+            [_front_roll_spring_sensitivity(step3, step4, track)]
+            if (step3.front_torsion_od_mm == 0.0 and step3.front_roll_spring_nmm > 0)
+            else [_torsion_bar_sensitivity(step3, step4, track),
+                  _torsion_turns_sensitivity(step3, track)]
+        ),
         _rear_spring_sensitivity(step3, track),
-        _torsion_turns_sensitivity(step3, track),
         # ── Perch offsets (dependent variables) ──
         _heave_perch_sensitivity(step2, track),
         _rear_third_perch_sensitivity(step2, track),

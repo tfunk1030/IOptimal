@@ -257,7 +257,7 @@ class CandidateSearchTests(unittest.TestCase):
             self.base_result,
             {
                 "front_heave_spring_nmm": self.base_result.step2.front_heave_nmm + 20.0,
-                "rear_arb_blade": self.base_result.step4.rear_arb_blade_start + 1,
+                "rear_arb_blade": max(1, self.base_result.step4.rear_arb_blade_start - 1),
                 "front_ls_comp": self.base_result.step6.lf.ls_comp + 1,
                 "rear_hs_comp": self.base_result.step6.lr.hs_comp - 1,
                 "diff_ramp_option_idx": 2,
@@ -267,8 +267,9 @@ class CandidateSearchTests(unittest.TestCase):
         )
 
         self.assertEqual(overrides.step2["front_heave_nmm"], self.base_result.step2.front_heave_nmm + 20.0)
-        self.assertEqual(overrides.step4["rear_arb_blade_start"], self.base_result.step4.rear_arb_blade_start + 1)
-        self.assertEqual(overrides.step4["rarb_blade_slow_corner"], self.base_result.step4.rear_arb_blade_start + 1)
+        expected_blade = max(1, self.base_result.step4.rear_arb_blade_start - 1)
+        self.assertEqual(overrides.step4["rear_arb_blade_start"], expected_blade)
+        self.assertEqual(overrides.step4["rarb_blade_slow_corner"], expected_blade)
         self.assertEqual(overrides.step6["lf"]["ls_comp"], self.base_result.step6.lf.ls_comp + 1)
         self.assertEqual(overrides.step6["rf"]["ls_comp"], self.base_result.step6.lf.ls_comp + 1)
         self.assertEqual(overrides.step6["lr"]["hs_comp"], self.base_result.step6.lr.hs_comp - 1)

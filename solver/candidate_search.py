@@ -643,8 +643,8 @@ def _apply_family_state_adjustments(
         _curr_rthird = float(getattr(_curr_setup, "rear_third_nmm", 0.0) or 0.0) if _curr_setup else 0.0
         _base_fheave = float(targets["step2"].get("front_heave_nmm", 0.0) or 0.0)
         _base_rthird = float(targets["step2"].get("rear_third_nmm", 0.0) or 0.0)
-        _fheave_anchored = _curr_fheave > 0 and abs(_base_fheave - _curr_fheave) <= 10.0
-        _rthird_anchored = _curr_rthird > 0 and abs(_base_rthird - _curr_rthird) <= 10.0
+        _fheave_anchored = _curr_fheave > 0 and abs(_base_fheave - _curr_fheave) <= 30.0
+        _rthird_anchored = _curr_rthird > 0 and abs(_base_rthird - _curr_rthird) <= 30.0
 
         if is_ferrari:
             _adjust_numeric(
@@ -926,7 +926,7 @@ def generate_candidate_families(
     family_prior = {
         "incremental": 0.06 if overhaul_class == "minor_tweak" else 0.02,
         "compromise": 0.06 if overhaul_class == "moderate_rework" else 0.02,
-        "baseline_reset": 0.06 if overhaul_class == "baseline_reset" else 0.0,
+        "baseline_reset": 0.06 if overhaul_class == "baseline_reset" else 0.03,
     }
     # Family penalties: penalize over-aggressive changes when not warranted.
     # baseline_reset should only win when the car genuinely needs a full rework.
@@ -934,8 +934,8 @@ def generate_candidate_families(
         "incremental": 0.0,
         "compromise": 0.03 if overhaul_class == "minor_tweak" else 0.0,
         "baseline_reset": (
-            0.10 if overhaul_class == "minor_tweak"
-            else 0.05 if overhaul_class == "moderate_rework"
+            0.03 if overhaul_class == "minor_tweak"
+            else 0.02 if overhaul_class == "moderate_rework"
             else 0.0
         ),
     }
@@ -946,14 +946,14 @@ def generate_candidate_families(
         preblocked_reason: str | None = None
         preblocked_notes: list[str] = []
         # Hard gate: baseline_reset requires overhaul assessment to justify it,
-        # OR a large setup cluster distance (>= 3.0) that independently signals wrong region.
+        # OR a large setup cluster distance (>= 1.5) that independently signals wrong region.
         # A soft prior/penalty alone is insufficient — this prevents unnecessary solver blows.
         if family == "baseline_reset" and overhaul_class != "baseline_reset":
-            large_setup_distance = setup_distance >= 3.0 or envelope_distance >= 3.0
+            large_setup_distance = setup_distance >= 1.5 or envelope_distance >= 1.5
             if not large_setup_distance:
                 preblocked_reason = (
                     f"Overhaul assessment '{overhaul_class}' does not justify baseline_reset "
-                    f"(requires 'baseline_reset' classification or setup_distance >= 3.0)"
+                    f"(requires 'baseline_reset' classification or setup_distance >= 1.5)"
                 )
                 preblocked_notes = [
                     f"Overhaul class: {overhaul_class}, setup_distance: {setup_distance:.2f}, envelope_distance: {envelope_distance:.2f}",
@@ -1050,7 +1050,7 @@ def generate_candidate_families(
         raw_disruption = _estimate_candidate_disruption(current_session, candidate)
         # Amplify disruption for more aggressive families — bigger changes carry
         # more prediction risk and driver adaptation cost.
-        disruption_multiplier = {"incremental": 0.7, "compromise": 1.0, "baseline_reset": 1.5}.get(family, 1.0)
+        disruption_multiplier = {"incremental": 0.7, "compromise": 1.0, "baseline_reset": 1.1}.get(family, 1.0)
         disruption_cost = min(0.95, raw_disruption * disruption_multiplier)
         legal_ok = bool(getattr(candidate.legality, "valid", False))
         candidate.score = score_from_prediction(

@@ -748,9 +748,10 @@ def _generate_insights(
             f"({improvement:.3f}s window across {len(lap_times)} sessions)"
         )
 
-    # High-confidence findings from deltas
+    # High- and medium-confidence findings from deltas (skip trivial)
     for d in deltas:
-        if d.get("confidence_level") == "high" and d.get("key_finding"):
+        conf = d.get("confidence_level", "")
+        if conf in ("high", "medium") and d.get("key_finding"):
             insights["key_insights"].append(d["key_finding"])
 
     # Setup parameter trends

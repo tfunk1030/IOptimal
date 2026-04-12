@@ -518,9 +518,9 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
 
 def _run_branching_solver(
     inputs: SolveChainInputs,
-    max_heave: int = 4,
-    max_corner: int = 5,
-    max_arb: int = 3,
+    max_heave: int = 6,
+    max_corner: int = 6,
+    max_arb: int = 4,
 ) -> tuple[Any, Any, Any, Any, Any, Any, float]:
     """Multi-candidate branching solver.
 
@@ -530,7 +530,7 @@ def _run_branching_solver(
     lightweight physics composite score.
 
     The branching is bounded: max_heave × max_corner × max_arb paths are
-    evaluated (default 4×5×3 = 60 paths). Steps 5 and 6 are fast (pure
+    evaluated (default 6×6×4 = 144 paths). Steps 5 and 6 are fast (pure
     calculation), so the total time is ~2-10s depending on car complexity.
 
     Falls back to ``_run_sequential_solver`` if any step fails.
@@ -1139,6 +1139,10 @@ def materialize_overrides(
                 "front_torsion_od_mm",
                 public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm),
             ),
+            "front_roll_spring_nmm": overrides.step3.get(
+                "front_roll_spring_nmm",
+                step3.front_roll_spring_nmm,
+            ),
             "rear_spring_rate_nmm": overrides.step3.get(
                 "rear_spring_rate_nmm",
                 public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm),
@@ -1154,6 +1158,7 @@ def materialize_overrides(
         }
         decoded_step3_targets = {
             "front_torsion_od_mm": internal_solver_value(car, "front_torsion_od_mm", step3_targets["front_torsion_od_mm"]),
+            "front_roll_spring_nmm": step3_targets["front_roll_spring_nmm"],
             "rear_spring_rate_nmm": internal_solver_value(car, "rear_spring_rate_nmm", step3_targets["rear_spring_rate_nmm"]),
             "rear_spring_perch_mm": step3_targets["rear_spring_perch_mm"],
             "rear_torsion_od_mm": (
@@ -1213,6 +1218,7 @@ def materialize_overrides(
                 fuel_load_l=inputs.fuel_load_l,
                 rear_spring_perch_mm=decoded_step3_targets["rear_spring_perch_mm"],
                 rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
+                front_roll_spring_nmm=decoded_step3_targets.get("front_roll_spring_nmm"),
             )
         else:
             _curr_rt = (
@@ -1316,6 +1322,7 @@ def materialize_overrides(
                 fuel_load_l=inputs.fuel_load_l,
                 rear_spring_perch_mm=decoded_step3_targets["rear_spring_perch_mm"],
                 rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
+                front_roll_spring_nmm=decoded_step3_targets.get("front_roll_spring_nmm"),
             )
         else:
             _curr_rt = (

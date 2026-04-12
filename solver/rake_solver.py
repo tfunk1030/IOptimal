@@ -418,7 +418,7 @@ class RakeSolver:
         self,
         target_balance: float | None = None,
         balance_tolerance: float = 0.1,
-        fuel_load_l: float = 89.0,
+        fuel_load_l: float | None = None,
         pin_front_min: bool = True,
     ) -> RakeSolution:
         """Find optimal ride heights for target DF balance.
@@ -428,6 +428,7 @@ class RakeSolver:
                 car model's default_df_balance_pct.
             balance_tolerance: Maximum acceptable deviation from target (%).
             fuel_load_l: Fuel load in liters (affects mass for compression).
+                If None, uses car.fuel_capacity_l (all LMDh GTP = 88.96L).
             pin_front_min: If True (default), pin front static RH at the sim
                 minimum (30.0mm) and solve only for rear. This matches real
                 GTP methodology where drivers always run minimum front RH for
@@ -436,6 +437,8 @@ class RakeSolver:
         Returns:
             RakeSolution with dynamic targets, static settings, and pushrod offsets.
         """
+        if fuel_load_l is None:
+            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
         if target_balance is None:
             target_balance = self.car.default_df_balance_pct
         # Ride height excursion from track surface (use clean-track p99,

@@ -355,7 +355,15 @@ def analyze_driver(
                 v_apex = c.apex_speed_kph / 3.6
                 theoretical_lat_g = v_apex ** 2 / (c.min_radius_m * 9.81)
                 if theoretical_lat_g > 0.3:
-                    utilizations.append(c.peak_lat_g / theoretical_lat_g)
+                    # Skip corners where the implied yaw rate is below noise
+                    # floor — near-zero yaw makes radius unreliable, causing
+                    # theoretical_lat_g to be tiny and utilization to explode.
+                    implied_yaw_rate = v_apex / c.min_radius_m  # rad/s
+                    if implied_yaw_rate < 0.05:
+                        continue  # near-straight segment, skip
+                    utilization = c.peak_lat_g / theoretical_lat_g
+                    utilization = min(utilization, 2.0)  # clamp to prevent explosion
+                    utilizations.append(utilization)
 
         if utilizations:
             profile.avg_peak_lat_g_utilization = float(np.mean(utilizations))

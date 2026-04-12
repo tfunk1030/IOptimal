@@ -323,8 +323,25 @@ def _fmt_instructions(key: str, car: str, track: str) -> str:
 
 # ─── Build subsystem calibration status from a CarModel ──────────────────────
 
-def _load_raw_calibration_models(car_canonical: str) -> dict:
-    """Load raw models.json for a car to read R² values and status flags.
+def _safe_track_slug(track: str) -> str:
+    """Return a filesystem-safe slug for *track*.
+
+    Mirrors :func:`auto_calibrate._safe_track_slug` so the gate reads
+    the same per-track model files that auto-calibrate writes.
+    """
+    import re
+
+    slug = re.sub(r"[^a-z0-9_]", "_", track.lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug or "unknown"
+
+
+def _load_raw_calibration_models(car_canonical: str, track: str = "") -> dict:
+    """Load raw models JSON for a car to read R² values and status flags.
+
+    When *track* is provided, try the per-track model file first
+    (``models_{slug}.json``).  Fall back to the pooled ``models.json``
+    if the per-track file doesn't exist.
 
     Returns an empty dict if no calibration file exists. Used for honest
     reporting — does NOT override what the live CarModel says.
@@ -333,7 +350,21 @@ def _load_raw_calibration_models(car_canonical: str) -> dict:
     import json
 
     repo_root = Path(__file__).resolve().parents[1]
-    path = repo_root / "data" / "calibration" / car_canonical / "models.json"
+    cal_dir = repo_root / "data" / "calibration" / car_canonical
+
+    # Try per-track model file first when a track is specified
+    if track:
+        slug = _safe_track_slug(track)
+        track_path = cal_dir / f"models_{slug}.json"
+        if track_path.exists():
+            try:
+                with open(track_path, encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass  # fall through to pooled file
+
+    # Pooled / fallback
+    path = cal_dir / "models.json"
     if not path.exists():
         return {}
     try:
@@ -395,7 +426,7 @@ def _append_q2_warnings(
 def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, SubsystemCalibration]:
     """Inspect a CarModel and return calibration status for every subsystem."""
     cn = car.canonical_name
-    raw_models = _load_raw_calibration_models(cn)
+    raw_models = _load_raw_calibration_models(cn, track=track_name)
     subs: dict[str, SubsystemCalibration] = {}
     track_supported = car.supports_track(track_name)
     subs["track_support"] = SubsystemCalibration(

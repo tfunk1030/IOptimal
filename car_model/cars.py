@@ -2731,7 +2731,7 @@ PORSCHE_963 = CarModel(
     max_front_rh_dynamic=50.0,
     min_rear_rh_dynamic=25.0,
     max_rear_rh_dynamic=75.0,
-    vortex_burst_threshold_mm=2.0,
+    vortex_burst_threshold_mm=8.0,  # CORRECTED: 2mm never bound (dynamic front RH 15-25mm). 8mm matches BMW and provides meaningful ground-effect stall protection.
     front_heave_spring_nmm=180.0,  # Updated from Algarve starting setup (was 50 estimate)
     rear_third_spring_nmm=120.0,  # From user's Algarve baseline (was 80 from initial setup)
     aero_compression=AeroCompression(
@@ -2761,14 +2761,14 @@ PORSCHE_963 = CarModel(
         slider_heave_coeff=0.0,   # Porsche Multimatic — no BMW-style slider geometry
         perch_offset_front_baseline_mm=58.0,     # CORRECTED: from Algarve starting setup
         perch_offset_rear_baseline_mm=120.5,     # CORRECTED: from Algarve starting setup
-        sigma_target_mm=10.0,   # Same as BMW. NOTE 2026-04-07: tested σ=7.5 calibrated against
-        #   newest IBT 14-23-44 (rear σ_meas=6.26 at driver rate=160) — but the σ MODEL is highly
-        #   sensitive to v_p99_rear_hs which varies 44% across sessions (0.2387 vs 0.3428 m/s),
-        #   making σ_target session-dependent. With σ=7.5 the regression baseline IBT (16-46-36,
-        #   higher v_p99) overshoots to rate=650 N/mm. Reverted to 10.0 — the rear stiffness gap
-        #   (pipeline 80 vs driver 160) requires a deeper fix: either a track-surface-derived σ
-        #   reference (not setup-dependent v_p99) OR a multi-objective rear stiffness selector
-        #   that includes traction/roll-coupling considerations the σ model misses.
+        sigma_target_mm=6.0,    # SKILL.md: σ > 5mm at >200 kph = unstable platform.
+        #   Previous value 10.0 was so loose the variance constraint never bound,
+        #   making the solver bottoming-constrained only (always picks softest spring).
+        #   6.0 is a middle ground: tighter than the 10.0 that never binds, looser
+        #   than 5.0 which may overshoot on high-v_p99 sessions.
+        #   NOTE 2026-04-07: σ MODEL is sensitive to v_p99_rear_hs which varies 44%
+        #   across sessions (0.2387 vs 0.3428 m/s). If this causes overshooting on
+        #   high-v_p99 sessions, the deeper fix is a track-surface-derived σ reference.
         # Porsche internal geometry is NOT calibrated — set to 0 to use physics-only path
         # (BMW defaults would produce wrong travel budget calculations for Multimatic chassis)
         heave_spring_defl_max_intercept_mm=0.0,
@@ -2904,6 +2904,7 @@ PORSCHE_963 = CarModel(
         # Porsche 963 real garage ranges (from user-verified iRacing garage, 2026-04-04)
         # Resolution fields use class defaults (0.5mm pushrod, 10 N/mm heave, 1.0mm perch)
         # — assumed same as other GTP cars; verify from garage screenshots if quantization issues arise
+        front_torsion_od_mm=(0.0, 0.0),  # Porsche has NO torsion bar — uses roll spring
         front_heave_nmm=(150.0, 600.0),
         front_heave_perch_mm=(40.0, 90.0),
         rear_third_nmm=(0.0, 800.0),
@@ -2972,7 +2973,7 @@ ACURA_ARX06 = CarModel(
         front_m_eff_kg=450.0,     # CALIBRATED: midpoint of 319-641kg range (garage screenshots)
         rear_m_eff_kg=220.0,      # CALIBRATED: midpoint of 187-254kg range (garage screenshots)
         front_spring_range_nmm=(90.0, 400.0),    # EXPANDED: garage shows 90-380 N/mm range
-        front_heave_hard_range_nmm=(90.0, 400.0),  # EXPANDED: setups use up to 380 N/mm
+        front_heave_hard_range_nmm=(90.0, 600.0),  # CORRECTED: garage allows up to 600 N/mm; 400 blocked legal range for bumpy tracks
         rear_spring_range_nmm=(60.0, 300.0),     # Garage shows 60-190 N/mm; cap at 300
         perch_offset_front_baseline_mm=68.0,     # CALIBRATED: typical operating point from setups
         perch_offset_rear_baseline_mm=85.0,      # CALIBRATED: typical operating point from setups

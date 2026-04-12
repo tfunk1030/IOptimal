@@ -1913,8 +1913,6 @@ def _extract_pitch(
         pitch = np.degrees(ibt.channel("Pitch")[start:end + 1])
         if np.sum(at_speed) > 50:
             state.pitch_mean_at_speed_deg = round(float(np.mean(pitch[at_speed])), 3)
-        state.pitch_range_deg = round(
-            float(np.percentile(pitch, 99) - np.percentile(pitch, 1)), 2)
         braking_pitch = (brake > 0.20) & (speed_kph > 80)
         if np.sum(braking_pitch) > 30:
             state.pitch_mean_braking_deg = round(float(np.mean(pitch[braking_pitch])), 3)
@@ -1922,6 +1920,18 @@ def _extract_pitch(
                 float(np.percentile(pitch[braking_pitch], 99) - np.percentile(pitch[braking_pitch], 1)),
                 2,
             )
+            # Use braking-only range for pitch_range_deg to exclude track gradient
+            # contamination. iRacing's Pitch channel includes road slope, so the
+            # full-lap p99-p01 can be dominated by elevation changes (e.g. 13° at
+            # Algarve) rather than suspension pitch. Braking-only filtering removes
+            # the worst straight-line uphill/downhill contamination.
+            state.pitch_range_deg = state.pitch_range_braking_deg
+        else:
+            # Not enough braking samples — fall back to full-lap range but this
+            # will still include track gradient (acceptable: few-braking tracks
+            # are typically flat ovals where gradient is minimal).
+            state.pitch_range_deg = round(
+                float(np.percentile(pitch, 99) - np.percentile(pitch, 1)), 2)
 
 
 def _extract_extended_adjustments(

@@ -463,11 +463,15 @@ def produce(
         log(f"\nLoaded track profile from store: {_hint_store.n_sessions} sessions ({_hint_car_slug})")
         log(f"  Track: {track.track_name} — {track.track_config}")
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
+        run_trace.record_car_track(car.canonical_name, track.track_name, wing_angle=getattr(args, "wing", None))
+        run_trace.record_calibration()
     elif saved_profile_path:
         log(f"\nLoading saved track profile: {saved_profile_path}")
         track = TrackProfile.load(saved_profile_path)
         log(f"  Track: {track.track_name} — {track.track_config}")
         log(f"  Best lap: {track.best_lap_time_s:.3f}s")
+        run_trace.record_car_track(car.canonical_name, track.track_name, wing_angle=getattr(args, "wing", None))
+        run_trace.record_calibration()
     else:
         log("\nBuilding track profile from IBT...")
         try:

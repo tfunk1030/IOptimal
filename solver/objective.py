@@ -1474,11 +1474,11 @@ class ObjectiveFunction:
         # TIER 5: DIFF PRELOAD (exit traction, small effect)
         # ═══════════════════════════════════════════════════════════════
 
-        # Diff preload: penalty for distance from moderate baseline.
-        # All cars use 30 Nm as the neutral target — individual cars will converge
-        # to their optimal via the empirical learner, not hardcoded overrides.
+        # Diff preload: penalty for distance from per-car neutral target.
+        # Each car has a default_diff_preload_nm in its model (e.g., BMW=12,
+        # Porsche=85). Fallback to 30 Nm for cars without the attribute.
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = 30.0  # Nm — moderate baseline for all cars
+        diff_target = getattr(self.car, "default_diff_preload_nm", 30.0)
         gain -= min(8.0, abs(diff - diff_target) * 0.12)
 
         # ═══════════════════════════════════════════════════════════════

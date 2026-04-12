@@ -629,8 +629,23 @@ class WheelGeometrySolver:
         rear_camber_change = roll_deg * geo.rear_roll_gain
         front_dynamic = front_camber + front_camber_change
         rear_dynamic = rear_camber + rear_camber_change
-        front_conditioning_rate = 2.4
-        rear_conditioning_rate = 3.2
+        # Per-car tyre conditioning rates (matches solve() logic)
+        car_name = self.car.canonical_name
+        if car_name == "bmw":
+            front_conditioning_rate = 2.4
+            rear_conditioning_rate = 3.2
+        elif car_name == "porsche":
+            front_conditioning_rate = 1.8
+            rear_conditioning_rate = 2.5
+        elif car_name == "ferrari":
+            front_conditioning_rate = 2.2
+            rear_conditioning_rate = 3.0
+        elif car_name == "acura":
+            front_conditioning_rate = 2.4
+            rear_conditioning_rate = 3.0
+        else:
+            front_conditioning_rate = 2.4
+            rear_conditioning_rate = 3.0
         laps_front = self._laps_to_operating_temp(front_conditioning_rate, front_toe, is_front=True)
         laps_rear = self._laps_to_operating_temp(rear_conditioning_rate, rear_toe, is_front=False)
         constraints = [

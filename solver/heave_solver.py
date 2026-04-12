@@ -426,7 +426,7 @@ class HeaveSolver:
         parallel_wheel_rate_nmm: float = 0.0,
         current_rate_nmm: float | None = None,
         current_meas_sigma_mm: float | None = None,
-        target_margin: float = 1.05,
+        target_margin: float = 1.02,
         prediction_correction_mm: float = 0.0,
     ) -> float:
         """Minimum spring rate (N/mm) to keep sigma below target.
@@ -445,8 +445,8 @@ class HeaveSolver:
             effective_model_target = effective_meas_target / cal_ratio
 
         Then the search returns the minimum rate where model σ ≤
-        effective_model_target. With target_margin = 1.05, the algorithm
-        produces a rate that gives a measured σ ~5 % looser than the
+        effective_model_target. With target_margin = 1.02, the algorithm
+        produces a rate that gives a measured σ ~2 % looser than the
         driver's current operating point — preserving the driver-validated
         choice while allowing slight softening when other constraints
         permit it.
@@ -524,7 +524,7 @@ class HeaveSolver:
         # calibration anchor — without it the algorithm picks the next rate
         # softer than the driver because the model says "good enough" at the
         # softer rate by a tiny margin.
-        STICKY_EPSILON_MM = 0.05  # ~5 µm of measured σ — within model precision
+        STICKY_EPSILON_MM = 0.50  # 0.5 mm — room for solver to recommend change when physics says to
         if (current_rate_nmm is not None and current_rate_nmm > 0
                 and lo - 1e-6 <= current_rate_nmm <= hi + 1e-6):
             anchor_m_eff = hsm.m_eff_at_rate(axle, float(current_rate_nmm))
