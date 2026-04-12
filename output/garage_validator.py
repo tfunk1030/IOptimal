@@ -20,7 +20,11 @@ Correction strategy (auto-correct correlations):
 
 from __future__ import annotations
 
+import logging
+
 from car_model.garage import GarageSetupState
+
+logger = logging.getLogger(__name__)
 
 
 def _snap(value: float, resolution: float) -> float:
@@ -128,14 +132,25 @@ def validate_and_fix_garage_correlation(
     # _clamp_step2/_clamp_step3 operated on local deep copies in index space; write the
     # corrected values back to the originals so callers receive the adjusted values.
     if _ferrari_orig_step2 is not None and _ferrari_orig_step3 is not None:
-        from car_model.setup_registry import internal_solver_value as _isv
-        _ferrari_orig_step2.front_heave_nmm = float(_isv(car, "front_heave_nmm", step2.front_heave_nmm))
-        _ferrari_orig_step2.rear_third_nmm = float(_isv(car, "rear_third_nmm", step2.rear_third_nmm))
-        _ferrari_orig_step2.perch_offset_front_mm = step2.perch_offset_front_mm
-        _ferrari_orig_step2.perch_offset_rear_mm = step2.perch_offset_rear_mm
-        _ferrari_orig_step3.front_torsion_od_mm = float(_isv(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
-        _ferrari_orig_step3.rear_spring_rate_nmm = float(_isv(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
-        _ferrari_orig_step3.rear_spring_perch_mm = step3.rear_spring_perch_mm
+        try:
+            from car_model.setup_registry import internal_solver_value as _isv
+            _ferrari_orig_step2.front_heave_nmm = float(_isv(car, "front_heave_nmm", step2.front_heave_nmm))
+            _ferrari_orig_step2.rear_third_nmm = float(_isv(car, "rear_third_nmm", step2.rear_third_nmm))
+            _ferrari_orig_step2.perch_offset_front_mm = step2.perch_offset_front_mm
+            _ferrari_orig_step2.perch_offset_rear_mm = step2.perch_offset_rear_mm
+            _ferrari_orig_step3.front_torsion_od_mm = float(_isv(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+            _ferrari_orig_step3.rear_spring_rate_nmm = float(_isv(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+            _ferrari_orig_step3.rear_spring_perch_mm = step3.rear_spring_perch_mm
+        except Exception as exc:
+            logger.warning(
+                "Ferrari write-back failed (%s); restoring original physical "
+                "step2/step3 to avoid partial corruption",
+                exc,
+            )
+            warnings.append(
+                f"Ferrari index write-back failed ({exc}); "
+                f"using unclamped physical values"
+            )
         # Restore local references to the physical objects so Phase 2 garage-model
         # validation (GarageSetupState.from_solver_steps) receives physical units
         # (N/mm, mm OD) rather than the index-space values used for Phase 1 clamping.

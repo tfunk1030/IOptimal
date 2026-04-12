@@ -211,6 +211,7 @@ class FittedModel:
     loo_rmse: float = 0.0
     n_samples: int = 0
     is_calibrated: bool = True
+    q_squared: float | None = None  # LOO R² = 1 - (LOO_RMSE² × n) / SS_total
 
 
 @dataclass
@@ -748,8 +749,12 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
     # LOO RMSE: use NaN when skipped (n<5) to avoid misleading "0.0 = perfect" display
     if n < 5:
         loo_rmse = float("nan")
+        q_squared = None
     else:
         loo_rmse = float(np.sqrt(np.mean(loo_errors ** 2)))
+        # Q² (predicted R², LOO R²): generalisation quality metric.
+        # Q² = 1 - (LOO_RMSE² × n) / SS_total
+        q_squared = float(1.0 - (loo_rmse ** 2 * n) / max(ss_tot, 1e-12))
 
     # A model is only considered calibrated if its R² meets the gate threshold.
     # Writing an under-threshold model to disk would let it appear "calibrated" on
@@ -795,6 +800,7 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
         loo_rmse=loo_rmse,
         n_samples=n,
         is_calibrated=is_cal,
+        q_squared=q_squared,
     )
 
 
@@ -1695,12 +1701,15 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
     # ─── 15b. Rear m_eff from telemetry ───
     _rear_uses_index = _heave_model is not None and _heave_model.rear_setting_index_range is not None
+    # heave_index_unvalidated is a shared (front+rear) validation flag: when True,
+    # the index→N/mm mapping has not been verified and index-space settings must be skipped.
+    _rear_index_unvalidated = _heave_model is not None and getattr(_heave_model, "heave_index_unvalidated", False)
     m_effs_rear: list[tuple[float, float]] = []  # (setting, m_eff) tuples
     for pt in unique:
         if pt.rear_shock_vel_p99_mps > 0.01 and pt.rear_sigma_mm > 0.1 and pt.rear_third_setting > 0:
             if _rear_uses_index:
-                if _front_index_unvalidated:
-                    continue  # skip — index→N/mm mapping not verified
+                if _rear_index_unvalidated:
+                    continue  # skip — index→N/mm mapping not verified for rear
                 k = _heave_model.rear_rate_from_setting(pt.rear_third_setting)
             else:
                 k = pt.rear_third_setting  # already N/mm (BMW)

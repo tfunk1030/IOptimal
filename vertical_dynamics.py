@@ -12,6 +12,16 @@ from __future__ import annotations
 import math
 
 
+# BMW-calibrated damper energy constants for the energy-based excursion model.
+# damper_velocity_fraction (0.25): average damper velocity during compression
+#     stroke as a fraction of peak velocity (trapezoidal velocity profile).
+# damper_energy_coupling (0.35): fraction of damper force acting against
+#     compression (rest attributed to blow-down, gas spring, friction).
+# These are NOT validated for non-BMW cars. Per-car calibration requires
+# IBT-measured excursion data at multiple spring rates.
+# Note: iRacing springs are perfectly linear (confirmed by Commodore's Garage),
+# so the single-point sigma calibration in heave_solver is more reliable than
+# it would be with real-world progressive springs.
 DEFAULT_DAMPER_VELOCITY_FRACTION = 0.25
 DEFAULT_DAMPER_ENERGY_COUPLING = 0.35
 

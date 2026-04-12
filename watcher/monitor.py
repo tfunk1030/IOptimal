@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 # the file stops growing once the driver exits the car / ends the session.
 _STABLE_WAIT_S = 3.0
 _STABLE_POLL_S = 0.5
+_MAX_RETRIES = 3
 
 
 def default_telemetry_dir() -> Path:
@@ -55,6 +57,7 @@ class IBTHandler(FileSystemEventHandler):
         # Track files we have already dispatched so duplicates from
         # create + modify events are suppressed.
         self._seen: set[str] = seen or set()
+        self._retry_counts: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     def on_created(self, event: FileCreatedEvent) -> None:  # type: ignore[override]
@@ -84,8 +87,23 @@ class IBTHandler(FileSystemEventHandler):
         logger.info("IBT file stable (%s bytes): %s", p.stat().st_size, p.name)
         try:
             self._on_new_ibt(p)
+            self._retry_counts.pop(key, None)  # clear on success
         except Exception:
-            logger.exception("Error processing IBT %s", p.name)
+            retries = self._retry_counts.get(key, 0) + 1
+            self._retry_counts[key] = retries
+            if retries >= _MAX_RETRIES:
+                logger.error("IBT %s failed %d times — giving up", p.name, retries)
+                self._retry_counts.pop(key, None)  # clear when giving up
+            else:
+                delay = 2.0 ** (retries - 1)  # exponential backoff: 1s, 2s, …
+                logger.exception(
+                    "Error processing IBT %s (attempt %d/%d — retrying in %.0fs)",
+                    p.name, retries, _MAX_RETRIES, delay,
+                )
+                self._seen.discard(key)
+                t = threading.Timer(delay, self._maybe_dispatch, args=(src_path,))
+                t.daemon = True
+                t.start()
 
     @staticmethod
     def _wait_until_stable(path: Path, timeout: float = 300.0) -> bool:
