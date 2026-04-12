@@ -137,7 +137,7 @@ def format_briefing(week_entry: dict, car: str, session_count: int,
 
     car_label = {
         "ferrari": "Ferrari 499P", "bmw": "BMW M Hybrid V8",
-        "cadillac": "Cadillac V-Series.R", "porsche": "Porsche 963",
+        "cadillac": "Cadillac V-Series.R", "porsche": "Porsche 963 GTP",
         "acura": "Acura ARX-06"
     }.get(car, car.upper())
 
