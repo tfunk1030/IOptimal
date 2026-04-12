@@ -199,7 +199,13 @@ def _rotation_search_lines(step3: Any, step4: Any, step5: Any, supporting: Any) 
         lines.append(f"{label}: {summary}")
     sample_evidence = next((value for value in evidence.values() if value), [])
     if sample_evidence:
-        lines.append(f"Rotation evidence: {'; '.join(sample_evidence[:3])}")
+        if isinstance(sample_evidence, dict):
+            sample_evidence = list(sample_evidence.values())
+        try:
+            items = list(sample_evidence)[:3]
+            lines.append(f"Rotation evidence: {'; '.join(str(e) for e in items)}")
+        except (TypeError, KeyError):
+            pass
     return lines[:4]
 
 
