@@ -3339,6 +3339,7 @@ Examples:
         elif len(track_groups) == 1:
             # Single track — pooled model IS the per-track model, save alias
             tk = next(iter(track_groups))
+            models.track = tk
             save_calibrated_models(car, models, track=tk)
             print(f"  [OK] Per-track model saved to {_models_path_for_track(car, tk)}")
     else:
