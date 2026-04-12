@@ -333,12 +333,13 @@ def produce(
             print(message)
 
     # ── Load car model and apply calibration data if available ──
-    # Extract track key from IBT header for per-track calibration model selection
+    # Parse the IBT once and reuse that instance throughout the pipeline.
+    ibt = None
     _track_key_for_cal = ""
     try:
+        ibt = IBTFile(str(ibt_path))
         from car_model.registry import track_key as _reg_track_key
-        _ibt_header = IBTFile(str(ibt_path))
-        _track_key_for_cal = _reg_track_key(_ibt_header.track_info().get("track_name", ""))
+        _track_key_for_cal = _reg_track_key(ibt.track_info().get("track_name", ""))
     except Exception:
         pass
     car = get_car(args.car)
