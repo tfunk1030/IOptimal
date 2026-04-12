@@ -55,8 +55,11 @@ Validated against BMW Sebring:
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
@@ -314,7 +317,10 @@ class ARBSolver:
         if self.car.measured_lltd_target is not None:
             target_lltd = self.car.measured_lltd_target + lltd_offset
         else:
-            # Theoretical formula (physics-based from tyre load sensitivity + track speed)
+            # Theoretical formula (physics-based from tyre load sensitivity + track speed).
+            # Uses OptimumG/Milliken "Magic Number" baseline: LLTD ≈ weight_dist + 5%.
+            logger.info("LLTD target: using physics formula (measured_lltd_target not set for %s)",
+                        getattr(self.car, 'canonical_name', 'unknown'))
             tyre_sens = self.car.tyre_load_sensitivity
             pct_hs = self.track.pct_above_200kph
             hs_correction = 0.01 * pct_hs  # up to +1% at 100% high-speed track
@@ -323,8 +329,7 @@ class ARBSolver:
 
         # Bounds-check: LLTD must be in a physically reasonable range
         if target_lltd < 0.30 or target_lltd > 0.75:
-            import logging
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 "LLTD target %.3f is outside [0.30, 0.75] — clamping "
                 "(lltd_offset=%.3f may be too extreme)",
                 target_lltd, lltd_offset,

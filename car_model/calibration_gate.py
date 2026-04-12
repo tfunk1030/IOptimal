@@ -46,16 +46,19 @@ class SubsystemCalibration:
     data_points: int = 0
     instructions: str = ""
     r_squared: float | None = None
+    q_squared: float | None = None   # LOO R² — generalisation quality metric
     confidence: str = "unknown"      # "high" | "medium" | "low" | "manual_override" | "unknown"
     warnings: list[str] = field(default_factory=list)
 
     def confidence_label(self) -> str:
-        """Short label for display, e.g. '[HIGH R²=0.97]' or '[LOW R²=0.61]'."""
+        """Short label for display, e.g. '[HIGH R²=0.97 Q²=0.91]'."""
         parts = []
         if self.confidence != "unknown":
             parts.append(self.confidence.upper())
         if self.r_squared is not None:
             parts.append(f"R²={self.r_squared:.2f}")
+        if self.q_squared is not None:
+            parts.append(f"Q²={self.q_squared:.2f}")
         return "[" + " ".join(parts) + "]" if parts else ""
 
 
@@ -354,6 +357,41 @@ def _classify_r_squared(r2: float | None, threshold_high: float = 0.90,
     return "low"
 
 
+def _weaker_q2(front_q2: float | None, rear_q2: float | None) -> float | None:
+    """Return the weaker (lower) of two Q² values, or whichever is available."""
+    if front_q2 is not None and rear_q2 is not None:
+        return min(front_q2, rear_q2)
+    return front_q2 if front_q2 is not None else rear_q2
+
+
+# Q² thresholds (conservative — warn only, do not change gate status)
+Q2_THRESHOLD_WARN = 0.60
+
+
+def _append_q2_warnings(
+    warnings: list[str],
+    label: str,
+    r2: float | None,
+    q2: float | None,
+) -> None:
+    """Append Q²-based warnings if Q² diverges significantly from R².
+
+    Conservative: warnings are informational and do NOT change gate status.
+    """
+    if q2 is None:
+        return
+    if q2 < Q2_THRESHOLD_WARN:
+        warnings.append(
+            f"{label} Q²={q2:.2f} < {Q2_THRESHOLD_WARN} — "
+            f"model may not generalise well to new setups"
+        )
+    elif r2 is not None and r2 - q2 > 0.15:
+        warnings.append(
+            f"{label} R²={r2:.2f} vs Q²={q2:.2f} (gap {r2 - q2:.2f}) — "
+            f"possible overfit"
+        )
+
+
 def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, SubsystemCalibration]:
     """Inspect a CarModel and return calibration status for every subsystem."""
     cn = car.canonical_name
@@ -403,6 +441,8 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     rear_rh = (raw_models.get("rear_ride_height") or {}) if isinstance(raw_models, dict) else {}
     front_r2 = front_rh.get("r_squared") if isinstance(front_rh, dict) else None
     rear_r2 = rear_rh.get("r_squared") if isinstance(rear_rh, dict) else None
+    front_q2 = front_rh.get("q_squared") if isinstance(front_rh, dict) else None
+    rear_q2 = rear_rh.get("q_squared") if isinstance(rear_rh, dict) else None
     # Use the weaker of the two models as the subsystem confidence
     weaker_r2 = None
     if front_r2 is not None and rear_r2 is not None:
@@ -411,6 +451,7 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
         weaker_r2 = front_r2
     elif rear_r2 is not None:
         weaker_r2 = rear_r2
+    weaker_q2 = _weaker_q2(front_q2, rear_q2)
     rh_warnings: list[str] = []
     if front_r2 is not None and front_r2 < R2_THRESHOLD_BLOCK:
         rh_warnings.append(f"Front RH model weak: R²={front_r2:.2f} < {R2_THRESHOLD_BLOCK}")
@@ -424,6 +465,9 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
         rh_warnings.append(
             f"Rear RH model below warn threshold: R²={rear_r2:.2f} < {R2_THRESHOLD_WARN}"
         )
+    # Q² warnings — conservative: warn but don't change gate status
+    _append_q2_warnings(rh_warnings, "Front RH", front_r2, front_q2)
+    _append_q2_warnings(rh_warnings, "Rear RH", rear_r2, rear_q2)
     # Strict mode: weak fits are surfaced with warnings and marked weak.
     if not rh_cal:
         rh_status = "uncalibrated"
@@ -440,6 +484,7 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
             else ("regression model" if rh_cal else "no calibration data")
         ),
         r_squared=weaker_r2,
+        q_squared=weaker_q2,
         confidence=_classify_r_squared(weaker_r2) if rh_cal else "unknown",
         warnings=rh_warnings,
         instructions=_fmt_instructions("ride_height_model", cn, track_name),
@@ -448,6 +493,7 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     # 3. Deflection model — report best-model R² from raw JSON
     defl_cal = car.deflection.is_calibrated
     defl_r2s: list[float] = []
+    defl_q2s: list[float] = []
     for key in ("heave_spring_defl_static", "heave_spring_defl_max",
                 "rear_spring_defl_static", "third_spring_defl_static",
                 "rear_shock_defl_static"):
@@ -457,7 +503,15 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
                 defl_r2s.append(float(model["r_squared"]))
             except (TypeError, ValueError):
                 pass
+        if isinstance(model, dict) and "q_squared" in model:
+            try:
+                val = model["q_squared"]
+                if val is not None:
+                    defl_q2s.append(float(val))
+            except (TypeError, ValueError):
+                pass
     weakest_defl_r2 = min(defl_r2s) if defl_r2s else None
+    weakest_defl_q2 = min(defl_q2s) if defl_q2s else None
     defl_warnings: list[str] = []
     if weakest_defl_r2 is not None and weakest_defl_r2 < R2_THRESHOLD_BLOCK:
         defl_warnings.append(
@@ -468,6 +522,10 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
             f"Weakest deflection sub-model below warn threshold: "
             f"R²={weakest_defl_r2:.2f} < {R2_THRESHOLD_WARN}"
         )
+    # Q² warnings — conservative: warn but don't change gate status
+    if weakest_defl_q2 is not None and weakest_defl_r2 is not None:
+        _append_q2_warnings(defl_warnings, "Weakest deflection sub-model",
+                            weakest_defl_r2, weakest_defl_q2)
     if not defl_cal:
         defl_status = "uncalibrated"
     elif weakest_defl_r2 is not None and weakest_defl_r2 < R2_THRESHOLD_BLOCK:
@@ -483,6 +541,7 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
             else ("regression model" if defl_cal else "no calibration data")
         ),
         r_squared=weakest_defl_r2,
+        q_squared=weakest_defl_q2,
         confidence=_classify_r_squared(weakest_defl_r2) if defl_cal else "unknown",
         warnings=defl_warnings,
         instructions=_fmt_instructions("deflection_model", cn, track_name),
@@ -695,7 +754,7 @@ class CalibrationGate:
         """
         out: dict[str, dict] = {}
         for name, sub in self._subsystems.items():
-            out[name] = {
+            entry: dict = {
                 "status": sub.status,
                 "source": sub.source,
                 "confidence": sub.confidence,
@@ -703,6 +762,9 @@ class CalibrationGate:
                 "data_points": sub.data_points,
                 "warnings": list(sub.warnings),
             }
+            if sub.q_squared is not None:
+                entry["q_squared"] = sub.q_squared
+            out[name] = entry
         return out
 
     # Solver chain data dependencies (not calibration dependencies):

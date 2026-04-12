@@ -458,6 +458,14 @@ class HeaveSolver:
         measured σ=6.26, model σ at 160 = 7.34): cal_ratio = 0.853,
         effective_meas_target = 6.57, effective_model_target = 7.71,
         algorithm returns 140-160 N/mm — within 1 step of driver-validated.
+
+        Single-point calibration assumption: cal_ratio is assumed constant
+        across all spring rates. This holds when the model's gradient
+        (∂σ/∂k) matches reality. In iRacing this is MORE reliable than
+        real-world because springs are perfectly linear (no progressive
+        behavior). Remaining sources of cal_ratio drift: (1) damper
+        nonlinearity (speed-dependent damping coefficient), (2) aero-load
+        feedback (not modeled — k_eff changes with preload at speed).
         """
         # Apply learner prediction correction: if the solver systematically
         # over-predicts σ (correction > 0), tighten the target to compensate.

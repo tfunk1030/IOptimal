@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # the file stops growing once the driver exits the car / ends the session.
 _STABLE_WAIT_S = 3.0
 _STABLE_POLL_S = 0.5
+_MAX_RETRIES = 3
 
 
 def default_telemetry_dir() -> Path:
@@ -55,6 +56,7 @@ class IBTHandler(FileSystemEventHandler):
         # Track files we have already dispatched so duplicates from
         # create + modify events are suppressed.
         self._seen: set[str] = seen or set()
+        self._retry_counts: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     def on_created(self, event: FileCreatedEvent) -> None:  # type: ignore[override]
@@ -85,7 +87,14 @@ class IBTHandler(FileSystemEventHandler):
         try:
             self._on_new_ibt(p)
         except Exception:
-            logger.exception("Error processing IBT %s", p.name)
+            retries = self._retry_counts.get(key, 0) + 1
+            self._retry_counts[key] = retries
+            if retries >= _MAX_RETRIES:
+                logger.error("IBT %s failed %d times — giving up", p.name, retries)
+            else:
+                logger.exception("Error processing IBT %s (attempt %d/%d — will retry)",
+                                 p.name, retries, _MAX_RETRIES)
+                self._seen.discard(key)
 
     @staticmethod
     def _wait_until_stable(path: Path, timeout: float = 300.0) -> bool:
