@@ -22,12 +22,18 @@ Directory structure:
 
 from __future__ import annotations
 
-import fcntl
 import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl as _fcntl  # Unix-only; not available on Windows
+    _HAS_FCNTL = True
+except ImportError:
+    _fcntl = None  # type: ignore[assignment]
+    _HAS_FCNTL = False
 
 
 LEARNINGS_DIR = Path(__file__).parent.parent / "data" / "learnings"
@@ -97,17 +103,22 @@ class KnowledgeStore:
         Uses a separate .lock sentinel file rather than locking the target file
         itself — this allows concurrent readers (which do not lock) to always see
         a complete, valid JSON file.
+
+        File locking is only available on Unix (fcntl). On Windows the write
+        proceeds without a lock — safe for single-user CLI use.
         """
         lock_path = path.with_suffix(".lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with open(lock_path, "w") as lf:
-                fcntl.flock(lf, fcntl.LOCK_EX)
-                path.write_text(json.dumps(data, indent=2))
-                fcntl.flock(lf, fcntl.LOCK_UN)
-        except OSError:
-            # fcntl not available (Windows) or lock file error — write without lock
-            path.write_text(json.dumps(data, indent=2))
+        if _HAS_FCNTL:
+            try:
+                with open(lock_path, "w") as lf:
+                    _fcntl.flock(lf, _fcntl.LOCK_EX)
+                    path.write_text(json.dumps(data, indent=2))
+                    _fcntl.flock(lf, _fcntl.LOCK_UN)
+                return
+            except OSError:
+                pass  # fall through to unlocked write on any OS error
+        path.write_text(json.dumps(data, indent=2))
 
     def save_index(self, idx: dict) -> None:
         idx["last_updated"] = datetime.now(timezone.utc).isoformat()
