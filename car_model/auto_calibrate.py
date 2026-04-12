@@ -304,9 +304,27 @@ def _models_path(car: str) -> Path:
     return _data_dir(car) / "models.json"
 
 
+def _safe_track_slug(track: str) -> str:
+    """Return a filesystem-safe slug for *track*.
+
+    Only lower-case letters, digits, and underscores are kept.  Anything else
+    (including path separators, spaces, dots, and ``..`` sequences) is replaced
+    with ``_``, so user-supplied track names cannot cause path traversal.
+    """
+    import re
+    slug = re.sub(r"[^a-z0-9_]", "_", track.lower())
+    # Collapse consecutive underscores and strip leading/trailing ones
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug or "unknown"
+
+
 def _models_path_for_track(car: str, track: str) -> Path:
-    """Per-track model file: models_{track}.json."""
-    return _data_dir(car) / f"models_{track}.json"
+    """Per-track model file: models_{slug}.json.
+
+    The track string is sanitised through :func:`_safe_track_slug` before
+    being embedded in the filename, preventing path traversal.
+    """
+    return _data_dir(car) / f"models_{_safe_track_slug(track)}.json"
 
 
 def load_calibration_points(car: str) -> list[CalibrationPoint]:
@@ -366,6 +384,58 @@ def save_calibrated_models(car: str, models: CarCalibrationModels, track: str = 
         p = _models_path(car)
     with open(p, "w", encoding="utf-8") as f:
         json.dump(_models_to_dict(models), f, indent=2)
+
+
+def _merge_car_wide_fields(
+    car: str,
+    dest: CarCalibrationModels,
+    source: CarCalibrationModels | None,
+    *,
+    verbose: bool = False,
+) -> None:
+    """Copy non-track-specific fields from *source* into *dest* (in-place).
+
+    Fields covered:
+    - Damper zeta targets (set by ``validation/calibrate_dampers.py``)
+    - Spring lookup tables (set by STO import / expand pass)
+    - Status dict keys not already present in *dest*
+
+    This ensures that per-track model files are self-contained — loading a
+    per-track model via ``load_calibrated_models(car, track=...)`` returns all
+    the same car-wide data as the pooled model would.
+    """
+    if source is None:
+        return
+
+    # Preserve damper zeta
+    if source.front_ls_zeta is not None and dest.front_ls_zeta is None:
+        dest.front_ls_zeta = source.front_ls_zeta
+        dest.rear_ls_zeta = source.rear_ls_zeta
+        dest.front_hs_zeta = source.front_hs_zeta
+        dest.rear_hs_zeta = source.rear_hs_zeta
+        dest.zeta_n_sessions = source.zeta_n_sessions
+
+    # Preserve spring lookup tables (and expand if they only have 1 entry)
+    if source.front_torsion_lookup and not dest.front_torsion_lookup:
+        lut_f = source.front_torsion_lookup
+        n_before = len(lut_f.entries)
+        lut_f = expand_torsion_lookup_from_physics(car, lut_f, axle="front")
+        if verbose and len(lut_f.entries) > n_before:
+            print(f"  Expanded front torsion lookup: {n_before} -> {len(lut_f.entries)} entries")
+        dest.front_torsion_lookup = lut_f
+
+    if source.rear_torsion_lookup and not dest.rear_torsion_lookup:
+        lut_r = source.rear_torsion_lookup
+        n_before = len(lut_r.entries)
+        lut_r = expand_torsion_lookup_from_physics(car, lut_r, axle="rear")
+        if verbose and len(lut_r.entries) > n_before:
+            print(f"  Expanded rear torsion lookup: {n_before} -> {len(lut_r.entries)} entries")
+        dest.rear_torsion_lookup = lut_r
+
+    # Merge status dict: preserve keys from source that dest hasn't computed
+    for k, v in source.status.items():
+        if k not in dest.status:
+            dest.status[k] = v
 
 
 def _models_to_dict(m: CarCalibrationModels) -> dict:
@@ -3275,35 +3345,7 @@ Examples:
         # Preserve fields from existing models.json that auto_calibrate doesn't compute
         # (e.g. zeta from calibrate_dampers, spring lookups from STO import)
         existing_saved = load_calibrated_models(car)
-        if existing_saved:
-            # Preserve damper zeta (set by validation/calibrate_dampers.py)
-            if existing_saved.front_ls_zeta is not None and models.front_ls_zeta is None:
-                models.front_ls_zeta = existing_saved.front_ls_zeta
-                models.rear_ls_zeta = existing_saved.rear_ls_zeta
-                models.front_hs_zeta = existing_saved.front_hs_zeta
-                models.rear_hs_zeta = existing_saved.rear_hs_zeta
-                models.zeta_n_sessions = existing_saved.zeta_n_sessions
-            # Preserve spring lookup tables (and expand if they only have 1 entry)
-            if existing_saved.front_torsion_lookup and not models.front_torsion_lookup:
-                lut_f = existing_saved.front_torsion_lookup
-                # Retroactively expand single-entry lookups with k proportional to OD^4 extrapolation
-                n_before = len(lut_f.entries)
-                lut_f = expand_torsion_lookup_from_physics(car, lut_f, axle="front")
-                if len(lut_f.entries) > n_before:
-                    print(f"  Expanded front torsion lookup: {n_before} -> {len(lut_f.entries)} entries")
-                models.front_torsion_lookup = lut_f
-            if existing_saved.rear_torsion_lookup and not models.rear_torsion_lookup:
-                lut_r = existing_saved.rear_torsion_lookup
-                n_before = len(lut_r.entries)
-                lut_r = expand_torsion_lookup_from_physics(car, lut_r, axle="rear")
-                if len(lut_r.entries) > n_before:
-                    print(f"  Expanded rear torsion lookup: {n_before} -> {len(lut_r.entries)} entries")
-                models.rear_torsion_lookup = lut_r
-            # Merge status dict: preserve keys from previous runs that this run didn't compute
-            # (e.g. roll_gains_calibrated from a previous run, arb status, etc.)
-            for k, v in existing_saved.status.items():
-                if k not in models.status:
-                    models.status[k] = v
+        _merge_car_wide_fields(car, models, existing_saved, verbose=True)
 
         save_calibrated_models(car, models)
         print(f"  [OK] Models saved to {_models_path(car)}")
@@ -3330,6 +3372,9 @@ Examples:
                     continue
                 tk_models = fit_models_from_points(car, track_pts)
                 tk_models.track = tk
+                # Merge car-wide fields (zeta, lookup tables, status) from the
+                # freshly-saved pooled model so per-track files are self-contained.
+                _merge_car_wide_fields(car, tk_models, models, verbose=False)
                 save_calibrated_models(car, tk_models, track=tk)
                 _best_r2 = max(
                     (m.r_squared for m in [tk_models.front_ride_height, tk_models.rear_ride_height] if m is not None),
