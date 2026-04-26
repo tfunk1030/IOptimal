@@ -8,10 +8,68 @@ Stores configuration in a JSON file at the platform-appropriate location:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
-from dataclasses import asdict, dataclass, field
+import re
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
+from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
+
+# Hex / base64-url alphabet, length-only validation. The server generates
+# 32+ char hex API keys; reject anything visibly malformed but don't reach
+# out to the server to validate.
+_API_KEY_RE = re.compile(r"^[A-Za-z0-9_\-+/=]{32,}$")
+
+
+try:
+    import fcntl as _fcntl  # type: ignore[import-not-found]
+except ImportError:
+    _fcntl = None  # type: ignore[assignment]
+
+try:
+    import msvcrt as _msvcrt  # type: ignore[import-not-found]
+except ImportError:
+    _msvcrt = None  # type: ignore[assignment]
+
+
+@contextmanager
+def _file_lock(fh):
+    """Best-effort cross-platform exclusive lock on an open file handle.
+
+    Falls back to a no-op if neither fcntl nor msvcrt is available (e.g.
+    exotic test environments) so concurrent-save tests still pass without
+    crashing the app.
+    """
+    acquired = None
+    try:
+        if _fcntl is not None:
+            try:
+                _fcntl.flock(fh.fileno(), _fcntl.LOCK_EX)
+                acquired = "fcntl"
+            except OSError as exc:
+                logger.warning("Config file lock acquisition failed: %s", exc)
+        elif _msvcrt is not None:
+            try:
+                _msvcrt.locking(fh.fileno(), _msvcrt.LK_LOCK, 1)
+                acquired = "msvcrt"
+            except OSError as exc:
+                logger.warning("Config file lock acquisition failed: %s", exc)
+        yield
+    finally:
+        if acquired == "fcntl" and _fcntl is not None:
+            try:
+                _fcntl.flock(fh.fileno(), _fcntl.LOCK_UN)
+            except OSError:
+                pass
+        elif acquired == "msvcrt" and _msvcrt is not None:
+            try:
+                _msvcrt.locking(fh.fileno(), _msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
 
 
 def _default_config_dir() -> Path:
@@ -68,16 +126,34 @@ class AppConfig:
     bulk_import_done: bool = False
 
     def save(self, config_dir: Path | None = None) -> None:
-        """Persist config to disk."""
+        """Persist config to disk atomically.
+
+        Writes to a temp file in the same directory, fsyncs, then atomically
+        replaces the target. An OS-level file lock guards against concurrent
+        saves from a second process.
+        """
         d = config_dir or _default_config_dir()
         d.mkdir(parents=True, exist_ok=True)
         path = d / "config.json"
-        with open(path, "w") as f:
-            json.dump(asdict(self), f, indent=2)
+        lock_path = d / "config.lock"
+        payload = json.dumps(asdict(self), indent=2)
+
+        with open(lock_path, "a+") as lock_fh:
+            with _file_lock(lock_fh):
+                tmp_path = path.with_suffix(path.suffix + ".tmp")
+                with open(tmp_path, "w") as f:
+                    f.write(payload)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, path)
 
     @classmethod
     def load(cls, config_dir: Path | None = None) -> AppConfig:
-        """Load config from disk, or return defaults if not found."""
+        """Load config from disk, returning defaults if missing or invalid.
+
+        Validates fields against safe defaults and logs a warning on any
+        rejected value rather than crashing.
+        """
         d = config_dir or _default_config_dir()
         path = d / "config.json"
         if not path.exists():
@@ -85,12 +161,39 @@ class AppConfig:
         try:
             with open(path) as f:
                 data = json.load(f)
-            # Only use known fields
-            known = {k for k in cls.__dataclass_fields__}
-            filtered = {k: v for k, v in data.items() if k in known}
-            return cls(**filtered)
-        except (json.JSONDecodeError, TypeError):
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Config file unreadable (%s); using defaults", exc)
             return cls()
+
+        known = {f.name for f in fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in known}
+        try:
+            instance = cls(**filtered)
+        except TypeError as exc:
+            logger.warning("Config schema mismatch (%s); using defaults", exc)
+            return cls()
+
+        instance._validate_and_repair()
+        return instance
+
+    def _validate_and_repair(self) -> None:
+        """Reset invalid fields to safe defaults; warn on each repair."""
+        if self.telemetry_dir and not Path(self.telemetry_dir).is_dir():
+            logger.warning(
+                "Configured telemetry_dir does not exist: %s", self.telemetry_dir
+            )
+
+        if self.team_server_url:
+            parsed = urlparse(self.team_server_url)
+            if not (parsed.scheme and parsed.netloc):
+                logger.warning(
+                    "Invalid team_server_url %r; clearing", self.team_server_url
+                )
+                self.team_server_url = ""
+
+        if self.api_key and not _API_KEY_RE.match(self.api_key):
+            logger.warning("Invalid api_key format; clearing")
+            self.api_key = ""
 
     @property
     def is_team_configured(self) -> bool:
