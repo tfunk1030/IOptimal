@@ -686,8 +686,8 @@ def _run_branching_solver(
                         rear_third_nmm=s2_copy.rear_third_nmm,
                     )
                     apply_damper_modifiers(s6, mods, car)
-                except ValueError:
-                    pass
+                except ValueError as e:
+                    logger.debug("Damper solve in branching path failed (zeta uncalibrated?): %s", e)
 
                 # ── Score this path ──
                 # Use the full ObjectiveFunction.evaluate_physics() +

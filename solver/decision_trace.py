@@ -77,7 +77,8 @@ def _estimate_gain_ms(parameter: str, measured: Any) -> float:
         "rear_master_cyl_mm",
         "pad_compound",
     }:
-        slip = getattr(measured, "rear_power_slip_ratio_p95", 0.0) or 0.0
+        _slip_raw = getattr(measured, "rear_power_slip_ratio_p95", None)
+        slip = float(_slip_raw) if _slip_raw is not None else 0.0
         return round(max(0.0, slip - 0.08) * 1800.0, 1)
     return 0.0
 
