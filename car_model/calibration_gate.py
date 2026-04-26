@@ -16,6 +16,8 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -23,6 +25,8 @@ from car_model.registry import track_key
 
 if TYPE_CHECKING:
     from car_model.cars import CarModel
+
+_logger = logging.getLogger(__name__)
 
 
 # ─── Calibration status for a single subsystem ──────────────────────────────
@@ -329,8 +333,6 @@ def _safe_track_slug(track: str) -> str:
     Mirrors :func:`auto_calibrate._safe_track_slug` so the gate reads
     the same per-track model files that auto-calibrate writes.
     """
-    import re
-
     slug = re.sub(r"[^a-z0-9_]", "_", track.lower())
     slug = re.sub(r"_+", "_", slug).strip("_")
     return slug or "unknown"
@@ -360,8 +362,15 @@ def _load_raw_calibration_models(car_canonical: str, track: str = "") -> dict:
             try:
                 with open(track_path, encoding="utf-8") as f:
                     return json.load(f)
-            except Exception:
-                pass  # fall through to pooled file
+            except Exception as exc:
+                # Per-track file is corrupt; fall through to pooled file but
+                # surface the failure so the user knows why the gate is using
+                # less-specific data than expected.
+                _logger.warning(
+                    "Failed to load per-track calibration models %s: %s — "
+                    "falling back to pooled models.json",
+                    track_path, exc,
+                )
 
     # Pooled / fallback
     path = cal_dir / "models.json"

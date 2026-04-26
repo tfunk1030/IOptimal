@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import re
 import sys
 from dataclasses import dataclass, field, asdict
@@ -57,6 +58,8 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+_logger = logging.getLogger(__name__)
 
 _CALIBRATION_DIR = PROJECT_ROOT / "data" / "calibration"
 _MIN_SESSIONS_FOR_FIT = 5   # absolute minimum unique-setup sessions before fitting
@@ -112,10 +115,6 @@ def _setup_key(pt) -> tuple:
         str(pt.rear_arb_size or ""),
         int(pt.rear_arb_blade or 0),
     )
-
-# Alias for backward compatibility
-_setup_fingerprint = _setup_key
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data structures
@@ -547,8 +546,7 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         lltd_m = getattr(measured, "lltd_measured", None) or 0.0
     except Exception as e:
         # Telemetry extraction is optional for calibration; skip gracefully
-        import logging
-        logging.getLogger(__name__).debug("Telemetry extraction skipped: %s", e)
+        _logger.debug("Telemetry extraction skipped: %s", e)
         roll_grad = 0.0
         lltd_m = 0.0
 
@@ -624,8 +622,7 @@ def _get_dummy_car(car_name: str):
         from car_model.cars import get_car
         return get_car(car_name or "bmw")
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).debug("Could not load car model '%s': %s", car_name, e)
+        _logger.debug("Could not load car model '%s': %s", car_name, e)
         return None
 
 
@@ -716,8 +713,7 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
     # meaningless R² = 1.0 and unstable coefficients. Require n > n_params.
     n_params = X_aug.shape[1]  # features + intercept
     if X.shape[0] <= n_params:
-        import logging
-        logging.getLogger(__name__).warning(
+        _logger.warning(
             "Model '%s': underdetermined (%d samples, %d parameters) — "
             "marking as uncalibrated",
             model_name, X.shape[0], n_params,
@@ -790,8 +786,6 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
             f"marking uncalibrated despite R²={r2:.3f}"
         )
     if _overfit_warnings:
-        import logging
-        _logger = logging.getLogger(__name__)
         for w in _overfit_warnings:
             _logger.warning("Model '%s': %s", model_name, w)
 
@@ -900,8 +894,6 @@ def _select_features(
     if not selected:
         return X, feature_names
 
-    import logging
-    _logger = logging.getLogger(__name__)
     selected_names = [feature_names[i] for i in selected]
     dropped = [feature_names[i] for i in range(n_features) if i not in selected]
     _logger.info(
@@ -1047,7 +1039,7 @@ def expand_torsion_lookup_from_physics(
     if added_count > 0:
         # Update method tag — preserve "decrypted_sto" as primary if anchors exist
         n_sto = len([e for e in lookup.entries if e.get("source") == "decrypted_sto"])
-        lookup.method = f"decrypted_sto+physics_extrapolated" if n_sto > 0 else "physics_extrapolated"
+        lookup.method = "decrypted_sto+physics_extrapolated" if n_sto > 0 else "physics_extrapolated"
 
     return lookup
 
@@ -1081,15 +1073,14 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         from car_model.cars import get_car
         _car_obj = get_car(car)
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).debug("Car model load failed in fit_models: %s", e)
+        _logger.debug("Car model load failed in fit_models: %s", e)
         _car_obj = None
 
     # Deduplicate by unique setup configuration (exclude telemetry-only differences)
     seen: set[tuple] = set()
     unique: list[CalibrationPoint] = []
     for pt in points:
-        key = _setup_fingerprint(pt)
+        key = _setup_key(pt)
         if key not in seen:
             seen.add(key)
             unique.append(pt)
@@ -1292,8 +1283,7 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         p_loo = primary.loo_rmse
         f_loo = fallback.loo_rmse
         if not np.isnan(p_loo) and not np.isnan(f_loo) and f_loo < p_loo:
-            import logging
-            logging.getLogger(__name__).info(
+            _logger.info(
                 "Pool fallback for '%s': universal pool LOO=%.3f beats "
                 "physics-aware LOO=%.3f",
                 model_name, f_loo, p_loo,
@@ -1404,7 +1394,6 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # Rear shock deflection depends on rear pushrod (geometric), rear third perch
     # (load path through third/heave spring vs. corner shock), and rear third
     # spring stiffness (how much the third spring carries).
-    # ─── 9. Rear Shock Deflection Static ───
     models.rear_shock_defl_static = _fit_from_pool(
         "rear_shock_defl_static_mm", "rear_shock_defl_static",
         pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL)
@@ -1828,16 +1817,14 @@ def _mk_direct(fitted_model) -> "DirectRegression | None":
     if fitted_model is None or not fitted_model.coefficients:
         return None
     if fitted_model.r_squared < 0.30 and len(fitted_model.feature_names) > 0:
-        import logging
-        logging.getLogger(__name__).info(
+        _logger.info(
             "DirectRegression skipped for '%s' — R²=%.3f too low",
             fitted_model.name, fitted_model.r_squared,
         )
         return None
     if _is_overfit(fitted_model):
-        import logging
         ratio = fitted_model.loo_rmse / max(fitted_model.rmse, 1e-6)
-        logging.getLogger(__name__).warning(
+        _logger.warning(
             "DirectRegression skipped for '%s' — LOO/train ratio %.0fx exceeds %.0fx threshold",
             fitted_model.name, ratio, _OVERFIT_LOO_TRAIN_RATIO,
         )
@@ -1885,8 +1872,6 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
         # Front RH not calibrated.  If the calibration data shows near-constant
         # front RH (e.g. Acura), use the mean as a constant intercept.  If there
         # is NO data at all, return None — the calibration gate blocks this car.
-        import logging
-        _logger = logging.getLogger(__name__)
         car_name = getattr(car_obj, "canonical_name", "")
         pts = load_calibration_points(car_name) if car_name else []
         valid_rhs = [p.static_front_rh_mm for p in pts if p.static_front_rh_mm > 0]
@@ -1926,8 +1911,6 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
         rear_coeff_fuel = rh.rear_coeff_fuel_l
     else:
         # Fallback: mean rear RH from calibration data (uncalibrated car)
-        import logging
-        _logger = logging.getLogger(__name__)
         car_name = getattr(car_obj, "canonical_name", "")
         pts = load_calibration_points(car_name) if car_name else []
         valid_rhs = [p.static_rear_rh_mm for p in pts if p.static_rear_rh_mm > 0]
@@ -2568,8 +2551,7 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
                         f"(from {len(entries)}-entry calibrated lookup)"
                     )
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).debug("Spring lookup application failed: %s", e)
+            _logger.debug("Spring lookup application failed: %s", e)
 
     # Auto-build GarageOutputModel from calibration regressions if the car
     # doesn't already have one. This enables RH/pushrod reconciliation and
@@ -2613,8 +2595,6 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
     # generalization guard. Users need to know which submodels were dropped so
     # they can either collect more data or accept the reduced coverage.
     if _skipped_overfit:
-        import logging as _logging
-        _logger = _logging.getLogger(__name__)
         _logger.warning(
             "apply_to_car: skipped %d overfit model(s) (LOO/train > %.0fx): %s",
             len(_skipped_overfit), _OVERFIT_LOO_TRAIN_RATIO,
