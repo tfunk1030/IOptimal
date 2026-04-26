@@ -14,8 +14,9 @@
     "rmse": 0.06998542122237596,
     "loo_rmse": 0.06998542122237596,
     "n_samples": 7,
-    "is_calibrated": true,
-    "q_squared": null
+    "is_calibrated": false,
+    "q_squared": 0.0,
+    "pool_fallback_used": false
   },
   "rear_ride_height": {
     "name": "rear_ride_height",
@@ -24,16 +25,17 @@
       "rear_pushrod"
     ],
     "coefficients": [
-      40.77179131747773,
-      195.9383304227361,
-      -0.015449096686410257
+      40.77179131747762,
+      195.93833042270748,
+      -0.015449096686415835
     ],
-    "r_squared": 0.2894886276768248,
-    "rmse": 1.271753076316688,
-    "loo_rmse": 8.928704379782557,
+    "r_squared": 0.28948862767682426,
+    "rmse": 1.2717530763166884,
+    "loo_rmse": 8.928704379782559,
     "n_samples": 7,
     "is_calibrated": false,
-    "q_squared": -34.02211164762291
+    "q_squared": -34.02211164762292,
+    "pool_fallback_used": false
   },
   "torsion_bar_turns": {
     "name": "torsion_bar_turns",
@@ -43,17 +45,18 @@
       "torsion_od"
     ],
     "coefficients": [
-      -0.28876033683361,
-      6.4431214291914065,
-      -0.00214651971100821,
-      0.030397034179846294
+      -0.2887603368335972,
+      6.44312142919167,
+      -0.002146519711007351,
+      0.03039703417984481
     ],
-    "r_squared": 0.5618891949069388,
-    "rmse": 0.008525879983796019,
-    "loo_rmse": 0.042641077045915826,
+    "r_squared": 0.5618891949069387,
+    "rmse": 0.00852587998379602,
+    "loo_rmse": 0.042641077045922925,
     "n_samples": 7,
     "is_calibrated": false,
-    "q_squared": -9.958771356722112
+    "q_squared": -9.958771356725762,
+    "pool_fallback_used": false
   },
   "torsion_bar_defl": {
     "name": "torsion_bar_defl_load",
@@ -62,16 +65,17 @@
       "front_heave_perch"
     ],
     "coefficients": [
-      -66147.30501722243,
-      540.8655408378263,
-      13836.547860630055
+      -66147.30501722216,
+      540.8655408378258,
+      13836.54786063005
     ],
-    "r_squared": 0.15020808855321333,
+    "r_squared": 0.15020808855321344,
     "rmse": 314088.79926345765,
-    "loo_rmse": 776010.777027224,
+    "loo_rmse": 776010.7770272238,
     "n_samples": 7,
     "is_calibrated": false,
-    "q_squared": -4.187321909277703
+    "q_squared": -4.187321909277702,
+    "pool_fallback_used": false
   },
   "front_shock_defl_static": null,
   "front_shock_defl_max": null,
@@ -84,16 +88,17 @@
       "front_camber"
     ],
     "coefficients": [
-      6.180562240639918,
-      -0.03157123756901843,
-      -5.643385619555125
+      6.180562240639919,
+      -0.03157123756901842,
+      -5.643385619555122
     ],
-    "r_squared": 0.9376504206430067,
-    "rmse": 1.425423734473702,
-    "loo_rmse": 2.577452477892166,
+    "r_squared": 0.9376504206430069,
+    "rmse": 1.4254237344737006,
+    "loo_rmse": 2.577452477892167,
     "n_samples": 7,
     "is_calibrated": true,
-    "q_squared": 0.7961424082453464
+    "q_squared": 0.7961424082453462,
+    "pool_fallback_used": false
   },
   "heave_spring_defl_max": {
     "name": "heave_spring_defl_max",
@@ -103,15 +108,16 @@
     ],
     "coefficients": [
       70.22919080132363,
-      -0.06499534339317405,
-      1457.733835182725
+      -0.06499534339317403,
+      1457.7338351827264
     ],
     "r_squared": 0.9998547618575268,
-    "rmse": 0.14493508157648552,
-    "loo_rmse": 0.2648279629205291,
+    "rmse": 0.14493508157648588,
+    "loo_rmse": 0.26482796292053645,
     "n_samples": 7,
     "is_calibrated": true,
-    "q_squared": 0.9995150897915497
+    "q_squared": 0.9995150897915497,
+    "pool_fallback_used": false
   },
   "heave_slider_defl_static": null,
   "rear_spring_defl_static": null,
@@ -129,10 +135,11 @@
     ],
     "r_squared": 0.8873616245352158,
     "rmse": 2.6671842822682392,
-    "loo_rmse": 3.7146694385508674,
+    "loo_rmse": 3.7146694385508656,
     "n_samples": 7,
     "is_calibrated": true,
-    "q_squared": 0.7815154772553262
+    "q_squared": 0.7815154772553264,
+    "pool_fallback_used": true
   },
   "third_spring_defl_max": {
     "name": "third_spring_defl_max",
@@ -141,16 +148,17 @@
       "rear_pushrod_sq"
     ],
     "coefficients": [
-      115.90603308690552,
-      -0.20111897211977936,
-      -0.003717399071242772
+      115.9060330869055,
+      -0.20111897211977925,
+      -0.0037173990712427414
     ],
     "r_squared": 0.9986264193439099,
-    "rmse": 0.33418970600285025,
-    "loo_rmse": 0.5829867719910705,
+    "rmse": 0.3341897060028482,
+    "loo_rmse": 0.5829867719910605,
     "n_samples": 7,
     "is_calibrated": true,
-    "q_squared": 0.9958199119396418
+    "q_squared": 0.9958199119396419,
+    "pool_fallback_used": false
   },
   "third_slider_defl_static": null,
   "torsion_bar_defl_direct": {
@@ -160,16 +168,17 @@
       "front_pushrod"
     ],
     "coefficients": [
-      -50.445329881273814,
-      708.6748601099902,
-      0.33042499688065163
+      -50.44532988127603,
+      708.6748601100052,
+      0.33042499688070437
     ],
     "r_squared": 0.9994771810648444,
-    "rmse": 0.17097549685893218,
-    "loo_rmse": 0.5832554168140056,
+    "rmse": 0.17097549685893326,
+    "loo_rmse": 0.5832554168134009,
     "n_samples": 7,
     "is_calibrated": true,
-    "q_squared": 0.993915833072641
+    "q_squared": 0.9939158330726536,
+    "pool_fallback_used": false
   },
   "third_slider_defl_direct": null,
   "front_heave_lookup": null,
@@ -191,11 +200,13 @@
   "aero_rear_compression_mm": null,
   "aero_n_sessions": 4,
   "status": {
+    "ride_height_model": "front: constant (no variance, Q\u00b2=0.00, marked uncalibrated); rear: regression (R\u00b2=0.29, Q\u00b2=-34.02)",
     "aero_compression": "calibrated from IBT AeroCalculator (4 sessions, front=7.1mm rear=n/a)",
     "arb_stiffness": "insufficient data (need sessions with varied ARB settings and driving telemetry)",
     "m_eff": "constant (5 points, mean 829 kg)",
     "m_eff_rear": "constant (5 points, mean 256 kg)",
     "lltd_target": "DISABLED \u2014 IBT 'lltd_measured' is a geometric proxy (t_f^3/(t_f^3+t_r^3)), not true LLTD. ARB solver uses OptimumG physics.",
-    "deflection_model": "calibrated (7 unique setups, best R\u00b2=1.00)"
+    "deflection_model": "calibrated (7 unique setups, best R\u00b2=1.00)",
+    "audit_note": "Q\u00b2<0.85 \u2192 is_calibrated=False per Unit 14 audit. front_ride_height collapses to a mean-only fit (no variance to generalise); rear_ride_height regression has Q\u00b2<<0 (data too small / cross-axis collinear). Pipeline must collect more varied garage sweeps before fitting a usable RH model."
   }
 }

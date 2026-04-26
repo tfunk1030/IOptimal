@@ -216,6 +216,10 @@ class FittedModel:
     n_samples: int = 0
     is_calibrated: bool = True
     q_squared: float | None = None  # LOO R² = 1 - (LOO_RMSE² × n) / SS_total
+    # Records that the universal feature pool beat the physics-aware pool on
+    # LOO RMSE. Set in `_fit_from_pool`; lets downstream audits see when the
+    # cross-axis-allowing fallback was justified by lower generalisation error.
+    pool_fallback_used: bool = False
 
 
 @dataclass
@@ -706,6 +710,30 @@ def ingest_sto_json(car: str, sto_json_path: str | Path) -> dict[str, float]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Regression fitting
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _make_constant_fit(model_name: str, y: np.ndarray, n_unique: int) -> FittedModel:
+    """Build a FittedModel for a near-constant target with honest Q²/calibration.
+
+    For a mean-only fit, R² is 1.0 (predictions match the mean exactly within
+    sensor noise) but Q² — the LOO-validated generalisation metric — is 0.0
+    because there is no out-of-sample variance to explain. With Q² < 0.85 the
+    model is marked ``is_calibrated=False`` so the calibration gate flags the
+    target as having insufficient signal to validate generalisation.
+    """
+    y_arr = np.asarray(y, dtype=float)
+    rmse = float(np.std(y_arr))
+    return FittedModel(
+        name=model_name,
+        feature_names=[],
+        coefficients=[float(np.mean(y_arr))],
+        r_squared=1.0,
+        rmse=rmse,
+        loo_rmse=rmse,
+        n_samples=int(n_unique),
+        is_calibrated=False,
+        q_squared=0.0,
+    )
+
 
 def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str) -> FittedModel:
     """Fit y = X @ beta via least squares with LOO cross-validation."""
@@ -1300,6 +1328,7 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             )
             # Fallback wins — restore the original model name
             fallback.name = model_name
+            fallback.pool_fallback_used = True
             return fallback
         return primary
 
@@ -1310,18 +1339,12 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             "static_front_rh_mm", "front_ride_height",
             pool=_FRONT_POOL, fallback_pool=_UNIVERSAL_POOL)
     elif len(unique) >= _MIN_SESSIONS_FOR_FIT and _front_rh_std > 0:
-        # Near-constant front RH: create a constant model (intercept-only)
-        _mean_frh = float(np.mean(col("static_front_rh_mm")))
-        models.front_ride_height = FittedModel(
-            name="front_ride_height",
-            feature_names=[],
-            coefficients=[_mean_frh],
-            r_squared=1.0,
-            rmse=float(_front_rh_std),
-            loo_rmse=float(_front_rh_std),
-            n_samples=len(unique),
-            is_calibrated=True,
-        )
+        # Near-constant front RH: create a constant model (intercept-only).
+        # Note: R²=1.0 is reported because the constant predicts the mean exactly
+        # (within sensor noise) — but Q² is honestly 0.0 because there is no
+        # variance left for an out-of-sample prediction to explain.
+        models.front_ride_height = _make_constant_fit(
+            "front_ride_height", col("static_front_rh_mm"), len(unique))
 
     # ─── 2. Rear Ride Height ───
     # Seed compliance features: rear RH depends on 1/k_third and 1/k_spring
@@ -1334,6 +1357,23 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             "static_rear_rh_mm", "rear_ride_height",
             pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL,
             seed_features=_REAR_RH_SEEDS)
+
+    # Surface honest ride-height-model status so audits don't mistake a
+    # constant-fit (no variance to explain) for a real regression.
+    _rh_status_parts: list[str] = []
+    for axle, fitted in (("front", models.front_ride_height), ("rear", models.rear_ride_height)):
+        if fitted is None:
+            continue
+        if not fitted.feature_names:
+            _rh_status_parts.append(
+                f"{axle}: constant (no variance, Q²={fitted.q_squared:.2f}, marked uncalibrated)"
+            )
+        else:
+            _rh_status_parts.append(
+                f"{axle}: regression (R²={fitted.r_squared:.2f}, Q²={fitted.q_squared if fitted.q_squared is None else round(fitted.q_squared, 2)})"
+            )
+    if _rh_status_parts:
+        models.status["ride_height_model"] = "; ".join(_rh_status_parts)
 
     # ─── 3. Torsion Bar Turns ───
     _tb_turns = col("torsion_bar_turns")
@@ -1351,17 +1391,8 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         )
     elif len(_tb_valid) >= _MIN_SESSIONS_FOR_FIT:
         # Near-constant torsion turns: use mean as constant model
-        _mean_turns = float(np.mean(_tb_valid))
-        models.torsion_bar_turns = FittedModel(
-            name="torsion_bar_turns",
-            feature_names=[],
-            coefficients=[_mean_turns],
-            r_squared=1.0,
-            rmse=float(np.std(_tb_valid)),
-            loo_rmse=float(np.std(_tb_valid)),
-            n_samples=len(unique),
-            is_calibrated=True,
-        )
+        models.torsion_bar_turns = _make_constant_fit(
+            "torsion_bar_turns", _tb_valid, len(unique))
 
     # ─── 4. Torsion Bar Deflection ───
     if np.std(col("torsion_bar_defl_mm")) > 0.5:
