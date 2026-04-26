@@ -97,7 +97,10 @@ class KnowledgeRecall:
         """Use an empirical model to predict a value.
 
         Args:
-            relationship: Name of the fitted relationship (e.g., "lltd_vs_rear_arb")
+            relationship: Name of the fitted relationship (e.g.,
+                "front_rh_var_vs_heave").  The historical LLTD-vs-ARB
+                relationship is intentionally not fitted because the IBT signal
+                is a ride-height proxy, not true wheel-load LLTD.
             x_value: Input value to predict from
 
         Returns:
