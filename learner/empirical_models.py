@@ -18,12 +18,14 @@ so the solver knows when to trust it and when to fall back to theory.
 
 from __future__ import annotations
 
-import math
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 # Time decay: weight *= 0.95 ^ days_since_observation
@@ -153,7 +155,8 @@ def _safe_linear_fit(x: list[float], y: list[float]) -> tuple[list[float], float
         ss_tot = np.sum((y_arr - np.mean(y_arr)) ** 2)
         r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
         return list(coeffs), max(0.0, r2)
-    except Exception:
+    except Exception as exc:
+        logger.debug("polyfit failed (n=%d): %s", len(x), exc)
         return [], 0.0
 
 

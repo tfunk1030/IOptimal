@@ -86,6 +86,9 @@ KNOWN_CAUSALITY = {
     ],
 
     # ── Step 2: Heave / Third Springs ──
+    # Cross-axle aero coupling effects (e.g. front heave → rear RH via pitch
+    # and DF redistribution) are second-order and direction-indeterminate;
+    # marked with "~" alongside the primary same-axle effects.
     ("front_heave_nmm", "+"): [
         ("front_rh_std_mm", "-"),
         ("front_bottoming_events", "-"),
@@ -95,6 +98,7 @@ KNOWN_CAUSALITY = {
         ("heave_bottoming_events_front", "-"),
         ("front_shock_vel_p95_mps", "-"),        # stiffer platform = less shock travel
         ("front_dominant_freq_hz", "+"),          # stiffer spring = higher natural freq
+        ("dynamic_rear_rh_mm", "~"),              # cross-axle: pitch shift → rear RH effect
     ],
     ("rear_third_nmm", "+"): [
         ("rear_rh_std_mm", "-"),
@@ -104,6 +108,7 @@ KNOWN_CAUSALITY = {
         ("heave_bottoming_events_rear", "-"),
         ("rear_shock_vel_p95_mps", "-"),
         ("rear_dominant_freq_hz", "+"),
+        ("dynamic_front_rh_mm", "~"),             # cross-axle: pitch shift → front RH effect
     ],
 
     # ── Step 3: Corner Springs ──
@@ -179,6 +184,44 @@ KNOWN_CAUSALITY = {
     # ── Supporting Parameters ──
     ("brake_bias_pct", "+"): [
         ("braking_decel_peak_g", "~"),   # bias change can go either way on decel
+        ("front_braking_lock_ratio_p95", "+"),  # more front bias → more front lock risk
+    ],
+
+    # ── Differential ──
+    ("diff_preload_nm", "+"): [
+        ("rear_power_slip_ratio_p95", "-"),  # tighter coupling on throttle reduces slip
+        ("body_slip_p95_deg", "-"),          # locked diff resists yaw → less rotation
+        ("understeer_low_speed_deg", "+"),    # locked diff pushes wide on low-speed exit
+    ],
+
+    # ── Traction Control ──
+    # Higher gain = earlier intervention; higher slip threshold = later intervention.
+    ("tc_gain", "+"): [
+        ("rear_power_slip_ratio_p95", "-"),  # earlier cut → less slip
+        ("tc_intervention_pct", "+"),
+    ],
+    ("tc_slip", "+"): [
+        ("rear_power_slip_ratio_p95", "+"),  # later cut → more slip allowed
+        ("tc_intervention_pct", "-"),
+    ],
+
+    # ── Tyre pressures ──
+    # Higher cold pressure → higher hot pressure (linear), reduces contact patch.
+    ("front_pressure_cold_kpa", "+"): [
+        ("front_pressure_mean_kpa", "+"),    # direct hot pressure response
+        ("understeer_mean_deg", "+"),         # smaller contact patch → less front grip
+    ],
+    ("rear_pressure_cold_kpa", "+"): [
+        ("rear_pressure_mean_kpa", "+"),
+        ("body_slip_p95_deg", "+"),           # smaller rear contact patch → more slip
+    ],
+
+    # ── Fuel load ──
+    # More fuel = more rear-biased weight (tank behind axle) → more rear RH
+    # compression and altered LLTD. Effects depend on tank position; mark "~".
+    ("fuel_l", "+"): [
+        ("dynamic_rear_rh_mm", "-"),          # heavier rear → more compression
+        ("lltd_measured", "~"),                # weight balance shift, direction depends on car
     ],
 }
 
