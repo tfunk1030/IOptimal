@@ -32,6 +32,7 @@ Validated against BMW Sebring telemetry:
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 
@@ -39,6 +40,8 @@ from car_model.garage import GarageSetupState
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 from vertical_dynamics import damped_excursion_mm, legacy_mass_to_shared_model_kg
+
+logger = logging.getLogger(__name__)
 
 # Guard so the heave-index UNVALIDATED warning is only printed once per process,
 # regardless of how many times solve() / reconcile_solution() / solution_from_explicit_settings()
@@ -261,7 +264,7 @@ class HeaveSolver:
         axle: str = "front",
         damper_coeff_nsm: float = 0.0,
         parallel_wheel_rate_nmm: float = 0.0,
-    ) -> float:
+    ) -> float | None:
         """Calculate p99 ride height excursion (mm).
 
         Args:
@@ -270,7 +273,11 @@ class HeaveSolver:
             k_nmm: spring rate in N/mm
 
         Returns:
-            Excursion in mm
+            Excursion in mm, or None when the inputs are outside the model's
+            domain (degenerate m_eff or k below the soft-spring floor — see
+            ``vertical_dynamics.damped_excursion_mm``). Callers must treat
+            None as "skip this constraint with an explicit reason"; never
+            substitute 0.0 silently.
         """
         tyre_rate = (
             self.car.tyre_vertical_rate_front_nmm
@@ -335,6 +342,9 @@ class HeaveSolver:
                 damper_coeff_nsm=damper_coeff_nsm,
                 parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
             )
+            if excursion_mm is None:
+                # Below the model's soft-spring domain — keep searching stiffer.
+                continue
             if excursion_mm <= dynamic_rh_mm + 1e-6:
                 best = float(rate)
                 break
@@ -407,6 +417,11 @@ class HeaveSolver:
                     damper_coeff_nsm=damper_coeff_nsm,
                     parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
                 )
+                if excursion is None:
+                    # Soft-spring domain — treat as bottoming (worst-case
+                    # safety bias) and keep counting.
+                    events_still_bottoming += 1
+                    continue
                 if excursion > dynamic_rh_mm:
                     events_still_bottoming += 1
 
@@ -499,11 +514,30 @@ class HeaveSolver:
                 damper_coeff_nsm=damper_coeff_nsm,
                 parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
             )
-            anchor_model_sigma = self.sigma_from_excursion(anchor_exc)
+            anchor_model_sigma = (
+                self.sigma_from_excursion(anchor_exc)
+                if anchor_exc is not None else 0.0
+            )
             if anchor_model_sigma > 0:
                 raw_ratio = float(current_meas_sigma_mm) / anchor_model_sigma
-                # Clamp to reject outliers (one bad lap shouldn't dictate setup)
+                # Clamp to reject outliers (one bad lap shouldn't dictate setup).
+                # Saturating the clamp is a real signal that the σ model is
+                # off — the IBT measurement disagrees with the model by more
+                # than 2× at the driver-validated operating point. Surface it
+                # so the user can audit the discrepancy rather than masking
+                # a model defect behind silent clipping.
                 cal_ratio = max(0.5, min(2.0, raw_ratio))
+                if abs(raw_ratio - cal_ratio) > 1e-9:
+                    logger.warning(
+                        "min_rate_for_sigma[%s]: cal_ratio clamp saturated "
+                        "(raw=%.3f → clamped=%.2f, model_σ=%.2fmm vs "
+                        "measured_σ=%.2fmm at %g N/mm) — σ model genuinely "
+                        "disagrees with IBT at the driver anchor; clamp is "
+                        "masking a real model defect.",
+                        axle, raw_ratio, cal_ratio,
+                        anchor_model_sigma, float(current_meas_sigma_mm),
+                        float(current_rate_nmm),
+                    )
                 # Effective σ-target in MEASURED units: tighter of (a) the
                 # driver's current operating σ * margin, (b) the user's loose
                 # default. Driver-anchored σ wins when it's tighter than the
@@ -538,12 +572,13 @@ class HeaveSolver:
                 damper_coeff_nsm=damper_coeff_nsm,
                 parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
             )
-            anchor_sigma_now = self.sigma_from_excursion(anchor_exc)
-            if anchor_sigma_now <= effective_target + STICKY_EPSILON_MM:
-                # Snap current rate to the 10 N/mm garage step (round nearest)
-                snapped = round(current_rate_nmm / 10.0) * 10
-                snapped = max(int(math.ceil(lo / 10.0) * 10), min(int(hi), snapped))
-                return float(snapped)
+            if anchor_exc is not None:
+                anchor_sigma_now = self.sigma_from_excursion(anchor_exc)
+                if anchor_sigma_now <= effective_target + STICKY_EPSILON_MM:
+                    # Snap current rate to the 10 N/mm garage step (round nearest)
+                    snapped = round(current_rate_nmm / 10.0) * 10
+                    snapped = max(int(math.ceil(lo / 10.0) * 10), min(int(hi), snapped))
+                    return float(snapped)
 
         best = float("inf")
         for rate in range(int(math.ceil(lo / 10.0) * 10), int(hi) + 10, 10):
@@ -558,6 +593,9 @@ class HeaveSolver:
                 damper_coeff_nsm=damper_coeff_nsm,
                 parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
             )
+            if excursion_mm is None:
+                # Soft-spring domain — keep searching stiffer rates.
+                continue
             sigma_mm = self.sigma_from_excursion(excursion_mm)
             if sigma_mm <= effective_target + 1e-6:
                 best = float(rate)
@@ -608,6 +646,26 @@ class HeaveSolver:
             damper_coeff_nsm=damper_coeff,
             parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
         )
+        if exc is None:
+            # Below the model's soft-spring domain (k < 20 N/mm or m_eff
+            # degenerate). Report unsafe with an explicit reason rather than
+            # silently substituting 0.0 — the solver must see this rate as
+            # unevaluable, not free of bottoming risk.
+            return SpringSafetyCheck(
+                label=label or f"{axle} {rate_nmm:.0f} N/mm",
+                rate_nmm=rate_nmm,
+                axle=axle,
+                excursion_mm=float("inf"),
+                dynamic_rh_mm=round(dynamic_rh_mm, 1),
+                bottoming_mm=float("inf"),
+                sigma_mm=float("inf"),
+                sigma_target_mm=hsm.sigma_target_mm,
+                safe=False,
+                reason=(
+                    f"Excursion model out-of-domain at {rate_nmm:.0f} N/mm "
+                    "(soft-spring floor 20 N/mm) — rate not evaluable"
+                ),
+            )
         sigma = self.sigma_from_excursion(exc)
         bottoming = exc - dynamic_rh_mm  # positive = bottoming
 
@@ -860,6 +918,9 @@ class HeaveSolver:
                 axle="front",
                 damper_coeff_nsm=front_hs_damper_nsm,
             )
+            if front_exc is None:
+                # Soft-spring out-of-domain; skip this rate.
+                continue
             front_sigma = self.sigma_from_excursion(front_exc)
             perch, outputs, constraint = self._best_front_perch_with_garage_model(
                 front_heave_nmm=rate,
@@ -1028,6 +1089,16 @@ class HeaveSolver:
             axle="front",
             damper_coeff_nsm=front_damper_coeff,
         )
+        if front_exc is None:
+            # Selected rate is below the model's soft-spring floor — this
+            # should be impossible after clamping to legal heave bounds, but
+            # guard so we never propagate a silent zero.
+            logger.warning(
+                "Front excursion model out-of-domain at chosen rate %.0f N/mm; "
+                "reporting infinite excursion (forces stiffer fallback).",
+                k_front,
+            )
+            front_exc = float("inf")
         front_sigma = self.sigma_from_excursion(front_exc)
 
         # --- Rear axle ---
@@ -1094,6 +1165,13 @@ class HeaveSolver:
             damper_coeff_nsm=rear_damper_coeff,
             parallel_wheel_rate_nmm=rear_corner_wheel_rate_nmm,
         )
+        if rear_exc is None:
+            logger.warning(
+                "Rear excursion model out-of-domain at chosen rate %.0f N/mm; "
+                "reporting infinite excursion (forces stiffer fallback).",
+                k_rear,
+            )
+            rear_exc = float("inf")
         rear_sigma = self.sigma_from_excursion(rear_exc)
 
         # --- Safety checks ---
@@ -1403,10 +1481,22 @@ class HeaveSolver:
         def _quick_solution(k_f: float, k_r: float, label: str) -> HeaveSolution:
             f_exc = self.excursion(v_front, m_front, k_f, axle="front",
                                   damper_coeff_nsm=front_damper_coeff)
+            if f_exc is None:
+                logger.warning(
+                    "_quick_solution: front excursion model out-of-domain at "
+                    "%.0f N/mm; reporting infinite excursion.", k_f,
+                )
+                f_exc = float("inf")
             f_sig = self.sigma_from_excursion(f_exc)
             r_exc = self.excursion(v_rear, m_rear, k_r, axle="rear",
                                   damper_coeff_nsm=rear_damper_coeff,
                                   parallel_wheel_rate_nmm=rear_corner_wrate)
+            if r_exc is None:
+                logger.warning(
+                    "_quick_solution: rear excursion model out-of-domain at "
+                    "%.0f N/mm; reporting infinite excursion.", k_r,
+                )
+                r_exc = float("inf")
             r_sig = self.sigma_from_excursion(r_exc)
             return HeaveSolution(
                 front_heave_nmm=k_f,

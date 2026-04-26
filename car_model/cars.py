@@ -14,10 +14,13 @@ IMPORTANT — Aero map axis swap:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from car_model.garage import GarageOutputModel
 from vertical_dynamics import damped_excursion_mm
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Ferrari indexed-control lookup tables ────────────────────────────────────
@@ -1798,13 +1801,26 @@ class CarModel:
             c_nsm = damper_coeff_nsm if damper_coeff_nsm is not None else self.damper.rear_hs_coefficient_nsm
             tyre_rate_nmm = self.tyre_vertical_rate_rear_nmm
 
-        return damped_excursion_mm(
+        excursion = damped_excursion_mm(
             shock_vel_p99_mps,
             m_eff,
             k_nmm,
             tyre_vertical_rate_nmm=tyre_rate_nmm,
             damper_coeff_nsm=c_nsm,
         )
+        if excursion is None:
+            # Soft-spring or degenerate-mass domain — Step 1 callers want a
+            # numeric excursion budget. Emit the conservative full-travel
+            # value (30 mm — same policy objective.py uses) so the rake
+            # solver never thinks soft setups have zero RH consumption.
+            logger.warning(
+                "rh_excursion_p99[%s]: excursion model out-of-domain "
+                "(k=%.1f N/mm, m_eff=%.1f kg) — returning conservative "
+                "full-travel 30 mm.",
+                axle, k_nmm, m_eff,
+            )
+            return 30.0
+        return excursion
 
     def estimate_confidence(self) -> dict[str, str]:
         """Return confidence level for key model parameters.
