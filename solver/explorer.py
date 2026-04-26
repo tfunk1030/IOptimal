@@ -28,6 +28,7 @@ import numpy as np
 
 from aero_model.interpolator import AeroSurface
 from car_model.cars import CarModel
+from solver._lltd import optimal_lltd
 from track_model.profile import TrackProfile
 
 
@@ -158,9 +159,13 @@ class SetupExplorer:
         if k_front + k_rear <= 0:
             return 0.0
         lltd = k_front / (k_front + k_rear)
-        tyre_sens = self.car.tyre_load_sensitivity
-        optimal_lltd = self.car.weight_dist_front + (tyre_sens / 0.20) * 0.05
-        return max(0.0, 1.0 - abs(lltd - optimal_lltd) / 0.10)
+        target = optimal_lltd(
+            front_weight_dist=self.car.weight_dist_front,
+            tyre_sens=self.car.tyre_load_sensitivity,
+            pct_above_200kph=getattr(self.track, "pct_above_200kph", 0.0),
+            car_name=getattr(self.car, "canonical_name", None),
+        )
+        return max(0.0, 1.0 - abs(lltd - target) / 0.10)
 
     def _is_conventional(self, c: ExplorerCandidate) -> tuple[bool, list[str]]:
         unconventional: list[str] = []

@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
+from solver._lltd import optimal_lltd
 from solver.scenario_profiles import get_scenario_profile
 from track_model.profile import TrackProfile
 from vertical_dynamics import damped_excursion_mm
@@ -753,7 +754,6 @@ class ObjectiveFunction:
         # Use car.measured_lltd_target when available (IBT-calibrated override).
         # For fuel window analysis, we still model the shift with fuel load,
         # but anchor to the measured target instead of the theoretical formula.
-        tyre_sens = car.tyre_load_sensitivity
         _measured_lltd_target = car.measured_lltd_target
         if _measured_lltd_target is not None:
             # Anchor to measured target; apply fuel-load shift on top
@@ -761,8 +761,16 @@ class ObjectiveFunction:
             target_start = _measured_lltd_target
             target_end = _measured_lltd_target + _shift
         else:
-            target_start = front_pct_start + (tyre_sens / 0.20) * 0.05
-            target_end = front_pct_end + (tyre_sens / 0.20) * 0.05
+            target_start = optimal_lltd(
+                front_weight_dist=front_pct_start,
+                tyre_sens=car.tyre_load_sensitivity,
+                car_name=getattr(car, "canonical_name", None),
+            )
+            target_end = optimal_lltd(
+                front_weight_dist=front_pct_end,
+                tyre_sens=car.tyre_load_sensitivity,
+                car_name=getattr(car, "canonical_name", None),
+            )
 
         err_start = abs(lltd_actual - target_start)
         err_end = abs(lltd_actual - target_end)
@@ -1053,11 +1061,14 @@ class ObjectiveFunction:
             result.lltd_error = 0.0  # zero error — LLTD is not tunable
         else:
             # All other cars: LLTD is computed from components and scored vs target
-            tyre_sens = car.tyre_load_sensitivity
             if _measured_lltd_target is not None:
                 target_lltd = _measured_lltd_target
             else:
-                target_lltd = car.weight_dist_front + (tyre_sens / 0.20) * 0.05
+                target_lltd = optimal_lltd(
+                    front_weight_dist=car.weight_dist_front,
+                    tyre_sens=car.tyre_load_sensitivity,
+                    car_name=getattr(car, "canonical_name", None),
+                )
             result.lltd_error = abs(result.lltd - target_lltd)
 
         # ── Damping ratios (real physics) ───────────────────────────────
