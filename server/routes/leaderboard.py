@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import verify_api_key
 from server.database import get_db
+from server.rate_limit import get_limit
+from server.validation import require_known_car
 from teamdb.models import Leaderboard, Member
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
@@ -36,12 +38,16 @@ class LeaderboardEntry(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("/{car}/{track}", response_model=list[LeaderboardEntry])
+@get_limit()
 async def get_leaderboard(
+    request: Request,
     car: str,
     track: str,
     member: Member = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
+    require_known_car(car)
+
     stmt = (
         select(Leaderboard)
         .where(

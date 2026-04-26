@@ -6,13 +6,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import verify_api_key
 from server.database import get_db
+from server.rate_limit import get_limit, post_limit
+from server.validation import require_known_car
 from teamdb.models import ActivityLog, CarDefinition, Member, Observation
 
 router = APIRouter(prefix="/observations", tags=["observations"])
@@ -51,11 +53,15 @@ class ObservationOut(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=ObservationOut, status_code=201)
+@post_limit()
 async def create_observation(
+    request: Request,
     body: ObservationCreateRequest,
     member: Member = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
+    require_known_car(body.car)
+
     # Auto-register car if not already present for this team.
     result = await db.execute(
         select(CarDefinition).where(CarDefinition.team_id == member.team_id, CarDefinition.car_name == body.car)
@@ -117,7 +123,9 @@ async def create_observation(
 
 
 @router.get("/{car}/{track}", response_model=list[ObservationOut])
+@get_limit()
 async def list_observations(
+    request: Request,
     car: str,
     track: str,
     limit: int = Query(100, ge=1, le=1000),
@@ -125,6 +133,8 @@ async def list_observations(
     member: Member = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
+    require_known_car(car)
+
     stmt = (
         select(Observation)
         .where(

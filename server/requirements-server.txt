@@ -7,3 +7,4 @@ aiosqlite>=0.20
 pydantic>=2.0
 python-multipart>=0.0.6
 httpx>=0.24
+slowapi>=0.1.9
