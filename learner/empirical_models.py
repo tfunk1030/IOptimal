@@ -791,9 +791,25 @@ def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> Non
         models.corrections["lltd_measured_std"] = float(np.std(pv))
         models.corrections["lltd_is_proxy"] = True
 
-    # Effective mass correction (from variance data + spring rates)
+    # Effective mass correction (from variance data + spring rates).
+    #
+    # CRITICAL: `obs.setup.front_heave_nmm` stores the RAW garage value for the
+    # heave control. For BMW/Porsche the garage exposes N/mm directly (typical
+    # range 50-600). For Ferrari/Acura the garage exposes an INDEX (0-18 for
+    # Ferrari, 1-26 for Acura) that must be decoded via the car's heave-spring
+    # lookup before any rate arithmetic. Without that decode, `k_nm = heave *
+    # 1000` becomes ~1000-26000 N/m instead of the actual ~50000-600000 N/m,
+    # giving m_eff values 1-2 orders of magnitude wrong that can still pass the
+    # [100, 4000] kg sanity guard for some index/(exc/v) combinations.
+    #
+    # The car decode lookup is optional: if it can't be loaded (e.g. test
+    # fixtures without car_model imported), we fall back to a magnitude-based
+    # heuristic (`heave < 30` → looks index-like → skip this observation
+    # rather than corrupt the correction).
+    car_for_decode = _get_car_for_decode(models.car)
+
     for obs in obs_list:
-        heave = obs.get("setup", {}).get("front_heave_nmm", 0)
+        heave_raw = obs.get("setup", {}).get("front_heave_nmm", 0) or 0.0
         telem = obs.get("telemetry", {})
 
         # Prefer high-speed filtered stats (>200kph) for m_eff correction to avoid
@@ -801,26 +817,94 @@ def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> Non
         var = telem.get("front_rh_std_hs_mm", 0) or telem.get("front_rh_std_mm", 0)
         sv_p99 = telem.get("front_heave_vel_p95_hs_mps", 0) or telem.get("front_shock_vel_p99_mps", 0)
 
-        if heave > 0 and var > 0 and sv_p99 > 0:
-            # excursion_p99 ≈ 2.33 * sigma
-            exc = var * 2.33
-            # exc = v_p99 * sqrt(m_eff / k) → m_eff = k * (exc/v_p99)^2
-            k_nm = heave * 1000
-            m_eff = k_nm * (exc / 1000 / sv_p99) ** 2
-            # Sanity check: high-downforce cars (Ferrari LMH) at high speed have aero spring
-            # k_aero >> k_mechanical, collapsing apparent m_eff toward 0. Any value below the
-            # minimum physically plausible sprung corner mass is an aero-contaminated reading
-            # and must be discarded. Range: [100 kg, 4000 kg].
-            if m_eff < 100.0 or m_eff > 4000.0:
-                continue  # discard — aero-contaminated or physically impossible
-            m_eff_val = round(m_eff, 1)
-            models.corrections.setdefault("m_eff_front_values", [])
-            models.corrections["m_eff_front_values"].append(m_eff_val)
+        if heave_raw <= 0 or var <= 0 or sv_p99 <= 0:
+            continue
+
+        heave_nmm = _decode_front_heave_nmm(heave_raw, car_for_decode)
+        if heave_nmm is None or heave_nmm < 30.0:
+            # Skip: looks index-like with no decode available, or implausibly
+            # soft. Better to drop one observation than corrupt the mean.
+            continue
+
+        # excursion_p99 ≈ 2.33 * sigma
+        exc = var * 2.33
+        # exc = v_p99 * sqrt(m_eff / k) → m_eff = k * (exc/v_p99)^2
+        k_nm = heave_nmm * 1000.0
+        m_eff = k_nm * (exc / 1000 / sv_p99) ** 2
+        # Sanity check: high-downforce cars (Ferrari LMH) at high speed have aero spring
+        # k_aero >> k_mechanical, collapsing apparent m_eff toward 0. Any value below the
+        # minimum physically plausible sprung corner mass is an aero-contaminated reading
+        # and must be discarded. Range: [100 kg, 4000 kg].
+        if m_eff < 100.0 or m_eff > 4000.0:
+            continue
+        m_eff_val = round(m_eff, 1)
+        models.corrections.setdefault("m_eff_front_values", [])
+        models.corrections["m_eff_front_values"].append(m_eff_val)
 
     m_eff_samples = models.corrections.get("m_eff_front_values", [])
     if m_eff_samples:
         models.corrections["m_eff_front_empirical_mean"] = float(np.mean(m_eff_samples))
         models.corrections["m_eff_front_empirical_std"] = float(np.std(m_eff_samples))
+
+
+def _get_car_for_decode(car_name: str) -> Any | None:
+    """Lazy-load a CarModel for indexed-heave decoding.
+
+    Returns None if the car can't be loaded (avoids hard-coupling the learner
+    to `car_model.cars` for tests / minimal environments).
+    """
+    if not car_name:
+        return None
+    try:
+        from car_model.cars import get_car  # local import to avoid cycle
+        return get_car(car_name, apply_calibration=False)
+    except Exception:
+        return None
+
+
+def _decode_front_heave_nmm(raw: float, car: Any | None) -> float | None:
+    """Convert a raw garage front-heave value to N/mm.
+
+    Logic:
+    - If `car.heave_spring.front_rate_from_setting` decodes (returns a
+      meaningfully different value), use that — handles Ferrari/Acura
+      indexed-control cars that expose `front_setting_index_range`.
+    - Else if the car has a `HeaveSpringTable` with `front_heave_rate_from_index`,
+      use that — defensive path for any car that switches to the table form.
+    - Else if the raw value looks like an N/mm rate (>= 30), accept it as-is —
+      handles BMW/Porsche.
+    - Else return None to signal the caller to skip this observation.
+    """
+    raw = float(raw)
+    if raw <= 0:
+        return None
+
+    # Try linear-slope decode (HeaveSpringModel) first.
+    hs = getattr(car, "heave_spring", None) if car is not None else None
+    if hs is not None and hasattr(hs, "front_rate_from_setting"):
+        try:
+            decoded = float(hs.front_rate_from_setting(raw))
+            # If the decode meaningfully differs from `raw` (i.e. the car
+            # actually uses indexed controls), trust it.
+            if decoded > 0 and abs(decoded - raw) > 1e-3:
+                return decoded
+        except Exception:
+            pass
+
+    # Try lookup-table decode (HeaveSpringTable on Ferrari etc.).
+    table = getattr(car, "heave_spring_table", None) if car is not None else None
+    if table is not None and hasattr(table, "front_heave_rate_from_index"):
+        try:
+            decoded = float(table.front_heave_rate_from_index(raw))
+            if decoded > 0 and abs(decoded - raw) > 1e-3:
+                return decoded
+        except Exception:
+            pass
+
+    # Fall through: raw value is already N/mm if it's plausibly large.
+    if raw >= 30.0:
+        return raw
+    return None
 
 
 def _obs_time_weight(obs: dict, now: datetime | None = None) -> float:
