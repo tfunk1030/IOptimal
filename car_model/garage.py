@@ -65,15 +65,16 @@ class GarageSetupState:
     def from_current_setup(cls, setup: Any, car: Any = None) -> "GarageSetupState":
         """Build from analyzer.setup_reader.CurrentSetup-like objects.
 
-        If *car* is provided (a CarModel), indexed spring cars (Ferrari, Acura)
-        get their raw garage indices decoded to physical N/mm rates.
+        Index↔physical conversion boundary (Ferrari/Acura garage path): when
+        *car* is provided, raw garage indices on the input setup are decoded
+        to physical N/mm rates EXACTLY ONCE here. Range-guarded so callers
+        passing already-physical values pass through unchanged.
         """
         front_heave_nmm = float(getattr(setup, "front_heave_nmm", 0.0))
         rear_third_nmm = float(getattr(setup, "rear_third_nmm", 0.0))
         rear_spring_nmm = float(getattr(setup, "rear_spring_nmm", 0.0))
         front_torsion_od_mm = float(getattr(setup, "front_torsion_od_mm", 0.0))
 
-        # Index decoding for indexed cars (Ferrari, Acura)
         if car is not None:
             hsm = car.heave_spring
             csm = car.corner_spring
