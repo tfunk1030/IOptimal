@@ -55,6 +55,37 @@ logger = logging.getLogger(__name__)
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
+# Ferrari preload-turn baseline perches (from the 59-session calibration set).
+# Used only when callers don't pass step2's actual perch values; see
+# CS-1 referral in docs/audit/2026-04-26/step3-corner-springs.md.
+_FERRARI_FRONT_HEAVE_PERCH_DEFAULT_MM = -16.5
+_FERRARI_REAR_THIRD_PERCH_DEFAULT_MM = -104.0
+
+# ~50 kg/corner unsprung mass × 2 corners = 100 kg per axle.
+_AXLE_UNSPRUNG_MASS_KG = 100.0
+# Sprung-mass floor used in heave-mode frequency calc to guard against
+# pathological inputs that would otherwise produce zero/negative mass.
+_SPRUNG_MASS_FLOOR_KG = 200.0
+# Minimum acceptable rear corner-frequency-to-bump-frequency isolation ratio.
+# Less strict than the front (front uses csm.min_freq_isolation_ratio) since
+# rear can run stiffer for traction and the third spring carries the platform.
+_REAR_FREQ_ISOLATION_MIN_RATIO = 1.2
+
+# Driver-anchor tolerance for rear coil spring (Principle 11). When the
+# driver-loaded rear coil is within this fraction of the physics target the
+# solver anchors to the driver value to preserve the rear-coil/RARB LLTD
+# coupling the driver validated.
+_DRIVER_REAR_SPRING_TOLERANCE = 0.20
+
+# LLTD-floor margin: only bump the front roll spring when the achievable
+# LLTD is more than this many percentage points below the target. Smaller
+# gaps fall within ARB-blade authority.
+_LLTD_FLOOR_ACCEPTABLE_GAP = 0.05
+
+# Floor used when dividing rear_third by the surface-severity ratio inside
+# the LLTD pre-check; prevents division blowup if the ratio collapses.
+_REAR_TARGET_RATIO_DIV_FLOOR = 0.5
+
 
 def _solve_ferrari_torsion_bar_turns(
     car: CarModel,
@@ -63,8 +94,8 @@ def _solve_ferrari_torsion_bar_turns(
     rear_spring_rate_nmm: float,
     front_heave_nmm: float,
     rear_third_nmm: float,
-    front_heave_perch_mm: float = -16.5,
-    rear_third_perch_mm: float = -104.0,
+    front_heave_perch_mm: float = _FERRARI_FRONT_HEAVE_PERCH_DEFAULT_MM,
+    rear_third_perch_mm: float = _FERRARI_REAR_THIRD_PERCH_DEFAULT_MM,
 ) -> tuple[float, float]:
     """Compute Ferrari front/rear torsion bar preload turns.
 
@@ -159,21 +190,15 @@ class CornerSpringSolution:
     # _solve_ferrari_torsion_bar_turns(); for all other cars they remain 0.0.
     front_torsion_bar_turns: float = 0.0
     rear_torsion_bar_turns: float = 0.0
-    parameter_search_status: dict = None
-    parameter_search_evidence: dict = None
-
-    def __post_init__(self):
-        if self.parameter_search_status is None:
-            self.parameter_search_status = {
-                "front_torsion_od_mm": "user_set",
-                "rear_torsion_od_mm": "user_set",
-                "rear_spring_rate_nmm": "user_set",
-                "rear_spring_perch_mm": "user_set",
-                "front_torsion_bar_turns": "user_set",
-                "rear_torsion_bar_turns": "user_set",
-            }
-        if self.parameter_search_evidence is None:
-            self.parameter_search_evidence = {}
+    parameter_search_status: dict = field(default_factory=lambda: {
+        "front_torsion_od_mm": "user_set",
+        "rear_torsion_od_mm": "user_set",
+        "rear_spring_rate_nmm": "user_set",
+        "rear_spring_perch_mm": "user_set",
+        "front_torsion_bar_turns": "user_set",
+        "rear_torsion_bar_turns": "user_set",
+    })
+    parameter_search_evidence: dict = field(default_factory=dict)
 
     @property
     def rear_wheel_rate_nmm(self) -> float:
@@ -306,7 +331,7 @@ class CornerSpringSolver:
             CornerSpringSolution with torsion bar OD and rear rate
         """
         if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+            fuel_load_l = self.car.fuel_capacity_l
         csm = self.car.corner_spring
         total_mass = self.car.total_mass(fuel_load_l)
         m_f_corner = total_mass * self.car.weight_dist_front / 2
@@ -398,20 +423,21 @@ class CornerSpringSolver:
             # Compute what physics alone would give
             _physics_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
             _physics_rear_rate = rear_third_nmm / _physics_ratio
-            # Soft preference: use driver's value only if within 20% of physics
-            if abs(float(current_rear_spring_nmm) - _physics_rear_rate) / _physics_rear_rate <= 0.20:
+            # Soft preference: use driver's value only if within tolerance of physics
+            tol_pct = _DRIVER_REAR_SPRING_TOLERANCE * 100
+            if abs(float(current_rear_spring_nmm) - _physics_rear_rate) / _physics_rear_rate <= _DRIVER_REAR_SPRING_TOLERANCE:
                 rear_target_rate = float(current_rear_spring_nmm)
                 logger.info(
                     "Rear spring anchored to driver-loaded %.0f N/mm "
-                    "(physics target: %.0f N/mm, within 20%%)",
-                    rear_target_rate, _physics_rear_rate,
+                    "(physics target: %.0f N/mm, within %.0f%%)",
+                    rear_target_rate, _physics_rear_rate, tol_pct,
                 )
             else:
                 rear_target_rate = _physics_rear_rate
                 logger.info(
                     "Rear spring using physics target %.0f N/mm "
-                    "(driver-loaded: %.0f N/mm, differs by >20%%)",
-                    rear_target_rate, float(current_rear_spring_nmm),
+                    "(driver-loaded: %.0f N/mm, differs by >%.0f%%)",
+                    rear_target_rate, float(current_rear_spring_nmm), tol_pct,
                 )
             # Use the driver's empirical ratio for the FREQUENCY check that
             # follows (kept symmetric with the synthetic path).
@@ -431,9 +457,14 @@ class CornerSpringSolver:
             rear_od = max(rear_od, csm.rear_torsion_od_range_mm[0])
             rear_od = min(rear_od, csm.rear_torsion_od_range_mm[1])
             rear_rate = csm.rear_torsion_bar_rate(rear_od)
-            # Validation warning for unvalidated rear torsion bar models
+            # Defense-in-depth: gate already blocks Step 3 when this flag
+            # is set; warning remains for any future car that bypasses the
+            # gate or sets the flag at runtime.
             if getattr(csm, 'rear_torsion_unvalidated', False):
-                print("\n⚠  UNVALIDATED: Ferrari rear torsion bar model may have 3.5x rate error — verify rear spring rates manually\n")
+                logger.warning(
+                    "Ferrari rear torsion bar model may have 3.5x rate "
+                    "error — verify rear spring rates manually."
+                )
         else:
             rear_od = None
             rear_rate = max(rear_target_rate, csm.rear_spring_range_nmm[0])
@@ -484,7 +515,7 @@ class CornerSpringSolver:
                 torsion bar path entirely. Ignored for torsion bar cars.
         """
         if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+            fuel_load_l = self.car.fuel_capacity_l
         csm = self.car.corner_spring
         # Roll spring cars: skip torsion bar entirely
         if csm.front_is_roll_spring or csm.front_torsion_c == 0.0:
@@ -513,25 +544,22 @@ class CornerSpringSolver:
         rear_freq = self.natural_freq(rear_rate, m_r_corner)
 
         # === Compute derived values ===
-        total_front_heave = front_heave_nmm + 2 * front_rate  # front MR=1.0
-        total_rear_heave = rear_third_nmm + 2 * rear_rate * csm.rear_motion_ratio ** 2
+        # Front MR=1.0, so front wheel rate == front_rate.
+        # Rear corner wheel rate = raw spring rate * MR^2 (CLAUDE.md spring convention).
+        rear_wheel_rate = rear_rate * csm.rear_motion_ratio ** 2
+        total_front_heave = front_heave_nmm + 2 * front_rate
+        total_rear_heave = rear_third_nmm + 2 * rear_wheel_rate
         front_heave_ratio = front_heave_nmm / front_rate if front_rate > 0 else 0
         rear_third_ratio = rear_third_nmm / rear_rate if rear_rate > 0 else 0
         front_isolation = bump_freq / front_freq if front_freq > 0 else 0
         rear_isolation = bump_freq / rear_freq if rear_freq > 0 else 0
 
-        # Heave-mode natural frequencies (what FFT measures on straights)
-        # Heave mode: both wheels move together, full axle sprung mass
-        # k_total = heave_spring + 2 * corner_wheel_rate (all in N/mm)
-        # Rear corner wheel rate = spring_rate * MR^2
-        rear_wheel_rate = rear_rate * csm.rear_motion_ratio ** 2
-        k_heave_front = front_heave_nmm + 2 * front_rate  # front MR=1.0
-        k_heave_rear = rear_third_nmm + 2 * rear_wheel_rate
-        # Sprung mass per axle (subtract ~50 kg/corner unsprung)
-        m_sprung_front = max(m_f_corner * 2 - 100, 200)  # kg
-        m_sprung_rear = max(m_r_corner * 2 - 100, 200)
-        front_heave_freq = self.natural_freq(k_heave_front / 2, m_sprung_front / 2)
-        rear_heave_freq = self.natural_freq(k_heave_rear / 2, m_sprung_rear / 2)
+        # Heave-mode natural frequencies (what FFT measures on straights):
+        # both wheels move together, full axle sprung mass.
+        m_sprung_front = max(m_f_corner * 2 - _AXLE_UNSPRUNG_MASS_KG, _SPRUNG_MASS_FLOOR_KG)
+        m_sprung_rear = max(m_r_corner * 2 - _AXLE_UNSPRUNG_MASS_KG, _SPRUNG_MASS_FLOOR_KG)
+        front_heave_freq = self.natural_freq(total_front_heave / 2, m_sprung_front / 2)
+        rear_heave_freq = self.natural_freq(total_rear_heave / 2, m_sprung_rear / 2)
 
         # === Constraint checks ===
         constraints = self._check_constraints(
@@ -551,8 +579,14 @@ class CornerSpringSolver:
         front_tb_turns = 0.0
         rear_tb_turns = 0.0
         if self.car.canonical_name == 'ferrari':
-            _f_perch = front_heave_perch_mm if front_heave_perch_mm is not None else -16.5
-            _r_perch = rear_third_perch_mm if rear_third_perch_mm is not None else -104.0
+            _f_perch = (
+                front_heave_perch_mm if front_heave_perch_mm is not None
+                else _FERRARI_FRONT_HEAVE_PERCH_DEFAULT_MM
+            )
+            _r_perch = (
+                rear_third_perch_mm if rear_third_perch_mm is not None
+                else _FERRARI_REAR_THIRD_PERCH_DEFAULT_MM
+            )
             front_tb_turns, rear_tb_turns = _solve_ferrari_torsion_bar_turns(
                 self.car,
                 front_torsion_od_mm=front_torsion_od_mm,
@@ -625,7 +659,7 @@ class CornerSpringSolver:
             best-first.
         """
         if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+            fuel_load_l = self.car.fuel_capacity_l
         csm = self.car.corner_spring
 
         # Always include the physics-targeted solve as the first candidate
@@ -763,7 +797,7 @@ class CornerSpringSolver:
                        if self.track.shock_vel_p99_rear_clean_mps > 0
                        else self.track.shock_vel_p99_rear_mps)
         rear_target_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
-        approx_rear_rate = rear_third_nmm / max(rear_target_ratio, 0.5)
+        approx_rear_rate = rear_third_nmm / max(rear_target_ratio, _REAR_TARGET_RATIO_DIV_FLOOR)
         approx_rear_rate = max(approx_rear_rate, csm.rear_spring_range_nmm[0])
         approx_rear_rate = min(approx_rear_rate, csm.rear_spring_range_nmm[1])
         rear_wheel_rate = approx_rear_rate * csm.rear_motion_ratio ** 2
@@ -800,8 +834,8 @@ class CornerSpringSolver:
             achievable_lltd = 0.5
 
         lltd_gap = lltd_target - achievable_lltd
-        if lltd_gap <= 0.05:
-            # Within 5 pp — no floor needed
+        if lltd_gap <= _LLTD_FLOOR_ACCEPTABLE_GAP:
+            # Within ARB-blade authority — no front-spring floor needed.
             return front_rate
 
         # Need to bump front roll spring to close the LLTD gap.
@@ -905,8 +939,11 @@ class CornerSpringSolver:
         rear_isolation = bump_freq / rear_freq if rear_freq > 0 else 0
         checks.append(CornerSpringCheck(
             name=f"Rear freq isolation ({rear_isolation:.1f}x)",
-            satisfied=rear_isolation >= 1.2,  # Less strict for rear
-            detail=f"Isolation {rear_isolation:.1f}x < minimum 1.2x",
+            satisfied=rear_isolation >= _REAR_FREQ_ISOLATION_MIN_RATIO,
+            detail=(
+                f"Isolation {rear_isolation:.1f}x < minimum "
+                f"{_REAR_FREQ_ISOLATION_MIN_RATIO}x"
+            ),
         ))
 
         # 5. Total front heave stiffness adequate
