@@ -267,9 +267,23 @@ class DamperSolver:
     6. Computes HS slope from track p99/p95 ratio (digressive need)
     """
 
+    # LS reference velocity: 25 mm/s — typical body-motion shaft speed,
+    # well below iRacing's official ~38 mm/s LS↔HS transition (1.5 in/s).
+    V_LS_REF_MPS = 0.025
+    # HS reference velocity floor: 50 mm/s prevents division by tiny p95
+    # values on near-pristine tracks.
+    V_HS_REF_FLOOR_MPS = 0.050
+
     def __init__(self, car: CarModel, track: TrackProfile):
         self.car = car
         self.track = track
+
+    def _hs_ref_velocities(self) -> tuple[float, float]:
+        """HS reference velocity per axle (track p95, floored)."""
+        return (
+            max(self.track.shock_vel_p95_front_mps, self.V_HS_REF_FLOOR_MPS),
+            max(self.track.shock_vel_p95_rear_mps, self.V_HS_REF_FLOOR_MPS),
+        )
 
     def _mass_per_corner_kg(self, is_front: bool, fuel_load_l: float) -> float:
         """Sprung mass per corner (kg)."""
@@ -287,39 +301,27 @@ class DamperSolver:
         return 2.0 * math.sqrt(k_nm * mass_kg)
 
     def _damping_ratio_ls(self, is_front: bool) -> float:
-        """LS damping ratio — uses calibrated targets if available, else physics defaults.
+        """LS damping ratio from calibrated targets.
 
-        Calibrated path: reads zeta_target_ls_front / zeta_target_ls_rear from the
-        car's DamperModel, set by validation/calibrate_dampers.py from IBT data.
+        Reads zeta_target_ls_front / zeta_target_ls_rear from the car's
+        DamperModel, set by validation/calibrate_dampers.py from IBT data.
 
-        Physics defaults (uncalibrated):
-        Front (ζ ≈ 0.85-0.90): near-critical for weight transfer control on entry.
-        Rear (ζ ≈ 0.28-0.32): light for rear traction compliance.
-        The front/rear split is driven by spring rate asymmetry.
+        This method is only safe to call when ``solve()`` has already verified
+        ``zeta_is_calibrated``; the uncalibrated branch is rejected up front
+        (no physics-default fallback — Principle 7).
         """
         d = self.car.damper
-        if getattr(d, "zeta_is_calibrated", False):
-            return d.zeta_target_ls_front if is_front else d.zeta_target_ls_rear
-        if is_front:
-            return 0.88  # Near-critical for entry control
-        return 0.30  # Light for rear traction
+        return d.zeta_target_ls_front if is_front else d.zeta_target_ls_rear
 
     def _damping_ratio_hs(self, is_front: bool) -> float:
-        """HS damping ratio — uses calibrated targets if available, else physics defaults.
+        """HS damping ratio from calibrated targets.
 
-        Calibrated path: reads zeta_target_hs_front / zeta_target_hs_rear from the
-        car's DamperModel, set by validation/calibrate_dampers.py from IBT data.
-
-        Physics defaults (uncalibrated):
-        Front HS (ζ ≈ 0.45): aero platform control, moderate HS damping.
-        Rear HS (ζ ≈ 0.13-0.15): maximum compliance for rear traction over bumps.
+        Reads zeta_target_hs_front / zeta_target_hs_rear from the car's
+        DamperModel, set by validation/calibrate_dampers.py from IBT data.
+        Only safe to call after ``solve()`` has verified ``zeta_is_calibrated``.
         """
         d = self.car.damper
-        if getattr(d, "zeta_is_calibrated", False):
-            return d.zeta_target_hs_front if is_front else d.zeta_target_hs_rear
-        if is_front:
-            return 0.45  # Platform control
-        return 0.14  # Maximum compliance for traction
+        return d.zeta_target_hs_front if is_front else d.zeta_target_hs_rear
 
     def _rbd_comp_ratio(self, is_ls: bool, is_front: bool) -> float:
         """Physics-derived rebound/compression ratio.
@@ -362,13 +364,13 @@ class DamperSolver:
         Linear:    F = c * v   → clicks = (c * v_ref) / fpc
         Digressive: F = c * v^n → clicks = (c * v_ref^n) / fpc
         """
-        n = getattr(self.car.damper, "digressive_exponent", 1.0)
+        n = self.car.damper.digressive_exponent
         force_n = c_target * (v_ref_mps ** n)
         clicks = round(force_n / max(force_per_click, 1.0))
         return max(lo, min(hi, clicks))
 
     def _clicks_to_coeff(self, clicks: float, v_ref_mps: float, force_per_click: float) -> float:
-        n = getattr(self.car.damper, "digressive_exponent", 1.0)
+        n = self.car.damper.digressive_exponent
         return float(clicks) * max(force_per_click, 1.0) / max(v_ref_mps ** n, 1e-6)
 
     def _hs_slope_from_surface(self) -> tuple[int, int, str]:
@@ -399,16 +401,13 @@ class DamperSolver:
             lo, hi = d.hs_slope_range
 
             # Physics: p99/p95 ratio indicates how "spiky" the bump
-            # distribution is.  Once extreme events are >=70% worse than
+            # distribution is. Once extreme events are >=70% worse than
             # typical HS events (ratio >= 1.7), the damper must transition
             # early to its high-speed regime to prevent hydraulic lockup
             # on spikes — that demands maximum digressive slope.
             #
-            # ratio_floor  = 1.1 : near-uniform surface → minimum slope
-            # ratio_saturate = 1.7 : severe surface     → max slope
-            #
-            # Sebring front 1.84 / rear 1.82 → both saturate → slope 11.
-            # Smooth track (ratio ~1.3) → slope ~4 (moderate digressivity).
+            # ratio_floor    = 1.1 : near-uniform surface → minimum slope
+            # ratio_saturate = 1.7 : severe surface       → maximum slope
             ratio_floor = 1.1
             ratio_saturate = 1.7
             normalized = max(0.0, min(1.0,
@@ -473,7 +472,7 @@ class DamperSolver:
         # for blocking Step 6 BEFORE this is called. If we get here, the gate
         # was bypassed (likely by a track-only direct solver call) and the
         # caller needs to know.
-        if not getattr(d, "zeta_is_calibrated", False):
+        if not d.zeta_is_calibrated:
             raise ValueError(
                 f"DamperSolver refuses to produce clicks without calibrated "
                 f"zeta targets for {self.car.name}. Run "
@@ -521,16 +520,21 @@ class DamperSolver:
         # ─── Telemetry-based oscillation validation (P2) ──────────────────────
         # If measured rear shock oscillation frequency exceeds 1.5× natural
         # frequency, the rear is underdamped. Bump ζ_hs_rear to reduce oscillation.
-        if measured is not None:
-            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
-            rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
-            if rear_osc_hz > 1.5 * rear_nat_freq_hz and rear_nat_freq_hz > 0:
-                # Underdamped evidence — increase HS ζ by 50% (capped at 0.25)
-                zeta_hs_r_original = zeta_hs_r
-                zeta_hs_r = min(zeta_hs_r * 1.5, 0.25)
-                # Also bump LS slightly if oscillation is severe
-                if rear_osc_hz > 2.0 * rear_nat_freq_hz:
-                    zeta_ls_r = min(zeta_ls_r * 1.15, 0.45)
+        rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
+        rear_osc_hz = (
+            (getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0)
+            if measured is not None
+            else 0.0
+        )
+        rear_osc_ratio = (
+            rear_osc_hz / rear_nat_freq_hz if rear_nat_freq_hz > 0 and rear_osc_hz > 0 else None
+        )
+        if rear_osc_ratio is not None and rear_osc_ratio > 1.5:
+            # Underdamped evidence — increase HS ζ by 50% (capped at 0.25)
+            zeta_hs_r = min(zeta_hs_r * 1.5, 0.25)
+            # Also bump LS slightly if oscillation is severe
+            if rear_osc_ratio > 2.0:
+                zeta_ls_r = min(zeta_ls_r * 1.15, 0.45)
 
         c_ls_front = zeta_ls_f * c_crit_front
         c_ls_rear = zeta_ls_r * c_crit_rear
@@ -543,12 +547,12 @@ class DamperSolver:
         # driver inputs (steering, braking, throttle), not road bumps.
         #
         # NOTE: iRacing's official Shock Tuning User Guide (2021) defines the
-        # LS↔HS transition at ~1.5 in/s = 38.1 mm/s. Our v_ls_ref of 25 mm/s
+        # LS↔HS transition at ~1.5 in/s = 38.1 mm/s. V_LS_REF_MPS = 25 mm/s
         # represents a typical LS operating point well below the transition,
         # ensuring the target damping coefficient is calibrated for the LS regime.
-        # The HS reference velocities (from track p95) are always >50 mm/s,
-        # well above the 38.1 mm/s transition.
-        v_ls_ref = 0.025  # 25 mm/s  (LS/HS knee at ~38 mm/s per iRacing guide)
+        # The HS reference velocities (from track p95, floored at 50 mm/s) are
+        # always at or above the 38.1 mm/s transition.
+        v_ls_ref = self.V_LS_REF_MPS
 
         # HS reference velocity: track-measured p95 shock velocity per axle.
         # p95 is the correct reference because dampers should be optimized for
@@ -556,13 +560,10 @@ class DamperSolver:
         # are well-controlled. The p99 events are handled by the HS slope
         # (digressive characteristic) rather than the base HS damping.
         #
-        # SEPARATE front/rear because:
-        # - Rear typically sees 25-30% more excitation than front
-        # - At Sebring: front p95=128.8 mm/s, rear p95=162.7 mm/s
-        # NOTE: Using raw (unfiltered) p95 intentionally — HS damping must
-        # handle kerb transients, not just clean-track surface inputs.
-        v_hs_ref_front = max(self.track.shock_vel_p95_front_mps, 0.050)
-        v_hs_ref_rear = max(self.track.shock_vel_p95_rear_mps, 0.050)
+        # SEPARATE front/rear because rear typically sees 25-30% more excitation
+        # than front. NOTE: Using raw (unfiltered) p95 intentionally — HS damping
+        # must handle kerb transients, not just clean-track surface inputs.
+        v_hs_ref_front, v_hs_ref_rear = self._hs_ref_velocities()
 
         lo_ls, hi_ls = d.ls_comp_range
         lo_hs, hi_hs = d.hs_comp_range
@@ -603,12 +604,6 @@ class DamperSolver:
         rear_slope_rbd_range_note: str | None = None
         if d.hs_slope_rbd_range is not None:
             lo_slope, hi_slope = d.hs_slope_rbd_range
-            rear_osc_ratio = None
-            if measured is not None:
-                rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
-                rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
-                if rear_osc_hz > 0.0 and rear_nat_freq_hz > 0.0:
-                    rear_osc_ratio = rear_osc_hz / rear_nat_freq_hz
 
             def _bounded_rbd_range(comp_slope: int, delta_lo: int, delta_hi: int) -> tuple[int, int]:
                 lo_val = max(lo_slope, min(hi_slope, comp_slope - delta_hi))
@@ -743,21 +738,17 @@ class DamperSolver:
         ]
 
         # Add oscillation validation constraint if telemetry is available
-        if measured is not None:
-            rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
-            rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
-            if rear_osc_hz > 0 and rear_nat_freq_hz > 0:
-                osc_ratio = rear_osc_hz / rear_nat_freq_hz
-                constraints.append(DamperConstraintCheck(
-                    name="Rear shock oscillation vs natural freq",
-                    passed=osc_ratio <= 1.5,
-                    value=rear_osc_hz,
-                    target=1.5 * rear_nat_freq_hz,
-                    units="Hz",
-                    note=(f"Ratio: {osc_ratio:.2f}x natural freq ({rear_nat_freq_hz:.2f} Hz). "
-                          f">1.5x = underdamped evidence."
-                          + (f" ζ_hs_rear bumped to {zeta_hs_r:.3f}." if osc_ratio > 1.5 else "")),
-                ))
+        if rear_osc_ratio is not None:
+            constraints.append(DamperConstraintCheck(
+                name="Rear shock oscillation vs natural freq",
+                passed=rear_osc_ratio <= 1.5,
+                value=rear_osc_hz,
+                target=1.5 * rear_nat_freq_hz,
+                units="Hz",
+                note=(f"Ratio: {rear_osc_ratio:.2f}x natural freq ({rear_nat_freq_hz:.2f} Hz). "
+                      f">1.5x = underdamped evidence."
+                      + (f" ζ_hs_rear bumped to {zeta_hs_r:.3f}." if rear_osc_ratio > 1.5 else "")),
+            ))
 
         notes = [
             f"Front critical damping: {c_crit_front:.0f} N*s/m "
@@ -841,8 +832,8 @@ class DamperSolver:
             # NO rear roll damper (rear roll is implicit in per-corner shocks).
             # Acura has BOTH. Backward-compat: if neither flag set, assume both
             # (legacy Acura behavior).
-            _has_front_roll = bool(getattr(dm, "has_front_roll_damper", False))
-            _has_rear_roll = bool(getattr(dm, "has_rear_roll_damper", False))
+            _has_front_roll = dm.has_front_roll_damper
+            _has_rear_roll = dm.has_rear_roll_damper
             if not _has_front_roll and not _has_rear_roll:
                 _has_front_roll = True
                 _has_rear_roll = True
@@ -938,24 +929,34 @@ class DamperSolver:
         if self.car.damper.has_heave_dampers:
             # Heave dampers control pitch/heave motions separately from corner dampers.
             # Use car baselines for now — physics-based heave damper tuning not yet implemented.
+            # Principle 7: if a car declares has_heave_dampers=True but no baseline is
+            # configured, refuse to fabricate values (no magic-number fallback).
             dm_h = self.car.damper
-            fhb = dm_h.front_heave_baseline or {}
-            rhb = dm_h.rear_heave_baseline or {}
+            required_keys = ("ls_comp", "hs_comp", "ls_rbd", "hs_rbd", "hs_slope")
+            for axle_name, baseline in (
+                ("front_heave_baseline", dm_h.front_heave_baseline),
+                ("rear_heave_baseline", dm_h.rear_heave_baseline),
+            ):
+                if not baseline or any(k not in baseline for k in required_keys):
+                    raise ValueError(
+                        f"DamperSolver: {self.car.name} has has_heave_dampers=True "
+                        f"but {axle_name} is missing keys "
+                        f"{[k for k in required_keys if not baseline or k not in baseline]}. "
+                        "Configure the baseline in car_model/cars.py — no fallback values."
+                    )
+
+            def _heave_settings(b: dict) -> FerrariHeaveDamperSettings:
+                return FerrariHeaveDamperSettings(
+                    ls_comp=int(b["ls_comp"]),
+                    hs_comp=int(b["hs_comp"]),
+                    ls_rbd=int(b["ls_rbd"]),
+                    hs_rbd=int(b["hs_rbd"]),
+                    hs_slope=int(b["hs_slope"]),
+                )
+
             heave_damper_kwargs = dict(
-                front_heave_damper=FerrariHeaveDamperSettings(
-                    ls_comp=int(fhb.get("ls_comp", 10)),
-                    hs_comp=int(fhb.get("hs_comp", 40)),
-                    ls_rbd=int(fhb.get("ls_rbd", 5)),
-                    hs_rbd=int(fhb.get("hs_rbd", 10)),
-                    hs_slope=int(fhb.get("hs_slope", 40)),
-                ),
-                rear_heave_damper=FerrariHeaveDamperSettings(
-                    ls_comp=int(rhb.get("ls_comp", 10)),
-                    hs_comp=int(rhb.get("hs_comp", 40)),
-                    ls_rbd=int(rhb.get("ls_rbd", 5)),
-                    hs_rbd=int(rhb.get("hs_rbd", 10)),
-                    hs_slope=int(rhb.get("hs_slope", 40)),
-                ),
+                front_heave_damper=_heave_settings(dm_h.front_heave_baseline),
+                rear_heave_damper=_heave_settings(dm_h.rear_heave_baseline),
             )
             notes.append(
                 "Heave damper values are baselines from validated setup — "
@@ -1020,9 +1021,8 @@ class DamperSolver:
             rear_third_nmm=rear_third_nmm,
         )
         d = self.car.damper
-        v_ls_ref = 0.025
-        v_hs_ref_front = max(self.track.shock_vel_p95_front_mps, 0.050)
-        v_hs_ref_rear = max(self.track.shock_vel_p95_rear_mps, 0.050)
+        v_ls_ref = self.V_LS_REF_MPS
+        v_hs_ref_front, v_hs_ref_rear = self._hs_ref_velocities()
         front_ls_comp = (lf.ls_comp + rf.ls_comp) / 2.0
         rear_ls_comp = (lr.ls_comp + rr.ls_comp) / 2.0
         front_hs_comp = (lf.hs_comp + rf.hs_comp) / 2.0
