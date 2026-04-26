@@ -197,20 +197,38 @@ def analyze_step1_constraints(
 
 def analyze_step2_constraints(
     step2: HeaveSolution,
-    sigma_target_front_mm: float = 8.0,
-    sigma_target_rear_mm: float = 10.0,
+    sigma_target_front_mm: float | None = None,
+    sigma_target_rear_mm: float | None = None,
 ) -> list[ConstraintProximity]:
     """Analyze Step 2 (heave/third) constraint proximity.
 
     Parameters
     ----------
     step2 : HeaveSolution
-    sigma_target_front_mm : float
-        Target front RH std dev (mm). Default 8.0 is typical BMW/Sebring.
-        Pass from SolveChainInputs.heave_sigma_target when available.
-    sigma_target_rear_mm : float
-        Target rear RH std dev (mm). Default 10.0. Pass from solve inputs.
+    sigma_target_front_mm : float | None
+        Target front RH std dev (mm). When None, falls back to
+        ``step2.front_sigma_target_mm`` (the actual target the heave solver
+        used) and finally to a per-car-agnostic 8.0 mm if neither is set.
+        Caller should pass the value explicitly when it is known to differ
+        (e.g. scenario-overridden).
+    sigma_target_rear_mm : float | None
+        Same logic for rear, falling back to ``step2.rear_sigma_target_mm``
+        and finally 10.0 mm. The historical 8.0 / 10.0 defaults were
+        BMW/Sebring values; modern callers should pass the car-specific
+        target so non-BMW cars get correct "binding" classifications.
     """
+    # Prefer the σ target that the heave solver actually used (carried on
+    # the solution). Fall back only for callers built before
+    # `front_sigma_target_mm` / `rear_sigma_target_mm` were added to
+    # `HeaveSolution`.
+    if sigma_target_front_mm is None:
+        sigma_target_front_mm = (
+            step2.front_sigma_target_mm if step2.front_sigma_target_mm > 0 else 8.0
+        )
+    if sigma_target_rear_mm is None:
+        sigma_target_rear_mm = (
+            step2.rear_sigma_target_mm if step2.rear_sigma_target_mm > 0 else 10.0
+        )
     constraints = []
 
     # Front bottoming margin
@@ -476,8 +494,8 @@ def build_sensitivity_report(
     rarb_sensitivity: float = 0.0,
     car: "CarModel | None" = None,
     target_df_balance_pct: float = 50.14,
-    sigma_target_front_mm: float = 8.0,
-    sigma_target_rear_mm: float = 10.0,
+    sigma_target_front_mm: float | None = None,
+    sigma_target_rear_mm: float | None = None,
 ) -> SensitivityReport:
     """Build complete sensitivity report from solver solutions.
 

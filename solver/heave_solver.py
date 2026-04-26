@@ -74,6 +74,13 @@ class HeaveSolution:
     perch_offset_front_mm: float
     perch_offset_rear_mm: float
 
+    # σ targets that drove this solve. Surfaced so downstream sensitivity
+    # analysis can classify "binding" vs "near binding" against the actual
+    # targets used (not generic BMW Sebring defaults). 0.0 means "not set
+    # by this solve" — callers should fall back to scenario defaults.
+    front_sigma_target_mm: float = 0.0
+    rear_sigma_target_mm: float = 0.0
+
     # Travel budget analysis (front heave)
     slider_static_front_mm: float = 0.0       # Predicted slider position
     defl_max_front_mm: float = 0.0            # Maximum spring travel
@@ -1298,6 +1305,8 @@ class HeaveSolver:
                 if rear_third_perch_mm is not None
                 else hsm.perch_offset_rear_baseline_mm
             ),
+            front_sigma_target_mm=float(hsm.sigma_target_mm),
+            rear_sigma_target_mm=float(hsm.sigma_target_mm),
             slider_static_front_mm=round(slider_static, 1),
             defl_max_front_mm=round(defl_max, 1),
             static_defl_front_mm=round(static_defl, 1),
@@ -1425,6 +1434,8 @@ class HeaveSolver:
                 rear_binding_constraint=label,
                 perch_offset_front_mm=base.perch_offset_front_mm,
                 perch_offset_rear_mm=base.perch_offset_rear_mm,
+                front_sigma_target_mm=base.front_sigma_target_mm,
+                rear_sigma_target_mm=base.rear_sigma_target_mm,
             )
 
         # Generate stiffness steps above the minimum (+10, +20, +30 N/mm)
