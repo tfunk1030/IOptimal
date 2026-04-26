@@ -165,6 +165,17 @@ def _front_camber(inputs: SolveChainInputs, step5: Any | None = None) -> float:
     return float(inputs.car.geometry.front_camber_baseline_deg)
 
 
+def _measured_rear_rh_anchor(inputs: SolveChainInputs) -> float | None:
+    """Driver anchor for rear dynamic RH (NEVER lap-time-driven).
+
+    Returns the IBT-measured rear RH at speed when available, or None in
+    physics mode / when telemetry is missing the channel.
+    """
+    if inputs.optimization_mode == "physics" or inputs.measured is None:
+        return None
+    return getattr(inputs.measured, "mean_rear_rh_at_speed_mm", None)
+
+
 def _candidate_veto_for_solution(
     *,
     inputs: SolveChainInputs,
@@ -389,11 +400,13 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     _physics_mode = inputs.optimization_mode == "physics"
 
     rake_solver = RakeSolver(car, inputs.surface, track)
+    _measured_rear_dyn = _measured_rear_rh_anchor(inputs)
     step1 = rake_solver.solve(
         target_balance=inputs.target_balance,
         balance_tolerance=inputs.balance_tolerance,
         fuel_load_l=fuel,
         pin_front_min=inputs.pin_front_min,
+        current_rear_rh_dynamic_mm=_measured_rear_dyn,
     )
 
     heave_solver = HeaveSolver(car, track)
@@ -448,6 +461,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         surface=inputs.surface,
         track=track,
         target_balance=inputs.target_balance,
+        current_rear_rh_dynamic_mm=_measured_rear_dyn,
     )
 
     # NOTE: Previously a provisional Step 6 (DamperSolver) ran here to refine
@@ -492,6 +506,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         surface=inputs.surface,
         track=track,
         target_balance=inputs.target_balance,
+        current_rear_rh_dynamic_mm=_measured_rear_dyn,
     )
 
     step6 = None
@@ -564,16 +579,18 @@ def _run_branching_solver(
     )
 
     # ── Step 1: Rake (single answer — Brent root-find, no branching) ──
+    _physics_mode = inputs.optimization_mode == "physics"
     rake_solver = RakeSolver(car, inputs.surface, track)
+    _measured_rear_dyn = _measured_rear_rh_anchor(inputs)
     step1 = rake_solver.solve(
         target_balance=inputs.target_balance,
         balance_tolerance=inputs.balance_tolerance,
         fuel_load_l=fuel,
         pin_front_min=inputs.pin_front_min,
+        current_rear_rh_dynamic_mm=_measured_rear_dyn,
     )
 
     # ── Step 2: Heave candidates ──
-    _physics_mode = inputs.optimization_mode == "physics"
     heave_solver = HeaveSolver(car, track)
     _k_current = None if _physics_mode else (getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None)
     _k_rear_current = None if _physics_mode else (getattr(inputs.current_setup, "rear_third_nmm", None) if inputs.current_setup else None)
@@ -638,7 +655,8 @@ def _run_branching_solver(
             reconcile_ride_heights(car, s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
                                   track_name=track.track_name, verbose=False,
                                   surface=inputs.surface, track=track,
-                                  target_balance=inputs.target_balance)
+                                  target_balance=inputs.target_balance,
+                                  current_rear_rh_dynamic_mm=_measured_rear_dyn)
 
             # Step 4: ARB candidates for this spring combo
             arb_candidates = arb_solver_inst.solve_candidates(
@@ -669,6 +687,7 @@ def _run_branching_solver(
                     fuel_load_l=fuel, track_name=track.track_name,
                     verbose=False, surface=inputs.surface, track=track,
                     target_balance=inputs.target_balance,
+                    current_rear_rh_dynamic_mm=_measured_rear_dyn,
                 )
 
                 # Step 6: dampers (fast, deterministic)
@@ -774,6 +793,7 @@ def _iterative_coupling_refinement(
     car = inputs.car
     track = inputs.track
     fuel = inputs.fuel_load_l
+    _measured_rear_dyn = _measured_rear_rh_anchor(inputs)
 
     # Build objective for scoring iterations.
     from solver.objective import ObjectiveFunction
@@ -926,6 +946,7 @@ def _iterative_coupling_refinement(
                 fuel_load_l=fuel, track_name=track.track_name,
                 verbose=False, surface=inputs.surface, track=track,
                 target_balance=inputs.target_balance,
+                current_rear_rh_dynamic_mm=_measured_rear_dyn,
             )
 
         if step6 is not None:
@@ -1099,6 +1120,7 @@ def materialize_overrides(
     mods = _default_modifiers(inputs.modifiers)
     car = inputs.car
     track = inputs.track
+    _measured_rear_dyn = _measured_rear_rh_anchor(inputs)
 
     step1 = copy.deepcopy(base_result.step1)
     step2 = copy.deepcopy(base_result.step2)
@@ -1256,6 +1278,7 @@ def materialize_overrides(
             surface=inputs.surface,
             track=track,
             target_balance=inputs.target_balance,
+            current_rear_rh_dynamic_mm=_measured_rear_dyn,
         )
 
         damper_solver = DamperSolver(car, track)
@@ -1361,6 +1384,7 @@ def materialize_overrides(
             surface=inputs.surface,
             track=track,
             target_balance=inputs.target_balance,
+            current_rear_rh_dynamic_mm=_measured_rear_dyn,
         )
     else:
         rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
@@ -1443,6 +1467,7 @@ def materialize_overrides(
             surface=inputs.surface,
             track=track,
             target_balance=inputs.target_balance,
+            current_rear_rh_dynamic_mm=_measured_rear_dyn,
         )
 
     rebuild_step6 = earliest <= 6 or rebuild_step5

@@ -196,13 +196,49 @@ class RakeSolver:
         ld = self.surface.lift_drag(aero_frh, aero_rrh)
         return bal, ld
 
+    def _resolve_aero_speed(self) -> float:
+        """Resolve the aero compression reference speed for this track.
+
+        Logs a warning if the track's V²-RMS reference is unset and we fall
+        back to the AeroCompression's intrinsic ref_speed (typically 230 kph),
+        since that fallback misrepresents tracks whose actual operating speed
+        differs significantly.
+        """
+        comp = self.car.aero_compression
+        aero_ref = self.track.aero_reference_speed_kph
+        if aero_ref > 0:
+            return aero_ref
+        logger.warning(
+            "track.aero_reference_speed_kph=%s — falling back to "
+            "comp.ref_speed_kph=%.1f kph; compression may be miscalibrated "
+            "for this track",
+            aero_ref, comp.ref_speed_kph,
+        )
+        return comp.ref_speed_kph
+
     def _find_rear_for_balance(
-        self, actual_front: float, target_balance: float
+        self, actual_front: float, target_balance: float,
+        current_rear_rh_dynamic_mm: float | None = None,
+        anchor_tolerance_pct: float = 0.10,
     ) -> float | None:
         """Find the actual rear RH that achieves target balance at a given front RH.
 
         Primary method: Brent's method (root finding) on the balance error.
         Fallback: surface.find_rh_for_balance() bisection (interpolator utility).
+
+        Driver anchor (NEVER lap-time-driven): if current_rear_rh_dynamic_mm
+        (IBT-measured dynamic rear RH) is provided AND its balance is within
+        anchor_tolerance_pct of the target, return the measured value. The
+        model-derived rear vs measured rear can differ by a few mm because
+        the rake_solver's balance search is independent of suspension
+        compliance, while the IBT measurement reflects the chassis the
+        driver actually drove. Honest-naming: callers should annotate the
+        returned value as "anchored to driver-loaded" when this branch fires.
+
+        Aero-gradient curvature warning: if |dBalance/dRH| is < 0.01 %/mm
+        near the operating point, the binary balance search becomes unstable
+        to pushrod quantization (small RH steps move balance by < 0.005 pp,
+        smaller than aero-map noise). We log a one-line info notice.
         """
         rear_lo = self.car.min_rear_rh_dynamic
         rear_hi = self.car.max_rear_rh_dynamic
@@ -221,17 +257,57 @@ class RakeSolver:
 
         try:
             result = brentq(balance_error, rear_lo, rear_hi, xtol=0.01, maxiter=50)
-            return result
         except ValueError:
             # Fallback: use AeroSurface.find_rh_for_balance() bisection method
             # Note: this operates in aero-map coordinates (may have axes swapped)
             aero_front, _ = self.car.to_aero_coords(actual_front, rear_lo)
-            fallback = self.surface.find_rh_for_balance(
+            result = self.surface.find_rh_for_balance(
                 target_balance,
                 rear_rh=aero_front,  # in aero coords, "rear_rh" col = actual front
                 front_rh_range=(rear_lo, rear_hi),
             )
-            return fallback
+
+        if result is None:
+            return None
+
+        # Aero-gradient curvature check at the operating point.
+        # ∂(balance)/∂(rear_RH) by central difference; warn if extremely flat.
+        try:
+            h = 0.5  # mm
+            r_lo = max(rear_lo, result - h)
+            r_hi = min(rear_hi, result + h)
+            if r_hi > r_lo:
+                bal_hi, _ = self._query_aero(actual_front, r_hi)
+                bal_lo, _ = self._query_aero(actual_front, r_lo)
+                d_bal_d_rh = (bal_hi - bal_lo) / (r_hi - r_lo)
+                if abs(d_bal_d_rh) < 0.01:
+                    logger.info(
+                        "Low-gradient aero regime at front=%.1fmm rear=%.1fmm: "
+                        "|dBalance/dRH|=%.4f %%/mm (<0.01) — solution sensitive to "
+                        "pushrod quantization",
+                        actual_front, result, abs(d_bal_d_rh),
+                    )
+        except Exception as exc:  # pragma: no cover — diagnostic only
+            logger.debug("Aero-gradient curvature check failed: %s", exc)
+
+        # Driver anchor: if measured dynamic rear RH is within tolerance of
+        # the model's solution AND the measured value also achieves balance
+        # within tolerance, prefer the measured value. Provenance is the
+        # caller's job (log a "anchored to driver-loaded" message).
+        if current_rear_rh_dynamic_mm is not None and current_rear_rh_dynamic_mm > 0:
+            anchor = float(current_rear_rh_dynamic_mm)
+            if rear_lo <= anchor <= rear_hi:
+                anchor_err = abs(balance_error(anchor))
+                if anchor_err <= anchor_tolerance_pct:
+                    logger.info(
+                        "Rake rear RH anchored to driver-loaded: "
+                        "model=%.2fmm, measured=%.2fmm, balance_err=%.3f%% "
+                        "(tolerance %.2f%%)",
+                        result, anchor, anchor_err, anchor_tolerance_pct,
+                    )
+                    return anchor
+
+        return result
 
     def _build_solution(
         self,
@@ -249,14 +325,9 @@ class RakeSolver:
         bal, ld = self._query_aero(actual_front_dyn, actual_rear_dyn)
 
         comp = self.car.aero_compression
-        # Use track median speed for compression instead of fixed reference speed
         # Aero-relevant reference speed: V²-RMS over speed bands, not median.
-        # Aero compression scales with V², so the time-averaged operating point
-        # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
-        # than median (187 vs 174 kph). Validated against IBT-measured rear
-        # compression on Porsche/Algarve (Apr 7 2026).
-        _aero_ref = self.track.aero_reference_speed_kph
-        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
+        # Validated against IBT-measured rear compression on Porsche/Algarve.
+        track_speed = self._resolve_aero_speed()
         front_comp = comp.front_at_speed(track_speed)
         rear_comp = comp.rear_at_speed(track_speed)
 
@@ -303,6 +374,10 @@ class RakeSolver:
                 rear_camber_deg=baseline.rear_camber_deg,
                 wing_deg=baseline.wing_deg,
             )
+            # Snap pushrods to 0.5mm garage step; surface any RH drift > 0.5mm
+            # so high-sensitivity cars (e.g. Cadillac front_pushrod_to_rh ≈
+            # 1.388) don't accumulate quiet drift across solver iterations.
+            unsnapped = {"front": float(front_pushrod), "rear": float(rear_pushrod)}
             front_pushrod = round(front_pushrod * 2) / 2
             rear_pushrod = round(rear_pushrod * 2) / 2
             outputs = garage_model.predict(GarageSetupState(
@@ -319,6 +394,19 @@ class RakeSolver:
                 rear_camber_deg=baseline.rear_camber_deg,
                 fuel_l=fuel_load_l,
             ))
+            for axle, target_rh, snapped_rh, snapped_pushrod in (
+                ("Front", static_front, outputs.front_static_rh_mm, front_pushrod),
+                ("Rear", static_rear, outputs.rear_static_rh_mm, rear_pushrod),
+            ):
+                drift = abs(snapped_rh - target_rh)
+                if drift > 0.5:
+                    logger.warning(
+                        "%s pushrod snap drift: target_RH=%.2fmm, snapped "
+                        "pushrod %.2f→%.1fmm gives RH=%.2fmm (drift %.2fmm > "
+                        "0.5mm) — high sensitivity car",
+                        axle, target_rh, unsnapped[axle.lower()], snapped_pushrod,
+                        snapped_rh, drift,
+                    )
             static_front = max(outputs.front_static_rh_mm, self.car.min_front_rh_static)
             static_rear = max(outputs.rear_static_rh_mm, self.car.min_rear_rh_static)
         else:
@@ -420,6 +508,7 @@ class RakeSolver:
         balance_tolerance: float = 0.1,
         fuel_load_l: float | None = None,
         pin_front_min: bool = True,
+        current_rear_rh_dynamic_mm: float | None = None,
     ) -> RakeSolution:
         """Find optimal ride heights for target DF balance.
 
@@ -433,6 +522,11 @@ class RakeSolver:
                 minimum (30.0mm) and solve only for rear. This matches real
                 GTP methodology where drivers always run minimum front RH for
                 maximum absolute downforce.
+            current_rear_rh_dynamic_mm: IBT-measured dynamic rear RH (driver
+                anchor). If provided AND the measured rear achieves the
+                target balance within tolerance, prefer it over the model's
+                Brent root. NEVER lap-time-driven — strictly an honest
+                fallback when the model and the IBT agree within tolerance.
 
         Returns:
             RakeSolution with dynamic targets, static settings, and pushrod offsets.
@@ -450,7 +544,8 @@ class RakeSolver:
 
         if pin_front_min:
             return self._solve_pinned_front(
-                target_balance, front_excursion_p99, fuel_load_l
+                target_balance, front_excursion_p99, fuel_load_l,
+                current_rear_rh_dynamic_mm=current_rear_rh_dynamic_mm,
             )
         else:
             return self._solve_free(
@@ -469,13 +564,7 @@ class RakeSolver:
     ) -> RakeSolution:
         """Build a Step 1 solution from explicit garage ride-height controls."""
         comp = self.car.aero_compression
-        # Aero-relevant reference speed: V²-RMS over speed bands, not median.
-        # Aero compression scales with V², so the time-averaged operating point
-        # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
-        # than median (187 vs 174 kph). Validated against IBT-measured rear
-        # compression on Porsche/Algarve (Apr 7 2026).
-        _aero_ref = self.track.aero_reference_speed_kph
-        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
+        track_speed = self._resolve_aero_speed()
         front_comp = comp.front_at_speed(track_speed)
         rear_comp = comp.rear_at_speed(track_speed)
         garage_model = self.car.active_garage_output_model(self.track.track_name)
@@ -644,6 +733,7 @@ class RakeSolver:
         target_balance: float,
         front_excursion_p99: float,
         fuel_load_l: float,
+        current_rear_rh_dynamic_mm: float | None = None,
     ) -> RakeSolution:
         """Solve with front static RH pinned at sim minimum.
 
@@ -651,15 +741,7 @@ class RakeSolver:
         then find rear RH to achieve target balance.
         """
         comp = self.car.aero_compression
-
-        # Use track median speed for compression (consistent with _build_solution)
-        # Aero-relevant reference speed: V²-RMS over speed bands, not median.
-        # Aero compression scales with V², so the time-averaged operating point
-        # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
-        # than median (187 vs 174 kph). Validated against IBT-measured rear
-        # compression on Porsche/Algarve (Apr 7 2026).
-        _aero_ref = self.track.aero_reference_speed_kph
-        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
+        track_speed = self._resolve_aero_speed()
 
         # Front static = sim minimum → front dynamic = minimum - compression
         static_front = self.car.min_front_rh_static
@@ -674,8 +756,11 @@ class RakeSolver:
             dyn_front = min_front_for_vortex
             static_front = dyn_front + comp.front_at_speed(track_speed)
 
-        # Find rear RH for target balance
-        dyn_rear = self._find_rear_for_balance(dyn_front, target_balance)
+        # Find rear RH for target balance (with optional driver anchor)
+        dyn_rear = self._find_rear_for_balance(
+            dyn_front, target_balance,
+            current_rear_rh_dynamic_mm=current_rear_rh_dynamic_mm,
+        )
         if dyn_rear is None:
             # Balance target not achievable at this front RH — target lies outside
             # the aero map's achievable range. Two causes:
@@ -884,6 +969,7 @@ def reconcile_ride_heights(
     surface=None,
     track=None,
     target_balance: float | None = None,
+    current_rear_rh_dynamic_mm: float | None = None,
 ) -> None:
     """Reconcile static ride heights after step2+step3 provide actual spring values.
 
@@ -894,6 +980,11 @@ def reconcile_ride_heights(
     rear RH from the aero balance target instead of relying on the potentially
     stale value in step1.dynamic_rear_rh_mm (which may have been computed with
     baseline springs in solution_from_explicit_offsets).
+
+    If current_rear_rh_dynamic_mm is provided (IBT-measured dynamic rear RH),
+    it is used as a driver anchor for the rear-balance search. NEVER lap-time-
+    driven — only fires when the model and IBT agree on balance within
+    tolerance.
     """
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is not None:
@@ -922,6 +1013,7 @@ def reconcile_ride_heights(
                 rake_solver = RakeSolver(car, surface, track)
                 corrected = rake_solver._find_rear_for_balance(
                     step1.dynamic_front_rh_mm, target_balance,
+                    current_rear_rh_dynamic_mm=current_rear_rh_dynamic_mm,
                 )
                 if corrected is not None:
                     corrected_dynamic_rear = corrected
