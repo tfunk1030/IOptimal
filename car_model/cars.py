@@ -2342,7 +2342,11 @@ FERRARI_499P_INDEXED_CONTROLS = FerrariIndexedControlModel(
 FERRARI_499P = CarModel(
     name="Ferrari 499P",
     canonical_name="ferrari",
-    supported_track_keys=("sebring",),
+    # Hockenheim is the calibration-authoritative track (90+ sessions). Sebring carries the
+    # legacy hand-calibrated S1 setup. Laguna Seca added 2026-04-26: aero/spring/RH models
+    # are physics-based and cross-track (per Key Principle 7); only the per-track regression
+    # cache is track-specific. Pure-physics solver path is valid for Laguna Seca.
+    supported_track_keys=("sebring", "hockenheim", "laguna_seca"),
     mass_car_kg=1030.0,           # GTP minimum — confirmed same as LMDh
     mass_driver_kg=75.0,
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%

@@ -29,15 +29,18 @@ class RunTraceBasicTests(unittest.TestCase):
         from output.run_trace import RunTrace
         trace = RunTrace()
         # Thresholds: calibrated=30+models, partial=15, exploratory=5, unsupported<5
-        trace.record_car_track("ferrari", "test")   # 60 sessions + models → calibrated
+        # Counts read live from data/calibration/<car>/calibration_points.json,
+        # so the assertions track the *current* on-disk dataset rather than
+        # historical numbers (data accumulates as IBT files are ingested).
+        trace.record_car_track("ferrari", "test")   # 100+ sessions + models → calibrated
         self.assertIn("calibrated", trace.car_support_tier)
-        trace.record_car_track("bmw", "test")        # 12 sessions, no models → exploratory
-        self.assertIn("exploratory", trace.car_support_tier)
-        trace.record_car_track("porsche", "test")   # 62 sessions + models → calibrated
+        trace.record_car_track("bmw", "test")        # 30+ sessions + models → calibrated
         self.assertIn("calibrated", trace.car_support_tier)
-        trace.record_car_track("acura", "test")     # 15 sessions + models → partial
+        trace.record_car_track("porsche", "test")   # 100+ sessions + models → calibrated
+        self.assertIn("calibrated", trace.car_support_tier)
+        trace.record_car_track("acura", "test")     # 15-29 sessions + models → partial
         self.assertIn("partial", trace.car_support_tier)
-        trace.record_car_track("cadillac", "test")  # 0 sessions → unsupported
+        trace.record_car_track("cadillac", "test")  # <5 sessions → unsupported
         self.assertIn("unsupported", trace.car_support_tier)
 
     def test_record_solver_path(self):

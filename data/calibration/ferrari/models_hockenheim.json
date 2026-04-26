@@ -1,7 +1,7 @@
 {
   "car": "ferrari",
   "track": "hockenheim",
-  "n_sessions": 76,
+  "n_sessions": 100,
   "n_unique_setups": 14,
   "calibration_complete": true,
   "front_ride_height": {

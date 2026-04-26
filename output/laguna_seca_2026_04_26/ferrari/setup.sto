@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LDXFile Version="1.6" Locale="English">
+  <Maths Id="Maths" Flags="184" Locale="English">
+    <MathConstants />
+  </Maths>
+  <Layers>
+    <Details>
+      <String Id="Event" Value="GTP Setup Builder" Unit="" />
+      <String Id="Session" Value="Generated 2026-04-26 15:51 UTC" Unit="" />
+      <String Id="Venue" Value="WeatherTech Raceway Laguna Seca — " Unit="" />
+      <String Id="Vehicle Type" Value="Car" Unit="" />
+      <Numeric Id="CarSetup_TiresAero_AeroSettings_RearWingAngle" Value="17.0" Unit="deg" />
+      <!-- TODO: ferrari front_rh_at_speed not mapped -->
+      <!-- TODO: ferrari rear_rh_at_speed not mapped -->
+      <!-- TODO: ferrari df_balance not mapped -->
+      <!-- TODO: ferrari ld_ratio not mapped -->
+      <Numeric Id="CarSetup_Chassis_LeftFront_RideHeight" Value="45.9" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightFront_RideHeight" Value="45.9" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_RideHeight" Value="40.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_RideHeight" Value="40.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_Front_PushrodLengthDelta" Value="40.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_Rear_PushrodLengthDelta" Value="40.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_Front_HeaveSpring" Value="4" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_Front_HeavePerchOffset" Value="-36.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_Rear_HeaveSpring" Value="0" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_Rear_HeavePerchOffset" Value="-104.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_TorsionBarOD" Value="18" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightFront_TorsionBarOD" Value="18" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_TorsionBarTurns" Value="0.09" Unit="Turns" />
+      <Numeric Id="CarSetup_Chassis_RightFront_TorsionBarTurns" Value="0.09" Unit="Turns" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_TorsionBarTurns" Value="0.088" Unit="Turns" />
+      <Numeric Id="CarSetup_Chassis_RightRear_TorsionBarTurns" Value="0.088" Unit="Turns" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_TorsionBarOD" Value="0" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_TorsionBarOD" Value="0" Unit="N/mm" />
+      <Numeric Id="CarSetup_TiresAero_LeftFront_StartingPressure" Value="152.0" Unit="kPa" />
+      <Numeric Id="CarSetup_TiresAero_RightFront_StartingPressure" Value="152.0" Unit="kPa" />
+      <Numeric Id="CarSetup_TiresAero_LeftRearTire_StartingPressure" Value="152.0" Unit="kPa" />
+      <Numeric Id="CarSetup_TiresAero_RightRearTire_StartingPressure" Value="152.0" Unit="kPa" />
+      <String Id="CarSetup_TiresAero_TireType_TireType" Value="Dry" Unit="" />
+      <Numeric Id="CarSetup_Systems_Fuel_FuelLevel" Value="89.0" Unit="L" />
+      <Numeric Id="CarSetup_Systems_BrakeSpec_BrakePressureBias" Value="48.9" Unit="%" />
+      <String Id="CarSetup_Systems_RearDiffSpec_CoastDriveRampOptions" Value="45/70" Unit="" />
+      <Numeric Id="CarSetup_Systems_RearDiffSpec_ClutchFrictionPlates" Value="6" Unit="" />
+      <Numeric Id="CarSetup_Systems_RearDiffSpec_Preload" Value="30" Unit="Nm" />
+      <Numeric Id="CarSetup_Systems_TractionControl_TractionControlGain" Value="4" Unit="" />
+      <Numeric Id="CarSetup_Systems_TractionControl_TractionControlSlip" Value="3" Unit="" />
+      <Numeric Id="CarSetup_Systems_Fuel_FuelLowWarning" Value="8.0" Unit="L" />
+      <String Id="CarSetup_Systems_GearRatios_GearStack" Value="Short" Unit="" />
+      <String Id="CarSetup_Systems_Lighting_RoofIdLightColor" Value="Orange" Unit="" />
+    </Details>
+  </Layers>
+</LDXFile>
