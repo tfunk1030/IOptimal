@@ -12,7 +12,13 @@ from pathlib import Path
 import numpy as np
 
 from track_model.ibt_parser import IBTFile
-from track_model.profile import TrackProfile, BrakingZone, Corner, KerbEvent
+from track_model.profile import (
+    TrackProfile,
+    BrakingZone,
+    Corner,
+    KerbEvent,
+    _validate_speed_bands,
+)
 
 
 def build_profile(ibt_path: str | Path) -> TrackProfile:
@@ -370,6 +376,7 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         air_density_kg_m3=env_air_density,
         telemetry_source=telemetry_src,
     )
+    _validate_speed_bands(profile.speed_bands_kph, source=str(ibt_path))
     return profile
 
 

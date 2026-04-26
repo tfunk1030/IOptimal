@@ -920,11 +920,17 @@ class ObjectiveFunction:
             # Porsche/Algarve IBTs (24 speed-binned data points): median 174 kph
             # under-predicts front comp by ~3 mm; V²-RMS 200 kph matches IBT
             # measured to within 1 mm.
-            _op_speed = (
-                getattr(track, "aero_reference_speed_kph", 0.0)
-                or getattr(track, "median_speed_kph", 0.0)
-                or car.aero_compression.ref_speed_kph
-            )
+            _aero_ref = getattr(track, "aero_reference_speed_kph", 0.0)
+            _med = getattr(track, "median_speed_kph", 0.0)
+            _op_speed = _aero_ref or _med or car.aero_compression.ref_speed_kph
+            if not _aero_ref and not _med:
+                logger.warning(
+                    "TrackProfile %r has no speed characterization "
+                    "(aero_reference_speed_kph and median_speed_kph both 0); "
+                    "objective falling back to car ref_speed_kph=%.1f kph.",
+                    getattr(track, "track_name", "<unknown>"),
+                    car.aero_compression.ref_speed_kph,
+                )
             # Front static: prefer the calibrated GarageOutputModel compliance
             # prediction at the candidate's pushrod offset, so the objective can
             # SEE the front_pushrod_offset_mm dimension. Falls back to the legacy
