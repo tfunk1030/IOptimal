@@ -2936,7 +2936,7 @@ PORSCHE_963 = CarModel(
 ACURA_ARX06 = CarModel(
     name="Acura ARX-06",
     canonical_name="acura",
-    supported_track_keys=("hockenheim",),
+    supported_track_keys=("hockenheim", "laguna_seca"),
     mass_car_kg=1030.0,               # PDF: dry weight 1030 kg
     mass_driver_kg=75.0,
     weight_dist_front=0.470,          # IBT: (2706+2706)/(2706+2706+3048+3048) = 0.470
