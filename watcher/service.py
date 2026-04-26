@@ -97,11 +97,18 @@ class WatcherService:
         )
         self._lock = threading.Lock()
         self._results: list[IngestResult] = []
+        self._skipped_unknown_car: int = 0
 
     @property
     def results(self) -> list[IngestResult]:
         with self._lock:
             return list(self._results)
+
+    @property
+    def skipped_unknown_car_count(self) -> int:
+        """Number of IBTs skipped because the car didn't map to a canonical name."""
+        with self._lock:
+            return self._skipped_unknown_car
 
     def start(self) -> None:
         """Start the watcher (non-blocking)."""
@@ -156,18 +163,31 @@ class WatcherService:
         _car_identity = resolve_car(car_screen)
         car_canonical = _car_identity.canonical if _car_identity else None
 
-        # Step 2: Filter by car if configured
-        if self._car_filter and car_canonical and car_canonical not in self._car_filter:
+        # Step 2: Reject IBTs whose car doesn't resolve to a known canonical.
+        # Project rule: no silent fallbacks — never ingest under "unknown".
+        if not car_canonical:
+            logger.warning(
+                "Skipping %s: car '%s' did not resolve to a known canonical car. "
+                "Add a mapping in car_model.registry to enable ingestion.",
+                ibt_path.name,
+                car_screen,
+            )
+            with self._lock:
+                self._skipped_unknown_car += 1
+            return None
+
+        # Step 3: Filter by car if configured
+        if self._car_filter and car_canonical not in self._car_filter:
             logger.debug("Skipping %s (car %s not in filter)", ibt_path.name, car_canonical)
             return None
 
-        # Step 3: Ingest via learner pipeline (for known cars)
+        # Step 4: Ingest via learner pipeline
         session_id = None
         best_lap = None
         fully_ingested = False
         error = None
 
-        if self._auto_ingest and car_canonical:
+        if self._auto_ingest:
             try:
                 from learner.ingest import ingest_ibt
 
@@ -189,13 +209,6 @@ class WatcherService:
             except Exception as e:
                 error = str(e)
                 logger.error("Ingestion failed for %s: %s", ibt_path.name, e)
-        elif not car_canonical:
-            logger.info(
-                "Unknown car '%s' — storing metadata only (no physics model).",
-                car_screen,
-            )
-            # For unknown cars, we still record that we saw the session.
-            # The team server can use this for car auto-registration.
 
         result = IngestResult(
             ibt_path=str(ibt_path),
