@@ -1,0 +1,295 @@
+{
+  "meta": {
+    "car": "Ferrari 499P",
+    "track": "WeatherTech Raceway Laguna Seca \u2014 ",
+    "wing": 17.0,
+    "generated_at": "2026-04-26T15:51:21.805093+00:00"
+  },
+  "step1_rake": {
+    "dynamic_front_rh_mm": 24.0,
+    "dynamic_rear_rh_mm": 25.4,
+    "rake_dynamic_mm": 1.4,
+    "df_balance_pct": 46.21,
+    "ld_ratio": 4.118,
+    "front_rh_excursion_p99_mm": 22.0,
+    "front_rh_min_p99_mm": 2.0,
+    "vortex_burst_threshold_mm": 2.0,
+    "vortex_burst_margin_mm": 0.0,
+    "static_front_rh_mm": 34.2,
+    "static_rear_rh_mm": 30.0,
+    "rake_static_mm": -4.2,
+    "front_pushrod_offset_mm": 40.0,
+    "rear_pushrod_offset_mm": 40.0,
+    "aero_compression_front_mm": 10.2,
+    "aero_compression_rear_mm": 4.3,
+    "compression_ref_speed_kph": 186.159824414369,
+    "balance_error_pct": 0.0,
+    "converged": true,
+    "iterations": 1,
+    "mode": "pinned_front",
+    "free_opt_ld": 4.216,
+    "ld_cost_of_pinning": -0.002,
+    "aero_state": "nominal",
+    "stall_factor": 0.0,
+    "parameter_search_status": {
+      "front_pushrod_offset_mm": "solver_computed",
+      "rear_pushrod_offset_mm": "solver_computed",
+      "static_front_rh_mm": "solver_computed",
+      "static_rear_rh_mm": "solver_computed"
+    },
+    "parameter_search_evidence": {}
+  },
+  "step2_heave": {
+    "front_heave_index": 4.0,
+    "rear_heave_index": 0.0,
+    "front_dynamic_rh_mm": 24.0,
+    "front_shock_vel_p99_mps": 0.13224999999999998,
+    "front_excursion_at_rate_mm": 15.7,
+    "front_bottoming_margin_mm": 8.3,
+    "front_sigma_at_rate_mm": 6.7,
+    "front_binding_constraint": "variance",
+    "rear_dynamic_rh_mm": 35.6,
+    "rear_shock_vel_p99_mps": 0.13575,
+    "rear_excursion_at_rate_mm": 8.2,
+    "rear_bottoming_margin_mm": 27.4,
+    "rear_sigma_at_rate_mm": 3.5,
+    "rear_binding_constraint": "bottoming",
+    "perch_offset_front_mm": -36.0,
+    "perch_offset_rear_mm": -104,
+    "front_sigma_target_mm": 10.0,
+    "rear_sigma_target_mm": 10.0,
+    "slider_static_front_mm": 30.6,
+    "defl_max_front_mm": 77.2,
+    "static_defl_front_mm": 3.2,
+    "available_travel_front_mm": 74.0,
+    "travel_margin_front_mm": 58.3,
+    "spring_force_at_limit_n": 7401.0,
+    "damper_force_braking_n": 341.0,
+    "total_force_at_limit_n": 7742.0,
+    "safety_checks": [
+      {
+        "label": "Recommended front heave 100 N/mm",
+        "rate_nmm": 100,
+        "axle": "front",
+        "excursion_mm": 15.7,
+        "dynamic_rh_mm": 24.0,
+        "bottoming_mm": 0,
+        "sigma_mm": 6.7,
+        "sigma_target_mm": 10.0,
+        "safe": true,
+        "reason": "Within all constraints"
+      },
+      {
+        "label": "Recommended rear third 100 N/mm",
+        "rate_nmm": 100,
+        "axle": "rear",
+        "excursion_mm": 8.2,
+        "dynamic_rh_mm": 35.6,
+        "bottoming_mm": 0,
+        "sigma_mm": 3.5,
+        "sigma_target_mm": 10.0,
+        "safe": true,
+        "reason": "Within all constraints"
+      },
+      {
+        "label": "Validation: front heave 30 N/mm (known unsafe)",
+        "rate_nmm": 30.0,
+        "axle": "front",
+        "excursion_mm": 24.7,
+        "dynamic_rh_mm": 24.0,
+        "bottoming_mm": 0.7,
+        "sigma_mm": 10.6,
+        "sigma_target_mm": 10.0,
+        "safe": false,
+        "reason": "Bottoming by 0.7mm (excursion 24.7mm > RH 24.0mm); Sigma 10.6mm > target 10.0mm"
+      },
+      {
+        "label": "Garage travel budget at 100 N/mm (perch -25.5mm)",
+        "rate_nmm": 100.0,
+        "axle": "front",
+        "excursion_mm": 15.7,
+        "dynamic_rh_mm": 77.2,
+        "bottoming_mm": 0,
+        "sigma_mm": 6.7,
+        "sigma_target_mm": 10.0,
+        "safe": true,
+        "reason": "Slider=30.6mm, travel margin=58.3mm"
+      }
+    ],
+    "garage_constraints_ok": true,
+    "garage_constraint_notes": [],
+    "parameter_search_status": {
+      "front_heave_index": "user_set",
+      "rear_heave_index": "user_set",
+      "perch_offset_front_mm": "user_set",
+      "perch_offset_rear_mm": "user_set"
+    },
+    "parameter_search_evidence": {}
+  },
+  "step3_corner": {
+    "front_torsion_bar_index": 18.0,
+    "front_wheel_rate_nmm": 204.7,
+    "front_natural_freq_hz": 4.31,
+    "front_heave_corner_ratio": 0.5,
+    "front_mass_per_corner_kg": 279.0,
+    "rear_torsion_bar_index": 0.0,
+    "rear_natural_freq_hz": 5.48,
+    "rear_third_corner_ratio": 0.3,
+    "rear_mass_per_corner_kg": 307.0,
+    "total_front_heave_nmm": 509.0,
+    "total_rear_heave_nmm": 373.0,
+    "front_heave_mode_freq_hz": 5.31,
+    "rear_heave_mode_freq_hz": 4.29,
+    "track_bump_freq_hz": 5.0,
+    "front_freq_isolation_ratio": 1.2,
+    "rear_freq_isolation_ratio": 0.9,
+    "constraints": [
+      {
+        "name": "Front heave/corner ratio (0.5x)",
+        "satisfied": false,
+        "detail": "Ratio 0.5x outside guideline 1.5-3.5x"
+      },
+      {
+        "name": "Rear third/corner ratio (0.3x)",
+        "satisfied": false,
+        "detail": "Ratio 0.3x outside guideline 1.5-3.5x"
+      },
+      {
+        "name": "Front freq isolation (1.2x)",
+        "satisfied": false,
+        "detail": "Isolation 1.2x < minimum 2.5x"
+      },
+      {
+        "name": "Rear freq isolation (0.9x)",
+        "satisfied": false,
+        "detail": "Isolation 0.9x < minimum 1.2x"
+      },
+      {
+        "name": "Total front heave (509 N/mm)",
+        "satisfied": true,
+        "detail": "Total heave 509 < heave spring 100"
+      },
+      {
+        "name": "Torsion bar OD valid (19.99mm)",
+        "satisfied": true,
+        "detail": "OD 19.99mm not in discrete garage options"
+      },
+      {
+        "name": "Rear rate in range (364 N/mm)",
+        "satisfied": true,
+        "detail": "Rate 364 outside range 364.0-590.0 N/mm"
+      }
+    ],
+    "rear_torsion_od_mm": 23.09,
+    "front_roll_spring_nmm": 0.0,
+    "rear_motion_ratio": 0.612,
+    "front_torsion_bar_turns": 0.09,
+    "rear_torsion_bar_turns": 0.088,
+    "parameter_search_status": {
+      "front_torsion_bar_index": "user_set",
+      "rear_torsion_od_mm": "user_set",
+      "rear_torsion_bar_index": "user_set",
+      "front_torsion_bar_turns": "user_set",
+      "rear_torsion_bar_turns": "user_set"
+    },
+    "parameter_search_evidence": {}
+  },
+  "step4_arb": null,
+  "step5_geometry": null,
+  "step6_dampers": null,
+  "calibration_blocked": [
+    4,
+    5,
+    6
+  ],
+  "calibration_instructions": "CALIBRATED STEPS (producing validated output):\n  [OK] Step 1: Rake / Ride Heights\n  [OK] Step 2: Heave / Third Springs\n  [OK] Step 3: Corner Springs\n\nUNCALIBRATED STEPS (calibration required):\n  STEP 4: Anti-Roll Bars \u2014 BLOCKED\n    Missing: arb_stiffness (uncalibrated)\n      TO CALIBRATE ARB STIFFNESS:\n      1. Record 3+ IBT sessions with different front/rear ARB sizes (keep springs constant between sessions)\n      2. Drive 3+ clean laps per session (the telemetry roll gradient data is needed for ARB back-solve)\n      3. Run: python -m car_model.auto_calibrate --car ferrari --ibt-dir <telemetry_dir>\n      4. This back-solves ARB stiffness from telemetry roll data across varied ARB configurations\n\n  STEP 5: Wheel Geometry \u2014 BLOCKED\n    Depends on Step 4 (which is also blocked)\n    Resolve Step 4 first.\n\n  STEP 6: Dampers \u2014 BLOCKED\n    Missing: damper_zeta (uncalibrated)\n      TO CALIBRATE DAMPER ZETA TARGETS:\n      1. Run dedicated damper click-sweep: 5+ stints with LS compression at varied clicks\n         (e.g., clicks 2, 5, 8, 11, 14 -- spread across the full range)\n      2. Keep ALL other setup parameters identical between stints\n      3. Record IBT per stint (minimum 3 clean laps each)\n      4. Run: python -m learner.ingest --car ferrari --ibt <each_file> --all-laps\n      5. After ingestion: python -m validation.calibrate_dampers --car ferrari --track laguna_seca\n      6. This extracts optimal zeta targets from the click -> platform stability relationship\n",
+  "calibration_weak_steps": [],
+  "calibration_weak_upstream_steps": [],
+  "calibration_provenance": {
+    "track_support": {
+      "status": "calibrated",
+      "source": "supported track 'laguna_seca'",
+      "confidence": "unknown",
+      "r_squared": null,
+      "data_points": 0,
+      "warnings": []
+    },
+    "aero_compression": {
+      "status": "calibrated",
+      "source": "IBT-derived (18 sessions)",
+      "confidence": "high",
+      "r_squared": null,
+      "data_points": 18,
+      "warnings": []
+    },
+    "ride_height_model": {
+      "status": "calibrated",
+      "source": "regression (front R\u00b2=0.86, rear R\u00b2=0.99)",
+      "confidence": "medium",
+      "r_squared": 0.8614245507126782,
+      "data_points": 0,
+      "warnings": [
+        "Front RH model below warn threshold: R\u00b2=0.86 < 0.95",
+        "Front RH R\u00b2=0.86 vs Q\u00b2=0.68 (gap 0.18) \u2014 possible overfit"
+      ],
+      "q_squared": 0.6772721024630736
+    },
+    "deflection_model": {
+      "status": "calibrated",
+      "source": "regression (weakest R\u00b2=0.99)",
+      "confidence": "high",
+      "r_squared": 0.9887010897460107,
+      "data_points": 0,
+      "warnings": [],
+      "q_squared": 0.9757871603689778
+    },
+    "pushrod_geometry": {
+      "status": "calibrated",
+      "source": "garage screenshots",
+      "confidence": "unknown",
+      "r_squared": null,
+      "data_points": 0,
+      "warnings": []
+    },
+    "spring_rates": {
+      "status": "calibrated",
+      "source": "car-specific model",
+      "confidence": "unknown",
+      "r_squared": null,
+      "data_points": 0,
+      "warnings": []
+    },
+    "damper_zeta": {
+      "status": "uncalibrated",
+      "source": "not calibrated from IBT",
+      "confidence": "unknown",
+      "r_squared": null,
+      "data_points": 0,
+      "warnings": []
+    },
+    "arb_stiffness": {
+      "status": "uncalibrated",
+      "source": "estimated \u2014 no measured data",
+      "confidence": "unknown",
+      "r_squared": null,
+      "data_points": 0,
+      "warnings": []
+    },
+    "lltd_target": {
+      "status": "calibrated",
+      "source": "track-observed hand calibration (target=0.510)",
+      "confidence": "unknown",
+      "r_squared": null,
+      "data_points": 0,
+      "warnings": []
+    },
+    "roll_gains": {
+      "status": "uncalibrated",
+      "source": "estimated",
+      "confidence": "unknown",
+      "r_squared": null,
+      "data_points": 0,
+      "warnings": []
+    }
+  }
+}
