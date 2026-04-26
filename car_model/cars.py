@@ -207,6 +207,12 @@ class PushrodGeometry:
     # garage data (screenshots or IBT analysis), False when estimated/default.
     is_calibrated: bool = False
 
+    # Front-pushrod sensitivity validation: True when front_pushrod_to_rh is
+    # backed by ≥4 garage data points across the operating pushrod range.
+    # Cadillac currently sits at 2 points (ESTIMATE per CLAUDE.md) — flagged
+    # so callers and the calibration gate can downgrade confidence.
+    pushrod_sensitivity_validated: bool = True
+
     def front_offset_for_rh(self, target_rh: float,
                              heave_perch_mm: float | None = None) -> float:
         """Front pushrod offset to achieve target static RH at the given heave perch.
@@ -1375,9 +1381,18 @@ class RideHeightVariance:
     using: excursion = shock_vel / (2 * pi * dominant_freq)
 
     The dominant frequency is the characteristic bump frequency of the
-    track surface, estimated from the shock velocity spectrum.
+    TRACK surface (not the car), estimated from the shock velocity spectrum.
+
+    Per CLAUDE.md, all 5 cars currently hardcode 5.0 Hz — this is the BMW
+    Sebring measurement extrapolated to other tracks as a default. Track
+    profile builders (Unit 10 / TrackProfile) override this when a measured
+    spectrum is available; the per-car default is the fallback when it isn't.
     """
-    dominant_bump_freq_hz: float     # Characteristic bump frequency
+    dominant_bump_freq_hz: float     # Characteristic bump frequency (track-specific, NOT car-specific)
+    # True only when the value was derived from this car/track combination's
+    # measured shock velocity spectrum. False for the cross-car BMW Sebring
+    # default of 5.0 Hz that the other cars currently inherit.
+    bump_freq_calibrated: bool = False
 
 
 @dataclass
@@ -1572,9 +1587,15 @@ class CarModel:
     # Damper model
     damper: DamperModel = field(default_factory=lambda: DamperModel())
 
-    # Tyre vertical compliance (loaded-radius loss contributes directly to RH)
+    # Tyre vertical compliance (loaded-radius loss contributes directly to RH).
+    # Defaults match the BMW Michelin GTP measurement (front ~300 N/mm, rear
+    # ~320 N/mm); all current GTP cars run the same Michelin compound, so the
+    # cross-car defaults are physically reasonable. Per-car overrides are kept
+    # explicit so the provenance is documented at the car definition site, not
+    # silently inherited from this class default.
     tyre_vertical_rate_front_nmm: float = 300.0
     tyre_vertical_rate_rear_nmm: float = 320.0
+    tyre_vertical_rate_calibrated: bool = False  # True only when measured per-car
 
     # Default DF balance target (%) — car-specific, derived from weight
     # distribution + aero characteristics. Used when no --balance override.
@@ -1868,6 +1889,12 @@ BMW_M_HYBRID_V8 = CarModel(
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
     default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
     tyre_load_sensitivity=0.22,    # BMW Michelin GTP compound — moderate sensitivity
+    # Tyre vertical rates: BMW reference values from telemetry-derived loaded
+    # radius compliance. All GTP cars run identical Michelin compound, so other
+    # cars inherit these as a reasonable cross-car estimate (flagged below).
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    tyre_vertical_rate_calibrated=True,
     torsion_arb_coupling=0.25,     # Back-calibrated from 73 IBT sessions at Sebring (LLTD=50.99%)
     # IBT-calibrated LLTD target: 46 BMW Sebring sessions show 38-43% actual balance.
     # Theoretical W_front + λ*0.05 = 0.4727 + 0.055 = 0.528 is ~10-14% too high.
@@ -1916,9 +1943,12 @@ BMW_M_HYBRID_V8 = CarModel(
         is_calibrated=True,
     ),
     rh_variance=RideHeightVariance(
-        # Sebring dominant bump frequency estimated at ~5 Hz
-        # from shock velocity spectrum (p50 ~25 mm/s, significant energy in 3-10 Hz)
+        # Sebring dominant bump frequency from BMW IBT shock velocity spectrum
+        # (p50 ~25 mm/s, significant energy in 3-10 Hz). This 5.0 Hz value is
+        # the TRACK-derived measurement that other cars currently inherit as a
+        # cross-track default until per-track profiles are built.
         dominant_bump_freq_hz=5.0,
+        bump_freq_calibrated=True,
     ),
     heave_spring=HeaveSpringModel(
         # Calibrated from BMW Sebring telemetry (2 sessions):
@@ -2158,6 +2188,11 @@ CADILLAC_VSERIES_R = CarModel(
                                     # 50.14% (BMW baseline) was unachievable at wing 12-14.
                                     # 52.0% is safely within range for all wing settings.
     tyre_load_sensitivity=0.20,   # ESTIMATE — Michelin GTP compound (Dallara platform)
+    # Tyre vertical rates inherited from BMW Michelin measurement (same compound).
+    # Not Cadillac-specific calibrated; flagged so calibration_gate downgrades.
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    tyre_vertical_rate_calibrated=False,
     aero_axes_swapped=True,       # Dallara aero map convention — confirmed same as BMW
     min_front_rh_static=30.0,     # iRacing floor for all GTP cars — confirmed
     max_front_rh_static=80.0,
@@ -2179,15 +2214,20 @@ CADILLAC_VSERIES_R = CarModel(
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=30.0,            # Target front static RH
         front_pushrod_default_mm=-25.0,     # Reference pushrod for front_base_rh_mm
-        front_pushrod_to_rh=1.28,           # CALIBRATED: LS fit over 4 garage data points
+        front_pushrod_to_rh=1.28,           # ESTIMATE: LS fit over 4 garage data points (sparse — flagged via pushrod_sensitivity_validated=False below)
         front_base_rh_mm=41.34,            # CALIBRATED: model prediction at (pushrod=-25, perch=-20.5)
-        front_heave_perch_to_rh=-1.955,    # CALIBRATED: LS fit over 4 garage data points
+        front_heave_perch_to_rh=-1.955,    # ESTIMATE: LS fit over 4 garage data points
         front_heave_perch_ref_mm=-20.5,    # Reference heave perch for front_base_rh_mm
         rear_base_rh_mm=46.85,              # CALIBRATED: intercept from IBT data
         rear_pushrod_to_rh=0.042,           # CALIBRATED: 2 data points (+0.5→46.8, -6.0→46.6)
                                             # Positive and very weak — DIFFERENT from BMW (-0.096)
                                             # -0.096 gives +2.5mm pushrod; 0.042 gives -6.0mm (correct)
+        # CLAUDE.md flags Cadillac front pushrod sensitivity as ESTIMATE (2 garage points).
+        # Surface this so the calibration gate and runtime can downgrade confidence.
+        pushrod_sensitivity_validated=False,
     ),
+    # 5.0 Hz is the BMW Sebring track measurement; Silverstone-specific bump
+    # frequency has not been measured. bump_freq_calibrated=False (default).
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
         front_m_eff_kg=266.0,   # CALIBRATED: learner mean 266kg (Cadillac-specific)
@@ -2347,6 +2387,12 @@ FERRARI_499P = CarModel(
                                     # 48.3% reflects Ferrari's actual high-downforce aero behavior
                                     # at competitive ride heights with high wing angles.
     tyre_load_sensitivity=0.25,   # Ferrari bespoke LMH compound — estimated higher sensitivity
+    # Tyre vertical rates inherited from BMW Michelin measurement; Ferrari uses
+    # the same Michelin GTP slick. Flagged uncalibrated until Ferrari-specific
+    # loaded-radius data is available.
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    tyre_vertical_rate_calibrated=False,
     aero_axes_swapped=True,       # Ferrari aero map uses same axis convention as Dallara
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
@@ -2374,6 +2420,8 @@ FERRARI_499P = CarModel(
         rear_pushrod_to_rh=0.45,        # CALIBRATED: slope = (48.8-47.9)/(14-12) = 0.45
         is_calibrated=True,
     ),
+    # 5.0 Hz is the BMW Sebring track measurement; Hockenheim/Sebring-specific
+    # bump frequency for Ferrari has not been measured. bump_freq_calibrated=False (default).
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
         front_m_eff_kg=1439.3,  # CALIBRATED from 7 Ferrari IBT sessions (mean, constant model)
@@ -2704,6 +2752,12 @@ PORSCHE_963 = CarModel(
     #   which corresponds to static_R ≈66 mm — beyond the +40 mm rear pushrod cap of 50.6 mm.
     #   The old value forced the rake solver to hit the rear pushrod cap on every run.
     tyre_load_sensitivity=0.18,   # DSSV dampers give better contact — lower effective sensitivity
+    # Tyre vertical rates inherited from BMW Michelin measurement; Porsche uses
+    # the same Michelin GTP slick. Flagged uncalibrated until Porsche-specific
+    # loaded-radius data is available.
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    tyre_vertical_rate_calibrated=False,
     brake_bias_pct=44.75,         # CALIBRATED: from user's Algarve baseline (was 46.0 BMW default)
     # LLTD target: PHYSICS-DERIVED via OptimumG/Milliken formula
     # = weight_dist_front + (tyre_sens/0.20) × 0.05 + speed_correction
@@ -2751,6 +2805,8 @@ PORSCHE_963 = CarModel(
         front_pushrod_to_rh=0.549,     # CALIBRATED: 0.549 mm_RH / mm_pushrod from 3-point sweep (R^2=1.0)
         is_calibrated=True,
     ),
+    # 5.0 Hz is the BMW Sebring track measurement; Algarve-specific bump
+    # frequency has not been measured. bump_freq_calibrated=False (default).
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
         front_m_eff_kg=498.0,   # CALIBRATED: empirical from 2 Sebring sessions
@@ -2932,6 +2988,12 @@ ACURA_ARX06 = CarModel(
     weight_dist_front=0.470,          # IBT: (2706+2706)/(2706+2706+3048+3048) = 0.470
     default_df_balance_pct=49.0,      # Sharp front end — risk of snap oversteer
     tyre_load_sensitivity=0.20,       # ESTIMATE — Michelin GTP compound
+    # Tyre vertical rates inherited from BMW Michelin measurement; Acura uses
+    # the same Michelin GTP slick. Flagged uncalibrated until Acura-specific
+    # loaded-radius data is available.
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    tyre_vertical_rate_calibrated=False,
     aero_axes_swapped=True,
     min_front_rh_static=30.0,
     max_front_rh_static=80.0,
@@ -2964,6 +3026,8 @@ ACURA_ARX06 = CarModel(
         rear_base_rh_mm=49.87,           # CALIBRATED: 13-point regression, R²=0.91
         rear_pushrod_to_rh=0.7644,       # CALIBRATED: positive (less negative pushrod = higher RH)
     ),
+    # 5.0 Hz is the BMW Sebring track measurement; Hockenheim-specific bump
+    # frequency has not been measured. bump_freq_calibrated=False (default).
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
         # m_eff varies with spring rate (nonlinear sim model):
@@ -3004,7 +3068,7 @@ ACURA_ARX06 = CarModel(
             13.90, 14.34, 14.76, 15.14, 15.51, 15.86,  # EXPANDED: full usable range
         ],
         # Rear also uses torsion bars (ORECA, not Dallara) — same discrete options
-        rear_torsion_c=0.0008036,         # ESTIMATE — same C constant, needs calibration
+        rear_torsion_c=0.0008036,         # UNVALIDATED — borrowed from BMW until ORECA garage-truth data available
         rear_torsion_od_range_mm=(13.9, 18.20),
         rear_torsion_od_options=[          # Same hardware as front
             13.90, 14.34, 14.76, 15.14, 15.51, 15.86,
@@ -3013,7 +3077,8 @@ ACURA_ARX06 = CarModel(
         rear_spring_range_nmm=(100.0, 300.0),    # Unused — rear is torsion bar
         rear_spring_step_nmm=10.0,               # Unused
         front_motion_ratio=1.0,           # Baked into C constant
-        rear_motion_ratio=1.0,            # Baked into C constant for rear torsion
+        rear_motion_ratio=1.0,            # UNVALIDATED — borrowed from BMW until ORECA garage-truth data available
+        rear_torsion_unvalidated=True,    # Acura rear torsion C + MR are BMW-borrowed; gate Step 3+ accordingly
         track_width_mm=1600.0,            # ORECA LMDh chassis
         cg_height_mm=350.0,              # ORECA LMDh chassis
     ),
@@ -3130,5 +3195,14 @@ def get_car(name: str, apply_calibration: bool = True) -> CarModel:
             # Auto-calibration is optional — never fail solver startup, but warn
             import warnings
             warnings.warn(f"Auto-calibration failed for {key}: {e}")
+
+    # Surface unvalidated per-car physics so callers can downgrade confidence.
+    if not car.pushrod.pushrod_sensitivity_validated and abs(car.pushrod.front_pushrod_to_rh) > 1e-6:
+        import warnings
+        warnings.warn(
+            f"{key}: front_pushrod_to_rh={car.pushrod.front_pushrod_to_rh:.3f} is an "
+            f"ESTIMATE (insufficient garage data points). Step 1 rake recommendations "
+            f"will be flagged weak until more garage screenshots calibrate the slope."
+        )
 
     return car
