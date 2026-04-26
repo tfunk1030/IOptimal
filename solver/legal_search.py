@@ -17,10 +17,13 @@ Usage:
 from __future__ import annotations
 
 import itertools
+import logging
 import random
 from dataclasses import dataclass, field
 
 from car_model.cars import CarModel
+
+logger = logging.getLogger(__name__)
 from solver.candidate_search import canonical_params_to_overrides
 from solver.legal_space import LegalSpace, LegalCandidate, compute_perch_offsets
 from solver.legality_engine import validate_candidate_legality
@@ -804,6 +807,7 @@ def _run_sampling_search(
                 overrides = canonical_params_to_overrides(base_result, ev.params, car=car)
                 rematerialized = materialize_overrides(base_result, overrides, solve_inputs)
             except Exception as exc:
+                logger.debug("materialization failed for family %s: %s", ev.family, exc, exc_info=True)
                 acceptance_notes.append(f"{ev.family}: materialization failed ({exc})")
                 continue
             if not rematerialized.legal_validation.valid:

@@ -40,10 +40,6 @@ def _snap_step(value: float, step: float, lo: float | None = None, hi: float | N
     return snapped
 
 
-def _snap_option(value: float, options: list[float]) -> float:
-    return min(options, key=lambda x: abs(float(x) - float(value)))
-
-
 def _step_option(value: float, options: list[float], delta: int) -> float:
     if not options:
         return value
@@ -705,38 +701,62 @@ def _apply_family_state_adjustments(
     _adjust_numeric(targets["step5"], "rear_camber_deg", -0.08 * exit_instability * family_intensity, decimals=3)
     _adjust_numeric(targets["step5"], "front_toe_mm", -0.05 * entry_push * family_intensity, decimals=3)
 
+    # Damper click ranges from the car's damper model (avoid hardcoded 0..20).
+    _damper = getattr(car, "damper", None) if car is not None else None
+    _hs_comp_lo, _hs_comp_hi = (
+        getattr(_damper, "hs_comp_range", (0, 20)) if _damper is not None else (0, 20)
+    )
+    _ls_rbd_lo, _ls_rbd_hi = (
+        getattr(_damper, "ls_rbd_range", (0, 20)) if _damper is not None else (0, 20)
+    )
+
     if targets.get("step6"):
         for corner_name in ("lf", "rf"):
             if corner_name in targets["step6"]:
-                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * front_support * family_intensity)), lo=0, hi=20)
-                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round((front_support + front_lock) * family_intensity)), lo=0, hi=20)
+                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * front_support * family_intensity)), lo=int(_hs_comp_lo), hi=int(_hs_comp_hi))
+                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round((front_support + front_lock) * family_intensity)), lo=int(_ls_rbd_lo), hi=int(_ls_rbd_hi))
         for corner_name in ("lr", "rr"):
             if corner_name in targets["step6"]:
-                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * rear_support * family_intensity)), lo=0, hi=20)
-                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round(rear_support * family_intensity)), lo=0, hi=20)
+                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * rear_support * family_intensity)), lo=int(_hs_comp_lo), hi=int(_hs_comp_hi))
+                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round(rear_support * family_intensity)), lo=int(_ls_rbd_lo), hi=int(_ls_rbd_hi))
 
     _adjust_numeric(targets["supporting"], "brake_bias_pct", -0.3 * front_lock * family_intensity, decimals=3)
     _adjust_numeric(targets["supporting"], "brake_bias_target", -0.5 * front_lock * family_intensity, decimals=3)
     _adjust_numeric(targets["supporting"], "brake_bias_migration", -0.35 * front_lock * family_intensity, decimals=3)
     _adjust_numeric(targets["supporting"], "diff_preload_nm", 5.0 * exit_instability * family_intensity, decimals=3)
+
+    # diff_ramp_option_idx hi must reflect the car's actual ramp option count.
+    _gr = getattr(car, "garage_ranges", None) if car is not None else None
+    _ramp_options = getattr(_gr, "diff_coast_drive_ramp_options", None) if _gr is not None else None
+    _ramp_hi = max(0, len(_ramp_options) - 1) if _ramp_options else 2
     _adjust_integer(
         targets["supporting"],
         "diff_ramp_option_idx",
         int(round((0.8 * entry_push - 1.2 * exit_instability) * family_intensity)),
         lo=0,
-        hi=2,
+        hi=_ramp_hi,
     )
+
+    # Clutch plate range pulled from car's option list.
+    _plate_options = getattr(_gr, "diff_clutch_plates_options", None) if _gr is not None else None
+    if _plate_options:
+        _plate_lo = int(min(_plate_options))
+        _plate_hi = int(max(_plate_options))
+    else:
+        _plate_lo, _plate_hi = 2, 6
     _adjust_integer(
         targets["supporting"],
         "diff_clutch_plates",
         int(round(2.0 * exit_instability * family_intensity)),
-        lo=2,
-        hi=6,
+        lo=_plate_lo,
+        hi=_plate_hi,
     )
     _adjust_integer(targets["supporting"], "tc_gain", int(round(exit_instability * family_intensity)), lo=1, hi=10)
     _adjust_integer(targets["supporting"], "tc_slip", int(round(0.8 * exit_instability * family_intensity)), lo=1, hi=10)
-    mc_options = [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8]
-    pad_options = ["Low", "Medium", "High"]
+
+    # Brake master cylinder + pad compound options come from the car model when available.
+    mc_options = list(getattr(_gr, "brake_master_cyl_options_mm", None) or [15.9, 16.8, 17.8, 19.1, 20.6, 22.2, 23.8])
+    pad_options = list(getattr(_gr, "brake_pad_compound_options", None) or ["Low", "Medium", "High"])
     if front_lock > 0.2:
         targets["supporting"]["front_master_cyl_mm"] = _step_option(
             float(targets["supporting"].get("front_master_cyl_mm", 19.1)),
@@ -1042,6 +1062,7 @@ def generate_candidate_families(
                     candidate.status = "ready"
                 candidate.notes.extend(result.notes)
         except Exception as exc:
+            logger.debug("Candidate materialization failed for family %s: %s", family, exc, exc_info=True)
             candidate.selectable = False
             candidate.status = "failed"
             candidate.failure_reason = str(exc)
