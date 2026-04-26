@@ -780,10 +780,18 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
             f"Only {n} samples for {n_features} features (recommend "
             f"{_min_sessions_for_features(n_features)}+)"
         )
-    # Defense-in-depth: if LOO is catastrophically worse than training (>10x),
+    # Heuristic looser than the 3:1 selection rule: catches edge cases where
+    # the rule allowed barely-enough features (e.g. 7 features on 24 samples
+    # passes 3:1 but is still at risk on noisy data).
+    if n_features > n / 4 and n >= 5:
+        _overfit_warnings.append(
+            f"{n_features} features on {n} samples ({n_features / n:.2f} per sample) "
+            f"— at risk of overfitting; consider more data or fewer features"
+        )
+    # Defense-in-depth: if LOO is catastrophically worse than training (>5x),
     # the model is memorizing noise and won't generalize. Mark uncalibrated
     # even if R² looks great on the training set.
-    if is_cal and n >= 5 and not np.isnan(loo_rmse) and loo_rmse > 10.0 * max(rmse, 1e-6):
+    if is_cal and n >= 5 and not np.isnan(loo_rmse) and loo_rmse > 5.0 * max(rmse, 1e-6):
         is_cal = False
         _overfit_warnings.append(
             f"LOO/train ratio {loo_rmse / max(rmse, 1e-6):.0f}x — "
@@ -1155,6 +1163,29 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                     row["rear_spring_setting"]
                 )
 
+    # Compliance-feature singularity guard: the 1/k features (inv_front_heave,
+    # inv_rear_third, inv_rear_spring) blow up as k → 0. A single row with
+    # k < 20 N/mm produces a 1/k value 10–100× larger than the rest of the
+    # dataset, dominating least-squares fits. Drop these rows so every
+    # downstream regression sees a clean compliance domain. Porsche's third
+    # spring is legally 0 (disabled); such a row is still dropped because
+    # including it in a 1/k fit is physically meaningless.
+    _MIN_RATE_NMM = 20.0
+    _kept_rows = [
+        r for r in rows
+        if (r["front_heave_setting"] >= _MIN_RATE_NMM
+            and r["rear_third_setting"] >= _MIN_RATE_NMM
+            and r["rear_spring_setting"] >= _MIN_RATE_NMM)
+    ]
+    if len(_kept_rows) < len(rows):
+        import logging
+        logging.getLogger(__name__).warning(
+            "Compliance guard: dropped %d/%d rows with spring rate < %.0f N/mm "
+            "(would cause 1/k singularity)",
+            len(rows) - len(_kept_rows), len(rows), _MIN_RATE_NMM,
+        )
+        rows = _kept_rows
+
     def col(name: str) -> np.ndarray:
         return _col(rows, name)
 
@@ -1293,10 +1324,13 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         f_loo = fallback.loo_rmse
         if not np.isnan(p_loo) and not np.isnan(f_loo) and f_loo < p_loo:
             import logging
+            # Audit log: physics-aware pool was rejected in favor of the
+            # broader universal pool. Surfaces cross-axis-pollution effects
+            # (e.g. Porsche/Ferrari front-RH) for review.
             logging.getLogger(__name__).info(
-                "Pool fallback for '%s': universal pool LOO=%.3f beats "
-                "physics-aware LOO=%.3f",
-                model_name, f_loo, p_loo,
+                "Pool fallback for '%s': universal pool wins "
+                "(LOO=%.3f vs physics-aware LOO=%.3f); chosen features=%s",
+                model_name, f_loo, p_loo, fallback.feature_names,
             )
             # Fallback wins — restore the original model name
             fallback.name = model_name
@@ -1787,9 +1821,9 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Threshold matches the defense-in-depth guard in _fit(): if a model's
-# leave-one-out RMSE is more than 10x its training RMSE it has memorized
+# leave-one-out RMSE is more than 5x its training RMSE it has memorized
 # noise and won't generalize. Skip applying such models to the car.
-_OVERFIT_LOO_TRAIN_RATIO = 10.0
+_OVERFIT_LOO_TRAIN_RATIO = 5.0
 
 
 def _is_overfit(model) -> bool:
