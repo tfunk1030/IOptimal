@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import copy
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, ElementTree, indent
@@ -27,6 +28,8 @@ from solver.corner_spring_solver import CornerSpringSolution
 from solver.arb_solver import ARBSolution
 from solver.wheel_geometry_solver import WheelGeometrySolution
 from solver.damper_solver import DamperSolution
+
+logger = logging.getLogger(__name__)
 
 
 def _numeric(parent: Element, param_id: str, value: float | int, unit: str) -> None:
@@ -53,7 +56,7 @@ def _string(parent: Element, param_id: str, value: str, unit: str = "") -> None:
 
 
 def _comment(parent: Element, text: str) -> None:
-    """Add an XML comment node (used for TODO stubs in unsupported cars)."""
+    """Add an XML comment node."""
     from xml.etree.ElementTree import Comment
     parent.append(Comment(f" {text} "))
 
@@ -662,8 +665,8 @@ def write_sto(
     """Write an iRacing .sto setup file from solver output.
 
     Dispatches to the correct CarSetup_* ID mapping based on car_canonical.
-    For partially-mapped cars (Ferrari, Porsche), known params are written
-    and unknown params get a XML comment stub: <!-- TODO: {car} {param} not mapped -->
+    For partially-mapped cars (Ferrari, Porsche), only mapped params are
+    written; unmapped params are silently skipped to keep .sto files clean.
 
     Args:
         car_name: Car display name (for metadata)
@@ -712,14 +715,24 @@ def write_sto(
     # physical units (N/mm, mm OD).  The validator handles its own Ferrari
     # conversion internally and writes corrected physical values back to the
     # caller-supplied step objects.
+    #
+    # Skip validation when any of step1/step2/step3 is None — the calibration
+    # gate normally prevents emission when these are blocked, so a None here
+    # means the writer was invoked with a partial setup.  Log and continue.
     from output.garage_validator import validate_and_fix_garage_correlation
     if _car is not None:
-        garage_warnings = validate_and_fix_garage_correlation(
-            _car, step1, step2, step3, step5,
-            fuel_l=fuel_l, track_name=track_name,
-        )
-        for w in garage_warnings:
-            print(f"[garage] {w}")
+        if step1 is None or step2 is None or step3 is None:
+            logger.info(
+                "setup_writer: skipping garage correlation validation — "
+                "step1/step2/step3 contains None (calibration gate likely blocked a step)"
+            )
+        else:
+            garage_warnings = validate_and_fix_garage_correlation(
+                _car, step1, step2, step3, step5,
+                fuel_l=fuel_l, track_name=track_name,
+            )
+            for w in garage_warnings:
+                print(f"[garage] {w}")
 
     if _car is not None:
         if getattr(_car, "canonical_name", "") == "ferrari":
@@ -732,8 +745,7 @@ def write_sto(
             if _car.corner_spring.front_torsion_c > 0 and step3.front_torsion_od_mm > 1.0:
                 _ferrari_front_torsion_rate = _car.corner_spring.torsion_bar_rate(step3.front_torsion_od_mm)
             else:
-                import logging
-                logging.getLogger(__name__).warning(
+                logger.warning(
                     "Ferrari front torsion rate unavailable (c=%.4f, od=%.1f) "
                     "— using mid-range estimate 250 N/mm for index lookup",
                     _car.corner_spring.front_torsion_c,
@@ -819,28 +831,22 @@ def write_sto(
         raise ValueError(f"No STO parameter ID mapping for car: {car_canonical}")
 
     def _w_num(param: str, value: float | int, unit: str) -> None:
-        """Write a numeric param using car-specific ID, or TODO comment if unmapped."""
+        """Write a numeric param using car-specific ID; silently skip if unmapped."""
         if value is None:
             return
-        if param in ids:
-            pid = ids[param]
-            if not pid:  # empty string = suppressed for this car
-                return
-            _numeric(details, pid, value, unit)
-        else:
-            _comment(details, f"TODO: {car_canonical} {param} not mapped")
+        pid = ids.get(param)
+        if not pid:  # missing key or empty string = suppressed for this car
+            return
+        _numeric(details, pid, value, unit)
 
     def _w_str(param: str, value: str, unit: str = "") -> None:
-        """Write a string param using car-specific ID, or TODO comment if unmapped."""
+        """Write a string param using car-specific ID; silently skip if unmapped."""
         if value is None:
             return
-        if param in ids:
-            pid = ids[param]
-            if not pid:
-                return
-            _string(details, pid, value, unit)
-        else:
-            _comment(details, f"TODO: {car_canonical} {param} not mapped")
+        pid = ids.get(param)
+        if not pid:
+            return
+        _string(details, pid, value, unit)
 
     is_acura = car_canonical.lower() == "acura"
     is_porsche = car_canonical.lower() == "porsche"
@@ -889,7 +895,7 @@ def write_sto(
     _w_num("rear_third_perch",     _snap_to_step(step2.perch_offset_rear_mm, rear_third_perch_step),  "mm")
 
     # === Corner springs ===
-    # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
+    # BMW: torsion bar OD + turns; cars without front torsion (Porsche) skip via empty IDs.
     _front_torsion_value = (
         int(round(step3.front_torsion_od_mm))
         if car_canonical.lower() == "ferrari"
@@ -1135,17 +1141,15 @@ def write_sto(
     # both. Writing CarSetup_Dampers_RearRoll_* for Porsche emits XML IDs
     # that don't exist in iRacing's Porsche garage schema — phantom output.
     if has_roll_dampers and step6 is not None:
-        _has_front_roll = bool(getattr(getattr(_car, "damper", None), "has_front_roll_damper", False))
-        _has_rear_roll = bool(getattr(getattr(_car, "damper", None), "has_rear_roll_damper", False))
-        # Backward-compat: if has_roll_dampers is True but neither per-axle flag
-        # is explicitly set, assume both (legacy Acura before per-axle flags were added).
-        # Only apply when the car's DamperModel has has_roll_dampers=True — a car
-        # missing all three flags gets neither (fail-safe).
+        _dm = getattr(_car, "damper", None)
+        _has_front_roll = bool(getattr(_dm, "has_front_roll_damper", False))
+        _has_rear_roll = bool(getattr(_dm, "has_rear_roll_damper", False))
         if not _has_front_roll and not _has_rear_roll:
-            _legacy_roll = bool(getattr(getattr(_car, "damper", None), "has_roll_dampers", False))
-            if _legacy_roll:
-                _has_front_roll = True
-                _has_rear_roll = True
+            raise ValueError(
+                f"car {car_canonical} has has_roll_dampers=True but neither "
+                "has_front_roll_damper nor has_rear_roll_damper is set; "
+                "set both per-axle flags explicitly on the DamperModel"
+            )
         _roll_ls_f = getattr(step6, 'front_roll_ls', None)
         _roll_hs_f = getattr(step6, 'front_roll_hs', None)
         _roll_ls_r = getattr(step6, 'rear_roll_ls', None)
