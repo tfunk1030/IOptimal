@@ -76,13 +76,15 @@ PR with explicit user sign-off.
 | `acura/models_hockenheim.json:185-189` | `null` | `null` | `null` | `null` | `0` |
 | `cadillac/models.json` (post-fix) | `null` | `null` | `null` | `null` | `0` |
 
-**Behavior:** the gate at `car_model/calibration_gate.py:626-639` reads
-`getattr(car.damper, "zeta_is_calibrated", False)` AND
-`raw_models["zeta_n_sessions"]`. Because every JSON except the Porsche
-pooled file holds zero sessions, every car except Porsche reports
-**Step 6 dampers `uncalibrated`** unless the in-memory car definition
-sets `zeta_is_calibrated=True` for another reason (which only BMW does:
-`car_model/cars.py:2043`).
+**Behavior:** at `car_model/calibration_gate.py:626-639`, the **status**
+is determined by `getattr(car.damper, "zeta_is_calibrated", False)`.
+`raw_models["zeta_n_sessions"]` is used for supporting metadata only
+(`source`, `data_points`, and `confidence`), not to force the status to
+`uncalibrated`. Because every JSON except the Porsche pooled file holds
+zero sessions, most cars also show zero-session ζ metadata; however,
+**Step 6 dampers `uncalibrated`** is due to the calibration flag not
+being set unless the in-memory car definition or loader marks
+`zeta_is_calibrated=True` (which BMW does in `car_model/cars.py:2043`).
 
 The current in-memory truth (verified):
 - **BMW**: `cars.py:2043` sets `zeta_is_calibrated=True` so Step 6
