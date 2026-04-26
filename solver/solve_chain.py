@@ -348,30 +348,46 @@ def _finalize_result(
     )
 
 
+_FERRARI_INDEXED_KEYS: tuple[str, ...] = (
+    "front_heave_nmm",
+    "rear_third_nmm",
+    "front_torsion_od_mm",
+    # CurrentSetup uses rear_spring_nmm for Ferrari rear torsion index.
+    "rear_spring_nmm",
+    # Keep legacy/alternate key for robustness across callers.
+    "rear_spring_rate_nmm",
+)
+
+
 def _decode_ferrari_indexed_setup(car: Any, setup: Any) -> None:
     """Decode Ferrari indexed controls on current_setup to physical values in-place.
 
-    Ferrari garage exposes heave springs as indices (0-8, 0-9) and torsion bars
-    as indices (0-18). The solver needs physical N/mm and mm values. This decoding
-    MUST happen before any solver step reads current_setup values.
+    Index↔physical conversion boundary: Ferrari garage exposes heave springs as
+    indices (0-8, 0-9) and torsion bars as indices (0-18). The solver needs
+    physical N/mm and mm values. This is the canonical decode point — once a
+    value has been promoted to physical units, ``internal_solver_value`` is a
+    no-op for it (range guards prevent double-conversion), so calling this
+    helper repeatedly is safe and idempotent.
+
+    Fields that are missing or zero on a partially-initialized ``current_setup``
+    are skipped with a warning so the consumer keeps the original sentinel
+    instead of silently coercing it to 0.0 via the out-of-range guard.
     """
     if setup is None or car.canonical_name != "ferrari":
         return
-    _indexed_keys = [
-        "front_heave_nmm",
-        "rear_third_nmm",
-        "front_torsion_od_mm",
-        # CurrentSetup uses rear_spring_nmm for Ferrari rear torsion index.
-        "rear_spring_nmm",
-        # Keep legacy/alternate key for robustness across callers.
-        "rear_spring_rate_nmm",
-    ]
-    for key in _indexed_keys:
+    for key in _FERRARI_INDEXED_KEYS:
         raw = getattr(setup, key, None)
-        if raw is not None:
-            decoded = internal_solver_value(car, key, raw)
-            if decoded is not None and decoded != raw:
-                setattr(setup, key, float(decoded))
+        if raw is None or raw == 0:
+            if raw is not None:
+                logger.warning(
+                    "Ferrari indexed field %s is None/0 — skipping decode "
+                    "(partial current_setup; consumer keeps original value)",
+                    key,
+                )
+            continue
+        decoded = internal_solver_value(car, key, raw)
+        if decoded is not None and decoded != raw:
+            setattr(setup, key, float(decoded))
 
 
 def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any, Any, Any, float]:
