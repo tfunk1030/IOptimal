@@ -144,6 +144,11 @@ def _ok(val: bool) -> str:
     return "✓" if val else "✗"
 
 
+def _fmt_freq(hz: float | None, fmt: str = ".2f") -> str:
+    """Format a natural-frequency value, rendering ``None`` as ``N/A``."""
+    return "N/A" if hz is None else f"{hz:{fmt}}"
+
+
 def _changed_marker(param_key: str, new_val, current_params: dict | None) -> str:
     """Return ' ←' if this value differs from current_params."""
     if current_params is None or param_key not in current_params:
@@ -621,7 +626,7 @@ def print_full_setup_report(
                f"  Third R:    {step2.rear_third_nmm:5.0f} N/mm  perch {step2.perch_offset_rear_mm:+.0f}mm"))
         if _no_front_torsion:
             a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
-                   f"  Roll spr:  {step3.front_roll_spring_nmm:5.0f} N/mm  {step3.front_natural_freq_hz:.2f}Hz"))
+                   f"  Roll spr:  {step3.front_roll_spring_nmm:5.0f} N/mm  {_fmt_freq(step3.front_natural_freq_hz)}Hz"))
         else:
             a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
                    f"  Torsion:   {step3.front_torsion_od_mm:6.2f} mm OD  {_tb_turns:.3f} Turns"))
@@ -954,19 +959,19 @@ def print_full_setup_report(
         a(f"  Heave slider: {garage_outputs.heave_slider_defl_static_mm:.1f}/{garage_outputs.heave_slider_defl_max_mm:.1f} mm  "
           f"travel margin: {garage_outputs.travel_margin_front_mm:.1f} mm")
     if _is_ferrari:
-        a(f"  F TB OD: {display_front_torsion:.0f} idx  {step3.front_natural_freq_hz:.2f}Hz  "
+        a(f"  F TB OD: {display_front_torsion:.0f} idx  {_fmt_freq(step3.front_natural_freq_hz)}Hz  "
           f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
-        a(f"  R TB OD: {display_rear_torsion:.0f} idx  {step3.rear_natural_freq_hz:.2f}Hz  "
+        a(f"  R TB OD: {display_rear_torsion:.0f} idx  {_fmt_freq(step3.rear_natural_freq_hz)}Hz  "
           f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
     elif _no_front_torsion:
-        a(f"  Roll spr: {step3.front_roll_spring_nmm:.0f} N/mm  {step3.front_natural_freq_hz:.2f}Hz  "
+        a(f"  Roll spr: {step3.front_roll_spring_nmm:.0f} N/mm  {_fmt_freq(step3.front_natural_freq_hz)}Hz  "
           f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
-        a(f"  Rear coil: {step3.rear_spring_rate_nmm:.0f} N/mm  {step3.rear_natural_freq_hz:.2f}Hz  "
+        a(f"  Rear coil: {step3.rear_spring_rate_nmm:.0f} N/mm  {_fmt_freq(step3.rear_natural_freq_hz)}Hz  "
           f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
     else:
-        a(f"  Torsion: {step3.front_torsion_od_mm:.2f}mm OD  {step3.front_natural_freq_hz:.2f}Hz  "
+        a(f"  Torsion: {step3.front_torsion_od_mm:.2f}mm OD  {_fmt_freq(step3.front_natural_freq_hz)}Hz  "
           f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
-        a(f"  Rear coil: {step3.rear_spring_rate_nmm:.0f} N/mm  {step3.rear_natural_freq_hz:.2f}Hz  "
+        a(f"  Rear coil: {step3.rear_spring_rate_nmm:.0f} N/mm  {_fmt_freq(step3.rear_natural_freq_hz)}Hz  "
           f"third/corner: {step3.rear_third_corner_ratio:.1f}x")
     if step5 is not None:
         a(f"  Roll at peak {step5.peak_lat_g:.2f}g: {step5.body_roll_at_peak_deg:.1f}°  "
