@@ -2099,8 +2099,12 @@ def _reason_to_modifiers(
                     aero_gradient_steep = True
                 elif max_grad < 0.2:
                     gradient_scale = 0.20  # shallow gradient → can push harder
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug(
+            "DF balance gradient analysis failed; using default scale: %s",
+            exc, exc_info=True,
+        )
 
     us_values = [s.measured.understeer_mean_deg for s in analysis_sessions]
     us_hs = [s.measured.understeer_high_speed_deg for s in analysis_sessions]
@@ -2849,8 +2853,12 @@ def reason_and_solve(
             for _, _t, _, _ in _lts:
                 if 30.0 < _t < 300.0:
                     _all_plausible.append(_t)
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug(
+                "Multi-session lap-time auto-detection skipped %s: %s",
+                _p, exc, exc_info=True,
+            )
     if _all_plausible:
         import statistics as _stat
         _median_lap = _stat.median(_all_plausible)

@@ -333,16 +333,40 @@ def produce(
             print(message)
 
     # ── Load car model and apply calibration data if available ──
+    # Validate car name first (cheap) so unknown-car errors surface before IBT parse.
+    try:
+        car = get_car(args.car)
+    except KeyError as exc:
+        # get_car()'s KeyError message already lists available cars.
+        raise PipelineInputError(
+            f"{exc.args[0] if exc.args else exc}\n"
+            f"See CLAUDE.md for current calibration tiers per car."
+        ) from exc
+
     # Parse the IBT once and reuse that instance throughout the pipeline.
-    ibt = None
-    _track_key_for_cal = ""
     try:
         ibt = IBTFile(str(ibt_path))
+    except FileNotFoundError as exc:
+        raise PipelineInputError(
+            f"IBT file not found: {ibt_path}\n"
+            f"Check the path and try again. Expected an iRacing telemetry file (.ibt)."
+        ) from exc
+    except Exception as exc:
+        raise PipelineInputError(
+            f"Could not parse IBT file: {ibt_path}\n"
+            f"Reason: {exc}\n"
+            f"Verify the file is a valid iRacing telemetry recording (.ibt) and is not truncated."
+        ) from exc
+
+    _track_key_for_cal = ""
+    try:
         from car_model.registry import track_key as _reg_track_key
         _track_key_for_cal = _reg_track_key(ibt.track_info().get("track_name", ""))
-    except Exception:
-        pass
-    car = get_car(args.car)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug(
+            "IBT track-name lookup for calibration failed: %s", exc, exc_info=True,
+        )
     try:
         from car_model.auto_calibrate import load_calibrated_models, apply_to_car
         cal_models = load_calibrated_models(car.canonical_name, track=_track_key_for_cal)
@@ -375,8 +399,17 @@ def produce(
     # Auto-detect min_lap_time if not explicitly set
     if getattr(args, "min_lap_time", None) is None:
         _all_lts = [t for _, t, _, _ in ibt.lap_times(min_time=30.0) if t < 300]
-        _fastest = min(_all_lts) if _all_lts else None
-        args.min_lap_time = max(60.0, _fastest * 0.95) if _fastest else 60.0
+        if not _all_lts:
+            raise PipelineInputError(
+                f"No usable laps detected in IBT file: {Path(ibt_path).name}\n"
+                "Every lap was shorter than 30s or longer than 300s. "
+                "Verify the IBT contains a complete racing session (out-laps and "
+                "installation laps are filtered). "
+                "If you have a known good lap, pass --min-lap-time <seconds> to override "
+                "the auto-detection floor."
+            )
+        _fastest = min(_all_lts)
+        args.min_lap_time = max(60.0, _fastest * 0.95)
 
     # ── Auto-detect from session info ──
     current_setup = CurrentSetup.from_ibt(ibt, car_canonical=car.canonical_name)
@@ -551,6 +584,11 @@ def produce(
             json.dump(setup_schema.to_dict(), f, indent=2, default=str)
         log(f"  Setup schema JSON: {setup_json_output}")
         if not args.sto and not args.json and not _return_result:
+            print(
+                f"Setup schema written to {setup_json_output}. "
+                "No --sto or --json requested; skipping full solver run.",
+                file=sys.stderr,
+            )
             return None
 
     # ── Phase B.5: Stint evolution (if --stint) ──
@@ -711,7 +749,12 @@ def produce(
 
             log(f"  Learner: {len(_healthy_obs)} historical sessions, "
                 f"envelope_dist={envelope_distance:.2f}, setup_dist={setup_distance_val:.2f}")
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug(
+            "Learner historical envelope/setup-distance computation failed: %s",
+            exc, exc_info=True,
+        )
         log("  Learner: no historical data available (using defaults)")
 
     # ── Phase F: Compute aero gradients ──
