@@ -57,12 +57,15 @@ Physics Foundation:
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 from vertical_dynamics import axle_modal_rate_nmm
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -278,11 +281,30 @@ class DamperSolver:
             return total * self.car.weight_dist_front / 2.0
         return total * (1.0 - self.car.weight_dist_front) / 2.0
 
+    def _natural_freq_hz(self, k_nmm: float, mass_kg: float) -> float:
+        """Undamped natural frequency f_n = sqrt(k/m) / (2*pi).
+
+        Returns 0.0 when k or m is non-positive so callers (oscillation gating,
+        report strings) can skip cleanly instead of dividing by zero / sqrt of
+        a negative.
+        """
+        if k_nmm <= 0.0 or mass_kg <= 0.0:
+            return 0.0
+        return math.sqrt(k_nmm * 1000.0 / mass_kg) / (2.0 * math.pi)
+
     def _critical_damping(self, k_nmm: float, mass_kg: float) -> float:
         """Critical damping coefficient c_crit = 2 * sqrt(k * m).
 
-        Returns N·s/m.
+        Returns N·s/m. Returns 0.0 (with a warning) when k or m is non-positive
+        — sqrt of a negative product would otherwise produce NaN and silently
+        propagate into LS/HS damping coefficients and click counts.
         """
+        if k_nmm <= 0.0 or mass_kg <= 0.0:
+            logger.warning(
+                "_critical_damping: non-positive input k_nmm=%.3f mass_kg=%.3f -> returning 0.0",
+                k_nmm, mass_kg,
+            )
+            return 0.0
         k_nm = k_nmm * 1000  # N/mm → N/m
         return 2.0 * math.sqrt(k_nm * mass_kg)
 
@@ -523,7 +545,7 @@ class DamperSolver:
         # frequency, the rear is underdamped. Bump ζ_hs_rear to reduce oscillation.
         if measured is not None:
             rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
-            rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
+            rear_nat_freq_hz = self._natural_freq_hz(modal_rear_rate_nmm, m_rear)
             if rear_osc_hz > 1.5 * rear_nat_freq_hz and rear_nat_freq_hz > 0:
                 # Underdamped evidence — increase HS ζ by 50% (capped at 0.25)
                 zeta_hs_r_original = zeta_hs_r
@@ -606,7 +628,7 @@ class DamperSolver:
             rear_osc_ratio = None
             if measured is not None:
                 rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
-                rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
+                rear_nat_freq_hz = self._natural_freq_hz(modal_rear_rate_nmm, m_rear)
                 if rear_osc_hz > 0.0 and rear_nat_freq_hz > 0.0:
                     rear_osc_ratio = rear_osc_hz / rear_nat_freq_hz
 
@@ -745,7 +767,7 @@ class DamperSolver:
         # Add oscillation validation constraint if telemetry is available
         if measured is not None:
             rear_osc_hz = getattr(measured, "rear_shock_oscillation_hz", 0.0) or 0.0
-            rear_nat_freq_hz = math.sqrt(modal_rear_rate_nmm * 1000 / m_rear) / (2 * math.pi)
+            rear_nat_freq_hz = self._natural_freq_hz(modal_rear_rate_nmm, m_rear)
             if rear_osc_hz > 0 and rear_nat_freq_hz > 0:
                 osc_ratio = rear_osc_hz / rear_nat_freq_hz
                 constraints.append(DamperConstraintCheck(
@@ -762,10 +784,10 @@ class DamperSolver:
         notes = [
             f"Front critical damping: {c_crit_front:.0f} N*s/m "
             f"(modal k={modal_front_rate_nmm:.1f} N/mm, "
-            f"f_n = {math.sqrt(modal_front_rate_nmm*1000/m_front)/(2*math.pi):.2f} Hz)",
+            f"f_n = {self._natural_freq_hz(modal_front_rate_nmm, m_front):.2f} Hz)",
             f"Rear critical damping: {c_crit_rear:.0f} N*s/m "
             f"(modal k={modal_rear_rate_nmm:.1f} N/mm, "
-            f"f_n = {math.sqrt(modal_rear_rate_nmm*1000/m_rear)/(2*math.pi):.2f} Hz)",
+            f"f_n = {self._natural_freq_hz(modal_rear_rate_nmm, m_rear):.2f} Hz)",
             f"Front LS: zeta={zeta_ls_f:.2f} -> c={c_ls_front:.0f} N*s/m -> "
             f"F@{v_ls_ref*1000:.0f}mm/s = {c_ls_front*v_ls_ref:.0f} N -> {front_ls_comp} clicks",
             f"Front HS: zeta={zeta_hs_f:.2f} -> c={c_hs_front:.0f} N*s/m -> "
@@ -813,8 +835,18 @@ class DamperSolver:
             k_gyration = 0.4 * (tw_f + tw_r) / 2.0
             i_roll = m_total * k_gyration ** 2  # kg*m^2
 
-            # Roll critical damping and target zeta
-            c_crit_roll = 2.0 * math.sqrt(k_roll_springs * i_roll)  # N*m*s/rad
+            # Roll critical damping and target zeta. Guard against degenerate
+            # car configurations where wheel rates or total mass collapse to
+            # zero — sqrt of a non-positive product would otherwise NaN-poison
+            # every roll-damper click below.
+            if k_roll_springs <= 0.0 or i_roll <= 0.0:
+                logger.warning(
+                    "Roll-damper sizing skipped: k_roll_springs=%.3f i_roll=%.3f",
+                    k_roll_springs, i_roll,
+                )
+                c_crit_roll = 0.0
+            else:
+                c_crit_roll = 2.0 * math.sqrt(k_roll_springs * i_roll)  # N*m*s/rad
             # Target roll zeta: 0.55 (moderate — controls weight transfer without over-damping)
             zeta_roll = 0.55
             c_roll = zeta_roll * c_crit_roll
@@ -889,7 +921,12 @@ class DamperSolver:
         # Physics: same zeta approach as main dampers but scaled for the third spring's
         # natural frequency and the 0-5 click range.
         rear_3rd_kwargs: dict = {}
-        if self.car.damper.has_roll_dampers and rear_third_nmm is not None and rear_third_nmm > 0:
+        if (
+            self.car.damper.has_roll_dampers
+            and rear_third_nmm is not None
+            and rear_third_nmm > 0
+            and m_rear > 0.0
+        ):
             # Third spring natural frequency
             k_3rd = float(rear_third_nmm) * 1000.0  # N/m
             # Effective mass on third spring is the rear sprung mass (both corners)

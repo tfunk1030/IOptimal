@@ -89,6 +89,30 @@ class PhysicsCorrectionTests(unittest.TestCase):
             any("insufficient negative camber" in problem.cause.lower() for problem in thermal_problems)
         )
 
+    def test_critical_damping_guards_non_positive_inputs(self) -> None:
+        track = TrackProfile(
+            track_name="Unit Test",
+            track_config="baseline",
+            track_length_m=5000.0,
+            car="bmw",
+            best_lap_time_s=90.0,
+            shock_vel_p95_front_mps=0.120,
+            shock_vel_p95_rear_mps=0.160,
+            shock_vel_p99_front_mps=0.260,
+            shock_vel_p99_rear_mps=0.320,
+        )
+        solver = DamperSolver(self.car, track)
+
+        # Zero or negative k or m must return 0.0 (not NaN) so downstream
+        # LS/HS coefficients and click counts stay well-defined.
+        self.assertEqual(solver._critical_damping(0.0, 100.0), 0.0)
+        self.assertEqual(solver._critical_damping(50.0, 0.0), 0.0)
+        self.assertEqual(solver._critical_damping(-1.0, 100.0), 0.0)
+        self.assertEqual(solver._critical_damping(50.0, -1.0), 0.0)
+
+        self.assertEqual(solver._natural_freq_hz(0.0, 100.0), 0.0)
+        self.assertEqual(solver._natural_freq_hz(50.0, 0.0), 0.0)
+
     def test_damper_solver_uses_modal_heave_rate_for_critical_damping(self) -> None:
         track = TrackProfile(
             track_name="Unit Test",
