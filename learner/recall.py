@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from car_model.registry import track_key
 from learner.knowledge_store import KnowledgeStore
 from learner.empirical_models import EmpiricalModelSet
 
@@ -37,8 +38,7 @@ class KnowledgeRecall:
         self.store = store
 
     def _load_models(self, car: str, track: str) -> EmpiricalModelSet | None:
-        track_key = track.lower().split()[0]  # Match ingest.py: first word only
-        model_id = f"{car}_{track_key}_empirical".lower()
+        model_id = f"{car}_{track_key(track)}_empirical".lower()
         data = self.store.load_model(model_id)
         if data:
             return EmpiricalModelSet.from_dict(data)
@@ -235,7 +235,7 @@ class KnowledgeRecall:
 
     def get_insights(self, car: str, track: str) -> RecallResult:
         """Get the distilled insights for a car/track combination."""
-        insight_id = f"{car}_{track.lower().split()[0]}_insights"
+        insight_id = f"{car}_{track_key(track)}_insights"
         insights = self.store.load_insights(insight_id)
         if insights is None:
             return RecallResult(
