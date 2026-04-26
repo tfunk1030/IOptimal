@@ -360,8 +360,26 @@ def _load_raw_calibration_models(car_canonical: str, track: str = "") -> dict:
             try:
                 with open(track_path, encoding="utf-8") as f:
                     return json.load(f)
-            except Exception:
-                pass  # fall through to pooled file
+            except Exception as exc:
+                pooled = {}
+                path = cal_dir / "models.json"
+                if path.exists():
+                    try:
+                        with open(path, encoding="utf-8") as f:
+                            pooled = json.load(f)
+                    except Exception as pooled_exc:
+                        pooled = {
+                            "__load_error__": f"{type(pooled_exc).__name__}: {pooled_exc}",
+                        }
+                # Keep this load failure visible without changing the status
+                # derived from the live CarModel.  Some cars intentionally have
+                # hand-calibrated live models that are stronger than stale raw
+                # JSON metadata.
+                pooled.setdefault("__track_load_error__", (
+                    f"{track_path.name}: {type(exc).__name__}: {exc}"
+                ))
+                pooled.setdefault("__calibration_model_source__", "pooled_after_track_load_error")
+                return pooled
 
     # Pooled / fallback
     path = cal_dir / "models.json"
@@ -369,7 +387,8 @@ def _load_raw_calibration_models(car_canonical: str, track: str = "") -> dict:
         return {}
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            return data
     except Exception as exc:
         return {
             "__load_error__": f"{type(exc).__name__}: {exc}",
@@ -500,8 +519,18 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     _append_q2_warnings(rh_warnings, "Front RH", front_r2, front_q2)
     _append_q2_warnings(rh_warnings, "Rear RH", rear_r2, rear_q2)
     # Strict mode: weak fits are surfaced with warnings and marked weak.
-    if not rh_cal:
+    if not rh_cal and weaker_r2 is None:
         rh_status = "uncalibrated"
+    elif not rh_cal:
+        # Raw per-track regression evidence exists, but the live CarModel was
+        # not marked calibrated (for example when one axis is weak and
+        # apply_to_car skipped the all-or-nothing RH update).  Surface this as
+        # weak evidence instead of a hard block so the gate matches the
+        # calibrated/weak/uncalibrated contract.
+        rh_status = "weak"
+        rh_warnings.append(
+            "Ride height regression data present, but live car model is not marked calibrated"
+        )
     elif weaker_r2 is not None and weaker_r2 < R2_THRESHOLD_BLOCK:
         rh_status = "weak"
     else:

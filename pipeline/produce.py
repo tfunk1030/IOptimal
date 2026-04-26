@@ -340,8 +340,12 @@ def produce(
         ibt = IBTFile(str(ibt_path))
         from car_model.registry import track_key as _reg_track_key
         _track_key_for_cal = _reg_track_key(ibt.track_info().get("track_name", ""))
-    except Exception:
-        pass
+    except Exception as exc:
+        log(
+            "  [WARNING] Could not parse IBT track for calibration scope: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        log("  [WARNING] Calibration loading will use pooled/default models.")
     car = get_car(args.car)
     try:
         from car_model.auto_calibrate import load_calibrated_models, apply_to_car

@@ -192,8 +192,10 @@ class CalibrationPoint:
     lap_time_s: float = 0.0
     assessment: str = ""
 
-    # ── Roll/LLTD telemetry (for ARB and roll gain calibration) ──
+    # ── Roll telemetry ──
     roll_gradient_deg_per_g: float = 0.0
+    # Backward-compatible storage for the RH-based roll_distribution_proxy.
+    # This is NOT true wheel-load LLTD and must not calibrate ARB/LLTD targets.
     lltd_measured: float = 0.0
 
     # ── Optional: decrypted .sto physics rates (from setupdelta.com) ──
@@ -544,7 +546,10 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         rear_shock_p99 = measured.rear_shock_vel_p99_mps or 0.0
         lap_time = measured.lap_time_s or 0.0
         roll_grad = getattr(measured, "roll_gradient_measured_deg_per_g", None) or 0.0
-        lltd_m = getattr(measured, "lltd_measured", None) or 0.0
+        lltd_m = getattr(measured, "roll_distribution_proxy", None)
+        if lltd_m is None:
+            lltd_m = getattr(measured, "lltd_measured", None)
+        lltd_m = lltd_m or 0.0
     except Exception as e:
         # Telemetry extraction is optional for calibration; skip gracefully
         import logging
@@ -614,6 +619,8 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         rear_shock_vel_p99_mps=rear_shock_p99,
         lap_time_s=lap_time,
         roll_gradient_deg_per_g=roll_grad,
+        # Historical field name retained for JSON compatibility.  Value is the
+        # roll_distribution_proxy, not a true LLTD calibration target.
         lltd_measured=lltd_m,
     )
 

@@ -244,23 +244,15 @@ def compare_all(solver_json: dict, measured: MeasuredState) -> list[Comparison]:
         ))
 
     # ================================================================
-    # Step 4: Balance (LLTD, roll gradient, body roll)
+    # Step 4: Balance (roll gradient, body roll)
     # ================================================================
-
-    pred_lltd = step4.get("lltd_achieved", 0)
-    if pred_lltd > 0 and measured.lltd_measured > 0:
-        comparisons.append(Comparison(
-            step=4,
-            parameter="lltd",
-            predicted=round(pred_lltd, 3),
-            measured=round(measured.lltd_measured, 3),
-            delta=round(measured.lltd_measured - pred_lltd, 3),
-            delta_pct=round(_pct(pred_lltd, measured.lltd_measured), 1),
-            tolerance_abs=0.03,
-            rethink_abs=0.08,
-            units="ratio",
-            physics_note="ARB stiffness model or roll stiffness distribution wrong.",
-        ))
+    #
+    # Deliberately do NOT compare step4.lltd_achieved against
+    # measured.lltd_measured here.  The IBT-derived "lltd_measured" field is a
+    # backward-compatible alias for a ride-height roll-distribution proxy, not
+    # true wheel-load LLTD.  Using it as a validation target caused downstream
+    # ARB back-solves to chase a geometric constant rather than a measured
+    # load-transfer distribution.
 
     # Roll gradient: derive predicted from step5 data
     pred_roll_grad = 0.0
