@@ -1,7 +1,7 @@
 {
   "car": "porsche",
   "track": "algarve",
-  "n_sessions": 117,
+  "n_sessions": 152,
   "n_unique_setups": 40,
   "calibration_complete": true,
   "front_ride_height": {
@@ -552,17 +552,17 @@
     }
   ],
   "measured_lltd_target": null,
-  "front_ls_zeta": null,
-  "rear_ls_zeta": null,
-  "front_hs_zeta": null,
-  "rear_hs_zeta": null,
-  "zeta_n_sessions": 0,
+  "front_ls_zeta": 0.664,
+  "rear_ls_zeta": 0.618,
+  "front_hs_zeta": 0.209,
+  "rear_hs_zeta": 0.282,
+  "zeta_n_sessions": 32,
   "aero_front_compression_mm": 16.185714285714287,
   "aero_rear_compression_mm": 22.210714285714282,
   "aero_n_sessions": 28,
   "status": {
     "aero_compression": "calibrated from IBT AeroCalculator (28 sessions, front=16.2mm rear=22.2mm)",
-    "arb_stiffness": "INCONCLUSIVE: roll-gradient noise floor (4731 N\u00b7m/deg) exceeds max predicted ARB delta (210 N\u00b7m/deg) across 5 configs. Signal is below measurement noise \u2014 cannot validate or invalidate cars.py manual values. Trusting hand-calibration.",
+    "arb_stiffness": "INCONCLUSIVE: roll-gradient noise floor (4664 N\u00b7m/deg) exceeds max predicted ARB delta (210 N\u00b7m/deg) across 5 configs. Signal is below measurement noise \u2014 cannot validate or invalidate cars.py manual values. Trusting hand-calibration.",
     "arb_calibrated": null,
     "roll_gradient_mean": 0.2545,
     "roll_gradient_n_sessions": 16,
