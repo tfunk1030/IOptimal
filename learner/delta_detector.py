@@ -120,13 +120,16 @@ KNOWN_CAUSALITY = {
     ],
 
     # ── Step 4: ARBs ──
+    # NOTE: ("front_arb_blade", "+") → ("lltd_measured", "-") and the rear-ARB
+    # mirror were removed — `lltd_measured` is an alias for the geometric
+    # roll-distribution proxy (insensitive to spring stiffness), and
+    # LLTD-from-proxy was disabled in `auto_calibrate.py:1360`. See CLAUDE.md
+    # "LLTD epistemic gap" / "LLTD CALIBRATION GAP".
     ("front_arb_blade", "+"): [
-        ("lltd_measured", "-"),         # more front ARB → front takes more roll → LLTD decreases
         ("roll_gradient_deg_per_g", "-"),  # stiffer front roll = less total roll
         ("understeer_mean_deg", "-"),   # less understeer (front stiffer)
     ],
     ("rear_arb_blade", "+"): [
-        ("lltd_measured", "+"),         # more rear ARB → more rear roll resistance → higher front LLTD
         ("understeer_mean_deg", "+"),   # more understeer (front lighter)
         ("roll_gradient_deg_per_g", "-"),  # stiffer rear roll = less total roll
         ("body_slip_p95_deg", "-"),     # more rear roll stiffness = less oversteer

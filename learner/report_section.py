@@ -8,6 +8,7 @@ differently from the physics model.
 
 from __future__ import annotations
 
+from car_model.registry import track_key
 from learner.knowledge_store import KnowledgeStore
 from learner.recall import KnowledgeRecall
 
@@ -45,8 +46,8 @@ def generate_learning_section(
     ]
 
     # ── Insights ──
-    track_key = track.lower().split()[0]
-    insight_id = f"{car}_{track_key}_insights"
+    track_slug = track_key(track)
+    insight_id = f"{car}_{track_slug}_insights"
     insights = store.load_insights(insight_id)
 
     if insights:
@@ -85,7 +86,7 @@ def generate_learning_section(
                 lines.append(f"    ! {u}")
 
     # ── Empirical corrections ──
-    model_id = f"{car}_{track_key}_empirical"
+    model_id = f"{car}_{track_slug}_empirical"
     model = store.load_model(model_id)
 
     if model:

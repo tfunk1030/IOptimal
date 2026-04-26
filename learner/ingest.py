@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
+from car_model.registry import track_key
 from learner.knowledge_store import KnowledgeStore
 from learner.observation import Observation, build_observation
 from learner.delta_detector import detect_delta, SessionDelta
@@ -35,6 +37,11 @@ from learner.sanity import (
     select_all_valid_laps,
     select_valid_lap,
 )
+
+logger = logging.getLogger(__name__)
+
+# Threshold above which we suggest the user re-run with --all-laps.
+_MULTI_LAP_HINT_THRESHOLD = 3
 
 
 def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
@@ -143,11 +150,10 @@ def _update_auto_calibration(
         # deflections due to aero load, surface, and speed profile differences.
         # Pooling cross-track data causes 27x-103x LOO/train overfitting.
         from car_model.auto_calibrate import _setup_key
-        from car_model.registry import track_key as _track_key
 
         track_groups: dict[str, list] = {}
         for p2 in cal_points:
-            tk = _track_key(p2.track) if p2.track else ""
+            tk = track_key(p2.track) if p2.track else ""
             if tk:
                 track_groups.setdefault(tk, []).append(p2)
 
@@ -224,6 +230,24 @@ def ingest_ibt(
         car_name, ibt_path, wing, lap
     )
 
+    # When the caller picks single-lap mode but the IBT contains many valid
+    # laps, recommend --all-laps so the learner gets one observation per lap
+    # (better statistical power for empirical fits).
+    if lap is None:
+        try:
+            valid_laps = select_all_valid_laps(
+                ibt, car=car_name, track=track.track_name
+            )
+            if len(valid_laps) > _MULTI_LAP_HINT_THRESHOLD:
+                logger.info(
+                    "IBT %s has %d valid laps; ingesting only one observation. "
+                    "Re-run with --all-laps for better statistical power.",
+                    Path(ibt_path).name,
+                    len(valid_laps),
+                )
+        except Exception as exc:
+            logger.debug("Skipped multi-lap hint: %s", exc)
+
     # ── 2. Build observation ─────────────────────────────────────────
     session_id = store.session_id_from_ibt(ibt_path, car_name, track.track_name)
 
@@ -280,7 +304,7 @@ def ingest_ibt(
 
     # ── 4. Delta detection against prior sessions ────────────────────
     delta_result = None
-    track_key_short = track.track_name.lower().split()[0]
+    track_key_short = track_key(track.track_name)
 
     prior_obs = store.list_observations(car=car_name, track=track.track_name)
     # Filter to sessions BEFORE this one (by timestamp or position)
@@ -524,7 +548,7 @@ def ingest_all_laps(
                 if prev_obs_data:
                     obs_before = Observation.from_dict(prev_obs_data)
                     delta_result = detect_delta(obs_before, obs)
-                    track_key_short = track.track_name.lower().split()[0]
+                    track_key_short = track_key(track.track_name)
                     delta_id = f"{car_name}_{track_key_short}_delta_lap_{lap_num:03d}"
                     store.save_delta(delta_id, delta_result.to_dict())
                     if verbose:
@@ -544,7 +568,7 @@ def ingest_all_laps(
     # Fit models with all accumulated observations for this car/track.
     all_obs = store.list_observations(car=car_name, track=track.track_name)
     all_deltas = store.list_deltas(car=car_name, track=track.track_name)
-    track_key_short = track.track_name.lower().split()[0]
+    track_key_short = track_key(track.track_name)
 
     models = fit_models(all_obs, all_deltas, car_name, track.track_name)
     model_id = f"{car_name}_{track_key_short}_empirical".lower()
@@ -649,7 +673,7 @@ def rebuild_track_learnings(
         if verbose:
             print(f"Rebuilt observation: {existing['session_id']} ({diag.lap_time_s:.3f}s)")
 
-    track_key_short = track.lower().split()[0]
+    track_key_short = track_key(track)
     for delta_path in (store.base / "deltas").glob(f"{car_name}_{track_key_short}_delta_*.json"):
         delta_path.unlink()
 

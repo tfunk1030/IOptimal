@@ -29,8 +29,17 @@ import numpy as np
 # Time decay: weight *= 0.95 ^ days_since_observation
 TIME_DECAY_BASE = 0.95
 
-# Minimum sessions for non-prediction corrections
+# Minimum sessions required before producing non-prediction empirical
+# corrections (e.g. roll gradient, LLTD, m_eff). These corrections sample a
+# broad signal that may be noisy across drivers/conditions, so we require a
+# larger sample before trusting the mean.
+#
+# Prediction-error corrections (`fit_prediction_errors`) deliberately use a
+# lower minimum (n=3): each prediction-vs-measurement pair is a targeted
+# delta against a specific solver output, so even a few samples carry useful
+# signal. The two thresholds intentionally differ.
 MIN_SESSIONS_FOR_CORRECTIONS = 5
+MIN_SESSIONS_FOR_PREDICTION_CORRECTIONS = 3
 
 
 @dataclass
@@ -826,8 +835,15 @@ def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> Non
 def _obs_time_weight(obs: dict, now: datetime | None = None) -> float:
     """Compute time-decay weight for an observation.
 
-    Returns TIME_DECAY_BASE ^ days_since_observation.
-    Recent sessions weigh more; old sessions decay toward zero.
+    Returns ``TIME_DECAY_BASE ^ days_since_observation``. Recent sessions
+    weigh more; old sessions decay toward zero.
+
+    There is no upper bound on staleness — a 90-day-old observation
+    contributes ~0.95**90 ≈ 0.0099 (< 1% weight). For very old stores this
+    means truly ancient observations still consume CPU during weighted
+    averages while contributing negligible signal. Operators should prune
+    obsolete observations periodically (e.g. drop sessions older than
+    180 days) to keep the corrections responsive and the store compact.
     """
     if now is None:
         now = datetime.now(timezone.utc)
@@ -899,7 +915,7 @@ def fit_prediction_errors(
             errors.append(error)
             weights.append(w)
 
-        if len(errors) < 3:
+        if len(errors) < MIN_SESSIONS_FOR_PREDICTION_CORRECTIONS:
             continue
 
         errors_arr = np.array(errors, dtype=float)
