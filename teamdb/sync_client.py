@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 _DEFAULT_PUSH_INTERVAL_S = 30
 _DEFAULT_PULL_INTERVAL_S = 300  # 5 minutes
 _MAX_RETRY_BACKOFF_S = 600  # 10 minutes
+_QUEUE_CLEANUP_AGE_DAYS = 30
+_QUEUE_CLEANUP_INTERVAL_S = 24 * 60 * 60  # once per day
 
 
 @dataclass
@@ -85,6 +87,7 @@ class SyncClient:
         db_path = Path(local_db_path) if local_db_path else Path.home() / ".ioptimal_app" / "sync_queue.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db_path = db_path
+        self._last_cleanup_ts = 0.0
         self._init_local_db()
 
     @property
@@ -105,18 +108,43 @@ class SyncClient:
 
     # ── Local offline queue (SQLite) ──────────────────────────────────
 
+    def _connect(self) -> sqlite3.Connection:
+        """Open the local SQLite DB in WAL journal mode.
+
+        WAL is safer than the default rollback journal for concurrent reads /
+        writes, especially on network-mounted Documents folders where multiple
+        IOptimal processes (watcher, desktop, sync client) may touch the same
+        file.
+        """
+        conn = sqlite3.connect(str(self._db_path))
+        # WAL persists across connections once set, but cheap to re-issue.
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+        except sqlite3.DatabaseError as exc:
+            logger.debug("PRAGMA setup skipped: %s", exc)
+        return conn
+
     def _init_local_db(self) -> None:
         """Create the local sync queue table if it doesn't exist."""
-        with sqlite3.connect(str(self._db_path)) as conn:
+        with self._connect() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sync_queue (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     payload_type TEXT NOT NULL,
                     payload_json TEXT NOT NULL,
                     created_at TEXT DEFAULT (datetime('now')),
-                    synced INTEGER DEFAULT 0
+                    synced INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'pending',
+                    processed_at TEXT
                 )
             """)
+            # Backfill columns on pre-existing DBs.
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(sync_queue)").fetchall()}
+            if "status" not in cols:
+                conn.execute("ALTER TABLE sync_queue ADD COLUMN status TEXT DEFAULT 'pending'")
+            if "processed_at" not in cols:
+                conn.execute("ALTER TABLE sync_queue ADD COLUMN processed_at TEXT")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS pulled_models (
                     car TEXT NOT NULL,
@@ -130,7 +158,7 @@ class SyncClient:
     def queue_observation(self, observation_dict: dict) -> None:
         """Queue an observation for sync.  Persists to local SQLite."""
         payload = json.dumps(observation_dict, default=str)
-        with sqlite3.connect(str(self._db_path)) as conn:
+        with self._connect() as conn:
             conn.execute(
                 "INSERT INTO sync_queue (payload_type, payload_json) VALUES (?, ?)",
                 ("observation", payload),
@@ -141,7 +169,7 @@ class SyncClient:
     def queue_setup(self, setup_dict: dict) -> None:
         """Queue a shared setup for sync."""
         payload = json.dumps(setup_dict, default=str)
-        with sqlite3.connect(str(self._db_path)) as conn:
+        with self._connect() as conn:
             conn.execute(
                 "INSERT INTO sync_queue (payload_type, payload_json) VALUES (?, ?)",
                 ("setup", payload),
@@ -152,7 +180,7 @@ class SyncClient:
 
     def _push_pending(self) -> int:
         """Push all pending items from the local queue.  Returns count pushed."""
-        with sqlite3.connect(str(self._db_path)) as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 "SELECT id, payload_type, payload_json FROM sync_queue WHERE synced = 0 ORDER BY id LIMIT 50"
             ).fetchall()
@@ -184,12 +212,14 @@ class SyncClient:
                     )
                     if resp.status_code in (200, 201, 409):
                         # 409 = duplicate, still mark as synced
-                        with sqlite3.connect(str(self._db_path)) as conn:
-                            conn.execute("UPDATE sync_queue SET synced = 1 WHERE id = ?", (row_id,))
+                        self._mark_row_processed(row_id, "success")
                         pushed += 1
                     else:
                         logger.warning("Push failed (HTTP %d): %s", resp.status_code, resp.text[:200])
                         self._status.last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                        # 4xx are non-retryable; 5xx leaves the row pending for retry.
+                        if 400 <= resp.status_code < 500:
+                            self._mark_row_processed(row_id, "failed")
                         failed = True
                         break  # Stop on first failure to preserve order
                 except self._request_error_type() as e:
@@ -213,9 +243,44 @@ class SyncClient:
 
     def _count_pending_queue_items(self) -> int:
         """Count unsynced rows in the local queue."""
-        with sqlite3.connect(str(self._db_path)) as conn:
+        with self._connect() as conn:
             row = conn.execute("SELECT COUNT(*) FROM sync_queue WHERE synced = 0").fetchone()
         return int(row[0] if row else 0)
+
+    def _mark_row_processed(self, row_id: int, status: str) -> None:
+        """Mark a queue row as ``success`` / ``failed`` with a timestamp."""
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE sync_queue
+                   SET synced = 1, status = ?, processed_at = datetime('now')
+                   WHERE id = ?""",
+                (status, row_id),
+            )
+
+    def _cleanup_old_rows(self, max_age_days: int = _QUEUE_CLEANUP_AGE_DAYS) -> int:
+        """Delete processed rows older than ``max_age_days``.  Returns rows deleted."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"""DELETE FROM sync_queue
+                    WHERE status IN ('success', 'failed')
+                      AND processed_at IS NOT NULL
+                      AND processed_at < datetime('now', '-{int(max_age_days)} days')"""
+            )
+            deleted = cur.rowcount or 0
+        if deleted:
+            logger.info("Cleaned up %d processed sync_queue rows older than %dd", deleted, max_age_days)
+        return deleted
+
+    def _maybe_cleanup_queue(self) -> None:
+        """Run ``_cleanup_old_rows`` at most once per ``_QUEUE_CLEANUP_INTERVAL_S``."""
+        now = time.monotonic()
+        if now - self._last_cleanup_ts < _QUEUE_CLEANUP_INTERVAL_S:
+            return
+        self._last_cleanup_ts = now
+        try:
+            self._cleanup_old_rows()
+        except sqlite3.DatabaseError:
+            logger.exception("sync_queue cleanup failed")
 
     def _endpoint_for_type(self, payload_type: str) -> str | None:
         return {
@@ -276,7 +341,7 @@ class SyncClient:
 
     def _store_pulled_model(self, car: str, track: str, model_data: dict) -> None:
         """Store a pulled model in local SQLite for the solver to use."""
-        with sqlite3.connect(str(self._db_path)) as conn:
+        with self._connect() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO pulled_models (car, track, model_json, updated_at)
                    VALUES (?, ?, ?, datetime('now'))""",
@@ -285,7 +350,7 @@ class SyncClient:
 
     def get_team_model(self, car: str, track: str) -> dict | None:
         """Retrieve a pulled team model for local solver use."""
-        with sqlite3.connect(str(self._db_path)) as conn:
+        with self._connect() as conn:
             row = conn.execute(
                 "SELECT model_json FROM pulled_models WHERE car = ? AND track = ?",
                 (car, track),
@@ -326,6 +391,7 @@ class SyncClient:
                     backoff = min(backoff * 2, _MAX_RETRY_BACKOFF_S)
                 else:
                     backoff = self._push_interval
+                self._maybe_cleanup_queue()
             except Exception:
                 logger.exception("Push loop error")
                 backoff = min(backoff * 2, _MAX_RETRY_BACKOFF_S)

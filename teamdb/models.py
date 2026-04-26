@@ -2,6 +2,13 @@
 
 All tables use UUID primary keys (server-side gen_random_uuid default)
 and PostgreSQL JSONB for semi-structured telemetry / model payloads.
+
+NOTE: this project does not currently use Alembic.  ``init_db()`` calls
+``Base.metadata.create_all`` which adds new tables/indices but never drops
+or alters existing ones.  When adding indices below, production deployments
+need a manual ``CREATE INDEX CONCURRENTLY`` against the live database the
+first time the schema change ships.  See ``docs/team_tool_next_steps.md``
+for the deployment runbook.
 """
 
 from __future__ import annotations
@@ -254,6 +261,9 @@ class Observation(Base):
 
 class Delta(Base):
     __tablename__ = "deltas"
+    __table_args__ = (
+        Index("ix_delta_team_car_track", "team_id", "car", "track"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         _UuidType, primary_key=True, default=uuid.uuid4
@@ -285,6 +295,8 @@ class EmpiricalModel(Base):
     __tablename__ = "empirical_models"
     __table_args__ = (
         UniqueConstraint("team_id", "car", "track", name="uq_empirical_models_team_car_track"),
+        # Cross-track lookups (e.g. "all empirical models for this car").
+        Index("ix_emp_team_car", "team_id", "car"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

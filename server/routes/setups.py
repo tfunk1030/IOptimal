@@ -6,13 +6,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import verify_api_key
 from server.database import get_db
+from server.rate_limit import get_limit, post_limit
+from server.validation import require_known_car
 from teamdb.models import ActivityLog, Member, SetupRating, SharedSetup
 
 router = APIRouter(prefix="/setups", tags=["setups"])
@@ -64,11 +66,15 @@ class RateResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/share", response_model=SetupOut, status_code=201)
+@post_limit()
 async def share_setup(
+    request: Request,
     body: SetupShareRequest,
     member: Member = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
+    require_known_car(body.car)
+
     setup = SharedSetup(
         id=uuid.uuid4().hex,
         team_id=member.team_id,
@@ -117,7 +123,9 @@ async def share_setup(
 
 
 @router.get("/{car}/{track}", response_model=list[SetupOut])
+@get_limit()
 async def list_setups(
+    request: Request,
     car: str,
     track: str,
     limit: int = Query(50, ge=1, le=500),
@@ -125,6 +133,8 @@ async def list_setups(
     member: Member = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
+    require_known_car(car)
+
     stmt = (
         select(SharedSetup)
         .where(
@@ -158,7 +168,9 @@ async def list_setups(
 
 
 @router.post("/{setup_id}/rate", response_model=RateResponse)
+@post_limit()
 async def rate_setup(
+    request: Request,
     setup_id: str,
     body: RateRequest,
     member: Member = Depends(verify_api_key),
