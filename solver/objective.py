@@ -31,8 +31,10 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import math
+import pathlib
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,15 @@ logger = logging.getLogger(__name__)
 from solver.scenario_profiles import get_scenario_profile
 from track_model.profile import TrackProfile
 from vertical_dynamics import damped_excursion_mm
+
+# Map DriverProfile.steering_smoothness (categorical) → numeric proxy for
+# scoring. 0.8 = smooth (high score), 0.2 = aggressive (low score). Used by
+# _compute_driver_mismatch to keep the < 0.3 / > 0.7 thresholds meaningful.
+_STEERING_SMOOTHNESS_SCORE = {
+    "smooth": 0.8,
+    "moderate": 0.5,
+    "aggressive": 0.2,
+}
 
 
 @dataclass
@@ -366,6 +377,7 @@ class ObjectiveFunction:
         self._measured = None   # set per-evaluation in evaluate()
         self._driver = None     # set per-evaluation in evaluate()
         self._session_db = None  # populated by set_session_context(); safe default for __main__ path
+        self._tyre_vr_warned: set[str] = set()  # one warning per axle per ObjectiveFunction instance
 
     def set_session_context(self, measured=None, driver=None) -> None:
         """Pre-stash measured telemetry and driver profile for all subsequent evaluations.
@@ -478,6 +490,28 @@ class ObjectiveFunction:
         except (TypeError, ValueError):
             return int(default)
 
+    @staticmethod
+    def _rbd_penalty(rbd: float, comp: float, target: float, ms_per_unit: float = 4.0) -> float:
+        """Per-axis rebound-vs-compression click penalty.
+
+        rbd_target = comp * target (comp-anchored). The error is divided by
+        comp so that asymmetric ratios are penalised consistently across the
+        click range. Capped at 5ms so rebound-ratio stays a tertiary signal.
+        """
+        if comp < 1.0:
+            # Zero-comp is penalised by ζ already; don't double-penalise.
+            return 0.0
+        rbd_target = comp * target
+        err = abs(rbd - rbd_target)  # click units (not ratio)
+        return min(5.0, err * ms_per_unit / max(1.0, comp))
+
+    # Rebound : compression ratio targets. LS near-symmetric (no roll jacking
+    # on chicanes); HS biased to compression (GTP kerb rule — comp absorbs the
+    # hit, rbd controls the return so the car doesn't jack off the kerb).
+    _LS_RBD_COMP_TARGET = 0.95
+    _HS_RBD_COMP_TARGET = 0.60
+    _RBD_PENALTY_MS_PER_UNIT = 4.0
+
     def _get_surface(self, wing_deg: float | None = None):
         """Lazy-load aero surface for DF balance queries.
 
@@ -573,9 +607,6 @@ class ObjectiveFunction:
         threshold = self.VORTEX_BURST_THRESHOLD_MM  # fallback
 
         try:
-            import pathlib
-            import json
-
             # Try to load aero map for this car+wing
             car_name = self.car.canonical_name
             aero_path = pathlib.Path("data/aero-maps") / f"{car_name}_wing_{wing_deg:.1f}.json"
@@ -863,20 +894,20 @@ class ObjectiveFunction:
             m_eff_rear = car.heave_spring.rear_m_eff_kg
             tyre_vr_front = car.tyre_vertical_rate_front_nmm
             tyre_vr_rear = car.tyre_vertical_rate_rear_nmm
-            if tyre_vr_front is None or tyre_vr_front <= 0:
-                import logging
-                logging.getLogger(__name__).warning(
+            if (tyre_vr_front is None or tyre_vr_front <= 0) and "front" not in self._tyre_vr_warned:
+                logger.warning(
                     "tyre_vertical_rate_front_nmm is %s — excursion uses "
                     "suspension-only model (no tyre compliance in series)",
                     tyre_vr_front,
                 )
-            if tyre_vr_rear is None or tyre_vr_rear <= 0:
-                import logging
-                logging.getLogger(__name__).warning(
+                self._tyre_vr_warned.add("front")
+            if (tyre_vr_rear is None or tyre_vr_rear <= 0) and "rear" not in self._tyre_vr_warned:
+                logger.warning(
                     "tyre_vertical_rate_rear_nmm is %s — excursion uses "
                     "suspension-only model (no tyre compliance in series)",
                     tyre_vr_rear,
                 )
+                self._tyre_vr_warned.add("rear")
 
             # Front excursion at p99 — for bottoming margin (worst-case bump)
             # Guard against k=0 which returns 0 (wrong: should be ∞)
@@ -1093,14 +1124,10 @@ class ObjectiveFunction:
         v_ls_ref = 0.025  # 25 mm/s — LS reference velocity
 
         c_ls_front = _c_eff_harmonic(
-            params.get("front_ls_comp", f_ls_comp),
-            params.get("front_ls_rbd", f_ls_rbd),
-            damper.ls_force_per_click_n, v_ls_ref,
+            f_ls_comp, f_ls_rbd, damper.ls_force_per_click_n, v_ls_ref,
         )
         c_ls_rear = _c_eff_harmonic(
-            params.get("rear_ls_comp", r_ls_comp),
-            params.get("rear_ls_rbd", r_ls_rbd),
-            damper.ls_force_per_click_n, v_ls_ref,
+            r_ls_comp, r_ls_rbd, damper.ls_force_per_click_n, v_ls_ref,
         )
 
         result.zeta_ls_front = c_ls_front / c_crit_front if c_crit_front > 0 else 0
@@ -1115,14 +1142,10 @@ class ObjectiveFunction:
             v_hs_rear = 0.150
 
         c_hs_front = _c_eff_harmonic(
-            params.get("front_hs_comp", f_hs_comp),
-            params.get("front_hs_rbd", f_hs_rbd),
-            damper.hs_force_per_click_n, v_hs_front,
+            f_hs_comp, f_hs_rbd, damper.hs_force_per_click_n, v_hs_front,
         )
         c_hs_rear = _c_eff_harmonic(
-            params.get("rear_hs_comp", r_hs_comp),
-            params.get("rear_hs_rbd", r_hs_rbd),
-            damper.hs_force_per_click_n, v_hs_rear,
+            r_hs_comp, r_hs_rbd, damper.hs_force_per_click_n, v_hs_rear,
         )
 
         result.zeta_hs_front = c_hs_front / c_crit_front if c_crit_front > 0 else 0
@@ -1427,29 +1450,14 @@ class ObjectiveFunction:
         #   Penalty: 3ms per 0.1 ratio error (mild — 4ms total range per axis)
         #   This gives the coord descent a gradient without overpowering compression ζ
 
-        # Ratio target: rbd = target_ratio * comp
-        # Penalty is deliberately WEAK (max 5ms) so ζ (comp) stays dominant.
-        # The gradient here only moves RBD — it must never pull COMP down.
-        # Implementation: rbd_target = comp * ratio_target (comp-anchored, not rbd-anchored)
-        # So if comp=11 → rbd_target_LS = 11*0.95 = 10.5 → solver pushes rbd toward 10-11.
-        # If rbd=5 and comp=11 → ratio=0.45 → error=0.50 → penalty=0.50*8=4ms (small).
-        # This gives the coord descent a gradient on rbd without destabilizing comp.
-        LS_RBD_COMP_TARGET = 0.95   # [ratio] LS rebound / LS comp target
-        HS_RBD_COMP_TARGET = 0.60   # [ratio] HS rebound / HS comp target (GTP kerb rule)
-        RBD_PENALTY_MS_PER_UNIT = 4.0   # halved from 8.0 — was wrong-direction correlated (+0.33 Spearman)
-
-        def _rbd_penalty(rbd: float, comp: float, target: float) -> float:
-            if comp < 1.0:
-                # Zero comp is penalized by ζ already; don't double-penalize here
-                return 0.0
-            rbd_target = comp * target
-            err = abs(rbd - rbd_target)  # in click units (not ratio — click-anchored)
-            return min(5.0, err * RBD_PENALTY_MS_PER_UNIT / max(1.0, comp))
-
-        gain -= _rbd_penalty(f_ls_rbd, f_ls_comp, LS_RBD_COMP_TARGET)
-        gain -= _rbd_penalty(f_hs_rbd, f_hs_comp, HS_RBD_COMP_TARGET)
-        gain -= _rbd_penalty(r_ls_rbd, r_ls_comp, LS_RBD_COMP_TARGET)
-        gain -= _rbd_penalty(r_hs_rbd, r_hs_comp, HS_RBD_COMP_TARGET)
+        # rbd = target_ratio * comp; weak (max 5ms) so ζ (comp) stays dominant.
+        # The gradient only moves RBD — it must never pull COMP down. See
+        # _rbd_penalty staticmethod and _{LS,HS}_RBD_COMP_TARGET class constants
+        # for the click-anchored formula.
+        gain -= self._rbd_penalty(f_ls_rbd, f_ls_comp, self._LS_RBD_COMP_TARGET, self._RBD_PENALTY_MS_PER_UNIT)
+        gain -= self._rbd_penalty(f_hs_rbd, f_hs_comp, self._HS_RBD_COMP_TARGET, self._RBD_PENALTY_MS_PER_UNIT)
+        gain -= self._rbd_penalty(r_ls_rbd, r_ls_comp, self._LS_RBD_COMP_TARGET, self._RBD_PENALTY_MS_PER_UNIT)
+        gain -= self._rbd_penalty(r_hs_rbd, r_hs_comp, self._HS_RBD_COMP_TARGET, self._RBD_PENALTY_MS_PER_UNIT)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 4: DF BALANCE (aero map quality, secondary to rake)
@@ -1475,33 +1483,15 @@ class ObjectiveFunction:
         # ═══════════════════════════════════════════════════════════════
 
         # Diff preload: penalty for distance from per-car neutral target.
-        # Each car has a default_diff_preload_nm in its model (e.g., BMW=12,
-        # Porsche=85). Fallback to 30 Nm for cars without the attribute.
+        # Every car defines default_diff_preload_nm (BMW=12, Porsche=85, …).
+        # Direct attribute access — no silent fallback (Key Principle 8).
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = getattr(self.car, "default_diff_preload_nm", 30.0)
+        diff_target = self.car.default_diff_preload_nm
         gain -= min(8.0, abs(diff - diff_target) * 0.12)
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: ARB SIZE (LLTD range — full steps, ~36-96ms each)
         # ═══════════════════════════════════════════════════════════════
-        # ARB size controls available LLTD range. Wrong size = can't hit
-        # target LLTD even with blade adjustments. Penalty on size mismatch
-        # vs what's needed to achieve target LLTD with mid-range blade.
-        # Soft=0, Medium=1, Stiff=2 for ordinal encoding.
-        f_arb_size_idx = self._arb_size_index(
-            params.get("front_arb_size", 0),
-            self.car.arb.front_size_labels,
-            self.car.arb.front_baseline_size,
-            default=0,
-        )
-        r_arb_size_idx = self._arb_size_index(
-            params.get("rear_arb_size", 1),
-            self.car.arb.rear_size_labels,
-            self.car.arb.rear_baseline_size,
-            default=1,
-        )
-        f_arb_blade = int(round(params.get("front_arb_blade", 1)))
-        r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
         # ARB extreme-combo penalty ZEROED OUT (2026-03-28, calibration evidence):
         # Removing this term improved BMW/Sebring in-sample Spearman by +0.048 and
         # holdout mean by +0.062.  The heuristic (max blade + Soft = wrong size) does
@@ -1622,21 +1612,10 @@ class ObjectiveFunction:
         r_ls_rbd = params.get("rear_ls_rbd", 5)
         r_hs_comp = params.get("rear_hs_comp", 3)
         r_hs_rbd = params.get("rear_hs_rbd", 3)
-        ls_rbd_comp_target = 0.95
-        hs_rbd_comp_target = 0.60
-        rbd_penalty_ms_per_unit = 4.0  # halved from 8.0 — was wrong-direction correlated
-
-        def _rbd_penalty(rbd: float, comp: float, target: float) -> float:
-            if comp < 1.0:
-                return 0.0
-            rbd_target = comp * target
-            err = abs(rbd - rbd_target)
-            return min(5.0, err * rbd_penalty_ms_per_unit / max(1.0, comp))
-
-        detail.rebound_ratio_ms += _rbd_penalty(f_ls_rbd, f_ls_comp, ls_rbd_comp_target)
-        detail.rebound_ratio_ms += _rbd_penalty(f_hs_rbd, f_hs_comp, hs_rbd_comp_target)
-        detail.rebound_ratio_ms += _rbd_penalty(r_ls_rbd, r_ls_comp, ls_rbd_comp_target)
-        detail.rebound_ratio_ms += _rbd_penalty(r_hs_rbd, r_hs_comp, hs_rbd_comp_target)
+        detail.rebound_ratio_ms += self._rbd_penalty(f_ls_rbd, f_ls_comp, self._LS_RBD_COMP_TARGET, self._RBD_PENALTY_MS_PER_UNIT)
+        detail.rebound_ratio_ms += self._rbd_penalty(f_hs_rbd, f_hs_comp, self._HS_RBD_COMP_TARGET, self._RBD_PENALTY_MS_PER_UNIT)
+        detail.rebound_ratio_ms += self._rbd_penalty(r_ls_rbd, r_ls_comp, self._LS_RBD_COMP_TARGET, self._RBD_PENALTY_MS_PER_UNIT)
+        detail.rebound_ratio_ms += self._rbd_penalty(r_hs_rbd, r_hs_comp, self._HS_RBD_COMP_TARGET, self._RBD_PENALTY_MS_PER_UNIT)
 
         detail.df_balance_ms += self._df_balance_lap_penalty_ms(physics)
 
@@ -1645,24 +1624,9 @@ class ObjectiveFunction:
         detail.camber_ms += self._camber_lap_penalty_ms(front_camber, rear_camber)
 
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = 30.0  # Nm — moderate baseline for all cars
+        diff_target = self.car.default_diff_preload_nm
         detail.diff_preload_ms += min(8.0, abs(diff - diff_target) * 0.12)
 
-        f_arb_size_idx = self._arb_size_index(
-            params.get("front_arb_size", 0),
-            self.car.arb.front_size_labels,
-            self.car.arb.front_baseline_size,
-            default=0,
-        )
-        r_arb_size_idx = self._arb_size_index(
-            params.get("rear_arb_size", 1),
-            self.car.arb.rear_size_labels,
-            self.car.arb.rear_baseline_size,
-            default=1,
-        )
-        f_arb_blade = int(round(params.get("front_arb_blade", 1)))
-        r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
-        max_blade = 5
         # arb_extreme_ms zeroed out — see _estimate_lap_gain() comment (2026-03-28)
         # detail.arb_extreme_ms += ...  (kept at 0.0 — calibration shows it adds noise)
 
@@ -1905,8 +1869,10 @@ class ObjectiveFunction:
         if driver_profile is None:
             return mismatch
 
-        # Trail braking: aggressive trail brakers need stiffer front LS (higher ζ)
-        trail_depth = getattr(driver_profile, "trail_brake_depth", 0.5)
+        # Trail braking: aggressive trail brakers need stiffer front LS (higher ζ).
+        # DriverProfile exposes trail_brake_depth_p95 (not trail_brake_depth) —
+        # the previous getattr fallback silently disabled this branch.
+        trail_depth = getattr(driver_profile, "trail_brake_depth_p95", 0.5)
         if trail_depth > 0.7 and physics.zeta_ls_front < 0.6:
             mismatch.trail_brake_ms = (0.6 - physics.zeta_ls_front) * 80.0
             soft_penalties.append(
@@ -1920,13 +1886,17 @@ class ObjectiveFunction:
                 f"for light trail braker"
             )
 
-        # Smoothness: erratic drivers need more HS damping
-        smoothness = getattr(driver_profile, "smoothness", 0.5)
+        # Smoothness: erratic drivers need more HS damping.
+        # DriverProfile.steering_smoothness is a STRING category (smooth/moderate/
+        # aggressive); map to a numeric proxy so the < 0.3 condition catches
+        # "aggressive" drivers (the prior getattr("smoothness", 0.5) was dead).
+        steering_cat = getattr(driver_profile, "steering_smoothness", "moderate")
+        smoothness = _STEERING_SMOOTHNESS_SCORE.get(steering_cat, 0.5)
         if smoothness < 0.3 and physics.zeta_hs_rear < 0.10:
             mismatch.smoothness_ms = (0.10 - physics.zeta_hs_rear) * 200.0
             soft_penalties.append(
                 f"Rear HS damping ζ={physics.zeta_hs_rear:.2f} too soft "
-                f"for erratic driver (smoothness={smoothness:.2f})"
+                f"for {steering_cat} driver"
             )
 
         # Throttle style: progressive throttle + low diff preload = entry rotation
