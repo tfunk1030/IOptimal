@@ -2,7 +2,10 @@ import unittest
 from types import SimpleNamespace
 
 from car_model.cars import get_car
-from output.garage_validator import validate_and_fix_garage_correlation
+from output.garage_validator import (
+    _clamp_step3,
+    validate_and_fix_garage_correlation,
+)
 from solver.legality_engine import validate_solution_legality
 
 
@@ -260,6 +263,106 @@ class GarageValidatorTests(unittest.TestCase):
         self.assertTrue(validation.hard_veto)
         self.assertTrue(validation.messages)
         self.assertIn("garage output model", validation.messages[0])
+
+    def test_validator_raises_when_step1_is_none(self) -> None:
+        """Calibration-gate-blocked step must surface as a typed ValueError so
+        callers cannot silently degrade validation coverage."""
+        car = get_car("bmw")
+        step2 = SimpleNamespace(
+            front_heave_nmm=50.0, rear_third_nmm=440.0,
+            perch_offset_front_mm=-7.0, perch_offset_rear_mm=43.0,
+            front_excursion_at_rate_mm=13.9,
+        )
+        step3 = SimpleNamespace(
+            front_torsion_od_mm=13.9, rear_spring_rate_nmm=150.0,
+            rear_spring_perch_mm=30.0,
+        )
+        with self.assertRaisesRegex(ValueError, r"step1 is None"):
+            validate_and_fix_garage_correlation(
+                car=car, step1=None, step2=step2, step3=step3, step5=None,
+                fuel_l=8.0, track_name="Sebring International Raceway",
+            )
+
+    def test_validator_raises_when_step2_is_none(self) -> None:
+        car = get_car("bmw")
+        step1 = SimpleNamespace(
+            front_pushrod_offset_mm=-25.5, rear_pushrod_offset_mm=-23.0,
+            static_front_rh_mm=30.2, static_rear_rh_mm=49.2, rake_static_mm=19.0,
+        )
+        step3 = SimpleNamespace(
+            front_torsion_od_mm=13.9, rear_spring_rate_nmm=150.0,
+            rear_spring_perch_mm=30.0,
+        )
+        with self.assertRaisesRegex(ValueError, r"step2 is None"):
+            validate_and_fix_garage_correlation(
+                car=car, step1=step1, step2=None, step3=step3, step5=None,
+                fuel_l=8.0, track_name="Sebring International Raceway",
+            )
+
+    def test_validator_raises_when_step3_is_none(self) -> None:
+        car = get_car("bmw")
+        step1 = SimpleNamespace(
+            front_pushrod_offset_mm=-25.5, rear_pushrod_offset_mm=-23.0,
+            static_front_rh_mm=30.2, static_rear_rh_mm=49.2, rake_static_mm=19.0,
+        )
+        step2 = SimpleNamespace(
+            front_heave_nmm=50.0, rear_third_nmm=440.0,
+            perch_offset_front_mm=-7.0, perch_offset_rear_mm=43.0,
+            front_excursion_at_rate_mm=13.9,
+        )
+        with self.assertRaisesRegex(ValueError, r"step3 is None"):
+            validate_and_fix_garage_correlation(
+                car=car, step1=step1, step2=step2, step3=None, step5=None,
+                fuel_l=8.0, track_name="Sebring International Raceway",
+            )
+
+    def test_clamp_step3_ferrari_index_domain_does_not_snap_to_physical_discretes(self) -> None:
+        """Ferrari range is in INDEX space (0-18) but the discrete OD list contains
+        PHYSICAL OD values (19.99-23.99 mm).  When the validator's Phase 1 hands an
+        index-domain value to _clamp_step3, the function must NOT snap it to the
+        nearest physical OD — that would produce nonsense like 'index=3 -> 19.99 mm'.
+        Expected behaviour: keep the value in index space (round to 2 decimals).
+        """
+        car = get_car("ferrari")
+        gr = car.garage_ranges
+        # Sanity-check the test fixture: domains differ as documented.
+        self.assertEqual(gr.front_torsion_od_mm, (0.0, 18.0))
+        self.assertTrue(gr.front_torsion_od_discrete)
+        self.assertGreater(min(gr.front_torsion_od_discrete), gr.front_torsion_od_mm[1])
+
+        step3 = SimpleNamespace(
+            front_torsion_od_mm=3.0,         # index 3 (physical = 20.66 mm)
+            rear_spring_rate_nmm=3.0,        # index 3
+            rear_spring_perch_mm=0.0,
+        )
+        msgs = _clamp_step3(step3, gr)
+
+        # The value must remain near 3 (index space), NOT snap to ~19.99 (the
+        # nearest physical OD).
+        self.assertAlmostEqual(step3.front_torsion_od_mm, 3.0, places=2,
+            msg=f"Ferrari index 3 must stay in index space, got {step3.front_torsion_od_mm}")
+        self.assertFalse(any("19.99" in m or "20.66" in m for m in msgs),
+            f"Should not snap index to physical OD; messages: {msgs}")
+
+    def test_clamp_step3_bmw_physical_domain_snaps_to_discretes(self) -> None:
+        """BMW range and discrete options share the same physical domain (mm),
+        so _clamp_step3 SHOULD snap to the nearest discrete OD."""
+        car = get_car("bmw")
+        gr = car.garage_ranges
+        # Sanity: both range and discretes are in physical mm.
+        self.assertTrue(gr.front_torsion_od_discrete)
+        self.assertLessEqual(min(gr.front_torsion_od_discrete), gr.front_torsion_od_mm[1])
+
+        # Pick a value between two discrete options
+        nearest = min(gr.front_torsion_od_discrete, key=lambda x: abs(x - 14.5))
+        step3 = SimpleNamespace(
+            front_torsion_od_mm=14.5,
+            rear_spring_rate_nmm=150.0,
+            rear_spring_perch_mm=30.0,
+        )
+        _clamp_step3(step3, gr)
+        self.assertEqual(step3.front_torsion_od_mm, nearest,
+            msg="BMW physical OD must snap to nearest discrete option")
 
 
 if __name__ == "__main__":

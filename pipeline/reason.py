@@ -3491,10 +3491,13 @@ def reason_and_solve(
         from output.setup_writer import write_sto
         from output.garage_validator import validate_and_fix_garage_correlation
 
-        garage_warnings = validate_and_fix_garage_correlation(
-            car, step1, step2, step3, step5,
-            fuel_l=detected_fuel, track_name=track.track_name,
-        )
+        try:
+            garage_warnings = validate_and_fix_garage_correlation(
+                car, step1, step2, step3, step5,
+                fuel_l=detected_fuel, track_name=track.track_name,
+            )
+        except ValueError as exc:
+            garage_warnings = [f"skipped — {exc}"]
         for w in garage_warnings:
             log(f"[garage] {w}")
 

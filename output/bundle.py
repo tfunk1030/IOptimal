@@ -168,10 +168,13 @@ def write_output_bundle(
                 supporting = result["supporting"]
 
                 # Run garage validation before writing
-                garage_warnings = validate_and_fix_garage_correlation(
-                    car_obj, step1, step2, step3, step5,
-                    fuel_l=fuel_l, track_name=track_label,
-                )
+                try:
+                    garage_warnings = validate_and_fix_garage_correlation(
+                        car_obj, step1, step2, step3, step5,
+                        fuel_l=fuel_l, track_name=track_label,
+                    )
+                except ValueError as exc:
+                    garage_warnings = [f"skipped — {exc}"]
 
                 # Build extra kwargs for Ferrari-specific fields
                 _extra_kw: dict[str, Any] = {

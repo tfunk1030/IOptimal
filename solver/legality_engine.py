@@ -72,15 +72,18 @@ def validate_solution_legality(
         )
         validation_step3.rear_spring_perch_mm = 0.0
 
-    warnings = validate_and_fix_garage_correlation(
-        car=car,
-        step1=validation_step1,
-        step2=validation_step2,
-        step3=validation_step3,
-        step5=step5,
-        fuel_l=fuel_l,
-        track_name=track_name,
-    )
+    try:
+        warnings = validate_and_fix_garage_correlation(
+            car=car,
+            step1=validation_step1,
+            step2=validation_step2,
+            step3=validation_step3,
+            step5=step5,
+            fuel_l=fuel_l,
+            track_name=track_name,
+        )
+    except ValueError as exc:
+        warnings = [f"skipped — {exc}"]
 
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is None:
