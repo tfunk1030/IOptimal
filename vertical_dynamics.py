@@ -25,6 +25,11 @@ import math
 DEFAULT_DAMPER_VELOCITY_FRACTION = 0.25
 DEFAULT_DAMPER_ENERGY_COUPLING = 0.35
 
+# Gaussian p99 = mean + GAUSSIAN_P99_SIGMA_FACTOR × sigma. Used to translate
+# between p99 ride-height excursion and the standard deviation that appears
+# in the platform-stability target (sigma_target_mm).
+GAUSSIAN_P99_SIGMA_FACTOR = 2.33
+
 
 def series_rate_nmm(primary_nmm: float, secondary_nmm: float | None = None) -> float:
     """Return the equivalent series spring rate in N/mm."""

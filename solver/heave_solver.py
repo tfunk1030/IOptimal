@@ -18,9 +18,9 @@ Physics:
     Two constraints per axle:
     - Bottoming: excursion_p99 < dynamic_RH
       Front is bottoming-constrained (dynamic RH ~15mm is the limiting factor)
-    - Variance: sigma = excursion_p99 / 2.33 < sigma_target
+    - Variance: sigma = excursion_p99 / GAUSSIAN_P99_SIGMA_FACTOR < sigma_target
       Rear is variance-constrained (platform stability at high speed)
-      The 2.33 factor: for a Gaussian, p99 = mean + 2.33*sigma
+      For a Gaussian: p99 = mean + GAUSSIAN_P99_SIGMA_FACTOR × sigma (≈2.33).
 
     The solver picks the binding constraint (whichever requires stiffer spring).
 
@@ -38,7 +38,32 @@ from dataclasses import dataclass, field
 from car_model.garage import GarageSetupState
 from car_model.cars import CarModel
 from track_model.profile import TrackProfile
-from vertical_dynamics import damped_excursion_mm, legacy_mass_to_shared_model_kg
+from vertical_dynamics import (
+    GAUSSIAN_P99_SIGMA_FACTOR,
+    damped_excursion_mm,
+    legacy_mass_to_shared_model_kg,
+)
+
+# Compression velocity in the LS regime when the car is settling under
+# braking — used to size the damper-force contribution at the spring's
+# travel limit. ~20 mm/s = the LS regime; HS coefficient kicks in higher.
+BRAKING_COMPRESSION_VELOCITY_MPS = 0.020
+
+# Sticky tolerance for the σ-anchor pre-check: when the driver-loaded rate
+# already meets the σ-target within this margin in MODEL space, snap to the
+# driver's rate rather than recommending a step softer/stiffer. This works
+# around the synthetic σ model's gradient slightly under-shooting reality
+# at the calibration anchor.
+STICKY_SIGMA_EPSILON_MM = 0.50
+
+# σ calibration ratio is clamped to this band: outside it, treat the
+# IBT-measured σ as an outlier (one bad lap shouldn't reset the model).
+SIGMA_CAL_RATIO_BOUNDS = (0.5, 2.0)
+
+# Lower floor on the model-space σ-target after calibration translation:
+# prevents searching for absurdly stiff rates if a tiny measured σ would
+# otherwise demand them.
+MIN_MODEL_SIGMA_TARGET_MM = 3.0
 
 # Guard so the heave-index UNVALIDATED warning is only printed once per process,
 # regardless of how many times solve() / reconcile_solution() / solution_from_explicit_settings()
@@ -199,7 +224,7 @@ class HeaveSolver:
 
     Uses the calibrated shared vertical model to find the minimum spring rate that satisfies:
         1. No bottoming: excursion < dynamic_RH
-        2. Platform stability: sigma = excursion/2.33 < sigma_target
+        2. Platform stability: sigma = excursion / GAUSSIAN_P99_SIGMA_FACTOR < sigma_target
     """
 
     def __init__(self, car: CarModel, track: TrackProfile):
@@ -218,14 +243,15 @@ class HeaveSolver:
                 rear_spring_rate_nmm = 0.5 * (lo + hi)
         return max(rear_spring_rate_nmm, 0.0) * self.car.corner_spring.rear_motion_ratio ** 2
 
-    def _shared_vertical_mass_kg(
-        self,
-        axle: str,
-        legacy_m_eff_kg: float,
-        *,
-        parallel_wheel_rate_nmm: float = 0.0,
-    ) -> float:
-        """Preserve the legacy BMW heave calibration inside the shared compliant model."""
+    def _shared_vertical_mass_kg(self, axle: str, legacy_m_eff_kg: float) -> float:
+        """Preserve the legacy BMW heave calibration inside the shared compliant model.
+
+        m_eff is the modal sprung mass at the heave mode — a constant for the
+        car, NOT a function of stiffness. The parallel corner-spring rate must
+        only enter through k_eff inside damped_excursion_mm; including it in
+        the m_eff rescaling double-counts the parallel contribution (Porsche
+        showed ~20 % over-prediction before this was excluded).
+        """
         is_front = axle == "front"
         tyre_rate_nmm = (
             self.car.tyre_vertical_rate_front_nmm
@@ -237,14 +263,6 @@ class HeaveSolver:
             if is_front
             else self.car.rear_third_spring_nmm
         )
-        # NOTE: m_eff is the modal sprung mass at the heave mode — a constant
-        # for the car, NOT a function of stiffness. Earlier code passed
-        # parallel_wheel_rate_nmm into the legacy rescaling, which inflates
-        # m_eff by the compliance ratio when a parallel corner spring exists
-        # (Porsche). That double-counts the parallel contribution: m grows
-        # ~1.6x while k only grows ~1.1x in excursion, predicting ~20% higher
-        # excursion than physics. The parallel rate must only enter through
-        # k_eff inside damped_excursion_mm; m_eff scaling is reference-only.
         return legacy_mass_to_shared_model_kg(
             legacy_m_eff_kg,
             reference_rate_nmm,
@@ -277,11 +295,7 @@ class HeaveSolver:
             if axle == "front"
             else self.car.tyre_vertical_rate_rear_nmm
         )
-        model_mass_kg = self._shared_vertical_mass_kg(
-            axle,
-            m_eff_kg,
-            parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
-        )
+        model_mass_kg = self._shared_vertical_mass_kg(axle, m_eff_kg)
         return damped_excursion_mm(
             v_p99_mps,
             model_mass_kg,
@@ -294,9 +308,9 @@ class HeaveSolver:
     def sigma_from_excursion(self, excursion_mm: float) -> float:
         """Convert p99 excursion to standard deviation (sigma).
 
-        For Gaussian: p99 = mean + 2.33*sigma, so sigma = excursion/2.33.
+        For Gaussian: p99 = mean + GAUSSIAN_P99_SIGMA_FACTOR × sigma.
         """
-        return excursion_mm / 2.33
+        return excursion_mm / GAUSSIAN_P99_SIGMA_FACTOR
 
     def min_rate_for_no_bottoming(
         self,
@@ -473,8 +487,7 @@ class HeaveSolver:
         correction = max(-2.0, min(2.0, prediction_correction_mm))
         sigma_target_mm = max(2.0, sigma_target_mm - correction)
 
-        excursion_limit = sigma_target_mm * 2.33
-        if excursion_limit <= 0:
+        if sigma_target_mm <= 0:
             return float("inf")
         lo, hi = (
             self._heave_hard_bounds()
@@ -503,7 +516,8 @@ class HeaveSolver:
             if anchor_model_sigma > 0:
                 raw_ratio = float(current_meas_sigma_mm) / anchor_model_sigma
                 # Clamp to reject outliers (one bad lap shouldn't dictate setup)
-                cal_ratio = max(0.5, min(2.0, raw_ratio))
+                cal_ratio_lo, cal_ratio_hi = SIGMA_CAL_RATIO_BOUNDS
+                cal_ratio = max(cal_ratio_lo, min(cal_ratio_hi, raw_ratio))
                 # Effective σ-target in MEASURED units: tighter of (a) the
                 # driver's current operating σ * margin, (b) the user's loose
                 # default. Driver-anchored σ wins when it's tighter than the
@@ -512,10 +526,9 @@ class HeaveSolver:
                     float(sigma_target_mm),
                     float(current_meas_sigma_mm) * target_margin,
                 )
-                # Translate target to MODEL units via the calibration ratio
-                effective_target = effective_meas_target / cal_ratio
-                # Floor at 3 mm so we never search for absurdly stiff rates
-                effective_target = max(effective_target, 3.0)
+                # Translate target to MODEL units via the calibration ratio,
+                # then floor so we never search for absurdly stiff rates.
+                effective_target = max(effective_meas_target / cal_ratio, MIN_MODEL_SIGMA_TARGET_MM)
 
         # ── Sticky-anchor pre-check ──
         # When the driver-loaded current rate satisfies the σ-target (within
@@ -524,7 +537,6 @@ class HeaveSolver:
         # calibration anchor — without it the algorithm picks the next rate
         # softer than the driver because the model says "good enough" at the
         # softer rate by a tiny margin.
-        STICKY_EPSILON_MM = 0.50  # 0.5 mm — room for solver to recommend change when physics says to
         if (current_rate_nmm is not None and current_rate_nmm > 0
                 and lo - 1e-6 <= current_rate_nmm <= hi + 1e-6):
             anchor_m_eff = hsm.m_eff_at_rate(axle, float(current_rate_nmm))
@@ -539,7 +551,7 @@ class HeaveSolver:
                 parallel_wheel_rate_nmm=parallel_wheel_rate_nmm,
             )
             anchor_sigma_now = self.sigma_from_excursion(anchor_exc)
-            if anchor_sigma_now <= effective_target + STICKY_EPSILON_MM:
+            if anchor_sigma_now <= effective_target + STICKY_SIGMA_EPSILON_MM:
                 # Snap current rate to the 10 N/mm garage step (round nearest)
                 snapped = round(current_rate_nmm / 10.0) * 10
                 snapped = max(int(math.ceil(lo / 10.0) * 10), min(int(hi), snapped))
@@ -1259,10 +1271,8 @@ class HeaveSolver:
 
         # --- Combined spring + shock force at travel limit ---
         spring_force_limit = k_front * available_travel if available_travel > 0 else 0.0
-        # Under braking, compression velocity is in LS regime (~20 mm/s for weight transfer)
-        v_braking_mps = 0.020  # Typical braking compression velocity (LS regime)
         damper = self.car.damper
-        damper_force_braking = damper.front_ls_coefficient_nsm * v_braking_mps
+        damper_force_braking = damper.front_ls_coefficient_nsm * BRAKING_COMPRESSION_VELOCITY_MPS
         total_force_limit = spring_force_limit + damper_force_braking
 
         # Validation warning for unvalidated heave spring index mappings.
@@ -1567,8 +1577,10 @@ class HeaveSolver:
         step2.available_travel_front_mm = round(outputs.available_travel_front_mm, 1)
         step2.travel_margin_front_mm = round(outputs.travel_margin_front_mm, 1)
         step2.spring_force_at_limit_n = round(step2.front_heave_nmm * outputs.available_travel_front_mm, 0)
-        v_braking_mps = 0.020
-        step2.damper_force_braking_n = round(self.car.damper.front_ls_coefficient_nsm * v_braking_mps, 0)
+        step2.damper_force_braking_n = round(
+            self.car.damper.front_ls_coefficient_nsm * BRAKING_COMPRESSION_VELOCITY_MPS,
+            0,
+        )
         step2.total_force_at_limit_n = round(
             step2.spring_force_at_limit_n + step2.damper_force_braking_n,
             0,
