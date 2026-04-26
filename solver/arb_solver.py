@@ -65,6 +65,24 @@ from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
 
+# ─── Tunable constants (single source of truth) ─────────────────────────────
+# OptimumG/Milliken "Magic Number" baseline LLTD = static_front + 0.05 at λ=0.20.
+LLTD_BASELINE_OFFSET = 0.05
+LLTD_TYRE_SENS_REFERENCE = 0.20
+# Speed-correction span: up to +1 pp at 100% high-speed track.
+LLTD_HS_CORRECTION_MAX = 0.01
+# Physically reasonable LLTD bounds (front share of lateral load transfer).
+LLTD_MIN = 0.30
+LLTD_MAX = 0.75
+# Search/anchor tolerances.
+LLTD_PREFER_SAME_SIZE_GATE = 0.015   # If preferred bar can hit target within 1.5pp, keep it.
+LLTD_DRIVER_ANCHOR_GATE = 0.03       # Best searched setup >3pp off → fall back to driver setup.
+LLTD_CONSTRAINT_PASS_GATE = 0.05     # Constraint reports PASS within 5pp.
+# RARB sensitivity (LLTD change per blade step) — useful operating range.
+RARB_SENS_MIN = 0.005
+RARB_SENS_MAX = 0.05
+
+
 @dataclass
 class ARBConstraintCheck:
     """Result of a single ARB constraint check."""
@@ -216,6 +234,104 @@ class ARBSolver:
             return 0.5
         return k_front / total
 
+    def _spring_roll_stiffness_pair(
+        self,
+        front_wheel_rate_nmm: float,
+        rear_wheel_rate_nmm: float,
+    ) -> tuple[float, float]:
+        """Roll stiffness contribution from springs for both axles (N·m/deg).
+
+        Picks the correct front-axle formula based on whether the car has a
+        single front roll spring (Multimatic/Porsche) or paired corner springs
+        (BMW/Ferrari/Acura/etc).
+
+        Both inputs are WHEEL rates (per Spring rate conventions in CLAUDE.md).
+        """
+        arb = self.car.arb
+        csm = self.car.corner_spring
+        k_springs_rear = self._corner_spring_roll_stiffness(
+            rear_wheel_rate_nmm, arb.track_width_rear_mm,
+        )
+        if csm.front_is_roll_spring:
+            # Multimatic (Porsche): single roll spring, not a pair.
+            # K_roll = k * IR² * (t/2)²  (no factor of 2)
+            ir = csm.front_roll_spring_installation_ratio
+            k_wheel_nm = front_wheel_rate_nmm * 1000.0
+            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
+            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
+        else:
+            k_springs_front = self._corner_spring_roll_stiffness(
+                front_wheel_rate_nmm, arb.track_width_front_mm,
+            )
+        return k_springs_front, k_springs_rear
+
+    def _resolve_target_lltd(self, lltd_offset: float) -> float:
+        """Resolve LLTD target with bounds-check.
+
+        Prefers the car's hand-calibrated `measured_lltd_target` when set;
+        otherwise falls back to the OptimumG/Milliken physics formula:
+            LLTD ≈ weight_dist_front + (tyre_sens / 0.20) * (0.05 + hs_correction)
+
+        Result is clamped to [LLTD_MIN, LLTD_MAX] (a warning is logged if the
+        raw value lands outside; usually means lltd_offset is too extreme).
+        """
+        if self.car.measured_lltd_target is not None:
+            target = self.car.measured_lltd_target + lltd_offset
+        else:
+            logger.info(
+                "LLTD target: using physics formula (measured_lltd_target not set for %s)",
+                getattr(self.car, "canonical_name", "unknown"),
+            )
+            tyre_sens = self.car.tyre_load_sensitivity
+            hs_correction = LLTD_HS_CORRECTION_MAX * self.track.pct_above_200kph
+            physics_offset = (tyre_sens / LLTD_TYRE_SENS_REFERENCE) * (
+                LLTD_BASELINE_OFFSET + hs_correction
+            )
+            target = self.car.weight_dist_front + physics_offset + lltd_offset
+
+        if target < LLTD_MIN or target > LLTD_MAX:
+            logger.warning(
+                "LLTD target %.3f is outside [%.2f, %.2f] — clamping "
+                "(lltd_offset=%.3f may be too extreme)",
+                target, LLTD_MIN, LLTD_MAX, lltd_offset,
+            )
+            target = max(LLTD_MIN, min(LLTD_MAX, target))
+        return target
+
+    def _build_constraints(
+        self,
+        lltd: float,
+        target_lltd: float,
+        rarb_slow_blade: int,
+        sensitivity: float,
+    ) -> list[ARBConstraintCheck]:
+        """Standard ARB constraint set (LLTD target, slow-blade, RARB sensitivity)."""
+        return [
+            ARBConstraintCheck(
+                name="LLTD target",
+                passed=abs(lltd - target_lltd) < LLTD_CONSTRAINT_PASS_GATE,
+                value=lltd,
+                target=target_lltd,
+                units="fraction",
+                note=f"Error: {abs(lltd - target_lltd):.1%}",
+            ),
+            ARBConstraintCheck(
+                name="RARB range covers slow-corner blade",
+                passed=rarb_slow_blade >= 1,
+                value=float(rarb_slow_blade),
+                target=1.0,
+                units="blade",
+            ),
+            ARBConstraintCheck(
+                name="RARB sensitivity within useful range",
+                passed=RARB_SENS_MIN < abs(sensitivity) < RARB_SENS_MAX,
+                value=abs(sensitivity),
+                target=0.02,
+                units="LLTD/blade",
+                note="<0.005 = insensitive (wrong bar size), >0.05 = too sensitive (step down)",
+            ),
+        ]
+
     def _compute_lltd(
         self,
         front_size: str,
@@ -268,73 +384,28 @@ class ARBSolver:
         """
         arb = self.car.arb
 
-        # Roll stiffness from springs
-        # Rear: always paired corner springs → K = 2 * k_wheel * (t/2)²
-        k_springs_rear = self._corner_spring_roll_stiffness(
-            rear_wheel_rate_nmm, arb.track_width_rear_mm,
+        # Front ARB anchor params accepted for API symmetry but not used —
+        # FARB is pinned soft (per BMW/Multimatic strategy). Warn if caller
+        # supplies them so they aren't silently dropped.
+        if current_front_arb_size is not None or current_front_arb_blade is not None:
+            logger.debug(
+                "Front-ARB driver anchor (size=%s, blade=%s) accepted but not honored — "
+                "FARB is pinned at baseline by design.",
+                current_front_arb_size, current_front_arb_blade,
+            )
+
+        # Roll stiffness from springs (architecture-aware).
+        k_springs_front, k_springs_rear = self._spring_roll_stiffness_pair(
+            front_wheel_rate_nmm, rear_wheel_rate_nmm,
         )
-        # Front: depends on architecture
-        csm = self.car.corner_spring
-        if csm.front_is_roll_spring:
-            # Multimatic (Porsche): single roll spring, not a pair.
-            # K_roll = k * IR² * (t/2)²  (no factor of 2)
-            ir = csm.front_roll_spring_installation_ratio
-            k_wheel_nm = front_wheel_rate_nmm * 1000.0
-            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
-            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
-        else:
-            # Conventional (BMW/Ferrari/etc): paired corner springs
-            k_springs_front = self._corner_spring_roll_stiffness(
-                front_wheel_rate_nmm, arb.track_width_front_mm,
-            )
 
-        # Target LLTD — use measured value if available, otherwise physics-based formula.
-        #
-        # Measured LLTD: When IBT telemetry provides a calibrated target (stored in
-        # car.measured_lltd_target), use it directly. This overrides the theoretical
-        # formula below. BMW/Sebring: measured_lltd_target=0.41 from 46 sessions.
-        #
-        # Theoretical LLTD (when measured_lltd_target is None):
-        # Base: OptimumG/Milliken RCVD baseline at λ=0.20 → +5% over static front weight.
-        # Formula: offset = (λ / 0.20) * 0.05, so λ=0.20 → +5%, λ=0.10 → +2.5%, λ=0.30 → +7.5%.
-        #
-        # Speed correction (validated by Milliken RCVD Ch.18 + Ron Sutton empirical rule):
-        # For road courses with fast corners (>160 kph / 100 mph), optimal LLTD increases
-        # by 0.5–1.0% above the baseline +5% rule. The physics reason: at high speed, aero
-        # downforce shifts effective weight distribution rearward (rear DF > front DF in most
-        # GTP setups), requiring more front LLTD bias to maintain neutral balance. Also, high-
-        # speed cornering demands faster, more decisive weight transfer — stiffer front roll
-        # resistance helps the front tyres load up instantly without lagging behind the rear.
-        #
-        # Implementation: use track.pct_above_200kph as a proxy for "high speed track".
-        #   pct_above_200kph=0   (slow track, e.g. Long Beach): +5.0%
-        #   pct_above_200kph=0.3 (mixed, e.g. Sebring):         +5.3%
-        #   pct_above_200kph=0.5 (fast, e.g. Daytona Road):     +5.5%
-        #   pct_above_200kph=0.8 (Monza / Le Mans):             +5.8%
-        # This matches the empirical +5.5–6.0% recommendation for fast tracks.
-
-        # Use measured LLTD target if available (overrides theoretical formula)
-        if self.car.measured_lltd_target is not None:
-            target_lltd = self.car.measured_lltd_target + lltd_offset
-        else:
-            # Theoretical formula (physics-based from tyre load sensitivity + track speed).
-            # Uses OptimumG/Milliken "Magic Number" baseline: LLTD ≈ weight_dist + 5%.
-            logger.info("LLTD target: using physics formula (measured_lltd_target not set for %s)",
-                        getattr(self.car, 'canonical_name', 'unknown'))
-            tyre_sens = self.car.tyre_load_sensitivity
-            pct_hs = self.track.pct_above_200kph
-            hs_correction = 0.01 * pct_hs  # up to +1% at 100% high-speed track
-            lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
-            target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
-
-        # Bounds-check: LLTD must be in a physically reasonable range
-        if target_lltd < 0.30 or target_lltd > 0.75:
-            logger.warning(
-                "LLTD target %.3f is outside [0.30, 0.75] — clamping "
-                "(lltd_offset=%.3f may be too extreme)",
-                target_lltd, lltd_offset,
-            )
-            target_lltd = max(0.30, min(0.75, target_lltd))
+        # Target LLTD — measured value if available, otherwise OptimumG/Milliken physics:
+        #   LLTD ≈ weight_dist_front + (tyre_sens/0.20) * (0.05 + hs_correction)
+        # where hs_correction (up to +1pp at 100% high-speed track) accounts for the
+        # downforce-induced rearward weight shift (Milliken RCVD Ch.18 + Ron Sutton).
+        # See LLTD epistemic gap in CLAUDE.md — without wheel-force telemetry we can't
+        # ground-truth this; the driver-anchor fallback below handles known mis-cal.
+        target_lltd = self._resolve_target_lltd(lltd_offset)
 
         # ─── BMW ARB strategy ────────────────────────────────────────────────
         # Per SKILL.md and per-car-quirks.md:
@@ -355,7 +426,7 @@ class ARBSolver:
         best_lltd_error = float("inf")
 
         # Prefer current setup's ARB size — only change size if no blade within
-        # the current size achieves an acceptable LLTD (within 0.015 = 1.5%).
+        # the current size achieves an acceptable LLTD (within LLTD_PREFER_SAME_SIZE_GATE).
         # Changing ARB bar size has massive feel implications and shouldn't be
         # done casually; blade changes within a size are the expected tuning range.
         preferred_size = current_rear_arb_size or arb.rear_baseline_size
@@ -372,8 +443,8 @@ class ARBSolver:
                     preferred_best_error = err
                     preferred_best_blade = blade
 
-        # Use the preferred size if it can get within 1.5% LLTD error
-        if preferred_best_error < 0.015:
+        anchored_to_driver = False
+        if preferred_best_error < LLTD_PREFER_SAME_SIZE_GATE:
             best_size = preferred_size
             best_blade = preferred_best_blade
             best_lltd_error = preferred_best_error
@@ -393,21 +464,15 @@ class ARBSolver:
                         best_size = rear_size
                         best_blade = blade
 
-            # ── Driver anchor fallback ──
-            # If even the best searched setup is far from target (>3 pp),
-            # the LLTD physics model is mis-calibrated for this car/track
-            # combo and the IBT-validated current setup is more reliable
-            # than any model-derived guess. Anchor to the driver's loaded
-            # ARB and accept the model's LLTD reading is wrong.
-            #
-            # Validated 2026-04-07 against Porsche/Algarve where:
-            #   measured LLTD target = 0.503 (from 14 IBT sessions)
-            #   model says driver setup (Stiff/10) gives LLTD = 0.391
-            #   → 11.2 pp gap means the rear-roll-stiffness contribution
-            #     is over-stated. Solver picks Soft/1 (LLTD=0.43) as
-            #     "closest" but driver's Stiff/10 actually achieves the
-            #     target in real telemetry. Anchor to driver.
-            if (best_lltd_error > 0.03
+            # ── Driver anchor fallback (per CLAUDE.md Principle 11) ──
+            # If even the best searched setup is far from target (>LLTD_DRIVER_ANCHOR_GATE),
+            # the LLTD physics model is mis-calibrated for this car/track and the
+            # IBT-validated driver setup is more reliable than any model-derived guess.
+            # See "LLTD epistemic gap" in CLAUDE.md Known Limitations: without wheel-force
+            # telemetry we cannot ground-truth k_front/k_total. Validated 2026-04-07
+            # against Porsche/Algarve (model says driver Stiff/10 gives LLTD=0.391 vs
+            # OptimumG target 0.521 — 13pp gap is real but un-attributable).
+            if (best_lltd_error > LLTD_DRIVER_ANCHOR_GATE
                     and current_rear_arb_size is not None
                     and current_rear_arb_blade is not None
                     and current_rear_arb_size in arb.rear_size_labels
@@ -415,9 +480,9 @@ class ARBSolver:
                     and 1 <= int(current_rear_arb_blade) <= arb.rear_blade_count):
                 best_size = current_rear_arb_size
                 best_blade = int(current_rear_arb_blade)
-                # Recompute the model's LLTD at the anchored setup (will
-                # show the model's mis-calibration in step4 output for
-                # later analysis).
+                anchored_to_driver = True
+                # Recompute the model's LLTD at the anchored setup so the gap is
+                # visible in step4 output (honest provenance, not hidden).
                 lltd_anchor, _, _, _, _ = self._compute_lltd(
                     farb_size, farb_blade, best_size, best_blade,
                     k_springs_front, k_springs_rear
@@ -452,31 +517,7 @@ class ARBSolver:
         )
 
         # Constraint checks
-        constraints = [
-            ARBConstraintCheck(
-                name="LLTD target",
-                passed=abs(lltd - target_lltd) < 0.05,
-                value=lltd,
-                target=target_lltd,
-                units="fraction",
-                note=f"Error: {abs(lltd - target_lltd):.1%}",
-            ),
-            ARBConstraintCheck(
-                name="RARB range covers slow-corner blade",
-                passed=rarb_slow_blade >= 1,
-                value=float(rarb_slow_blade),
-                target=1.0,
-                units="blade",
-            ),
-            ARBConstraintCheck(
-                name="RARB sensitivity within useful range",
-                passed=0.005 < abs(sensitivity) < 0.05,
-                value=abs(sensitivity),
-                target=0.02,
-                units="LLTD/blade",
-                note="<0.005 = insensitive (wrong bar size), >0.05 = too sensitive (step down)",
-            ),
-        ]
+        constraints = self._build_constraints(lltd, target_lltd, rarb_slow_blade, sensitivity)
 
         # Car-specific notes
         car_name = self.car.canonical_name
@@ -513,12 +554,22 @@ class ARBSolver:
             ]
         else:
             notes = [
-                f"{self.car.name}: Front ARB '{farb_size}'/blade {farb_blade}, "
+                f"{self.car.canonical_name}: Front ARB '{farb_size}'/blade {farb_blade}, "
                 f"Rear ARB '{best_size}'/blade {best_blade}.",
                 "Stiffer RARB -> more load transfer to rear -> front gains grip via LLTD. "
                 "Use RARB as the primary live balance variable.",
                 "Cold tyre out-lap: softer RARB to prevent snap oversteer.",
             ]
+
+        # Honest provenance: surface driver-anchor when it fired (Principle 11).
+        if anchored_to_driver:
+            notes.insert(
+                0,
+                f"Rear ARB anchored to driver-loaded {best_size}/blade {best_blade} — "
+                f"model LLTD={lltd:.1%} vs target {target_lltd:.1%} "
+                f"({best_lltd_error:.1%} gap). Physics target unverifiable without "
+                "wheel-force telemetry; deferring to IBT-validated driver setup.",
+            )
 
         # parameter_search_status: classify ARB settings as user-set
         pss = {
@@ -590,21 +641,11 @@ class ARBSolver:
         )
 
         arb = self.car.arb
-        csm = self.car.corner_spring
 
-        # Compute spring roll stiffness (same as solve())
-        k_springs_rear = self._corner_spring_roll_stiffness(
-            rear_wheel_rate_nmm, arb.track_width_rear_mm,
+        # Compute spring roll stiffness (architecture-aware, same as solve()).
+        k_springs_front, k_springs_rear = self._spring_roll_stiffness_pair(
+            front_wheel_rate_nmm, rear_wheel_rate_nmm,
         )
-        if getattr(csm, "front_is_roll_spring", False):
-            ir = csm.front_roll_spring_installation_ratio
-            k_wheel_nm = front_wheel_rate_nmm * 1000.0
-            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
-            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
-        else:
-            k_springs_front = self._corner_spring_roll_stiffness(
-                front_wheel_rate_nmm, arb.track_width_front_mm,
-            )
 
         target_lltd = base.lltd_target
         farb_size = arb.front_baseline_size
@@ -667,29 +708,10 @@ class ARBSolver:
     ) -> ARBSolution:
         """Build a Step 4 solution from explicit ARB settings."""
         arb = self.car.arb
-        csm = self.car.corner_spring
-        if getattr(csm, "front_is_roll_spring", False):
-            ir = getattr(csm, "front_roll_spring_installation_ratio", 1.0)
-            k_wheel_nm = front_wheel_rate_nmm * 1000.0
-            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
-            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
-        else:
-            k_springs_front = self._corner_spring_roll_stiffness(
-                front_wheel_rate_nmm, arb.track_width_front_mm,
-            )
-        k_springs_rear = self._corner_spring_roll_stiffness(
-            rear_wheel_rate_nmm, arb.track_width_rear_mm,
+        k_springs_front, k_springs_rear = self._spring_roll_stiffness_pair(
+            front_wheel_rate_nmm, rear_wheel_rate_nmm,
         )
-        # Use measured LLTD target if available (overrides theoretical formula)
-        if self.car.measured_lltd_target is not None:
-            target_lltd = self.car.measured_lltd_target + lltd_offset
-        else:
-            # Theoretical formula (physics-based from tyre load sensitivity + track speed)
-            tyre_sens = self.car.tyre_load_sensitivity
-            pct_hs = self.track.pct_above_200kph
-            hs_correction = 0.01 * pct_hs
-            lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
-            target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
+        target_lltd = self._resolve_target_lltd(lltd_offset)
         farb_blade = int(farb_blade_locked if farb_blade_locked is not None else front_arb_blade_start)
         rarb_slow_blade = int(rarb_blade_slow_corner if rarb_blade_slow_corner is not None else 1)
         rarb_fast_blade = int(rarb_blade_fast_corner if rarb_blade_fast_corner is not None else min(4, arb.rear_blade_count))
@@ -712,31 +734,7 @@ class ARBSolver:
         lltd_max, _, _, _, _ = self._compute_lltd(
             front_arb_size, farb_blade, rear_arb_size, rarb_fast_blade, k_springs_front, k_springs_rear
         )
-        constraints = [
-            ARBConstraintCheck(
-                name="LLTD target",
-                passed=abs(lltd - target_lltd) < 0.05,
-                value=lltd,
-                target=target_lltd,
-                units="fraction",
-                note=f"Error: {abs(lltd - target_lltd):.1%}",
-            ),
-            ARBConstraintCheck(
-                name="RARB range covers slow-corner blade",
-                passed=rarb_slow_blade >= 1,
-                value=float(rarb_slow_blade),
-                target=1.0,
-                units="blade",
-            ),
-            ARBConstraintCheck(
-                name="RARB sensitivity within useful range",
-                passed=0.005 < abs(sensitivity) < 0.05,
-                value=abs(sensitivity),
-                target=0.02,
-                units="LLTD/blade",
-                note="<0.005 = insensitive (wrong bar size), >0.05 = too sensitive (step down)",
-            ),
-        ]
+        constraints = self._build_constraints(lltd, target_lltd, rarb_slow_blade, sensitivity)
         notes = [
             "Explicit ARB materialization preserves the selected bar/blade family and recomputes LLTD.",
             f"Front ARB {front_arb_size}/{int(front_arb_blade_start)}, rear ARB {rear_arb_size}/{int(rear_arb_blade_start)}.",
