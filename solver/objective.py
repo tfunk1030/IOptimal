@@ -27,6 +27,21 @@ Usage:
     obj = ObjectiveFunction(car, track)
     evaluation = obj.evaluate(candidate_params, solver_result, measured, driver)
     print(evaluation.breakdown)
+
+Shock-velocity percentile convention (DO NOT CHANGE without coordinating
+with solver/rake_solver.py):
+
+    * Bottoming margin       → p99 (worst-case isolated bumps must survive)
+    * Vortex-burst margin    → p95 by default, p99 only as legacy override
+                               (configured per car via car.vortex_excursion_pctile;
+                               sustained floor proximity, not isolated peaks)
+    * Step-1 rake / vortex
+      threshold (rake_solver) → ALWAYS p99 (CarModel.rh_excursion_p99)
+
+If a car ever sets vortex_excursion_pctile = "p99", the objective and rake
+solver compute the SAME excursion quantity for the vortex constraint, which
+double-counts the same event in the score. ObjectiveFunction.__init__
+asserts this collision cannot happen — see _check_excursion_pctile_compat.
 """
 
 from __future__ import annotations
@@ -345,6 +360,8 @@ class ObjectiveFunction:
         self._scenario_profile = get_scenario_profile(scenario_profile)
         self._surface = None  # lazy-loaded aero surface
         self._vortex_threshold_cache: dict[float, float] = {}  # wing_deg → threshold_mm
+        self._check_excursion_pctile_compat(car)
+        self._warn_if_tyre_rate_missing(car)
         # Empirical heave spring calibration — loads from real IBT telemetry data.
         # Falls back to physics model if no calibration file exists yet.
         from solver.heave_calibration import HeaveCalibration
@@ -389,6 +406,56 @@ class ObjectiveFunction:
         except Exception as e:
             logger.debug("Session DB init failed: %s", e)
             self._session_db = None
+
+    @staticmethod
+    def _warn_if_tyre_rate_missing(car) -> None:
+        """Warn once per car if either per-axle tyre vertical rate is missing.
+
+        damped_excursion_mm models the suspension spring and the tyre carcass as
+        springs in series. A missing/zero tyre rate degrades the calculation to
+        suspension-only, which under-reports excursion (tyre compliance adds
+        travel under bumps). Both axles must be populated in CarModel; the
+        dataclass defaults are 300/320 N/mm but explicit None on a car would
+        silently disable the series-spring physics.
+        """
+        for axle, value in (
+            ("front", getattr(car, "tyre_vertical_rate_front_nmm", None)),
+            ("rear", getattr(car, "tyre_vertical_rate_rear_nmm", None)),
+        ):
+            if value is None or value <= 0:
+                logger.warning(
+                    "Car '%s' tyre_vertical_rate_%s_nmm=%s — excursion will "
+                    "use suspension-only model (tyre compliance ignored). "
+                    "Populate the per-axle field in CarModel.",
+                    getattr(car, "name", "<unknown>"), axle, value,
+                )
+
+    @staticmethod
+    def _check_excursion_pctile_compat(car) -> None:
+        """Fail loud if the objective and rake-side excursion percentiles collide.
+
+        Rake (Step 1) ALWAYS uses p99 for vortex_burst_threshold via
+        CarModel.rh_excursion_p99. The objective's vortex stall margin uses
+        car.vortex_excursion_pctile (default "p95"). If a car ever sets that
+        to "p99", both code paths score the same isolated-bump event, and
+        platform_risk.vortex_risk_ms double-counts what Step 1 already
+        constrained. That is silent and corrupts ranking. Refuse to construct.
+        """
+        pctile = getattr(car, "vortex_excursion_pctile", "p95")
+        if pctile == "p99":
+            car_name = getattr(car, "name", "<unknown>")
+            raise ValueError(
+                f"Car '{car_name}' has vortex_excursion_pctile='p99', which "
+                "collides with rake_solver's p99 vortex constraint. The same "
+                "excursion event would be scored twice (Step-1 hard constraint "
+                "AND objective vortex_risk_ms). Set vortex_excursion_pctile='p95' "
+                "or change rake_solver to consume the same percentile."
+            )
+        if pctile != "p95":
+            raise ValueError(
+                f"Car '{getattr(car, 'name', '<unknown>')}' has unsupported "
+                f"vortex_excursion_pctile={pctile!r} (expected 'p95' or 'p99')."
+            )
 
     def _new_breakdown(self) -> ObjectiveBreakdown:
         weights = self._scenario_profile.objective
@@ -841,8 +908,9 @@ class ObjectiveFunction:
             # P95 is used for vortex stall margin (sustained floor dynamics;
             # p99 caused 43% false veto rate on real BMW Sebring setups because
             # an isolated p99 spike does not cause sustained vortex burst).
-            # The percentile for vortex is configurable per car via
-            # car.vortex_excursion_pctile ("p95" default, "p99" for legacy behaviour).
+            # car.vortex_excursion_pctile must be "p95" — see _check_excursion_pctile_compat;
+            # rake_solver always uses p99 for the vortex constraint, so p99 here would
+            # double-count the same event. The compat check fails loud at construction.
             v_p99_front = (track.shock_vel_p99_front_clean_mps
                           if getattr(track, "shock_vel_p99_front_clean_mps", 0) > 0
                           else track.shock_vel_p99_front_mps)
@@ -850,33 +918,14 @@ class ObjectiveFunction:
                          if getattr(track, "shock_vel_p99_rear_clean_mps", 0) > 0
                          else track.shock_vel_p99_rear_mps)
 
-            # Vortex excursion uses car-specific percentile (p95 by default)
-            _vortex_pctile = car.vortex_excursion_pctile
-            if _vortex_pctile == "p95":
-                v_vortex_front = (track.shock_vel_p95_front_clean_mps
-                                  if getattr(track, "shock_vel_p95_front_clean_mps", 0) > 0
-                                  else track.shock_vel_p95_front_mps)
-            else:
-                v_vortex_front = v_p99_front  # legacy behaviour
+            v_vortex_front = (track.shock_vel_p95_front_clean_mps
+                              if getattr(track, "shock_vel_p95_front_clean_mps", 0) > 0
+                              else track.shock_vel_p95_front_mps)
 
             m_eff_front = car.heave_spring.front_m_eff_kg
             m_eff_rear = car.heave_spring.rear_m_eff_kg
             tyre_vr_front = car.tyre_vertical_rate_front_nmm
             tyre_vr_rear = car.tyre_vertical_rate_rear_nmm
-            if tyre_vr_front is None or tyre_vr_front <= 0:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "tyre_vertical_rate_front_nmm is %s — excursion uses "
-                    "suspension-only model (no tyre compliance in series)",
-                    tyre_vr_front,
-                )
-            if tyre_vr_rear is None or tyre_vr_rear <= 0:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "tyre_vertical_rate_rear_nmm is %s — excursion uses "
-                    "suspension-only model (no tyre compliance in series)",
-                    tyre_vr_rear,
-                )
 
             # Front excursion at p99 — for bottoming margin (worst-case bump)
             # Guard against k=0 which returns 0 (wrong: should be ∞)
@@ -1767,17 +1816,38 @@ class ObjectiveFunction:
                        if self.car.corner_spring.front_torsion_od_options else 0.0)
         _od_mm = params.get("front_torsion_od_mm", _od_default)
 
-        # Ferrari's auto-calibrated deflection model was trained on INDEX inputs
-        # (front_heave=0-8, torsion_od=0-18), not physical N/mm rates.
-        # Convert N/mm → index before calling the deflection model.
+        # Ferrari index ↔ N/mm boundary (single conversion site).
+        #
+        # Ferrari's garage exposes INDEX values (front_heave 0-8, torsion_od 0-18);
+        # the rest of the solver works in N/mm and physical OD mm. The Ferrari
+        # deflection model is fit on the indexed inputs uniformly
+        # (data/calibration/ferrari/calibration_points.json: front_heave_setting
+        # values in [3,5,8] and front_torsion_od_mm in [1..8] are all index space,
+        # well below the 19.99 mm physical OD floor). The candidate's physical
+        # N/mm rate must therefore be encoded back to an index before the
+        # deflection-model lookup, and this is the ONLY place in the objective
+        # where that conversion happens. Calibration-side encoding uniformity
+        # is enforced by car_model/auto_calibrate.py (mixed units would surface
+        # as a logger.error there too).
         _ferrari_controls = self.car.ferrari_indexed_controls
         if _ferrari_controls is not None:
-            # Convert front heave N/mm → index for deflection model
-            _anchor = _hsm.front_setting_anchor_index or 1.0
-            _rate_at_anchor = _hsm.front_rate_at_anchor_nmm or 50.0
-            _rate_per_idx = _hsm.front_rate_per_index_nmm or 20.0
-            _k_front = _anchor + (_k_front - _rate_at_anchor) / _rate_per_idx  # → heave index
-            # Convert torsion OD mm → torsion bar index for deflection model
+            if (
+                _hsm.front_setting_anchor_index is None
+                or _hsm.front_rate_at_anchor_nmm is None
+                or _hsm.front_rate_per_index_nmm in (None, 0.0)
+            ):
+                logger.error(
+                    "Ferrari heave-spring index encoding is incomplete "
+                    "(anchor=%s, rate_at_anchor=%s, rate_per_index=%s) — "
+                    "deflection model will be evaluated with mixed units. "
+                    "Populate HeaveSpringModel.front_setting_* on the car definition.",
+                    _hsm.front_setting_anchor_index,
+                    _hsm.front_rate_at_anchor_nmm,
+                    _hsm.front_rate_per_index_nmm,
+                )
+            # N/mm → heave index (uniform encoding via HeaveSpringModel)
+            _k_front = _hsm.front_setting_from_rate(_k_front, resolution=0.0)
+            # Torsion OD mm → torsion bar index (already in index space in params)
             _od_mm = float(params.get("front_torsion_bar_index", 2.0))
 
         _perch_front = _hsm.perch_offset_front_baseline_mm
