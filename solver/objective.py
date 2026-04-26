@@ -886,15 +886,19 @@ class ObjectiveFunction:
             # per-axle total (2 corners), but the excursion model computes
             # per-corner dynamics. Each corner sees half the axle wheel rate
             # in parallel with the heave spring.
-            result.front_excursion_mm = damped_excursion_mm(
+            # Soft-spring policy: damped_excursion_mm returns None for
+            # k < 20 N/mm (out-of-domain). Treat that as "full travel" (30 mm)
+            # so σ reflects the real aero instability risk rather than a
+            # silent zero.
+            _front_exc_raw = damped_excursion_mm(
                 v_p99_front, m_eff_front, front_heave_clamped,
                 tyre_vertical_rate_nmm=tyre_vr_front,
                 parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
             )
-            # Override: if heave spring < 20 N/mm, cap excursion at full travel (30mm)
-            # so sigma reflects the true aero instability risk
-            if front_heave_nmm < 20.0:
-                result.front_excursion_mm = max(result.front_excursion_mm, 30.0)
+            if _front_exc_raw is None or front_heave_nmm < 20.0:
+                result.front_excursion_mm = max(_front_exc_raw or 0.0, 30.0)
+            else:
+                result.front_excursion_mm = _front_exc_raw
 
             # Front excursion at vortex percentile (p95) — for stall margin
             _front_vortex_excursion_mm = damped_excursion_mm(
@@ -902,14 +906,23 @@ class ObjectiveFunction:
                 tyre_vertical_rate_nmm=tyre_vr_front,
                 parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
             )
+            if _front_vortex_excursion_mm is None:
+                # Same soft-spring policy: assume full travel so stall margin
+                # reflects real instability risk.
+                _front_vortex_excursion_mm = 30.0
 
             # Rear excursion at p99 — for bottoming margin
             rear_third_clamped = max(5.0, rear_third_nmm)
-            result.rear_excursion_mm = damped_excursion_mm(
+            _rear_exc_raw = damped_excursion_mm(
                 v_p99_rear, m_eff_rear, rear_third_clamped,
                 tyre_vertical_rate_nmm=tyre_vr_rear,
                 parallel_wheel_rate_nmm=rear_wheel_rate * 0.5,
             )
+            if _rear_exc_raw is None or rear_third_nmm < 20.0:
+                # Soft rear third — full-travel policy mirrors the front.
+                result.rear_excursion_mm = max(_rear_exc_raw or 0.0, 30.0)
+            else:
+                result.rear_excursion_mm = _rear_exc_raw
 
             # Dynamic ride heights (use car compression model when available).
             # static_front_rh - aero_compression → mean floor height at speed.
