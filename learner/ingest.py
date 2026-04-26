@@ -20,13 +20,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
+import logging
 import sys
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 from learner.knowledge_store import KnowledgeStore
 from learner.observation import Observation, build_observation
-from learner.delta_detector import detect_delta, SessionDelta
+from learner.delta_detector import detect_delta
 from learner.empirical_models import fit_models
 from learner.recall import KnowledgeRecall
 from learner.sanity import (
@@ -69,8 +71,8 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
         _car_slug = car_name.lower().replace(" ", "_")
         _store = TrackProfileStore(_slug, _car_slug)
         _store.add_session(track, session_id=Path(ibt_path).stem)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("TrackProfileStore add_session skipped: %s", exc)
 
     lap_num, start, end, _lap_time = select_valid_lap(
         ibt,
@@ -193,6 +195,7 @@ def _update_auto_calibration(
                     f"models {'fitted' if cal_models.calibration_complete else 'pending'}"
                 )
     except Exception as exc:
+        logger.debug("auto-calibration update skipped: %s", exc)
         if verbose:
             print(f"  [calibrate] Skipped: {exc}")
     return result
@@ -263,6 +266,7 @@ def ingest_ibt(
             print(f"  Garage model updated: {car_name}/{track_name}")
     except Exception as _gm_err:
         # Never block IBT analysis due to garage model failure
+        logger.debug("garage_model update skipped: %s", _gm_err)
         if verbose:
             print(f"  [garage_model] Update skipped: {_gm_err}")
 
@@ -368,6 +372,7 @@ def ingest_ibt(
             if global_model.anomalies:
                 print(f"  Track anomalies detected: {len(global_model.anomalies)}")
     except Exception as e:
+        logger.debug("cross-track global model skipped: %s", e)
         if verbose:
             print(f"\nPhase 5: Global model skipped ({e})")
 
@@ -681,6 +686,7 @@ def rebuild_track_learnings(
         from learner.cross_track import build_global_model
         build_global_model(car_name, store)
     except Exception as exc:
+        logger.debug("cross-track global model rebuild skipped: %s", exc)
         if verbose:
             print(f"Global model rebuild skipped: {exc}")
 

@@ -59,7 +59,6 @@ def track_key_from_name(track_name: str) -> str:
     >>> track_key_from_name("Sebring")
     'sebring'
     """
-    import re
     # Lower-case, replace any run of non-alphanumeric chars with a single dash,
     # and strip leading/trailing dashes.
     slug = re.sub(r"[^a-z0-9]+", "-", track_name.lower().strip()).strip("-")
@@ -104,8 +103,19 @@ class KnowledgeStore:
         itself — this allows concurrent readers (which do not lock) to always see
         a complete, valid JSON file.
 
-        File locking is only available on Unix (fcntl). On Windows the write
-        proceeds without a lock — safe for single-user CLI use.
+        Cross-platform behavior:
+            - Unix/Linux/macOS: ``fcntl.flock`` provides advisory exclusive locking.
+              Concurrent writers from the same KnowledgeStore on the same machine
+              will serialize through the lock.
+            - Windows: ``fcntl`` is unavailable, so the write proceeds **without**
+              any locking. This is safe for the documented single-user CLI use case
+              (one ``learner.ingest`` process at a time per machine), but is NOT
+              safe for concurrent ingest invocations. The desktop watcher service
+              processes IBTs sequentially through a queue (see ``watcher/service.py``)
+              specifically to avoid concurrent writes on Windows.
+            - On any OS error during locking, the write falls through to an
+              unlocked write — a last-resort path so a transient lock failure
+              never blocks a learning update.
         """
         lock_path = path.with_suffix(".lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
