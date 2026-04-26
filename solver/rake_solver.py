@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import logging
 import math
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -249,7 +250,6 @@ class RakeSolver:
         bal, ld = self._query_aero(actual_front_dyn, actual_rear_dyn)
 
         comp = self.car.aero_compression
-        # Use track median speed for compression instead of fixed reference speed
         # Aero-relevant reference speed: V²-RMS over speed bands, not median.
         # Aero compression scales with V², so the time-averaged operating point
         # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
@@ -438,7 +438,7 @@ class RakeSolver:
             RakeSolution with dynamic targets, static settings, and pushrod offsets.
         """
         if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+            fuel_load_l = self.car.fuel_capacity_l
         if target_balance is None:
             target_balance = self.car.default_df_balance_pct
         # Ride height excursion from track surface (use clean-track p99,
@@ -652,7 +652,6 @@ class RakeSolver:
         """
         comp = self.car.aero_compression
 
-        # Use track median speed for compression (consistent with _build_solution)
         # Aero-relevant reference speed: V²-RMS over speed bands, not median.
         # Aero compression scales with V², so the time-averaged operating point
         # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
@@ -688,7 +687,6 @@ class RakeSolver:
             # This allows the solver to produce a physically valid setup with a warning
             # rather than crashing.  The balance_error_pct field on the solution will flag
             # the deviation for the caller to handle.
-            import warnings
             rear_lo = self.car.min_rear_rh_dynamic
             rear_hi = self.car.max_rear_rh_dynamic
             best_rear = rear_lo
@@ -741,7 +739,6 @@ class RakeSolver:
                 # Cap to maximum achievable
                 capped_dyn_rear = max_static_rear - rear_comp
                 capped_bal, _ = self._query_aero(dyn_front, capped_dyn_rear)
-                import warnings
                 warnings.warn(
                     f"[rake_solver] Target rear static RH {implied_static_rear:.1f}mm "
                     f"exceeds garage max ({max_static_rear:.1f}mm at pushrod={max_pushrod}mm). "
@@ -777,9 +774,14 @@ class RakeSolver:
         min_front_for_vortex = (
             self.car.vortex_burst_threshold_mm + front_excursion_p99
         )
-        # Also enforce static minimum constraint
+        # Also enforce static minimum constraint.
+        # Use the same V²-RMS reference speed as _build_solution and
+        # _solve_pinned_front so the constraint reflects the actual
+        # operating point (not the at-230-kph reference value).
         comp = self.car.aero_compression
-        min_front_for_static = self.car.min_front_rh_static - comp.front_compression_mm
+        _aero_ref = self.track.aero_reference_speed_kph
+        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
+        min_front_for_static = self.car.min_front_rh_static - comp.front_at_speed(track_speed)
 
         front_lo = max(
             self.car.min_front_rh_dynamic,
@@ -830,7 +832,7 @@ class RakeSolver:
                             best_ld = -result.fun
                             best_result = result
                 except Exception as e:
-                    logger.debug("Rear RH search iteration failed: %s", e)
+                    logger.debug("SLSQP free-optimization iteration failed: %s", e)
                     continue
 
         if best_result is None:
