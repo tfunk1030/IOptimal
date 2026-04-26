@@ -85,3 +85,9 @@ repomix-output.xml
 
 # Debug/scratch output files
 output/*.txt
+
+# Claude Code agent worktrees (transient, duplicate codebase)
+.claude/worktrees/
+
+# Track-store runtime lockfiles
+data/tracks/*.lock
