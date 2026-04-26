@@ -115,14 +115,15 @@ class CornerSpringSolution:
     # Front torsion bar (or roll spring for Porsche)
     front_torsion_od_mm: float  # 0.0 for Porsche (uses roll spring instead)
     front_wheel_rate_nmm: float
-    front_natural_freq_hz: float
+    # None when the wheel rate falls below the natural_freq physical floor.
+    front_natural_freq_hz: float | None
     front_heave_corner_ratio: float   # heave_spring / corner_wheel_rate
     front_mass_per_corner_kg: float
 
     # Rear corner spring — RAW spring rate (N/mm), NOT wheel rate.
     # Use rear_wheel_rate_nmm property for the MR^2-corrected wheel rate.
     rear_spring_rate_nmm: float
-    rear_natural_freq_hz: float
+    rear_natural_freq_hz: float | None
     rear_third_corner_ratio: float    # third_spring / corner_rate
     rear_mass_per_corner_kg: float
 
@@ -132,8 +133,8 @@ class CornerSpringSolution:
 
     # Heave-mode natural frequencies (heave + 2*corner, full axle mass)
     # THIS is what the FFT measures on straights — both wheels moving together
-    front_heave_mode_freq_hz: float
-    rear_heave_mode_freq_hz: float
+    front_heave_mode_freq_hz: float | None
+    rear_heave_mode_freq_hz: float | None
 
     # Track surface matching
     track_bump_freq_hz: float
@@ -162,6 +163,12 @@ class CornerSpringSolution:
     parameter_search_status: dict = None
     parameter_search_evidence: dict = None
 
+    # False when the underlying physics model is unverified (e.g., Ferrari
+    # rear torsion bar with the legacy 3.5x rate-error flag set). Consumers
+    # should treat the solution as advisory and let the calibration gate
+    # suppress emission.
+    is_calibrated: bool = True
+
     def __post_init__(self):
         if self.parameter_search_status is None:
             self.parameter_search_status = {
@@ -184,6 +191,10 @@ class CornerSpringSolution:
         """Human-readable summary of the solution."""
         # Detect roll spring car: OD=0 and roll spring rate set
         _is_roll_spring = (self.front_torsion_od_mm == 0.0 and self.front_roll_spring_nmm > 0)
+        _ff = "  N/A " if self.front_natural_freq_hz is None else f"{self.front_natural_freq_hz:6.2f}"
+        _rf = "  N/A " if self.rear_natural_freq_hz is None else f"{self.rear_natural_freq_hz:6.2f}"
+        _ff_short = "N/A" if self.front_natural_freq_hz is None else f"{self.front_natural_freq_hz:.2f}"
+        _rf_short = "N/A" if self.rear_natural_freq_hz is None else f"{self.rear_natural_freq_hz:.2f}"
         lines = [
             "===========================================================",
             "  STEP 3: CORNER SPRING SOLUTION",
@@ -195,7 +206,7 @@ class CornerSpringSolution:
                 "  FRONT ROLL SPRING",
                 f"    Roll spring rate:    {self.front_roll_spring_nmm:6.0f} N/mm",
                 f"    Wheel rate:          {self.front_wheel_rate_nmm:6.1f} N/mm",
-                f"    Natural frequency:   {self.front_natural_freq_hz:6.2f} Hz",
+                f"    Natural frequency:   {_ff} Hz",
                 f"    Heave/corner ratio:  {self.front_heave_corner_ratio:6.1f}x "
                 f"(guideline: 1.5-3.5x)",
                 f"    Freq isolation:      {self.front_freq_isolation_ratio:6.1f}x "
@@ -206,7 +217,7 @@ class CornerSpringSolution:
                 "  FRONT TORSION BAR",
                 f"    Torsion bar OD:      {self.front_torsion_od_mm:6.2f} mm",
                 f"    Wheel rate:          {self.front_wheel_rate_nmm:6.1f} N/mm",
-                f"    Natural frequency:   {self.front_natural_freq_hz:6.2f} Hz",
+                f"    Natural frequency:   {_ff} Hz",
                 f"    Heave/corner ratio:  {self.front_heave_corner_ratio:6.1f}x "
                 f"(guideline: 1.5-3.5x)",
                 f"    Freq isolation:      {self.front_freq_isolation_ratio:6.1f}x "
@@ -222,7 +233,7 @@ class CornerSpringSolution:
             f"    Spring rate:         {self.rear_spring_rate_nmm:6.0f} N/mm",
             f"    Wheel rate:          {self.rear_wheel_rate_nmm:6.1f} N/mm"
             f"  (MR={self.rear_motion_ratio:.3f})",
-            f"    Natural frequency:   {self.rear_natural_freq_hz:6.2f} Hz",
+            f"    Natural frequency:   {_rf} Hz",
             f"    Third/corner ratio:  {self.rear_third_corner_ratio:6.1f}x "
             f"(guideline: 1.5-3.5x)",
             f"    Freq isolation:      {self.rear_freq_isolation_ratio:6.1f}x",
@@ -236,9 +247,9 @@ class CornerSpringSolution:
             "",
             "  TRACK SURFACE MATCHING",
             f"    Track bump frequency:  {self.track_bump_freq_hz:.1f} Hz",
-            f"    Front corner freq:     {self.front_natural_freq_hz:.2f} Hz "
+            f"    Front corner freq:     {_ff_short} Hz "
             f"({self.front_freq_isolation_ratio:.1f}x isolation)",
-            f"    Rear corner freq:      {self.rear_natural_freq_hz:.2f} Hz "
+            f"    Rear corner freq:      {_rf_short} Hz "
             f"({self.rear_freq_isolation_ratio:.1f}x isolation)",
         ]
 
@@ -262,6 +273,25 @@ class CornerSpringCheck:
     detail: str
 
 
+def _validate_front_spring_exclusivity(car: CarModel) -> None:
+    """Reject car models that claim BOTH a front torsion bar and a front roll spring.
+
+    The two front-spring architectures are mutually exclusive (a car has either
+    individual front torsion bars OR a single roll spring, never both). Tolerating
+    inconsistent definitions hides setup bugs because the torsion-bar branch
+    silently wins below.
+    """
+    csm = car.corner_spring
+    has_torsion_bar = csm.front_torsion_c > 0 and bool(csm.front_torsion_od_options)
+    has_roll_spring = csm.front_roll_spring_range_nmm[1] > 0
+    if has_torsion_bar and has_roll_spring:
+        raise ValueError(
+            f"Car '{car.canonical_name}' has both front_torsion_c>0 with "
+            f"front_torsion_od_options AND front_roll_spring_range_nmm set — "
+            f"these are mutually exclusive front-spring architectures. Pick one."
+        )
+
+
 class CornerSpringSolver:
     """Step 3 solver: find corner spring rates for track surface compliance.
 
@@ -271,11 +301,38 @@ class CornerSpringSolver:
     """
 
     def __init__(self, car: CarModel, track: TrackProfile):
+        _validate_front_spring_exclusivity(car)
         self.car = car
         self.track = track
 
-    def natural_freq(self, k_wheel_nmm: float, m_corner_kg: float) -> float:
-        """Corner natural frequency (Hz) for a given wheel rate and mass."""
+    def _resolve_fuel_load(self, fuel_load_l: float | None) -> float:
+        """Default to full tank; clamp out-of-range values to ``[0, capacity]`` with a warning."""
+        capacity = self.car.fuel_capacity_l
+        if fuel_load_l is None:
+            return capacity
+        if fuel_load_l < 0 or fuel_load_l > capacity:
+            clamped = max(0.0, min(float(fuel_load_l), capacity))
+            logger.warning(
+                "fuel_load_l=%.2f L outside [0, %.2f]; clamped to %.2f L",
+                fuel_load_l, capacity, clamped,
+            )
+            return clamped
+        return float(fuel_load_l)
+
+    def natural_freq(self, k_wheel_nmm: float, m_corner_kg: float) -> float | None:
+        """Corner natural frequency (Hz) for a given wheel rate and mass.
+
+        Returns ``None`` for non-physical wheel rates (< 10 N/mm) — a real
+        suspension corner is never softer than that, so any value below the
+        floor signals a degenerate input (zero spring, NaN propagation,
+        misconfigured car) rather than a meaningful frequency.
+        """
+        if k_wheel_nmm < 10:
+            logger.warning(
+                "natural_freq: wheel rate %.2f N/mm below 10 N/mm floor — "
+                "returning None", k_wheel_nmm,
+            )
+            return None
         return (1 / (2 * math.pi)) * math.sqrt(k_wheel_nmm * 1000 / m_corner_kg)
 
     def rate_for_freq(self, freq_hz: float, m_corner_kg: float) -> float:
@@ -305,8 +362,7 @@ class CornerSpringSolver:
         Returns:
             CornerSpringSolution with torsion bar OD and rear rate
         """
-        if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+        fuel_load_l = self._resolve_fuel_load(fuel_load_l)
         csm = self.car.corner_spring
         total_mass = self.car.total_mass(fuel_load_l)
         m_f_corner = total_mass * self.car.weight_dist_front / 2
@@ -338,7 +394,9 @@ class CornerSpringSolver:
         front_rate = min(front_rate, front_max_for_ratio)
 
         # Convert to torsion bar OD (skip for cars with no front torsion bar, e.g. Porsche)
-        if csm.front_torsion_c > 0 and csm.front_torsion_od_options:
+        has_torsion_bar = csm.front_torsion_c > 0 and bool(csm.front_torsion_od_options)
+        has_roll_spring = csm.front_roll_spring_range_nmm[1] > 0
+        if has_torsion_bar:
             front_od = csm.torsion_bar_od_for_rate(front_rate)
             front_od = csm.snap_torsion_od(front_od)
 
@@ -348,7 +406,7 @@ class CornerSpringSolver:
 
             # Recalculate actual rate from snapped OD
             front_rate = csm.torsion_bar_rate(front_od)
-        elif csm.front_roll_spring_range_nmm[1] > 0:
+        elif has_roll_spring:
             # Porsche: front corner stiffness comes from adjustable roll spring (100-320 N/mm)
             # Snap computed rate to the roll spring garage range and step
             front_rate = csm.snap_front_roll_spring(front_rate)
@@ -431,9 +489,6 @@ class CornerSpringSolver:
             rear_od = max(rear_od, csm.rear_torsion_od_range_mm[0])
             rear_od = min(rear_od, csm.rear_torsion_od_range_mm[1])
             rear_rate = csm.rear_torsion_bar_rate(rear_od)
-            # Validation warning for unvalidated rear torsion bar models
-            if getattr(csm, 'rear_torsion_unvalidated', False):
-                print("\n⚠  UNVALIDATED: Ferrari rear torsion bar model may have 3.5x rate error — verify rear spring rates manually\n")
         else:
             rear_od = None
             rear_rate = max(rear_target_rate, csm.rear_spring_range_nmm[0])
@@ -483,8 +538,7 @@ class CornerSpringSolver:
                 front roll spring rate (N/mm). When provided, overrides the
                 torsion bar path entirely. Ignored for torsion bar cars.
         """
-        if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+        fuel_load_l = self._resolve_fuel_load(fuel_load_l)
         csm = self.car.corner_spring
         # Roll spring cars: skip torsion bar entirely
         if csm.front_is_roll_spring or csm.front_torsion_c == 0.0:
@@ -517,8 +571,8 @@ class CornerSpringSolver:
         total_rear_heave = rear_third_nmm + 2 * rear_rate * csm.rear_motion_ratio ** 2
         front_heave_ratio = front_heave_nmm / front_rate if front_rate > 0 else 0
         rear_third_ratio = rear_third_nmm / rear_rate if rear_rate > 0 else 0
-        front_isolation = bump_freq / front_freq if front_freq > 0 else 0
-        rear_isolation = bump_freq / rear_freq if rear_freq > 0 else 0
+        front_isolation = bump_freq / front_freq if front_freq else 0
+        rear_isolation = bump_freq / rear_freq if rear_freq else 0
 
         # Heave-mode natural frequencies (what FFT measures on straights)
         # Heave mode: both wheels move together, full axle sprung mass
@@ -546,6 +600,18 @@ class CornerSpringSolver:
             m_r_corner=m_r_corner,
         )
 
+        # Rear torsion bar with the legacy 3.5x rate-error flag set: physics
+        # is unverified, mark the solution uncalibrated. The calibration gate
+        # already maps this flag to step3 = uncalibrated and blocks emission;
+        # this flag lets ad-hoc callers self-check without re-querying the gate.
+        is_calibrated = not (csm.rear_is_torsion_bar and csm.rear_torsion_unvalidated)
+        if not is_calibrated:
+            logger.warning(
+                "Rear torsion bar model is unvalidated (potential 3.5x rate "
+                "error); CornerSpringSolution.is_calibrated=False. Step 3 "
+                "should be blocked by the calibration gate."
+            )
+
         # Ferrari: compute authoritative torsion bar preload turns.
         # All other cars leave these at the 0.0 default.
         front_tb_turns = 0.0
@@ -567,16 +633,16 @@ class CornerSpringSolver:
             front_torsion_od_mm=front_torsion_od_mm,
             front_roll_spring_nmm=round(front_rate, 0) if csm.front_roll_spring_range_nmm[1] > 0 else 0.0,
             front_wheel_rate_nmm=round(front_rate, 1),
-            front_natural_freq_hz=round(front_freq, 2),
+            front_natural_freq_hz=None if front_freq is None else round(front_freq, 2),
             front_heave_corner_ratio=round(front_heave_ratio, 1),
             front_mass_per_corner_kg=round(m_f_corner, 0),
             rear_spring_rate_nmm=rear_rate,
             rear_motion_ratio=csm.rear_motion_ratio,
-            rear_natural_freq_hz=round(rear_freq, 2),
+            rear_natural_freq_hz=None if rear_freq is None else round(rear_freq, 2),
             rear_third_corner_ratio=round(rear_third_ratio, 1),
             rear_mass_per_corner_kg=round(m_r_corner, 0),
-            front_heave_mode_freq_hz=round(front_heave_freq, 2),
-            rear_heave_mode_freq_hz=round(rear_heave_freq, 2),
+            front_heave_mode_freq_hz=None if front_heave_freq is None else round(front_heave_freq, 2),
+            rear_heave_mode_freq_hz=None if rear_heave_freq is None else round(rear_heave_freq, 2),
             total_front_heave_nmm=round(total_front_heave, 0),
             total_rear_heave_nmm=round(total_rear_heave, 0),
             track_bump_freq_hz=bump_freq,
@@ -591,6 +657,7 @@ class CornerSpringSolver:
             constraints=constraints,
             front_torsion_bar_turns=front_tb_turns,
             rear_torsion_bar_turns=rear_tb_turns,
+            is_calibrated=is_calibrated,
         )
 
     def solve_candidates(
@@ -624,8 +691,7 @@ class CornerSpringSolver:
             List of up to *max_candidates* CornerSpringSolution objects, scored
             best-first.
         """
-        if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+        fuel_load_l = self._resolve_fuel_load(fuel_load_l)
         csm = self.car.corner_spring
 
         # Always include the physics-targeted solve as the first candidate
@@ -865,8 +931,8 @@ class CornerSpringSolver:
         rear_rate: float,
         front_heave_nmm: float,
         rear_third_nmm: float,
-        front_freq: float,
-        rear_freq: float,
+        front_freq: float | None,
+        rear_freq: float | None,
         bump_freq: float,
         m_f_corner: float,
         m_r_corner: float,
@@ -893,7 +959,7 @@ class CornerSpringSolver:
         ))
 
         # 3. Front frequency isolation
-        front_isolation = bump_freq / front_freq if front_freq > 0 else 0
+        front_isolation = bump_freq / front_freq if front_freq else 0
         min_isolation = csm.min_freq_isolation_ratio
         checks.append(CornerSpringCheck(
             name=f"Front freq isolation ({front_isolation:.1f}x)",
@@ -902,7 +968,7 @@ class CornerSpringSolver:
         ))
 
         # 4. Rear frequency isolation (less strict — rear can be stiffer)
-        rear_isolation = bump_freq / rear_freq if rear_freq > 0 else 0
+        rear_isolation = bump_freq / rear_freq if rear_freq else 0
         checks.append(CornerSpringCheck(
             name=f"Rear freq isolation ({rear_isolation:.1f}x)",
             satisfied=rear_isolation >= 1.2,  # Less strict for rear

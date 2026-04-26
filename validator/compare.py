@@ -210,7 +210,7 @@ def compare_all(solver_json: dict, measured: MeasuredState) -> list[Comparison]:
     # for this purpose.  Fall back to per-corner freq for old JSONs.
 
     pred_front_freq = step3.get("front_heave_mode_freq_hz",
-                                step3.get("front_natural_freq_hz", 0))
+                                step3.get("front_natural_freq_hz", 0)) or 0
     if pred_front_freq > 0 and measured.front_dominant_freq_hz > 0:
         comparisons.append(Comparison(
             step=3,
@@ -227,7 +227,7 @@ def compare_all(solver_json: dict, measured: MeasuredState) -> list[Comparison]:
         ))
 
     pred_rear_freq = step3.get("rear_heave_mode_freq_hz",
-                               step3.get("rear_natural_freq_hz", 0))
+                               step3.get("rear_natural_freq_hz", 0)) or 0
     if pred_rear_freq > 0 and measured.rear_dominant_freq_hz > 0:
         comparisons.append(Comparison(
             step=3,
