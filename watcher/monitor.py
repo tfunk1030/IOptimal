@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 _STABLE_WAIT_S = 3.0
 _STABLE_POLL_S = 0.5
 _MAX_RETRIES = 3
+# Cap the number of times we defer for "size changed during gap" before giving
+# up — guards against pathological cases where the file grows on every check.
+_MAX_DEFERRALS = 5
 
 
 def default_telemetry_dir() -> Path:
@@ -107,25 +110,60 @@ class IBTHandler(FileSystemEventHandler):
 
     @staticmethod
     def _wait_until_stable(path: Path, timeout: float = 300.0) -> bool:
-        """Block until *path* stops growing or disappears."""
+        """Block until *path* stops growing or disappears.
+
+        After the stability window passes, re-check the size: if the file grew
+        during the small gap between the stability decision and this final
+        check, defer for another window. Capped at ``_MAX_DEFERRALS`` to avoid
+        looping forever on a continuously-written file.
+        """
         deadline = time.monotonic() + timeout
-        prev_size = -1
-        stable_since = 0.0
+        deferrals = 0
 
         while time.monotonic() < deadline:
+            stable_size = IBTHandler._wait_for_stable_size(path, deadline)
+            if stable_size is None:
+                return False
+            # Final re-check: if size changed during the dispatch gap, defer.
+            time.sleep(_STABLE_POLL_S)
             if not path.exists():
                 return False
+            if path.stat().st_size == stable_size:
+                return True
+            deferrals += 1
+            if deferrals >= _MAX_DEFERRALS:
+                logger.warning(
+                    "IBT %s kept growing across %d stability windows — giving up",
+                    path.name, deferrals,
+                )
+                return False
+            logger.debug("IBT %s size changed during gap — deferring (%d/%d)",
+                         path.name, deferrals, _MAX_DEFERRALS)
+        return False
+
+    @staticmethod
+    def _wait_for_stable_size(path: Path, deadline: float) -> int | None:
+        """Wait for *path* to stop growing for ``_STABLE_WAIT_S``.
+
+        Returns the stable size on success, or ``None`` if the file disappeared
+        or the deadline was reached.
+        """
+        prev_size = -1
+        stable_since = 0.0
+        while time.monotonic() < deadline:
+            if not path.exists():
+                return None
             size = path.stat().st_size
             if size == prev_size and size > 0:
                 if stable_since == 0.0:
                     stable_since = time.monotonic()
                 elif time.monotonic() - stable_since >= _STABLE_WAIT_S:
-                    return True
+                    return size
             else:
                 stable_since = 0.0
                 prev_size = size
             time.sleep(_STABLE_POLL_S)
-        return False
+        return None
 
 
 class IBTWatcher:
