@@ -132,6 +132,7 @@ _TRACK_ALIASES: dict[str, str] = {
     "daytona international speedway": "daytona",
     "silverstone circuit": "silverstone",
     "weathertech raceway laguna seca": "laguna_seca",
+    "weathertech_raceway_laguna_seca": "laguna_seca",
     "long beach street circuit": "long_beach",
     "circuit de barcelona-catalunya": "barcelona",
     "circuit des 24 heures du mans": "le_mans",

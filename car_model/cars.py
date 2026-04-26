@@ -1866,7 +1866,7 @@ class CarModel:
 BMW_M_HYBRID_V8 = CarModel(
     name="BMW M Hybrid V8",
     canonical_name="bmw",
-    supported_track_keys=("sebring",),
+    supported_track_keys=("sebring", "laguna_seca"),
     mass_car_kg=1050.3,       # Calibrated from 41 sessions (corner weights)
     mass_driver_kg=75.0,
     weight_dist_front=0.4727,  # Calibrated from 41 sessions (corner weights) at full fuel
