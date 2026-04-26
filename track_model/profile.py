@@ -12,10 +12,14 @@ Extracts track characteristics from parsed IBT telemetry:
 from __future__ import annotations
 
 import json
+import logging
+import math
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,6 +48,60 @@ class KerbEvent:
     lap_dist_m: float           # Distance from S/F
     severity: float             # Peak vertical acceleration spike (g)
     side: str                   # "left", "right", or "both"
+
+
+def _validate_speed_bands(
+    speed_bands_kph: dict[str, float],
+    source: str = "<unknown>",
+    tolerance_pct: float = 5.0,
+) -> None:
+    """Validate that speed_bands_kph is sorted, non-overlapping, and sums to ~100%.
+
+    Logs a warning (does not raise) on malformed histograms so callers get
+    visibility into stale or partial track data without breaking the pipeline.
+
+    Bands are stored as ``"lo-hi"`` keys where ``lo`` and ``hi`` are kph and
+    values are percentages.
+    """
+    if not speed_bands_kph:
+        return
+
+    parsed: list[tuple[float, float, float, str]] = []
+    for label, pct in speed_bands_kph.items():
+        try:
+            lo_str, hi_str = label.split("-")
+            lo, hi = float(lo_str), float(hi_str)
+        except ValueError:
+            logger.warning(
+                "speed_bands_kph contains malformed band label %r in %s",
+                label, source,
+            )
+            continue
+        if hi <= lo:
+            logger.warning(
+                "speed_bands_kph band %r in %s has hi <= lo", label, source,
+            )
+            continue
+        parsed.append((lo, hi, float(pct), label))
+
+    if not parsed:
+        return
+
+    parsed.sort(key=lambda b: b[0])
+    for prev, curr in zip(parsed, parsed[1:]):
+        if curr[0] < prev[1]:
+            logger.warning(
+                "speed_bands_kph bands %r and %r overlap in %s",
+                prev[3], curr[3], source,
+            )
+
+    total_pct = sum(b[2] for b in parsed)
+    if abs(total_pct - 100.0) > tolerance_pct:
+        logger.warning(
+            "speed_bands_kph in %s sums to %.1f%% (expected ~100%%); "
+            "track histogram may be incomplete.",
+            source, total_pct,
+        )
 
 
 def build_kerb_spatial_mask(
@@ -199,6 +257,9 @@ class TrackProfile:
         — better than median but still under-predicts.
 
         Falls back to median_speed_kph when speed_bands_kph is unavailable.
+        Returns 0.0 when both are missing; callers should treat 0.0 as the
+        missing-characterization signal and log/handle accordingly rather
+        than silently using a hardcoded reference speed.
         """
         if not self.speed_bands_kph:
             return self.median_speed_kph
@@ -219,8 +280,71 @@ class TrackProfile:
             total_frac += frac
         if total_frac <= 0.0:
             return self.median_speed_kph
-        import math as _m
-        return _m.sqrt(v2_sum / total_frac)
+        return math.sqrt(v2_sum / total_frac)
+
+    def derive_dominant_bump_freq_hz(
+        self,
+        axle: str = "front",
+        rh_excursion_floor_mm: float = 0.5,
+    ) -> float | None:
+        """Estimate the track's dominant bump frequency from telemetry.
+
+        Uses the kinematic identity for a sinusoidal oscillation:
+            v_peak = 2π · f · x_peak
+        Approximated with population statistics:
+            f ≈ shock_vel_p95 / (2π · RH_std)
+
+        where ``RH_std`` is the standard deviation of ride height across the
+        lap (a robust proxy for typical excursion amplitude). Both percentile
+        and std are clean-track preferred — kerb strikes corrupt both terms.
+
+        Args:
+            axle: "front" or "rear" — which axle's data to use.
+            rh_excursion_floor_mm: Minimum RH excursion (mm) below which the
+                derivation is rejected (signal noise dominates).
+
+        Returns:
+            Estimated frequency in Hz, or None if the necessary inputs aren't
+            available.
+        """
+        if axle == "front":
+            shock_p95 = (self.shock_vel_p95_front_clean_mps
+                         or self.shock_vel_p95_front_mps)
+            corner_keys = ("LF", "RF")
+        elif axle == "rear":
+            shock_p95 = (self.shock_vel_p95_rear_clean_mps
+                         or self.shock_vel_p95_rear_mps)
+            corner_keys = ("LR", "RR")
+        else:
+            raise ValueError(f"axle must be 'front' or 'rear', got {axle!r}")
+
+        if shock_p95 <= 0.0:
+            return None
+
+        rh_stds_mm = [
+            self.ride_heights_mm[k]["std_mm"]
+            for k in corner_keys
+            if k in self.ride_heights_mm and "std_mm" in self.ride_heights_mm[k]
+        ]
+        if not rh_stds_mm:
+            return None
+        rh_std_mm = float(np.mean(rh_stds_mm))
+        if rh_std_mm < rh_excursion_floor_mm:
+            return None
+
+        rh_std_m = rh_std_mm / 1000.0
+        return shock_p95 / (2.0 * math.pi * rh_std_m)
+
+    @property
+    def dominant_bump_freq_hz(self) -> float | None:
+        """Track-derived dominant bump frequency (front axle).
+
+        See ``derive_dominant_bump_freq_hz`` for derivation. Returns None when
+        telemetry doesn't carry enough information; the corner spring solver
+        currently falls back to ``car.rh_variance.dominant_bump_freq_hz`` in
+        that case (Unit 15 owns moving the canonical value to the track).
+        """
+        return self.derive_dominant_bump_freq_hz(axle="front")
 
     def pct_time_above_kph(self, threshold_kph: float) -> float:
         """Fraction of lap time spent above *threshold_kph*.
@@ -269,6 +393,8 @@ class TrackProfile:
 
         Gracefully handles unknown fields in the JSON (ignores them if
         they don't match a dataclass field, preserving forward compatibility).
+        Validates speed_bands_kph for sortedness, non-overlap, and a sum
+        near 100% — logs a warning when the histogram is malformed.
         """
         data = json.loads(Path(path).read_text())
         # Reconstruct nested dataclasses
@@ -279,7 +405,9 @@ class TrackProfile:
         import dataclasses
         known_fields = {f.name for f in dataclasses.fields(TrackProfile)}
         filtered = {k: v for k, v in data.items() if k in known_fields}
-        return TrackProfile(**filtered)
+        profile = TrackProfile(**filtered)
+        _validate_speed_bands(profile.speed_bands_kph, source=str(path))
+        return profile
 
     def summary(self) -> str:
         """Human-readable summary."""

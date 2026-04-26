@@ -55,6 +55,27 @@ from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
 
+def _resolve_aero_speed(track: TrackProfile, comp) -> float:
+    """Pick the V²-RMS speed for aero compression sizing.
+
+    Prefers ``track.aero_reference_speed_kph`` (V²-RMS over speed bands ≥100
+    kph). When the track has no speed-band characterization, falls back to
+    the car's calibration ``ref_speed_kph`` and logs a warning so the silent
+    fallback is auditable.
+    """
+    aero_ref = track.aero_reference_speed_kph
+    if aero_ref > 0:
+        return aero_ref
+    logger.warning(
+        "TrackProfile %r has no speed-band characterization "
+        "(speed_bands_kph empty and median_speed_kph=0); "
+        "falling back to car aero compression ref_speed_kph=%.1f kph. "
+        "Rebuild the track profile from IBT to fix.",
+        track.track_name, comp.ref_speed_kph,
+    )
+    return comp.ref_speed_kph
+
+
 @dataclass
 class RakeSolution:
     """Output of the Step 1 rake/ride height solver."""
@@ -255,8 +276,7 @@ class RakeSolver:
         # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
         # than median (187 vs 174 kph). Validated against IBT-measured rear
         # compression on Porsche/Algarve (Apr 7 2026).
-        _aero_ref = self.track.aero_reference_speed_kph
-        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
+        track_speed = _resolve_aero_speed(self.track, comp)
         front_comp = comp.front_at_speed(track_speed)
         rear_comp = comp.rear_at_speed(track_speed)
 
@@ -474,8 +494,7 @@ class RakeSolver:
         # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
         # than median (187 vs 174 kph). Validated against IBT-measured rear
         # compression on Porsche/Algarve (Apr 7 2026).
-        _aero_ref = self.track.aero_reference_speed_kph
-        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
+        track_speed = _resolve_aero_speed(self.track, comp)
         front_comp = comp.front_at_speed(track_speed)
         rear_comp = comp.rear_at_speed(track_speed)
         garage_model = self.car.active_garage_output_model(self.track.track_name)
@@ -658,8 +677,7 @@ class RakeSolver:
         # is sqrt(<V²>), which for tracks like Algarve is meaningfully higher
         # than median (187 vs 174 kph). Validated against IBT-measured rear
         # compression on Porsche/Algarve (Apr 7 2026).
-        _aero_ref = self.track.aero_reference_speed_kph
-        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
+        track_speed = _resolve_aero_speed(self.track, comp)
 
         # Front static = sim minimum → front dynamic = minimum - compression
         static_front = self.car.min_front_rh_static
