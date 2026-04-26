@@ -62,6 +62,7 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 from car_model.cars import CarModel
+from solver._lltd import LLTD_MAX, LLTD_MIN, optimal_lltd
 from track_model.profile import TrackProfile
 
 
@@ -314,27 +315,29 @@ class ARBSolver:
         # This matches the empirical +5.5–6.0% recommendation for fast tracks.
 
         # Use measured LLTD target if available (overrides theoretical formula)
+        car_name = getattr(self.car, "canonical_name", None)
         if self.car.measured_lltd_target is not None:
             target_lltd = self.car.measured_lltd_target + lltd_offset
         else:
-            # Theoretical formula (physics-based from tyre load sensitivity + track speed).
-            # Uses OptimumG/Milliken "Magic Number" baseline: LLTD ≈ weight_dist + 5%.
-            logger.info("LLTD target: using physics formula (measured_lltd_target not set for %s)",
-                        getattr(self.car, 'canonical_name', 'unknown'))
-            tyre_sens = self.car.tyre_load_sensitivity
-            pct_hs = self.track.pct_above_200kph
-            hs_correction = 0.01 * pct_hs  # up to +1% at 100% high-speed track
-            lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
-            target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
-
-        # Bounds-check: LLTD must be in a physically reasonable range
-        if target_lltd < 0.30 or target_lltd > 0.75:
-            logger.warning(
-                "LLTD target %.3f is outside [0.30, 0.75] — clamping "
-                "(lltd_offset=%.3f may be too extreme)",
-                target_lltd, lltd_offset,
+            logger.info(
+                "LLTD target: using physics formula (measured_lltd_target not set for %s)",
+                car_name or "unknown",
             )
-            target_lltd = max(0.30, min(0.75, target_lltd))
+            target_lltd = optimal_lltd(
+                front_weight_dist=self.car.weight_dist_front,
+                tyre_sens=self.car.tyre_load_sensitivity,
+                pct_above_200kph=self.track.pct_above_200kph,
+                car_name=car_name,
+            ) + lltd_offset
+
+        # Bounds-check: post-offset LLTD must still be in the physically plausible range.
+        if target_lltd < LLTD_MIN or target_lltd > LLTD_MAX:
+            logger.warning(
+                "LLTD target %.3f is outside [%.2f, %.2f] — clamping "
+                "(lltd_offset=%.3f may be too extreme)",
+                target_lltd, LLTD_MIN, LLTD_MAX, lltd_offset,
+            )
+            target_lltd = max(LLTD_MIN, min(LLTD_MAX, target_lltd))
 
         # ─── BMW ARB strategy ────────────────────────────────────────────────
         # Per SKILL.md and per-car-quirks.md:
@@ -407,22 +410,35 @@ class ARBSolver:
             #     is over-stated. Solver picks Soft/1 (LLTD=0.43) as
             #     "closest" but driver's Stiff/10 actually achieves the
             #     target in real telemetry. Anchor to driver.
-            if (best_lltd_error > 0.03
-                    and current_rear_arb_size is not None
-                    and current_rear_arb_blade is not None
-                    and current_rear_arb_size in arb.rear_size_labels
-                    and current_rear_arb_size.lower() != "disconnected"
-                    and 1 <= int(current_rear_arb_blade) <= arb.rear_blade_count):
+            anchor_eligible = (
+                current_rear_arb_size is not None
+                and current_rear_arb_blade is not None
+                and current_rear_arb_size in arb.rear_size_labels
+                and current_rear_arb_size.lower() != "disconnected"
+                and 1 <= int(current_rear_arb_blade or 0) <= arb.rear_blade_count
+            )
+            if best_lltd_error > 0.03 and anchor_eligible:
+                logger.warning(
+                    "ARB driver-anchor fallback fired: best searched LLTD "
+                    "error %.3f > 0.03 (target=%.3f). Anchoring to driver-loaded "
+                    "rear ARB %s/%d (physics target unverifiable per LLTD epistemic gap).",
+                    best_lltd_error, target_lltd,
+                    current_rear_arb_size, int(current_rear_arb_blade),
+                )
                 best_size = current_rear_arb_size
                 best_blade = int(current_rear_arb_blade)
-                # Recompute the model's LLTD at the anchored setup (will
-                # show the model's mis-calibration in step4 output for
-                # later analysis).
                 lltd_anchor, _, _, _, _ = self._compute_lltd(
                     farb_size, farb_blade, best_size, best_blade,
                     k_springs_front, k_springs_rear
                 )
                 best_lltd_error = abs(lltd_anchor - target_lltd)
+            elif best_lltd_error > 0.03:
+                logger.warning(
+                    "ARB target unreachable: best searched LLTD error %.3f > 0.03 "
+                    "(target=%.3f, picked %s/%d). No driver-loaded ARB available "
+                    "for anchoring — solver returning best-effort match.",
+                    best_lltd_error, target_lltd, best_size, best_blade,
+                )
 
         # Compute full solution at chosen ARB setup
         lltd, k_farb, k_rarb, k_front, k_rear = self._compute_lltd(
@@ -684,12 +700,12 @@ class ARBSolver:
         if self.car.measured_lltd_target is not None:
             target_lltd = self.car.measured_lltd_target + lltd_offset
         else:
-            # Theoretical formula (physics-based from tyre load sensitivity + track speed)
-            tyre_sens = self.car.tyre_load_sensitivity
-            pct_hs = self.track.pct_above_200kph
-            hs_correction = 0.01 * pct_hs
-            lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
-            target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
+            target_lltd = optimal_lltd(
+                front_weight_dist=self.car.weight_dist_front,
+                tyre_sens=self.car.tyre_load_sensitivity,
+                pct_above_200kph=self.track.pct_above_200kph,
+                car_name=getattr(self.car, "canonical_name", None),
+            ) + lltd_offset
         farb_blade = int(farb_blade_locked if farb_blade_locked is not None else front_arb_blade_start)
         rarb_slow_blade = int(rarb_blade_slow_corner if rarb_blade_slow_corner is not None else 1)
         rarb_fast_blade = int(rarb_blade_fast_corner if rarb_blade_fast_corner is not None else min(4, arb.rear_blade_count))
