@@ -272,52 +272,10 @@ def _recommend_step4(
     step4 = solver_json.get("step4_arb", {})
 
     if comp.parameter == "lltd":
-        # LLTD too low = front too soft relative to rear, or rear too stiff
-        delta = comp.delta  # measured - predicted
-        sensitivity = step4.get("rarb_sensitivity_per_blade", 0.02)
-
-        if abs(delta) < 0.08 and abs(sensitivity) > 0.005:
-            # Can fix with ARB blade adjustment
-            blade_change = delta / sensitivity
-            current_blade = step4.get("rear_arb_blade_start", 3)
-            new_blade = max(1, min(5, round(current_blade - blade_change)))
-
-            output.parameter_adjustments.append(ParameterAdjustment(
-                step=4,
-                parameter="rear_arb_blade",
-                current_value=current_blade,
-                recommended_value=new_blade,
-                units="blade",
-                reasoning=(
-                    f"LLTD measured = {comp.measured:.3f} vs predicted {comp.predicted:.3f}. "
-                    f"Delta = {delta:+.3f}. RARB sensitivity = {sensitivity:+.3f}/blade. "
-                    f"Adjust RARB blade from {current_blade} to {new_blade}."
-                ),
-            ))
-        else:
-            # Need ARB stiffness recalibration
-            k_front_total = step4.get("k_roll_front_total", 0)
-            k_rear_total = step4.get("k_roll_rear_total", 0)
-            k_total = k_front_total + k_rear_total
-
-            if k_total > 0 and measured.lltd_measured > 0:
-                # Required front roll stiffness for measured LLTD
-                k_front_needed = measured.lltd_measured * k_total
-                k_front_arb_needed = k_front_needed - step4.get("k_roll_front_springs", 0)
-
-                output.model_corrections.append(ModelCorrection(
-                    model_component="arb_model.stiffness_values",
-                    current_value=k_front_total,
-                    corrected_value=round(k_front_needed, 1),
-                    units="N*m/deg",
-                    reasoning=(
-                        f"LLTD mismatch ({comp.delta:+.3f}) too large for blade adjustment. "
-                        f"Need front roll stiffness = {k_front_needed:.0f} N*m/deg "
-                        f"(currently {k_front_total:.0f}). "
-                        f"Recalibrate ARB stiffness values or check motion ratios."
-                    ),
-                    confidence="medium",
-                ))
+        # The validator no longer produces LLTD comparisons from IBT data because
+        # that signal is a roll-distribution proxy, not true wheel-load LLTD.
+        # Keep this branch inert for backward-compatible saved validation files.
+        return
 
     elif comp.parameter == "roll_gradient_deg_per_g":
         output.model_corrections.append(ModelCorrection(

@@ -8,7 +8,7 @@ The key models:
 1. Aero compression model: how much does the car actually compress vs V²?
 2. Roll gradient model: actual deg/g vs what the spring model predicts
 3. Heave effective mass: calibrated m_eff per track surface (varies!)
-4. LLTD vs ARB blade: real LLTD response vs model prediction
+4. Roll-distribution proxy auditing: the IBT signal is not true LLTD
 5. Damper click → settle time: how clicks map to damping response
 6. Lap time sensitivity: which parameters have the biggest lap time effect
 
@@ -181,8 +181,10 @@ def fit_models(
     # ── 1. Roll gradient: actual roll vs lateral G ──────────────────
     _fit_roll_gradient(observations, models)
 
-    # ── 2. LLTD vs rear ARB blade ──────────────────────────────────
-    _fit_lltd_vs_arb(observations, models)
+    # ── 2. Roll-distribution proxy provenance ──────────────────────
+    # The historical "lltd_measured" field is a ride-height proxy, not true
+    # wheel-load LLTD.  Do not fit ARB calibration relationships from it.
+    _record_roll_distribution_proxy(observations, models)
 
     # ── 3. Heave spring → platform variance ────────────────────────
     _fit_heave_to_variance(observations, models)
@@ -258,33 +260,25 @@ def _fit_roll_gradient(obs_list: list[dict], models: EmpiricalModelSet) -> None:
         )
 
 
-def _fit_lltd_vs_arb(obs_list: list[dict], models: EmpiricalModelSet) -> None:
-    """Fit LLTD as a function of rear ARB blade."""
-    x, y = [], []
+def _record_roll_distribution_proxy(obs_list: list[dict], models: EmpiricalModelSet) -> None:
+    """Record that legacy LLTD telemetry is proxy-only, not a calibration target."""
+    proxy_values = []
     for obs in obs_list:
-        blade = obs.get("setup", {}).get("rear_arb_blade")
-        lltd = obs.get("telemetry", {}).get("lltd_measured", 0)
-        if blade is not None and lltd > 0:
-            x.append(float(blade))
-            y.append(lltd)
+        telemetry = obs.get("telemetry", {})
+        proxy = telemetry.get("roll_distribution_proxy", telemetry.get("lltd_measured", 0))
+        if proxy and proxy > 0:
+            proxy_values.append(float(proxy))
 
-    if len(x) >= 4:
-        coeffs, r2 = _safe_linear_fit(x, y)
-        if coeffs:
-            models.relationships["lltd_vs_rear_arb"] = FittedRelationship(
-                name="LLTD vs rear ARB blade",
-                x_param="rear_arb_blade",
-                y_param="lltd_measured",
-                fit_type="linear",
-                coefficients=coeffs,
-                r_squared=r2,
-                sample_count=len(x),
-                residual_std=float(np.std(np.array(y) - np.polyval(coeffs, x))),
-                x_values=x,
-                y_values=y,
-                x_min=min(x),
-                x_max=max(x),
-            )
+    if proxy_values:
+        pv = np.array(proxy_values, dtype=float)
+        models.corrections["roll_distribution_proxy_mean"] = float(np.mean(pv))
+        models.corrections["roll_distribution_proxy_std"] = float(np.std(pv))
+        models.corrections["roll_distribution_proxy_sample_count"] = len(proxy_values)
+        # Backward-compatible keys are retained only so downstream guards can
+        # explicitly skip applying the proxy as an LLTD target.
+        models.corrections["lltd_measured_mean"] = float(np.mean(pv))
+        models.corrections["lltd_measured_std"] = float(np.std(pv))
+        models.corrections["lltd_is_proxy"] = True
 
 
 def _fit_heave_to_variance(obs_list: list[dict], models: EmpiricalModelSet) -> None:
@@ -777,19 +771,25 @@ def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> Non
         models.corrections["roll_gradient_measured_std"] = float(np.std(rv))
         models.corrections["roll_gradient_sample_count"] = len(roll_vals)
 
-    # LLTD correction (time-weighted)
-    lltd_vals = []
-    lltd_weights = []
+    # Roll-distribution proxy summary (time-weighted).  This is intentionally
+    # not a true LLTD correction and must not be applied to ARB calibration.
+    proxy_vals = []
+    proxy_weights = []
     for obs in obs_list:
-        lltd = obs.get("telemetry", {}).get("lltd_measured", 0)
-        if lltd > 0:
-            lltd_vals.append(lltd)
-            lltd_weights.append(_obs_time_weight(obs, now))
-    if len(lltd_vals) >= MIN_SESSIONS_FOR_CORRECTIONS:
-        lv = np.array(lltd_vals, dtype=float)
-        lw = np.array(lltd_weights, dtype=float)
-        models.corrections["lltd_measured_mean"] = float(np.average(lv, weights=lw))
-        models.corrections["lltd_measured_std"] = float(np.std(lv))
+        telemetry = obs.get("telemetry", {})
+        proxy = telemetry.get("roll_distribution_proxy", telemetry.get("lltd_measured", 0))
+        if proxy > 0:
+            proxy_vals.append(proxy)
+            proxy_weights.append(_obs_time_weight(obs, now))
+    if len(proxy_vals) >= MIN_SESSIONS_FOR_CORRECTIONS:
+        pv = np.array(proxy_vals, dtype=float)
+        pw = np.array(proxy_weights, dtype=float)
+        models.corrections["roll_distribution_proxy_mean"] = float(np.average(pv, weights=pw))
+        models.corrections["roll_distribution_proxy_std"] = float(np.std(pv))
+        models.corrections["roll_distribution_proxy_sample_count"] = len(proxy_vals)
+        models.corrections["lltd_measured_mean"] = float(np.average(pv, weights=pw))
+        models.corrections["lltd_measured_std"] = float(np.std(pv))
+        models.corrections["lltd_is_proxy"] = True
 
     # Effective mass correction (from variance data + spring rates)
     for obs in obs_list:

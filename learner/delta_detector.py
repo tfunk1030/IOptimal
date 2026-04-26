@@ -55,7 +55,7 @@ EFFECT_METRICS = {
         "heave_bottoming_events_front", "heave_bottoming_events_rear",
     ],
     "balance": [
-        "lltd_measured", "understeer_mean_deg",
+        "roll_distribution_proxy", "understeer_mean_deg",
         "understeer_high_speed_deg", "understeer_low_speed_deg",
         "body_slip_p95_deg",
     ],
@@ -121,12 +121,14 @@ KNOWN_CAUSALITY = {
 
     # ── Step 4: ARBs ──
     ("front_arb_blade", "+"): [
-        ("lltd_measured", "-"),         # more front ARB → front takes more roll → LLTD decreases
+        # Do not use the legacy lltd_measured field here: it is a
+        # ride-height roll proxy, not true wheel-load LLTD.
+        ("roll_distribution_proxy", "~"),
         ("roll_gradient_deg_per_g", "-"),  # stiffer front roll = less total roll
         ("understeer_mean_deg", "-"),   # less understeer (front stiffer)
     ],
     ("rear_arb_blade", "+"): [
-        ("lltd_measured", "+"),         # more rear ARB → more rear roll resistance → higher front LLTD
+        ("roll_distribution_proxy", "~"),
         ("understeer_mean_deg", "+"),   # more understeer (front lighter)
         ("roll_gradient_deg_per_g", "-"),  # stiffer rear roll = less total roll
         ("body_slip_p95_deg", "-"),     # more rear roll stiffness = less oversteer

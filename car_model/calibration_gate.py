@@ -360,8 +360,22 @@ def _load_raw_calibration_models(car_canonical: str, track: str = "") -> dict:
             try:
                 with open(track_path, encoding="utf-8") as f:
                     return json.load(f)
-            except Exception:
-                pass  # fall through to pooled file
+            except Exception as exc:
+                pooled = {}
+                path = cal_dir / "models.json"
+                if path.exists():
+                    try:
+                        with open(path, encoding="utf-8") as f:
+                            pooled = json.load(f)
+                    except Exception as pooled_exc:
+                        pooled = {
+                            "__load_error__": f"{type(pooled_exc).__name__}: {pooled_exc}",
+                        }
+                pooled["__track_load_error__"] = (
+                    f"{track_path.name}: {type(exc).__name__}: {exc}"
+                )
+                pooled["__calibration_model_source__"] = "pooled_after_track_load_error"
+                return pooled
 
     # Pooled / fallback
     path = cal_dir / "models.json"
@@ -369,7 +383,10 @@ def _load_raw_calibration_models(car_canonical: str, track: str = "") -> dict:
         return {}
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            if track:
+                data.setdefault("__calibration_model_source__", "pooled_no_track_file")
+            return data
     except Exception as exc:
         return {
             "__load_error__": f"{type(exc).__name__}: {exc}",

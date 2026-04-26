@@ -271,6 +271,7 @@ def build_observation(
         "body_roll_p95_deg": getattr(m, "body_roll_p95_deg", 0.0),
         "body_roll_max_deg": getattr(m, "body_roll_at_peak_g_deg", 0.0),
         "roll_gradient_deg_per_g": m.roll_gradient_measured_deg_per_g,
+        "roll_distribution_proxy": getattr(m, "roll_distribution_proxy", None) or m.lltd_measured,
         "lltd_measured": m.lltd_measured,
         "understeer_mean_deg": getattr(m, "understeer_mean_deg", 0.0),
         "understeer_high_speed_deg": getattr(m, "understeer_high_speed_deg", 0.0),
