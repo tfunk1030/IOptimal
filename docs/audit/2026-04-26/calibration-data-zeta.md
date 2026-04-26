@@ -261,9 +261,12 @@ correcting them properly requires per-car damper-physics references
 
 **Behavior:** `auto_calibrate.py:362-382` (`load_calibrated_models`)
 prefers the per-track file when `n_unique_setups >= _MIN_SESSIONS_FOR_FIT`
-and falls back to the pooled file otherwise. The "track key" is
-`track.lower().split()[0]` (matches the `models_<key>.json` filename).
-Per-track files store identical schema to pooled.
+and falls back to the pooled file otherwise. The per-track filename is
+derived from the sanitized track slug/key used by calibration code
+(for example, multi-word track keys may include underscores, as in
+`models_weathertech_raceway_laguna_seca.json`), rather than from
+`track.lower().split()[0]`. Per-track files store identical schema to
+pooled.
 
 This is correct and well-tested but undocumented at the file level.
 No file changes made — convention is captured here in the audit doc.
