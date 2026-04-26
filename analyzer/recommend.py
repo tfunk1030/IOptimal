@@ -413,7 +413,15 @@ def _recommend_balance(
             ))
 
     elif "lltd" in problem.symptom.lower() or "roll distribution proxy" in problem.symptom.lower():
-        if "too high" in problem.cause.lower():
+        # `diagnose.py` emits "front-heavy" / "rear-heavy" in `cause` for the
+        # roll-proxy problem. Older code paths (and any future direct-LLTD
+        # diagnosis once true wheel-load telemetry exists) may emit
+        # "too high" / "too low" — accept both forms so this branch fires
+        # against current diagnose output.
+        cause_lower = problem.cause.lower()
+        is_too_high = "too high" in cause_lower or "front-heavy" in cause_lower
+        is_too_low = "too low" in cause_lower or "rear-heavy" in cause_lower
+        if is_too_high:
             # LLTD too high -> soften front ARB or stiffen rear
             current_blade = setup.front_arb_blade
             if current_blade > 1:
@@ -456,7 +464,7 @@ def _recommend_balance(
                         confidence="high",
                     ))
 
-        elif "too low" in problem.cause.lower():
+        elif is_too_low:
             # LLTD too low -> stiffen front ARB or soften rear
             current_blade = setup.front_arb_blade
             max_blade = arb.front_blade_count

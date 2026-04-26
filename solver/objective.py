@@ -1383,14 +1383,24 @@ class ObjectiveFunction:
         # else: damper clicks are not scored — output will flag [ESTIMATE: damper clicks unscored]
 
         # ── Extract damper click params (used by compression bonus + ratio sections) ──
-        f_ls_comp = params.get("front_ls_comp", 7)
-        f_ls_rbd  = params.get("front_ls_rbd", 6)
-        f_hs_comp = params.get("front_hs_comp", 5)
-        f_hs_rbd  = params.get("front_hs_rbd", 5)
-        r_ls_comp = params.get("rear_ls_comp", 5)
-        r_ls_rbd  = params.get("rear_ls_rbd", 5)
-        r_hs_comp = params.get("rear_hs_comp", 3)
-        r_hs_rbd  = params.get("rear_hs_rbd", 3)
+        # Defaults are derived from each car's `damper.*_range` midpoint rather
+        # than hardcoded BMW values (7/6/5/5/5/5/3/3). For BMW the midpoint of
+        # (0,11) is 5.5 → rounds to 5/6, very close to the historical defaults.
+        # For Ferrari (1,11) it is 6, for Porsche (1,11) it is 6, and for
+        # Cadillac (0,40) it is 20 — matching each car's click scale.
+        damper = self.car.damper
+        _ls_c_mid = (damper.ls_comp_range[0] + damper.ls_comp_range[1]) / 2.0
+        _ls_r_mid = (damper.ls_rbd_range[0] + damper.ls_rbd_range[1]) / 2.0
+        _hs_c_mid = (damper.hs_comp_range[0] + damper.hs_comp_range[1]) / 2.0
+        _hs_r_mid = (damper.hs_rbd_range[0] + damper.hs_rbd_range[1]) / 2.0
+        f_ls_comp = params.get("front_ls_comp", _ls_c_mid)
+        f_ls_rbd  = params.get("front_ls_rbd", _ls_r_mid)
+        f_hs_comp = params.get("front_hs_comp", _hs_c_mid)
+        f_hs_rbd  = params.get("front_hs_rbd", _hs_r_mid)
+        r_ls_comp = params.get("rear_ls_comp", _ls_c_mid)
+        r_ls_rbd  = params.get("rear_ls_rbd", _ls_r_mid)
+        r_hs_comp = params.get("rear_hs_comp", _hs_c_mid)
+        r_hs_rbd  = params.get("rear_hs_rbd", _hs_r_mid)
 
         # ── DAMPER COMPRESSION LEVEL (empirical, BMW-calibrated) ──────────────
         # Cross-session correlation (73 BMW/Sebring sessions): front_ls_comp has
@@ -1502,15 +1512,15 @@ class ObjectiveFunction:
         )
         f_arb_blade = int(round(params.get("front_arb_blade", 1)))
         r_arb_blade = int(round(params.get("rear_arb_blade", 2)))
-        # ARB extreme-combo penalty ZEROED OUT (2026-03-28, calibration evidence):
-        # Removing this term improved BMW/Sebring in-sample Spearman by +0.048 and
-        # holdout mean by +0.062.  The heuristic (max blade + Soft = wrong size) does
-        # not hold in the 75-session dataset — fast BMW setups use a range of ARB
-        # size/blade combos including those this term would penalise.  The physics
-        # reasoning (blade maxed → size up) is sound in principle but the lap-time
-        # signal is absent, so applying it adds noise that hurts ranking quality.
-        # See validation/calibration_report.md — ablation: arb_extreme_ms removed.
-        # gain -= ...  (placeholder — do NOT restore without corroborating IBT evidence)
+        # ARB extreme-combo penalty: intentionally NOT applied.
+        # Calibration evidence (BMW/Sebring 75 sessions, 2026-03-28 ablation):
+        # the heuristic "max blade + Soft = wrong size" is physically reasonable
+        # but is not supported by the lap-time data — applying it degrades
+        # in-sample Spearman by 0.048 and holdout mean by 0.062. Do not restore
+        # without new IBT evidence. See `validation/calibration_report.md`.
+        # The variables `f_arb_size_idx`, `r_arb_size_idx`, `f_arb_blade`,
+        # `r_arb_blade` are still extracted because they are read by the
+        # diff/ramp section below.
 
         # ═══════════════════════════════════════════════════════════════
         # TIER 5: DIFF RAMP ANGLES (corner-entry rotation + exit traction)

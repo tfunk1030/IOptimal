@@ -823,8 +823,30 @@ def _iterative_coupling_refinement(
         else:
             lltd_residual = 0.0
 
+        # ── Check σ residual (front + rear platform stability) ──
+        # σ residual = max(0, sigma_at_rate - sigma_target) for each axle.
+        # If both axles meet target, residual is 0 and σ does not block
+        # convergence; if either is over target the loop should keep iterating
+        # (Step 2 may need stiffer springs, which couples back to Step 1
+        # static RH and Step 4 roll stiffness).
+        sigma_residual = 0.0
+        if step2 is not None:
+            f_target = getattr(step2, "front_sigma_target_mm", 0.0) or 0.0
+            r_target = getattr(step2, "rear_sigma_target_mm", 0.0) or 0.0
+            if f_target > 0:
+                sigma_residual = max(sigma_residual,
+                                     step2.front_sigma_at_rate_mm - f_target)
+            if r_target > 0:
+                sigma_residual = max(sigma_residual,
+                                     step2.rear_sigma_at_rate_mm - r_target)
+            sigma_residual = max(0.0, sigma_residual)
+
         # ── Check convergence ──
-        converged = (df_residual <= df_tol and lltd_residual <= lltd_tol)
+        converged = (
+            df_residual <= df_tol
+            and lltd_residual <= lltd_tol
+            and sigma_residual <= sigma_tol_mm
+        )
         if converged:
             break
 

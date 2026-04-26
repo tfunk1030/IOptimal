@@ -617,9 +617,15 @@ class DeflectionModel:
     Rear parameters use physics-based force-balance models (exact on S1/S2).
     Shock deflections use pushrod-offset-based models (exact on S1/S2).
 
-    NOTE: This model is BMW-specific. Non-BMW cars should use uncalibrated().
+    NOTE: This model is BMW-specific. Non-BMW cars should use uncalibrated()
+    or pass `is_calibrated=False` explicitly.
     """
-    is_calibrated: bool = True  # True for BMW, False for uncalibrated cars
+    # Default False: any car that constructs `DeflectionModel()` without an
+    # explicit `is_calibrated=True` should not silently claim calibration.
+    # Cars that ARE calibrated (BMW, Ferrari, Porsche) pass `is_calibrated=True`
+    # at their construction site. This mirrors the `RideHeightModel` default
+    # change made in LOW-7 / 2026-04-10.
+    is_calibrated: bool = False
 
     # --- Shock deflection: defl = intercept + coeff * pushrod_offset ---
     # Calibrated from 31 unique setups across 41 BMW sessions (March 2026)
@@ -2126,7 +2132,11 @@ BMW_M_HYBRID_V8 = CarModel(
         slider_coeff_front_pushrod_mm=0.0,
         slider_coeff_front_rh_mm=0.0,
         slider_coeff_torsion_turns=0.0,
-        deflection=DeflectionModel(),
+        # BMW is the historical calibration source — the dataclass defaults ARE
+        # the BMW Sebring regression coefficients. Pass is_calibrated=True
+        # explicitly so that any cross-car copy of this construction pattern
+        # does not silently inherit a "calibrated" flag.
+        deflection=DeflectionModel(is_calibrated=True),
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
     garage_ranges=GarageRanges(

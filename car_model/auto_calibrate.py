@@ -626,10 +626,23 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
 
 
 def _get_dummy_car(car_name: str):
-    """Get a minimal car object for telemetry extraction."""
+    """Get a minimal car object for telemetry extraction.
+
+    Refuses to silently fall back to BMW when ``car_name`` is empty/None — that
+    would silently apply BMW physics (index decode, m_eff, deflection
+    coefficients) to whichever car happened to be calibrating. Returns None
+    instead so callers handle missing-car explicitly.
+    """
+    if not car_name:
+        import logging
+        logging.getLogger(__name__).warning(
+            "_get_dummy_car called with empty car_name; refusing to default to BMW. "
+            "Caller should pass an explicit car name."
+        )
+        return None
     try:
         from car_model.cars import get_car
-        return get_car(car_name or "bmw")
+        return get_car(car_name)
     except Exception as e:
         import logging
         logging.getLogger(__name__).debug("Could not load car model '%s': %s", car_name, e)
