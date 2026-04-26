@@ -141,19 +141,25 @@ def _snap_targets_to_garage(targets: dict[str, Any], car: Any | None = None) -> 
             rear_spring_perch_range[1],
         )
 
-    # Use car's actual ARB blade count when available (Porsche has 1-16, BMW 1-5)
-    _arb = getattr(car, "arb", None) if car is not None else None
-    _rear_blade_max = getattr(_arb, "rear_blade_count", None) if _arb else None
-    if _rear_blade_max is not None:
-        arb_range = (1, int(_rear_blade_max))
-    elif gr is not None:
-        arb_range = getattr(gr, "arb_blade", (1, 5))
+    # Use car's actual ARB blade counts (front and rear may differ — Porsche 1-13/1-16, BMW 1-5/1-5).
+    # No silent fallback: every car must define arb.front_blade_count and arb.rear_blade_count.
+    if car is not None:
+        _arb = car.arb
+        _front_arb_range = (1, int(_arb.front_blade_count))
+        _rear_arb_range = (1, int(_arb.rear_blade_count))
     else:
-        arb_range = (1, 5)
-    for field in ("front_arb_blade_start", "rarb_blade_slow_corner", "rarb_blade_fast_corner", "rear_arb_blade_start", "farb_blade_locked"):
-        target = targets["step4"]
+        _front_arb_range = _rear_arb_range = None
+    _front_arb_fields = ("front_arb_blade_start", "farb_blade_locked")
+    _rear_arb_fields = ("rear_arb_blade_start", "rarb_blade_slow_corner", "rarb_blade_fast_corner")
+    target = targets["step4"]
+    for field, blade_range in (
+        *((f, _front_arb_range) for f in _front_arb_fields),
+        *((f, _rear_arb_range) for f in _rear_arb_fields),
+    ):
+        if blade_range is None:
+            continue
         if field in target and isinstance(target[field], (int, float)):
-            target[field] = int(round(_clamp(float(target[field]), arb_range[0], arb_range[1])))
+            target[field] = int(round(_clamp(float(target[field]), blade_range[0], blade_range[1])))
 
     # Step 5: camber (0.1 deg step), toe (0.5 mm step)
     camber_front = getattr(gr, "camber_front_deg", (-5.0, 0.0)) if gr is not None else (-5.0, 0.0)
@@ -185,6 +191,9 @@ def _cluster_center_issues(car: Any | None, setup_cluster: Any | None) -> list[s
     if car is None:
         return []
     gr = getattr(car, "garage_ranges", None) if car is not None else None
+    arb = getattr(car, "arb", None) if car is not None else None
+    front_arb_range = (1, int(arb.front_blade_count)) if arb is not None else None
+    rear_arb_range = (1, int(arb.rear_blade_count)) if arb is not None else None
     issues: list[str] = []
     checks = [
         ("front_pushrod_mm", getattr(gr, "front_pushrod_mm", None)),
@@ -193,8 +202,8 @@ def _cluster_center_issues(car: Any | None, setup_cluster: Any | None) -> list[s
         ("rear_third_nmm", getattr(gr, "rear_third_nmm", None)),
         ("front_torsion_od_mm", getattr(gr, "front_torsion_od_mm", None)),
         ("rear_spring_nmm", getattr(gr, "rear_spring_nmm", None)),
-        ("front_arb_blade", getattr(gr, "arb_blade", None)),
-        ("rear_arb_blade", getattr(gr, "arb_blade", None)),
+        ("front_arb_blade", front_arb_range),
+        ("rear_arb_blade", rear_arb_range),
         ("front_camber_deg", getattr(gr, "camber_front_deg", None)),
         ("rear_camber_deg", getattr(gr, "camber_rear_deg", None)),
         ("front_toe_mm", getattr(gr, "toe_front_mm", None)),
@@ -495,7 +504,7 @@ def canonical_params_to_overrides(
     return overrides
 
 
-def _apply_cluster_center(targets: dict[str, Any], setup_cluster: Any, *, car_name: str = "bmw") -> None:
+def _apply_cluster_center(targets: dict[str, Any], setup_cluster: Any, *, car_name: str = "unknown") -> None:
     center = getattr(setup_cluster, "center", {}) or {}
     if not center:
         return
@@ -690,16 +699,13 @@ def _apply_family_state_adjustments(
         )
 
     arb_delta = int(round((entry_push + high_speed_push - exit_instability) * family_intensity))
-    # Clamp to the car-specific rear ARB blade range, NOT a hardcoded 1-6
-    # (which was a BMW assumption). Porsche's rear ARB has blade range 1-16;
-    # driver-validated operating point is blade=10 — unreachable with hi=6.
-    _arb_hi = (
-        int(getattr(getattr(car, "arb", None), "rear_blade_count", 6))
-        if car is not None else 6
-    ) or 6
-    _adjust_integer(targets["step4"], "rear_arb_blade_start", arb_delta, lo=1, hi=_arb_hi)
-    _adjust_integer(targets["step4"], "rarb_blade_slow_corner", arb_delta, lo=1, hi=_arb_hi)
-    _adjust_integer(targets["step4"], "rarb_blade_fast_corner", arb_delta, lo=1, hi=_arb_hi)
+    # Clamp to the car-specific rear ARB blade range. No silent fallback:
+    # every car defines arb.rear_blade_count (BMW=5, Porsche=16, Acura=5, etc.).
+    if car is not None:
+        _arb_hi = int(car.arb.rear_blade_count)
+        _adjust_integer(targets["step4"], "rear_arb_blade_start", arb_delta, lo=1, hi=_arb_hi)
+        _adjust_integer(targets["step4"], "rarb_blade_slow_corner", arb_delta, lo=1, hi=_arb_hi)
+        _adjust_integer(targets["step4"], "rarb_blade_fast_corner", arb_delta, lo=1, hi=_arb_hi)
 
     _adjust_numeric(targets["step5"], "front_camber_deg", -0.12 * entry_push * family_intensity, decimals=3)
     _adjust_numeric(targets["step5"], "rear_camber_deg", -0.08 * exit_instability * family_intensity, decimals=3)
@@ -983,7 +989,7 @@ def generate_candidate_families(
         # how much to anchor back to a historical setup.
         cluster_seeded = family == "baseline_reset" and setup_cluster is not None
         if cluster_seeded:
-            _apply_cluster_center(targets, setup_cluster, car_name=getattr(car, "canonical_name", "bmw"))
+            _apply_cluster_center(targets, setup_cluster, car_name=getattr(car, "canonical_name", "unknown"))
         _apply_family_state_adjustments(
             targets,
             car=car,

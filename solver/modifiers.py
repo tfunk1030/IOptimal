@@ -113,11 +113,11 @@ def compute_modifiers(
     """
     mods = SolverModifiers()
 
-    # Per-car heave spring minimum for scaling floor thresholds.
-    # BMW range starts at ~30 N/mm; Porsche at ~180 N/mm; Acura at ~90 N/mm.
-    # Using absolute BMW values would never trigger for stiffer-sprung cars.
-    # Use 10% of range as base increment, NOT the range minimum.
-    # For BMW (0-900): _heave_step = 90. For Porsche (150-600): _heave_step = 45.
+    # Per-car heave spring floor scale: 10% of the front heave spring range width.
+    # Floors throughout this function are expressed as multiples of _heave_min so
+    # they scale across cars (BMW range 0-900 → _heave_min=90; Porsche 150-600 → 45).
+    # Hardcoded absolute N/mm values would either be too tight for Porsche or
+    # never trigger on stiffer-sprung cars.
     _heave_min = 30.0  # fallback only if car is None (standalone mode)
     if car is not None:
         _range = car.heave_spring.front_spring_range_nmm
@@ -179,7 +179,7 @@ def compute_modifiers(
             scrape_count = int(problem.measured)
             if scrape_count > 20:
                 # Critical: frequent scraping, need significant stiffening
-                scrape_floor = _heave_min * 1.67  # ~50 N/mm for BMW (30*1.67), ~150 for Porsche
+                scrape_floor = _heave_min * 1.67  # 1.67× heave-min: BMW=150, Porsche=75
                 mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, scrape_floor)
                 mods.reasons.append(
                     f"Splitter scrape detected ({scrape_count} events) → front heave floor "
@@ -187,7 +187,7 @@ def compute_modifiers(
                 )
             elif scrape_count > 10:
                 # Significant: moderate scraping, 10-20% stiffer
-                scrape_floor = _heave_min * 1.40  # ~42 N/mm for BMW (30*1.4), ~126 for Porsche
+                scrape_floor = _heave_min * 1.40  # 1.40× heave-min: BMW=126, Porsche=63
                 mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, scrape_floor)
                 mods.reasons.append(
                     f"Splitter scrape detected ({scrape_count} events) → front heave floor "
@@ -240,7 +240,7 @@ def compute_modifiers(
     pitch_range_deg = _num(measured.pitch_range_deg)
     if front_heave_vel_hs_pct > 33:
         # >33% of heave velocity in HS regime = platform is getting pounded by surface
-        _hs_floor = _heave_min * 1.33  # ~40 N/mm for BMW (30*1.33)
+        _hs_floor = _heave_min * 1.33  # 1.33× heave-min: BMW=120, Porsche=60
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _hs_floor)
         mods.reasons.append(
             f"Heave HS regime {front_heave_vel_hs_pct:.0f}% > 33% → heave floor {_hs_floor:.0f} N/mm"
@@ -254,7 +254,7 @@ def compute_modifiers(
 
     # ── From Pitch Dynamics (platform stability) ──
     if pitch_range_deg > 1.5:
-        _pitch_floor = _heave_min * 1.27  # ~38 N/mm for BMW (30*1.27)
+        _pitch_floor = _heave_min * 1.27  # 1.27× heave-min: BMW=114, Porsche=57
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _pitch_floor)
         mods.reasons.append(
             f"Pitch range {pitch_range_deg:.2f}° > 1.5° → heave floor {_pitch_floor:.0f} N/mm"
@@ -265,15 +265,15 @@ def compute_modifiers(
     # even if the p99 bottoming model passes (it uses shock velocity p99 which misses extreme events).
     travel_pct = measured.front_heave_travel_used_pct or 0.0
     if travel_pct >= 90.0:
-        _travel_floor = _heave_min * 2.0  # ~60 N/mm for BMW (30*2.0), ~180 for Porsche
+        _travel_floor = _heave_min * 2.0  # 2.0× heave-min: BMW=180, Porsche=90
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
         mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 90% → heave floor {_travel_floor:.0f} N/mm (bottoming risk)")
     elif travel_pct >= 80.0:
-        _travel_floor = _heave_min * 1.67  # ~50 N/mm for BMW (30*1.67)
+        _travel_floor = _heave_min * 1.67  # 1.67× heave-min: BMW=150, Porsche=75
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
         mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 80% → heave floor {_travel_floor:.0f} N/mm")
     elif travel_pct >= 70.0:
-        _travel_floor = _heave_min * 1.33  # ~40 N/mm for BMW (30*1.33)
+        _travel_floor = _heave_min * 1.33  # 1.33× heave-min: BMW=120, Porsche=60
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
         mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 70% → heave floor {_travel_floor:.0f} N/mm")
 
@@ -295,12 +295,15 @@ def compute_modifiers(
             )
 
     # ── From Corner Deflections (travel proximity) ──
+    # Use 0.5x heave_min as a modest floor (corner_defl is a soft signal).
+    # BMW (heave_min=90) → 45 N/mm; Porsche (heave_min=45) → 23 N/mm.
     front_corner_defl = _num(measured.front_corner_defl_p99_mm)
     if front_corner_defl > 30:
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 35.0)
+        _defl_floor = _heave_min * 0.5
+        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _defl_floor)
         mods.reasons.append(
             f"Front corner defl p99 {front_corner_defl:.1f}mm > 30mm "
-            f"→ heave floor 35 N/mm (travel proximity)"
+            f"→ heave floor {_defl_floor:.0f} N/mm (travel proximity)"
         )
 
     # ── From Driver Style ──
@@ -357,10 +360,9 @@ def compute_modifiers(
     # Re-apply safety floors AFTER confidence scaling.
     # These are based on directly measured physical facts (not inferred diagnoses),
     # so they must not be eroded by confidence weighting.
-    # Floors are expressed as multiples of _heave_min (car-relative) to work
-    # correctly across BMW (range 0-900, _heave_min=90), Porsche (150-600, 45),
-    # and Acura (90-1800, 171). Hardcoded absolute N/mm values would be either
-    # too tight for Porsche or meaningless for BMW.
+    # Floors are expressed as multiples of _heave_min (car-relative) so they scale
+    # across cars: BMW (0-900) → _heave_min=90; Porsche (150-600) → 45;
+    # Acura (90-400) → 31. Hardcoded absolute N/mm values would mis-fit non-BMW cars.
     travel_pct = measured.front_heave_travel_used_pct or 0.0
     if travel_pct >= 90.0:
         _travel_floor_post = _heave_min * 2.0   # same ratio as diagnosis block above
