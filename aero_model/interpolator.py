@@ -48,9 +48,13 @@ class AeroSurface:
 
     def _clamp_rh(self, front_rh: float, rear_rh: float) -> tuple[float, float]:
         """Clamp ride heights to the grid boundaries to prevent extrapolation."""
+        if not (np.isfinite(front_rh) and np.isfinite(rear_rh)):
+            raise ValueError(
+                f"Aero query received non-finite ride heights "
+                f"(front_rh={front_rh}, rear_rh={rear_rh})"
+            )
         clamped_front = float(np.clip(front_rh, self.front_rh[0], self.front_rh[-1]))
         clamped_rear = float(np.clip(rear_rh, self.rear_rh[0], self.rear_rh[-1]))
-        # Log when clamping moves the value significantly (>2mm)
         # Use debug level since bisection search calls this repeatedly
         if abs(clamped_front - front_rh) > 2.0:
             logger.debug(
@@ -67,7 +71,15 @@ class AeroSurface:
     def _interp_or_raise(
         self, interp: RegularGridInterpolator, front_rh: float, rear_rh: float, label: str,
     ) -> float:
-        """Interpolate and raise if result is NaN."""
+        """Interpolate and raise ``ValueError`` if the result is NaN.
+
+        NaN can arise from cubic interpolation pathologies even after
+        :meth:`_clamp_rh` has snapped the query to grid bounds — typically
+        when the aero map itself contains NaN cells. Raising (rather than
+        silently returning NaN) lets the candidate generator reject the
+        configuration with an explicit reason instead of letting NaN
+        propagate into the balance/L/D scoring.
+        """
         result = float(interp([[front_rh, rear_rh]])[0])
         if np.isnan(result):
             raise ValueError(
