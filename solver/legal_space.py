@@ -19,6 +19,7 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 from dataclasses import dataclass, field
@@ -31,6 +32,8 @@ from car_model.setup_registry import (
     get_field,
     get_car_spec,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Perch offset computation ────────────────────────────────────────────────
@@ -656,8 +659,8 @@ class LegalSpace:
                         nb = dict(params)
                         nb[dim.name] = vals[dn_idx]
                         neighbors.append(nb)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("neighborhood enumeration failed for %s: %s", dim.name, exc)
             else:
                 # Continuous: step by resolution
                 res = dim.resolution if dim.resolution > 0 else (dim.hi - dim.lo) * 0.05
