@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from car_model.registry import track_key
+from car_model.registry import safe_track_slug, track_key
 
 if TYPE_CHECKING:
     from car_model.cars import CarModel
@@ -323,19 +323,6 @@ def _fmt_instructions(key: str, car: str, track: str) -> str:
 
 # ─── Build subsystem calibration status from a CarModel ──────────────────────
 
-def _safe_track_slug(track: str) -> str:
-    """Return a filesystem-safe slug for *track*.
-
-    Mirrors :func:`auto_calibrate._safe_track_slug` so the gate reads
-    the same per-track model files that auto-calibrate writes.
-    """
-    import re
-
-    slug = re.sub(r"[^a-z0-9_]", "_", track.lower())
-    slug = re.sub(r"_+", "_", slug).strip("_")
-    return slug or "unknown"
-
-
 def _load_raw_calibration_models(car_canonical: str, track: str = "") -> dict:
     """Load raw models JSON for a car to read R² values and status flags.
 
@@ -354,8 +341,7 @@ def _load_raw_calibration_models(car_canonical: str, track: str = "") -> dict:
 
     # Try per-track model file first when a track is specified
     if track:
-        slug = _safe_track_slug(track)
-        track_path = cal_dir / f"models_{slug}.json"
+        track_path = cal_dir / f"models_{safe_track_slug(track)}.json"
         if track_path.exists():
             try:
                 with open(track_path, encoding="utf-8") as f:
@@ -727,7 +713,8 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
 # Each solver step maps to required subsystems.
 # "calibrated" runs cleanly, "weak" runs with warnings, "uncalibrated" blocks.
 STEP_REQUIREMENTS: dict[int, tuple[str, list[str]]] = {
-    1: ("Rake / Ride Heights", ["aero_compression", "ride_height_model", "pushrod_geometry"]),
+    1: ("Rake / Ride Heights",
+        ["track_support", "aero_compression", "ride_height_model", "pushrod_geometry"]),
     2: ("Heave / Third Springs", ["spring_rates"]),
     3: ("Corner Springs", ["spring_rates"]),
     4: ("Anti-Roll Bars", ["arb_stiffness", "lltd_target"]),
@@ -842,10 +829,17 @@ class CalibrationGate:
                 return report
             # Propagate weak-upstream: if prior step has weak calibration
             # or itself has weak upstream, flag this step so provenance
-            # reflects reduced confidence in input data.
-            if prior.weak_block or prior.weak_upstream:
+            # reflects reduced confidence in input data.  Attribute to the
+            # ORIGINAL weak step, not just the immediate predecessor — a
+            # Step 4 report should say "weak_upstream from Step 2" when
+            # Step 2 is the weak source, even though Step 4 inherits it
+            # via Step 3.
+            if prior.weak_block:
                 report.weak_upstream = True
                 report.weak_upstream_step = prior_num
+            elif prior.weak_upstream:
+                report.weak_upstream = True
+                report.weak_upstream_step = prior.weak_upstream_step or prior_num
 
         # Check this step's own subsystems.
         # Strict-mode classification: any "weak" subsystem marks the step

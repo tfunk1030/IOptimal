@@ -22,6 +22,7 @@ Usage::
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -175,6 +176,20 @@ def track_slug(display_name: str, config: str = "") -> str:
         suffix = config.lower().replace(" ", "_")
         return f"{base}_{suffix}"
     return base
+
+
+def safe_track_slug(track: str) -> str:
+    """Return a filesystem-safe slug for *track*.
+
+    Only lower-case letters, digits, and underscores are kept.  Anything
+    else (including path separators, spaces, dots, and ``..`` sequences)
+    is replaced with ``_``, so user-supplied track names cannot cause
+    path traversal.  Used as the basis for per-track calibration model
+    file names like ``models_{slug}.json``.
+    """
+    slug = re.sub(r"[^a-z0-9_]", "_", track.lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug or "unknown"
 
 
 def track_key(display_name: str) -> str:

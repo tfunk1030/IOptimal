@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -310,17 +309,10 @@ def _models_path(car: str) -> Path:
     return _data_dir(car) / "models.json"
 
 
-def _safe_track_slug(track: str) -> str:
-    """Return a filesystem-safe slug for *track*.
-
-    Only lower-case letters, digits, and underscores are kept.  Anything else
-    (including path separators, spaces, dots, and ``..`` sequences) is replaced
-    with ``_``, so user-supplied track names cannot cause path traversal.
-    """
-    slug = re.sub(r"[^a-z0-9_]", "_", track.lower())
-    # Collapse consecutive underscores and strip leading/trailing ones
-    slug = re.sub(r"_+", "_", slug).strip("_")
-    return slug or "unknown"
+# Single canonical implementation lives in ``car_model.registry``.
+# Re-exported under the legacy underscore-prefixed name for tests and
+# any callers still importing it from this module.
+from car_model.registry import safe_track_slug as _safe_track_slug  # noqa: E402
 
 
 def _models_path_for_track(car: str, track: str) -> Path:
