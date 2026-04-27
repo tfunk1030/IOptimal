@@ -3086,18 +3086,28 @@ def reason_and_solve(
             pin_front_min=True,
         )
 
-        heave_solver = HeaveSolver(car, track)
-        _step2 = heave_solver.solve(
-            dynamic_front_rh_mm=_step1.dynamic_front_rh_mm,
-            dynamic_rear_rh_mm=_step1.dynamic_rear_rh_mm,
-            front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
-            rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
-            front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
-            front_pushrod_mm=_step1.front_pushrod_offset_mm,
-            rear_pushrod_mm=_step1.rear_pushrod_offset_mm,
-            fuel_load_l=detected_fuel,
-            front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-        )
+        # GT3 dispatch (W2.1): cars without heave/third skip Step 2 entirely
+        # and use HeaveSolution.null() so Step 3+ can keep running.
+        if car.suspension_arch.has_heave_third:
+            heave_solver = HeaveSolver(car, track)
+            _step2 = heave_solver.solve(
+                dynamic_front_rh_mm=_step1.dynamic_front_rh_mm,
+                dynamic_rear_rh_mm=_step1.dynamic_rear_rh_mm,
+                front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
+                rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+                front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
+                front_pushrod_mm=_step1.front_pushrod_offset_mm,
+                rear_pushrod_mm=_step1.rear_pushrod_offset_mm,
+                fuel_load_l=detected_fuel,
+                front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+            )
+        else:
+            heave_solver = None  # GT3: Step 2 is N/A
+            from solver.heave_solver import HeaveSolution as _HeaveSolutionLocal
+            _step2 = _HeaveSolutionLocal.null(
+                front_dynamic_rh_mm=_step1.dynamic_front_rh_mm,
+                rear_dynamic_rh_mm=_step1.dynamic_rear_rh_mm,
+            )
 
         corner_solver = CornerSpringSolver(car, track)
         _step3 = corner_solver.solve(
@@ -3108,14 +3118,15 @@ def reason_and_solve(
 
         _rear_wheel_rate_nmm = _step3.rear_wheel_rate_nmm
 
-        heave_solver.reconcile_solution(
-            _step1,
-            _step2,
-            _step3,
-            fuel_load_l=detected_fuel,
-            front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            verbose=False,
-        )
+        if heave_solver is not None and getattr(_step2, "present", True):
+            heave_solver.reconcile_solution(
+                _step1,
+                _step2,
+                _step3,
+                fuel_load_l=detected_fuel,
+                front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+                verbose=False,
+            )
         reconcile_ride_heights(
             car,
             _step1,
@@ -3370,8 +3381,15 @@ def reason_and_solve(
             # Enforce modifier safety floors on candidate result.
             # Candidates may set spring rates from observed session medians, which
             # can violate physics-derived minimums (heave floor, pitch floor, etc.).
+            # GT3 dispatch (W2.1): the heave floor doesn't apply to cars
+            # without heave/third architecture; step2 is null and stays null.
             heave_floor = mods.front_heave_min_floor_nmm
-            if heave_floor > 0 and step2.front_heave_nmm < heave_floor:
+            if (
+                car.suspension_arch.has_heave_third
+                and getattr(step2, "present", True)
+                and heave_floor > 0
+                and step2.front_heave_nmm < heave_floor
+            ):
                 state.solver_notes.append(
                     f"Candidate heave {step2.front_heave_nmm:.0f} N/mm < floor {heave_floor:.0f} N/mm "
                     f"(from {selected_candidate.family} selection) — re-solving with floor constraint."

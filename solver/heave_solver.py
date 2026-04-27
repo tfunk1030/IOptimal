@@ -1580,6 +1580,12 @@ class HeaveSolver:
         verbose: bool = True,
     ) -> None:
         """Round-trip the front heave travel budget after torsion/spring choices are known."""
+        # GT3 guard: HeaveSolution.null() carries no real heave/perch state and
+        # there is no front heave spring to reconcile. Callers should ideally
+        # skip the call entirely, but defense-in-depth lets a caller pass a
+        # null step2 without crashing on car.heave_spring=None reads downstream.
+        if not getattr(step2, "present", True):
+            return
         garage_model = self.car.active_garage_output_model(self.track.track_name)
         # Auto-built garage models don't have validated travel budget constraints
         if garage_model is None or getattr(garage_model, "_auto_built", False):

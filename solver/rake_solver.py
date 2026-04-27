@@ -55,6 +55,24 @@ from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
 
+# ─── Helpers for GT3 (heave_spring=None) safety ────────────────────────────────
+# GT3 cars (suspension_arch=GT3_COIL_4WHEEL) have no heave/third spring; the
+# `heave_spring` attribute on CarModel is None. Any read of
+# `car.heave_spring.<x>` would AttributeError. Use these helpers wherever a
+# heave-perch baseline is needed; they degrade to 0.0 for GT3 (which is correct
+# because GT3 has no heave perch — the Step-1 path that consumes them is also
+# gated on car.suspension_arch.has_heave_third).
+
+def _heave_perch_front_baseline(car: CarModel) -> float:
+    """Front heave-spring perch baseline (mm), 0.0 for GT3 cars."""
+    return car.heave_spring.perch_offset_front_baseline_mm if car.heave_spring is not None else 0.0
+
+
+def _heave_perch_rear_baseline(car: CarModel) -> float:
+    """Rear heave-spring perch baseline (mm), 0.0 for GT3 cars."""
+    return car.heave_spring.perch_offset_rear_baseline_mm if car.heave_spring is not None else 0.0
+
+
 @dataclass
 class RakeSolution:
     """Output of the Step 1 rake/ride height solver."""
@@ -190,10 +208,14 @@ class RakeSolver:
         self.track = track
 
     def _query_aero(self, actual_front: float, actual_rear: float) -> tuple[float, float]:
-        """Query aero surface at actual front/rear RH. Returns (balance, L/D)."""
+        """Query aero surface at actual front/rear RH. Returns (balance, L/D).
+
+        For balance-only maps (GT3, ``surface.has_ld=False``) L/D is NaN — this
+        is the explicit "no signal" sentinel the rake solver branches on.
+        """
         aero_frh, aero_rrh = self.car.to_aero_coords(actual_front, actual_rear)
         bal = self.surface.df_balance(aero_frh, aero_rrh)
-        ld = self.surface.lift_drag(aero_frh, aero_rrh)
+        ld = self.surface.lift_drag(aero_frh, aero_rrh) if self.surface.has_ld else float("nan")
         return bal, ld
 
     def _find_rear_for_balance(
@@ -325,12 +347,18 @@ class RakeSolver:
             # Snap pushrods to 0.5mm increments (iRacing garage constraint)
             front_pushrod = round(self.car.pushrod.front_offset_for_rh(static_front) * 2) / 2
 
+            # GT3 cars (heave_spring=None) cannot use the legacy RH model path
+            # because the model's regressors include heave-spring features. Until
+            # a GT3-specific RH model lands (Wave 3+), fall back to PushrodGeometry.
+            _has_heave = self.car.heave_spring is not None
+            _use_calibrated_rh = rh_model.is_calibrated and _has_heave
+
             # Rear pushrod: use multi-variable RH model if calibrated
-            if rh_model.is_calibrated:
+            if _use_calibrated_rh:
                 # Use baseline heave/spring values (step2/step3 haven't run yet).
                 # These will be reconciled after step2 in solve.py.
                 baseline_third_nmm = self.car.rear_third_spring_nmm  # car default
-                baseline_heave_perch = self.car.heave_spring.perch_offset_front_baseline_mm
+                baseline_heave_perch = _heave_perch_front_baseline(self.car)
                 baseline_rear_spring = self.car.corner_spring.rear_spring_range_nmm[0]
                 # Ferrari RH model was calibrated with INDEX inputs (0-9 heave, 0-18 torsion),
                 # not physical N/mm. Convert physical baselines to index space.
@@ -339,7 +367,7 @@ class RakeSolver:
                     from car_model.setup_registry import public_output_value
                     baseline_third_nmm = float(public_output_value('ferrari', 'rear_third_nmm', baseline_third_nmm))
                     baseline_rear_spring = float(public_output_value('ferrari', 'rear_spring_rate_nmm', baseline_rear_spring))
-                    baseline_heave_perch = self.car.heave_spring.perch_offset_rear_baseline_mm
+                    baseline_heave_perch = _heave_perch_rear_baseline(self.car)
                 baseline_fuel = self.car.fuel_capacity_l
                 baseline_spring_perch = self.car.corner_spring.rear_spring_perch_baseline_mm
                 rear_pushrod = rh_model.pushrod_for_target_rh(
@@ -353,16 +381,16 @@ class RakeSolver:
             rear_pushrod = round(rear_pushrod * 2) / 2
 
             # Recompute actual static RH from snapped pushrod
-            if rh_model.front_is_calibrated:
+            if rh_model.front_is_calibrated and _has_heave:
                 static_front = rh_model.predict_front_static_rh(
                     heave_nmm=self.car.front_heave_spring_nmm,
                     camber_deg=self.car.geometry.front_camber_baseline_deg,
                     pushrod_mm=front_pushrod,
-                    perch_mm=self.car.heave_spring.perch_offset_front_baseline_mm,
+                    perch_mm=_heave_perch_front_baseline(self.car),
                 )
             else:
                 static_front = self.car.pushrod.front_rh_for_offset(front_pushrod)
-            if rh_model.is_calibrated:
+            if _use_calibrated_rh:
                 static_rear = rh_model.predict_rear_static_rh(
                     rear_pushrod, baseline_third_nmm,
                     baseline_rear_spring, baseline_heave_perch,
@@ -381,17 +409,41 @@ class RakeSolver:
         front_min_p99 = actual_front_dyn - front_excursion_p99
         vb_margin = front_min_p99 - self.car.vortex_burst_threshold_mm
 
-        ld_cost = ld - free_opt_ld if free_opt_ld > 0 else 0.0
+        # NaN-safe L/D cost: balance-only maps (GT3) report L/D=NaN, free_opt_ld=NaN.
+        # The "cost of pinning" is undefined in that regime — propagate NaN so the
+        # report says "L/D unknown" instead of falsely claiming "no cost".
+        if math.isnan(ld) or math.isnan(free_opt_ld):
+            ld_cost = float("nan")
+        elif free_opt_ld > 0:
+            ld_cost = ld - free_opt_ld
+        else:
+            ld_cost = 0.0
 
         # Compute aero stall proximity at the dynamic front ride height
         stall = self.surface.stall_proximity(actual_front_dyn)
+
+        # ld_ratio / free_opt_ld serialization: round() preserves NaN.
+        _ld_ratio_out = round(ld, 3) if not math.isnan(ld) else float("nan")
+        _free_opt_ld_out = (
+            round(free_opt_ld, 3) if (not math.isnan(free_opt_ld) and free_opt_ld > 0) else 0.0
+        )
+        # When L/D is NaN, the "free vs pinned" comparison has no meaning.
+        if math.isnan(ld):
+            _free_opt_ld_out = float("nan")
+            _ld_cost_out = float("nan")
+        elif math.isnan(ld_cost):
+            _ld_cost_out = float("nan")
+        elif free_opt_ld > 0:
+            _ld_cost_out = round(ld_cost, 3)
+        else:
+            _ld_cost_out = 0.0
 
         return RakeSolution(
             dynamic_front_rh_mm=round(actual_front_dyn, 1),
             dynamic_rear_rh_mm=round(actual_rear_dyn, 1),
             rake_dynamic_mm=round(actual_rear_dyn - actual_front_dyn, 1),
             df_balance_pct=round(bal, 2),
-            ld_ratio=round(ld, 3),
+            ld_ratio=_ld_ratio_out,
             front_rh_excursion_p99_mm=round(front_excursion_p99, 1),
             front_rh_min_p99_mm=round(front_min_p99, 1),
             vortex_burst_threshold_mm=self.car.vortex_burst_threshold_mm,
@@ -408,8 +460,8 @@ class RakeSolver:
             converged=converged,
             iterations=iterations,
             mode=mode,
-            free_opt_ld=round(free_opt_ld, 3) if free_opt_ld > 0 else 0.0,
-            ld_cost_of_pinning=round(ld_cost, 3) if free_opt_ld > 0 else 0.0,
+            free_opt_ld=_free_opt_ld_out,
+            ld_cost_of_pinning=_ld_cost_out,
             aero_state=stall["aero_state"],
             stall_factor=stall["stall_factor"],
         )
@@ -432,7 +484,9 @@ class RakeSolver:
             pin_front_min: If True (default), pin front static RH at the sim
                 minimum (30.0mm) and solve only for rear. This matches real
                 GTP methodology where drivers always run minimum front RH for
-                maximum absolute downforce.
+                maximum absolute downforce. Forced to False for GT3 cars
+                (suspension_arch=GT3_COIL_4WHEEL) which have flat-floor aero,
+                no ground-effect vortex, and do not pin to the floor.
 
         Returns:
             RakeSolution with dynamic targets, static settings, and pushrod offsets.
@@ -447,6 +501,16 @@ class RakeSolver:
                         if self.track.shock_vel_p99_front_clean_mps > 0
                         else self.track.shock_vel_p99_front_mps)
         front_excursion_p99 = self.car.rh_excursion_p99(front_sv_p99)
+
+        # GT3 dispatch: balance-only search. Front-pinning is GTP/ground-effect
+        # specific (cars run at the sim floor for max DF); GT3 cars run at
+        # 50-72 mm static and don't have a vortex-burst floor. The GT3 mode
+        # searches both front and rear for target balance with no L/D
+        # objective and no vortex constraint.
+        if not self.car.suspension_arch.has_heave_third:
+            return self._solve_balance_only(
+                target_balance, balance_tolerance, front_excursion_p99, fuel_load_l
+            )
 
         if pin_front_min:
             return self._solve_pinned_front(
@@ -724,12 +788,14 @@ class RakeSolver:
         max_pushrod = pushrod_range[1]  # upper garage limit
 
         rh_model = self.car.ride_height_model
-        if rh_model.is_calibrated and abs(rh_model.rear_coeff_pushrod) > 1e-6:
+        # Calibrated RH model uses heave-spring baselines; skip for GT3 (no heave).
+        _has_heave = self.car.heave_spring is not None
+        if rh_model.is_calibrated and abs(rh_model.rear_coeff_pushrod) > 1e-6 and _has_heave:
             # Compute the max static rear RH achievable at max pushrod
             # using baseline spring values (step 2/3 haven't run yet)
             baseline_third = self.car.rear_third_spring_nmm
             baseline_spring = self.car.corner_spring.rear_spring_range_nmm[0]
-            baseline_perch = self.car.heave_spring.perch_offset_rear_baseline_mm
+            baseline_perch = _heave_perch_rear_baseline(self.car)
             baseline_fuel = self.car.fuel_capacity_l
             baseline_spring_perch = self.car.corner_spring.rear_spring_perch_baseline_mm
             max_static_rear = rh_model.predict_rear_static_rh(
@@ -853,7 +919,14 @@ class RakeSolver:
         """Find the maximum L/D achievable at target balance (for comparison).
 
         Quick grid search — used to compute the L/D cost of pinning front RH.
+
+        Returns NaN cleanly for balance-only aero maps (GT3) — there is no L/D
+        to maximise. The previous behaviour was ``best_ld > 0`` after seeding
+        with NaN, which silently returned 0.0 (falsely claiming "no cost of
+        pinning") on every GT3 surface. NaN forces callers to branch.
         """
+        if not self.surface.has_ld:
+            return float("nan")
         best_ld = -np.inf
         for frh in self.surface.front_rh:
             for rrh in self.surface.rear_rh:
@@ -867,9 +940,90 @@ class RakeSolver:
                 bal = self.surface.df_balance(float(frh), float(rrh))
                 if abs(bal - target_balance) <= 0.5:
                     ld = self.surface.lift_drag(float(frh), float(rrh))
-                    if ld > best_ld:
+                    # NaN-safe comparison: NaN > -inf is False, so best_ld stays at -inf
+                    if not math.isnan(ld) and ld > best_ld:
                         best_ld = ld
         return best_ld if best_ld > 0 else 0.0
+
+    def _solve_balance_only(
+        self,
+        target_balance: float,
+        balance_tolerance: float,
+        front_excursion_p99: float,
+        fuel_load_l: float,
+    ) -> RakeSolution:
+        """Balance-only search for GT3 cars (flat-floor, no L/D objective).
+
+        GT3 mode (suspension_arch=GT3_COIL_4WHEEL):
+          * No front-pinning — GT3 cars run static front 50-72 mm, well above
+            any "minimum" floor (the front-pin strategy is GTP/ground-effect
+            specific where running at the sim floor maximises absolute DF).
+          * No vortex-burst constraint — GT3 has flat-floor non-ground-effect
+            aero, so the vortex-collapse threshold doesn't apply.
+          * No L/D objective — the aero map is balance-only (``has_ld=False``);
+            ``lift_drag()`` returns NaN at every grid point.
+
+        Search strategy: at the car's static-RH baseline (mid-range), find the
+        rear dynamic RH that achieves target balance via root-finding.
+        Front dynamic RH is taken from the static baseline minus aero
+        compression. This is conservative until per-car driver-anchored static
+        RH defaults land in Wave 3.
+        """
+        comp = self.car.aero_compression
+        _aero_ref = self.track.aero_reference_speed_kph
+        track_speed = _aero_ref if _aero_ref > 0 else comp.ref_speed_kph
+
+        # Use the midpoint of the legal static front RH range as the baseline.
+        # GT3 manuals quote a "max-DF target" dyn front around 35 mm and
+        # min-drag around 17.5 mm. Until per-car defaults land, take the
+        # static-RH range midpoint as a neutral seed.
+        static_front_seed = 0.5 * (self.car.min_front_rh_static + self.car.max_front_rh_static)
+        dyn_front = max(
+            self.car.min_front_rh_dynamic,
+            static_front_seed - comp.front_at_speed(track_speed),
+        )
+
+        # Find rear dyn RH for target balance at the seeded front
+        dyn_rear = self._find_rear_for_balance(dyn_front, target_balance)
+        if dyn_rear is None:
+            # Closest-achievable fallback (same shape as _solve_pinned_front).
+            import warnings
+            rear_lo = self.car.min_rear_rh_dynamic
+            rear_hi = self.car.max_rear_rh_dynamic
+            best_rear = rear_lo
+            best_err = float("inf")
+            for rear_candidate in [rear_lo + i * (rear_hi - rear_lo) / 50 for i in range(51)]:
+                try:
+                    bal, _ = self._query_aero(dyn_front, rear_candidate)
+                    err = abs(bal - target_balance)
+                    if err < best_err:
+                        best_err = err
+                        best_rear = rear_candidate
+                except Exception as e:  # pragma: no cover - defensive
+                    logger.debug("Rear RH search iteration failed: %s", e)
+                    continue
+            achieved_bal, _ = self._query_aero(dyn_front, best_rear)
+            warnings.warn(
+                f"[rake_solver] Cannot achieve {target_balance:.2f}% DF balance at "
+                f"dynamic front RH {dyn_front:.1f}mm for {self.car.canonical_name}. "
+                f"Closest achievable: {achieved_bal:.2f}% at rear_dyn={best_rear:.1f}mm "
+                f"(error {best_err:.2f}pp).",
+                stacklevel=3,
+            )
+            dyn_rear = best_rear
+
+        # No L/D maximisation for balance-only maps; pass NaN.
+        return self._build_solution(
+            actual_front_dyn=dyn_front,
+            actual_rear_dyn=dyn_rear,
+            front_excursion_p99=front_excursion_p99,
+            target_balance=target_balance,
+            fuel_load_l=fuel_load_l,
+            converged=True,
+            iterations=1,
+            mode="balance_only_search",
+            free_opt_ld=float("nan"),
+        )
 
 
 def reconcile_ride_heights(
@@ -894,7 +1048,22 @@ def reconcile_ride_heights(
     rear RH from the aero balance target instead of relying on the potentially
     stale value in step1.dynamic_rear_rh_mm (which may have been computed with
     baseline springs in solution_from_explicit_offsets).
+
+    GT3 cars (heave_spring=None / Step 2 = HeaveSolution.null()) skip this
+    reconciliation: every code path below reads heave/third spring values and
+    perch baselines, all of which are absent. Until a GT3-specific RH model
+    and reconcile path land (Wave 3+), Step 1 statics remain at the rake
+    solver's initial output.
     """
+    if car.heave_spring is None:
+        if verbose:
+            logger.warning(
+                "reconcile_ride_heights: skipping for %s (GT3 / heave_spring=None — "
+                "RH reconciliation path requires a GT3 RH model that does not yet exist).",
+                car.canonical_name,
+            )
+        return
+
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is not None:
         front_camber = (
@@ -1114,7 +1283,11 @@ def reconcile_ride_heights(
                         step1.dynamic_front_rh_mm, step1.dynamic_rear_rh_mm
                     )
                     step1.df_balance_pct = round(surface.df_balance(af, ar), 2)
-                    step1.ld_ratio = round(surface.lift_drag(af, ar), 3)
+                    # NaN-safe L/D: balance-only maps return NaN cleanly.
+                    if surface.has_ld:
+                        step1.ld_ratio = round(surface.lift_drag(af, ar), 3)
+                    else:
+                        step1.ld_ratio = float("nan")
                 except Exception as e:
                     logger.debug("Aero balance update failed: %s", e)
         return

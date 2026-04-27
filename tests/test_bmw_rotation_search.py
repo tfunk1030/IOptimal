@@ -339,6 +339,11 @@ class SequentialSolveTelemetryTests(unittest.TestCase):
         fake_car = SimpleNamespace(
             canonical_name="bmw",
             corner_spring=SimpleNamespace(rear_motion_ratio=1.0),
+            # GT3 dispatch (W2.1): _run_sequential_solver branches on
+            # car.suspension_arch.has_heave_third before constructing the
+            # HeaveSolver. Stub the attribute as GTP (has_heave_third=True)
+            # so the BMW path is exercised, matching this test's intent.
+            suspension_arch=SimpleNamespace(has_heave_third=True),
         )
         fake_inputs = SolveChainInputs(
             car=fake_car,

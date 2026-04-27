@@ -431,7 +431,19 @@ def run_solver(args: "argparse.Namespace") -> None:
             log(cal_gate.check_step(1).instructions_text())
 
         # ─── Step 2: Heave / Third Springs ─────────────────────────────────
-        if step1 is not None and cal_gate.step_is_runnable(2):
+        # GT3 dispatch (W2.1): cars with no heave/third architecture skip
+        # Step 2 entirely. The N/A path produces a HeaveSolution.null() so
+        # that downstream Step 3+ can still run from Step 1 RH targets.
+        heave_solver = None
+        if step1 is not None and not car.suspension_arch.has_heave_third:
+            log()
+            log("Skipping Step 2: GT3 architecture has no heave/third springs.")
+            from solver.heave_solver import HeaveSolution as _HeaveSolutionLocal
+            step2 = _HeaveSolutionLocal.null(
+                front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+                rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            )
+        elif step1 is not None and cal_gate.step_is_runnable(2):
             log()
             log("Running Step 2: Heave / Third Springs...")
             log()
@@ -476,14 +488,15 @@ def run_solver(args: "argparse.Namespace") -> None:
             rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
             # ─── RH Reconciliation (after step2+step3 provide actual spring values) ──
-            heave_solver.reconcile_solution(
-                step1,
-                step2,
-                step3,
-                fuel_load_l=args.fuel,
-                front_camber_deg=car.geometry.front_camber_baseline_deg,
-                verbose=not args.json and not args.report_only,
-            )
+            if heave_solver is not None and getattr(step2, "present", True):
+                heave_solver.reconcile_solution(
+                    step1,
+                    step2,
+                    step3,
+                    fuel_load_l=args.fuel,
+                    front_camber_deg=car.geometry.front_camber_baseline_deg,
+                    verbose=not args.json and not args.report_only,
+                )
             reconcile_ride_heights(
                 car, step1, step2, step3,
                 fuel_load_l=args.fuel,
@@ -652,7 +665,14 @@ def run_solver(args: "argparse.Namespace") -> None:
     sensitivity_result = None
     space_result = None
 
-    if step2 is not None:
+    # GT3 dispatch (W2.1): the analyzer call sites below read step2.front_heave_nmm
+    # / step2.rear_third_nmm directly. On HeaveSolution.null() those are 0.0 and
+    # the analyzers would emit garbage, so gate on step2.present (replaces the
+    # legacy `step2 is not None` check). For GTP cars where step2 came from a
+    # real solve, step2.present is True and behaviour is unchanged.
+    _step2_real = step2 is not None and getattr(step2, "present", True)
+
+    if _step2_real:
         try:
             from solver.stint_model import analyze_stint
             stint_result = analyze_stint(
@@ -666,7 +686,7 @@ def run_solver(args: "argparse.Namespace") -> None:
         except Exception as e:
             log(f"[stint] Skipped: {e}")
 
-    if step1 is not None and step2 is not None and step4 is not None:
+    if step1 is not None and _step2_real and step4 is not None:
         try:
             from solver.sector_compromise import SectorCompromise
             from solver.supporting_solver import compute_brake_bias as _cbias_sec
@@ -684,7 +704,7 @@ def run_solver(args: "argparse.Namespace") -> None:
         except Exception as e:
             log(f"[sector] Skipped: {e}")
 
-    if step1 is not None and step2 is not None and step3 is not None:
+    if step1 is not None and _step2_real and step3 is not None:
         try:
             from solver.laptime_sensitivity import compute_laptime_sensitivity
             from solver.supporting_solver import compute_brake_bias as _cbias
@@ -702,7 +722,7 @@ def run_solver(args: "argparse.Namespace") -> None:
         except Exception as e:
             log(f"[sensitivity] Skipped: {e}")
 
-    if args.space and step1 is not None and step2 is not None and step3 is not None and step4 is not None:
+    if args.space and step1 is not None and _step2_real and step3 is not None and step4 is not None:
         try:
             from solver.setup_space import explore_setup_space
             space_result = explore_setup_space(
@@ -717,7 +737,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             log(f"[space] Skipped: {e}")
 
     # ─── Multi-Speed Compromise Analysis (--multi-speed) ──────────────
-    if args.multi_speed and step1 is not None and step2 is not None and step3 is not None:
+    if args.multi_speed and step1 is not None and _step2_real and step3 is not None:
         log("[EXPERIMENTAL] Multi-speed solver is research-only and not validated for production use.")
         try:
             from solver.multi_speed_solver import MultiSpeedSolver
@@ -752,7 +772,7 @@ def run_solver(args: "argparse.Namespace") -> None:
             log(f"[explore] Skipped: {e}")
 
     # ─── Bayesian Optimization (--bayesian) ───────────────────────────
-    if args.bayesian and all(s is not None for s in [step2, step3, step4, step5]):
+    if args.bayesian and _step2_real and all(s is not None for s in [step3, step4, step5]):
         log("[EXPERIMENTAL] Bayesian optimizer is research-only and not validated for production use.")
         try:
             from solver.bayesian_optimizer import BayesianOptimizer
@@ -775,8 +795,16 @@ def run_solver(args: "argparse.Namespace") -> None:
             log(f"[bayesian] Skipped: {e}")
 
     # ─── Legal-Manifold Search (--legal-search) ───────────────────────
-    # Requires all 6 steps to have produced output
-    _all_steps_present = all(s is not None for s in [step1, step2, step3, step4, step5, step6])
+    # Requires all 6 steps to have produced output. For GT3 cars Step 2 is
+    # `not_applicable`: HeaveSolution.null() is non-None but `present=False`
+    # — treat that as "Step 2 satisfied (vacuously)" so the search still runs.
+    def _step_satisfied(step) -> bool:
+        if step is None:
+            return False
+        return getattr(step, "present", True)
+    _all_steps_present = all(
+        _step_satisfied(s) for s in [step1, step2, step3, step4, step5, step6]
+    )
     if _all_steps_present and should_run_legal_manifold_search(
         free_mode=free_mode,
         explicit_search=getattr(args, "legal_search", False),
@@ -790,8 +818,6 @@ def run_solver(args: "argparse.Namespace") -> None:
             baseline_params = {
                 "front_pushrod_offset_mm": step1.front_pushrod_offset_mm,
                 "rear_pushrod_offset_mm": step1.rear_pushrod_offset_mm,
-                "front_heave_spring_nmm": step2.front_heave_nmm,
-                "rear_third_spring_nmm": step2.rear_third_nmm,
                 "rear_spring_rate_nmm": step3.rear_spring_rate_nmm,
                 "front_camber_deg": step5.front_camber_deg,
                 "rear_camber_deg": step5.rear_camber_deg,
@@ -808,6 +834,12 @@ def run_solver(args: "argparse.Namespace") -> None:
                 "rear_hs_comp": step6.lr.hs_comp,
                 "rear_hs_rbd": step6.lr.hs_rbd,
             }
+            # GT3 dispatch (W2.1): only include heave/third axes when the
+            # architecture has them. Otherwise the legal search would treat
+            # 0.0 as a perturbable axis on a non-existent spring.
+            if getattr(step2, "present", True):
+                baseline_params["front_heave_spring_nmm"] = step2.front_heave_nmm
+                baseline_params["rear_third_spring_nmm"] = step2.rear_third_nmm
             search_budget = getattr(args, "search_budget", 1000)
             ls_result = run_legal_search(
                 car=car,

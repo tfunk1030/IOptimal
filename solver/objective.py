@@ -1168,7 +1168,13 @@ class ObjectiveFunction:
                 # before querying (map x-axis = actual rear RH, y-axis = actual front RH).
                 af, ar = car.to_aero_coords(dyn_f, dyn_r)
                 result.df_balance_pct = surface.df_balance(af, ar)
-                result.ld_ratio = surface.lift_drag(af, ar)
+                # GT3 balance-only maps publish no L/D — surface.has_ld is False
+                # and lift_drag() returns NaN. Leave result.ld_ratio at its
+                # default (3.0) so downstream score = -ld * 2.0 contributes a
+                # constant offset for ALL GT3 candidates (no signal, no penalty).
+                if surface.has_ld:
+                    result.ld_ratio = surface.lift_drag(af, ar)
+                # else: keep dataclass default 3.0 — neutral offset for GT3
                 result.df_balance_error_pct = abs(
                     result.df_balance_pct - car.default_df_balance_pct
                 )

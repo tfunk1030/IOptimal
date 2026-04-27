@@ -1873,16 +1873,36 @@ class CarModel:
         This uses the BMW-calibrated effective heave mass and a baseline axle
         spring/damper state so Step 1 and Step 2 are at least directionally
         consistent about how bumps consume ride-height budget.
+
+        For GT3 cars (heave_spring=None) the per-axle effective mass falls
+        back to a coarse axle-share of the dry car mass + driver, since the
+        heave-spring model that normally publishes m_eff doesn't exist for
+        coil-only architectures. This is sufficient for Step 1 directional
+        sizing; Wave-3 GT3 calibration will replace it with measured values.
         """
         is_front = axle.lower().startswith("f")
         if is_front:
-            m_eff = self.heave_spring.front_m_eff_kg
-            k_nmm = spring_rate_nmm if spring_rate_nmm is not None else self.front_heave_spring_nmm
+            if self.heave_spring is not None:
+                m_eff = self.heave_spring.front_m_eff_kg
+                k_nmm = (spring_rate_nmm if spring_rate_nmm is not None
+                         else self.front_heave_spring_nmm)
+            else:
+                # GT3 fallback: front-axle share of sprung mass at zero fuel
+                m_eff = (self.mass_car_kg + self.mass_driver_kg) * self.weight_dist_front
+                # Coil corner spring as the heave-equivalent stiffness reference
+                k_nmm = (spring_rate_nmm if spring_rate_nmm is not None
+                         else 2.0 * self.corner_spring.rear_spring_range_nmm[0])
             c_nsm = damper_coeff_nsm if damper_coeff_nsm is not None else self.damper.front_hs_coefficient_nsm
             tyre_rate_nmm = self.tyre_vertical_rate_front_nmm
         else:
-            m_eff = self.heave_spring.rear_m_eff_kg
-            k_nmm = spring_rate_nmm if spring_rate_nmm is not None else self.rear_third_spring_nmm
+            if self.heave_spring is not None:
+                m_eff = self.heave_spring.rear_m_eff_kg
+                k_nmm = (spring_rate_nmm if spring_rate_nmm is not None
+                         else self.rear_third_spring_nmm)
+            else:
+                m_eff = (self.mass_car_kg + self.mass_driver_kg) * (1.0 - self.weight_dist_front)
+                k_nmm = (spring_rate_nmm if spring_rate_nmm is not None
+                         else 2.0 * self.corner_spring.rear_spring_range_nmm[0])
             c_nsm = damper_coeff_nsm if damper_coeff_nsm is not None else self.damper.rear_hs_coefficient_nsm
             tyre_rate_nmm = self.tyre_vertical_rate_rear_nmm
 

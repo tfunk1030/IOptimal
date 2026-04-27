@@ -24,27 +24,39 @@ class AeroSurface:
         wing_angle: Wing angle in degrees
         front_rh: 1D array of front ride height grid points (mm)
         rear_rh: 1D array of rear ride height grid points (mm)
+        has_ld: True if the aero map publishes L/D data; False for balance-only
+            maps (GT3 cars). When False, ``lift_drag()`` returns NaN cleanly
+            instead of raising — callers must branch on ``surface.has_ld``.
     """
 
     def __init__(self, car: str, wing_angle: float,
                  front_rh: np.ndarray, rear_rh: np.ndarray,
-                 balance: np.ndarray, ld: np.ndarray):
+                 balance: np.ndarray, ld: np.ndarray,
+                 *, has_ld: bool = True):
         self.car = car
         self.wing_angle = wing_angle
         self.front_rh = front_rh
         self.rear_rh = rear_rh
         self._balance_raw = balance
         self._ld_raw = ld
+        self.has_ld = has_ld
 
         # Build interpolators (front_rh = axis 0, rear_rh = axis 1)
         self._balance_interp = RegularGridInterpolator(
             (front_rh, rear_rh), balance,
             method="cubic", bounds_error=False, fill_value=np.nan,
         )
-        self._ld_interp = RegularGridInterpolator(
-            (front_rh, rear_rh), ld,
-            method="cubic", bounds_error=False, fill_value=np.nan,
-        )
+        # Balance-only maps (GT3) carry an all-NaN L/D grid — the cubic
+        # interpolator's solver rejects non-finite RHS values, so we skip
+        # constructing the L/D interpolator entirely. lift_drag() returns NaN
+        # via the has_ld guard.
+        if has_ld:
+            self._ld_interp = RegularGridInterpolator(
+                (front_rh, rear_rh), ld,
+                method="cubic", bounds_error=False, fill_value=np.nan,
+            )
+        else:
+            self._ld_interp = None
 
     def _clamp_rh(self, front_rh: float, rear_rh: float) -> tuple[float, float]:
         """Clamp ride heights to the grid boundaries to prevent extrapolation."""
@@ -82,8 +94,15 @@ class AeroSurface:
         return self._interp_or_raise(self._balance_interp, front_rh, rear_rh, "df_balance")
 
     def lift_drag(self, front_rh: float, rear_rh: float) -> float:
-        """Query L/D ratio at given ride heights."""
+        """Query L/D ratio at given ride heights.
+
+        Returns NaN cleanly for balance-only aero maps (``has_ld=False``,
+        e.g. GT3 cars). Callers that need a numeric L/D must branch on
+        ``surface.has_ld`` first.
+        """
         front_rh, rear_rh = self._clamp_rh(front_rh, rear_rh)
+        if not self.has_ld:
+            return float("nan")
         return self._interp_or_raise(self._ld_interp, front_rh, rear_rh, "L/D")
 
     def query(self, front_rh: float, rear_rh: float) -> dict:
@@ -204,7 +223,12 @@ class AeroSurface:
 
         If target_balance is specified, constrain to within balance_tolerance
         of that value.
+
+        For balance-only aero maps (``has_ld=False``) returns an explicit
+        error dict — there is no L/D to maximise.
         """
+        if not self.has_ld:
+            return {"error": "Aero map is balance-only — no L/D data available"}
         best_ld = -np.inf
         best_frh = None
         best_rrh = None
@@ -255,10 +279,16 @@ def load_car_surfaces(car: str) -> dict[float, AeroSurface]:
     surfaces = {}
     front_rh = data["front_rh"]
     rear_rh = data["rear_rh"]
+    # GT3 balance-only maps store an all-NaN L/D grid. Surface that flag so the
+    # rake solver / objective can branch instead of trying to interpolate NaN.
+    balance_only = bool(meta.get("balance_only", False))
 
     for wing in meta["wing_angles"]:
         balance = data[f"balance_{wing}"]
         ld = data[f"ld_{wing}"]
-        surfaces[wing] = AeroSurface(car, wing, front_rh, rear_rh, balance, ld)
+        surfaces[wing] = AeroSurface(
+            car, wing, front_rh, rear_rh, balance, ld,
+            has_ld=not balance_only,
+        )
 
     return surfaces
