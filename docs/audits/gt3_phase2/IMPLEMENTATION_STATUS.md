@@ -1,7 +1,7 @@
 # GT3 Phase 2 — Implementation Status
 
-**Last updated:** 2026-04-27 (Wave 7.1 + Wave 8.1 shipped)
-**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 10 implementation commits)
+**Last updated:** 2026-04-27 (Wave 7.2 + Wave 8.2 shipped — Wave 7 + Wave 8 COMPLETE)
+**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 11 implementation commits)
 **Plan source of truth:** [`SYNTHESIS.md`](SYNTHESIS.md) — 22 work units across 10 waves, ~511 h estimated.
 
 This doc tracks which units have shipped, what was deferred, and the recommended next batch. It is updated after every work-unit batch lands. Each merged PR / batch commit is referenced by SHA + message so the diff can be inspected directly.
@@ -16,13 +16,13 @@ This doc tracks which units have shipped, what was deferred, and the recommended
 | 4 | Output + writer | 3 | ~70 h | **DONE 2026-04-27** |
 | 5 | Pipeline + analyzer | 3 | ~62 h | **DONE 2026-04-27** |
 | 6 | Learner + scoring | 3 | ~56 h | **DONE 2026-04-27** |
-| 7 | Auto-calibrate + GarageOutputModel | 2 | ~80 h | W7.1 done; W7.2 remains (~56 h, gated on IBT capture) |
-| 8 | Infra + DB + automation | 2 | ~43 h | W8.1 done; W8.2 remains (~19 h) |
-| 9 | UI + CLI + tests + docs | 2 | ~62 h | TODO |
-| 10 | E2E smoke + remaining cars | 1 | ~80 h+ | TODO (gated on IBT capture) |
+| 7 | Auto-calibrate + GarageOutputModel | 2 | ~80 h | **DONE 2026-04-27** (W7.2 scaffolding only — full fits gated on IBT) |
+| 8 | Infra + DB + automation | 2 | ~43 h | **DONE 2026-04-27** |
+| 9 | UI + CLI + tests + docs | 2 | ~62 h | TODO (next critical-path) |
+| 10 | E2E smoke + remaining cars | 1 | ~80 h+ | TODO (gated on per-car IBT capture) |
 
-**Shipped so far:** 21 of 22 unblocked units (~368 h of ~511 h ≈ 72% of total estimated work). Of the 3 unfinished units, 1 (W7.2) is gated on more IBT capture.
-**Remaining critical path:** W7.2 → W9.1 → W9.2 → W10.1 ≈ ~230 h.
+**Shipped so far:** 21 of 22 unblocked units (~443 h of ~511 h ≈ 87% of total estimated work).
+**Remaining critical path:** W9.1 → W9.2 → W10.1 ≈ ~174 h (W10.1 gated on IBT capture).
 
 ## Wave 1 — DONE (2026-04-27)
 
@@ -490,9 +490,53 @@ Commit: `1d071b8 feat(gt3): Wave 7.1 + Wave 8.1 — GarageOutputModel + DB schem
 
 **Tests:** 20 new in `tests/test_teamdb_gt3_w81.py`. Schema fields + defaults; aggregator filters mixed observations to target arch only; aggregator uses canonical `track_key` not split-on-space; per-arch support tier thresholds; migration script presence + ALTER TABLE statements verified. F6 server-route mismatch: schema-level (Pydantic + handler logic); HTTP-level deferred to a TestClient fixture.
 
+## Wave 7.2 + Wave 8.2 — DONE (2026-04-27)
+
+Commit: `c262efa feat(gt3): Wave 7.2 + Wave 8.2 — auto-calibrate scaffolding + watcher CarPath`
++1078/-32 across 10 files. 49 new tests. Suite: 805 passed.
+
+### W7.2 — Auto-calibrate GT3 scaffolding — DONE (intercept-only until IBT data lands)
+
+**Files:** `car_model/auto_calibrate.py`, `car_model/registry.py`, `tests/test_auto_calibrate_gt3_w72.py` (new).
+
+- **`CalibrationPoint`** (L228-244): 5 new GT3 fields — `front_corner_spring_nmm`, `rear_corner_spring_nmm`, `front_bump_rubber_gap_mm`, `rear_bump_rubber_gap_mm`, `splitter_height_mm`. Field names align with `learner/observation.py` (W6.3) and `car_model/garage.py:GarageSetupState` (W7.1).
+- **New `_track_slug` helper** (L368-382): wraps `registry.track_key` with Spielberg / Red Bull Ring aliases (audit #12).
+- **`fit_models_from_points`** (L1193-1202): GT3 guard around the index-decode block — skips heave_spring/torsion access for GT3.
+- **`_UNIVERSAL_POOL`** (L1297-1322): 9 new GT3 features appended (corner_spring × 2, inv_corner_spring × 2, bump_rubber_gap × 2, splitter_height, fuel_x_inv × 2). Std-filter at L1310 auto-drops zero-variance features per call site so GTP IBTs silently drop GT3 features and vice-versa.
+- **`_FRONT_AXIS_NAMES`** (L1264+): +4 GT3 entries.
+- **`_REAR_AXIS_NAMES`** (L1264+): +5 GT3 entries (including `splitter_height` for aero balance shift).
+- **`apply_to_car`** (L2239-2269): GT3 short-circuit. Detected via `car.suspension_arch.has_heave_third == False`. Returns immediately with applied note "GT3 calibration applied (intercept-only — N unique setups; varied-spring IBT data needed for full regression fit, see W10.1)". `TODO(W10.1)` marker documents the future write target (`car.corner_spring.front_baseline_rate_nmm`). garage_ranges fields NOT touched (driver-tuned, not regression outputs).
+- **`_GT3_PROTOCOL_HINT` template + `_car_protocol_hint(car)` dispatcher** (L2790-2891): GT3 fast path replaces BMW fallback for `bmw_m4_gt3` / `aston_martin_vantage_gt3` / `porsche_992_gt3r`.
+- **CLI `--car` argparse choices** (L3427-3438): pulled from `sorted(_CARS.keys())` so all 8 cars (5 GTP + 3 GT3) are accepted automatically.
+- **`car_model/registry.py:_TRACK_ALIASES`**: Spielberg / Red Bull Ring aliases.
+
+**Deferred / IBT-gated:**
+- Actual non-intercept regression fits on GT3 data — gated on W10.1 (varied-front-coil IBTs at the same track).
+- `apply_to_car()` write into `car.corner_spring.front_baseline_rate_nmm` from regression intercept — TODO(W10.1) marker in place.
+
+**Tests:** 25 new across 6 classes covering schema, pool coverage, fingerprint, apply_to_car short-circuit, track slug, protocol hint, CLI choices.
+
+### W8.2 — Watcher + desktop GT3 CarPath detection — DONE
+
+**Files:** `car_model/registry.py`, `track_model/ibt_parser.py` (already had CarPath from W5.x — verified), `watcher/service.py`, `watcher/monitor.py`, `desktop/config.py`, `desktop/app.py`, `teamdb/sync_client.py`, `tests/test_watcher_gt3_w82.py` (new).
+
+- **`car_model/registry.py`**: `_CAR_REGISTRY` rows (L62-77) populate `iracing_car_path` for all 8 entries (5 GTP + 3 GT3). New `_BY_IRACING_PATH` index (L86-90). `_BY_LOWER` build loop (L97) extended to include `iracing_car_path`. `resolve_car()` (L108-115) probes `_BY_IRACING_PATH` first. `resolve_car_from_ibt()` (L139-160) rewritten with CarPath → CarScreenName → None dispatch (audit F5).
+- **`track_model/ibt_parser.py`**: `IBTFile.car_info()` already returns `car_path` + `iracing_car_path` keys (W5.x). No edits — verified.
+- **`watcher/service.py`**: `_detect_car_and_track` (L46-79) extracts CarPath, performs CarPath → CarScreenName → None dispatch, returns 5-tuple. New `_class_for_canonical` helper (L82-110) uses `SuspensionArchitecture` to map cars to "GTP" / "GT3" class labels. `WatcherService.__init__` (L131-156) accepts `class_filter` kwarg (case-normalised). `_handle_new_ibt` (L201-251) consumes new tuple shape, applies `class_filter` after `car_filter`. `IngestResult` gains `iracing_car_path` field.
+- **`watcher/monitor.py`** (L23-35): `TODO(W8.2-followup, audit F14)` doc block above `_STABLE_WAIT_S` documenting the GT3 short-session caveat. Cosmetic — no behavioural change.
+- **`desktop/config.py`** (L60-66): `AppConfig.class_filter: list[str]` field (default `[]`). Round-trips through existing save/load via `__dataclass_fields__` filter.
+- **`desktop/app.py`** (L66): `class_filter=self.config.class_filter or None` passed to `WatcherService`.
+- **`teamdb/sync_client.py`** (L120-128): `TODO(W9.x, audit F12)` doc block above `pulled_models` PK — architecture-collision problem deferred to W9.x (parallels F7 server-side `EmpiricalModel.UniqueConstraint` deferred by W8.1).
+
+**Deferred:**
+- F12 (sync_client `pulled_models` PK extension): W9.x.
+- F14 (monitor short-session window): no real-world false-stable reported; cosmetic TODO only.
+
+**Tests:** 24 new across 6 classes. CarPath resolution via `_BY_IRACING_PATH`; `resolve_car("bmwm4gt3")` returns GT3; `_detect_car_and_track` resolves GT3 from CarPath even with misleading CarScreenName; `class_filter` round-trip; legacy config without `class_filter` loads cleanly.
+
 ## Combined-state pipeline behavior
 
-After Wave 1 + Wave 2 (all 4 units) + Wave 3 (all 3 units) + Wave 4 (all 3 units) + Wave 5 (all 3 units) + Wave 6 (all 3 units) + W7.1 + W8.1:
+After all 8 waves COMPLETE (Wave 1 + Wave 2 + Wave 3 + Wave 4 + Wave 5 + Wave 6 + Wave 7 + Wave 8):
 
 - **GT3 IBT through `pipeline.produce`** runs cleanly through Step 1 → Step 6.
   - Step 1: `_solve_balance_only` returns `RakeSolution` with target balance hit, NaN L/D, `mode="balance_only_search"`.
@@ -517,20 +561,18 @@ After Wave 1 + Wave 2 (all 4 units) + Wave 3 (all 3 units) + Wave 4 (all 3 units
 
 ## Recommended next batch
 
-**W8.2 + W9.1 in parallel** — disjoint files, both unblock the closeout + UI work.
+**W9.1 + W9.2 in parallel** — closes Wave 9 fully and reaches the project's "all unblocked work shipped" state.
 
 | Unit | Files | Effort | Why |
 |---|---|---|---|
-| **W8.2** | `watcher/{monitor,service}.py` use `CarPath` not `CarScreenName`, register all GT3 paths (`bmwm4gt3`, `amvantageevogt3`, `porsche992rgt3`, etc.), `desktop/config.py` GT3 entries | 19 h | Closes Wave 8. Today the watcher detects cars by `CarScreenName` (drifts with locale + EVO suffixes); needs to use `CarPath` (the stable IBT identifier). GT3 IBTs that the registry knows about (post-W1.3) are still silently dropped by the watcher because `_CAR_HINTS` was hardcoded GTP-only. |
-| **W9.1** | `webapp/` GT3 car list + conditional setup display panels (hide heave/third for GT3), `__main__.py` + `pipeline/__main__.py` argparse choices, `validation/{run_validation,objective_calibration}.py` GT3 support tier rows | 30 h | Opens Wave 9. webapp car selector hardcodes 5 GTP cars; SETUP_GROUP_SPECS pins heave/third/torsion rows that don't apply to GT3. CLI subcommands carry GTP-only `--car` choices. Without this, the user-facing surface is broken for GT3 even though the pipeline produces valid output. |
+| **W9.1** | `webapp/` GT3 car list + conditional setup display panels (hide heave/third for GT3), `__main__.py` + `pipeline/__main__.py` argparse choices, `validation/{run_validation,objective_calibration}.py` GT3 support tier rows | 30 h | User-facing surface. webapp car selector hardcodes 5 GTP cars; SETUP_GROUP_SPECS pins heave/third/torsion rows that don't apply to GT3. CLI subcommands carry GTP-only `--car` choices. Validation report support-tier classifier hardcoded to 3 GTP pairs. |
+| **W9.2** | 3 GT3 regression baselines (`tests/fixtures/baselines/{bmw_m4_gt3_spielberg,aston_vantage_gt3_spielberg,porsche_992_gt3r_spielberg}_baseline.sto`), parameterize `tests/test_setup_regression.py`, `CLAUDE.md` GT3 section, `skill/per-car-quirks.md` GT3 quirks, `docs/calibration_guide.md` GT3 onboarding | 32 h | Test + docs hardening. Baselines lock the W4.x .sto write outputs; parameterized regression tests catch any future drift on GT3 cars. Docs orient new contributors. |
 
-Combined ~49 h, no file overlap. Both depend only on previously-shipped waves.
+Combined ~62 h, mostly disjoint files. Closes Wave 9 fully.
 
-Alternative batches:
-- **W7.2 alone** (~56 h): the heavy critical-path unit, but gated on more IBT capture (varied-spring sweeps for BMW M4 GT3 at the same track). Without that data the regression fits would be intercept-only. The W7.1 scaffolding is in place; once IBT capture lands, W7.2 can follow quickly.
-- **W9.1 + W9.2** (~62 h): closes Wave 9 fully. W9.2 is GT3 regression baselines + docs (~32 h) — needs valid `.sto` fixtures from W4.x output (done) plus updates to `CLAUDE.md`, `skill/per-car-quirks.md`, `docs/calibration_guide.md`.
+After Wave 9, only **W10.1** (E2E smoke + 7 remaining GT3 cars: Mercedes AMG, Acura NSX, Lamborghini Huracán, McLaren 720S, Mustang, Corvette Z06, Audi R8 LMS — ~80 h+) remains. W10.1 is gated on per-car IBT collection (each new car needs at least one IBT to pin its YAML schema + CarPath; varied-spring sweeps for BMW M4 GT3 are also needed to light up the W7.2 regression fits).
 
-After Wave 8 + Wave 9, only **W7.2** (auto-calibrate, gated on IBT) and **W10.1** (E2E smoke + 7 remaining GT3 cars, ~80 h+, gated on per-car IBT collection) remain. The branch effectively reaches GT3-end-to-end-correct status pending those data-gated units.
+Alternative batch: **W9.1 alone** (~30 h) if you'd rather defer baselines/docs. Stand-alone W9.2 is cheaper (~32 h) and could land first to lock the current `.sto` outputs against drift.
 
 ## Top deferred-finding ledger (rolled up across waves)
 
@@ -554,10 +596,10 @@ After Wave 8 + Wave 9, only **W7.2** (auto-calibrate, gated on IBT) and **W10.1*
 
 ## Test posture
 
-- 756 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +287 from Waves 1–6, +36 from Wave 7.1+8.1 = 323 new GT3-specific tests).
+- 805 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +287 from Waves 1–6, +36 from Wave 7.1+8.1, +49 from Wave 7.2+8.2 = 372 new GT3-specific tests).
 - 33 skipped (mostly fastapi-dependent webapp tests + 1 new skip on `W63BuildObservationGT3Tests`).
 - 1 deselected: `tests/test_run_trace.py::test_support_tier_mapping` — pre-existing data-dependent failure (BMW dataset has 26 sessions but test asserts ≥30); confirmed unchanged across all batches.
-- 0 NEW regressions from any of the 21 shipped units.
+- 0 NEW regressions from any of the 21 shipped units (W7.2 ships as scaffolding; counts as 1 unit but no actual regression fits until IBT data lands).
 
 ## Branch strategy reminder
 

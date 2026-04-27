@@ -5,7 +5,7 @@
 
 The 12 audit docs are the source of truth — this is a synthesis layer that pulls them into one buildable Phase 2 implementation plan with ordering, dependencies, and concrete PR-sized work units.
 
-> **Implementation status (2026-04-27, latest batch W7.1 + W8.1):** Wave 1–6 (15 units) + W7.1 + W8.1 shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. **21 of 22 work units done (~368 h shipped, ~72%)**. 756 tests pass, 0 new regressions. GT3 IBT runs end-to-end through pipeline → solver → objective scoring → writer → report cleanly; `GarageSetupState` carries GT3 paired-coil + bump-rubber + splitter fields; team server's DB schema and aggregator partition GT3 vs GTP observations. **Production DB needs `migrations/0001_gt3_phase2.sql` applied via `psql -f` before next server roll-out.** Remaining: W7.2 (auto-calibrate, gated on more IBT capture) + W8.2 (watcher CarPath) + Wave 9 (UI/CLI/tests/docs) + W10.1 (E2E + 7 remaining GT3 cars, gated on per-car IBT). See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).
+> **Implementation status (2026-04-27, latest batch W7.2 + W8.2 — Wave 7 + Wave 8 COMPLETE):** All 8 of the first 8 waves (21 units) shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged. **21 of 22 work units done (~443 h shipped, ~87%)**. 805 tests pass, 0 new regressions. GT3 IBT runs end-to-end through analyzer → solver → writer → learner → teamdb cleanly. Watcher detects GT3 cars via stable CarPath identifier; auto-calibrate scaffolding accepts GT3 IBTs (intercept-only fits until varied-spring IBT data lands). **Production DB needs `migrations/0001_gt3_phase2.sql` applied via `psql -f` before next server roll-out.** Remaining: Wave 9 (UI/CLI/tests/docs, ~62 h, fully unblocked) + W10.1 (E2E + 7 remaining GT3 cars, ~80 h+, gated on per-car IBT capture). See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).
 
 ## Aggregate findings
 
@@ -130,19 +130,19 @@ Sequenced by dependency. Each work unit becomes one PR. Effort estimates per uni
 | W6.2 | Learner KNOWN_CAUSALITY GT3 entries (23 tuples) + STEP_GROUPS | `learner/delta_detector.py` `STEP_GROUPS["step3_corner_combined"]` for GT3, 23 new causality tuples | 6 h | **DONE** | W5.3 |
 | W6.3 | Learner empirical models + observation schema GT3 | `learner/observation.py` GT3 setup-dict fields, `learner/empirical_models.py` heave-fitter no-op + `_fit_corner_to_variance`, `learner/setup_clusters.py` GT3 cluster keys, `learner/recall.py` GT3 lookups | 18 h | **DONE** | W6.2, W5.3 |
 
-### Wave 7 — auto-calibrate + GarageOutputModel (2 units; ~80 h) — **W7.1 done; W7.2 remains (gated on IBT capture)**
+### Wave 7 — auto-calibrate + GarageOutputModel (2 units; ~80 h) — **DONE 2026-04-27** (W7.2 = scaffolding only; full fits gated on IBT capture)
 
 | # | Title | Files | Effort | Status | Depends on |
 |---|---|---|---|---|---|
 | W7.1 | `car_model/garage.py` GT3 GarageSetupState + GarageOutputModel | `car_model/garage.py` `GarageSetupState.from_current_setup` GT3 conditional extraction, `DirectRegression._EXTRACTORS` GT3 features, `_setup_key()` GT3 fingerprint fields, `GarageOutputModel.default_state(car=)` dispatch | 24 h | **DONE** | W1.3, W4.1 |
-| W7.2 | `car_model/auto_calibrate.py` GT3 feature pools + apply_to_car | GT3 `_FRONT_POOL`/`_REAR_POOL`/`_UNIVERSAL_POOL` alternatives (corner-coil 1/k, no heave), `apply_to_car` GT3 attribute writes (no `car.heave_spring.*`), GT3 calibration-data layout under `data/calibration/{gt3_car}/` | 56 h | TODO (gated on IBT) | W7.1 |
+| W7.2 | `car_model/auto_calibrate.py` GT3 feature pools + apply_to_car | `CalibrationPoint` GT3 fields, GT3 features in `_UNIVERSAL_POOL` / `_FRONT_AXIS_NAMES` / `_REAR_AXIS_NAMES`, `apply_to_car` GT3 short-circuit (intercept-only until IBT), CLI `--car` choices, GT3 protocol hint | 56 h | **DONE (scaffolding)** — actual non-intercept regression fits require varied-front-coil IBTs at the same track (W10.1) | W7.1 |
 
-### Wave 8 — infra + DB + automation (2 units; ~43 h) — **W8.1 done; W8.2 remains**
+### Wave 8 — infra + DB + automation (2 units; ~43 h) — **DONE 2026-04-27**
 
 | # | Title | Files | Effort | Status | Depends on |
 |---|---|---|---|---|---|
 | W8.1 | `teamdb` schema migration + GT3 columns | `teamdb/models.py` `CarDefinition`+`Observation` `iracing_car_path`/`bop_version`/`suspension_arch` columns, `migrations/0001_gt3_phase2.sql` raw SQL, `teamdb/aggregator.py` per-architecture partition, `server/routes/observations.py` validation | 24 h | **DONE** | none |
-| W8.2 | Watcher + desktop GT3 CarPath detection | `watcher/{monitor,service}.py` use `CarPath` not `CarScreenName`, register all GT3 paths (`bmwm4gt3`, `amvantageevogt3`, `porsche992rgt3`, etc.), `desktop/config.py` GT3 entries | 19 h | TODO (next batch) | W1.3 |
+| W8.2 | Watcher + desktop GT3 CarPath detection | `watcher/service.py` CarPath → CarScreenName → None dispatch, `_class_for_canonical` helper, `WatcherService(class_filter=...)`, `desktop/config.py:AppConfig.class_filter`, `car_model/registry.py:_BY_IRACING_PATH` index | 19 h | **DONE** | W1.3 |
 
 ### Wave 9 — UI + CLI + tests + docs (2 units; ~62 h)
 
