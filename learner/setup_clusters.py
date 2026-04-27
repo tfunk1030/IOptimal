@@ -39,6 +39,70 @@ DEFAULT_SETUP_PARAMETERS = [
 ]
 
 
+# Common (architecture-agnostic) setup axes
+_COMMON_SETUP_PARAMETERS = [
+    "front_pushrod_mm",
+    "rear_pushrod_mm",
+    "front_arb_blade",
+    "rear_arb_blade",
+    "front_camber_deg",
+    "rear_camber_deg",
+    "front_toe_mm",
+    "rear_toe_mm",
+    "brake_bias_pct",
+    "diff_preload_nm",
+]
+
+# GTP heave/third + torsion-bar-front spring axes
+_GTP_SPRING_PARAMETERS = [
+    "front_heave_nmm",
+    "rear_third_nmm",
+    "front_torsion_od_mm",
+    "rear_spring_nmm",
+]
+
+# GT3 paired-coil + bump-rubber + splitter axes (audit BLOCKER #7)
+_GT3_SPRING_PARAMETERS = [
+    "front_corner_spring_nmm",
+    "rear_corner_spring_nmm",
+    "front_bump_rubber_gap_mm",
+    "rear_bump_rubber_gap_mm",
+    "splitter_height_mm",
+]
+
+
+def setup_parameters_for_arch(arch: Any) -> list[str]:
+    """Return architecture-aware setup parameter list for cluster fingerprinting.
+
+    GTP cars get the legacy heave/third + torsion-bar parameter set. GT3 cars
+    get paired-coil + bump-rubber + splitter parameters. Unknown architectures
+    fall back to the GTP layout for backward compat.
+
+    Audit reference: docs/audits/gt3_phase2/learner.md BLOCKER #7. Without this
+    dispatch, GT3 setups land in the cluster center with only pushrod + arb +
+    camber + toe + brake_bias + diff_preload — the springs that distinguish
+    GT3 setups most are silently absent, making cluster fingerprints collide
+    far more often.
+    """
+    try:
+        from car_model.cars import SuspensionArchitecture
+    except Exception:  # pragma: no cover
+        SuspensionArchitecture = None  # type: ignore[assignment]
+
+    has_heave_third = bool(getattr(arch, "has_heave_third", False))
+    is_gt3 = (
+        SuspensionArchitecture is not None
+        and arch is SuspensionArchitecture.GT3_COIL_4WHEEL
+    )
+
+    if has_heave_third:
+        return _GTP_SPRING_PARAMETERS + _COMMON_SETUP_PARAMETERS
+    if is_gt3:
+        return _GT3_SPRING_PARAMETERS + _COMMON_SETUP_PARAMETERS
+    # Unknown architecture: GTP layout for backward compat.
+    return _GTP_SPRING_PARAMETERS + _COMMON_SETUP_PARAMETERS
+
+
 def _extract_value(sample: Any, parameter: str) -> float | None:
     if isinstance(sample, dict):
         value = sample.get(parameter)

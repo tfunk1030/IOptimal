@@ -187,7 +187,14 @@ class KnowledgeRecall:
         )
 
     def most_impactful_parameters(self, car: str, track: str) -> RecallResult:
-        """Query: 'Which parameters have the biggest effect on lap time?'"""
+        """Query: 'Which parameters have the biggest effect on lap time?'
+
+        NOTE(audit COSMETIC #16): downstream of the W6.2 ``KNOWN_CAUSALITY``
+        +``STEP_GROUPS`` fixes, GT3 corner-spring deltas now generate hypotheses
+        and contribute to ``_fit_lap_time_sensitivity``. Before W6.2 they did
+        not, so older GT3 model files may still under-represent springs in this
+        ranking. Refit with ``learner.ingest --refit`` to repopulate.
+        """
         models = self._load_models(car, track)
         if models is None or not models.most_sensitive_parameters:
             return RecallResult(

@@ -754,9 +754,24 @@ def _generate_insights(
         if conf in ("high", "medium") and d.get("key_finding"):
             insights["key_insights"].append(d["key_finding"])
 
-    # Setup parameter trends
-    params_to_track = ["front_heave_nmm", "rear_third_nmm", "rear_arb_blade",
-                        "front_camber_deg", "rear_camber_deg"]
+    # Setup parameter trends — architecture-aware (audit DEGRADED #12).
+    # For GT3 cars, surface corner-spring + splitter trends; for GTP cars,
+    # surface heave/third trends.
+    try:
+        from car_model.cars import SuspensionArchitecture, get_car
+        car_obj = get_car(car, apply_calibration=False)
+        is_gt3 = car_obj.suspension_arch is SuspensionArchitecture.GT3_COIL_4WHEEL
+    except Exception:
+        is_gt3 = False
+    if is_gt3:
+        params_to_track = [
+            "front_corner_spring_nmm", "rear_corner_spring_nmm",
+            "rear_arb_blade", "front_camber_deg", "rear_camber_deg",
+            "splitter_height_mm",
+        ]
+    else:
+        params_to_track = ["front_heave_nmm", "rear_third_nmm", "rear_arb_blade",
+                            "front_camber_deg", "rear_camber_deg"]
     for param in params_to_track:
         values = []
         for obs in observations:

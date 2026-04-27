@@ -187,10 +187,16 @@ def fit_models(
     _record_roll_distribution_proxy(observations, models)
 
     # ── 3. Heave spring → platform variance ────────────────────────
+    # GTP: front_heave_nmm → front_rh_std_mm
+    # GT3: front_corner_spring_nmm → front_rh_std_mm (paired-coil)
     _fit_heave_to_variance(observations, models)
+    _fit_corner_spring_to_variance(observations, models, axle="front")
 
     # ── 4. Third spring → rear variance ────────────────────────────
+    # GTP: rear_third_nmm → rear_rh_std_mm
+    # GT3: rear_corner_spring_nmm → rear_rh_std_mm (paired-coil)
     _fit_third_to_variance(observations, models)
+    _fit_corner_spring_to_variance(observations, models, axle="rear")
 
     # ── 5. Aero compression model ──────────────────────────────────
     _fit_aero_compression(observations, models)
@@ -326,6 +332,55 @@ def _fit_third_to_variance(obs_list: list[dict], models: EmpiricalModelSet) -> N
                 name="Rear RH variance vs third spring",
                 x_param="rear_third_nmm",
                 y_param="rear_rh_std_mm",
+                fit_type="linear",
+                coefficients=coeffs,
+                r_squared=r2,
+                sample_count=len(x),
+                x_values=x,
+                y_values=y,
+                x_min=min(x),
+                x_max=max(x),
+            )
+
+
+def _fit_corner_spring_to_variance(
+    obs_list: list[dict],
+    models: EmpiricalModelSet,
+    axle: str,
+) -> None:
+    """Fit GT3 paired-coil corner-spring → axle RH variance relationship.
+
+    Audit BLOCKER #3 (docs/audits/gt3_phase2/learner.md lines 124-160).
+
+    For a GT3 paired-coil axle the parallel stiffness seen in heave motion is
+    ``2 × per_corner_spring_nmm`` (left + right in parallel). Empirically we
+    just need the slope, so feeding per-corner k into ``np.polyfit`` is fine —
+    the factor of 2 absorbs into the regression intercept. Same shape as
+    ``_fit_heave_to_variance`` for GTP cars.
+    """
+    if axle not in ("front", "rear"):
+        raise ValueError(f"axle must be 'front' or 'rear', got {axle!r}")
+
+    setup_key = f"{axle}_corner_spring_nmm"
+    tel_key = f"{axle}_rh_std_mm"
+    rel_key = f"{axle}_rh_var_vs_corner_spring"
+    rel_name = f"{axle.capitalize()} RH variance vs corner spring"
+
+    x, y = [], []
+    for obs in obs_list:
+        spring = obs.get("setup", {}).get(setup_key)
+        var = obs.get("telemetry", {}).get(tel_key, 0)
+        if spring and spring > 0 and var > 0:
+            x.append(float(spring))
+            y.append(float(var))
+
+    if len(x) >= 4:
+        coeffs, r2 = _safe_linear_fit(x, y)
+        if coeffs:
+            models.relationships[rel_key] = FittedRelationship(
+                name=rel_name,
+                x_param=setup_key,
+                y_param=tel_key,
                 fit_type="linear",
                 coefficients=coeffs,
                 r_squared=r2,
@@ -808,6 +863,24 @@ def _compute_corrections(obs_list: list[dict], models: EmpiricalModelSet) -> Non
     # rather than corrupt the correction).
     car_for_decode = _get_car_for_decode(models.car)
 
+    # Audit BLOCKER #4: m_eff calibration is GTP-only today. The current
+    # closed-form (m_eff = k * (exc/v)²) reads ``front_heave_nmm`` and decodes
+    # via ``car.heave_spring`` — both unavailable on GT3. For GT3 cars the
+    # parallel front spring rate is ``2 × front_corner_spring_nmm`` and the
+    # same kinematic relationship holds, but the formula needs validation
+    # against IBT before we wire it into the correction loop.
+    # TODO(W7.x): add GT3 corner-spring m_eff path once we have varied-spring
+    # IBT capture for at least one GT3 car at the same track.
+    is_gt3_arch = (
+        car_for_decode is not None
+        and getattr(car_for_decode, "heave_spring", None) is None
+    )
+    if is_gt3_arch:
+        # Skip the GTP-only m_eff loop entirely for GT3. Empty
+        # ``m_eff_front_values`` does not corrupt downstream consumers — the
+        # correction key simply does not appear in models.corrections.
+        return
+
     for obs in obs_list:
         heave_raw = obs.get("setup", {}).get("front_heave_nmm", 0) or 0.0
         telem = obs.get("telemetry", {})
@@ -958,6 +1031,11 @@ def fit_prediction_errors(
         "front_pressure_hot_kpa": "front_pressure_mean_kpa",
         "rear_pressure_hot_kpa": "rear_pressure_mean_kpa",
         "m_eff_front_kg": None,  # no direct telemetry equivalent
+        # GT3 RH-floor proxies (audit BLOCKER #6 — splitter scrape and bump
+        # rubber engagement are the GT3 equivalents of GTP heave-bottoming).
+        "splitter_scrape_events": "splitter_scrape_events",
+        "front_bump_rubber_contact_pct": "front_bump_rubber_contact_pct",
+        "rear_bump_rubber_contact_pct": "rear_bump_rubber_contact_pct",
     }
 
     now = datetime.now(timezone.utc)
