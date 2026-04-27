@@ -1,7 +1,7 @@
 # GT3 Phase 2 — Implementation Status
 
-**Last updated:** 2026-04-27 (Wave 4.1 + Wave 3.3 shipped)
-**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 5 implementation commits)
+**Last updated:** 2026-04-27 (Wave 4.2 + Wave 5.2 shipped)
+**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 6 implementation commits)
 **Plan source of truth:** [`SYNTHESIS.md`](SYNTHESIS.md) — 22 work units across 10 waves, ~511 h estimated.
 
 This doc tracks which units have shipped, what was deferred, and the recommended next batch. It is updated after every work-unit batch lands. Each merged PR / batch commit is referenced by SHA + message so the diff can be inspected directly.
@@ -13,16 +13,16 @@ This doc tracks which units have shipped, what was deferred, and the recommended
 | 1 | Foundation invariants | 3 | ~20 h | **DONE 2026-04-27** |
 | 2 | Solver chain unblocks | 4 | ~76 h | **DONE 2026-04-27** |
 | 3 | Solver chain crash fixes | 3 | ~30 h | **DONE 2026-04-27** |
-| 4 | Output + writer | 3 | ~70 h | W4.1 done; W4.2 + W4.3 remain (~38 h) |
-| 5 | Pipeline + analyzer | 3 | ~62 h | TODO |
+| 4 | Output + writer | 3 | ~70 h | W4.1 + W4.2 done; W4.3 remains (~14 h) |
+| 5 | Pipeline + analyzer | 3 | ~62 h | W5.2 done; W5.1 + W5.3 remain (~38 h) |
 | 6 | Learner + scoring | 3 | ~56 h | TODO |
 | 7 | Auto-calibrate + GarageOutputModel | 2 | ~80 h | TODO |
 | 8 | Infra + DB + automation | 2 | ~43 h | TODO |
 | 9 | UI + CLI + tests + docs | 2 | ~62 h | TODO |
 | 10 | E2E smoke + remaining cars | 1 | ~80 h+ | TODO (gated on IBT capture) |
 
-**Shipped so far:** 11 of 22 units (~182 h of ~511 h ≈ 36% of total estimated work).
-**Remaining critical path:** W4.2 → W4.3 → W7.1 → W7.2 → W9.1 → W9.2 → W10.1 ≈ ~230 h.
+**Shipped so far:** 13 of 22 units (~230 h of ~511 h ≈ 45% of total estimated work).
+**Remaining critical path:** W4.3 → W7.1 → W7.2 → W9.1 → W9.2 → W10.1 ≈ ~206 h.
 
 ## Wave 1 — DONE (2026-04-27)
 
@@ -257,9 +257,60 @@ Commit: `9f746be feat(gt3): Wave 4.1 + Wave 3.3 — BMW M4 GT3 .sto writer + fue
 
 **Tests:** 13 new in `tests/test_fuel_constants_gt3.py`. `DamperSolver(BMW_M4_GT3, ...)` raises with "100L"; analyze_stint covers `[100, 55, 10]` not `[89, 50, 12]`. GTP regression locked.
 
+## Wave 4.2 + Wave 5.2 — DONE (2026-04-27)
+
+Commit: `d124944 feat(gt3): Wave 4.2 + Wave 5.2 — Aston/Porsche writer + analyzer GT3 dispatch`
++1307/-24 across 9 files. 39 new tests. Suite: 641 passed.
+
+### W4.2 — Aston Vantage + Porsche 992 GT3 R setup writer — DONE
+
+**Files:** `output/setup_writer.py`, `tests/test_setup_writer_gt3_aston_porsche.py` (new).
+
+- **`_ASTON_MARTIN_VANTAGE_GT3_PARAM_IDS` dict (L604-688)** — verbatim from `output.md:367-441`. ~50 entries with Aston-specific divergences: `FrontBrakesLights` section, `FarbBlades`/`RarbBlades`, `AeroBalanceCalculator` suffix, `EpasSetting`/`ThrottleResponse`/`EnduranceLights`/`NightLedStripColor`.
+- **`_PORSCHE_992_GT3R_PARAM_IDS` dict (L691-768)** — verbatim from `output.md:443-518`. Porsche-unique: integer `ArbSetting`/`RarbSetting` (no blade), paired `Chassis.Rear.TotalToeIn`, `Chassis.FrontBrakesLights.FuelLevel`, `ThrottleShapeSetting`/`DashDisplayPage`.
+- **Both registered** in `_CAR_PARAM_IDS` (L770-771).
+- **Per-car GT3 sub-dispatch** with `is_aston_gt3` / `is_porsche_gt3` flags (L1141-1142):
+  - ARB encoding: BMW/Aston use blade keys (`front_arb_blades` → ArbBlades / FarbBlades); Porsche uses `front_arb_setting` → ArbSetting (single int).
+  - Rear toe: BMW + Aston per-wheel; Porsche paired (avg of LR/RR) at L1423.
+  - TC label suffix dispatch (L1576-1583): "n (TC)" BMW, "n (TC SLIP)" Aston, "n (TC-LAT)" Porsche.
+  - Aston-only fields written at L1594+.
+  - Porsche-only fields written at L1600+ with defaults sourced from `docs/gt3_session_info_porsche_992_gt3r_spielberg_2026-04-26.yaml`.
+  - Roll/3rd-damper guard now respects `is_porsche_gt3` (L1452) — phantom-write protection.
+
+**Deferred (W4.3):** driver-`current_setup` passthrough for new display fields (currently placeholders), `BumpRubberGap` value sourcing, iRacing schema round-trip validation.
+
+**Tests:** 23 new in `tests/test_setup_writer_gt3_aston_porsche.py`. Per-car field presence + forbidden field absence + BMW M4 GT3 regression.
+
+### W5.2 — Analyzer setup_reader / setup_schema / sto_adapters GT3 dispatch — DONE
+
+**Files:** `analyzer/setup_reader.py`, `analyzer/setup_schema.py`, `analyzer/sto_adapters.py`, `analyzer/sto_binary.py`, `analyzer/extract.py` (TODO markers), `analyzer/diagnose.py` (TODO markers), `tests/test_analyzer_setup_reader_gt3.py` (new).
+
+- **`analyzer/setup_reader.py`** (L20-25, 28, 125, 338-355, 405-411, 519-537, 762-767, 802):
+  - `GT3_CANONICALS` / `GTP_CANONICALS` constants.
+  - `_parse_indexed_label` helper strips "X (TC SLIP)" / "X (TC-LAT)" / "X (ABS)" → int.
+  - `_read_gt3_setup(cs, car_canonical)` per-car YAML-path dispatch (front section name, ARB encoding, fuel location, rear toe shape).
+  - GT3 dataclass fields: `front_corner_spring_nmm`, bump rubber gaps × 4, splitter, ARB settings, EPAS/throttle/cross-weight.
+  - `from_ibt` GT3 early-return; `adapter_name` whitelist accepts GT3 canonicals; `summary()` GT3 branch.
+- **`analyzer/setup_schema.py`** (L88-209, 268-277, 452-470):
+  - `_GT3_KNOWN_FIELD_MAP` per-car XML field-id table (BMW M4 GT3 / Aston / Porsche, ~35 entries each).
+  - `get_known_fields(car)` dispatcher.
+  - `_manual_constraints` `hasattr()` guards — early-return `(None, None, None)` when GT3 GarageRanges lacks heave/torsion fields.
+- **`analyzer/sto_adapters.py`** (L447-451, 482-501):
+  - `_GT3_CANONICALS` frozenset.
+  - GT3 branch returns `"<canonical>_v3_container"` instead of generic fallback.
+- **`analyzer/sto_binary.py`** (L28-34): 3 GT3 entries prepended to `_CAR_HINTS` (longer-match-first ordering).
+- **TODO(W5.3) markers added** per spec: `extract.py:96` (lltd_measured alias / A16), `extract.py:1443+1450` (`_extract_heave_deflection` / A17), `diagnose.py:179` (`_check_safety` heave bottoming alarms / A18).
+
+**Audit corrections discovered:**
+- Porsche `ThrottleShapeSetting` actually under `Chassis.InCarAdjustments`, not `Chassis.FrontBrakesLights` as audit stated.
+- `ThrottleShapeSetting` is plain integer, not indexed-label string.
+- Wing angle appears redundantly in `Chassis.Rear` AND `TiresAero.AeroBalanceCalc`; reader prefers AeroBalanceCalc.
+
+**Tests:** 16 new in `tests/test_analyzer_setup_reader_gt3.py`. Loaded existing `docs/gt3_session_info_*.yaml` files as fixtures directly. GTP regression locked.
+
 ## Combined-state pipeline behavior
 
-After Wave 1 + Wave 2 (all 4 units) + Wave 3 (all 3 units) + Wave 4.1:
+After Wave 1 + Wave 2 (all 4 units) + Wave 3 (all 3 units) + Wave 4.1 + Wave 4.2 + Wave 5.2:
 
 - **GT3 IBT through `pipeline.produce`** runs cleanly through Step 1 → Step 6.
   - Step 1: `_solve_balance_only` returns `RakeSolution` with target balance hit, NaN L/D, `mode="balance_only_search"`.
@@ -268,8 +319,8 @@ After Wave 1 + Wave 2 (all 4 units) + Wave 3 (all 3 units) + Wave 4.1:
   - **Step 4: `ARBSolution` with size-label live tuning** — search rotates from baseline. Porsche 992 RR LLTD targets the empirically-correct 0.45 (was over-targeting at 0.499).
   - Step 5: Geometry runs (consumes step3 + step4).
   - **Step 6: Dampers respect per-car polarity + range.** GT3 L/R adjustments collapsed to per-axle averages (no silent .sto write loss).
-- **Setup writer (`output/setup_writer.py`)** **now writes a valid `.sto` for BMW M4 GT3 EVO** (well-formed XML, all required CarSetup_* fields present, no GTP-only fields leaked). **iRacing schema round-trip not yet validated** — that's W4.3.
-- **Setup writer for Aston Vantage GT3 + Porsche 992 GT3 R** still raises (no PARAM_IDS dicts yet) — that's W4.2.
+- **Setup writer (`output/setup_writer.py`)** **now writes a valid `.sto` for all 3 sampled GT3 cars** (BMW M4 GT3 EVO, Aston Vantage GT3 EVO, Porsche 911 GT3 R / 992) — well-formed XML, all required CarSetup_* fields present, no GTP-only fields leaked, per-car YAML divergences honoured. **iRacing schema round-trip not yet validated** — that's W4.3.
+- **Analyzer setup_reader** parses GT3 YAML setup data correctly (was silently falling to BMW GTP path or "unknown"). `sto_binary` recognises GT3 STO filenames; `sto_adapters` returns car-specific adapter_name; `setup_schema` describes GT3 fields via `_GT3_KNOWN_FIELD_MAP`.
 - **Fuel constants** (`damper_solver`, `stint_model`) now derive per-car: GT3 cars (100/104/106 L) get correct stint analysis and damper corner-mass; no silent 89L BMW-GTP fallback.
 - **Legal-search (`legal_space.py`)** drops heave/third/torsion axes for GT3.
 - **Modifier object** no longer carries dead GT3 heave-floor values.
@@ -277,11 +328,16 @@ After Wave 1 + Wave 2 (all 4 units) + Wave 3 (all 3 units) + Wave 4.1:
 
 ## Recommended next batch
 
-**W4.2 alone** is the next critical-path unit (~24 h, single agent). It adds Aston Vantage GT3 + Porsche 992 GT3 R PARAM_IDS dicts to `output/setup_writer.py`. Porsche 992 has 5+ structural divergences from BMW M4 GT3 (integer ARB encoding `ArbSetting` not blade, paired rear `TotalToeIn` not per-wheel, `FuelLevel` in front section, separate `Chassis.FrontBrakesLights.*` instead of `Chassis.FrontBrakes.*`, `DashDisplayPage` only on Porsche). Aston has 4 unique fields (`EnduranceLights`, `NightLedStripColor`, `ThrottleResponse`, `EpasSetting`) plus `FrontBrakesLights` / `FarbBlades`+`RarbBlades` / `AeroBalanceCalculator` (vs BMW's `AeroBalanceCalc`).
+**W4.3 + W5.3 in parallel** — disjoint files, both unblock the final-mile GT3 cleanup before W7.x.
 
-Alternative parallel batch: **W4.2 + W5.2 (analyzer setup_reader GT3 schema dispatch)** — disjoint files (`output/setup_writer.py` vs `analyzer/setup_reader.py` + `analyzer/setup_schema.py` + `analyzer/sto_adapters.py`), ~48 h combined. W5.2 unblocks the IBT-→analyzer-→pipeline path for GT3 (currently the analyzer falls back to BMW GTP YAML mappings on GT3 input).
+| Unit | Files | Effort | Why |
+|---|---|---|---|
+| **W4.3** | `output/garage_validator.py` (`_clamp_step3` / `_fix_slider` / `_fix_torsion_bar_defl` / `_fix_front_rh` GT3 early-returns), `output/report.py` (heave/third → 4-corner spring display for GT3, audit O28-O35), `output/bundle.py` step2.present guards, new GT3 GarageRanges fields (`bump_rubber_gap`, `splitter_height`) | 14 h | Closes Wave 4. After this, GT3 .sto write is end-to-end clean (validators don't mutate, report renders correctly). iRacing schema round-trip validation also lands here. |
+| **W5.3** | `analyzer/extract.py` heave channels optional + `lltd_measured` alias removed for GT3 (A16, A17), `analyzer/diagnose.py` skip heave-bottoming for GT3 (A18), `analyzer/causal_graph.py` GT3 nodes (A19) | 14 h | Closes Wave 5 analyzer work. Marked TODO(W5.3) by W5.2; current GT3 IBT still fires phantom heave-bottoming critical alarms with "stiffen heave spring" recommendations. |
 
-After W4.2 / W4.3, the next critical-path is **W7.1 / W7.2** (auto-calibrate + GarageOutputModel for GT3 — ~80 h, gated on more IBT capture: varied-spring sweeps for BMW M4 GT3 at the same track).
+Combined ~28 h, no file overlap, both depend only on previous waves (done). After this batch, **Wave 4 and Wave 5 are complete** and the next critical-path is **W7.1 / W7.2** (auto-calibrate + GarageOutputModel for GT3 — ~80 h, gated on more IBT capture: varied-spring sweeps for BMW M4 GT3 at the same track).
+
+Optional alternative batch: **W5.1 (pipeline produce/reason/report GT3 conditional, ~24 h)** alone — closes Wave 5 first leg. W5.1 needs heave_spring access guards + JSON output guards + alias dict + display panels in `pipeline/{produce,reason,report}.py`.
 
 ## Top deferred-finding ledger (rolled up across waves)
 
@@ -305,10 +361,10 @@ After W4.2 / W4.3, the next critical-path is **W7.1 / W7.2** (auto-calibrate + G
 
 ## Test posture
 
-- 602 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +56 from Wave 1, +21 from Wave 2.1+2.2, +33 from Wave 2.3+3.1, +30 from Wave 2.4+3.2, +29 from Wave 4.1+3.3 = 169 new GT3-specific tests).
+- 641 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +56 from Wave 1, +21 from Wave 2.1+2.2, +33 from Wave 2.3+3.1, +30 from Wave 2.4+3.2, +29 from Wave 4.1+3.3, +39 from Wave 4.2+5.2 = 208 new GT3-specific tests).
 - 32 skipped (mostly fastapi-dependent webapp tests in this sandbox).
 - 1 deselected: `tests/test_run_trace.py::test_support_tier_mapping` — pre-existing data-dependent failure (BMW dataset has 26 sessions but test asserts ≥30); confirmed unchanged across all batches.
-- 0 NEW regressions from any of the 11 shipped units.
+- 0 NEW regressions from any of the 13 shipped units.
 
 ## Branch strategy reminder
 

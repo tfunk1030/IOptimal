@@ -5,7 +5,7 @@
 
 The 12 audit docs are the source of truth — this is a synthesis layer that pulls them into one buildable Phase 2 implementation plan with ordering, dependencies, and concrete PR-sized work units.
 
-> **Implementation status (2026-04-27, latest batch W4.1 + W3.3):** Wave 1 (W1.1–W1.3) + Wave 2 (W2.1–W2.4) + Wave 3 (W3.1–W3.3) + W4.1 shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. 11 of 22 work units done (~182 h shipped). 602 tests pass, 0 new regressions. GT3 IBT runs through Step 1 → Step 6 cleanly **and writes a valid `.sto` file for BMW M4 GT3 EVO**. iRacing schema round-trip not yet validated (W4.3). Aston + Porsche 992 setup writers (W4.2) and output validator GT3 guards (W4.3) remain. See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the full progress log.
+> **Implementation status (2026-04-27, latest batch W4.2 + W5.2):** Wave 1 (W1.1–W1.3) + Wave 2 (W2.1–W2.4) + Wave 3 (W3.1–W3.3) + W4.1 + W4.2 + W5.2 shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. 13 of 22 work units done (~230 h shipped, ~45%). 641 tests pass, 0 new regressions. GT3 IBT runs end-to-end and **writes valid `.sto` files for all 3 sampled GT3 cars** (BMW M4 GT3 EVO, Aston Vantage GT3 EVO, Porsche 911 GT3 R / 992) with per-car YAML divergences honoured. Analyzer setup_reader correctly parses GT3 YAML (was silently falling to BMW GTP path). W4.3 (output validators + iRacing schema round-trip) and W5.3 (analyzer extract/diagnose GT3 awareness) remain. See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the full progress log.
 
 ## Aggregate findings
 
@@ -106,21 +106,21 @@ Sequenced by dependency. Each work unit becomes one PR. Effort estimates per uni
 | W3.2 | Damper polarity + range per-car | `solver/damper_solver.py`, `car_model/cars.py` `DamperModel.click_polarity` + `click_range`, per-car overrides for Audi/McLaren/Corvette/Porsche/Acura | 14 h | **DONE** | W1.1 |
 | W3.3 | Fuel constants generalized | `solver/scenario_profiles.py` per-class fuel cap, `solver/{damper,stint}_model.py` hardcoded 89L removed | 8 h | **DONE** | none |
 
-### Wave 4 — output + writer (3 units; ~70 h) — **W4.1 done; W4.2 + W4.3 remain**
+### Wave 4 — output + writer (3 units; ~70 h) — **W4.1 + W4.2 done; W4.3 remains**
 
 | # | Title | Files | Effort | Status | Depends on |
 |---|---|---|---|---|---|
 | W4.1 | Setup writer GT3 dispatch — BMW M4 GT3 EVO | `output/setup_writer.py` `_BMW_M4_GT3_PARAM_IDS` + per-axle damper collapse | 16 h | **DONE** | W1.3, W2.1, W3.2 |
-| W4.2 | Setup writer GT3 dispatch — Aston Vantage + Porsche 992 | `output/setup_writer.py` `_ASTON_VANTAGE_GT3_PARAM_IDS`, `_PORSCHE_992_GT3R_PARAM_IDS` (Porsche has integer ARB encoding, paired rear TotalToeIn, FuelLevel-in-front) | 24 h | TODO (next critical-path) | W4.1 |
-| W4.3 | Output guards + GT3 garage validator + report | `output/garage_validator.py`, `output/report.py`, `output/bundle.py` step2.present guards; new GT3 GarageRanges fields (`bump_rubber_gap`, `splitter_height`) | 14 h | TODO | W1.2, W4.1 |
+| W4.2 | Setup writer GT3 dispatch — Aston Vantage + Porsche 992 | `output/setup_writer.py` `_ASTON_VANTAGE_GT3_PARAM_IDS`, `_PORSCHE_992_GT3R_PARAM_IDS` | 24 h | **DONE** | W4.1 |
+| W4.3 | Output guards + GT3 garage validator + report | `output/garage_validator.py`, `output/report.py`, `output/bundle.py` step2.present guards; new GT3 GarageRanges fields (`bump_rubber_gap`, `splitter_height`); iRacing schema round-trip | 14 h | TODO (next critical-path) | W1.2, W4.1 |
 
-### Wave 5 — pipeline + analyzer (3 units; ~62 h)
+### Wave 5 — pipeline + analyzer (3 units; ~62 h) — **W5.2 done; W5.1 + W5.3 remain**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W5.1 | Pipeline produce/reason/report GT3 conditional | `pipeline/produce.py` (heave_spring access, JSON output guards, alias dict), `pipeline/reason.py` (heave floor checks), `pipeline/report.py` (display panels) | 24 h | W1.1, W1.2, W2.1 |
-| W5.2 | Analyzer setup_reader GT3 schema dispatch | `analyzer/setup_reader.py` adapter_name whitelist, GT3 per-axle damper branch, `analyzer/setup_schema.py` `_KNOWN_FIELD_MAP` GT3 paths, `analyzer/sto_adapters.py` GT3 entries | 24 h | W1.3 |
-| W5.3 | Analyzer diagnose + extract GT3 awareness | `analyzer/diagnose.py` skip heave-bottoming for GT3, `analyzer/extract.py` heave channels optional, `analyzer/causal_graph.py` GT3 nodes | 14 h | W5.2 |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W5.1 | Pipeline produce/reason/report GT3 conditional | `pipeline/produce.py` (heave_spring access, JSON output guards, alias dict), `pipeline/reason.py` (heave floor checks), `pipeline/report.py` (display panels) | 24 h | TODO | W1.1, W1.2, W2.1 |
+| W5.2 | Analyzer setup_reader GT3 schema dispatch | `analyzer/setup_reader.py` adapter_name whitelist, GT3 per-axle damper branch, `analyzer/setup_schema.py` `_KNOWN_FIELD_MAP` GT3 paths, `analyzer/sto_adapters.py` GT3 entries | 24 h | **DONE** | W1.3 |
+| W5.3 | Analyzer diagnose + extract GT3 awareness | `analyzer/diagnose.py` skip heave-bottoming for GT3, `analyzer/extract.py` heave channels optional, `analyzer/causal_graph.py` GT3 nodes | 14 h | TODO (batchable with W4.3) | W5.2 |
 
 ### Wave 6 — learner + scoring (3 units; ~56 h)
 
