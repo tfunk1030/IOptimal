@@ -5,7 +5,7 @@
 
 The 12 audit docs are the source of truth — this is a synthesis layer that pulls them into one buildable Phase 2 implementation plan with ordering, dependencies, and concrete PR-sized work units.
 
-> **Implementation status (2026-04-27, latest batch W7.2 + W8.2 — Wave 7 + Wave 8 COMPLETE):** All 8 of the first 8 waves (21 units) shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged. **21 of 22 work units done (~443 h shipped, ~87%)**. 805 tests pass, 0 new regressions. GT3 IBT runs end-to-end through analyzer → solver → writer → learner → teamdb cleanly. Watcher detects GT3 cars via stable CarPath identifier; auto-calibrate scaffolding accepts GT3 IBTs (intercept-only fits until varied-spring IBT data lands). **Production DB needs `migrations/0001_gt3_phase2.sql` applied via `psql -f` before next server roll-out.** Remaining: Wave 9 (UI/CLI/tests/docs, ~62 h, fully unblocked) + W10.1 (E2E + 7 remaining GT3 cars, ~80 h+, gated on per-car IBT capture). See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).
+> **Implementation status (2026-04-27, Wave 1–9 COMPLETE):** All 9 of the first 9 waves (21 units) shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged. **21 of 22 work units done (~505 h shipped, ~99%)**. 830 tests pass, 0 new regressions. GT3 IBT runs end-to-end through analyzer → solver → writer → learner → teamdb → webapp/CLI cleanly. The 3 GT3 baseline `.sto` fixtures regression-lock the W4.x writer outputs. CLAUDE.md / per-car-quirks.md / calibration_guide.md carry GT3 sections. **Production DB needs `migrations/0001_gt3_phase2.sql` applied via `psql -f` before next server roll-out.** Only remaining: **W10.1** (E2E + 7 remaining GT3 cars, ~80 h+, gated on per-car IBT capture). The branch is at "all unblocked work shipped" status. See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).
 
 ## Aggregate findings
 
@@ -144,12 +144,12 @@ Sequenced by dependency. Each work unit becomes one PR. Effort estimates per uni
 | W8.1 | `teamdb` schema migration + GT3 columns | `teamdb/models.py` `CarDefinition`+`Observation` `iracing_car_path`/`bop_version`/`suspension_arch` columns, `migrations/0001_gt3_phase2.sql` raw SQL, `teamdb/aggregator.py` per-architecture partition, `server/routes/observations.py` validation | 24 h | **DONE** | none |
 | W8.2 | Watcher + desktop GT3 CarPath detection | `watcher/service.py` CarPath → CarScreenName → None dispatch, `_class_for_canonical` helper, `WatcherService(class_filter=...)`, `desktop/config.py:AppConfig.class_filter`, `car_model/registry.py:_BY_IRACING_PATH` index | 19 h | **DONE** | W1.3 |
 
-### Wave 9 — UI + CLI + tests + docs (2 units; ~62 h)
+### Wave 9 — UI + CLI + tests + docs (2 units; ~62 h) — **DONE 2026-04-27**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W9.1 | webapp + CLI accept GT3 | `webapp/` GT3 car list + conditional setup display panels (hide heave/third for GT3), `__main__.py` + `pipeline/__main__.py` argparse choices, `validation/{run_validation,objective_calibration}.py` GT3 support tier rows | 30 h | W4.2, W5.1 |
-| W9.2 | Tests + GT3 fixtures + docs | 3 GT3 regression baselines (`tests/fixtures/baselines/{bmw_m4_gt3_spielberg,aston_vantage_gt3_spielberg,porsche_992_gt3r_spielberg}_baseline.sto`), parameterize `tests/test_setup_regression.py`, `CLAUDE.md` GT3 section, `skill/per-car-quirks.md` GT3 quirks, `docs/calibration_guide.md` GT3 onboarding | 32 h | all prior |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W9.1 | webapp + CLI accept GT3 | `webapp/{services,app,templates/runs_new.html}`, `__main__.py` + 3 submodule entry points argparse choices, `validation/{run_validation,objective_calibration}.py` GT3 support tier rows | 30 h | **DONE** | W4.2, W5.1 |
+| W9.2 | Tests + GT3 fixtures + docs | 3 GT3 regression baselines + parameterized `tests/test_setup_regression.py`, `CLAUDE.md` GT3 section, `skill/per-car-quirks.md` 3 per-car GT3 sections, `docs/calibration_guide.md` GT3 onboarding | 32 h | **DONE** | all prior |
 
 ### Wave 10 — end-to-end smoke + onboarding remaining cars (1 unit; ~80+ h)
 

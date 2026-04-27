@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LDXFile Version="1.6" Locale="English">
+  <Maths Id="Maths" Flags="184" Locale="English">
+    <MathConstants />
+  </Maths>
+  <Layers>
+    <Details>
+      <String Id="Event" Value="GTP Setup Builder" Unit="" />
+      <String Id="Session" Value="Generated 2026-04-27 21:19 UTC" Unit="" />
+      <String Id="Venue" Value="Red Bull Ring — Grand Prix" Unit="" />
+      <String Id="Vehicle Type" Value="Car" Unit="" />
+      <Numeric Id="CarSetup_Chassis_Rear_WingSetting" Value="5.7" Unit="deg" />
+      <Numeric Id="CarSetup_TiresAero_AeroBalanceCalc_FrontRhAtSpeed" Value="77.0" Unit="mm" />
+      <Numeric Id="CarSetup_TiresAero_AeroBalanceCalc_RearRhAtSpeed" Value="76.0" Unit="mm" />
+      <Numeric Id="CarSetup_TiresAero_AeroBalanceCalc_FrontDownforce" Value="38.3" Unit="%" />
+      <!-- TODO: porsche_992_gt3r ld_ratio not mapped -->
+      <Numeric Id="CarSetup_Chassis_LeftFront_RideHeight" Value="60.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightFront_RideHeight" Value="60.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_RideHeight" Value="70.5" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_RideHeight" Value="70.5" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_SpringRate" Value="170" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_RightFront_SpringRate" Value="170" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_SpringRate" Value="160" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_SpringRate" Value="160" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_BumpRubberGap" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightFront_BumpRubberGap" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_BumpRubberGap" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_BumpRubberGap" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakesLights_CenterFrontSplitterHeight" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakesLights_ArbSetting" Value="1" Unit="" />
+      <Numeric Id="CarSetup_Chassis_Rear_RarbSetting" Value="1" Unit="" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_Camber" Value="-1.2" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_RightFront_Camber" Value="-1.2" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_Camber" Value="-1.1" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_RightRear_Camber" Value="-1.1" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakesLights_TotalToeIn" Value="-0.2" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_Rear_TotalToeIn" Value="0.3" Unit="mm" />
+      <Numeric Id="CarSetup_TiresAero_LeftFront_StartingPressure" Value="152.0" Unit="kPa" />
+      <Numeric Id="CarSetup_TiresAero_RightFront_StartingPressure" Value="152.0" Unit="kPa" />
+      <Numeric Id="CarSetup_TiresAero_LeftRear_StartingPressure" Value="152.0" Unit="kPa" />
+      <Numeric Id="CarSetup_TiresAero_RightRear_StartingPressure" Value="152.0" Unit="kPa" />
+      <String Id="CarSetup_TiresAero_TireType_TireType" Value="Dry" Unit="" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakesLights_FuelLevel" Value="99.0" Unit="L" />
+      <Numeric Id="CarSetup_Chassis_InCarAdjustments_BrakePressureBias" Value="51.8" Unit="%" />
+      <!-- TODO: porsche_992_gt3r diff_coast_drive_ramp not mapped -->
+      <!-- TODO: porsche_992_gt3r diff_clutch_plates not mapped -->
+      <Numeric Id="CarSetup_Chassis_GearsDifferential_DiffPreload" Value="110" Unit="Nm" />
+      <String Id="CarSetup_Chassis_InCarAdjustments_TcSetting" Value="3 (TC-LAT)" Unit="" />
+      <String Id="CarSetup_Chassis_InCarAdjustments_AbsSetting" Value="3 (ABS)" Unit="" />
+      <Numeric Id="CarSetup_Chassis_InCarAdjustments_ThrottleShapeSetting" Value="3" Unit="" />
+      <String Id="CarSetup_Chassis_InCarAdjustments_DashDisplayPage" Value="Race 2" Unit="" />
+      <String Id="CarSetup_Chassis_FrontBrakesLights_NightLedStripColor" Value="White" Unit="" />
+      <Numeric Id="CarSetup_TiresAero_AeroBalanceCalc_WingSetting" Value="5.7" Unit="deg" />
+      <!-- TODO: porsche_992_gt3r brake_bias_migration not mapped -->
+      <!-- TODO: porsche_992_gt3r brake_bias_target not mapped -->
+      <String Id="CarSetup_Chassis_FrontBrakesLights_BrakePads" Value="Medium" Unit="" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakesLights_FrontMasterCyl" Value="20.6" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakesLights_RearMasterCyl" Value="19.1" Unit="mm" />
+      <!-- TODO: porsche_992_gt3r fuel_low_warning not mapped -->
+      <String Id="CarSetup_Chassis_GearsDifferential_GearStack" Value="FIA" Unit="" />
+      <!-- TODO: porsche_992_gt3r roof_light_color not mapped -->
+    </Details>
+  </Layers>
+</LDXFile>

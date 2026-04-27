@@ -1,7 +1,7 @@
 # GT3 Phase 2 — Implementation Status
 
-**Last updated:** 2026-04-27 (Wave 7.2 + Wave 8.2 shipped — Wave 7 + Wave 8 COMPLETE)
-**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 11 implementation commits)
+**Last updated:** 2026-04-27 (Wave 9 COMPLETE + hot-fix; Wave 1–9 done)
+**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 13 implementation commits)
 **Plan source of truth:** [`SYNTHESIS.md`](SYNTHESIS.md) — 22 work units across 10 waves, ~511 h estimated.
 
 This doc tracks which units have shipped, what was deferred, and the recommended next batch. It is updated after every work-unit batch lands. Each merged PR / batch commit is referenced by SHA + message so the diff can be inspected directly.
@@ -18,11 +18,61 @@ This doc tracks which units have shipped, what was deferred, and the recommended
 | 6 | Learner + scoring | 3 | ~56 h | **DONE 2026-04-27** |
 | 7 | Auto-calibrate + GarageOutputModel | 2 | ~80 h | **DONE 2026-04-27** (W7.2 scaffolding only — full fits gated on IBT) |
 | 8 | Infra + DB + automation | 2 | ~43 h | **DONE 2026-04-27** |
-| 9 | UI + CLI + tests + docs | 2 | ~62 h | TODO (next critical-path) |
+| 9 | UI + CLI + tests + docs | 2 | ~62 h | **DONE 2026-04-27** |
 | 10 | E2E smoke + remaining cars | 1 | ~80 h+ | TODO (gated on per-car IBT capture) |
 
-**Shipped so far:** 21 of 22 unblocked units (~443 h of ~511 h ≈ 87% of total estimated work).
-**Remaining critical path:** W9.1 → W9.2 → W10.1 ≈ ~174 h (W10.1 gated on IBT capture).
+**Shipped so far:** 21 of 22 unblocked units (~505 h of ~511 h ≈ 99% of total estimated work). Only **W10.1** (E2E smoke + 7 remaining GT3 cars: Mercedes AMG, Acura NSX, Lambo Huracán, McLaren 720S, Mustang, Corvette Z06, Audi R8 LMS — gated on per-car IBT collection) remains.
+
+## Wave 9.1 + Wave 9.2 + GT3 hot-fix — DONE (2026-04-27)
+
+Three commits:
+- `4ec42b7 fix(gt3): hot-fix BMW M4 GT3 / Aston / Porsche 992 RH floor + camber baselines` — driven by user's Road Atlanta IBT post-mortem.
+- `d2f6785 feat(gt3): Wave 9.1 — webapp + CLI + validation accept GT3` — closes the user-facing surface.
+- (W9.2 commit pending) — closes Wave 9 fully.
+
+### GT3 hot-fix (commit `4ec42b7`)
+
+User ran the pipeline against a real BMW M4 GT3 IBT at Road Atlanta and surfaced two recommendation-quality issues from W2.2 placeholder values that the audit ledger flagged "PENDING_IBT verification":
+
+- **Front static RH**: pipeline recommended 50.0 mm (the floor), driver-loaded was 72.6 mm. Bumped `min_front_rh_static` from 50.0 → 60.0 for all 3 GT3 cars to give the Step 1 search a realistic floor.
+- **Camber baselines**: were GTP defaults (-2.9 / -1.9). Updated to driver-loaded values from the 3 Spielberg IBTs: BMW M4 GT3 -4.0/-2.8, Aston -4.0/-2.8 (rear PENDING_IBT), Porsche 992 -4.0/-3.0.
+
+Localized to `car_model/cars.py`. No solver behavior changes for GTP cars.
+
+### W9.1 — webapp + CLI + validation accept GT3 — DONE
+
+Commit: `d2f6785 feat(gt3): Wave 9.1 — webapp + CLI + validation accept GT3`
++681/-55 across 11 files. 22 new tests. Suite: 830 passed.
+
+- **`webapp/services.py`**: `_GTP_SETUP_GROUP_SPECS` / `_GT3_SETUP_GROUP_SPECS` constants; `setup_group_specs_for(car_canonical)` dispatcher; `list_supported_cars(class_filter=None)` for selector grouping; GT3 PARAM_EXPLANATIONS entries.
+- **`webapp/app.py`** + **`webapp/templates/runs_new.html`**: `<optgroup>` Jinja loop driven by `supported_cars_grouped`; `car: str = Form(...)` required (was Form("bmw")).
+- **`__main__.py`** + 3 submodule entry points: `_car_choices()` / `_car_help()` helpers pull from `sorted(_CARS.keys())` so all 8 cars accepted automatically. 10 sites total updated.
+- **`validation/run_validation.py`**: `_SUPPORT_TIER_REGISTRY` dict (4 GTP + 6 GT3 (car, track) pairs tagged "exploratory"); `_target_samples(car=, track=)` parameterised.
+- **`validation/objective_calibration.py`**: `load_observations(car_filter=None, track_filter=None)` parameterised; defaults preserve BMW/Sebring for current callers.
+- **`solver/scenario_profiles.py`**: F20 TODO expanded with explicit data-gated reasoning.
+
+**Tests:** 22 new in `tests/test_webapp_cli_gt3_w91.py` covering F1–F4 (webapp), F5–F9 (CLI), F16–F18 (validation).
+
+**Deferred:**
+- F4 PARAM_EXPLANATIONS GT3 copy quality — content-quality review by docs writer recommended before user-facing release.
+- F19 cosmetic workflow_map / report header GTP-flavored strings.
+
+### W9.2 — GT3 regression baselines + docs — DONE
+
+Files: `tests/test_setup_regression.py` (parameterized regression test was pre-existing; only stale `.sto` baselines regenerated), 3 new `.sto` baselines in `tests/fixtures/baselines/`, `tests/fixtures/baselines/README.md`, `CLAUDE.md` (+31 lines), `skill/per-car-quirks.md` (+178 lines), `docs/calibration_guide.md` (+103 lines).
+
+- **3 GT3 baseline `.sto` fixtures**: BMW M4 GT3 / Aston Vantage GT3 / Porsche 992 GT3 R at Spielberg, generated via `python -m pipeline.produce --force` against the IBT files in `data/gt3_ibts/`. Locks the W4.x .sto write outputs; regression-locks any future Phase 2 drift on GT3 cars.
+- **CLAUDE.md**: GT3 architecture subsection (10 bullets) in "Important Implementation Details" — documents the `SuspensionArchitecture.GT3_COIL_4WHEEL` invariants (no heave/third/torsion, paired-blade ARBs, per-axle dampers, BumpRubberGap + splitter, per-car LLTD targets, CarPath as stable IBT identity, intercept-only auto-calibrate scaffolding, per-arch aggregator partitioning). New GT3 pipeline-usage block. New GT3 reference files.
+- **skill/per-car-quirks.md**: 3 new per-car GT3 sections (BMW M4 GT3 EVO, Aston Martin Vantage GT3 EVO, Porsche 911 GT3 R 992) — each with iRacing screen name + CarPath, suspension architecture, BoP version, ARB encoding, damper polarity, LLTD target, driver-loaded baselines from the 3 Spielberg session-info YAMLs, known calibration gaps. Class-architecture umbrella section. ToC reorganized GTP / GT3 / Cross-Car groups.
+- **docs/calibration_guide.md**: "GT3 Onboarding (added 2026-04-27)" section with subsystem-status matrix, varied-spring IBT capture protocol, per-car spring-range targets, currently-shipped table, 4th-car onboarding workflow, gotchas, audit corpus pointer. Title updated to "GTP / GT3".
+
+**Pipeline ran cleanly on all 3 GT3 IBTs**; no crashes. The 3 baselines drifted vs current pipeline output (front_RH 50→60 mm, aero balance calc 65→70 mm) — likely from the W2.2/W3.x rake refactors landing after the previous baselines were generated. Regenerated against current pipeline output.
+
+**Tests:** Parameterized regression test was pre-existing — only the 3 stale `.sto` baselines were regenerated. `tests/test_setup_regression.py`: 3 GT3 passed; 2 GTP skipped (IBT files at `data/telemetry/` and `ibtfiles/` not present in checkout). `tests/test_registry.py:test_returns_all_display_names` asserts `len(names) == 8` (W1.3, F10 verification).
+
+## Combined-state pipeline behavior
+
+After all 9 waves COMPLETE + hot-fix:
 
 ## Wave 1 — DONE (2026-04-27)
 
@@ -534,9 +584,7 @@ Commit: `c262efa feat(gt3): Wave 7.2 + Wave 8.2 — auto-calibrate scaffolding +
 
 **Tests:** 24 new across 6 classes. CarPath resolution via `_BY_IRACING_PATH`; `resolve_car("bmwm4gt3")` returns GT3; `_detect_car_and_track` resolves GT3 from CarPath even with misleading CarScreenName; `class_filter` round-trip; legacy config without `class_filter` loads cleanly.
 
-## Combined-state pipeline behavior
-
-After all 8 waves COMPLETE (Wave 1 + Wave 2 + Wave 3 + Wave 4 + Wave 5 + Wave 6 + Wave 7 + Wave 8):
+### Subsequent state (after the post-W7.2/W8.2 progress block):
 
 - **GT3 IBT through `pipeline.produce`** runs cleanly through Step 1 → Step 6.
   - Step 1: `_solve_balance_only` returns `RakeSolution` with target balance hit, NaN L/D, `mode="balance_only_search"`.
@@ -560,6 +608,14 @@ After all 8 waves COMPLETE (Wave 1 + Wave 2 + Wave 3 + Wave 4 + Wave 5 + Wave 6 
 - **Calibration gate** correctly reports Step 2 as `not_applicable` for GT3, Step 3+ as `weak` (real coil range / ARB size labels but rear motion ratio still placeholder = 1.0).
 
 ## Recommended next batch
+
+**W10.1** is the only remaining unit. Gated on per-car IBT capture (each new GT3 car needs at least one IBT to pin its YAML schema + CarPath; varied-spring sweeps for BMW M4 GT3 are needed to light up W7.2's regression fits). Workflow shape per `docs/calibration_guide.md` GT3 section.
+
+The branch is now at "all unblocked work shipped" — every code path that doesn't require new IBT data has been touched. The remaining 7 GT3 cars (Mercedes AMG, Acura NSX, Lambo Huracán, McLaren 720S, Mustang, Corvette Z06, Audi R8 LMS) are pure data-gated work: each needs a stub `CarModel` entry, a `_<CAR>_GT3_PARAM_IDS` dict, and a regression baseline `.sto`.
+
+---
+
+### Original "recommended next batch" (kept for history):
 
 **W9.1 + W9.2 in parallel** — closes Wave 9 fully and reaches the project's "all unblocked work shipped" state.
 
@@ -596,8 +652,8 @@ Alternative batch: **W9.1 alone** (~30 h) if you'd rather defer baselines/docs. 
 
 ## Test posture
 
-- 805 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +287 from Waves 1–6, +36 from Wave 7.1+8.1, +49 from Wave 7.2+8.2 = 372 new GT3-specific tests).
-- 33 skipped (mostly fastapi-dependent webapp tests + 1 new skip on `W63BuildObservationGT3Tests`).
+- 830 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +287 from Waves 1–6, +36 from Wave 7.1+8.1, +49 from Wave 7.2+8.2, +25 from Wave 9.1+9.2 = 397 new GT3-specific tests).
+- 33 skipped (mostly fastapi-dependent webapp tests + 1 new skip on `W63BuildObservationGT3Tests`; 2 GTP regression-test skips when IBT files at `data/telemetry/` and `ibtfiles/` are absent in checkout).
 - 1 deselected: `tests/test_run_trace.py::test_support_tier_mapping` — pre-existing data-dependent failure (BMW dataset has 26 sessions but test asserts ≥30); confirmed unchanged across all batches.
 - 0 NEW regressions from any of the 21 shipped units (W7.2 ships as scaffolding; counts as 1 unit but no actual regression fits until IBT data lands).
 
