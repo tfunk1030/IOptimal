@@ -93,6 +93,10 @@ class MeasuredState:
     rear_dominant_freq_hz: float | None = None
 
     # --- Step 4: Balance ---
+    # TODO(W5.3): drop ``lltd_measured`` alias entirely — it is the geometric
+    # roll_distribution_proxy and is insensitive to spring stiffness. Carrying
+    # it forward into GT3 is doubly wrong (no GT3 calibration baseline).
+    # See docs/audits/gt3_phase2/analyzer.md:A16.
     lltd_measured: float | None = None              # Backward-compatible alias of roll_distribution_proxy
     roll_distribution_proxy: float | None = None    # RH-based proxy, not true LLTD
     roll_gradient_measured_deg_per_g: float | None = None
@@ -1435,7 +1439,15 @@ def _extract_heave_deflection(
     Channels:
         HFshockDefl — front heave element deflection (meters)
         HRshockDefl — rear heave/third element deflection (may be missing)
+
+    TODO(W5.3): GT3 cars have no heave element; HFshockDefl/HRshockDefl
+    either don't exist on GT3 IBTs or carry per-corner travel and must be
+    routed to per-corner bottoming metrics.  See
+    docs/audits/gt3_phase2/analyzer.md:A17/A18.  Today the function silently
+    populates ``front_heave_travel_used_pct`` etc. for GT3 cars where the
+    metric has no physical meaning.
     """
+    # TODO(W5.3): early-return on car.suspension_arch is GT3_COIL_4WHEEL.
     n = end - start + 1
     hsm = car.heave_spring
 

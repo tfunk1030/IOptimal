@@ -7,11 +7,42 @@ are stripped and converted to numeric types.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from track_model.ibt_parser import IBTFile
+
+
+# GT3 canonical names (W5.2 — must be kept in sync with car_model/registry.py
+# `_CAR_REGISTRY` GT3 entries and car_model/cars.py GT3 stubs).
+GT3_CANONICALS: tuple[str, ...] = (
+    "bmw_m4_gt3",
+    "aston_martin_vantage_gt3",
+    "porsche_992_gt3r",
+)
+GTP_CANONICALS: tuple[str, ...] = ("bmw", "ferrari", "cadillac", "porsche", "acura")
+
+
+def _parse_indexed_label(value: Any) -> int:
+    """Parse GT3 indexed-string fields like ``"5 (TC SLIP)"`` → ``5``.
+
+    GT3 TC/ABS YAML values come through as ``"X (TC)"``, ``"X (TC SLIP)"``,
+    ``"X (TC-LAT)"``, ``"X (ABS)"`` etc. The integer prefix is the actual
+    setting; the parenthesised label varies per car.  Falls back to ``_parse_int``
+    for plain integers.
+    """
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        m = re.match(r"^\s*(-?\d+)\s*\(", value)
+        if m:
+            try:
+                return int(m.group(1))
+            except ValueError:
+                return 0
+    return _parse_int(value)
 
 
 def _parse_float(value: str | int | float | None, default: float = 0.0) -> float:
@@ -91,6 +122,192 @@ def _get(d: dict, *keys, default=None):
     return d
 
 
+def _read_gt3_setup(cs: dict, car_canonical: str) -> dict[str, Any]:
+    """GT3 YAML extractor (W5.2).
+
+    Maps the GT3 IBT session-info layout to the canonical ``CurrentSetup``
+    field set.  GT3 cars (BMW M4 GT3, Aston Martin Vantage GT3 EVO,
+    Porsche 911 GT3 R 992) share a per-axle damper / per-corner spring
+    layout but differ in the location of brake / fuel / ARB blocks:
+
+      * BMW       — ``Chassis.FrontBrakes`` (paired front toe + ARB blades)
+      * Aston     — ``Chassis.FrontBrakesLights`` (FarbBlades / RarbBlades)
+      * Porsche   — ``Chassis.FrontBrakesLights`` (ArbSetting integer; fuel here)
+
+    Returns a dict of ``CurrentSetup``-attribute keys → values.  Heave/third
+    fields and torsion-bar fields are intentionally absent (default zero) — GT3
+    cars have no heave element nor torsion bars (per
+    ``SuspensionArchitecture.GT3_COIL_4WHEEL`` invariants).
+    """
+    chassis = cs.get("Chassis", {})
+    tires_aero = cs.get("TiresAero", {})
+    dampers = cs.get("Dampers", {})
+
+    lf = chassis.get("LeftFront", {})
+    rf = chassis.get("RightFront", {})
+    lr = chassis.get("LeftRear", {})
+    rr = chassis.get("RightRear", {})
+    rear = chassis.get("Rear", {})
+    in_car = chassis.get("InCarAdjustments", {})
+    diff = chassis.get("GearsDifferential", {})
+
+    # Front section: BMW = "FrontBrakes"; Aston / Porsche = "FrontBrakesLights".
+    front_brakes = chassis.get("FrontBrakes") or chassis.get("FrontBrakesLights") or {}
+
+    # Aero balance calculator: BMW / Porsche = "AeroBalanceCalc"; Aston = "AeroBalanceCalculator".
+    aero_calc = tires_aero.get("AeroBalanceCalc") or tires_aero.get("AeroBalanceCalculator") or {}
+
+    # Wing angle: BMW & Porsche use "WingSetting"; Aston uses "RearWingAngle".
+    wing_angle = (
+        aero_calc.get("WingSetting")
+        or aero_calc.get("RearWingAngle")
+        or rear.get("WingAngle")
+        or rear.get("WingSetting")
+        or rear.get("RearWingAngle")
+    )
+
+    # ARB encoding varies by car:
+    #   BMW       — front_brakes.ArbBlades / rear.ArbBlades   (paired blades)
+    #   Aston     — front_brakes.FarbBlades / rear.RarbBlades
+    #   Porsche   — front_brakes.ArbSetting / rear.RarbSetting (integer setting)
+    if car_canonical == "porsche_992_gt3r":
+        front_arb_value = front_brakes.get("ArbSetting")
+        rear_arb_value = rear.get("RarbSetting")
+    elif car_canonical == "aston_martin_vantage_gt3":
+        front_arb_value = front_brakes.get("FarbBlades")
+        rear_arb_value = rear.get("RarbBlades")
+    else:  # bmw_m4_gt3
+        front_arb_value = front_brakes.get("ArbBlades")
+        rear_arb_value = rear.get("ArbBlades")
+
+    # Per-axle dampers (8 channels total; no per-corner damper section in GT3 YAML).
+    front_damp = dampers.get("FrontDampers", {})
+    rear_damp = dampers.get("RearDampers", {})
+
+    # Fuel: BMW + Aston put it under Chassis.Rear.FuelLevel.
+    # Porsche puts it under Chassis.FrontBrakesLights.FuelLevel.
+    fuel_value = rear.get("FuelLevel") or front_brakes.get("FuelLevel")
+
+    # Toe — front is paired ("TotalToeIn") under FrontBrakes / FrontBrakesLights.
+    # Rear toe:
+    #   BMW + Aston — per-wheel ToeIn on LeftRear / RightRear
+    #   Porsche     — paired Rear.TotalToeIn ONLY (no per-wheel ToeIn keys)
+    if car_canonical == "porsche_992_gt3r":
+        rear_toe = _parse_float(rear.get("TotalToeIn"))
+    else:
+        lr_toe = _parse_float(lr.get("ToeIn"))
+        rr_toe = _parse_float(rr.get("ToeIn"))
+        rear_toe = (lr_toe + rr_toe) / 2.0 if (lr_toe or rr_toe) else _parse_float(rear.get("TotalToeIn"))
+
+    # Per-corner spring rates (the four corner coils).  Average left/right.
+    lf_spring = _parse_float(lf.get("SpringRate"))
+    rf_spring = _parse_float(rf.get("SpringRate"))
+    lr_spring = _parse_float(lr.get("SpringRate"))
+    rr_spring = _parse_float(rr.get("SpringRate"))
+
+    # Bump rubber gaps (per corner) — average left/right.
+    lf_bump = _parse_float(lf.get("BumpRubberGap"))
+    rf_bump = _parse_float(rf.get("BumpRubberGap"))
+    lr_bump = _parse_float(lr.get("BumpRubberGap"))
+    rr_bump = _parse_float(rr.get("BumpRubberGap"))
+
+    return {
+        # --- Aero ---
+        "wing_angle_deg": _parse_float(wing_angle),
+        "front_rh_at_speed_mm": _parse_float(aero_calc.get("FrontRhAtSpeed")),
+        "rear_rh_at_speed_mm": _parse_float(aero_calc.get("RearRhAtSpeed")),
+        "df_balance_pct": _parse_float(aero_calc.get("FrontDownforce")),
+        # GT3 YAML does not expose an L/D ratio.
+        "ld_ratio": 0.0,
+
+        # --- Ride heights (avg L/R) ---
+        "static_front_rh_mm": (_parse_float(lf.get("RideHeight")) + _parse_float(rf.get("RideHeight"))) / 2.0,
+        "static_rear_rh_mm": (_parse_float(lr.get("RideHeight")) + _parse_float(rr.get("RideHeight"))) / 2.0,
+
+        # --- Corner springs (front + rear axle averages from per-corner SpringRate) ---
+        # GT3 uses 4 coil-overs.  We surface front/rear axle spring rate via
+        # the legacy ``rear_spring_nmm`` field (already used for legacy rear
+        # coil cars) and reserve the fronts on a new contract: avg of LF/RF
+        # SpringRate is stored to ``front_corner_spring_nmm`` (added to
+        # CurrentSetup) — fall back to overloading ``rear_spring_nmm`` for
+        # the rear axle.
+        "front_corner_spring_nmm": (lf_spring + rf_spring) / 2.0 if (lf_spring or rf_spring) else 0.0,
+        "rear_spring_nmm": (lr_spring + rr_spring) / 2.0 if (lr_spring or rr_spring) else 0.0,
+
+        # --- Bump rubber gaps (per corner; avg by axle for compactness) ---
+        "lf_bump_rubber_gap_mm": lf_bump,
+        "rf_bump_rubber_gap_mm": rf_bump,
+        "lr_bump_rubber_gap_mm": lr_bump,
+        "rr_bump_rubber_gap_mm": rr_bump,
+
+        # --- ARBs ---
+        # ``front_arb_blade`` is the canonical numeric.  ``front_arb_setting``
+        # is populated for Porsche where the garage shows a single integer.
+        "front_arb_blade": _parse_int(front_arb_value),
+        "rear_arb_blade": _parse_int(rear_arb_value),
+        "front_arb_setting": _parse_int(front_arb_value) if car_canonical == "porsche_992_gt3r" else 0,
+        "rear_arb_setting": _parse_int(rear_arb_value) if car_canonical == "porsche_992_gt3r" else 0,
+        # GT3 YAML has no ArbSize labels — leave empty (matches GTP path when absent).
+        "front_arb_size": "",
+        "rear_arb_size": "",
+
+        # --- Geometry ---
+        "front_camber_deg": (_parse_float(lf.get("Camber")) + _parse_float(rf.get("Camber"))) / 2.0,
+        "rear_camber_deg": (_parse_float(lr.get("Camber")) + _parse_float(rr.get("Camber"))) / 2.0,
+        "front_toe_mm": _parse_float(front_brakes.get("TotalToeIn")),
+        "rear_toe_mm": rear_toe,
+
+        # --- Per-axle dampers (8 channels) ---
+        "front_ls_comp": _parse_int(front_damp.get("LowSpeedCompressionDamping")),
+        "front_hs_comp": _parse_int(front_damp.get("HighSpeedCompressionDamping")),
+        "front_ls_rbd": _parse_int(front_damp.get("LowSpeedReboundDamping")),
+        "front_hs_rbd": _parse_int(front_damp.get("HighSpeedReboundDamping")),
+        "rear_ls_comp": _parse_int(rear_damp.get("LowSpeedCompressionDamping")),
+        "rear_hs_comp": _parse_int(rear_damp.get("HighSpeedCompressionDamping")),
+        "rear_ls_rbd": _parse_int(rear_damp.get("LowSpeedReboundDamping")),
+        "rear_hs_rbd": _parse_int(rear_damp.get("HighSpeedReboundDamping")),
+        # GT3 has no HS comp slope channel — leave 0.
+        "front_hs_slope": 0,
+        "rear_hs_slope": 0,
+
+        # --- Brakes / Diff / TC ---
+        "brake_bias_pct": _parse_float(in_car.get("BrakePressureBias")),
+        "front_master_cyl_mm": _parse_float(front_brakes.get("FrontMasterCyl")),
+        "rear_master_cyl_mm": _parse_float(front_brakes.get("RearMasterCyl")),
+        "pad_compound": str(front_brakes.get("BrakePads", "") or ""),
+        "splitter_height_mm": _parse_float(front_brakes.get("CenterFrontSplitterHeight")),
+        "diff_preload_nm": _parse_float(diff.get("DiffPreload")),
+        "diff_clutch_plates": _parse_int(diff.get("FrictionFaces")),
+        "gear_stack": str(diff.get("GearStack", "") or ""),
+        # GT3 has a single TcSetting integer (label varies: "X (TC)", "X (TC SLIP)", "X (TC-LAT)").
+        "tc_setting": _parse_indexed_label(in_car.get("TcSetting")),
+        "abs_setting": _parse_indexed_label(in_car.get("AbsSetting")),
+        # Legacy ``tc_gain`` carries the same integer for backward-compat with
+        # solver/diagnose code that expects ``tc_gain`` to be populated.
+        "tc_gain": _parse_indexed_label(in_car.get("TcSetting")),
+        "tc_slip": 0,
+        "front_weight_dist_pct": _parse_float(in_car.get("FWtdist")),
+        "cross_weight_pct": _parse_float(in_car.get("CrossWeight")),
+        # Aston / Porsche specific extras.
+        # Aston ``ThrottleResponse: "4 (RED)"`` lives under InCarAdjustments;
+        # Porsche ``ThrottleShapeSetting: 3`` (plain int) also under InCarAdjustments.
+        "epas_setting": _parse_indexed_label(in_car.get("EpasSetting")) if in_car.get("EpasSetting") is not None else 0,
+        "throttle_map": _parse_indexed_label(
+            in_car.get("ThrottleResponse") if in_car.get("ThrottleResponse") is not None
+            else in_car.get("ThrottleShapeSetting")
+        ) if (in_car.get("ThrottleResponse") is not None or in_car.get("ThrottleShapeSetting") is not None) else 0,
+
+        # --- Fuel ---
+        "fuel_l": _parse_float(fuel_value),
+
+        # --- Corner weights (display) ---
+        "lf_corner_weight_n": _parse_float(lf.get("CornerWeight")),
+        "rf_corner_weight_n": _parse_float(rf.get("CornerWeight")),
+        "lr_corner_weight_n": _parse_float(lr.get("CornerWeight")),
+        "rr_corner_weight_n": _parse_float(rr.get("CornerWeight")),
+    }
+
+
 @dataclass
 class CurrentSetup:
     """All garage-settable parameters extracted from IBT session info."""
@@ -120,12 +337,26 @@ class CurrentSetup:
     front_torsion_od_mm: float = 0.0
     rear_spring_nmm: float = 0.0
     rear_spring_perch_mm: float = 0.0
+    # GT3: per-axle paired-coil front spring rate (avg of LF/RF SpringRate).
+    # Zero on GTP cars (which use heave/torsion-bar/roll-spring at the front).
+    front_corner_spring_nmm: float = 0.0
+    # GT3: per-corner bump rubber gaps (mm).
+    lf_bump_rubber_gap_mm: float = 0.0
+    rf_bump_rubber_gap_mm: float = 0.0
+    lr_bump_rubber_gap_mm: float = 0.0
+    rr_bump_rubber_gap_mm: float = 0.0
+    # GT3: BMW M4 GT3 / Aston Vantage / Porsche 992 GT3 R have a front
+    # splitter height adjustment under FrontBrakes(Lights).CenterFrontSplitterHeight.
+    splitter_height_mm: float = 0.0
 
     # --- ARBs ---
     front_arb_size: str = ""
     front_arb_blade: int = 0
     rear_arb_size: str = ""
     rear_arb_blade: int = 0
+    # GT3 Porsche-only: integer ARB setting (1..N) — distinct from blade idx.
+    front_arb_setting: int = 0
+    rear_arb_setting: int = 0
 
     # --- Geometry ---
     front_camber_deg: float = 0.0
@@ -176,6 +407,13 @@ class CurrentSetup:
     diff_clutch_plates: int = 0
     tc_gain: int = 0
     tc_slip: int = 0
+    # GT3: single-integer settings parsed from "X (TC)" / "X (ABS)" labels.
+    tc_setting: int = 0
+    abs_setting: int = 0
+    front_weight_dist_pct: float = 0.0
+    cross_weight_pct: float = 0.0
+    epas_setting: int = 0      # Aston only
+    throttle_map: int = 0      # Aston ThrottleResponse / Porsche ThrottleShapeSetting
     fuel_l: float = 0.0
     fuel_low_warning_l: float = 0.0
     fuel_target_l: float = 0.0
@@ -282,6 +520,26 @@ class CurrentSetup:
             raise ValueError("IBT session info is not parsed (pyyaml missing?)")
 
         cs = si.get("CarSetup", {})
+
+        # W5.2 — dispatch GT3 cars to the dedicated reader.  GT3 layout is
+        # structurally distinct from any GTP car (per-axle dampers, no
+        # heave/third element, no Systems block) so reuse of the GTP parsing
+        # path below would yield zeros for nearly every field.
+        canonical_lower = car_canonical.lower() if car_canonical else ""
+        if canonical_lower in GT3_CANONICALS:
+            gt3_values = _read_gt3_setup(cs, canonical_lower)
+            attempts = [
+                {"path": "CarSetup.Chassis", "status": "ok" if cs.get("Chassis") else "missing"},
+                {"path": "CarSetup.TiresAero", "status": "ok" if cs.get("TiresAero") else "missing"},
+                {"path": "CarSetup.Dampers", "status": "ok" if cs.get("Dampers") else "missing"},
+            ]
+            return cls(
+                source="ibt",
+                adapter_name=canonical_lower,
+                extraction_attempts=attempts,
+                **gt3_values,
+            )
+
         chassis = cs.get("Chassis", {})
         tires_aero = cs.get("TiresAero", {})
 
@@ -500,8 +758,10 @@ class CurrentSetup:
             adapter_name=(
                 # If caller explicitly knows the car, use that — avoids Cadillac/Porsche
                 # being misidentified as BMW (they share the same IBT setup structure).
+                # GT3 canonicals are handled by the early-return dispatch above; this
+                # path only fires for GTP cars.
                 car_canonical.lower()
-                if car_canonical and car_canonical.lower() in ("bmw", "ferrari", "cadillac", "porsche", "acura")
+                if car_canonical and car_canonical.lower() in GTP_CANONICALS + GT3_CANONICALS
                 else (
                     "acura" if is_heave_roll_layout
                     else ("ferrari" if is_ferrari_layout else "unknown")
@@ -539,6 +799,27 @@ class CurrentSetup:
 
     def summary(self) -> str:
         """One-line summary of key setup parameters."""
+        if self.adapter_name in GT3_CANONICALS:
+            # GT3: no heave element; ARB exposed as either blade (BMW/Aston)
+            # or single integer setting (Porsche).
+            farb = (
+                f"{self.front_arb_setting}"
+                if self.adapter_name == "porsche_992_gt3r"
+                else f"{self.front_arb_blade}"
+            )
+            rarb = (
+                f"{self.rear_arb_setting}"
+                if self.adapter_name == "porsche_992_gt3r"
+                else f"{self.rear_arb_blade}"
+            )
+            return (
+                f"Wing {self.wing_angle_deg:.0f}  "
+                f"RH F{self.static_front_rh_mm:.0f}/R{self.static_rear_rh_mm:.0f}  "
+                f"Spring F{self.front_corner_spring_nmm:.0f}/R{self.rear_spring_nmm:.0f}  "
+                f"FARB {farb} RARB {rarb}  "
+                f"Cam F{self.front_camber_deg:.1f}/R{self.rear_camber_deg:.1f}  "
+                f"BB {self.brake_bias_pct:.1f}%"
+            )
         return (
             f"Wing {self.wing_angle_deg:.0f}  "
             f"RH F{self.static_front_rh_mm:.0f}/R{self.static_rear_rh_mm:.0f}  "

@@ -530,7 +530,7 @@ _BMW_M4_GT3_PARAM_IDS: dict[str, str] = {
     "lr_pressure":              "CarSetup_TiresAero_LeftRear_StartingPressure",   # NB: no `Tire` suffix
     "rr_pressure":              "CarSetup_TiresAero_RightRear_StartingPressure",
     "tyre_type":                "CarSetup_TiresAero_TireType_TireType",
-    # ── Front brakes section ─────────────────────────────────────────
+    # ── Front brakes section (BMW: `FrontBrakes` — Aston/Porsche use `FrontBrakesLights`) ─
     "front_arb_blades":         "CarSetup_Chassis_FrontBrakes_ArbBlades",
     "front_toe":                "CarSetup_Chassis_FrontBrakes_TotalToeIn",
     "front_master_cyl":         "CarSetup_Chassis_FrontBrakes_FrontMasterCyl",
@@ -585,14 +585,190 @@ _BMW_M4_GT3_PARAM_IDS: dict[str, str] = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Aston Martin Vantage GT3 EVO — GT3 architecture (W4.2)
+# Notable differences vs BMW M4 GT3:
+#   - Aero balance section is `AeroBalanceCalculator` (not `AeroBalanceCalc`)
+#   - Wing field is `RearWingAngle` (mirrors to TiresAero.AeroBalanceCalculator
+#     too, but the dict only maps the chassis copy — single emit for now)
+#   - Front section is `FrontBrakesLights` (not `FrontBrakes`)
+#   - Front ARB is `FarbBlades` (not `ArbBlades`)
+#   - Rear ARB is `RarbBlades` (not `ArbBlades`)
+#   - 4 Aston-only fields: EnduranceLights, NightLedStripColor,
+#     ThrottleResponse ("n (RED)"), EpasSetting ("n (PAS)")
+#   - TC label is "n (TC SLIP)" (not "n (TC)")
+#   - Rear toe is per-wheel (LeftRear.ToeIn / RightRear.ToeIn) — same as BMW
+# Source: docs/audits/gt3_phase2/output.md:367-435 (verbatim).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ASTON_MARTIN_VANTAGE_GT3_PARAM_IDS: dict[str, str] = {
+    # ── Aero ──────────────────────────────────────────────────────────
+    "wing_angle":               "CarSetup_Chassis_Rear_RearWingAngle",            # int deg, ALSO mirrors to TiresAero.AeroBalanceCalculator.RearWingAngle
+    "front_rh_at_speed":        "CarSetup_TiresAero_AeroBalanceCalculator_FrontRhAtSpeed",   # NB: Calculator suffix
+    "rear_rh_at_speed":         "CarSetup_TiresAero_AeroBalanceCalculator_RearRhAtSpeed",
+    "df_balance":               "CarSetup_TiresAero_AeroBalanceCalculator_FrontDownforce",
+    # ── Tyres ─────────────────────────────────────────────────────────
+    "lf_pressure":              "CarSetup_TiresAero_LeftFront_StartingPressure",
+    "rf_pressure":              "CarSetup_TiresAero_RightFront_StartingPressure",
+    "lr_pressure":              "CarSetup_TiresAero_LeftRear_StartingPressure",
+    "rr_pressure":              "CarSetup_TiresAero_RightRear_StartingPressure",
+    "tyre_type":                "CarSetup_TiresAero_TireType_TireType",
+    # ── FrontBrakesLights ─────────────────────────────────────────────
+    "front_arb_blades":         "CarSetup_Chassis_FrontBrakesLights_FarbBlades",  # NB: Farb*, not Arb*
+    "front_toe":                "CarSetup_Chassis_FrontBrakesLights_TotalToeIn",
+    "front_master_cyl":         "CarSetup_Chassis_FrontBrakesLights_FrontMasterCyl",
+    "rear_master_cyl":          "CarSetup_Chassis_FrontBrakesLights_RearMasterCyl",
+    "pad_compound":             "CarSetup_Chassis_FrontBrakesLights_BrakePads",
+    "endurance_lights":         "CarSetup_Chassis_FrontBrakesLights_EnduranceLights",  # ASTON ONLY
+    "night_led_strip_color":    "CarSetup_Chassis_FrontBrakesLights_NightLedStripColor",  # ASTON+PORSCHE
+    "front_splitter_height":    "CarSetup_Chassis_FrontBrakesLights_CenterFrontSplitterHeight",
+    # ── Per-corner ────────────────────────────────────────────────────
+    "lf_corner_weight":         "CarSetup_Chassis_LeftFront_CornerWeight",
+    "lf_ride_height":           "CarSetup_Chassis_LeftFront_RideHeight",
+    "lf_bump_rubber_gap":       "CarSetup_Chassis_LeftFront_BumpRubberGap",
+    "lf_spring_rate":           "CarSetup_Chassis_LeftFront_SpringRate",
+    "lf_camber":                "CarSetup_Chassis_LeftFront_Camber",
+    "rf_corner_weight":         "CarSetup_Chassis_RightFront_CornerWeight",
+    "rf_ride_height":           "CarSetup_Chassis_RightFront_RideHeight",
+    "rf_bump_rubber_gap":       "CarSetup_Chassis_RightFront_BumpRubberGap",
+    "rf_spring_rate":           "CarSetup_Chassis_RightFront_SpringRate",
+    "rf_camber":                "CarSetup_Chassis_RightFront_Camber",
+    "lr_corner_weight":         "CarSetup_Chassis_LeftRear_CornerWeight",
+    "lr_ride_height":           "CarSetup_Chassis_LeftRear_RideHeight",
+    "lr_bump_rubber_gap":       "CarSetup_Chassis_LeftRear_BumpRubberGap",
+    "lr_spring_rate":           "CarSetup_Chassis_LeftRear_SpringRate",
+    "lr_camber":                "CarSetup_Chassis_LeftRear_Camber",
+    "lr_toe":                   "CarSetup_Chassis_LeftRear_ToeIn",
+    "rr_corner_weight":         "CarSetup_Chassis_RightRear_CornerWeight",
+    "rr_ride_height":           "CarSetup_Chassis_RightRear_RideHeight",
+    "rr_bump_rubber_gap":       "CarSetup_Chassis_RightRear_BumpRubberGap",
+    "rr_spring_rate":           "CarSetup_Chassis_RightRear_SpringRate",
+    "rr_camber":                "CarSetup_Chassis_RightRear_Camber",
+    "rr_toe":                   "CarSetup_Chassis_RightRear_ToeIn",
+    # ── Rear section ─────────────────────────────────────────────────
+    "fuel_level":               "CarSetup_Chassis_Rear_FuelLevel",
+    "rear_arb_blades":          "CarSetup_Chassis_Rear_RarbBlades",               # NB: Rarb*, not Arb*
+    # ── In-car adjustments (Aston-extended) ──────────────────────────
+    "brake_bias":               "CarSetup_Chassis_InCarAdjustments_BrakePressureBias",
+    "abs_setting":              "CarSetup_Chassis_InCarAdjustments_AbsSetting",
+    "tc_setting":               "CarSetup_Chassis_InCarAdjustments_TcSetting",     # "n (TC SLIP)" — Aston uses TC SLIP label
+    "throttle_response":        "CarSetup_Chassis_InCarAdjustments_ThrottleResponse",  # ASTON ONLY: "n (RED)"
+    "epas_setting":             "CarSetup_Chassis_InCarAdjustments_EpasSetting",   # ASTON ONLY: "n (PAS)"
+    "fwt_dist":                 "CarSetup_Chassis_InCarAdjustments_FWtdist",
+    "cross_weight":             "CarSetup_Chassis_InCarAdjustments_CrossWeight",
+    # ── Gears + diff ──────────────────────────────────────────────────
+    "gear_stack":               "CarSetup_Chassis_GearsDifferential_GearStack",
+    "diff_friction_faces":      "CarSetup_Chassis_GearsDifferential_FrictionFaces",
+    "diff_preload":             "CarSetup_Chassis_GearsDifferential_DiffPreload",
+    # ── Dampers (per-axle, 4 channels each) — same as BMW M4 GT3 ─────
+    "front_ls_comp":            "CarSetup_Dampers_FrontDampers_LowSpeedCompressionDamping",
+    "front_hs_comp":            "CarSetup_Dampers_FrontDampers_HighSpeedCompressionDamping",
+    "front_ls_rbd":             "CarSetup_Dampers_FrontDampers_LowSpeedReboundDamping",
+    "front_hs_rbd":             "CarSetup_Dampers_FrontDampers_HighSpeedReboundDamping",
+    "rear_ls_comp":             "CarSetup_Dampers_RearDampers_LowSpeedCompressionDamping",
+    "rear_hs_comp":             "CarSetup_Dampers_RearDampers_HighSpeedCompressionDamping",
+    "rear_ls_rbd":              "CarSetup_Dampers_RearDampers_LowSpeedReboundDamping",
+    "rear_hs_rbd":              "CarSetup_Dampers_RearDampers_HighSpeedReboundDamping",
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Porsche 911 GT3 R (992) — GT3 architecture (W4.2)
+# Most divergent of the three GT3 cars.  Differences from BMW M4 GT3:
+#   - Front ARB is `ArbSetting` (single int — NOT a blade index)
+#   - Rear ARB is `RarbSetting` (single int)
+#   - Rear toe is paired (`Chassis.Rear.TotalToeIn`) — NOT per-wheel
+#   - Fuel level is in `FrontBrakesLights` section, NOT `Rear`
+#   - Wing field is `WingSetting` and is mirrored in BOTH `Chassis.Rear` AND
+#     `TiresAero.AeroBalanceCalc` (driver YAML shows both copies)
+#   - 3 Porsche-only fields: ThrottleShapeSetting, DashDisplayPage,
+#     NightLedStripColor
+#   - TC label is "n (TC-LAT)"
+#   - Damper range 0–12 (already wired in W3.2 DamperModel)
+# Source: docs/audits/gt3_phase2/output.md:443-513 (verbatim).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PORSCHE_992_GT3R_PARAM_IDS: dict[str, str] = {
+    # ── Aero ──────────────────────────────────────────────────────────
+    "wing_angle":               "CarSetup_Chassis_Rear_WingSetting",              # NB: WingSetting (Porsche uses this name in BOTH chassis-rear AND aero-balance)
+    "front_rh_at_speed":        "CarSetup_TiresAero_AeroBalanceCalc_FrontRhAtSpeed",
+    "rear_rh_at_speed":         "CarSetup_TiresAero_AeroBalanceCalc_RearRhAtSpeed",
+    "df_balance":               "CarSetup_TiresAero_AeroBalanceCalc_FrontDownforce",
+    # ── Tyres ─────────────────────────────────────────────────────────
+    "lf_pressure":              "CarSetup_TiresAero_LeftFront_StartingPressure",
+    "rf_pressure":              "CarSetup_TiresAero_RightFront_StartingPressure",
+    "lr_pressure":              "CarSetup_TiresAero_LeftRear_StartingPressure",
+    "rr_pressure":              "CarSetup_TiresAero_RightRear_StartingPressure",
+    "tyre_type":                "CarSetup_TiresAero_TireType_TireType",
+    # ── FrontBrakesLights ─────────────────────────────────────────────
+    "front_arb_setting":        "CarSetup_Chassis_FrontBrakesLights_ArbSetting",  # **INT, not blade — Porsche-unique**
+    "front_toe":                "CarSetup_Chassis_FrontBrakesLights_TotalToeIn",
+    "fuel_level":               "CarSetup_Chassis_FrontBrakesLights_FuelLevel",   # **PORSCHE-UNIQUE: fuel here, not in Rear**
+    "front_master_cyl":         "CarSetup_Chassis_FrontBrakesLights_FrontMasterCyl",
+    "rear_master_cyl":          "CarSetup_Chassis_FrontBrakesLights_RearMasterCyl",
+    "pad_compound":             "CarSetup_Chassis_FrontBrakesLights_BrakePads",
+    "night_led_strip_color":    "CarSetup_Chassis_FrontBrakesLights_NightLedStripColor",
+    "front_splitter_height":    "CarSetup_Chassis_FrontBrakesLights_CenterFrontSplitterHeight",
+    # ── Per-corner ────────────────────────────────────────────────────
+    "lf_corner_weight":         "CarSetup_Chassis_LeftFront_CornerWeight",
+    "lf_ride_height":           "CarSetup_Chassis_LeftFront_RideHeight",
+    "lf_bump_rubber_gap":       "CarSetup_Chassis_LeftFront_BumpRubberGap",
+    "lf_spring_rate":           "CarSetup_Chassis_LeftFront_SpringRate",
+    "lf_camber":                "CarSetup_Chassis_LeftFront_Camber",
+    "rf_corner_weight":         "CarSetup_Chassis_RightFront_CornerWeight",
+    "rf_ride_height":           "CarSetup_Chassis_RightFront_RideHeight",
+    "rf_bump_rubber_gap":       "CarSetup_Chassis_RightFront_BumpRubberGap",
+    "rf_spring_rate":           "CarSetup_Chassis_RightFront_SpringRate",
+    "rf_camber":                "CarSetup_Chassis_RightFront_Camber",
+    "lr_corner_weight":         "CarSetup_Chassis_LeftRear_CornerWeight",
+    "lr_ride_height":           "CarSetup_Chassis_LeftRear_RideHeight",
+    "lr_bump_rubber_gap":       "CarSetup_Chassis_LeftRear_BumpRubberGap",
+    "lr_spring_rate":           "CarSetup_Chassis_LeftRear_SpringRate",
+    "lr_camber":                "CarSetup_Chassis_LeftRear_Camber",
+    # NO lr_toe / rr_toe per-wheel — Porsche uses paired rear toe (see below)
+    "rr_corner_weight":         "CarSetup_Chassis_RightRear_CornerWeight",
+    "rr_ride_height":           "CarSetup_Chassis_RightRear_RideHeight",
+    "rr_bump_rubber_gap":       "CarSetup_Chassis_RightRear_BumpRubberGap",
+    "rr_spring_rate":           "CarSetup_Chassis_RightRear_SpringRate",
+    "rr_camber":                "CarSetup_Chassis_RightRear_Camber",
+    # ── Rear section (Porsche-specific) ───────────────────────────────
+    "rear_arb_setting":         "CarSetup_Chassis_Rear_RarbSetting",              # **INT, not blade**
+    "rear_toe":                 "CarSetup_Chassis_Rear_TotalToeIn",               # **PAIRED rear toe — Porsche-unique**
+    # NO Chassis.Rear.FuelLevel — see FrontBrakesLights.FuelLevel above
+    # ── In-car adjustments (Porsche-extended) ────────────────────────
+    "brake_bias":               "CarSetup_Chassis_InCarAdjustments_BrakePressureBias",
+    "abs_setting":              "CarSetup_Chassis_InCarAdjustments_AbsSetting",
+    "tc_setting":               "CarSetup_Chassis_InCarAdjustments_TcSetting",    # "n (TC-LAT)" — Porsche label
+    "throttle_shape_setting":   "CarSetup_Chassis_InCarAdjustments_ThrottleShapeSetting",  # PORSCHE ONLY
+    "dash_display_page":        "CarSetup_Chassis_InCarAdjustments_DashDisplayPage",       # PORSCHE ONLY
+    "fwt_dist":                 "CarSetup_Chassis_InCarAdjustments_FWtdist",
+    "cross_weight":             "CarSetup_Chassis_InCarAdjustments_CrossWeight",
+    # ── Gears + diff ──────────────────────────────────────────────────
+    "gear_stack":               "CarSetup_Chassis_GearsDifferential_GearStack",
+    "diff_friction_faces":      "CarSetup_Chassis_GearsDifferential_FrictionFaces",
+    "diff_preload":             "CarSetup_Chassis_GearsDifferential_DiffPreload",
+    # ── Dampers (per-axle, 4 channels each).  Range 0–12 (W3.2). ─────
+    "front_ls_comp":            "CarSetup_Dampers_FrontDampers_LowSpeedCompressionDamping",
+    "front_hs_comp":            "CarSetup_Dampers_FrontDampers_HighSpeedCompressionDamping",
+    "front_ls_rbd":             "CarSetup_Dampers_FrontDampers_LowSpeedReboundDamping",
+    "front_hs_rbd":             "CarSetup_Dampers_FrontDampers_HighSpeedReboundDamping",
+    "rear_ls_comp":             "CarSetup_Dampers_RearDampers_LowSpeedCompressionDamping",
+    "rear_hs_comp":             "CarSetup_Dampers_RearDampers_HighSpeedCompressionDamping",
+    "rear_ls_rbd":              "CarSetup_Dampers_RearDampers_LowSpeedReboundDamping",
+    "rear_hs_rbd":              "CarSetup_Dampers_RearDampers_HighSpeedReboundDamping",
+}
+
+
 # Master dispatch table
 _CAR_PARAM_IDS: dict[str, dict[str, str]] = {
-    "bmw":         _BMW_PARAM_IDS,
-    "ferrari":     _FERRARI_PARAM_IDS,
-    "porsche":     _PORSCHE_PARAM_IDS,
-    "cadillac":    _CADILLAC_PARAM_IDS,
-    "acura":       _ACURA_PARAM_IDS,
-    "bmw_m4_gt3":  _BMW_M4_GT3_PARAM_IDS,
+    "bmw":                       _BMW_PARAM_IDS,
+    "ferrari":                   _FERRARI_PARAM_IDS,
+    "porsche":                   _PORSCHE_PARAM_IDS,
+    "cadillac":                  _CADILLAC_PARAM_IDS,
+    "acura":                     _ACURA_PARAM_IDS,
+    "bmw_m4_gt3":                _BMW_M4_GT3_PARAM_IDS,
+    "aston_martin_vantage_gt3":  _ASTON_MARTIN_VANTAGE_GT3_PARAM_IDS,
+    "porsche_992_gt3r":          _PORSCHE_992_GT3R_PARAM_IDS,
 }
 
 
@@ -952,6 +1128,18 @@ def write_sto(
         _car is not None
         and getattr(getattr(_car, "suspension_arch", None), "has_heave_third", True) is False
     )
+    # W4.2: GT3 sub-dispatch.  All three GT3 cars share the GT3 architecture
+    # (single `is_gt3` flag), but diverge inside the GT3 path on:
+    #  - rear toe per-wheel (BMW/Aston) vs paired (Porsche `Chassis.Rear.TotalToeIn`)
+    #  - ARB blade int (BMW/Aston use `*ArbBlades`/`*Blades`) vs single int
+    #    (Porsche `ArbSetting`/`RarbSetting`)
+    #  - fuel section (BMW/Aston in `Chassis.Rear`, Porsche in `Chassis.FrontBrakesLights`)
+    #  - TC label suffix (`(TC)` BMW / `(TC SLIP)` Aston / `(TC-LAT)` Porsche)
+    #  - Aston-only display fields: throttle_response, epas_setting, endurance_lights
+    #  - Porsche-only display fields: throttle_shape_setting, dash_display_page
+    is_bmw_gt3 = is_gt3 and car_canonical.lower() == "bmw_m4_gt3"
+    is_aston_gt3 = is_gt3 and car_canonical.lower() == "aston_martin_vantage_gt3"
+    is_porsche_gt3 = is_gt3 and car_canonical.lower() == "porsche_992_gt3r"
 
     # Build XML tree
     root = Element("LDXFile", Version="1.6", Locale="English")
@@ -1227,13 +1415,23 @@ def write_sto(
     # === ARBs ===
     if step4 is not None:
         if not is_gt3:
-            # GTP cars: separate size string + blade int. GT3 cars have a
-            # single ArbBlades int (BMW M4 GT3) — see GT3 PARAM_IDS dict.
+            # GTP cars: separate size string + blade int.
             _w_str("front_arb_size",   step4.front_arb_size)
-        _w_num("front_arb_blades", step4.front_arb_blade_start, "")
-        if not is_gt3:
+            _w_num("front_arb_blades", step4.front_arb_blade_start, "")
             _w_str("rear_arb_size",    step4.rear_arb_size)
-        _w_num("rear_arb_blades",  step4.rear_arb_blade_start, "")
+            _w_num("rear_arb_blades",  step4.rear_arb_blade_start, "")
+        elif is_porsche_gt3:
+            # W4.2: Porsche 992 GT3 R uses a single integer ArbSetting (not
+            # blade index).  Both axles read off step4.*_arb_blade_start
+            # (already an int; the GT3 ARB solver writes ints from W2.4).
+            _w_num("front_arb_setting", step4.front_arb_blade_start, "")
+            _w_num("rear_arb_setting",  step4.rear_arb_blade_start, "")
+        else:
+            # BMW M4 GT3 + Aston Vantage GT3: blade ints under car-specific
+            # XML IDs (BMW: ArbBlades, Aston: FarbBlades / RarbBlades).  The
+            # PARAM_IDS dict handles the XML name divergence.
+            _w_num("front_arb_blades", step4.front_arb_blade_start, "")
+            _w_num("rear_arb_blades",  step4.rear_arb_blade_start, "")
 
     # === Cross weight (computed by iRacing) ===
     if include_computed:
@@ -1246,7 +1444,12 @@ def write_sto(
         _w_num("lr_camber",  step5.rear_camber_deg,  "deg")
         _w_num("rr_camber",  step5.rear_camber_deg,  "deg")
         _w_num("front_toe",  step5.front_toe_mm,     "mm")
-        if is_acura:
+        # Rear toe dispatch:
+        #   - Acura: paired (`rear_toe`)
+        #   - Porsche 992 GT3 R: paired (`rear_toe` -> `Chassis.Rear.TotalToeIn`) — W4.2
+        #   - BMW M4 GT3 + Aston Vantage GT3: per-wheel (LeftRear.ToeIn / RightRear.ToeIn)
+        #   - GTP BMW/Ferrari/Cadillac: per-wheel
+        if is_acura or is_porsche_gt3:
             _w_num("rear_toe", step5.rear_toe_mm, "mm")
         else:
             _w_num("lr_toe",     step5.rear_toe_mm,      "mm")
@@ -1362,19 +1565,67 @@ def write_sto(
     _w_num("diff_clutch_plates",    diff_clutch_plates,   "")
     _w_num("diff_preload",          None if diff_preload_nm is None else int(round(diff_preload_nm)), "Nm")
     if is_gt3:
-        # GT3: TC/ABS are indexed STRINGS with car-specific labels (BMW = "4 (TC)",
-        # "6 (ABS)"; Aston = "n (TC SLIP)"; Porsche 992 = "n (TC-LAT)"). For BMW
-        # M4 GT3 we emit the BMW label suffix. tc_slip is unused on GT3 (single
-        # combined TC integer). The dict has no `tc_gain` / `tc_slip` keys so
-        # those would TODO-comment; gate them out explicitly.
+        # GT3: TC/ABS are indexed STRINGS with car-specific labels.  W4.2
+        # extends the per-car suffix dispatch from W4.1's BMW-only path:
+        #   - BMW M4 GT3:        "n (TC)"      / "n (ABS)"
+        #   - Aston Vantage GT3: "n (TC SLIP)" / "n (ABS)"
+        #   - Porsche 992 GT3 R: "n (TC-LAT)"  / "n (ABS)"
+        # tc_slip is reused as the ABS index (single combined TC integer on
+        # GT3 — the GTP TC slip channel doesn't exist).  Source values:
+        # YAML samples in docs/gt3_session_info_*.yaml line up with this.
+        if is_porsche_gt3:
+            _tc_suffix = "TC-LAT"
+        elif is_aston_gt3:
+            _tc_suffix = "TC SLIP"
+        else:  # is_bmw_gt3 (or future GT3 fallback)
+            _tc_suffix = "TC"
         if tc_gain is not None:
-            _w_str("tc_setting", f"{int(tc_gain)} (TC)")
-        # ABS is supplied via supporting params; default to TC value if none.
-        # Audit O12 lists per-car suffix variations as W4.3 territory; for
-        # BMW M4 GT3 we use "(ABS)". W4.2 will carry per-car suffix dispatch.
+            _w_str("tc_setting", f"{int(tc_gain)} ({_tc_suffix})")
+        # ABS suffix is "(ABS)" for all three GT3 cars (verified in YAMLs).
         _abs_value = tc_slip if tc_slip is not None else tc_gain
         if _abs_value is not None:
             _w_str("abs_setting", f"{int(_abs_value)} (ABS)")
+        # === Aston-only display fields ===
+        # Defaults sourced from docs/gt3_session_info_aston_vantage_spielberg_2026-04-26.yaml:
+        #   ThrottleResponse: "4 (RED)"  EpasSetting: "3 (PAS)"
+        #   EnduranceLights:  "Not Fitted"   NightLedStripColor: "false"
+        # TODO(W4.3): wire current_setup passthrough so driver-loaded values
+        # take precedence over these statics.
+        if is_aston_gt3:
+            _w_str("throttle_response",   "4 (RED)")
+            _w_str("epas_setting",        "3 (PAS)")
+            _w_str("endurance_lights",    "Not Fitted")
+            _w_str("night_led_strip_color", "false")
+        # === Porsche 992-only display fields ===
+        # Defaults sourced from docs/gt3_session_info_porsche_992_gt3r_spielberg_2026-04-26.yaml:
+        #   ThrottleShapeSetting: 3   DashDisplayPage: "Race 2"
+        #   NightLedStripColor:   "White"
+        # TODO(W4.3): wire current_setup passthrough so driver-loaded values
+        # take precedence over these statics.
+        if is_porsche_gt3:
+            _w_num("throttle_shape_setting", 3, "")
+            _w_str("dash_display_page",      "Race 2")
+            _w_str("night_led_strip_color",  "White")
+            # Porsche emits WingSetting in BOTH chassis-rear AND aero-balance.
+            # The dict only maps `wing_angle` to chassis-rear; emit the
+            # aero-balance copy explicitly here. (Audit Open Question 1.)
+            if wing is not None:
+                _numeric(
+                    details,
+                    "CarSetup_TiresAero_AeroBalanceCalc_WingSetting",
+                    wing,
+                    "deg",
+                )
+        # Aston also mirrors RearWingAngle to TiresAero.AeroBalanceCalculator
+        # (per audit comment on the wing_angle line).  The dict maps the
+        # chassis-rear copy; emit the aero-balance copy explicitly.
+        if is_aston_gt3 and wing is not None:
+            _numeric(
+                details,
+                "CarSetup_TiresAero_AeroBalanceCalculator_RearWingAngle",
+                wing,
+                "deg",
+            )
     else:
         _w_num("tc_gain", tc_gain, "")
         _w_num("tc_slip", tc_slip, "")

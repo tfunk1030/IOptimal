@@ -174,7 +174,14 @@ def _check_safety(
     m: MeasuredState, s: CurrentSetup, car: CarModel, problems: list[Problem],
     t: AdaptiveThresholds = AdaptiveThresholds(),
 ) -> None:
-    """Check safety-critical items: vortex burst and bottoming."""
+    """Check safety-critical items: vortex burst and bottoming.
+
+    TODO(W5.3): heave-travel exhaustion checks (`front_heave_travel_used_pct
+    > 85`) fire phantom critical-severity alarms on GT3 cars (no heave
+    element exists).  Branch on ``car.suspension_arch is GT3_COIL_4WHEEL``
+    and route to per-corner bottoming.  See
+    docs/audits/gt3_phase2/analyzer.md:A18.
+    """
 
     # Vortex burst events at speed
     if m.vortex_burst_event_count > 0:

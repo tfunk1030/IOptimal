@@ -79,6 +79,134 @@ class SetupSchema:
         }
 
 
+# GT3 LDX field-id maps (W5.2).  GT3 cars use a structurally distinct
+# CarSetup XML layout: per-axle dampers (FrontDampers/RearDampers),
+# per-corner SpringRate, no heave/third element, no Systems block.  The
+# field-ids per car branch on the front-section name (BMW = "FrontBrakes";
+# Aston/Porsche = "FrontBrakesLights") and the ARB encoding (BMW = "ArbBlades";
+# Aston = "FarbBlades"/"RarbBlades"; Porsche = "ArbSetting"/"RarbSetting").
+_GT3_KNOWN_FIELD_MAP: dict[str, dict[str, tuple[str, str | None]]] = {
+    "bmw_m4_gt3": {
+        "CarSetup_Chassis_FrontBrakes_ArbBlades": ("front_arb_blade", "front_arb_blade"),
+        "CarSetup_Chassis_Rear_ArbBlades": ("rear_arb_blade", "rear_arb_blade"),
+        "CarSetup_Chassis_FrontBrakes_TotalToeIn": ("front_toe_mm", "front_toe_mm"),
+        "CarSetup_Chassis_FrontBrakes_FrontMasterCyl": ("front_master_cyl_mm", "front_master_cyl_mm"),
+        "CarSetup_Chassis_FrontBrakes_RearMasterCyl": ("rear_master_cyl_mm", "rear_master_cyl_mm"),
+        "CarSetup_Chassis_FrontBrakes_BrakePads": ("pad_compound", "pad_compound"),
+        "CarSetup_Chassis_FrontBrakes_CenterFrontSplitterHeight": ("splitter_height_mm", "splitter_height_mm"),
+        "CarSetup_Chassis_LeftFront_SpringRate": ("front_corner_spring_nmm", "front_corner_spring_nmm"),
+        "CarSetup_Chassis_RightFront_SpringRate": ("front_corner_spring_nmm", "front_corner_spring_nmm"),
+        "CarSetup_Chassis_LeftRear_SpringRate": ("rear_spring_nmm", "rear_spring_nmm"),
+        "CarSetup_Chassis_RightRear_SpringRate": ("rear_spring_nmm", "rear_spring_nmm"),
+        "CarSetup_Chassis_LeftFront_BumpRubberGap": ("lf_bump_rubber_gap_mm", "lf_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_RightFront_BumpRubberGap": ("rf_bump_rubber_gap_mm", "rf_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_LeftRear_BumpRubberGap": ("lr_bump_rubber_gap_mm", "lr_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_RightRear_BumpRubberGap": ("rr_bump_rubber_gap_mm", "rr_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_LeftFront_Camber": ("front_camber_deg", "front_camber_deg"),
+        "CarSetup_Chassis_LeftRear_Camber": ("rear_camber_deg", "rear_camber_deg"),
+        "CarSetup_Chassis_LeftRear_ToeIn": ("rear_toe_mm", "rear_toe_mm"),
+        "CarSetup_Chassis_Rear_FuelLevel": ("fuel_l", "fuel_l"),
+        "CarSetup_Chassis_Rear_WingAngle": ("wing_angle_deg", "wing_angle_deg"),
+        "CarSetup_Chassis_GearsDifferential_GearStack": ("gear_stack", "gear_stack"),
+        "CarSetup_Chassis_GearsDifferential_FrictionFaces": ("diff_clutch_plates", "diff_clutch_plates"),
+        "CarSetup_Chassis_GearsDifferential_DiffPreload": ("diff_preload_nm", "diff_preload_nm"),
+        "CarSetup_Chassis_InCarAdjustments_BrakePressureBias": ("brake_bias_pct", "brake_bias_pct"),
+        "CarSetup_Chassis_InCarAdjustments_AbsSetting": ("abs_setting", "abs_setting"),
+        "CarSetup_Chassis_InCarAdjustments_TcSetting": ("tc_setting", "tc_setting"),
+        "CarSetup_Chassis_InCarAdjustments_FWtdist": ("front_weight_dist_pct", "front_weight_dist_pct"),
+        "CarSetup_Chassis_InCarAdjustments_CrossWeight": ("cross_weight_pct", "cross_weight_pct"),
+        "CarSetup_Dampers_FrontDampers_LowSpeedCompressionDamping": ("front_ls_comp", "front_ls_comp"),
+        "CarSetup_Dampers_FrontDampers_HighSpeedCompressionDamping": ("front_hs_comp", "front_hs_comp"),
+        "CarSetup_Dampers_FrontDampers_LowSpeedReboundDamping": ("front_ls_rbd", "front_ls_rbd"),
+        "CarSetup_Dampers_FrontDampers_HighSpeedReboundDamping": ("front_hs_rbd", "front_hs_rbd"),
+        "CarSetup_Dampers_RearDampers_LowSpeedCompressionDamping": ("rear_ls_comp", "rear_ls_comp"),
+        "CarSetup_Dampers_RearDampers_HighSpeedCompressionDamping": ("rear_hs_comp", "rear_hs_comp"),
+        "CarSetup_Dampers_RearDampers_LowSpeedReboundDamping": ("rear_ls_rbd", "rear_ls_rbd"),
+        "CarSetup_Dampers_RearDampers_HighSpeedReboundDamping": ("rear_hs_rbd", "rear_hs_rbd"),
+    },
+    "aston_martin_vantage_gt3": {
+        "CarSetup_Chassis_FrontBrakesLights_FarbBlades": ("front_arb_blade", "front_arb_blade"),
+        "CarSetup_Chassis_Rear_RarbBlades": ("rear_arb_blade", "rear_arb_blade"),
+        "CarSetup_Chassis_FrontBrakesLights_TotalToeIn": ("front_toe_mm", "front_toe_mm"),
+        "CarSetup_Chassis_FrontBrakesLights_FrontMasterCyl": ("front_master_cyl_mm", "front_master_cyl_mm"),
+        "CarSetup_Chassis_FrontBrakesLights_RearMasterCyl": ("rear_master_cyl_mm", "rear_master_cyl_mm"),
+        "CarSetup_Chassis_FrontBrakesLights_BrakePads": ("pad_compound", "pad_compound"),
+        "CarSetup_Chassis_FrontBrakesLights_CenterFrontSplitterHeight": ("splitter_height_mm", "splitter_height_mm"),
+        "CarSetup_Chassis_LeftFront_SpringRate": ("front_corner_spring_nmm", "front_corner_spring_nmm"),
+        "CarSetup_Chassis_RightFront_SpringRate": ("front_corner_spring_nmm", "front_corner_spring_nmm"),
+        "CarSetup_Chassis_LeftRear_SpringRate": ("rear_spring_nmm", "rear_spring_nmm"),
+        "CarSetup_Chassis_RightRear_SpringRate": ("rear_spring_nmm", "rear_spring_nmm"),
+        "CarSetup_Chassis_LeftFront_BumpRubberGap": ("lf_bump_rubber_gap_mm", "lf_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_RightFront_BumpRubberGap": ("rf_bump_rubber_gap_mm", "rf_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_LeftRear_BumpRubberGap": ("lr_bump_rubber_gap_mm", "lr_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_RightRear_BumpRubberGap": ("rr_bump_rubber_gap_mm", "rr_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_LeftFront_Camber": ("front_camber_deg", "front_camber_deg"),
+        "CarSetup_Chassis_LeftRear_Camber": ("rear_camber_deg", "rear_camber_deg"),
+        "CarSetup_Chassis_LeftRear_ToeIn": ("rear_toe_mm", "rear_toe_mm"),
+        "CarSetup_Chassis_Rear_FuelLevel": ("fuel_l", "fuel_l"),
+        "CarSetup_Chassis_Rear_RearWingAngle": ("wing_angle_deg", "wing_angle_deg"),
+        "CarSetup_Chassis_GearsDifferential_GearStack": ("gear_stack", "gear_stack"),
+        "CarSetup_Chassis_GearsDifferential_FrictionFaces": ("diff_clutch_plates", "diff_clutch_plates"),
+        "CarSetup_Chassis_GearsDifferential_DiffPreload": ("diff_preload_nm", "diff_preload_nm"),
+        "CarSetup_Chassis_InCarAdjustments_BrakePressureBias": ("brake_bias_pct", "brake_bias_pct"),
+        "CarSetup_Chassis_InCarAdjustments_AbsSetting": ("abs_setting", "abs_setting"),
+        "CarSetup_Chassis_InCarAdjustments_TcSetting": ("tc_setting", "tc_setting"),
+        "CarSetup_Chassis_InCarAdjustments_ThrottleResponse": ("throttle_map", "throttle_map"),
+        "CarSetup_Chassis_InCarAdjustments_EpasSetting": ("epas_setting", "epas_setting"),
+        "CarSetup_Chassis_InCarAdjustments_FWtdist": ("front_weight_dist_pct", "front_weight_dist_pct"),
+        "CarSetup_Chassis_InCarAdjustments_CrossWeight": ("cross_weight_pct", "cross_weight_pct"),
+        "CarSetup_Dampers_FrontDampers_LowSpeedCompressionDamping": ("front_ls_comp", "front_ls_comp"),
+        "CarSetup_Dampers_FrontDampers_HighSpeedCompressionDamping": ("front_hs_comp", "front_hs_comp"),
+        "CarSetup_Dampers_FrontDampers_LowSpeedReboundDamping": ("front_ls_rbd", "front_ls_rbd"),
+        "CarSetup_Dampers_FrontDampers_HighSpeedReboundDamping": ("front_hs_rbd", "front_hs_rbd"),
+        "CarSetup_Dampers_RearDampers_LowSpeedCompressionDamping": ("rear_ls_comp", "rear_ls_comp"),
+        "CarSetup_Dampers_RearDampers_HighSpeedCompressionDamping": ("rear_hs_comp", "rear_hs_comp"),
+        "CarSetup_Dampers_RearDampers_LowSpeedReboundDamping": ("rear_ls_rbd", "rear_ls_rbd"),
+        "CarSetup_Dampers_RearDampers_HighSpeedReboundDamping": ("rear_hs_rbd", "rear_hs_rbd"),
+    },
+    "porsche_992_gt3r": {
+        "CarSetup_Chassis_FrontBrakesLights_ArbSetting": ("front_arb_setting", "front_arb_setting"),
+        "CarSetup_Chassis_Rear_RarbSetting": ("rear_arb_setting", "rear_arb_setting"),
+        "CarSetup_Chassis_FrontBrakesLights_TotalToeIn": ("front_toe_mm", "front_toe_mm"),
+        "CarSetup_Chassis_FrontBrakesLights_FuelLevel": ("fuel_l", "fuel_l"),
+        "CarSetup_Chassis_FrontBrakesLights_FrontMasterCyl": ("front_master_cyl_mm", "front_master_cyl_mm"),
+        "CarSetup_Chassis_FrontBrakesLights_RearMasterCyl": ("rear_master_cyl_mm", "rear_master_cyl_mm"),
+        "CarSetup_Chassis_FrontBrakesLights_BrakePads": ("pad_compound", "pad_compound"),
+        "CarSetup_Chassis_FrontBrakesLights_CenterFrontSplitterHeight": ("splitter_height_mm", "splitter_height_mm"),
+        "CarSetup_Chassis_LeftFront_SpringRate": ("front_corner_spring_nmm", "front_corner_spring_nmm"),
+        "CarSetup_Chassis_RightFront_SpringRate": ("front_corner_spring_nmm", "front_corner_spring_nmm"),
+        "CarSetup_Chassis_LeftRear_SpringRate": ("rear_spring_nmm", "rear_spring_nmm"),
+        "CarSetup_Chassis_RightRear_SpringRate": ("rear_spring_nmm", "rear_spring_nmm"),
+        "CarSetup_Chassis_LeftFront_BumpRubberGap": ("lf_bump_rubber_gap_mm", "lf_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_RightFront_BumpRubberGap": ("rf_bump_rubber_gap_mm", "rf_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_LeftRear_BumpRubberGap": ("lr_bump_rubber_gap_mm", "lr_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_RightRear_BumpRubberGap": ("rr_bump_rubber_gap_mm", "rr_bump_rubber_gap_mm"),
+        "CarSetup_Chassis_LeftFront_Camber": ("front_camber_deg", "front_camber_deg"),
+        "CarSetup_Chassis_LeftRear_Camber": ("rear_camber_deg", "rear_camber_deg"),
+        # Porsche-only: paired rear toe under Chassis.Rear.TotalToeIn (per schema).
+        "CarSetup_Chassis_Rear_TotalToeIn": ("rear_toe_mm", "rear_toe_mm"),
+        "CarSetup_Chassis_Rear_WingSetting": ("wing_angle_deg", "wing_angle_deg"),
+        "CarSetup_Chassis_GearsDifferential_GearStack": ("gear_stack", "gear_stack"),
+        "CarSetup_Chassis_GearsDifferential_FrictionFaces": ("diff_clutch_plates", "diff_clutch_plates"),
+        "CarSetup_Chassis_GearsDifferential_DiffPreload": ("diff_preload_nm", "diff_preload_nm"),
+        "CarSetup_Chassis_InCarAdjustments_BrakePressureBias": ("brake_bias_pct", "brake_bias_pct"),
+        "CarSetup_Chassis_InCarAdjustments_AbsSetting": ("abs_setting", "abs_setting"),
+        "CarSetup_Chassis_InCarAdjustments_TcSetting": ("tc_setting", "tc_setting"),
+        "CarSetup_Chassis_InCarAdjustments_ThrottleShapeSetting": ("throttle_map", "throttle_map"),
+        "CarSetup_Chassis_InCarAdjustments_FWtdist": ("front_weight_dist_pct", "front_weight_dist_pct"),
+        "CarSetup_Chassis_InCarAdjustments_CrossWeight": ("cross_weight_pct", "cross_weight_pct"),
+        "CarSetup_Dampers_FrontDampers_LowSpeedCompressionDamping": ("front_ls_comp", "front_ls_comp"),
+        "CarSetup_Dampers_FrontDampers_HighSpeedCompressionDamping": ("front_hs_comp", "front_hs_comp"),
+        "CarSetup_Dampers_FrontDampers_LowSpeedReboundDamping": ("front_ls_rbd", "front_ls_rbd"),
+        "CarSetup_Dampers_FrontDampers_HighSpeedReboundDamping": ("front_hs_rbd", "front_hs_rbd"),
+        "CarSetup_Dampers_RearDampers_LowSpeedCompressionDamping": ("rear_ls_comp", "rear_ls_comp"),
+        "CarSetup_Dampers_RearDampers_HighSpeedCompressionDamping": ("rear_hs_comp", "rear_hs_comp"),
+        "CarSetup_Dampers_RearDampers_LowSpeedReboundDamping": ("rear_ls_rbd", "rear_ls_rbd"),
+        "CarSetup_Dampers_RearDampers_HighSpeedReboundDamping": ("rear_hs_rbd", "rear_hs_rbd"),
+    },
+}
+
+
 _KNOWN_FIELD_MAP: dict[str, tuple[str, str | None]] = {
     "CarSetup_TiresAero_AeroSettings_RearWingAngle": ("wing_angle_deg", "wing_angle_deg"),
     "CarSetup_Chassis_Front_PushrodLengthDelta": ("front_pushrod_mm", "front_pushrod_mm"),
@@ -135,6 +263,19 @@ _KNOWN_FIELD_MAP: dict[str, tuple[str, str | None]] = {
     "CarSetup_Systems_HybridConfig_HybridRearDriveCornerPct": ("hybrid_rear_drive_corner_pct", "hybrid_rear_drive_corner_pct"),
     "CarSetup_Systems_Lighting_RoofIdLightColor": ("roof_light_color", "roof_light_color"),
 }
+
+
+def get_known_fields(car_canonical: str | None = None) -> dict[str, tuple[str, str | None]]:
+    """Return the LDX field-id → (canonical_key, setup_attr) map.
+
+    For GT3 cars the GT3-specific map is returned (W5.2); for GTP cars
+    (or when ``car_canonical`` is None / unknown) the legacy GTP map is
+    returned.
+    """
+    if car_canonical and car_canonical.lower() in _GT3_KNOWN_FIELD_MAP:
+        return dict(_GT3_KNOWN_FIELD_MAP[car_canonical.lower()])
+    return dict(_KNOWN_FIELD_MAP)
+
 
 _TELEMETRY_CORRELATION = {
     "CarSetup_Systems_BrakeSpec_BrakePressureBias": ("dcBrakeBias", "live_brake_bias_pct"),
@@ -308,13 +449,25 @@ def _manual_constraints(car: Any, field_id: str) -> tuple[dict[str, Any] | None,
         return None, None, None
     if field_id == "CarSetup_TiresAero_AeroSettings_RearWingAngle":
         return None, list(getattr(car, "wing_angles", [])), None
+    # W5.2 — GT3 cars do not populate front_heave_nmm / front_torsion_od_mm
+    # on garage_ranges (they have no heave element nor torsion bars).  Guard
+    # the legacy GTP field-id constraints behind hasattr() so the function
+    # returns ``(None, None, None)`` rather than raising AttributeError.
     if field_id == "CarSetup_Chassis_Front_HeaveSpring":
+        if not hasattr(gr, "front_heave_nmm") or gr.front_heave_nmm is None:
+            return None, None, None
         return {"min": gr.front_heave_nmm[0], "max": gr.front_heave_nmm[1], "source": "car_model"}, None, gr.heave_spring_resolution_nmm
     if field_id == "CarSetup_Chassis_Rear_HeaveSpring":
+        if not hasattr(gr, "rear_third_nmm") or gr.rear_third_nmm is None:
+            return None, None, None
         return {"min": gr.rear_third_nmm[0], "max": gr.rear_third_nmm[1], "source": "car_model"}, None, gr.heave_spring_resolution_nmm
     if field_id == "CarSetup_Chassis_LeftFront_TorsionBarOD":
+        if not hasattr(gr, "front_torsion_od_mm") or gr.front_torsion_od_mm is None:
+            return None, None, None
         return {"min": gr.front_torsion_od_mm[0], "max": gr.front_torsion_od_mm[1], "source": "car_model"}, None, gr.rear_spring_resolution_nmm
     if field_id == "CarSetup_Chassis_LeftRear_TorsionBarOD":
+        if not hasattr(gr, "rear_spring_nmm") or gr.rear_spring_nmm is None:
+            return None, None, None
         return {"min": gr.rear_spring_nmm[0], "max": gr.rear_spring_nmm[1], "source": "car_model"}, None, gr.rear_spring_resolution_nmm
     if field_id in ("CarSetup_Chassis_Front_ArbBlades", "CarSetup_Chassis_Rear_ArbBlades"):
         return {"min": gr.arb_blade[0], "max": gr.arb_blade[1], "source": "car_model"}, None, 1
