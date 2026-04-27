@@ -1,7 +1,7 @@
 # GT3 Phase 2 — Implementation Status
 
-**Last updated:** 2026-04-27 (Wave 4.3 + Wave 5.3 shipped)
-**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 7 implementation commits)
+**Last updated:** 2026-04-27 (Wave 5.1 + Wave 6.1 shipped)
+**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 8 implementation commits)
 **Plan source of truth:** [`SYNTHESIS.md`](SYNTHESIS.md) — 22 work units across 10 waves, ~511 h estimated.
 
 This doc tracks which units have shipped, what was deferred, and the recommended next batch. It is updated after every work-unit batch lands. Each merged PR / batch commit is referenced by SHA + message so the diff can be inspected directly.
@@ -14,15 +14,15 @@ This doc tracks which units have shipped, what was deferred, and the recommended
 | 2 | Solver chain unblocks | 4 | ~76 h | **DONE 2026-04-27** |
 | 3 | Solver chain crash fixes | 3 | ~30 h | **DONE 2026-04-27** |
 | 4 | Output + writer | 3 | ~70 h | **DONE 2026-04-27** |
-| 5 | Pipeline + analyzer | 3 | ~62 h | W5.2 + W5.3 done; W5.1 remains (~24 h) |
-| 6 | Learner + scoring | 3 | ~56 h | TODO |
+| 5 | Pipeline + analyzer | 3 | ~62 h | **DONE 2026-04-27** |
+| 6 | Learner + scoring | 3 | ~56 h | W6.1 done; W6.2 + W6.3 remain (~24 h) |
 | 7 | Auto-calibrate + GarageOutputModel | 2 | ~80 h | TODO |
 | 8 | Infra + DB + automation | 2 | ~43 h | TODO |
 | 9 | UI + CLI + tests + docs | 2 | ~62 h | TODO |
 | 10 | E2E smoke + remaining cars | 1 | ~80 h+ | TODO (gated on IBT capture) |
 
-**Shipped so far:** 15 of 22 units (~258 h of ~511 h ≈ 50% of total estimated work).
-**Remaining critical path:** W5.1 → W7.1 → W7.2 → W9.1 → W9.2 → W10.1 ≈ ~278 h.
+**Shipped so far:** 17 of 22 units (~296 h of ~511 h ≈ 58% of total estimated work).
+**Remaining critical path:** W7.1 → W7.2 → W9.1 → W9.2 → W10.1 ≈ ~254 h.
 
 ## Wave 1 — DONE (2026-04-27)
 
@@ -361,9 +361,64 @@ Commit: `2792f3b feat(gt3): Wave 4.3 + Wave 5.3 — output validators + analyzer
 - `A18DiagnoseHeaveAlarmsTests`: GT3 doesn't emit "stiffen heave spring"; GTP still does (regression locked).
 - `A19CausalGraphTests`: `applicable_nodes(BMW_M4_GT3)` excludes heave nodes, includes GT3 corner-spring nodes; reverse for BMW LMDH.
 
+## Wave 5.1 + Wave 6.1 — DONE (2026-04-27)
+
+Commit: `eb8c2a0 feat(gt3): Wave 5.1 + Wave 6.1 — pipeline conditional + objective/sensitivity`
++1510/-229 across 9 files. 38 new tests. Suite: 703 passed.
+
+### W5.1 — Pipeline produce/reason/report GT3 conditional — DONE
+
+**Files:** `pipeline/produce.py`, `pipeline/reason.py`, `pipeline/report.py`, `pipeline/scan.py`, `tests/test_pipeline_gt3_w51.py` (new).
+
+- **`pipeline/produce.py`** (194 LoC delta): module-level `_is_gt3_car(car)` and `_step2_present(step2)` helpers (L67-90). F1 alias map drops heave/third on GT3 (L93-138). F2 m_eff `car.heave_spring is not None` guard (L460-470). F4 analyze_stint heave/third = None on GT3 (L1011-1019). F7 JSON `step2_heave` sentinel (L1672-1681). F9 delta card + solver_predictions heave fields gated on `_step2_present` (L1814-1823, L1918-1949). F10 GT3 top-n column schema swap LF-Spg/RR-Spg (L1376-1429).
+- **`pipeline/reason.py`** (limited delta): F4 analyze_stint GT3 None passthrough (L3427-3437). F7 JSON sentinel (L3777-3784). F13 heave-floor modifier section gated (L2174-2185). F11/F12 verified already W2.1-handled (no further edits).
+- **`pipeline/report.py`** (118 LoC delta): module-level `_is_gt3` / `_step2_present` helpers (L47-72). F14 CURRENT vs RECOMMENDED 4 corner spring rows for GT3 (L513-553). F15 FRONT HEAVE TRAVEL BUDGET architecture-aware gate (L603-614). F16 `GarageSetupState.from_solver_steps` + `garage_model.predict` gated on `not _is_gt3_report` (L243-265).
+- **`pipeline/scan.py`** (5 LoC): F23 `TODO(W5.1+)` marker for missing GT3 coil model row (L458-462).
+
+**Stale audit findings already handled (verified):**
+- F11, F12: W2.1 (commit `2cbf1e8`).
+- F6 (.sto writer call site): W4.x (`output/setup_writer.py` `is_gt3` dispatch).
+- F8 (Report-emission): output/report.py W4.3 GT3 awareness.
+
+**Deferred:**
+- DEGRADED 17 / 18 / 19: CLI ergonomics; track-slug heuristic — out of W5.1 architecture scope.
+- DEGRADED 21 / 22: predictor cascading — W7+ territory.
+- F23 cosmetic: needs new model fit per car + adapter wiring.
+
+**Tests:** 20 new in `tests/test_pipeline_gt3_w51.py`. Alias map filtering, `_step2_present` sentinel, top-n schema swap, report 4-corner display, GTP regression.
+
+### W6.1 — Objective + sensitivity GT3 guards — DONE
+
+**Files:** `solver/objective.py`, `solver/sensitivity.py`, `solver/laptime_sensitivity.py`, `tests/test_objective_sensitivity_gt3_w61.py` (new).
+
+- **`solver/objective.py`** (180 LoC delta):
+  - F-O-1 (L884-905): m_eff GT3 fallback. Uses half-axle sprung mass (`total_mass × weight_dist / 2.0`) — same proxy as W2.2 `rh_excursion_p99` fallback. BMW M4 GT3 (1411 kg, 0.464 fwd) → m_eff_front ≈ 327 kg, m_eff_rear ≈ 378 kg.
+  - F-O-2 (L926-959): excursion physics dispatch — `k_front_for_excursion` / `parallel_wheel_rate_for_excursion` uses corner-spring rate on GT3 instead of heave; cap relaxed (< 20 N/mm) for GT3.
+  - F-O-3 (L686-696): `_compute_lltd_fuel_window` early-returns `(0, 0, 0)` on GT3. Corner coils are constant-rate; LLTD doesn't shift across stint.
+  - F-O-4 (L1840-1882): `_compute_platform_risk` gates entire heave-spring deflection block on `_hsm is not None`.
+  - F-O-5 (L417-422 + L428-431 + L2072-2086): `_heave_calibration_uncertainty_penalty_ms` / `_heave_realism_penalty_ms` / envelope ratio penalty all gated on `heave_spring is None` / `_is_gt3_envelope`; contribute 0 for GT3.
+- **`solver/sensitivity.py`** (87 LoC delta):
+  - F-S-1 (L224-231): `analyze_step2_constraints` early-return `[]` when `not step2.present`.
+  - F-S-3/4/5 (L555-580): `build_sensitivity_report` `_heave_block_runnable` gate around heave sensitivities and confidence bands.
+- **`solver/laptime_sensitivity.py`** (63 LoC delta):
+  - F-LT-1 (L394-407, L598-611): `_front_heave_sensitivity` and `_rear_third_sensitivity` early-return on `not step2.present`.
+  - F-LT-2 (L893-911, L919-936): `_heave_perch_sensitivity` and `_rear_third_perch_sensitivity` same.
+  - Master aggregator (L1400-1432): `_step2_present` flag + conditional list entries + None filter.
+
+**Audit corrections / discoveries:**
+- GTP-existing bug noted: `_compute_lap_gain_breakdown:1664` hardcodes `diff_target=30.0` instead of `car.default_diff_preload_nm` (F-O-12). Affects all non-BMW cars; out of W6.1 scope.
+- **GT3 LLTD scoring quality bias** (F-O-7): `front_wheel_rate` falls through to `car.corner_spring.front_roll_spring_rate_nmm = 0.0` on GT3, so the LLTD `k_front` term gets 0 and silently underweights candidates. GT3 score is non-crashing but uniformly biased until W6.x wires the GT3 `front_corner_spring_nmm` axis as a candidate variable.
+
+**Deferred (per task instructions):**
+- F-O-6 through F-O-15 (DEGRADED + COSMETIC).
+- F-S-2, F-S-6, F-LT-3 through F-LT-11 (DEGRADED + COSMETIC).
+- GT3-shape `_front_corner_spring_sensitivity` replacement function: W6.x.
+
+**Tests:** 18 new in `tests/test_objective_sensitivity_gt3_w61.py`. `evaluate_physics(BMW_M4_GT3)` non-crash + finite Score. LLTD fuel window returns `(0, 0, 0)` for GT3. Heave-perch / rear-third sensitivity functions return None on GT3. GTP regression: BMW LMDH still includes heave/third rows + non-zero LLTD fuel window.
+
 ## Combined-state pipeline behavior
 
-After Wave 1 + Wave 2 (all 4 units) + Wave 3 (all 3 units) + Wave 4 (all 3 units) + Wave 5.2 + Wave 5.3:
+After Wave 1 + Wave 2 (all 4 units) + Wave 3 (all 3 units) + Wave 4 (all 3 units) + Wave 5 (all 3 units) + Wave 6.1:
 
 - **GT3 IBT through `pipeline.produce`** runs cleanly through Step 1 → Step 6.
   - Step 1: `_solve_balance_only` returns `RakeSolution` with target balance hit, NaN L/D, `mode="balance_only_search"`.
@@ -388,21 +443,20 @@ After Wave 1 + Wave 2 (all 4 units) + Wave 3 (all 3 units) + Wave 4 (all 3 units
 
 ## Recommended next batch
 
-**W5.1 + W6.1 in parallel** — disjoint files, both unblock the GT3 pipeline + objective scoring path.
+**W6.2 + W6.3 in parallel** — closes Wave 6 fully. Files have shallow ordering (W6.3 depends on W6.2 STEP_GROUPS + KNOWN_CAUSALITY); both touch `learner/` so dispatch as a sequenced unit (W6.2 first, then W6.3) within a single agent call OR as parallel agents that both edit `learner/delta_detector.py` carefully.
 
 | Unit | Files | Effort | Why |
 |---|---|---|---|
-| **W5.1** | `pipeline/produce.py` (heave_spring access, JSON output guards, alias dict), `pipeline/reason.py` (heave floor checks), `pipeline/report.py` (display panels) | 24 h | Closes Wave 5 (last unit). Today the pipeline orchestrator still has `car.heave_spring.*` reads on the auto-learn path; the JSON output dict carries phantom heave/third keys for GT3. After this, the full IBT → .sto pipeline works end-to-end on GT3 with clean JSON for the webapp/learner. |
-| **W6.1** | `solver/objective.py` `_compute_lltd_fuel_window` GT3 branch, `solver/sensitivity.py` `step2.present` guards, `solver/laptime_sensitivity.py` `_front_heave_sensitivity` skip | 14 h | Opens Wave 6. Today the objective scoring runs on GT3 but the LLTD-fuel-window calculation references heave/third fields; sensitivity scoring emits phantom heave-axis sensitivities. Both are silent quality regressions (not crashes) but pollute the objective signal for GT3. |
+| **W6.2** | `learner/delta_detector.py` `STEP_GROUPS["step3_corner_combined"]` for GT3, 23 new GT3 KNOWN_CAUSALITY tuples | 6 h | Tiny, surgical. Without it, the learner doesn't recognise GT3 corner-spring → variance/freq/settle/shock-vel/roll/understeer causality, so empirical fits never accumulate for GT3. |
+| **W6.3** | `learner/observation.py` GT3 setup-dict fields, `learner/empirical_models.py` heave-fitter no-op + new `_fit_corner_to_variance`, `learner/setup_clusters.py` GT3 cluster keys, `learner/recall.py` GT3 lookups | 18 h | Wires the GT3 observation schema and empirical-model fitting. Closes the learner GT3 leg. |
 
-Combined ~38 h, no file overlap, W5.1 depends on W2.1+W1.1+W1.2 (done), W6.1 depends on W2.1+W3.1 (done). After this batch, **Wave 5 is complete** and Wave 6's first unit is in.
+Combined ~24 h, sequential ordering (W6.2 → W6.3). After this batch, **Wave 6 is complete** (all 3 units done).
 
 Alternative batches:
-- **W6.2 + W6.3** (learner GT3 awareness, ~24 h combined): closes Wave 6 fully but blocks on W5.3 cleanup that just landed plus W6.2→W6.3 ordering.
-- **W8.1 + W8.2** (infra/teamdb/watcher, ~43 h): independent of pipeline/learner work, pure parallelizable backend work.
-- **W4.3 follow-up** (GT3 .sto round-trip fixture from a known-good iRacing-emitted file): manual QA effort, no engineer-time bound.
+- **W8.1 + W8.2** (infra/teamdb/watcher, ~43 h combined): independent of solver/learner work; pure parallelizable backend. W8.1 is the DB schema migration (24h) — touches `teamdb/models.py` + `migrations/0001_gt3_phase2.sql` + aggregator. W8.2 is watcher GT3 CarPath detection (19h) — touches `watcher/{monitor,service}.py` + `desktop/config.py`.
+- **W7.1** (24 h): the critical-path next step. `car_model/garage.py` GT3 `GarageSetupState` + `GarageOutputModel` extraction. Gated on knowing the GT3 garage-features (which we have via the W4.3 GarageRanges plumbing). Doesn't strictly need real IBT data; can land with stubbed garage-output models. W7.2 (56 h, the heavy lift) IS gated on varied-spring IBT capture.
 
-After Wave 5 + Wave 6.1, the next critical-path is **W7.1 / W7.2** (auto-calibrate + GarageOutputModel for GT3 — ~80 h, gated on more IBT capture: varied-spring sweeps for BMW M4 GT3 at the same track).
+After Wave 6 + W7.1, the critical path is **W7.2** (auto-calibrate per-car for GT3 — ~56 h, gated on more IBT capture: varied-spring sweeps for BMW M4 GT3 at the same track).
 
 ## Top deferred-finding ledger (rolled up across waves)
 
@@ -426,10 +480,10 @@ After Wave 5 + Wave 6.1, the next critical-path is **W7.1 / W7.2** (auto-calibra
 
 ## Test posture
 
-- 665 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +56 from Wave 1, +21 from Wave 2.1+2.2, +33 from Wave 2.3+3.1, +30 from Wave 2.4+3.2, +29 from Wave 4.1+3.3, +39 from Wave 4.2+5.2, +24 from Wave 4.3+5.3 = 232 new GT3-specific tests).
+- 703 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +56 from Wave 1, +21 from Wave 2.1+2.2, +33 from Wave 2.3+3.1, +30 from Wave 2.4+3.2, +29 from Wave 4.1+3.3, +39 from Wave 4.2+5.2, +24 from Wave 4.3+5.3, +38 from Wave 5.1+6.1 = 270 new GT3-specific tests).
 - 32 skipped (mostly fastapi-dependent webapp tests in this sandbox).
 - 1 deselected: `tests/test_run_trace.py::test_support_tier_mapping` — pre-existing data-dependent failure (BMW dataset has 26 sessions but test asserts ≥30); confirmed unchanged across all batches.
-- 0 NEW regressions from any of the 15 shipped units.
+- 0 NEW regressions from any of the 17 shipped units.
 
 ## Branch strategy reminder
 
