@@ -32,10 +32,10 @@ A separate worker is auditing `output/setup_writer.py`, `solver/`, `analyzer/`, 
 | F6 | DEGRADED | CLI | `__main__.py:489-490, 542, 556, 583, 605, 622, 794-795` | All `--car` help text says "(bmw \| ferrari \| porsche \| cadillac \| acura)" — never mentions GT3 |
 | F7 | DEGRADED | CLI | `__main__.py:467-468, 783` | Top-level CLI description "GTP setup solver" — class-locked |
 | F8 | DEGRADED | CLI | `analyzer/__main__.py:35` | `--car` help locks to GTP names |
-| F9 | DEGRADED | CLI | `learner/ingest.py:807` | `--car` help is empty (no choices), but docstring example only shows `bmw` |
+| F9 | DEGRADED | CLI | `learner/ingest.py:807` | `--car` argparse help is empty, but docstring example only shows `bmw` |
 | F10 | BLOCKER | tests | `tests/test_registry.py:114-125` | `test_returns_all_display_names` hard-asserts `len(names) == 5` — fails the moment GT3 cars enter the registry |
 | F11 | BLOCKER | tests | `tests/test_setup_regression.py:1-80` | Regression baseline only covers BMW/Sebring + Porsche/Algarve `.sto` — no GT3 baseline; pipeline cannot be regression-locked for GT3 |
-| F12 | DEGRADED | tests | `tests/test_registry.py:19-69` | All `parametrize` lists are GTP-only (`bmw`, `porsche`, `ferrari`, `cadillac`, `acura`) — no GT3 canonical-name resolution coverage |
+| F12 | DEGRADED | tests | `tests/test_registry.py:19-69` | All `parametrize` lists are GTP-only — no GT3 canonical-name resolution coverage |
 | F13 | DEGRADED | tests | `tests/test_aero_ld_validation.py`, `tests/test_optimize.py` | Tests reference GTP cars only; no parametrize for GT3 wing-angle ranges |
 | F14 | DEGRADED | tests | `tests/test_all_cars_garage_truth.py:98-101` | `_TOLERANCES` dict keyed by 4 GTP cars (bmw/porsche/ferrari/acura). GT3 cars will silently fall through |
 | F15 | DEGRADED | tests | `tests/test_webapp_routes.py:36-43` | E2E test posts `car=bmw` only; no GT3 form submission exercise |
@@ -44,10 +44,10 @@ A separate worker is auditing `output/setup_writer.py`, `solver/`, `analyzer/`, 
 | F18 | BLOCKER | validation | `validation/objective_calibration.py:127-169` | `load_observations()` filters to `car == "bmw"` and `track == sebring_international_raceway`; calibration weights only ever fit BMW |
 | F19 | DEGRADED | validation | `validation/run_validation.py:333-340` | `workflow_map` and report header list GTP workflow only |
 | F20 | BLOCKER | scenario_profiles | `solver/scenario_profiles.py:1-294` | No GT3-specific scenario; sanity windows for `front_heave_travel_used_pct`, `front_excursion_mm`, `rear_rh_std_mm` are tuned to GTP ride-height telemetry. GT3 has no heave channel and runs different RH magnitudes (BMW M4 GT3 dynamic F=68/R=70, Porsche 992 F=69/R=61 *reverse rake*) |
-| F21 | DEGRADED | scenario_profiles | adjacent — `solver/{corner_spring_solver.py:309,487,628, damper_solver.py:444,1004, diff_solver.py:302, explorer.py:191}` | Hardcoded `89.0` L fuel default (GTP BMW M Hybrid V8 capacity). GT3 cars range 100 (BMW/Porsche) to 106 L (Aston/Mercedes). Falls outside this audit's strict scope but is the natural place for "scenario fuel" to live |
-| F22 | BLOCKER | docs (CLAUDE.md) | `CLAUDE.md` (entire) | Header reads "Physics-Based Setup Calculator for iRacing GTP/Hypercar"; "Project Goal" pins authority to GTP cars. No GT3 section. Heave/third documented as universal physics. |
-| F23 | BLOCKER | docs (per-car-quirks) | `skill/per-car-quirks.md:1-461` | "Per-Car Setup Quirks" Table of Contents lists only 5 GTP cars. "Critical Architecture Differences" lays out LMDh / Multimatic / ORECA / Ferrari LMH chassis frames as if exhaustive. No GT3 section. |
-| F24 | BLOCKER | docs (calibration_guide) | `docs/calibration_guide.md:1-2` | Title "iOptimal **GTP** Calibration Guide". 21 references to "GTP cars" / "all GTP cars" assumed universal. No GT3 onboarding workflow. |
+| F21 | DEGRADED | scenario_profiles | adjacent — `solver/corner_spring_solver.py:309,487,628`, `solver/damper_solver.py:444,1004`, `solver/diff_solver.py:302`, `solver/explorer.py:191` | Hardcoded `89.0` L fuel default (GTP BMW M Hybrid V8 capacity). GT3 cars range 100 (BMW/Porsche) to 106 L (Aston/Mercedes) |
+| F22 | BLOCKER | docs (CLAUDE.md) | `CLAUDE.md` (entire) | Header reads "Physics-Based Setup Calculator for iRacing GTP/Hypercar"; "Project Goal" pins authority to GTP cars. No GT3 section. Heave/third documented as universal physics |
+| F23 | BLOCKER | docs (per-car-quirks) | `skill/per-car-quirks.md:1-461` | "Per-Car Setup Quirks" Table of Contents lists only 5 GTP cars. "Critical Architecture Differences" lays out LMDh / Multimatic / ORECA / Ferrari LMH chassis frames as if exhaustive. No GT3 section |
+| F24 | BLOCKER | docs (calibration_guide) | `docs/calibration_guide.md:1-2` | Title "iOptimal **GTP** Calibration Guide". 21 references to "GTP cars" / "all GTP cars" assumed universal. No GT3 onboarding workflow |
 
 **Counts:** 9 BLOCKER, 15 DEGRADED, 0 COSMETIC.
 
@@ -329,14 +329,3 @@ All 51 `tests/test_*.py` files were enumerated via `Glob`. The files explicitly 
 - Pass through unchanged for GT3 (e.g., `tests/test_brake_solver.py`, `tests/test_diff_solver_extended.py`, `tests/test_run_trace.py`).
 - Already cover GT3 scaffolding (`tests/test_suspension_architecture.py` — Phase 0 contract is well-pinned and should not be touched without coordinated changes).
 - Are car-specific GTP tests that must NOT be parameterized for GT3 because they pin GTP-specific output (`tests/test_ferrari_setup_schema.py`, `tests/test_ferrari_setup_writer.py`, `tests/test_bmw_rotation_search.py`, `tests/test_bmw_sebring_garage_truth.py`, `tests/test_bmw_setup_coverage.py`, `tests/test_acura_hockenheim.py`). These will need GT3 sibling files (proposed name: tests/test_bmw_m4_gt3_spielberg.py) once calibration is operational.
-
-Files with GTP-specific names that imply they are class-locked (no GT3 work needed within the file, but a sibling GT3 test should be authored):
-- `tests/test_bmw_rotation_search.py`
-- `tests/test_bmw_sebring_garage_truth.py`
-- `tests/test_bmw_setup_coverage.py`
-- `tests/test_ferrari_hockenheim_calibration.py`
-- `tests/test_ferrari_public_output_consistency.py`
-- `tests/test_ferrari_setup_schema.py`
-- `tests/test_ferrari_setup_writer.py`
-- `tests/test_acura_hockenheim.py`
-- `tests/test_lltd_proxy_guardrails.py` (Porsche-specific physics)
