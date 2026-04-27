@@ -1735,6 +1735,13 @@ class CarModel:
     # Empty string = unspecified / not BoP-tracked (legacy GTP cars).
     bop_version: str = ""
 
+    # iRacing CarPath (DriverInfo.Drivers[me].CarPath) for IBT-driven car
+    # auto-detection. Empty for legacy GTP cars whose canonical_name already
+    # matches the IBT short name (bmw, porsche, ferrari, cadillac, acura);
+    # populated for GT3 cars where canonical_name is descriptive
+    # (e.g., "bmw_m4_gt3") but iRacing exposes a short tag ("bmwm4gt3").
+    iracing_car_path: str = ""
+
     def __post_init__(self) -> None:
         # Auto-populate garage_ranges discrete torsion OD options from corner spring model
         if not self.garage_ranges.front_torsion_od_discrete and self.corner_spring.front_torsion_od_options:
@@ -3187,16 +3194,17 @@ ACURA_ARX06 = CarModel(
 #   3. anchor the registry entry for future calibration.
 
 BMW_M4_GT3 = CarModel(
-    name="BMW M4 GT3",
+    name="BMW M4 GT3 EVO",  # IBT screen name 2026-04-26 (iRacing 2026 S2 = EVO version)
     canonical_name="bmw_m4_gt3",
+    iracing_car_path="bmwm4gt3",  # IBT DriverInfo.CarPath
     suspension_arch=SuspensionArchitecture.GT3_COIL_4WHEEL,
     bop_version="2026s2_p3",  # iRacing 2026 Season 2 Patch 3 (2026-04-21)
-    supported_track_keys=(),  # No track calibration yet — gate will block per-track work
+    supported_track_keys=("spielberg",),  # Have one IBT at Spielberg / Red Bull Ring
     # Mass + chassis (manual: dry 1285 kg, wet w/driver 1411 kg, WB 2916 mm)
     mass_car_kg=1285.0,
     mass_driver_kg=75.0,
-    weight_dist_front=0.50,  # COMMUNITY estimate; FR layout but engine behind front axle
-    fuel_capacity_l=120.0,    # PENDING_VERIFICATION — manual does not state; typical GT3
+    weight_dist_front=0.464,  # IBT: InCarAdjustments.FWtdist = 46.4% (Spielberg setup)
+    fuel_capacity_l=100.0,    # IBT: DriverCarFuelMaxLtr = 100.0
     fuel_stint_end_l=10.0,
     wheelbase_m=2.916,
     steering_ratio=14.0,      # PENDING_IBT (typical GT3 14-16:1)
@@ -3272,10 +3280,11 @@ BMW_M4_GT3 = CarModel(
     deflection=DeflectionModel.uncalibrated(),
     # Wing angle range from parsed aero map (-2 to +6, 1° steps)
     wing_angles=[-2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-    # GT3 brake bias operating window from community sources
-    brake_bias_pct=54.0,
-    default_diff_preload_nm=40.0,  # PENDING_IBT
-    measured_lltd_target=None,     # Will use OptimumG physics formula
+    # Brake bias from IBT (Spielberg setup): 52.0% front
+    brake_bias_pct=52.0,
+    # Diff preload from IBT (Spielberg setup): 100 Nm
+    default_diff_preload_nm=100.0,
+    measured_lltd_target=None,     # Will use OptimumG physics formula (W_f=46.4% → ~0.51)
     lltd_target_source="physics_formula",
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=0.0,    # GT3 RH not pinned — varies with springs
@@ -3296,6 +3305,255 @@ BMW_M4_GT3 = CarModel(
 )
 
 
+# ─── Aston Martin Vantage GT3 EVO ────────────────────────────────────────────
+# Second GT3 entry. Seeded from iRacing user manual V1 (2026-01) + verified IBT
+# session_info from a Spielberg/Red Bull Ring session 2026-04-26. Some fields
+# remain PENDING_IBT pending more setup variation across multiple sessions.
+#
+# Distinctive properties from the IBT YAML:
+#   - Front section is named `FrontBrakesLights` (not `FrontBrakes`); ARB field
+#     is `FarbBlades`/`RarbBlades` (not `ArbBlades`).
+#   - Aero balance section is named `AeroBalanceCalculator` (not
+#     `AeroBalanceCalc`); wing field is `RearWingAngle` (not `WingSetting`).
+#   - Extra in-car adjusters: `ThrottleResponse`, `EpasSetting` (electronic
+#     power steering) — Aston-specific, not present on BMW.
+#   - Endurance light fields (`EnduranceLights`, `NightLedStripColor`) present.
+#
+# These car-specific YAML field names will need per-car PARAM_IDS encoding in
+# `output/setup_writer.py` once that module gets its GT3 dispatch table.
+
+ASTON_MARTIN_VANTAGE_GT3 = CarModel(
+    name="Aston Martin Vantage GT3 EVO",
+    canonical_name="aston_martin_vantage_gt3",
+    iracing_car_path="amvantageevogt3",  # IBT DriverInfo.CarPath
+    suspension_arch=SuspensionArchitecture.GT3_COIL_4WHEEL,
+    bop_version="2026s2_p3",
+    supported_track_keys=("spielberg",),  # Have one IBT at Spielberg
+    # Mass + chassis (real-world FIA: dry ~1265 kg; iRacing wet ~1330 kg).
+    mass_car_kg=1265.0,
+    mass_driver_kg=75.0,
+    weight_dist_front=0.480,  # IBT: InCarAdjustments.FWtdist = 48.0% (Spielberg setup)
+    fuel_capacity_l=106.0,    # IBT: DriverCarFuelMaxLtr = 106.0
+    fuel_stint_end_l=10.0,
+    wheelbase_m=2.704,        # PENDING manual decode (V1 PDF is image-based); 2018 platform reference
+    steering_ratio=14.0,      # PENDING_IBT
+    aero_axes_swapped=False,
+    # GT3 RH operating envelope. Manual: max-DF wing +10.5 → dyn F 35.0±2.5,
+    # dyn R 70.0±2.5; min-drag wing +0.5 → F/R 17.5±2.5.
+    min_front_rh_static=50.0,  # PENDING manual decode
+    max_front_rh_static=95.0,
+    min_rear_rh_static=50.0,
+    max_rear_rh_static=95.0,
+    min_front_rh_dynamic=5.0,
+    max_front_rh_dynamic=80.0,
+    min_rear_rh_dynamic=5.0,
+    max_rear_rh_dynamic=95.0,
+    vortex_burst_threshold_mm=2.0,  # PENDING_IBT
+    heave_spring=None,
+    corner_spring=CornerSpringModel(
+        front_torsion_c=0.0,
+        front_torsion_od_ref_mm=0.0,
+        front_torsion_od_range_mm=(0.0, 0.0),
+        front_torsion_od_options=[],
+        front_is_roll_spring=False,
+        front_motion_ratio=1.0,
+        rear_motion_ratio=1.0,
+        rear_spring_range_nmm=(120.0, 280.0),  # PENDING manual decode (community range)
+        rear_spring_step_nmm=10.0,
+        rear_spring_perch_baseline_mm=0.0,
+        track_width_mm=1700.0,
+        cg_height_mm=350.0,
+    ),
+    # ARB: blade counts PENDING manual decode (V1 PDF image-based).
+    # IBT uses `FarbBlades` / `RarbBlades` field naming (vs BMW's `ArbBlades`).
+    arb=ARBModel(
+        front_size_labels=[f"B{i}" for i in range(1, 11)],  # PENDING — assumed 10 blades
+        front_stiffness_nmm_deg=[0.0] * 10,
+        front_blade_count=1,
+        front_baseline_size="B5",
+        front_baseline_blade=1,
+        rear_size_labels=[f"B{i}" for i in range(1, 11)],
+        rear_stiffness_nmm_deg=[0.0] * 10,
+        rear_blade_count=1,
+        rear_baseline_size="B5",
+        rear_baseline_blade=1,
+    ),
+    geometry=WheelGeometryModel(),
+    damper=DamperModel(
+        # Real-world Aston has 5-way adjustable; iRacing IBT YAML exposes 4-way
+        # per-axle (FrontDampers/RearDampers, LSC/HSC/LSR/HSR clicks).
+        # Click range PENDING — driver-loaded values were 9–11 across the board
+        # which suggests a 0–11 scale similar to BMW.
+        has_roll_dampers=False,
+        has_front_roll_damper=False,
+        has_rear_roll_damper=False,
+        zeta_is_calibrated=False,
+    ),
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    default_df_balance_pct=44.0,  # IBT: 40.5% measured (driver setup at Spielberg, wing +5)
+    tyre_load_sensitivity=0.20,
+    ride_height_model=RideHeightModel.uncalibrated(),
+    deflection=DeflectionModel.uncalibrated(),
+    # Wing angle range from parsed aero map: 5 to 13 (9 angles, 1° steps)
+    wing_angles=[5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0],
+    # Brake bias from IBT (Spielberg setup): 55.8% front
+    brake_bias_pct=55.8,
+    # Diff preload from IBT (Spielberg setup): 110 Nm
+    default_diff_preload_nm=110.0,
+    measured_lltd_target=None,     # OptimumG physics formula will derive
+    lltd_target_source="physics_formula",
+    pushrod=PushrodGeometry(
+        front_pinned_rh_mm=0.0,
+        front_pushrod_default_mm=0.0,
+        rear_base_rh_mm=76.0,  # IBT: rear static RH = 76.0 mm
+        rear_pushrod_to_rh=0.0,
+    ),
+    rh_variance=RideHeightVariance(dominant_bump_freq_hz=4.0),
+    aero_compression=AeroCompression(
+        ref_speed_kph=200.0,
+        # IBT static-vs-dynamic delta at Spielberg: front 70.1 → 70 mm (~0 mm),
+        # rear 76.0 → 70 mm (~6 mm). Single sample — PENDING multi-session calibration.
+        front_compression_mm=0.0,
+        rear_compression_mm=6.0,
+    ),
+    garage_ranges=GarageRanges(
+        camber_front_deg=(-4.0, 0.0),
+        camber_rear_deg=(-3.0, 0.0),
+    ),
+)
+
+
+# ─── Porsche 911 GT3 R (992) ────────────────────────────────────────────────
+# Third GT3 entry. The ONLY rear-engine (RR) GT3 — critical for de-risking the
+# LLTD physics path. Seeded from iRacing user manual V2 (2024-09) + verified
+# IBT session_info from a Spielberg/Red Bull Ring session 2026-04-26.
+#
+# RR-layout signatures verified in the IBT:
+#   - FWtdist = 44.9% (lowest of the three GT3s sampled — BMW 46.4%, Aston 48.0%)
+#   - Rear spring 260 N/mm > front 220 N/mm (rear-stiff to control rear lift,
+#     opposite of FR/MR cars where front is typically stiffer)
+#   - Dynamic RH at speed: front 69 mm > rear 61 mm (reverse rake — opposite of
+#     GTP/MR cars where rear sits higher)
+#
+# Additional IBT YAML field-name divergence vs BMW + Aston:
+#   - Front ARB = `ArbSetting` (single integer, NOT blade-paired like BMW)
+#   - Rear ARB  = `RarbSetting`
+#   - Rear toe is `TotalToeIn` (PAIRED axle-level), not per-wheel ToeIn
+#   - FuelLevel lives in `FrontBrakesLights` section (not `Rear` like BMW/Aston)
+#   - Wing field is `WingSetting` in BOTH aero and chassis-rear sections
+#   - Wing angles use 0.7-degree offsets (5.7, 6.7, ..., not integer)
+#   - Damper driver-loaded values reach 12 — implies a 0-12 click range,
+#     wider than BMW/Aston's 0-11. Manual does not state range; PENDING
+#     a click-sweep IBT to confirm.
+
+PORSCHE_992_GT3R = CarModel(
+    name="Porsche 911 GT3 R (992)",
+    canonical_name="porsche_992_gt3r",
+    iracing_car_path="porsche992rgt3",
+    suspension_arch=SuspensionArchitecture.GT3_COIL_4WHEEL,
+    bop_version="2026s2_p3",
+    supported_track_keys=("spielberg",),
+    # Mass + chassis (manual: dry 1250 kg lightest, wet 1496 kg, WB 2.507 m shortest)
+    mass_car_kg=1250.0,
+    mass_driver_kg=75.0,
+    weight_dist_front=0.449,  # IBT: FWtdist = 44.9% (RR-layout signature)
+    fuel_capacity_l=100.0,    # IBT: DriverCarFuelMaxLtr
+    fuel_stint_end_l=10.0,
+    wheelbase_m=2.507,
+    steering_ratio=14.0,
+    aero_axes_swapped=False,
+    # GT3 RH operating envelope. Manual does NOT publish max-DF/min-drag aero
+    # targets for this car (notable gap among GT3 manuals). Step 1 will need to
+    # discover them empirically from the parsed aero map.
+    min_front_rh_static=50.0,
+    max_front_rh_static=95.0,
+    min_rear_rh_static=50.0,
+    max_rear_rh_static=95.0,
+    min_front_rh_dynamic=5.0,
+    max_front_rh_dynamic=80.0,
+    min_rear_rh_dynamic=5.0,
+    max_rear_rh_dynamic=95.0,
+    vortex_burst_threshold_mm=2.0,  # PENDING_IBT
+    heave_spring=None,
+    corner_spring=CornerSpringModel(
+        front_torsion_c=0.0,
+        front_torsion_od_ref_mm=0.0,
+        front_torsion_od_range_mm=(0.0, 0.0),
+        front_torsion_od_options=[],
+        front_is_roll_spring=False,
+        front_motion_ratio=1.0,
+        rear_motion_ratio=1.0,
+        rear_spring_range_nmm=(150.0, 350.0),  # PENDING manual decode (driver loaded 260 N/mm)
+        rear_spring_step_nmm=10.0,
+        rear_spring_perch_baseline_mm=0.0,
+        track_width_mm=1700.0,
+        cg_height_mm=350.0,
+    ),
+    # ARB: single-integer ArbSetting / RarbSetting in IBT.
+    # Driver loaded ArbSetting=7 / RarbSetting=7. Manual mentions 35mm/45mm
+    # binary diameters + blade positions but blade count not stated.
+    # Range PENDING a sweep — assume 0–10 placeholder.
+    arb=ARBModel(
+        front_size_labels=[str(i) for i in range(0, 11)],
+        front_stiffness_nmm_deg=[0.0] * 11,
+        front_blade_count=1,
+        front_baseline_size="7",
+        front_baseline_blade=1,
+        rear_size_labels=[str(i) for i in range(0, 11)],
+        rear_stiffness_nmm_deg=[0.0] * 11,
+        rear_blade_count=1,
+        rear_baseline_size="7",
+        rear_baseline_blade=1,
+    ),
+    geometry=WheelGeometryModel(),
+    damper=DamperModel(
+        # Driver-loaded values reach 12 (HSC front=12, LSR rear=12) — implies
+        # 0-12 click range, wider than BMW/Aston (which cap at 11). Manual
+        # does not state range. PENDING click-sweep IBT.
+        has_roll_dampers=False,
+        has_front_roll_damper=False,
+        has_rear_roll_damper=False,
+        zeta_is_calibrated=False,
+    ),
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    # IBT measured FrontDownforce = 36.0% (lower than BMW/Aston 40-41%) —
+    # consistent with RR layout where rear weight does aero work without splitter.
+    default_df_balance_pct=38.0,
+    tyre_load_sensitivity=0.20,
+    ride_height_model=RideHeightModel.uncalibrated(),
+    deflection=DeflectionModel.uncalibrated(),
+    # Wing angles from parsed aero map: 5.7..12.7 (8 angles, 1° steps with 0.7 offset)
+    wing_angles=[5.7, 6.7, 7.7, 8.7, 9.7, 10.7, 11.7, 12.7],
+    # Brake bias from IBT: 51.7% (slightly forward of 50, consistent with RR —
+    # weight transfer onto front under braking is large because static rear is heavy)
+    brake_bias_pct=51.7,
+    default_diff_preload_nm=110.0,  # IBT
+    measured_lltd_target=None,     # OptimumG: 0.449 + (0.20/0.20)*0.05 = 0.499 (LOWER than FR/MR)
+    lltd_target_source="physics_formula",
+    pushrod=PushrodGeometry(
+        front_pinned_rh_mm=0.0,
+        front_pushrod_default_mm=0.0,
+        rear_base_rh_mm=70.5,  # IBT static rear RH
+        rear_pushrod_to_rh=0.0,
+    ),
+    rh_variance=RideHeightVariance(dominant_bump_freq_hz=4.0),
+    # Aero compression at speed (single sample): static F 69.8 → dyn 69 (~0.8 mm),
+    # static R 70.5 → dyn 61 (~9.5 mm). Rear compresses much more — consistent
+    # with RR weight bias. PENDING multi-session calibration.
+    aero_compression=AeroCompression(
+        ref_speed_kph=200.0,
+        front_compression_mm=0.8,
+        rear_compression_mm=9.5,
+    ),
+    garage_ranges=GarageRanges(
+        camber_front_deg=(-4.5, 0.0),
+        camber_rear_deg=(-3.5, 0.0),
+    ),
+)
+
+
 # ─── Registry ────────────────────────────────────────────────────────────────
 
 _CARS = {
@@ -3305,6 +3563,8 @@ _CARS = {
     "porsche": PORSCHE_963,
     "acura": ACURA_ARX06,
     "bmw_m4_gt3": BMW_M4_GT3,
+    "aston_martin_vantage_gt3": ASTON_MARTIN_VANTAGE_GT3,
+    "porsche_992_gt3r": PORSCHE_992_GT3R,
 }
 
 

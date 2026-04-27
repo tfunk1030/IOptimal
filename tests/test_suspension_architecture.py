@@ -13,9 +13,11 @@ from __future__ import annotations
 import pytest
 
 from car_model.cars import (
+    ASTON_MARTIN_VANTAGE_GT3,
     BMW_M_HYBRID_V8,
     BMW_M4_GT3,
     PORSCHE_963,
+    PORSCHE_992_GT3R,
     CarModel,
     CornerSpringModel,
     SuspensionArchitecture,
@@ -150,6 +152,99 @@ class TestBMWM4GT3:
         car = get_car("bmw_m4_gt3", apply_calibration=False)
         assert car.canonical_name == "bmw_m4_gt3"
         assert car.heave_spring is None
+
+    def test_iracing_car_path_set(self):
+        """IBT DriverInfo.CarPath = 'bmwm4gt3' — needed for IBT auto-detection."""
+        assert BMW_M4_GT3.iracing_car_path == "bmwm4gt3"
+
+    def test_ibt_verified_constants(self):
+        """Values pulled from a real IBT session_info dump (Spielberg 2026-04-26).
+        These are GROUND TRUTH from iRacing, not manual-derived estimates."""
+        assert BMW_M4_GT3.weight_dist_front == pytest.approx(0.464)
+        assert BMW_M4_GT3.fuel_capacity_l == pytest.approx(100.0)
+        assert BMW_M4_GT3.brake_bias_pct == pytest.approx(52.0)
+        assert BMW_M4_GT3.default_diff_preload_nm == pytest.approx(100.0)
+
+
+class TestAstonMartinVantageGT3:
+    def test_canonical_name_and_arch(self):
+        assert ASTON_MARTIN_VANTAGE_GT3.canonical_name == "aston_martin_vantage_gt3"
+        assert ASTON_MARTIN_VANTAGE_GT3.suspension_arch is SuspensionArchitecture.GT3_COIL_4WHEEL
+
+    def test_iracing_car_path(self):
+        assert ASTON_MARTIN_VANTAGE_GT3.iracing_car_path == "amvantageevogt3"
+
+    def test_heave_spring_is_none(self):
+        assert ASTON_MARTIN_VANTAGE_GT3.heave_spring is None
+
+    def test_no_roll_dampers(self):
+        d = ASTON_MARTIN_VANTAGE_GT3.damper
+        assert d.has_roll_dampers is False
+        assert d.has_front_roll_damper is False
+        assert d.has_rear_roll_damper is False
+
+    def test_ibt_verified_constants(self):
+        """Values from Spielberg IBT session_info 2026-04-26."""
+        assert ASTON_MARTIN_VANTAGE_GT3.weight_dist_front == pytest.approx(0.480)
+        assert ASTON_MARTIN_VANTAGE_GT3.fuel_capacity_l == pytest.approx(106.0)
+        assert ASTON_MARTIN_VANTAGE_GT3.brake_bias_pct == pytest.approx(55.8)
+        assert ASTON_MARTIN_VANTAGE_GT3.default_diff_preload_nm == pytest.approx(110.0)
+
+    def test_wing_angles_match_aero_map(self):
+        """Wing angles 5..13 (9 angles) parsed from aston_martin_vantage_gt3_aero.npz."""
+        assert ASTON_MARTIN_VANTAGE_GT3.wing_angles == [5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0]
+
+    def test_registry_lookup(self):
+        from car_model.cars import get_car
+        car = get_car("aston_martin_vantage_gt3", apply_calibration=False)
+        assert car.iracing_car_path == "amvantageevogt3"
+        assert car.heave_spring is None
+
+
+class TestPorsche992GT3R:
+    """The only RR-layout GT3 — critical for de-risking the LLTD physics path."""
+
+    def test_canonical_name_and_arch(self):
+        assert PORSCHE_992_GT3R.canonical_name == "porsche_992_gt3r"
+        assert PORSCHE_992_GT3R.suspension_arch is SuspensionArchitecture.GT3_COIL_4WHEEL
+
+    def test_iracing_car_path(self):
+        assert PORSCHE_992_GT3R.iracing_car_path == "porsche992rgt3"
+
+    def test_heave_spring_is_none(self):
+        assert PORSCHE_992_GT3R.heave_spring is None
+
+    def test_no_roll_dampers(self):
+        d = PORSCHE_992_GT3R.damper
+        assert d.has_roll_dampers is False
+        assert d.has_front_roll_damper is False
+        assert d.has_rear_roll_damper is False
+
+    def test_rr_weight_distribution(self):
+        """The defining RR-layout signature — front weight fraction <0.46.
+        BMW 0.464, Aston 0.480, Porsche 0.449 — clearly the lightest front."""
+        assert PORSCHE_992_GT3R.weight_dist_front < 0.46
+        assert PORSCHE_992_GT3R.weight_dist_front == pytest.approx(0.449)
+        assert PORSCHE_992_GT3R.weight_dist_front < BMW_M4_GT3.weight_dist_front
+        assert PORSCHE_992_GT3R.weight_dist_front < ASTON_MARTIN_VANTAGE_GT3.weight_dist_front
+
+    def test_ibt_verified_constants(self):
+        assert PORSCHE_992_GT3R.fuel_capacity_l == pytest.approx(100.0)
+        assert PORSCHE_992_GT3R.brake_bias_pct == pytest.approx(51.7)
+        assert PORSCHE_992_GT3R.default_diff_preload_nm == pytest.approx(110.0)
+
+    def test_wing_angles_with_offset(self):
+        """Porsche uses 0.7-degree offsets (5.7, 6.7, ..., 12.7) — distinct
+        from BMW (-2..6 integer) and Aston (5..13 integer)."""
+        assert PORSCHE_992_GT3R.wing_angles == [5.7, 6.7, 7.7, 8.7, 9.7, 10.7, 11.7, 12.7]
+        assert all(round(w - int(w), 1) == 0.7 for w in PORSCHE_992_GT3R.wing_angles)
+
+    def test_registry_lookup(self):
+        from car_model.cars import get_car
+        car = get_car("porsche_992_gt3r", apply_calibration=False)
+        assert car.iracing_car_path == "porsche992rgt3"
+        assert car.heave_spring is None
+        assert car.suspension_arch is SuspensionArchitecture.GT3_COIL_4WHEEL
 
 
 class TestNullHeaveSolution:
