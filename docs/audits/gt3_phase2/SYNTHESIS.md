@@ -1,9 +1,11 @@
 # GT3 Phase 2 Synthesis — v5 implementation plan
 
-**Date:** 2026-04-26
+**Date:** 2026-04-26 (plan); last updated 2026-04-27 (status)
 **Inputs:** 12 parallel audit PRs (#103 – #114) + 4 IBT-verified session_info YAMLs (BMW M4 GT3 EVO at Spielberg + Nürburgring, Aston Vantage GT3 EVO at Spielberg, Porsche 992 GT3 R at Spielberg) + 10 parsed GT3 aero maps.
 
 The 12 audit docs are the source of truth — this is a synthesis layer that pulls them into one buildable Phase 2 implementation plan with ordering, dependencies, and concrete PR-sized work units.
+
+> **Implementation status (2026-04-27):** Wave 1 (W1.1, W1.2, W1.3) and Wave 2 (W2.1, W2.2) shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. 510 tests pass, 0 new regressions. GT3 IBT now runs end-to-end through Step 1 + Step 2 without crashing; Step 3 still produces non-physical output (W2.3 territory) and the setup writer still raises (W4.1 territory). See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the full progress log.
 
 ## Aggregate findings
 
@@ -79,22 +81,22 @@ Porsche 992 GT3 R is the ONLY rear-engine GT3 (`weight_dist_front=0.449`). Optim
 
 Sequenced by dependency. Each work unit becomes one PR. Effort estimates per unit; ordering critical.
 
-### Wave 1 — foundation invariants (must land first; 3 units; ~20 h)
+### Wave 1 — foundation invariants (must land first; 3 units; ~20 h) — **DONE (2026-04-27)**
 
-| # | Title | Files | Effort | Why first |
-|---|---|---|---|---|
-| W1.1 | Calibration gate emits `not_applicable` for GT3 Step 2 | `car_model/calibration_gate.py` | 8 h | Audit 8 — the gate is read by every solver and pipeline path; fixing this unblocks all downstream Step 2 skipping logic. |
-| W1.2 | `step2.present` consumers wired | `solver/{params_util,candidate_search,decision_trace}.py` + `solver/heave_solver.py` defensive guard | 4 h | Audit 4 — 3 BLOCKER consumers + defense-in-depth. Tiny, surgical. |
-| W1.3 | `car_model/registry.py` resolves GT3 names without falling back to GTP | `car_model/registry.py`, `car_model/setup_registry.py` `_car_name()`, `car_model/setup_registry.py` `CAR_FIELD_SPECS` GT3 entries | 8 h | Audits 7+11 — silent GTP-fallback is the most dangerous data integrity issue. |
+| # | Title | Files | Effort | Status | Why first |
+|---|---|---|---|---|---|
+| W1.1 | Calibration gate emits `not_applicable` for GT3 Step 2 | `car_model/calibration_gate.py` | 8 h | **DONE** | Audit 8 — the gate is read by every solver and pipeline path; fixing this unblocks all downstream Step 2 skipping logic. |
+| W1.2 | `step2.present` consumers wired | `solver/{params_util,candidate_search,decision_trace}.py` + `solver/heave_solver.py` defensive guard | 4 h | **DONE** | Audit 4 — 3 BLOCKER consumers + defense-in-depth. Tiny, surgical. |
+| W1.3 | `car_model/registry.py` resolves GT3 names without falling back to GTP | `car_model/registry.py`, `car_model/setup_registry.py` `_car_name()`, `car_model/setup_registry.py` `CAR_FIELD_SPECS` GT3 entries | 8 h | **DONE** (specs are empty stubs; W4.1/4.2 will populate) | Audits 7+11 — silent GTP-fallback is the most dangerous data integrity issue. |
 
-### Wave 2 — solver chain unblocks (4 units; ~76 h)
+### Wave 2 — solver chain unblocks (4 units; ~76 h) — **W2.1 + W2.2 done; W2.3 + W2.4 remain**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W2.1 | Step 2 (heave) skipped for GT3 in solve_chain | `solver/solve_chain.py` (5 sites), `solver/solve.py` step2-aware analyzers | 12 h | W1.1, W1.2 |
-| W2.2 | Step 1 (rake) balance-only mode for GT3 (no L/D) | `solver/rake_solver.py`, `aero_model/parse_xlsx.py` (already has balance_only), `solver/objective.py` | 24 h | W1.1 |
-| W2.3 | Step 3 (corner spring) GT3 front-coil branch | `solver/corner_spring_solver.py` extending `front_torsion_c == 0.0` path; `CornerSpringSolution.front_corner_spring_nmm` field | 16 h | W1.1, W1.2, W2.1 |
-| W2.4 | Step 4 (ARB/LLTD) per-car blade encoding + RR LLTD target | `solver/arb_solver.py` blade-vs-label dispatch; Porsche 992 LLTD physics formula | 24 h | W1.1, W2.3 |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W2.1 | Step 2 (heave) skipped for GT3 in solve_chain | `solver/solve_chain.py` (5 sites), `solver/solve.py` step2-aware analyzers | 12 h | **DONE** | W1.1, W1.2 |
+| W2.2 | Step 1 (rake) balance-only mode for GT3 (no L/D) | `solver/rake_solver.py`, `aero_model/parse_xlsx.py` (already has balance_only), `solver/objective.py` | 24 h | **DONE** | W1.1 |
+| W2.3 | Step 3 (corner spring) GT3 front-coil branch | `solver/corner_spring_solver.py` extending `front_torsion_c == 0.0` path; `CornerSpringSolution.front_corner_spring_nmm` field | 16 h | TODO (next critical-path) | W1.1, W1.2, W2.1 |
+| W2.4 | Step 4 (ARB/LLTD) per-car blade encoding + RR LLTD target | `solver/arb_solver.py` blade-vs-label dispatch; Porsche 992 LLTD physics formula | 24 h | TODO | W1.1, W2.3 |
 
 ### Wave 3 — solver chain crash fixes (3 units; ~30 h)
 
@@ -206,8 +208,18 @@ Parallelizable tail: ~190 h of work in W2.2/W3.x/W5.x/W6.x/W8.x can run in paral
 
 ## Recommendation
 
-1. **Land the audit PRs (#103–#114) on `gt3-phase0-foundations`** — merge them into the same branch so all the audit docs ship together with the Phase 0/1 scaffolding.
-2. **Begin Wave 1 work units in parallel** (W1.1, W1.2, W1.3 are independent and small).
+1. ~~**Land the audit PRs (#103–#114) on `gt3-phase0-foundations`**~~ — DONE 2026-04-27 on `claude/merge-audits-wave1-DDFyg`. All 12 PRs merged with one resolvable add/add conflict on `webapp-cli-tests-docs.md`.
+2. ~~**Begin Wave 1 work units in parallel**~~ — DONE 2026-04-27.
 3. **Capture more IBTs in parallel** — varied-spring sweeps for BMW M4 GT3 at Spielberg unblock W7.2 (auto-calibrate). The remaining 7 GT3 cars each need at least one IBT to pin their YAML schemas.
 4. **Defer Audi R8 LMS** until aero map is available.
-5. **Update CLAUDE.md** with a GT3 section after W2 lands so the convention doc reflects shipped state.
+5. ~~**Update CLAUDE.md** with a GT3 section after W2 lands~~ — DONE 2026-04-27 (see entry under "Current Codebase Status").
+
+## What's next (post-Wave 2)
+
+- **W2.3 (Step 3 corner spring GT3 front-coil branch)** is the next critical-path unit. Without it, GT3 IBT runs through Step 1 + Step 2 cleanly but Step 3 emits `front_torsion_od_mm=0.0` and `front_rate=0`, making Steps 4–6 non-physical. ~16 h.
+- **W3.1 (legal_space / modifiers / stint_model heave_spring=None guards)** is the smallest remaining unit (~8 h), independent of W2.3, and would let the legal-search path run cleanly on GT3. Good fill-in work to batch with W2.3.
+- **W3.2 (damper polarity per-car)** is a cross-cutting fix — affects 5/11 GT3 cars (Audi/McLaren/Corvette inverted polarity, Porsche/Acura range mismatch) plus protects against silent damper-direction bugs in candidate-search. ~14 h.
+- **W4.1 (BMW M4 GT3 PARAM_IDS)** is what finally lets a GT3 `.sto` file be written. Depends on W2.1 (done), W3.2 (TODO), W1.3 (done). ~16 h.
+- **Wave 5 (analyzer + pipeline)** is independent of Steps 3/4 fixes — could parallelize with W2.3/W2.4 if there's a second developer.
+
+See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for shipped diff summary, deferred-finding ledger, and recommended next-batch sequencing.
