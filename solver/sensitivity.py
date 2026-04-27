@@ -221,6 +221,13 @@ def analyze_step2_constraints(
     # the solution). Fall back only for callers built before
     # `front_sigma_target_mm` / `rear_sigma_target_mm` were added to
     # `HeaveSolution`.
+    # W6.1 (F-S-1): GT3 cars (suspension_arch=GT3_COIL_4WHEEL) skip Step 2
+    # entirely; HeaveSolution.null() carries `present=False` and zero numeric
+    # fields. Computing slack on those zeros emits four phantom BINDING
+    # constraints with "Stiffen front heave..." advice — wrong for GT3.
+    # Return an empty list so the report has no Step-2 entries.
+    if not getattr(step2, "present", True):
+        return []
     if sigma_target_front_mm is None:
         sigma_target_front_mm = (
             step2.front_sigma_target_mm if step2.front_sigma_target_mm > 0 else 8.0
@@ -545,21 +552,32 @@ def build_sensitivity_report(
             ),
         ))
 
-    # Heave sensitivities — read m_eff from the car model. Every car must
-    # define these; sensitivity bands are skipped if no car is provided.
+    # W6.1 (F-S-3, F-S-4, F-S-5): for GT3 cars (suspension_arch=GT3_COIL_4WHEEL)
+    # Step 2 is N/A — `step2.present` is False, all numeric heave fields are
+    # zero, and `car.heave_spring` is None. The heave sensitivity / confidence
+    # functions divide by k=0 and crash, and `car.heave_spring.front_m_eff_kg`
+    # would raise AttributeError. Skip the entire heave block on GT3 (and on
+    # any caller that passes a null Step-2). A GT3-shaped corner-spring
+    # sensitivity is a Phase 3 follow-on (TODO(W6.x)).
+    _step2_present = getattr(step2, "present", True)
+    _heave_block_runnable = (
+        _step2_present
+        and car is not None
+        and car.heave_spring is not None
+    )
     _m_eff_front: float = 0.0
     _m_eff_rear: float = 0.0
-    if car is not None:
+    if _heave_block_runnable:
         _m_eff_front = float(car.heave_spring.front_m_eff_kg)
         _m_eff_rear = float(car.heave_spring.rear_m_eff_kg)
-    report.sensitivities.extend(compute_heave_sensitivities(
-        v_p99_front_mps=step2.front_shock_vel_p99_mps,
-        v_p99_rear_mps=step2.rear_shock_vel_p99_mps,
-        m_eff_front_kg=_m_eff_front,
-        m_eff_rear_kg=_m_eff_rear,
-        k_front_nmm=step2.front_heave_nmm,
-        k_rear_nmm=step2.rear_third_nmm,
-    ))
+        report.sensitivities.extend(compute_heave_sensitivities(
+            v_p99_front_mps=step2.front_shock_vel_p99_mps,
+            v_p99_rear_mps=step2.rear_shock_vel_p99_mps,
+            m_eff_front_kg=_m_eff_front,
+            m_eff_rear_kg=_m_eff_rear,
+            k_front_nmm=step2.front_heave_nmm,
+            k_rear_nmm=step2.rear_third_nmm,
+        ))
 
     # RARB sensitivity (if provided)
     if rarb_sensitivity > 0:
@@ -574,27 +592,30 @@ def build_sensitivity_report(
             ),
         ))
 
-    # Confidence bands — use per-car m_eff (no BMW hardcodes)
-    report.confidence_bands.append(compute_heave_confidence(
-        v_p99_mps=step2.front_shock_vel_p99_mps,
-        m_eff_kg=_m_eff_front,
-        k_nmm=step2.front_heave_nmm,
-        excursion_mm=step2.front_excursion_at_rate_mm,
-        axle="front",
-    ))
-    report.confidence_bands.append(compute_heave_confidence(
-        v_p99_mps=step2.rear_shock_vel_p99_mps,
-        m_eff_kg=_m_eff_rear,
-        k_nmm=step2.rear_third_nmm,
-        excursion_mm=step2.rear_excursion_at_rate_mm,
-        axle="rear",
-    ))
-    report.confidence_bands.append(compute_excursion_confidence(
-        v_p99_mps=step2.front_shock_vel_p99_mps,
-        m_eff_kg=_m_eff_front,
-        k_nmm=step2.front_heave_nmm,
-        excursion_mm=step2.front_excursion_at_rate_mm,
-        axle="front",
-    ))
+    # Confidence bands — use per-car m_eff (no BMW hardcodes).
+    # Same GT3 / null-Step-2 gate as above (F-S-3, F-S-4): heave confidence
+    # math divides by k=0 on GT3.
+    if _heave_block_runnable:
+        report.confidence_bands.append(compute_heave_confidence(
+            v_p99_mps=step2.front_shock_vel_p99_mps,
+            m_eff_kg=_m_eff_front,
+            k_nmm=step2.front_heave_nmm,
+            excursion_mm=step2.front_excursion_at_rate_mm,
+            axle="front",
+        ))
+        report.confidence_bands.append(compute_heave_confidence(
+            v_p99_mps=step2.rear_shock_vel_p99_mps,
+            m_eff_kg=_m_eff_rear,
+            k_nmm=step2.rear_third_nmm,
+            excursion_mm=step2.rear_excursion_at_rate_mm,
+            axle="rear",
+        ))
+        report.confidence_bands.append(compute_excursion_confidence(
+            v_p99_mps=step2.front_shock_vel_p99_mps,
+            m_eff_kg=_m_eff_front,
+            k_nmm=step2.front_heave_nmm,
+            excursion_mm=step2.front_excursion_at_rate_mm,
+            axle="front",
+        ))
 
     return report
