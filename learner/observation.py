@@ -384,6 +384,32 @@ def build_observation(
         "live_tc_slip": getattr(m, "live_tc_slip", None),
         "live_front_arb_blade": getattr(m, "live_front_arb_blade", None),
         "live_rear_arb_blade": getattr(m, "live_rear_arb_blade", None),
+        # Suspension PSD → ζ + ω_n per mode (Unit 2). Optional — populated
+        # when the IBT has the relevant deflection channels for this car's
+        # architecture. None values indicate the channel/mode wasn't
+        # available, NOT zero damping.
+        "front_heave_natural_freq_hz": getattr(m, "front_heave_natural_freq_hz", None),
+        "front_heave_damping_ratio": getattr(m, "front_heave_damping_ratio", None),
+        "front_heave_q_factor": getattr(m, "front_heave_q_factor", None),
+        "rear_heave_natural_freq_hz": getattr(m, "rear_heave_natural_freq_hz", None),
+        "rear_heave_damping_ratio": getattr(m, "rear_heave_damping_ratio", None),
+        "rear_heave_q_factor": getattr(m, "rear_heave_q_factor", None),
+        "front_roll_natural_freq_hz": getattr(m, "front_roll_natural_freq_hz", None),
+        "front_roll_damping_ratio": getattr(m, "front_roll_damping_ratio", None),
+        "rear_roll_natural_freq_hz": getattr(m, "rear_roll_natural_freq_hz", None),
+        "rear_roll_damping_ratio": getattr(m, "rear_roll_damping_ratio", None),
+        "lf_natural_freq_hz": getattr(m, "lf_natural_freq_hz", None),
+        "lf_damping_ratio": getattr(m, "lf_damping_ratio", None),
+        "rf_natural_freq_hz": getattr(m, "rf_natural_freq_hz", None),
+        "rf_damping_ratio": getattr(m, "rf_damping_ratio", None),
+        "lr_natural_freq_hz": getattr(m, "lr_natural_freq_hz", None),
+        "lr_damping_ratio": getattr(m, "lr_damping_ratio", None),
+        "rr_natural_freq_hz": getattr(m, "rr_natural_freq_hz", None),
+        "rr_damping_ratio": getattr(m, "rr_damping_ratio", None),
+        "front_axle_natural_freq_hz": getattr(m, "front_axle_natural_freq_hz", None),
+        "front_axle_damping_ratio": getattr(m, "front_axle_damping_ratio", None),
+        "rear_axle_natural_freq_hz": getattr(m, "rear_axle_natural_freq_hz", None),
+        "rear_axle_damping_ratio": getattr(m, "rear_axle_damping_ratio", None),
     }
 
     # ── Driver ──
