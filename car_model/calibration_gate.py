@@ -32,16 +32,21 @@ class SubsystemCalibration:
     """Calibration status of one subsystem for a specific car.
 
     Status semantics (strict mode — no silent fallbacks):
-      - "calibrated":    Real measurement, R² >= 0.85 (or no R² applicable),
-                         auto-cal validated. Step runs.
-      - "weak":          Calibrated but R² < 0.85, or manual override that
-                         disagrees with auto-cal. Step still runs with explicit
-                         warning, and propagates weak-upstream status.
-                         Weak blocks do NOT cascade to downstream steps.
-      - "uncalibrated":  No measurement at all. Step BLOCKS and cascades.
+      - "calibrated":      Real measurement, R² >= 0.85 (or no R² applicable),
+                           auto-cal validated. Step runs.
+      - "weak":            Calibrated but R² < 0.85, or manual override that
+                           disagrees with auto-cal. Step still runs with explicit
+                           warning, and propagates weak-upstream status.
+                           Weak blocks do NOT cascade to downstream steps.
+      - "uncalibrated":    No measurement at all. Step BLOCKS and cascades.
+      - "not_applicable":  Subsystem doesn't exist for this car's suspension
+                           architecture (e.g. heave/third springs on a GT3 car).
+                           This is HONEST absence — distinct from "uncalibrated"
+                           which means "should be calibrated but isn't yet".
+                           Step is skipped, not blocked. Does NOT cascade.
     """
     name: str
-    status: str                      # "calibrated" | "weak" | "uncalibrated"
+    status: str                      # "calibrated" | "weak" | "uncalibrated" | "not_applicable"
     source: str = ""
     data_points: int = 0
     instructions: str = ""
@@ -86,6 +91,11 @@ class StepCalibrationReport:
     # runs but its provenance should note reduced input confidence.
     weak_upstream: bool = False
     weak_upstream_step: int | None = None
+    # True when this step does not apply to this car's suspension architecture
+    # (e.g. Step 2 heave/third springs on a GT3 car with coil-only suspension).
+    # Not applicable is HONEST absence — the step is skipped, not blocked,
+    # and does NOT cascade. Distinct from `blocked`.
+    not_applicable: bool = False
 
     @property
     def confidence_weight(self) -> float:
@@ -93,9 +103,9 @@ class StepCalibrationReport:
 
         1.0 = fully calibrated, 0.7 = weak calibration,
         0.5 = weak upstream (input data has reduced confidence),
-        0.0 = blocked (no output).
+        0.0 = blocked (no output) or not applicable (architecture skip).
         """
-        if self.blocked:
+        if self.blocked or self.not_applicable:
             return 0.0
         if self.weak_block:
             return 0.7
@@ -235,6 +245,8 @@ class CalibrationReport:
                 status_icon = "OK "
             elif sub.status == "weak":
                 status_icon = "~~ "
+            elif sub.status == "not_applicable":
+                status_icon = "-- "
             else:
                 status_icon = "!! "
             lines.append(f"  {status_icon}{name:<22} {label}  {sub.source}")

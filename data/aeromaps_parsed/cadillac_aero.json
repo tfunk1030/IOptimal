@@ -19,5 +19,6 @@
   "grid_shape": [
     51,
     46
-  ]
+  ],
+  "balance_only": false
 }
