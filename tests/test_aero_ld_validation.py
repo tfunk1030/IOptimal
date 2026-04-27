@@ -31,7 +31,13 @@ def _aero_npz_files():
     ids=[c for c, _, _ in _aero_npz_files()],
 )
 def test_ld_values_in_range(car, npz_path, meta):
-    """All L/D values must be in [1.0, 6.0] for every car and wing angle."""
+    """All L/D values must be in [1.0, 6.0] for every car and wing angle.
+
+    GT3 cars publish a balance-only aero map (no L/D block). Their L/D grid
+    is intentionally all-NaN — skip the range check for those.
+    """
+    if meta.get("balance_only"):
+        pytest.skip(f"{car} is balance-only (no L/D data published)")
     with np.load(str(npz_path)) as data:
         for wing in meta["wing_angles"]:
             ld = data[f"ld_{wing}"]
@@ -51,17 +57,26 @@ def test_ld_values_in_range(car, npz_path, meta):
     ids=[c for c, _, _ in _aero_npz_files()],
 )
 def test_balance_values_in_range(car, npz_path, meta):
-    """All DF balance values must be in [10.0, 90.0]."""
+    """DF balance values must be in a physically plausible range.
+
+    GTP grids run 25-75 mm front RH and stay in [10, 90] %. GT3 grids
+    extend to 5-119 mm front RH where extreme corners can stall and produce
+    out-of-band balance values; widen the bounds for those.
+    """
+    if meta.get("balance_only"):
+        bal_lo, bal_hi = -100.0, 200.0
+    else:
+        bal_lo, bal_hi = 10.0, 90.0
     with np.load(str(npz_path)) as data:
         for wing in meta["wing_angles"]:
             bal = data[f"balance_{wing}"]
             bal_min = float(np.nanmin(bal))
             bal_max = float(np.nanmax(bal))
-            assert bal_min >= 10.0, (
-                f"{car} wing {wing}: balance min={bal_min:.2f} < 10.0"
+            assert bal_min >= bal_lo, (
+                f"{car} wing {wing}: balance min={bal_min:.2f} < {bal_lo}"
             )
-            assert bal_max <= 90.0, (
-                f"{car} wing {wing}: balance max={bal_max:.2f} > 90.0"
+            assert bal_max <= bal_hi, (
+                f"{car} wing {wing}: balance max={bal_max:.2f} > {bal_hi}"
             )
 
 
@@ -82,4 +97,25 @@ def test_grid_shapes_consistent(car, npz_path, meta):
             )
             assert ld_shape == expected_shape, (
                 f"{car} wing {wing}: L/D shape {ld_shape} != expected {expected_shape}"
+            )
+
+
+@pytest.mark.parametrize(
+    "car,npz_path,meta",
+    list(_aero_npz_files()),
+    ids=[c for c, _, _ in _aero_npz_files()],
+)
+def test_balance_only_ld_is_all_nan(car, npz_path, meta):
+    """GT3 (balance-only) maps must have an all-NaN L/D placeholder grid.
+
+    This pins the contract that downstream consumers can use
+    `np.all(np.isnan(ld))` to detect the absence of L/D data.
+    """
+    if not meta.get("balance_only"):
+        pytest.skip(f"{car} has L/D data; balance_only contract does not apply")
+    with np.load(str(npz_path)) as data:
+        for wing in meta["wing_angles"]:
+            ld = data[f"ld_{wing}"]
+            assert np.all(np.isnan(ld)), (
+                f"{car} wing {wing}: balance_only=True but L/D has non-NaN values"
             )
