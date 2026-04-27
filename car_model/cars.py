@@ -3199,7 +3199,12 @@ BMW_M4_GT3 = CarModel(
     iracing_car_path="bmwm4gt3",  # IBT DriverInfo.CarPath
     suspension_arch=SuspensionArchitecture.GT3_COIL_4WHEEL,
     bop_version="2026s2_p3",  # iRacing 2026 Season 2 Patch 3 (2026-04-21)
-    supported_track_keys=("spielberg",),  # Have one IBT at Spielberg / Red Bull Ring
+    # Two IBTs sampled 2026-04-26: Spielberg (Red Bull Ring) and Nürburgring
+    # Combined (Gesamtstrecke 24h). Both with byte-identical CarSetup — driver
+    # carried the same setup across tracks. Cannot back-solve aero compression
+    # from this pair (no varying static→dynamic point); need 3+ varied-spring
+    # IBTs at the same track for that.
+    supported_track_keys=("spielberg", "nurburgring"),
     # Mass + chassis (manual: dry 1285 kg, wet w/driver 1411 kg, WB 2916 mm)
     mass_car_kg=1285.0,
     mass_driver_kg=75.0,

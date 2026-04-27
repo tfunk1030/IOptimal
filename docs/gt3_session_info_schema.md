@@ -1,8 +1,9 @@
 # GT3 Session Info Schema — Discovered from IBT YAML
 
-This doc captures the actual `CarSetup` YAML schema iRacing emits for GT3 cars, derived from two real session_info dumps:
+This doc captures the actual `CarSetup` YAML schema iRacing emits for GT3 cars, derived from four real session_info dumps:
 
 - BMW M4 GT3 EVO at Spielberg / Red Bull Ring (2026-04-26 21:34) → [docs/gt3_session_info_bmw_m4_gt3_spielberg_2026-04-26.yaml](gt3_session_info_bmw_m4_gt3_spielberg_2026-04-26.yaml)
+- BMW M4 GT3 EVO at Nürburgring Combined (2026-04-26 21:56) → [docs/gt3_session_info_bmw_m4_gt3_nurburgring_2026-04-26.yaml](gt3_session_info_bmw_m4_gt3_nurburgring_2026-04-26.yaml) — **byte-identical to the Spielberg setup**: driver carried the same configuration across tracks (UpdateCount=4 on both, same springs/dampers/ARB/perches/RH). Confirms portability but provides zero aero-compression calibration signal (no varying point).
 - Aston Martin Vantage GT3 EVO at Spielberg / Red Bull Ring (2026-04-26 21:25) → [docs/gt3_session_info_aston_vantage_spielberg_2026-04-26.yaml](gt3_session_info_aston_vantage_spielberg_2026-04-26.yaml)
 - Porsche 911 GT3 R (992) at Spielberg / Red Bull Ring (2026-04-26 21:42) → [docs/gt3_session_info_porsche_992_gt3r_spielberg_2026-04-26.yaml](gt3_session_info_porsche_992_gt3r_spielberg_2026-04-26.yaml)
 
