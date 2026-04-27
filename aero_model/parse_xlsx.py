@@ -35,6 +35,17 @@ _SHEET_NAMES = {
     "Acuragtpaeromap": "AeroBalance",
     "Ferrarigtpaeromap": "AeroBalance",
     "Porschegtpaeromap": "AeroBalance",
+    # GT3 — all use "AeroBalance" sheet, balance-only (no L/D block).
+    "BMWGT3AeroMap": "AeroBalance",
+    "Ferrari296GT3AeroMap": "AeroBalance",
+    "MercedesAMGGT3AeroMap": "AeroBalance",
+    "AcuraNSXGT3AeroMap": "AeroBalance",
+    "LamborghiniHuracanGT3AeroMap": "AeroBalance",
+    "AstonMartinVantageGT3AeroMap": "AeroBalance",
+    "McLaren720SGT3AeroMap": "AeroBalance",
+    "Porsche992GT3RAeroMap": "AeroBalance",
+    "FordMustangGT3AeroMap": "AeroBalance",
+    "CorvetteZ06GT3RAeroMap": "AeroBalance",
 }
 
 # Map from directory name to canonical car name
@@ -44,6 +55,31 @@ CAR_NAMES = {
     "Acuragtpaeromap": "acura",
     "Ferrarigtpaeromap": "ferrari",
     "Porschegtpaeromap": "porsche",
+    "BMWGT3AeroMap": "bmw_m4_gt3",
+    "Ferrari296GT3AeroMap": "ferrari_296_gt3",
+    "MercedesAMGGT3AeroMap": "mercedes_amg_gt3",
+    "AcuraNSXGT3AeroMap": "acura_nsx_gt3",
+    "LamborghiniHuracanGT3AeroMap": "lamborghini_huracan_gt3",
+    "AstonMartinVantageGT3AeroMap": "aston_martin_vantage_gt3",
+    "McLaren720SGT3AeroMap": "mclaren_720s_gt3",
+    "Porsche992GT3RAeroMap": "porsche_992_gt3r",
+    "FordMustangGT3AeroMap": "ford_mustang_gt3",
+    "CorvetteZ06GT3RAeroMap": "corvette_z06_gt3r",
+}
+
+# GT3 aero maps are balance-only — no L/D block (single grid in the sheet).
+# When True, the parser skips L/D extraction and stores NaN for the L/D grid.
+_BALANCE_ONLY_DIRS = {
+    "BMWGT3AeroMap",
+    "Ferrari296GT3AeroMap",
+    "MercedesAMGGT3AeroMap",
+    "AcuraNSXGT3AeroMap",
+    "LamborghiniHuracanGT3AeroMap",
+    "AstonMartinVantageGT3AeroMap",
+    "McLaren720SGT3AeroMap",
+    "Porsche992GT3RAeroMap",
+    "FordMustangGT3AeroMap",
+    "CorvetteZ06GT3RAeroMap",
 }
 
 
@@ -116,8 +152,13 @@ def _detect_format(ws) -> str:
     return "unlabeled"
 
 
-def _parse_labeled(ws) -> dict:
-    """Parse a labeled-format sheet (BMW, Cadillac, Acura, Porsche)."""
+def _parse_labeled(ws, balance_only: bool = False) -> dict:
+    """Parse a labeled-format sheet (BMW, Cadillac, Acura, Porsche, all GT3).
+
+    When balance_only=True (GT3 cars), the sheet contains only a balance grid
+    with no separate L/D block. The L/D output is set to a NaN array of the
+    same shape so downstream code can detect absence via np.all(np.isnan(ld)).
+    """
     # Row 1, cols B onward: rear ride heights for balance block
     rear_rh_balance = []
     for c in range(2, ws.max_column + 1):
@@ -144,6 +185,14 @@ def _parse_labeled(ws) -> dict:
         for j in range(n_rear):
             v = ws.cell(row=2 + i, column=2 + j).value
             balance[i, j] = float(v) if v is not None else np.nan
+
+    if balance_only:
+        return {
+            "front_rh": np.array(front_rh),
+            "rear_rh": np.array(rear_rh_balance),
+            "balance": balance,
+            "ld": np.full_like(balance, np.nan),
+        }
 
     # Find L/D block: scan rightward from end of balance block.
     # Must find a column where BOTH row 1 (header) and row 2 (data) have numeric values
@@ -281,15 +330,17 @@ def parse_aero_xlsx(filepath: str | Path) -> dict:
     wb = openpyxl.load_workbook(str(filepath), data_only=True, read_only=False)
     ws = _find_data_sheet(wb, car_dir)
 
+    balance_only = car_dir in _BALANCE_ONLY_DIRS
+
     fmt = _detect_format(ws)
     if fmt == "labeled":
-        data = _parse_labeled(ws)
+        data = _parse_labeled(ws, balance_only=balance_only)
     else:
         data = _parse_unlabeled(ws)
 
     wb.close()
 
-    _validate_parsed_data(data, car_name, wing_angle, filepath)
+    _validate_parsed_data(data, car_name, wing_angle, filepath, balance_only=balance_only)
 
     return {
         "car": car_name,
@@ -299,54 +350,81 @@ def parse_aero_xlsx(filepath: str | Path) -> dict:
 
 
 def _validate_parsed_data(
-    data: dict, car: str, wing: float, filepath: Path,
+    data: dict, car: str, wing: float, filepath: Path, balance_only: bool = False,
 ) -> None:
-    """Validate parsed aero data has physically plausible values."""
+    """Validate parsed aero data has physically plausible values.
+
+    When balance_only=True (GT3), L/D is intentionally absent and the L/D
+    range/shape checks are skipped — the grid is a NaN-filled placeholder.
+    """
     ld = data["ld"]
     balance = data["balance"]
 
-    if np.all(np.isnan(ld)):
-        raise ValueError(
-            f"Aero map {car} wing {wing} ({filepath.name}): L/D grid is entirely NaN"
-        )
     if np.all(np.isnan(balance)):
         raise ValueError(
             f"Aero map {car} wing {wing} ({filepath.name}): balance grid is entirely NaN"
         )
 
-    ld_min, ld_max = float(np.nanmin(ld)), float(np.nanmax(ld))
-    if ld_min < 1.0 or ld_max > 6.0:
-        raise ValueError(
-            f"Aero map {car} wing {wing} ({filepath.name}): "
-            f"L/D values out of range [1.0, 6.0]: "
-            f"min={ld_min:.3f}, max={ld_max:.3f}"
-        )
+    # GT3 aero grids span wider front-RH ranges (5-119 mm vs GTP 25-75 mm).
+    # At extreme RH the floor/diffuser stalls and an axle can produce lift,
+    # which makes balance % go negative or above 100 in those grid corners.
+    # Those cells are physically real — the operating envelope still lives in
+    # the [10, 90] window. Widen the validator bounds in balance-only mode.
+    if balance_only:
+        # GT3 grids span 5-119 mm front RH; extreme corners can produce strongly
+        # negative or above-100 balance % when one axle stalls and the other
+        # still produces. The operating envelope (~25-55 mm RH) is always
+        # bounded; the validator is here to catch encoding/parsing corruption,
+        # not to enforce physical operating limits.
+        bal_lo, bal_hi = -100.0, 200.0
+    else:
+        bal_lo, bal_hi = 10.0, 90.0
 
     bal_min, bal_max = float(np.nanmin(balance)), float(np.nanmax(balance))
-    if bal_min < 10.0 or bal_max > 90.0:
+    if bal_min < bal_lo or bal_max > bal_hi:
         raise ValueError(
             f"Aero map {car} wing {wing} ({filepath.name}): "
-            f"DF balance values out of range [10.0, 90.0]: "
+            f"DF balance values out of range [{bal_lo}, {bal_hi}]: "
             f"min={bal_min:.2f}, max={bal_max:.2f}"
         )
 
-    if ld.shape != balance.shape:
-        raise ValueError(
-            f"Aero map {car} wing {wing} ({filepath.name}): "
-            f"L/D shape {ld.shape} != balance shape {balance.shape}"
-        )
+    if not balance_only:
+        if np.all(np.isnan(ld)):
+            raise ValueError(
+                f"Aero map {car} wing {wing} ({filepath.name}): L/D grid is entirely NaN"
+            )
+        ld_min, ld_max = float(np.nanmin(ld)), float(np.nanmax(ld))
+        if ld_min < 1.0 or ld_max > 6.0:
+            raise ValueError(
+                f"Aero map {car} wing {wing} ({filepath.name}): "
+                f"L/D values out of range [1.0, 6.0]: "
+                f"min={ld_min:.3f}, max={ld_max:.3f}"
+            )
+        if ld.shape != balance.shape:
+            raise ValueError(
+                f"Aero map {car} wing {wing} ({filepath.name}): "
+                f"L/D shape {ld.shape} != balance shape {balance.shape}"
+            )
 
 
 def _extract_wing_angle(filename: str) -> float:
-    """Extract wing angle from filename like 'Aero data 17 wing BMW LMDH.xlsx'."""
-    # Pattern: number before "wing" in the filename
+    """Extract wing angle from filename.
+
+    Handles GTP and GT3 patterns:
+      'Aero data 17 wing BMW LMDH.xlsx'           -> 17.0   (number BEFORE "wing")
+      'Aerobalance wing 5 Ferrari 296 GT3.xlsx'   -> 5.0    (number AFTER "wing")
+      'Aerobalance -1 wing BMW GT3.xlsx'          -> -1.0   (negative wing)
+      'Aerobalance 6.7 wing Porsche GT3.xlsx'     -> 6.7    (decimal wing)
+    """
     parts = filename.lower().replace(".xlsx", "").split()
     for i, part in enumerate(parts):
-        if part == "wing" and i > 0:
-            try:
-                return float(parts[i - 1])
-            except ValueError:
-                pass
+        if part == "wing":
+            for neighbor in (i - 1, i + 1):
+                if 0 <= neighbor < len(parts):
+                    try:
+                        return float(parts[neighbor])
+                    except ValueError:
+                        continue
     raise ValueError(f"Could not extract wing angle from filename: {filename}")
 
 
@@ -417,6 +495,7 @@ def parse_all_cars() -> None:
             "front_rh_range": [float(shared_front_rh[0]), float(shared_front_rh[-1])],
             "rear_rh_range": [float(shared_rear_rh[0]), float(shared_rear_rh[-1])],
             "grid_shape": list(arrays[f"balance_{wing_angles[0]}"].shape),
+            "balance_only": car_dir_path.name in _BALANCE_ONLY_DIRS,
         }
         json_path = _AERO_OUT_DIR / f"{car_name}_aero.json"
         json_path.write_text(json.dumps(meta, indent=2) + "\n")
