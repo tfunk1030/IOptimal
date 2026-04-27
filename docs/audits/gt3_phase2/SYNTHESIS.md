@@ -5,7 +5,7 @@
 
 The 12 audit docs are the source of truth — this is a synthesis layer that pulls them into one buildable Phase 2 implementation plan with ordering, dependencies, and concrete PR-sized work units.
 
-> **Implementation status (2026-04-27, latest batch W2.3 + W3.1):** Wave 1 (W1.1, W1.2, W1.3) + Wave 2.1 + W2.2 + W2.3 + Wave 3.1 shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. 543 tests pass, 0 new regressions. GT3 IBT now runs through Step 1 + Step 2 + Step 3 cleanly with real `front_coil_rate_nmm` and `rear_spring_rate_nmm` from frequency-isolation physics. Step 4 still over-targets Porsche 992 RR LLTD and ARB blade encoding is wrong (W2.4); damper polarity wrong for inverted-polarity cars (W3.2); setup writer still raises (W4.1, W4.2). See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the full progress log.
+> **Implementation status (2026-04-27, latest batch W2.4 + W3.2):** Wave 1 (W1.1–W1.3) + Wave 2 (W2.1–W2.4 all done) + Wave 3.1 + W3.2 shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. 9 of 22 work units done (~158 h shipped). 573 tests pass, 0 new regressions. GT3 IBT now runs through Step 1 → Step 6 cleanly with real coil/ARB/damper output (Porsche 992 RR LLTD targets 0.45; per-car damper polarity respected). **Setup writer still raises (W4.1 next critical-path).** See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the full progress log.
 
 ## Aggregate findings
 
@@ -89,22 +89,22 @@ Sequenced by dependency. Each work unit becomes one PR. Effort estimates per uni
 | W1.2 | `step2.present` consumers wired | `solver/{params_util,candidate_search,decision_trace}.py` + `solver/heave_solver.py` defensive guard | 4 h | **DONE** | Audit 4 — 3 BLOCKER consumers + defense-in-depth. Tiny, surgical. |
 | W1.3 | `car_model/registry.py` resolves GT3 names without falling back to GTP | `car_model/registry.py`, `car_model/setup_registry.py` `_car_name()`, `car_model/setup_registry.py` `CAR_FIELD_SPECS` GT3 entries | 8 h | **DONE** (specs are empty stubs; W4.1/4.2 will populate) | Audits 7+11 — silent GTP-fallback is the most dangerous data integrity issue. |
 
-### Wave 2 — solver chain unblocks (4 units; ~76 h) — **W2.1 + W2.2 + W2.3 done; W2.4 remains**
+### Wave 2 — solver chain unblocks (4 units; ~76 h) — **DONE 2026-04-27**
 
 | # | Title | Files | Effort | Status | Depends on |
 |---|---|---|---|---|---|
 | W2.1 | Step 2 (heave) skipped for GT3 in solve_chain | `solver/solve_chain.py` (5 sites), `solver/solve.py` step2-aware analyzers | 12 h | **DONE** | W1.1, W1.2 |
 | W2.2 | Step 1 (rake) balance-only mode for GT3 (no L/D) | `solver/rake_solver.py`, `aero_model/parse_xlsx.py` (already has balance_only), `solver/objective.py` | 24 h | **DONE** | W1.1 |
 | W2.3 | Step 3 (corner spring) GT3 front-coil branch | `solver/corner_spring_solver.py` extending `front_torsion_c == 0.0` path; `CornerSpringSolution.front_coil_rate_nmm` field; `CornerSpringModel.front_spring_range_nmm` | 16 h | **DONE** | W1.1, W1.2, W2.1 |
-| W2.4 | Step 4 (ARB/LLTD) per-car blade encoding + RR LLTD target | `solver/arb_solver.py` blade-vs-label dispatch; Porsche 992 LLTD physics formula | 24 h | TODO (next critical-path) | W1.1, W2.3 |
+| W2.4 | Step 4 (ARB/LLTD) per-car blade encoding + RR LLTD target | `solver/arb_solver.py` blade-vs-label dispatch; Porsche 992 LLTD physics formula | 24 h | **DONE** | W1.1, W2.3 |
 
-### Wave 3 — solver chain crash fixes (3 units; ~30 h) — **W3.1 done; W3.2 + W3.3 remain**
+### Wave 3 — solver chain crash fixes (3 units; ~30 h) — **W3.1 + W3.2 done; W3.3 remains**
 
 | # | Title | Files | Effort | Status | Depends on |
 |---|---|---|---|---|---|
 | W3.1 | `legal_space`/`modifiers`/`stint_model` heave_spring=None guards | `solver/legal_space.py`, `solver/modifiers.py`, `solver/stint_model.py` | 8 h | **DONE** | W1.2 |
-| W3.2 | Damper polarity + range per-car | `solver/damper_solver.py`, `car_model/cars.py` `DamperModel.click_polarity` + `click_range`, per-car overrides for Audi/McLaren/Corvette/Porsche/Acura | 14 h | TODO (next critical-path; batchable with W2.4) | W1.1 |
-| W3.3 | Fuel constants generalized | `solver/scenario_profiles.py` per-class fuel cap, `solver/{damper,stint}_model.py` hardcoded 89L removed | 8 h | TODO | none |
+| W3.2 | Damper polarity + range per-car | `solver/damper_solver.py`, `car_model/cars.py` `DamperModel.click_polarity` + `click_range`, per-car overrides for Audi/McLaren/Corvette/Porsche/Acura | 14 h | **DONE** | W1.1 |
+| W3.3 | Fuel constants generalized | `solver/scenario_profiles.py` per-class fuel cap, `solver/{damper,stint}_model.py` hardcoded 89L removed | 8 h | TODO (batchable with W4.1) | none |
 
 ### Wave 4 — output + writer (3 units; ~70 h)
 

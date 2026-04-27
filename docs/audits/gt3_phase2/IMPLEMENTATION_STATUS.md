@@ -1,7 +1,7 @@
 # GT3 Phase 2 — Implementation Status
 
-**Last updated:** 2026-04-27 (Wave 2.3 + Wave 3.1 shipped)
-**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 3 implementation commits)
+**Last updated:** 2026-04-27 (Wave 2.4 + Wave 3.2 shipped)
+**Branch:** `claude/merge-audits-wave1-DDFyg` (mirrors `gt3-phase0-foundations` + 12 audit merges + 4 implementation commits)
 **Plan source of truth:** [`SYNTHESIS.md`](SYNTHESIS.md) — 22 work units across 10 waves, ~511 h estimated.
 
 This doc tracks which units have shipped, what was deferred, and the recommended next batch. It is updated after every work-unit batch lands. Each merged PR / batch commit is referenced by SHA + message so the diff can be inspected directly.
@@ -11,9 +11,9 @@ This doc tracks which units have shipped, what was deferred, and the recommended
 | Wave | Title | Units | Effort | Status |
 |---|---|---|---|---|
 | 1 | Foundation invariants | 3 | ~20 h | **DONE 2026-04-27** |
-| 2 | Solver chain unblocks | 4 | ~76 h | W2.1 + W2.2 + W2.3 done; W2.4 remains (~24 h) |
-| 3 | Solver chain crash fixes | 3 | ~30 h | W3.1 done; W3.2 + W3.3 remain (~22 h) |
-| 4 | Output + writer | 3 | ~70 h | TODO |
+| 2 | Solver chain unblocks | 4 | ~76 h | **DONE 2026-04-27** |
+| 3 | Solver chain crash fixes | 3 | ~30 h | W3.1 + W3.2 done; W3.3 remains (~8 h) |
+| 4 | Output + writer | 3 | ~70 h | TODO (W4.1 unblocked, next critical-path) |
 | 5 | Pipeline + analyzer | 3 | ~62 h | TODO |
 | 6 | Learner + scoring | 3 | ~56 h | TODO |
 | 7 | Auto-calibrate + GarageOutputModel | 2 | ~80 h | TODO |
@@ -21,8 +21,8 @@ This doc tracks which units have shipped, what was deferred, and the recommended
 | 9 | UI + CLI + tests + docs | 2 | ~62 h | TODO |
 | 10 | E2E smoke + remaining cars | 1 | ~80 h+ | TODO (gated on IBT capture) |
 
-**Shipped so far:** 7 of 22 units (~120 h of ~511 h ≈ 23% of total estimated work).
-**Remaining critical path:** W2.4 → W4.1 → W4.2 → W7.1 → W7.2 → W9.1 → W9.2 → W10.1 ≈ ~278 h.
+**Shipped so far:** 9 of 22 units (~158 h of ~511 h ≈ 31% of total estimated work).
+**Remaining critical path:** W4.1 → W4.2 → W7.1 → W7.2 → W9.1 → W9.2 → W10.1 ≈ ~254 h.
 
 ## Wave 1 — DONE (2026-04-27)
 
@@ -178,32 +178,80 @@ Commit: `c31f3be feat(gt3): Wave 2.3 + Wave 3.1 — Step 3 GT3 front-coil + heav
 
 **Cross-file couplings:** none — all callers of `LegalSpace.from_car()` and `compute_perch_offsets()` (in `pipeline/produce.py`, `pipeline/reason.py`, `solver/legal_search.py`, `solver/grid_search.py`) already pass `car` positionally, so the new architecture-aware filtering kicks in automatically.
 
+## Wave 2.4 + Wave 3.2 — DONE (2026-04-27)
+
+Commit: `aa0beda feat(gt3): Wave 2.4 + Wave 3.2 — ARB blade encoding + damper polarity`
++990/-99 across 8 files. 30 new tests. Suite: 573 passed.
+
+### W2.4 — Step 4 ARB blade encoding + Porsche LLTD target — DONE
+
+**Files:** `car_model/cars.py`, `solver/arb_solver.py`, `tests/test_arb_solver_gt3.py` (new).
+
+- **`ARBModel.blade_factor` short-circuits to 1.0 when `max_blade <= 1`** (A-9). Previously returned 0.30 for `blade_factor(1, 1)` — was scaling all GT3 paired-blade ARB stiffness lookups by 0.30. BMW GTP regression cases (`blade_factor(1, 5) = 0.30`, `blade_factor(5, 5) = 1.0`) preserved.
+- **New `ARBModel.arb_direction: Literal["ascending", "descending"]`** field (default `"ascending"`) — forward-compat for Corvette Z06 GT3.R inverted encoding when its stub lands in W10.1.
+- **GT3 `measured_lltd_target` set per car**: BMW M4 GT3 = 0.51, Aston Vantage GT3 = 0.53, **Porsche 992 GT3 R = 0.45** (RR adjustment from OptimumG +5pp rule). Without these, the bare formula over-targeted Porsche 992 by 5–7pp.
+- **`ARBSolution`** gains `rarb_size_slow_corner` / `rarb_size_fast_corner` (size-label live tuning for collapsed-blade encodings).
+- **New `_front_spring_roll_stiffness` helper** extracted from 3-way copy-paste (A-7).
+- **New `_iter_blade_options(blade_count)` helper**: returns `[1]` when count<=1 (GT3 single-blade-per-label) else `range(1, count+1)` (GTP). Self-documenting GT3 vs GTP intent without flag plumbing.
+- **New `_neighbor_size` helper**: walks `rear_size_labels` ±1/±2 indices for slow/fast tuning, honouring `arb_direction`.
+- **A-2 zero-front-rate assertion**: loud-fail safety net for any future W2.3 regression.
+- **All blade loops** in `solve()` / `solve_candidates()` / `solution_from_explicit_settings()` dispatch through `_iter_blade_options`. GT3 vs GTP slow/fast tuning split: blade-walk for GTP, size-label-walk for GT3 collapsed-blade.
+- **GT3 generic `car_specific_notes` branch (A-8)** emits "size label is the live tuning unit" guidance.
+- **`summary()`**: GT3 / collapsed-blade branch.
+
+**Deferred:**
+- A-8 per-car-name notes (BMW M4 GT3 / Aston / Porsche 992 specific wording) — generic GT3 branch sufficient for now.
+- Corvette descending-direction application — no Corvette stub yet (W10.1); forward-compat hook in place via `arb_direction` field.
+
+**Tests:** 16 new in `tests/test_arb_solver_gt3.py`. GTP regression: BMW search returns sensible blade values.
+
+### W3.2 — Damper polarity + range per-car — DONE
+
+**Files:** `car_model/cars.py`, `solver/legality_engine.py`, `solver/candidate_search.py`, `solver/damper_solver.py`, `solver/legal_space.py`, `tests/test_damper_polarity_gt3.py` (new).
+
+- **`DamperModel.click_polarity: Literal["higher_stiffer", "lower_stiffer"]`** field added (default `"higher_stiffer"` preserves BMW behaviour).
+- **Porsche 992 GT3 R damper range** confirmed at `(0, 12)` (driver IBT clicks reach 12; matches L3).
+- **`legality_engine.py`** (L215-276, polarity at L224): replaced single LS-comp hierarchy check with polarity-dispatched 4-way check (LS comp, LS rbd, HS comp, HS rbd) (L4). Penalty wording changed from numeric to semantic ("Front LS comp softer than rear LS comp") so it reads correctly under either polarity.
+- **`candidate_search.py`** (L714-761, polarity at L722): replaced hardcoded `lo=0, hi=20` in `_adjust_integer` with `car.damper.{ls_comp,ls_rbd,hs_comp,hs_rbd}_range` per axle (CS6). Added polarity sign inversion: `polarity_sign = 1 if higher_stiffer else -1` multiplied into delta so "stiffer" intent always means stiffer regardless of car convention (CS7).
+- **`damper_solver.py`** (L676-687): GT3 L/R averaging — when `car.suspension_arch.has_heave_third` is False, `lf_hs_comp_adj = rf_hs_comp_adj = (lf+rf)//2` (and lr/rr same). iRacing GT3 garage has only per-axle dampers (8 channels) — without this collapse, the asymmetric .sto write would silently lose L/R divergence (F2 partial fix).
+- **`legal_space.py`** (L881-887): TODO(W6.1) comment for polarity-aware search-dimension scoring.
+
+**Deferred:**
+- L3 Audi/McLaren/Corvette stubs — those `CarModel` definitions don't exist yet (W10.1). The polarity field is wired so when stubs land, only `click_polarity="lower_stiffer"` + per-car ranges (e.g. McLaren HS=0–50) need to be set — no further code change.
+- LS5 polarity-aware search-dimension scoring (TODO comment in `legal_space.py`).
+- F2 deeper fix (skip asymmetric calc entirely on GT3 vs collapse-to-average) — current collapse preserves intent.
+
+**Tests:** 14 new in `tests/test_damper_polarity_gt3.py`. GTP regression: `damper_solver.solve(BMW, ...)` does NOT collapse L/R.
+
 ## Combined-state pipeline behavior
 
-After Wave 1 + Wave 2.1 + Wave 2.2 + Wave 2.3 + Wave 3.1:
+After Wave 1 + Wave 2 (all 4 units) + Wave 3.1 + Wave 3.2:
 
-- **GT3 IBT through `pipeline.produce`** runs cleanly through Step 1 + Step 2 + Step 3.
-  - Step 1: `_solve_balance_only` returns a `RakeSolution` with target balance hit, NaN L/D, `mode="balance_only_search"`.
+- **GT3 IBT through `pipeline.produce`** runs cleanly through Step 1 → Step 6.
+  - Step 1: `_solve_balance_only` returns `RakeSolution` with target balance hit, NaN L/D, `mode="balance_only_search"`.
   - Step 2: `HeaveSolution.null()` with step1's dynamic RH propagated, `present=False`.
-  - Step 3: `CornerSpringSolution` with real `front_coil_rate_nmm` (from GT3 spring range) + real `rear_spring_rate_nmm` (from frequency-isolation), `front_torsion_od_mm = 0.0`.
-- **Step 4 (ARB/LLTD)** still over-targets Porsche 992 RR LLTD (A-1 — RR `weight_dist_front=0.449` + 0.05 = 0.499 vs empirical 0.43). **W2.4 will fix this.** Front roll stiffness now correctly receives non-zero `front_wheel_rate_nmm` from W2.3, so the search loop executes — but rear blade encoding is still wrong (A-3, A-4: `rear_blade_count=1` for all GT3 stubs means the search loop iterates once).
-- **Step 6 (dampers)** still uses BMW polarity for inverted-polarity GT3 cars (Audi/McLaren/Corvette). **W3.2 will fix this.**
-- **Setup writer (`output/setup_writer.py`)** raises `ValueError` because GT3 PARAM_IDS are empty stubs. **W4.1 (BMW M4 GT3) and W4.2 (Aston, Porsche 992) will populate them.**
-- **Legal-search (`legal_space.py`)** now correctly drops `front_heave_spring_nmm` / `rear_third_spring_nmm` / `front_torsion_od_mm` axes for GT3 — search space is GT3-shaped.
+  - Step 3: `CornerSpringSolution` with real `front_coil_rate_nmm` + real `rear_spring_rate_nmm` (frequency-isolation).
+  - **Step 4: `ARBSolution` with size-label live tuning** — search rotates from baseline. Porsche 992 RR LLTD targets the empirically-correct 0.45 (was over-targeting at 0.499).
+  - Step 5: Geometry runs (consumes step3 + step4).
+  - **Step 6: Dampers respect per-car polarity + range.** GT3 L/R adjustments collapsed to per-axle averages (no silent .sto write loss).
+- **Setup writer (`output/setup_writer.py`)** raises `ValueError` because GT3 PARAM_IDS are empty stubs. **W4.1 (BMW M4 GT3) is now fully unblocked and is the next critical-path unit.**
+- **Legal-search (`legal_space.py`)** drops heave/third/torsion axes for GT3.
 - **Modifier object** no longer carries dead GT3 heave-floor values.
 - **Stint analysis** works on GT3 fuel curves but still labels with hardcoded `89` L (W3.3 territory).
-- **Calibration gate** correctly reports Step 2 as `not_applicable` for GT3, Step 3 now `weak` (real coil range but motion ratio still placeholder = 1.0), Steps 4–6 still `uncalibrated` or `weak`.
+- **Calibration gate** correctly reports Step 2 as `not_applicable` for GT3, Step 3+ as `weak` (real coil range / ARB size labels but rear motion ratio still placeholder = 1.0).
 
 ## Recommended next batch
 
-W2.4 + W3.2 in parallel — both touch disjoint files, both unblock the next leg of the GT3 chain.
+**W4.1 alone** is the next critical-path unit (~16 h). Options for batching:
 
-| Unit | Files | Effort | Why batch together |
+| Combo | Files | Effort | Why batch together |
 |---|---|---|---|
-| **W2.4** | `solver/arb_solver.py` blade-vs-label dispatch (A-1..A-5); Porsche 992 LLTD physics formula in `car_model/cars.py` | 24 h | Critical-path: W4.1 setup writer reads `step4.front_arb_*` / `step4.rear_arb_*`. Without this, GT3 ARB output is `front_blade=1, rear_blade=1` — never tunes the ARB. |
-| **W3.2** | `solver/damper_solver.py`, `car_model/cars.py` `DamperModel.click_polarity` + `click_range`, per-car overrides (Audi/McLaren/Corvette inverted; Porsche/Acura range mismatch) | 14 h | Independent of W2.4; protects against silent damper-direction bugs. Required before W4.1 because the writer encodes damper clicks. |
+| **W4.1 + W3.3** | `output/setup_writer.py` `_BMW_M4_GT3_PARAM_IDS` + per-axle damper collapse; `solver/scenario_profiles.py` per-class fuel cap + `solver/{damper,stint}_model.py` hardcoded 89L removed | 16 h + 8 h = 24 h | Disjoint files. W3.3 is independent (no upstream blockers) and removes the last GT3 display-drift / modeling drift. After this batch, the BMW M4 GT3 .sto write is end-to-end correct. |
+| **W4.1 alone** | `output/setup_writer.py` only | 16 h | Cleanest critical-path step. Then W4.2 (Aston + Porsche 992 PARAM_IDS) can land next, then W4.3 (output guards + GT3 garage validator). |
 
-Combined ~38 h, no file overlap, both depend on Wave 1 (done). After this batch, **W4.1 (BMW M4 GT3 setup writer)** becomes runnable — it requires W1.3 (registry, done), W2.1 (step2 dispatch, done), W2.3 (front coil, done), W3.2 (damper polarity, after this batch).
+Recommend **W4.1 + W3.3 in parallel** — disjoint files, W3.3 closes Wave 3, and the combined batch gets the BMW M4 GT3 to a fully-correct .sto round-trip.
+
+After this batch the next critical-path is **W4.2** (Aston + Porsche 992 PARAM_IDS — single agent, ~24h) followed by **W4.3** (output guards + GT3 garage validator — ~14h) and then **W5.x** (pipeline + analyzer GT3 awareness — ~62h, can parallelize across 3 agents).
 
 ## Top deferred-finding ledger (rolled up across waves)
 
@@ -213,20 +261,24 @@ Combined ~38 h, no file overlap, both depend on Wave 1 (done). After this batch,
 | R-7 / R-8 vortex_burst_threshold cleanup | COSMETIC | Wave 9 docs/cleanup |
 | C-8 GT3 rear motion ratio = 1.0 placeholder | DEGRADED → BLOCKER once Step 4/6 calibration matters | Data-blocked (PENDING_IBT); W7.2 territory |
 | C-11 Ferrari preload-turns hook canonical-name gate | COSMETIC | Defer until 2nd car needs the same shape |
-| ST1/ST2/ST3/ST4/ST7 stint_model fuel constants (89 L hardcoded) | DEGRADED (display drift on GT3) | W3.3 |
+| ST1/ST2/ST3/ST4/ST7 stint_model fuel constants (89 L hardcoded) | DEGRADED (display drift on GT3) | W3.3 (next batch) |
 | MD1 modifier dataclass dead-fields on GT3 | DEGRADED (harmless) | Wave 9 cleanup |
 | F19 legal-search heave axis fallback scoring | DEGRADED | W6.1 (objective + sensitivity GT3 guards) |
 | `_car_name(None) → "bmw"` silent default | DEGRADED | Follow-up after W4.1 (needs `_extract_target_maps` car plumbing) |
 | BMW fallback in `detect_car_adapter` (GT3 fingerprint logged but not dispatched per car) | DEGRADED | W4.x (per-car YAML fingerprints: Aston `EpasSetting`, Porsche RR fuel cell) |
 | Cosmetic F9–F11 in calibration-gate | COSMETIC | Wave 9 |
-| A-2 assertion `front_wheel_rate_nmm > 0` in arb_solver | COSMETIC (loud-fail safety net) | W2.4 |
+| A-8 per-car-name ARB notes (BMW M4 GT3 / Aston / Porsche 992 wording) | COSMETIC | Wave 9 |
+| Corvette `arb_direction="descending"` application | DEGRADED (forward-compat hook in place, no Corvette stub yet) | W10.1 |
+| L3 inverted-polarity car stubs (Audi, McLaren, Corvette `click_polarity="lower_stiffer"`) | BLOCKER for those 3 cars (no stub exists yet) | W10.1 |
+| LS5 polarity-aware search-dimension scoring in `legal_space.py` | DEGRADED (TODO comment in code) | W6.1 |
+| F2 deeper fix (skip asymmetric damper calc on GT3 vs collapse-to-average) | DEGRADED (current collapse preserves intent) | Future cleanup |
 
 ## Test posture
 
-- 543 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +56 from Wave 1, +21 from Wave 2.1+2.2, +33 from Wave 2.3+3.1 = 110 new GT3-specific tests).
+- 573 tests pass (was 295 before this Phase 2 work began per CLAUDE.md 2026-04-11 entry; +56 from Wave 1, +21 from Wave 2.1+2.2, +33 from Wave 2.3+3.1, +30 from Wave 2.4+3.2 = 140 new GT3-specific tests).
 - 32 skipped (mostly fastapi-dependent webapp tests in this sandbox).
-- 1 deselected: `tests/test_run_trace.py::test_support_tier_mapping` — pre-existing data-dependent failure (BMW dataset has 26 sessions but test asserts ≥30); confirmed unchanged whether Wave 1/2/3.1 changes are present or stashed.
-- 0 NEW regressions from any of the 7 shipped units.
+- 1 deselected: `tests/test_run_trace.py::test_support_tier_mapping` — pre-existing data-dependent failure (BMW dataset has 26 sessions but test asserts ≥30); confirmed unchanged whether Wave 1/2/3.1/3.2 changes are present or stashed.
+- 0 NEW regressions from any of the 9 shipped units.
 
 ## Branch strategy reminder
 
