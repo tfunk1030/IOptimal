@@ -5,7 +5,7 @@
 
 The 12 audit docs are the source of truth — this is a synthesis layer that pulls them into one buildable Phase 2 implementation plan with ordering, dependencies, and concrete PR-sized work units.
 
-> **Implementation status (2026-04-27, latest batch W2.4 + W3.2):** Wave 1 (W1.1–W1.3) + Wave 2 (W2.1–W2.4 all done) + Wave 3.1 + W3.2 shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. 9 of 22 work units done (~158 h shipped). 573 tests pass, 0 new regressions. GT3 IBT now runs through Step 1 → Step 6 cleanly with real coil/ARB/damper output (Porsche 992 RR LLTD targets 0.45; per-car damper polarity respected). **Setup writer still raises (W4.1 next critical-path).** See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the full progress log.
+> **Implementation status (2026-04-27, latest batch W4.1 + W3.3):** Wave 1 (W1.1–W1.3) + Wave 2 (W2.1–W2.4) + Wave 3 (W3.1–W3.3) + W4.1 shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. 11 of 22 work units done (~182 h shipped). 602 tests pass, 0 new regressions. GT3 IBT runs through Step 1 → Step 6 cleanly **and writes a valid `.sto` file for BMW M4 GT3 EVO**. iRacing schema round-trip not yet validated (W4.3). Aston + Porsche 992 setup writers (W4.2) and output validator GT3 guards (W4.3) remain. See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the full progress log.
 
 ## Aggregate findings
 
@@ -98,21 +98,21 @@ Sequenced by dependency. Each work unit becomes one PR. Effort estimates per uni
 | W2.3 | Step 3 (corner spring) GT3 front-coil branch | `solver/corner_spring_solver.py` extending `front_torsion_c == 0.0` path; `CornerSpringSolution.front_coil_rate_nmm` field; `CornerSpringModel.front_spring_range_nmm` | 16 h | **DONE** | W1.1, W1.2, W2.1 |
 | W2.4 | Step 4 (ARB/LLTD) per-car blade encoding + RR LLTD target | `solver/arb_solver.py` blade-vs-label dispatch; Porsche 992 LLTD physics formula | 24 h | **DONE** | W1.1, W2.3 |
 
-### Wave 3 — solver chain crash fixes (3 units; ~30 h) — **W3.1 + W3.2 done; W3.3 remains**
+### Wave 3 — solver chain crash fixes (3 units; ~30 h) — **DONE 2026-04-27**
 
 | # | Title | Files | Effort | Status | Depends on |
 |---|---|---|---|---|---|
 | W3.1 | `legal_space`/`modifiers`/`stint_model` heave_spring=None guards | `solver/legal_space.py`, `solver/modifiers.py`, `solver/stint_model.py` | 8 h | **DONE** | W1.2 |
 | W3.2 | Damper polarity + range per-car | `solver/damper_solver.py`, `car_model/cars.py` `DamperModel.click_polarity` + `click_range`, per-car overrides for Audi/McLaren/Corvette/Porsche/Acura | 14 h | **DONE** | W1.1 |
-| W3.3 | Fuel constants generalized | `solver/scenario_profiles.py` per-class fuel cap, `solver/{damper,stint}_model.py` hardcoded 89L removed | 8 h | TODO (batchable with W4.1) | none |
+| W3.3 | Fuel constants generalized | `solver/scenario_profiles.py` per-class fuel cap, `solver/{damper,stint}_model.py` hardcoded 89L removed | 8 h | **DONE** | none |
 
-### Wave 4 — output + writer (3 units; ~70 h)
+### Wave 4 — output + writer (3 units; ~70 h) — **W4.1 done; W4.2 + W4.3 remain**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W4.1 | Setup writer GT3 dispatch — BMW M4 GT3 EVO | `output/setup_writer.py` `_BMW_M4_GT3_PARAM_IDS` + per-axle damper collapse | 16 h | W1.3, W2.1, W3.2 |
-| W4.2 | Setup writer GT3 dispatch — Aston Vantage + Porsche 992 | `output/setup_writer.py` `_ASTON_VANTAGE_GT3_PARAM_IDS`, `_PORSCHE_992_GT3R_PARAM_IDS` (Porsche has integer ARB encoding, paired rear TotalToeIn, FuelLevel-in-front) | 24 h | W4.1 |
-| W4.3 | Output guards + GT3 garage validator + report | `output/garage_validator.py`, `output/report.py`, `output/bundle.py` step2.present guards; new GT3 GarageRanges fields (`bump_rubber_gap`, `splitter_height`) | 14 h | W1.2, W4.1 |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W4.1 | Setup writer GT3 dispatch — BMW M4 GT3 EVO | `output/setup_writer.py` `_BMW_M4_GT3_PARAM_IDS` + per-axle damper collapse | 16 h | **DONE** | W1.3, W2.1, W3.2 |
+| W4.2 | Setup writer GT3 dispatch — Aston Vantage + Porsche 992 | `output/setup_writer.py` `_ASTON_VANTAGE_GT3_PARAM_IDS`, `_PORSCHE_992_GT3R_PARAM_IDS` (Porsche has integer ARB encoding, paired rear TotalToeIn, FuelLevel-in-front) | 24 h | TODO (next critical-path) | W4.1 |
+| W4.3 | Output guards + GT3 garage validator + report | `output/garage_validator.py`, `output/report.py`, `output/bundle.py` step2.present guards; new GT3 GarageRanges fields (`bump_rubber_gap`, `splitter_height`) | 14 h | TODO | W1.2, W4.1 |
 
 ### Wave 5 — pipeline + analyzer (3 units; ~62 h)
 
