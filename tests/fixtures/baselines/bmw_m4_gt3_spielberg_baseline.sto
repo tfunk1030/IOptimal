@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LDXFile Version="1.6" Locale="English">
+  <Maths Id="Maths" Flags="184" Locale="English">
+    <MathConstants />
+  </Maths>
+  <Layers>
+    <Details>
+      <String Id="Event" Value="GTP Setup Builder" Unit="" />
+      <String Id="Session" Value="Generated 2026-04-27 21:19 UTC" Unit="" />
+      <String Id="Venue" Value="Red Bull Ring — Grand Prix" Unit="" />
+      <String Id="Vehicle Type" Value="Car" Unit="" />
+      <Numeric Id="CarSetup_Chassis_Rear_WingAngle" Value="-2.0" Unit="deg" />
+      <Numeric Id="CarSetup_TiresAero_AeroBalanceCalc_FrontRhAtSpeed" Value="70.0" Unit="mm" />
+      <Numeric Id="CarSetup_TiresAero_AeroBalanceCalc_RearRhAtSpeed" Value="62.0" Unit="mm" />
+      <Numeric Id="CarSetup_TiresAero_AeroBalanceCalc_FrontDownforce" Value="44.0" Unit="%" />
+      <!-- TODO: bmw_m4_gt3 ld_ratio not mapped -->
+      <Numeric Id="CarSetup_Chassis_LeftFront_RideHeight" Value="60.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightFront_RideHeight" Value="60.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_RideHeight" Value="80.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_RideHeight" Value="80.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_SpringRate" Value="190" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_RightFront_SpringRate" Value="190" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_SpringRate" Value="130" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_SpringRate" Value="130" Unit="N/mm" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_BumpRubberGap" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightFront_BumpRubberGap" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_BumpRubberGap" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_BumpRubberGap" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakes_CenterFrontSplitterHeight" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakes_ArbBlades" Value="1" Unit="" />
+      <Numeric Id="CarSetup_Chassis_Rear_ArbBlades" Value="1" Unit="" />
+      <Numeric Id="CarSetup_Chassis_LeftFront_Camber" Value="-1.3" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_RightFront_Camber" Value="-1.3" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_Camber" Value="-1.2" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_RightRear_Camber" Value="-1.2" Unit="deg" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakes_TotalToeIn" Value="-0.2" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_ToeIn" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_ToeIn" Value="0.0" Unit="mm" />
+      <Numeric Id="CarSetup_TiresAero_LeftFront_StartingPressure" Value="152.0" Unit="kPa" />
+      <Numeric Id="CarSetup_TiresAero_RightFront_StartingPressure" Value="152.0" Unit="kPa" />
+      <Numeric Id="CarSetup_TiresAero_LeftRear_StartingPressure" Value="152.0" Unit="kPa" />
+      <Numeric Id="CarSetup_TiresAero_RightRear_StartingPressure" Value="152.0" Unit="kPa" />
+      <String Id="CarSetup_TiresAero_TireType_TireType" Value="Dry" Unit="" />
+      <Numeric Id="CarSetup_Chassis_Rear_FuelLevel" Value="100.0" Unit="L" />
+      <Numeric Id="CarSetup_Chassis_InCarAdjustments_BrakePressureBias" Value="52.1" Unit="%" />
+      <!-- TODO: bmw_m4_gt3 diff_coast_drive_ramp not mapped -->
+      <!-- TODO: bmw_m4_gt3 diff_clutch_plates not mapped -->
+      <Numeric Id="CarSetup_Chassis_GearsDifferential_DiffPreload" Value="100" Unit="Nm" />
+      <String Id="CarSetup_Chassis_InCarAdjustments_TcSetting" Value="4 (TC)" Unit="" />
+      <String Id="CarSetup_Chassis_InCarAdjustments_AbsSetting" Value="3 (ABS)" Unit="" />
+      <!-- TODO: bmw_m4_gt3 brake_bias_migration not mapped -->
+      <!-- TODO: bmw_m4_gt3 brake_bias_target not mapped -->
+      <String Id="CarSetup_Chassis_FrontBrakes_BrakePads" Value="Medium" Unit="" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakes_FrontMasterCyl" Value="17.8" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_FrontBrakes_RearMasterCyl" Value="17.8" Unit="mm" />
+      <!-- TODO: bmw_m4_gt3 fuel_low_warning not mapped -->
+      <String Id="CarSetup_Chassis_GearsDifferential_GearStack" Value="FIA" Unit="" />
+      <!-- TODO: bmw_m4_gt3 roof_light_color not mapped -->
+    </Details>
+  </Layers>
+</LDXFile>

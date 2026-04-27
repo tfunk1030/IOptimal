@@ -34,12 +34,27 @@ class Observation:
 
     # ── Setup Parameters (what was configured) ──
     setup: dict = field(default_factory=dict)
-    # Keys: wing, fuel_l, front_rh_static, rear_rh_static,
-    #        front_pushrod, rear_pushrod, front_heave_nmm, rear_third_nmm,
-    #        torsion_bar_od_mm, rear_spring_nmm, front_arb_size, front_arb_blade,
-    #        rear_arb_size, rear_arb_blade, front_camber_deg, rear_camber_deg,
-    #        front_toe_mm, rear_toe_mm, brake_bias_pct,
-    #        dampers: {lf/rf/lr/rr: {ls_comp, ls_rbd, hs_comp, hs_rbd, hs_slope}}
+    # Keys (GTP architecture — heave/third + torsion-bar / roll-spring front):
+    #   wing, fuel_l, front_rh_static, rear_rh_static,
+    #   front_pushrod, rear_pushrod, front_heave_nmm, rear_third_nmm,
+    #   torsion_bar_od_mm, rear_spring_nmm, front_arb_size, front_arb_blade,
+    #   rear_arb_size, rear_arb_blade, front_camber_deg, rear_camber_deg,
+    #   front_toe_mm, rear_toe_mm, brake_bias_pct,
+    #   dampers: {lf/rf/lr/rr: {ls_comp, ls_rbd, hs_comp, hs_rbd, hs_slope}}
+    #
+    # Keys (GT3 architecture — paired coil-overs + bump rubbers + splitter):
+    #   wing, fuel_l, front_rh_static, rear_rh_static,
+    #   front_pushrod, rear_pushrod,
+    #   front_corner_spring_nmm, rear_corner_spring_nmm,
+    #   front_bump_rubber_gap_mm, rear_bump_rubber_gap_mm,
+    #   lf_bump_rubber_gap_mm, rf_bump_rubber_gap_mm,
+    #   lr_bump_rubber_gap_mm, rr_bump_rubber_gap_mm,
+    #   splitter_height_mm,
+    #   front_arb_size, front_arb_blade, rear_arb_size, rear_arb_blade,
+    #   front_camber_deg, rear_camber_deg, front_toe_mm, rear_toe_mm,
+    #   brake_bias_pct,
+    #   dampers: {lf/rf/lr/rr: {ls_comp, ls_rbd, hs_comp, hs_rbd, hs_slope}}
+    #     (per-axle on GT3 — duplicated lf/rf and lr/rr rows)
 
     # ── Performance Metrics (what happened) ──
     performance: dict = field(default_factory=dict)
@@ -159,6 +174,18 @@ def build_observation(
     diag: Diagnosis = diagnosis_obj
     tp: TrackProfile = track_profile
 
+    # Detect GT3 architecture (audit BLOCKER #5). Without a CarModel handle
+    # available here, infer from CurrentSetup field shape: GT3 cars carry a
+    # non-zero ``front_corner_spring_nmm`` and zero on the GTP-only fields
+    # (heave/third, torsion-bar OD). The flag drives which keys we populate
+    # below so STEP_GROUPS and KNOWN_CAUSALITY downstream see the correct
+    # architecture-specific tuples.
+    is_gt3 = (
+        getattr(s, "front_corner_spring_nmm", 0.0) > 0.0
+        and not getattr(s, "front_heave_nmm", 0.0)
+        and not getattr(s, "front_torsion_od_mm", 0.0)
+    )
+
     # ── Setup dict ──
     setup = {
         "wing": s.wing_angle_deg,
@@ -174,6 +201,35 @@ def build_observation(
         "rear_third_nmm": s.rear_third_nmm,
         "torsion_bar_od_mm": s.front_torsion_od_mm,
         "rear_spring_nmm": s.rear_spring_nmm,
+        # GT3 paired-coil + bump-rubber + splitter fields (audit BLOCKER #5).
+        # Always populated from getattr-with-defaults so GTP observations
+        # carry zeros and GT3 observations carry the real values. Downstream
+        # consumers (delta_detector, empirical_models, setup_clusters) gate
+        # off the per-arch threshold dict so zero values are skipped.
+        "front_corner_spring_nmm": getattr(s, "front_corner_spring_nmm", 0.0),
+        # rear_corner_spring_nmm is the GT3-physical alias of rear_spring_nmm —
+        # the analyzer stores the avg of LR/RR SpringRate into rear_spring_nmm
+        # for GT3 cars (see analyzer/setup_reader.py:235). Surface it under the
+        # GT3-canonical key so KNOWN_CAUSALITY tuples can fire.
+        "rear_corner_spring_nmm": (
+            s.rear_spring_nmm if is_gt3 else getattr(s, "rear_corner_spring_nmm", 0.0)
+        ),
+        # Bump rubber gaps: average per axle for delta-detector convenience,
+        # but also surface the per-corner values so analyses that need
+        # left/right asymmetry can still get them.
+        "lf_bump_rubber_gap_mm": getattr(s, "lf_bump_rubber_gap_mm", 0.0),
+        "rf_bump_rubber_gap_mm": getattr(s, "rf_bump_rubber_gap_mm", 0.0),
+        "lr_bump_rubber_gap_mm": getattr(s, "lr_bump_rubber_gap_mm", 0.0),
+        "rr_bump_rubber_gap_mm": getattr(s, "rr_bump_rubber_gap_mm", 0.0),
+        "front_bump_rubber_gap_mm": (
+            (getattr(s, "lf_bump_rubber_gap_mm", 0.0)
+             + getattr(s, "rf_bump_rubber_gap_mm", 0.0)) / 2.0
+        ),
+        "rear_bump_rubber_gap_mm": (
+            (getattr(s, "lr_bump_rubber_gap_mm", 0.0)
+             + getattr(s, "rr_bump_rubber_gap_mm", 0.0)) / 2.0
+        ),
+        "splitter_height_mm": getattr(s, "splitter_height_mm", 0.0),
         "front_heave_index": getattr(s, "raw_indexed_fields", {}).get("front_heave_index", s.front_heave_nmm),
         "rear_heave_index": getattr(s, "raw_indexed_fields", {}).get("rear_heave_index", s.rear_third_nmm),
         "front_torsion_bar_index": getattr(s, "raw_indexed_fields", {}).get("front_torsion_bar_index", s.front_torsion_od_mm),
@@ -294,6 +350,13 @@ def build_observation(
         "splitter_rh_mean_at_speed_mm": getattr(m, "splitter_rh_mean_at_speed_mm", 0.0),
         "splitter_rh_min_mm": getattr(m, "splitter_rh_min_mm", 0.0),
         "splitter_scrape_events": getattr(m, "splitter_scrape_events", 0),
+        # GT3 bump-rubber engagement proxies (audit DEGRADED #11). These
+        # telemetry fields are not yet computed in analyzer/extract.py — they
+        # default to 0.0 here so the delta_detector / KNOWN_CAUSALITY paths
+        # do not crash on lookups. TODO(W7.x): wire from analyzer once the
+        # bump-rubber-contact extractor lands.
+        "front_bump_rubber_contact_pct": getattr(m, "front_bump_rubber_contact_pct", 0.0),
+        "rear_bump_rubber_contact_pct": getattr(m, "rear_bump_rubber_contact_pct", 0.0),
         "front_corner_defl_p99_mm": getattr(m, "front_corner_defl_p99_mm", 0.0),
         "rear_corner_defl_p99_mm": getattr(m, "rear_corner_defl_p99_mm", 0.0),
         "front_heave_vel_p95_mps": getattr(m, "front_heave_vel_p95_mps", 0.0),

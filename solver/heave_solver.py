@@ -252,6 +252,20 @@ class HeaveSolver:
     """
 
     def __init__(self, car: CarModel, track: TrackProfile):
+        # Defense-in-depth: HeaveSolver only applies to architectures that
+        # actually have heave/third springs (GTP). On GT3_COIL_4WHEEL the
+        # solver chain MUST skip Step 2 and use HeaveSolution.null(...).
+        # If a future caller forgets, fail loudly here rather than silently
+        # producing zero-derived garbage values that downstream consumers
+        # would treat as real spring rates (Key Principle 8).
+        if not car.suspension_arch.has_heave_third:
+            raise ValueError(
+                f"HeaveSolver does not apply to {car.canonical_name} "
+                f"(suspension_arch={car.suspension_arch.name}, "
+                f"has_heave_third=False). "
+                f"Use HeaveSolution.null(...) and skip Step 2 for this "
+                f"architecture (e.g. GT3_COIL_4WHEEL)."
+            )
         self.car = car
         self.track = track
 
@@ -1566,6 +1580,12 @@ class HeaveSolver:
         verbose: bool = True,
     ) -> None:
         """Round-trip the front heave travel budget after torsion/spring choices are known."""
+        # GT3 guard: HeaveSolution.null() carries no real heave/perch state and
+        # there is no front heave spring to reconcile. Callers should ideally
+        # skip the call entirely, but defense-in-depth lets a caller pass a
+        # null step2 without crashing on car.heave_spring=None reads downstream.
+        if not getattr(step2, "present", True):
+            return
         garage_model = self.car.active_garage_output_model(self.track.track_name)
         # Auto-built garage models don't have validated travel budget constraints
         if garage_model is None or getattr(garage_model, "_auto_built", False):

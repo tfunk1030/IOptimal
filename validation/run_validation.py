@@ -144,14 +144,52 @@ def _count_by_bucket(rows: list[ObservationSample]) -> dict[str, dict[str, int]]
     return counts
 
 
+# GT3 Phase 2 W9.1 — F16 fix. The previous implementation hardcoded 3 GTP
+# car/track pairs and tagged everything else "unsupported", including all
+# GT3 rows even after the W7.x calibration scaffolding landed. The registry
+# below makes the support tier explicit per (car, track) pair. Architecture
+# defaults are sourced from ``teamdb.aggregator._TIER_THRESHOLDS_BY_ARCH``
+# (W8.1) so the per-arch sample-count cutoffs stay in sync.
+_SUPPORT_TIER_REGISTRY: dict[tuple[str, str], str] = {
+    # GTP
+    ("bmw", "sebring_international_raceway"): "calibrated",
+    ("ferrari", "sebring_international_raceway"): "partial",
+    ("cadillac", "silverstone_circuit"): "exploratory",
+    ("porsche", "algarve_international_circuit"): "calibrated",
+    ("porsche", "algarve"): "calibrated",
+    ("acura", "hockenheimring_baden_württemberg"): "partial",
+    ("acura", "hockenheim"): "partial",
+    ("ferrari", "hockenheimring_baden_württemberg"): "partial",
+    ("ferrari", "hockenheim"): "partial",
+    # GT3 — only Spielberg is currently exercised by the IBT corpus (1 IBT
+    # per car). Tag "exploratory" while we still have <4 sessions and no
+    # varied-spring sweeps. Promote to "partial" after W10.1 captures
+    # additional IBTs.
+    ("bmw_m4_gt3", "spielberg"): "exploratory",
+    ("bmw_m4_gt3", "red_bull_ring"): "exploratory",
+    ("aston_martin_vantage_gt3", "spielberg"): "exploratory",
+    ("aston_martin_vantage_gt3", "red_bull_ring"): "exploratory",
+    ("porsche_992_gt3r", "spielberg"): "exploratory",
+    ("porsche_992_gt3r", "red_bull_ring"): "exploratory",
+}
+
+
 def _confidence_tier(row: ObservationSample, count: int) -> str:
     track_slug = slugify(row.track)
-    if row.car == "bmw" and track_slug == "sebring_international_raceway":
-        return "calibrated"
-    if row.car == "ferrari" and track_slug == "sebring_international_raceway":
-        return "partial"
-    if row.car == "cadillac" and track_slug == "silverstone_circuit":
-        return "exploratory"
+    # Try direct lookup first; fall back to the canonical short track key
+    # (``track_key()`` from the registry collapses Algarve/Sebring/etc.
+    # variants).
+    hit = _SUPPORT_TIER_REGISTRY.get((row.car, track_slug))
+    if hit is not None:
+        return hit
+    try:
+        from car_model.registry import track_key
+        short = track_key(row.track)
+        hit = _SUPPORT_TIER_REGISTRY.get((row.car, short))
+        if hit is not None:
+            return hit
+    except Exception:
+        pass
     return "unsupported"
 
 
@@ -166,12 +204,45 @@ def _serialize_file_mtime(path: Path) -> dict[str, Any]:
     }
 
 
-def _target_samples(rows: list[ObservationSample]) -> list[ObservationSample]:
-    return [
-        row
-        for row in rows
-        if row.car == "bmw" and slugify(row.track) == "sebring_international_raceway"
-    ]
+def _target_samples(
+    rows: list[ObservationSample],
+    car: str = "bmw",
+    track: str = "sebring_international_raceway",
+) -> list[ObservationSample]:
+    """Filter observations down to a single (car, track) pair.
+
+    GT3 Phase 2 W9.1 — F17 fix. Pre-W9.1 the filter was hardcoded to
+    BMW/Sebring; callers now pass the pair they want. The headline report
+    keeps BMW/Sebring as the default for backward compatibility — GT3
+    car/track pairs can be selected by passing ``car="bmw_m4_gt3"`` and
+    ``track="spielberg"`` (matching the canonical short track key).
+    """
+    track_slug = slugify(track)
+    try:
+        from car_model.registry import track_key
+        short = track_key(track)
+    except Exception:
+        track_key = None  # type: ignore[assignment]
+        short = track_slug
+    matched: list[ObservationSample] = []
+    for row in rows:
+        if row.car != car:
+            continue
+        row_slug = slugify(row.track)
+        if row_slug == track_slug or row_slug == slugify(short):
+            matched.append(row)
+            continue
+        # Fall back to the canonical short track key — this collapses
+        # "Red Bull Ring" → "spielberg" so a caller passing the short key
+        # for a GT3 row matches the long display-name in the observation.
+        if track_key is not None:
+            try:
+                row_short = track_key(row.track)
+            except Exception:
+                row_short = ""
+            if row_short and (row_short == short or slugify(row_short) == track_slug):
+                matched.append(row)
+    return matched
 
 
 def build_validation_report() -> dict[str, Any]:

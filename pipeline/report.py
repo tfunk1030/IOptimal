@@ -44,6 +44,34 @@ from output.report import print_full_setup_report, _load_support_tier
 W = 70
 
 
+def _is_gt3(car: Any) -> bool:
+    """W5.1: GT3 architecture dispatch helper for the pipeline report layer.
+
+    Mirrors ``output/report.py:_is_gt3``. Returns True when the car has no
+    heave/third architecture (``SuspensionArchitecture.GT3_COIL_4WHEEL``).
+    Used to gate "Front heave" / "Rear third" rows in the CURRENT vs
+    RECOMMENDED table and the FRONT HEAVE TRAVEL BUDGET block, both of
+    which are GTP-only constructs.
+    """
+    if car is None:
+        return False
+    arch = getattr(car, "suspension_arch", None)
+    if arch is None:
+        return False
+    return getattr(arch, "has_heave_third", True) is False
+
+
+def _step2_present(step2: Any) -> bool:
+    """W5.1: True iff ``step2`` carries real heave/third data.
+
+    Returns False for both ``None`` (calibration-blocked) and
+    ``HeaveSolution.null()`` GT3 placeholders (``present=False``).
+    """
+    if step2 is None:
+        return False
+    return bool(getattr(step2, "present", True))
+
+
 def _hdr(title: str) -> str:
     pad = (W - len(title) - 2) // 2
     return "─" * pad + f" {title} " + "─" * (W - pad - len(title) - 2)
@@ -212,11 +240,25 @@ def generate_report(
     report_fuel_l = fuel_l if fuel_l is not None else getattr(current_setup, "fuel_l", 0.0)
     garage_outputs = None
     garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
+    # W5.1 F16: GarageSetupState.from_solver_steps + garage_model.predict are
+    # GTP-only constructs (heave/third spring + heave-axis excursion). For GT3
+    # cars step2 is HeaveSolution.null() with all numeric fields zero — feeding
+    # those into the regression-based predictor would emit zeroed
+    # `front_heave_nmm` / `rear_third_nmm` features and produce nonsense
+    # predictions. Skip both the state build and the predict call until W7.x
+    # delivers a coil-only GarageSetupState constructor.
+    _is_gt3_report = _is_gt3(car)
+    _step2_alive = _step2_present(step2)
     _solver_state = GarageSetupState.from_solver_steps(
         step1=step1, step2=step2, step3=step3, step5=step5,
         fuel_l=report_fuel_l,
-    ) if step1 is not None and step2 is not None and step3 is not None else None
-    if garage_model is not None and _solver_state is not None:
+    ) if (
+        step1 is not None
+        and _step2_alive
+        and step3 is not None
+        and not _is_gt3_report
+    ) else None
+    if garage_model is not None and _solver_state is not None and _step2_alive:
         garage_outputs = garage_model.predict(
             _solver_state,
             front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
@@ -465,25 +507,51 @@ def generate_report(
         a(_cmp("Front RH (static)",  current_setup.static_front_rh_mm,   step1.static_front_rh_mm,       "mm"))
         a(_cmp("Rear RH (static)",   current_setup.static_rear_rh_mm,    step1.static_rear_rh_mm,        "mm"))
         _is_ferrari = getattr(car, "canonical_name", "") == "ferrari"
+        _is_gt3_table = _is_gt3(car)
         _hu = "idx" if _is_ferrari else "N/mm"
         _tu = "idx" if _is_ferrari else "mm"
-        # For Ferrari, convert raw N/mm values to garage indices via public_output_value so
-        # both Current and Recomm columns are in the same display units (idx).
-        _cur_fh  = float(public_output_value(car, "front_heave_nmm",     current_setup.front_heave_nmm))
-        _rec_fh  = float(public_output_value(car, "front_heave_nmm",     step2.front_heave_nmm))
-        _cur_rh  = float(public_output_value(car, "rear_third_nmm",      current_setup.rear_third_nmm))
-        _rec_rh  = float(public_output_value(car, "rear_third_nmm",      step2.rear_third_nmm))
-        _cur_rs  = float(public_output_value(car, "rear_spring_rate_nmm", current_setup.rear_spring_nmm))
-        _rec_rs  = float(public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
-        _cur_tb  = float(public_output_value(car, "front_torsion_od_mm", current_setup.front_torsion_od_mm))
-        _rec_tb  = float(public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
-        a(_cmp("Front heave",        _cur_fh,   _rec_fh,  _hu, ".0f"))
-        _rear_heave_lbl = "Rear heave" if _is_ferrari else "Rear third"
-        a(_cmp(_rear_heave_lbl,      _cur_rh,   _rec_rh,  _hu, ".0f"))
-        _rear_spr_lbl = "Rear TB OD" if _is_ferrari else "Rear spring"
-        a(_cmp(_rear_spr_lbl,        _cur_rs,   _rec_rs,  _hu, ".0f"))
-        _tb_lbl = "F torsion bar OD" if _is_ferrari else "Torsion bar OD"
-        a(_cmp(_tb_lbl,              _cur_tb,   _rec_tb,  _tu))
+        # W5.1 F14: GT3 cars have no heave/third/torsion architecture. Replace
+        # the GTP "Front heave / Rear third / Rear spring / Torsion bar OD"
+        # rows with the four corner spring rates (which is the only spring
+        # control on a GT3 garage). step3.front_coil_rate_nmm is a paired
+        # axle-level value (LF=RF) and step3.rear_spring_rate_nmm is the rear
+        # paired rate (LR=RR), so the four rows are 2 distinct values shown
+        # twice; this matches output/report.py:_is_gt3 layout.
+        if _is_gt3_table:
+            _front_coil = getattr(step3, "front_coil_rate_nmm", None)
+            _rear_coil = getattr(step3, "rear_spring_rate_nmm", None)
+            _cur_lf = getattr(current_setup, "lf_spring_rate", None) or getattr(
+                current_setup, "front_corner_spring_nmm", None
+            )
+            _cur_rf = getattr(current_setup, "rf_spring_rate", None) or _cur_lf
+            _cur_lr = getattr(current_setup, "lr_spring_rate", None) or getattr(
+                current_setup, "rear_spring_nmm", None
+            )
+            _cur_rr = getattr(current_setup, "rr_spring_rate", None) or _cur_lr
+            if _front_coil is not None:
+                a(_cmp("LF Spring",          _cur_lf,   float(_front_coil),  "N/mm", ".0f"))
+                a(_cmp("RF Spring",          _cur_rf,   float(_front_coil),  "N/mm", ".0f"))
+            if _rear_coil is not None:
+                a(_cmp("LR Spring",          _cur_lr,   float(_rear_coil),   "N/mm", ".0f"))
+                a(_cmp("RR Spring",          _cur_rr,   float(_rear_coil),   "N/mm", ".0f"))
+        else:
+            # For Ferrari, convert raw N/mm values to garage indices via public_output_value so
+            # both Current and Recomm columns are in the same display units (idx).
+            _cur_fh  = float(public_output_value(car, "front_heave_nmm",     current_setup.front_heave_nmm))
+            _rec_fh  = float(public_output_value(car, "front_heave_nmm",     step2.front_heave_nmm))
+            _cur_rh  = float(public_output_value(car, "rear_third_nmm",      current_setup.rear_third_nmm))
+            _rec_rh  = float(public_output_value(car, "rear_third_nmm",      step2.rear_third_nmm))
+            _cur_rs  = float(public_output_value(car, "rear_spring_rate_nmm", current_setup.rear_spring_nmm))
+            _rec_rs  = float(public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+            _cur_tb  = float(public_output_value(car, "front_torsion_od_mm", current_setup.front_torsion_od_mm))
+            _rec_tb  = float(public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+            a(_cmp("Front heave",        _cur_fh,   _rec_fh,  _hu, ".0f"))
+            _rear_heave_lbl = "Rear heave" if _is_ferrari else "Rear third"
+            a(_cmp(_rear_heave_lbl,      _cur_rh,   _rec_rh,  _hu, ".0f"))
+            _rear_spr_lbl = "Rear TB OD" if _is_ferrari else "Rear spring"
+            a(_cmp(_rear_spr_lbl,        _cur_rs,   _rec_rs,  _hu, ".0f"))
+            _tb_lbl = "F torsion bar OD" if _is_ferrari else "Torsion bar OD"
+            a(_cmp(_tb_lbl,              _cur_tb,   _rec_tb,  _tu))
         a(_cmp("Front camber",       current_setup.front_camber_deg,     step5.front_camber_deg,         "°"))
         a(_cmp("Rear camber",        current_setup.rear_camber_deg,      step5.rear_camber_deg,          "°"))
         a(_cmp("Brake bias",         current_setup.brake_bias_pct,       supporting.brake_bias_pct,      "%"))
@@ -532,7 +600,17 @@ def generate_report(
             a("")
 
     # ── HEAVE TRAVEL BUDGET ────────────────────────────────────────────
-    if step2 is not None and step2.defl_max_front_mm > 0:
+    # W5.1 F15: This block is GTP-specific — it renders heave-spring travel
+    # budget analytics from a populated HeaveSolution. GT3 cars have no heave
+    # architecture (step2.present=False, defl_max_front_mm=0.0); the existing
+    # numeric `> 0` guard happens to skip the block silently, but make the
+    # architecture branch explicit so future refactors can't regress.
+    if (
+        not _is_gt3(car)
+        and step2 is not None
+        and getattr(step2, "present", True)
+        and step2.defl_max_front_mm > 0
+    ):
         budget_slider = (
             garage_outputs.heave_slider_defl_static_mm
             if garage_outputs is not None else

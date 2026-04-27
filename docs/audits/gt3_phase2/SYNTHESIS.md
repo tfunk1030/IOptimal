@@ -1,9 +1,11 @@
 # GT3 Phase 2 Synthesis — v5 implementation plan
 
-**Date:** 2026-04-26
+**Date:** 2026-04-26 (plan); last updated 2026-04-27 (status)
 **Inputs:** 12 parallel audit PRs (#103 – #114) + 4 IBT-verified session_info YAMLs (BMW M4 GT3 EVO at Spielberg + Nürburgring, Aston Vantage GT3 EVO at Spielberg, Porsche 992 GT3 R at Spielberg) + 10 parsed GT3 aero maps.
 
 The 12 audit docs are the source of truth — this is a synthesis layer that pulls them into one buildable Phase 2 implementation plan with ordering, dependencies, and concrete PR-sized work units.
+
+> **Implementation status (2026-04-27, Wave 1–9 COMPLETE):** All 9 of the first 9 waves (21 units) shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged. **21 of 22 work units done (~505 h shipped, ~99%)**. 830 tests pass, 0 new regressions. GT3 IBT runs end-to-end through analyzer → solver → writer → learner → teamdb → webapp/CLI cleanly. The 3 GT3 baseline `.sto` fixtures regression-lock the W4.x writer outputs. CLAUDE.md / per-car-quirks.md / calibration_guide.md carry GT3 sections. **Production DB needs `migrations/0001_gt3_phase2.sql` applied via `psql -f` before next server roll-out.** Only remaining: **W10.1** (E2E + 7 remaining GT3 cars, ~80 h+, gated on per-car IBT capture). The branch is at "all unblocked work shipped" status. See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).
 
 ## Aggregate findings
 
@@ -79,75 +81,75 @@ Porsche 992 GT3 R is the ONLY rear-engine GT3 (`weight_dist_front=0.449`). Optim
 
 Sequenced by dependency. Each work unit becomes one PR. Effort estimates per unit; ordering critical.
 
-### Wave 1 — foundation invariants (must land first; 3 units; ~20 h)
+### Wave 1 — foundation invariants (must land first; 3 units; ~20 h) — **DONE (2026-04-27)**
 
-| # | Title | Files | Effort | Why first |
-|---|---|---|---|---|
-| W1.1 | Calibration gate emits `not_applicable` for GT3 Step 2 | `car_model/calibration_gate.py` | 8 h | Audit 8 — the gate is read by every solver and pipeline path; fixing this unblocks all downstream Step 2 skipping logic. |
-| W1.2 | `step2.present` consumers wired | `solver/{params_util,candidate_search,decision_trace}.py` + `solver/heave_solver.py` defensive guard | 4 h | Audit 4 — 3 BLOCKER consumers + defense-in-depth. Tiny, surgical. |
-| W1.3 | `car_model/registry.py` resolves GT3 names without falling back to GTP | `car_model/registry.py`, `car_model/setup_registry.py` `_car_name()`, `car_model/setup_registry.py` `CAR_FIELD_SPECS` GT3 entries | 8 h | Audits 7+11 — silent GTP-fallback is the most dangerous data integrity issue. |
+| # | Title | Files | Effort | Status | Why first |
+|---|---|---|---|---|---|
+| W1.1 | Calibration gate emits `not_applicable` for GT3 Step 2 | `car_model/calibration_gate.py` | 8 h | **DONE** | Audit 8 — the gate is read by every solver and pipeline path; fixing this unblocks all downstream Step 2 skipping logic. |
+| W1.2 | `step2.present` consumers wired | `solver/{params_util,candidate_search,decision_trace}.py` + `solver/heave_solver.py` defensive guard | 4 h | **DONE** | Audit 4 — 3 BLOCKER consumers + defense-in-depth. Tiny, surgical. |
+| W1.3 | `car_model/registry.py` resolves GT3 names without falling back to GTP | `car_model/registry.py`, `car_model/setup_registry.py` `_car_name()`, `car_model/setup_registry.py` `CAR_FIELD_SPECS` GT3 entries | 8 h | **DONE** (specs are empty stubs; W4.1/4.2 will populate) | Audits 7+11 — silent GTP-fallback is the most dangerous data integrity issue. |
 
-### Wave 2 — solver chain unblocks (4 units; ~76 h)
+### Wave 2 — solver chain unblocks (4 units; ~76 h) — **DONE 2026-04-27**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W2.1 | Step 2 (heave) skipped for GT3 in solve_chain | `solver/solve_chain.py` (5 sites), `solver/solve.py` step2-aware analyzers | 12 h | W1.1, W1.2 |
-| W2.2 | Step 1 (rake) balance-only mode for GT3 (no L/D) | `solver/rake_solver.py`, `aero_model/parse_xlsx.py` (already has balance_only), `solver/objective.py` | 24 h | W1.1 |
-| W2.3 | Step 3 (corner spring) GT3 front-coil branch | `solver/corner_spring_solver.py` extending `front_torsion_c == 0.0` path; `CornerSpringSolution.front_corner_spring_nmm` field | 16 h | W1.1, W1.2, W2.1 |
-| W2.4 | Step 4 (ARB/LLTD) per-car blade encoding + RR LLTD target | `solver/arb_solver.py` blade-vs-label dispatch; Porsche 992 LLTD physics formula | 24 h | W1.1, W2.3 |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W2.1 | Step 2 (heave) skipped for GT3 in solve_chain | `solver/solve_chain.py` (5 sites), `solver/solve.py` step2-aware analyzers | 12 h | **DONE** | W1.1, W1.2 |
+| W2.2 | Step 1 (rake) balance-only mode for GT3 (no L/D) | `solver/rake_solver.py`, `aero_model/parse_xlsx.py` (already has balance_only), `solver/objective.py` | 24 h | **DONE** | W1.1 |
+| W2.3 | Step 3 (corner spring) GT3 front-coil branch | `solver/corner_spring_solver.py` extending `front_torsion_c == 0.0` path; `CornerSpringSolution.front_coil_rate_nmm` field; `CornerSpringModel.front_spring_range_nmm` | 16 h | **DONE** | W1.1, W1.2, W2.1 |
+| W2.4 | Step 4 (ARB/LLTD) per-car blade encoding + RR LLTD target | `solver/arb_solver.py` blade-vs-label dispatch; Porsche 992 LLTD physics formula | 24 h | **DONE** | W1.1, W2.3 |
 
-### Wave 3 — solver chain crash fixes (3 units; ~30 h)
+### Wave 3 — solver chain crash fixes (3 units; ~30 h) — **DONE 2026-04-27**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W3.1 | `legal_space`/`modifiers`/`stint_model` heave_spring=None guards | `solver/legal_space.py`, `solver/modifiers.py`, `solver/stint_model.py` | 8 h | W1.2 |
-| W3.2 | Damper polarity + range per-car | `solver/damper_solver.py`, `car_model/cars.py` `DamperModel.click_polarity` + `click_range`, per-car overrides for Audi/McLaren/Corvette/Porsche/Acura | 14 h | W1.1 |
-| W3.3 | Fuel constants generalized | `solver/scenario_profiles.py` per-class fuel cap, `solver/{damper,stint}_model.py` hardcoded 89L removed | 8 h | none |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W3.1 | `legal_space`/`modifiers`/`stint_model` heave_spring=None guards | `solver/legal_space.py`, `solver/modifiers.py`, `solver/stint_model.py` | 8 h | **DONE** | W1.2 |
+| W3.2 | Damper polarity + range per-car | `solver/damper_solver.py`, `car_model/cars.py` `DamperModel.click_polarity` + `click_range`, per-car overrides for Audi/McLaren/Corvette/Porsche/Acura | 14 h | **DONE** | W1.1 |
+| W3.3 | Fuel constants generalized | `solver/scenario_profiles.py` per-class fuel cap, `solver/{damper,stint}_model.py` hardcoded 89L removed | 8 h | **DONE** | none |
 
-### Wave 4 — output + writer (3 units; ~70 h)
+### Wave 4 — output + writer (3 units; ~70 h) — **DONE 2026-04-27**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W4.1 | Setup writer GT3 dispatch — BMW M4 GT3 EVO | `output/setup_writer.py` `_BMW_M4_GT3_PARAM_IDS` + per-axle damper collapse | 16 h | W1.3, W2.1, W3.2 |
-| W4.2 | Setup writer GT3 dispatch — Aston Vantage + Porsche 992 | `output/setup_writer.py` `_ASTON_VANTAGE_GT3_PARAM_IDS`, `_PORSCHE_992_GT3R_PARAM_IDS` (Porsche has integer ARB encoding, paired rear TotalToeIn, FuelLevel-in-front) | 24 h | W4.1 |
-| W4.3 | Output guards + GT3 garage validator + report | `output/garage_validator.py`, `output/report.py`, `output/bundle.py` step2.present guards; new GT3 GarageRanges fields (`bump_rubber_gap`, `splitter_height`) | 14 h | W1.2, W4.1 |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W4.1 | Setup writer GT3 dispatch — BMW M4 GT3 EVO | `output/setup_writer.py` `_BMW_M4_GT3_PARAM_IDS` + per-axle damper collapse | 16 h | **DONE** | W1.3, W2.1, W3.2 |
+| W4.2 | Setup writer GT3 dispatch — Aston Vantage + Porsche 992 | `output/setup_writer.py` `_ASTON_VANTAGE_GT3_PARAM_IDS`, `_PORSCHE_992_GT3R_PARAM_IDS` | 24 h | **DONE** | W4.1 |
+| W4.3 | Output guards + GT3 garage validator + report | `output/garage_validator.py`, `output/report.py`, `output/setup_writer.py` deflection block; new GT3 GarageRanges fields (`bump_rubber_gap`, `splitter_height`); iRacing schema round-trip | 14 h | **DONE** (iRacing round-trip deferred to manual QA) | W1.2, W4.1 |
 
-### Wave 5 — pipeline + analyzer (3 units; ~62 h)
+### Wave 5 — pipeline + analyzer (3 units; ~62 h) — **DONE 2026-04-27**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W5.1 | Pipeline produce/reason/report GT3 conditional | `pipeline/produce.py` (heave_spring access, JSON output guards, alias dict), `pipeline/reason.py` (heave floor checks), `pipeline/report.py` (display panels) | 24 h | W1.1, W1.2, W2.1 |
-| W5.2 | Analyzer setup_reader GT3 schema dispatch | `analyzer/setup_reader.py` adapter_name whitelist, GT3 per-axle damper branch, `analyzer/setup_schema.py` `_KNOWN_FIELD_MAP` GT3 paths, `analyzer/sto_adapters.py` GT3 entries | 24 h | W1.3 |
-| W5.3 | Analyzer diagnose + extract GT3 awareness | `analyzer/diagnose.py` skip heave-bottoming for GT3, `analyzer/extract.py` heave channels optional, `analyzer/causal_graph.py` GT3 nodes | 14 h | W5.2 |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W5.1 | Pipeline produce/reason/report GT3 conditional | `pipeline/produce.py` (heave_spring access, JSON output guards, alias dict), `pipeline/reason.py` (heave floor checks), `pipeline/report.py` (display panels) | 24 h | **DONE** | W1.1, W1.2, W2.1 |
+| W5.2 | Analyzer setup_reader GT3 schema dispatch | `analyzer/setup_reader.py` adapter_name whitelist, GT3 per-axle damper branch, `analyzer/setup_schema.py` `_KNOWN_FIELD_MAP` GT3 paths, `analyzer/sto_adapters.py` GT3 entries | 24 h | **DONE** | W1.3 |
+| W5.3 | Analyzer diagnose + extract GT3 awareness | `analyzer/diagnose.py` skip heave-bottoming for GT3, `analyzer/extract.py` heave channels optional, `analyzer/causal_graph.py` GT3 nodes | 14 h | **DONE** | W5.2 |
 
-### Wave 6 — learner + scoring (3 units; ~56 h)
+### Wave 6 — learner + scoring (3 units; ~56 h) — **DONE 2026-04-27**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W6.1 | Objective + sensitivity GT3 guards | `solver/objective.py` `_compute_lltd_fuel_window` GT3 branch, `solver/sensitivity.py` `step2.present` guards, `solver/laptime_sensitivity.py` `_front_heave_sensitivity` skip | 14 h | W2.1, W3.1 |
-| W6.2 | Learner KNOWN_CAUSALITY GT3 entries (23 tuples) + STEP_GROUPS | `learner/delta_detector.py` `STEP_GROUPS["step3_corner_combined"]` for GT3, 23 new causality tuples | 6 h | W5.3 |
-| W6.3 | Learner empirical models + observation schema GT3 | `learner/observation.py` GT3 setup-dict fields, `learner/empirical_models.py` heave-fitter no-op + `_fit_corner_to_variance`, `learner/setup_clusters.py` GT3 cluster keys, `learner/recall.py` GT3 lookups | 18 h | W6.2, W5.3 |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W6.1 | Objective + sensitivity GT3 guards | `solver/objective.py` `_compute_lltd_fuel_window` GT3 branch, `solver/sensitivity.py` `step2.present` guards, `solver/laptime_sensitivity.py` `_front_heave_sensitivity` skip | 14 h | **DONE** | W2.1, W3.1 |
+| W6.2 | Learner KNOWN_CAUSALITY GT3 entries (23 tuples) + STEP_GROUPS | `learner/delta_detector.py` `STEP_GROUPS["step3_corner_combined"]` for GT3, 23 new causality tuples | 6 h | **DONE** | W5.3 |
+| W6.3 | Learner empirical models + observation schema GT3 | `learner/observation.py` GT3 setup-dict fields, `learner/empirical_models.py` heave-fitter no-op + `_fit_corner_to_variance`, `learner/setup_clusters.py` GT3 cluster keys, `learner/recall.py` GT3 lookups | 18 h | **DONE** | W6.2, W5.3 |
 
-### Wave 7 — auto-calibrate + GarageOutputModel (2 units; ~80 h)
+### Wave 7 — auto-calibrate + GarageOutputModel (2 units; ~80 h) — **DONE 2026-04-27** (W7.2 = scaffolding only; full fits gated on IBT capture)
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W7.1 | `car_model/garage.py` GT3 GarageSetupState + GarageOutputModel | `car_model/garage.py` `GarageSetupState.from_current_setup` GT3 conditional extraction, `DirectRegression._EXTRACTORS` GT3 features (inv_lf_spring, splitter_h, bump_rubber_gap), `_setup_key()` GT3 fingerprint fields | 24 h | W1.3, W4.1 |
-| W7.2 | `car_model/auto_calibrate.py` GT3 feature pools + apply_to_car | GT3 `_FRONT_POOL`/`_REAR_POOL`/`_UNIVERSAL_POOL` alternatives (corner-coil 1/k, no heave), `apply_to_car` GT3 attribute writes (no `car.heave_spring.*`), GT3 calibration-data layout under `data/calibration/{gt3_car}/` | 56 h | W7.1 |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W7.1 | `car_model/garage.py` GT3 GarageSetupState + GarageOutputModel | `car_model/garage.py` `GarageSetupState.from_current_setup` GT3 conditional extraction, `DirectRegression._EXTRACTORS` GT3 features, `_setup_key()` GT3 fingerprint fields, `GarageOutputModel.default_state(car=)` dispatch | 24 h | **DONE** | W1.3, W4.1 |
+| W7.2 | `car_model/auto_calibrate.py` GT3 feature pools + apply_to_car | `CalibrationPoint` GT3 fields, GT3 features in `_UNIVERSAL_POOL` / `_FRONT_AXIS_NAMES` / `_REAR_AXIS_NAMES`, `apply_to_car` GT3 short-circuit (intercept-only until IBT), CLI `--car` choices, GT3 protocol hint | 56 h | **DONE (scaffolding)** — actual non-intercept regression fits require varied-front-coil IBTs at the same track (W10.1) | W7.1 |
 
-### Wave 8 — infra + DB + automation (2 units; ~43 h)
+### Wave 8 — infra + DB + automation (2 units; ~43 h) — **DONE 2026-04-27**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W8.1 | `teamdb` schema migration + GT3 columns | `teamdb/models.py` `CarDefinition`+`Observation` `iracing_car_path`/`bop_version`/`suspension_arch` columns, `migrations/0001_gt3_phase2.sql` raw SQL, `teamdb/aggregator.py` per-architecture partition, `server/routes/observations.py` validation | 24 h | none |
-| W8.2 | Watcher + desktop GT3 CarPath detection | `watcher/{monitor,service}.py` use `CarPath` not `CarScreenName`, register all GT3 paths (`bmwm4gt3`, `amvantageevogt3`, `porsche992rgt3`, etc.), `desktop/config.py` GT3 entries | 19 h | W1.3 |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W8.1 | `teamdb` schema migration + GT3 columns | `teamdb/models.py` `CarDefinition`+`Observation` `iracing_car_path`/`bop_version`/`suspension_arch` columns, `migrations/0001_gt3_phase2.sql` raw SQL, `teamdb/aggregator.py` per-architecture partition, `server/routes/observations.py` validation | 24 h | **DONE** | none |
+| W8.2 | Watcher + desktop GT3 CarPath detection | `watcher/service.py` CarPath → CarScreenName → None dispatch, `_class_for_canonical` helper, `WatcherService(class_filter=...)`, `desktop/config.py:AppConfig.class_filter`, `car_model/registry.py:_BY_IRACING_PATH` index | 19 h | **DONE** | W1.3 |
 
-### Wave 9 — UI + CLI + tests + docs (2 units; ~62 h)
+### Wave 9 — UI + CLI + tests + docs (2 units; ~62 h) — **DONE 2026-04-27**
 
-| # | Title | Files | Effort | Depends on |
-|---|---|---|---|---|
-| W9.1 | webapp + CLI accept GT3 | `webapp/` GT3 car list + conditional setup display panels (hide heave/third for GT3), `__main__.py` + `pipeline/__main__.py` argparse choices, `validation/{run_validation,objective_calibration}.py` GT3 support tier rows | 30 h | W4.2, W5.1 |
-| W9.2 | Tests + GT3 fixtures + docs | 3 GT3 regression baselines (`tests/fixtures/baselines/{bmw_m4_gt3_spielberg,aston_vantage_gt3_spielberg,porsche_992_gt3r_spielberg}_baseline.sto`), parameterize `tests/test_setup_regression.py`, `CLAUDE.md` GT3 section, `skill/per-car-quirks.md` GT3 quirks, `docs/calibration_guide.md` GT3 onboarding | 32 h | all prior |
+| # | Title | Files | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| W9.1 | webapp + CLI accept GT3 | `webapp/{services,app,templates/runs_new.html}`, `__main__.py` + 3 submodule entry points argparse choices, `validation/{run_validation,objective_calibration}.py` GT3 support tier rows | 30 h | **DONE** | W4.2, W5.1 |
+| W9.2 | Tests + GT3 fixtures + docs | 3 GT3 regression baselines + parameterized `tests/test_setup_regression.py`, `CLAUDE.md` GT3 section, `skill/per-car-quirks.md` 3 per-car GT3 sections, `docs/calibration_guide.md` GT3 onboarding | 32 h | **DONE** | all prior |
 
 ### Wave 10 — end-to-end smoke + onboarding remaining cars (1 unit; ~80+ h)
 
@@ -206,8 +208,18 @@ Parallelizable tail: ~190 h of work in W2.2/W3.x/W5.x/W6.x/W8.x can run in paral
 
 ## Recommendation
 
-1. **Land the audit PRs (#103–#114) on `gt3-phase0-foundations`** — merge them into the same branch so all the audit docs ship together with the Phase 0/1 scaffolding.
-2. **Begin Wave 1 work units in parallel** (W1.1, W1.2, W1.3 are independent and small).
+1. ~~**Land the audit PRs (#103–#114) on `gt3-phase0-foundations`**~~ — DONE 2026-04-27 on `claude/merge-audits-wave1-DDFyg`. All 12 PRs merged with one resolvable add/add conflict on `webapp-cli-tests-docs.md`.
+2. ~~**Begin Wave 1 work units in parallel**~~ — DONE 2026-04-27.
 3. **Capture more IBTs in parallel** — varied-spring sweeps for BMW M4 GT3 at Spielberg unblock W7.2 (auto-calibrate). The remaining 7 GT3 cars each need at least one IBT to pin their YAML schemas.
 4. **Defer Audi R8 LMS** until aero map is available.
-5. **Update CLAUDE.md** with a GT3 section after W2 lands so the convention doc reflects shipped state.
+5. ~~**Update CLAUDE.md** with a GT3 section after W2 lands~~ — DONE 2026-04-27 (see entry under "Current Codebase Status").
+
+## What's next (post-Wave 2)
+
+- **W2.3 (Step 3 corner spring GT3 front-coil branch)** is the next critical-path unit. Without it, GT3 IBT runs through Step 1 + Step 2 cleanly but Step 3 emits `front_torsion_od_mm=0.0` and `front_rate=0`, making Steps 4–6 non-physical. ~16 h.
+- **W3.1 (legal_space / modifiers / stint_model heave_spring=None guards)** is the smallest remaining unit (~8 h), independent of W2.3, and would let the legal-search path run cleanly on GT3. Good fill-in work to batch with W2.3.
+- **W3.2 (damper polarity per-car)** is a cross-cutting fix — affects 5/11 GT3 cars (Audi/McLaren/Corvette inverted polarity, Porsche/Acura range mismatch) plus protects against silent damper-direction bugs in candidate-search. ~14 h.
+- **W4.1 (BMW M4 GT3 PARAM_IDS)** is what finally lets a GT3 `.sto` file be written. Depends on W2.1 (done), W3.2 (TODO), W1.3 (done). ~16 h.
+- **Wave 5 (analyzer + pipeline)** is independent of Steps 3/4 fixes — could parallelize with W2.3/W2.4 if there's a second developer.
+
+See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for shipped diff summary, deferred-finding ledger, and recommended next-batch sequencing.

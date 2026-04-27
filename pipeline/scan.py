@@ -455,6 +455,11 @@ def _refit_per_track(ibts: list[IBTInfo]) -> None:
             save_calibrated_models(car_name, models, track=tk)
 
             # Report key model health
+            # TODO(W5.1+): GT3 cars have no `heave_spring_defl_static` model; the
+            # health row drops silently for GT3 instead of reporting a coil-only
+            # equivalent (e.g. `front_corner_spring_defl_static`). Cosmetic per
+            # docs/audits/gt3_phase2/pipeline.md F23 / DEGRADED 23 — leaves the
+            # user without a "model present but not yet fit" signal on GT3.
             health = []
             for name in ["front_ride_height", "rear_ride_height", "heave_spring_defl_static"]:
                 m = getattr(models, name, None)

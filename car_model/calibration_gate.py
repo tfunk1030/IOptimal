@@ -115,6 +115,8 @@ class StepCalibrationReport:
 
     def instructions_text(self) -> str:
         """Format calibration instructions for all missing subsystems."""
+        if self.not_applicable:
+            return f"  STEP {self.step_number}: {self.step_name} — N/A (architecture skip)\n"
         if self.dependency_blocked:
             return (
                 f"  STEP {self.step_number}: {self.step_name} — BLOCKED\n"
@@ -155,7 +157,10 @@ class CalibrationReport:
 
     @property
     def solved_steps(self) -> list[int]:
-        return [r.step_number for r in self.step_reports if not r.blocked]
+        return [
+            r.step_number for r in self.step_reports
+            if not r.blocked and not r.not_applicable
+        ]
 
     @property
     def weak_steps(self) -> list[int]:
@@ -164,6 +169,13 @@ class CalibrationReport:
     @property
     def blocked_steps(self) -> list[int]:
         return [r.step_number for r in self.step_reports if r.blocked]
+
+    @property
+    def not_applicable_steps(self) -> list[int]:
+        """Steps skipped because they don't apply to this car's suspension
+        architecture (e.g. Step 2 heave/third on a GT3 coil-only car).
+        Distinct from blocked: this is HONEST absence, not a calibration gap."""
+        return [r.step_number for r in self.step_reports if r.not_applicable]
 
     @property
     def weak_upstream_steps(self) -> list[int]:
@@ -210,6 +222,13 @@ class CalibrationReport:
                     )
                 else:
                     lines.append(f"  Step {s} ({r.step_name}): upstream dependency is weak")
+        not_applicable = self.not_applicable_steps
+        if not_applicable:
+            lines.append("")
+            lines.append("NOT APPLICABLE STEPS (architecture skip — not a calibration gap):")
+            for s in not_applicable:
+                r = self.step_reports[s - 1]
+                lines.append(f"  [--] Step {s}: {r.step_name}")
         if blocked:
             lines.append("")
             lines.append("UNCALIBRATED STEPS (calibration required):")
@@ -562,13 +581,22 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
         instructions=_fmt_instructions("ride_height_model", cn, track_name),
     )
 
-    # 3. Deflection model — report best-model R² from raw JSON
+    # 3. Deflection model — report best-model R² from raw JSON.
+    # Filter heave/third sub-models out for cars whose suspension architecture
+    # has no heave/third springs (e.g. GT3 coil-only); those sub-models are
+    # physically nonexistent and would otherwise pull non-data into the
+    # subsystem's R² statistics.
     defl_cal = car.deflection.is_calibrated
     defl_r2s: list[float] = []
     defl_q2s: list[float] = []
-    for key in ("heave_spring_defl_static", "heave_spring_defl_max",
-                "rear_spring_defl_static", "third_spring_defl_static",
-                "rear_shock_defl_static"):
+    defl_keys: list[str] = ["rear_spring_defl_static", "rear_shock_defl_static"]
+    if car.suspension_arch.has_heave_third:
+        defl_keys = [
+            "heave_spring_defl_static",
+            "heave_spring_defl_max",
+            "third_spring_defl_static",
+        ] + defl_keys
+    for key in defl_keys:
         model = raw_models.get(key)
         if isinstance(model, dict) and "r_squared" in model:
             try:
@@ -618,6 +646,15 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
         warnings=defl_warnings,
         instructions=_fmt_instructions("deflection_model", cn, track_name),
     )
+
+    # GT3-style architectures expose an honest "this doesn't exist" provenance
+    # entry so the JSON dump shows the absence as architectural, not a gap.
+    if not car.suspension_arch.has_heave_third:
+        subs["heave_third_deflection"] = SubsystemCalibration(
+            name="heave_third_deflection",
+            status="not_applicable",
+            source=f"architecture skip ({car.suspension_arch.name})",
+        )
 
     # 4. Pushrod geometry — check the per-car PushrodGeometry.is_calibrated flag.
     # When True: pushrod coefficients come from measured garage data / IBT screenshots.
@@ -848,7 +885,24 @@ class CalibrationGate:
     # Cascade tracks the HIGHEST dependency — if Step 4 is blocked, Step 5 is
     # also blocked because solve.py:520 feeds step4.k_roll_front/rear_total
     # into the geometry solver.
+    #
+    # NOTE: This class-level constant is the GTP variant and is preserved for
+    # backwards compatibility with any external module that still imports it.
+    # Per-instance dispatch (which honours suspension_arch) goes through the
+    # _data_prior_step property below; check_step uses that, NOT this constant.
     _DATA_PRIOR_STEP: dict[int, int] = {2: 1, 3: 2, 4: 3, 5: 4, 6: 3}
+
+    @property
+    def _data_prior_step(self) -> dict[int, int]:
+        """Cascade table per suspension architecture.
+
+        GTP cars (heave/third present): {2: 1, 3: 2, 4: 3, 5: 4, 6: 3}
+        GT3 cars (no heave/third — Step 2 is N/A):  {3: 1, 4: 3, 5: 4, 6: 3}
+          Step 3 cascades directly from Step 1 because Step 2 doesn't exist.
+        """
+        if self.car.suspension_arch.has_heave_third:
+            return {2: 1, 3: 2, 4: 3, 5: 4, 6: 3}
+        return {3: 1, 4: 3, 5: 4, 6: 3}
 
     def check_step(self, step_number: int) -> StepCalibrationReport:
         """Check if a solver step can run with calibrated data.
@@ -859,8 +913,20 @@ class CalibrationGate:
 
         Cascade: only TRUE data blocks (uncalibrated, dependency-blocked)
         propagate to downstream steps. A "weak" block does NOT cascade —
-        downstream steps with their own valid data still run.
+        downstream steps with their own valid data still run. Likewise a
+        "not_applicable" prior step does NOT cascade: not_applicable is HONEST
+        absence (architectural skip), not a calibration gap, and does not
+        reduce downstream confidence.
         """
+        # GT3 dispatch: Step 2 (heave/third springs) does not apply to cars
+        # whose suspension architecture lacks heave/third springs.
+        if step_number == 2 and not self.car.suspension_arch.has_heave_third:
+            return StepCalibrationReport(
+                step_number=2,
+                step_name=STEP_REQUIREMENTS[2][0],
+                not_applicable=True,
+            )
+
         step_name, required = STEP_REQUIREMENTS.get(
             step_number, (f"Step {step_number}", [])
         )
@@ -869,8 +935,8 @@ class CalibrationGate:
             step_name=step_name,
         )
 
-        # Data dependency cascade (only on TRUE blocks, not weak)
-        prior_num = self._DATA_PRIOR_STEP.get(step_number)
+        # Data dependency cascade (only on TRUE blocks, not weak, not N/A)
+        prior_num = self._data_prior_step.get(step_number)
         if prior_num is not None:
             prior = self.check_step(prior_num)
             # Only cascade if prior step is BLOCKED for a hard reason
@@ -883,8 +949,9 @@ class CalibrationGate:
                 return report
             # Propagate weak-upstream: if prior step has weak calibration
             # or itself has weak upstream, flag this step so provenance
-            # reflects reduced confidence in input data.
-            if prior.weak_block or prior.weak_upstream:
+            # reflects reduced confidence in input data. NOT_APPLICABLE
+            # priors are excluded — architecture skip is not a quality gap.
+            if (prior.weak_block or prior.weak_upstream) and not prior.not_applicable:
                 report.weak_upstream = True
                 report.weak_upstream_step = prior_num
 
@@ -923,7 +990,12 @@ class CalibrationGate:
         return not self.check_step(step_number).blocked
 
     def all_calibrated(self) -> bool:
-        """True if all 6 steps can run with calibrated data."""
+        """True if all APPLICABLE steps can run with calibrated data.
+
+        Architecture skips (e.g. Step 2 on a GT3 coil-only car) do NOT count
+        as a failure: they are not_applicable, not blocked. A car with one
+        not_applicable step and the rest calibrated still returns True.
+        """
         return all(self.step_is_runnable(s) for s in range(1, 7))
 
     def summary_line(self) -> str:
@@ -931,9 +1003,16 @@ class CalibrationGate:
         report = self.full_report()
         solved = len(report.solved_steps)
         blocked = len(report.blocked_steps)
-        if blocked == 0:
+        na = len(report.not_applicable_steps)
+        applicable = 6 - na
+        if blocked == 0 and na == 0:
             return f"{self.car.name}: all 6 steps calibrated"
+        if blocked == 0:
+            return (
+                f"{self.car.name}: {solved}/{applicable} applicable steps calibrated, "
+                f"{na} not applicable (steps {report.not_applicable_steps})"
+            )
         return (
-            f"{self.car.name}: {solved}/6 steps calibrated, "
+            f"{self.car.name}: {solved}/{applicable} steps calibrated, "
             f"{blocked} blocked (steps {report.blocked_steps})"
         )

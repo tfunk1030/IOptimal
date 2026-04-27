@@ -414,12 +414,22 @@ class ObjectiveFunction:
         return breakdown
 
     def _heave_calibration_uncertainty_penalty_ms(self, front_heave: float) -> float:
+        # W6.1 (F-O-5): GT3 cars have no heave spring — no calibration
+        # uncertainty to penalize. Return 0 so this term contributes nothing
+        # for GT3 candidates.
+        if self.car.heave_spring is None:
+            return 0.0
         cal_uncertainty = self._heave_cal.uncertainty(front_heave)
         if cal_uncertainty <= 0.2:
             return 0.0
         return (cal_uncertainty - 0.2) ** 1.5 * 8.0
 
     def _heave_realism_penalty_ms(self, front_heave: float) -> float:
+        # W6.1 (F-O-5): GT3 cars have no heave spring; the candidate dict
+        # carries no front_heave_spring_nmm key and the heave-realism window
+        # does not apply. Return 0 to keep the envelope penalty neutral.
+        if self.car.heave_spring is None:
+            return 0.0
         # Keep solver search inside a realistic GTP heave window even when
         # the forward physics looks artificially "safe" at very stiff rates.
         # This remains an envelope/realism concern, not raw lap-gain.
@@ -673,6 +683,18 @@ class ObjectiveFunction:
         """
         car = self.car
 
+        # W6.1 (F-O-3): GT3 has neither torsion bar nor heave/third — front
+        # wheel rate comes from paired corner coils (constant rate, no fuel
+        # ramp). Skip the fuel-window LLTD analysis: the spring/ARB-driven
+        # LLTD does not shift across a stint the way GTP torsion+heave does,
+        # so a flat zero-window contributes no penalty and no signal. The
+        # static LLTD error is still scored normally in evaluate_physics.
+        if (
+            getattr(car, "suspension_arch", None) is not None
+            and not car.suspension_arch.has_heave_third
+        ):
+            return 0.0, 0.0, 0.0
+
         # Read per-car fuel loads from the car model (no BMW fallbacks).
         if fuel_start_l is None:
             fuel_start_l = car.fuel_capacity_l
@@ -859,8 +881,31 @@ class ObjectiveFunction:
             else:
                 v_vortex_front = v_p99_front  # legacy behaviour
 
-            m_eff_front = car.heave_spring.front_m_eff_kg
-            m_eff_rear = car.heave_spring.rear_m_eff_kg
+            # W6.1 (F-O-1): GT3 cars (suspension_arch=GT3_COIL_4WHEEL) have
+            # car.heave_spring=None. The original BMW physics reads
+            # heave_spring.front_m_eff_kg as the effective mass driving
+            # the damped-excursion model. For GT3, the dominant vertical
+            # stiffness is the corner coil at each wheel — so m_eff per
+            # corner is half the per-axle sprung mass (~corner mass).
+            # We use:
+            #   m_eff_front = total_mass × weight_dist_front / 2.0
+            #   m_eff_rear  = total_mass × (1 - weight_dist_front) / 2.0
+            # This is the same proxy used in car_model/cars.py
+            # rh_excursion_p99 GT3 fallback (W2.2). The exact value is
+            # less important than (a) not crashing and (b) being
+            # deterministic across GT3 candidates so excursion comparisons
+            # are well-defined. Documented per audit F-O-1.
+            _is_gt3 = (
+                getattr(car, "suspension_arch", None) is not None
+                and not car.suspension_arch.has_heave_third
+            )
+            if _is_gt3 or car.heave_spring is None:
+                _total_mass = car.total_mass(car.fuel_capacity_l)
+                m_eff_front = _total_mass * car.weight_dist_front / 2.0
+                m_eff_rear = _total_mass * (1.0 - car.weight_dist_front) / 2.0
+            else:
+                m_eff_front = car.heave_spring.front_m_eff_kg
+                m_eff_rear = car.heave_spring.rear_m_eff_kg
             tyre_vr_front = car.tyre_vertical_rate_front_nmm
             tyre_vr_rear = car.tyre_vertical_rate_rear_nmm
             if tyre_vr_front is None or tyre_vr_front <= 0:
@@ -878,37 +923,54 @@ class ObjectiveFunction:
                     tyre_vr_rear,
                 )
 
-            # Front excursion at p99 — for bottoming margin (worst-case bump)
-            # Guard against k=0 which returns 0 (wrong: should be ∞)
-            # GTP heave spring ≥ 20 N/mm in practice. k=0 is physically degenerate.
-            front_heave_clamped = max(5.0, front_heave_nmm)  # prevent div/zero physics
-            # parallel_wheel_rate is halved because front_wheel_rate is the
-            # per-axle total (2 corners), but the excursion model computes
-            # per-corner dynamics. Each corner sees half the axle wheel rate
-            # in parallel with the heave spring.
+            # W6.1 (F-O-2): for GT3 cars the corner coil IS the dominant
+            # vertical stiffness at each wheel (no heave/third spring in
+            # parallel), so the excursion model takes the corner wheel rate
+            # as the primary spring and zero parallel rate. The "<20 N/mm
+            # → cap at 30 mm" GTP safety heuristic is meaningless for GT3
+            # (front coils run 190-340 N/mm) and is skipped. For GTP the
+            # legacy heave-spring physics is preserved.
+            if _is_gt3:
+                k_front_for_excursion = max(5.0, front_wheel_rate)
+                k_rear_for_excursion = max(5.0, rear_wheel_rate)
+                parallel_front = 0.0
+                parallel_rear = 0.0
+            else:
+                # Front excursion at p99 — for bottoming margin (worst-case bump)
+                # Guard against k=0 which returns 0 (wrong: should be ∞)
+                # GTP heave spring ≥ 20 N/mm in practice. k=0 is physically degenerate.
+                k_front_for_excursion = max(5.0, front_heave_nmm)
+                k_rear_for_excursion = max(5.0, rear_third_nmm)
+                # parallel_wheel_rate is halved because front_wheel_rate is the
+                # per-axle total (2 corners), but the excursion model computes
+                # per-corner dynamics. Each corner sees half the axle wheel rate
+                # in parallel with the heave spring.
+                parallel_front = front_wheel_rate * 0.5
+                parallel_rear = rear_wheel_rate * 0.5
+
             result.front_excursion_mm = damped_excursion_mm(
-                v_p99_front, m_eff_front, front_heave_clamped,
+                v_p99_front, m_eff_front, k_front_for_excursion,
                 tyre_vertical_rate_nmm=tyre_vr_front,
-                parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
+                parallel_wheel_rate_nmm=parallel_front,
             )
             # Override: if heave spring < 20 N/mm, cap excursion at full travel (30mm)
-            # so sigma reflects the true aero instability risk
-            if front_heave_nmm < 20.0:
+            # so sigma reflects the true aero instability risk. GT3 has no heave
+            # spring so this cap does not apply.
+            if not _is_gt3 and front_heave_nmm < 20.0:
                 result.front_excursion_mm = max(result.front_excursion_mm, 30.0)
 
             # Front excursion at vortex percentile (p95) — for stall margin
             _front_vortex_excursion_mm = damped_excursion_mm(
-                v_vortex_front, m_eff_front, front_heave_clamped,
+                v_vortex_front, m_eff_front, k_front_for_excursion,
                 tyre_vertical_rate_nmm=tyre_vr_front,
-                parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
+                parallel_wheel_rate_nmm=parallel_front,
             )
 
             # Rear excursion at p99 — for bottoming margin
-            rear_third_clamped = max(5.0, rear_third_nmm)
             result.rear_excursion_mm = damped_excursion_mm(
-                v_p99_rear, m_eff_rear, rear_third_clamped,
+                v_p99_rear, m_eff_rear, k_rear_for_excursion,
                 tyre_vertical_rate_nmm=tyre_vr_rear,
-                parallel_wheel_rate_nmm=rear_wheel_rate * 0.5,
+                parallel_wheel_rate_nmm=parallel_rear,
             )
 
             # Dynamic ride heights (use car compression model when available).
@@ -1168,7 +1230,13 @@ class ObjectiveFunction:
                 # before querying (map x-axis = actual rear RH, y-axis = actual front RH).
                 af, ar = car.to_aero_coords(dyn_f, dyn_r)
                 result.df_balance_pct = surface.df_balance(af, ar)
-                result.ld_ratio = surface.lift_drag(af, ar)
+                # GT3 balance-only maps publish no L/D — surface.has_ld is False
+                # and lift_drag() returns NaN. Leave result.ld_ratio at its
+                # default (3.0) so downstream score = -ld * 2.0 contributes a
+                # constant offset for ALL GT3 candidates (no signal, no penalty).
+                if surface.has_ld:
+                    result.ld_ratio = surface.lift_drag(af, ar)
+                # else: keep dataclass default 3.0 — neutral offset for GT3
                 result.df_balance_error_pct = abs(
                     result.df_balance_pct - car.default_df_balance_pct
                 )
@@ -1769,41 +1837,59 @@ class ObjectiveFunction:
         # Front shock legal max: 19.9 mm (GarageRanges.front_shock_defl_max_mm)
         # Rear shock legal min: 15.0 mm (GarageRanges.rear_shock_defl_min_mm)
         # These are enforced by iRacing's garage and cannot be raced if violated.
+        # W6.1 (F-O-4): GT3 cars (suspension_arch=GT3_COIL_4WHEEL) have no
+        # heave spring — there is no heave-spring deflection legality to
+        # enforce. Skip the entire block. GT3 corner-coil deflection
+        # legality is enforced upstream in legality_engine.py / Step 3.
         _hsm = self.car.heave_spring
-        _gr = self.car.garage_ranges
-        _k_front = params.get("front_heave_spring_nmm", 50.0)
-        # Default OD: use car's first torsion option, or 0.0 for cars without torsion bars (Porsche)
-        _od_default = (self.car.corner_spring.front_torsion_od_options[0]
-                       if self.car.corner_spring.front_torsion_od_options else 0.0)
-        _od_mm = params.get("front_torsion_od_mm", _od_default)
-
-        # Ferrari's auto-calibrated deflection model was trained on INDEX inputs
-        # (front_heave=0-8, torsion_od=0-18), not physical N/mm rates.
-        # Convert N/mm → index before calling the deflection model.
-        _ferrari_controls = self.car.ferrari_indexed_controls
-        if _ferrari_controls is not None:
-            # Convert front heave N/mm → index for deflection model
-            _anchor = _hsm.front_setting_anchor_index or 1.0
-            _rate_at_anchor = _hsm.front_rate_at_anchor_nmm or 50.0
-            _rate_per_idx = _hsm.front_rate_per_index_nmm or 20.0
-            _k_front = _anchor + (_k_front - _rate_at_anchor) / _rate_per_idx  # → heave index
-            # Convert torsion OD mm → torsion bar index for deflection model
-            _od_mm = float(params.get("front_torsion_bar_index", 2.0))
-
-        _perch_front = _hsm.perch_offset_front_baseline_mm
         _dm = self.car.deflection
-        _spring_defl = _dm.heave_spring_defl_static(_k_front, _perch_front, _od_mm)
-        _slider_static = _dm.heave_slider_defl_static(_k_front, _perch_front, _od_mm)
+        _deflection_veto_enabled = (
+            _hsm is not None
+            and _dm.is_calibrated
+            and self.car.ferrari_indexed_controls is None
+        )
+        if _hsm is not None:
+            _gr = self.car.garage_ranges
+            _k_front = params.get("front_heave_spring_nmm", 50.0)
+            # Default OD: use car's first torsion option, or 0.0 for cars without torsion bars (Porsche)
+            _od_default = (self.car.corner_spring.front_torsion_od_options[0]
+                           if self.car.corner_spring.front_torsion_od_options else 0.0)
+            _od_mm = params.get("front_torsion_od_mm", _od_default)
 
-        _defl_min, _defl_max = _gr.heave_spring_defl_mm   # (0.6, 25.0)
-        _slider_min, _slider_max = _gr.heave_slider_defl_mm  # (25.0, 45.0)
+            # Ferrari's auto-calibrated deflection model was trained on INDEX inputs
+            # (front_heave=0-8, torsion_od=0-18), not physical N/mm rates.
+            # Convert N/mm → index before calling the deflection model.
+            _ferrari_controls = self.car.ferrari_indexed_controls
+            if _ferrari_controls is not None:
+                # Convert front heave N/mm → index for deflection model
+                _anchor = _hsm.front_setting_anchor_index or 1.0
+                _rate_at_anchor = _hsm.front_rate_at_anchor_nmm or 50.0
+                _rate_per_idx = _hsm.front_rate_per_index_nmm or 20.0
+                _k_front = _anchor + (_k_front - _rate_at_anchor) / _rate_per_idx  # → heave index
+                # Convert torsion OD mm → torsion bar index for deflection model
+                _od_mm = float(params.get("front_torsion_bar_index", 2.0))
+
+            _perch_front = _hsm.perch_offset_front_baseline_mm
+            _spring_defl = _dm.heave_spring_defl_static(_k_front, _perch_front, _od_mm)
+            _slider_static = _dm.heave_slider_defl_static(_k_front, _perch_front, _od_mm)
+
+            _defl_min, _defl_max = _gr.heave_spring_defl_mm   # (0.6, 25.0)
+            _slider_min, _slider_max = _gr.heave_slider_defl_mm  # (25.0, 45.0)
+        else:
+            # GT3: no heave spring; the Ferrari conversion never applies.
+            _ferrari_controls = None
+            _spring_defl = 0.0
+            _slider_static = 0.0
+            _defl_min = _defl_max = 0.0
+            _slider_min = _slider_max = 0.0
+            _k_front = 0.0
 
         # Deflection vetoes only applied when the car's DeflectionModel is calibrated
         # from real measured data. BMW: calibrated from 31 sessions (R²=0.953).
         # Ferrari: auto-calibrated but indexed inputs have insufficient boundary precision.
         # Porsche/Acura/Cadillac: uncalibrated — BMW coefficients produce garbage values.
         # NEVER apply BMW-calibrated deflection model to uncalibrated cars.
-        _deflection_veto_enabled = _dm.is_calibrated and _ferrari_controls is None
+        # GT3: _hsm is None so _deflection_veto_enabled is False (set above).
         if _deflection_veto_enabled:
             if _spring_defl < _defl_min:
                 veto_reasons.append(
@@ -1983,9 +2069,15 @@ class ObjectiveFunction:
         penalty = EnvelopePenalty()
 
         # Extreme spring ratios
+        # W6.1 (F-O-5): heave/third ratio penalty does not apply to GT3
+        # (no heave or third spring). Skip the ratio check entirely on GT3.
+        _is_gt3_envelope = (
+            getattr(self.car, "suspension_arch", None) is not None
+            and not self.car.suspension_arch.has_heave_third
+        )
         front_heave = params.get("front_heave_spring_nmm", 50.0)
         rear_third = params.get("rear_third_spring_nmm", 450.0)
-        if rear_third > 0:
+        if not _is_gt3_envelope and rear_third > 0:
             ratio = front_heave / rear_third
             if ratio < 0.03 or ratio > 0.20:
                 penalty.setup_distance_ms = 10.0

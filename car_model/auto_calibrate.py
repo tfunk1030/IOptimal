@@ -80,7 +80,13 @@ def _setup_key(pt) -> tuple:
     status, CLI, and protocol to avoid counting discrepancies.
 
     Parameters included:
-    - Springs: front heave, rear third, front torsion OD/index, rear spring
+    - Springs (GTP): front heave, rear third, front torsion OD/index, rear spring
+    - Springs (GT3, W7.1 audit BLOCKER #6): front/rear paired coil rate, bump
+      rubber gap front/rear, splitter height. For GTP cars these getattrs return
+      0.0 so the appended tuple slots are no-ops. For GT3 cars these are the
+      actual differentiators — without them, two GT3 IBTs varying only by front
+      coil rate would collapse to the same fingerprint and one would be silently
+      dropped at L2726/L2847/L3300/L3318/L3379/L3410.
     - Perches: front heave perch, rear third perch, rear spring perch
     - Geometry: front/rear pushrod, front/rear camber
     - ARB: front/rear size (string) and blade (integer) — affect roll stiffness
@@ -91,6 +97,9 @@ def _setup_key(pt) -> tuple:
         # Track — different tracks produce different ride heights and deflections
         # at the same setup due to aero load, surface, and speed profile differences.
         # Pooling cross-track data causes 27x-103x LOO/train overfitting ratios.
+        # TODO(W7.x audit COSMETIC #25): re-read once more GT3 tracks land — today
+        # all 3 GT3 IBTs are at Spielberg + Nürburgring so the track key carries
+        # most of the variance.
         str(getattr(pt, "track", "") or ""),
         round(pt.front_heave_setting, 1),
         round(pt.rear_third_setting, 1),
@@ -111,6 +120,17 @@ def _setup_key(pt) -> tuple:
         int(pt.front_arb_blade or 0),
         str(pt.rear_arb_size or ""),
         int(pt.rear_arb_blade or 0),
+        # ── GT3 paired-coil + bump-rubber + splitter (W7.1, audit BLOCKER #6) ──
+        # Append-to-tuple so legacy GTP keys stay equivalent (these slots are 0.0
+        # for GTP). W7.2 will add the corresponding fields to ``CalibrationPoint``
+        # itself; until then these getattrs return 0.0 and are no-ops. Once W7.2
+        # populates them from GT3 IBTs, this key correctly distinguishes setups
+        # that differ only by front/rear coil rate or bump rubber gap.
+        round(float(getattr(pt, "front_corner_spring_nmm", 0.0)), 1),
+        round(float(getattr(pt, "rear_corner_spring_nmm", 0.0)), 1),
+        round(float(getattr(pt, "front_bump_rubber_gap_mm", 0.0)), 1),
+        round(float(getattr(pt, "rear_bump_rubber_gap_mm", 0.0)), 1),
+        round(float(getattr(pt, "splitter_height_mm", 0.0)), 1),
     )
 
 # Alias for backward compatibility
@@ -204,6 +224,26 @@ class CalibrationPoint:
     rear_side_spring_rate_nmm: float = 0.0    # from rSideSpringRateNpm / 1000
     front_heave_rate_nmm: float = 0.0         # front heave spring physics rate
     rear_heave_rate_nmm: float = 0.0          # rear heave/third physics rate
+
+    # ── GT3 paired-coil + bump-rubber + splitter fields (W7.2) ───────────
+    # GT3 cars (BMW M4 GT3 EVO, Aston Martin Vantage GT3 EVO, Porsche 911
+    # GT3 R 992) use paired front coils + paired rear coils + bump rubber gap
+    # × 2 axles + splitter height. They have no heave/third springs and no
+    # front torsion bar (`heave_spring=None`, `front_torsion_c=0.0`), so the
+    # GTP fields above stay 0.0 for GT3 IBTs — the std-filter at L1293 drops
+    # them automatically. Field names align with `learner/observation.py`
+    # (W6.3) and `car_model/garage.py:GarageSetupState` (W7.1) so the same
+    # canonical names propagate observation → calibration → garage.
+    #
+    # NOTE: until varied-spring GT3 IBTs land (gated on W10.1 capture), these
+    # will be (near-)constant in the dataset and the regression will be
+    # intercept-only. The scaffolding below ensures no further code changes
+    # are needed once the data arrives.
+    front_corner_spring_nmm: float = 0.0
+    rear_corner_spring_nmm: float = 0.0
+    front_bump_rubber_gap_mm: float = 0.0
+    rear_bump_rubber_gap_mm: float = 0.0
+    splitter_height_mm: float = 0.0
 
 
 @dataclass
@@ -323,6 +363,23 @@ def _safe_track_slug(track: str) -> str:
     # Collapse consecutive underscores and strip leading/trailing ones
     slug = re.sub(r"_+", "_", slug).strip("_")
     return slug or "unknown"
+
+
+def _track_slug(track_name: str) -> str:
+    """Resolve a track display name to its canonical short slug.
+
+    Wraps :func:`car_model.registry.track_key` so callers in this module
+    (and tests) get the alias-aware short slug ("Red Bull Ring Grand Prix"
+    → ``"spielberg"``, "Sebring International Raceway" → ``"sebring"``)
+    rather than a raw underscore-substituted display name. Per audit
+    finding #11 (W7.2), the per-track partition writer must use this
+    rather than ``pt.track.replace(" ", "_")`` so unknown long display
+    names land on conventional short slugs.
+    """
+    if not track_name:
+        return ""
+    from car_model.registry import track_key as _track_key
+    return _track_key(track_name)
 
 
 def _models_path_for_track(car: str, track: str) -> Path:
@@ -1133,7 +1190,13 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # with raw indices and others with pre-decoded physical rates. We detect
     # this by checking if the value exceeds the index range maximum. If it
     # does, the value is already in physical units and should NOT be converted.
-    if _car_obj is not None:
+    # GT3 cars have ``heave_spring=None`` and ``front_torsion_c=0.0``, so the
+    # index→N/mm decode path below is skipped entirely. The GT3 corner spring
+    # rates arrive in N/mm directly (no index conversion needed) and there are
+    # no heave/third/torsion fields to decode. W7.2 audit BLOCKER #10.
+    _arch = getattr(_car_obj, "suspension_arch", None) if _car_obj else None
+    _is_gt3_fit = _arch is not None and not _arch.has_heave_third
+    if _car_obj is not None and not _is_gt3_fit:
         _hsm = _car_obj.heave_spring
         _csm = _car_obj.corner_spring
 
@@ -1231,6 +1294,31 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     _UNIVERSAL_POOL.append((col("torsion_bar_turns"), "torsion_turns"))
     _UNIVERSAL_POOL.append((col("rear_torsion_bar_turns"), "rear_torsion_turns"))
 
+    # ── GT3 paired-coil + bump-rubber + splitter features (W7.2) ─────────
+    # For GTP IBTs these columns are all zeros (CalibrationPoint defaults),
+    # so the std-filter at L1293 drops them automatically — same dict, no
+    # GTP behavioural change. For GT3 IBTs the legacy GTP features above are
+    # zero and these are populated. Compliance physics: defl ∝ F/k, so
+    # `inv_front_corner_spring` (1/k) drives static RH and deflection just as
+    # `inv_front_heave` does for GTP. `splitter_height` is a downforce/balance
+    # axis; `bump_rubber_gap` affects platform stiffness in the bump zone.
+    _front_coil = col("front_corner_spring_nmm")
+    _rear_coil = col("rear_corner_spring_nmm")
+    _UNIVERSAL_POOL.append((_front_coil, "front_corner_spring"))
+    _UNIVERSAL_POOL.append((_rear_coil, "rear_corner_spring"))
+    _UNIVERSAL_POOL.append((1.0 / np.maximum(_front_coil, 1.0), "inv_front_corner_spring"))
+    _UNIVERSAL_POOL.append((1.0 / np.maximum(_rear_coil, 1.0), "inv_rear_corner_spring"))
+    _UNIVERSAL_POOL.append((col("front_bump_rubber_gap_mm"), "front_bump_rubber_gap"))
+    _UNIVERSAL_POOL.append((col("rear_bump_rubber_gap_mm"), "rear_bump_rubber_gap"))
+    _UNIVERSAL_POOL.append((col("splitter_height_mm"), "splitter_height"))
+    # Fuel × compliance for GT3 (mirror of GTP fuel_x_inv_third / inv_spring).
+    _UNIVERSAL_POOL.append(
+        (_fuel / np.maximum(_front_coil, 1.0), "fuel_x_inv_front_corner_spring")
+    )
+    _UNIVERSAL_POOL.append(
+        (_fuel / np.maximum(_rear_coil, 1.0), "fuel_x_inv_rear_corner_spring")
+    )
+
     # ── Physics-aware per-output feature pools ──
     # Each garage output is driven by features from a specific axle. The
     # universal forward selection (LOO RMSE-driven, physics-blind) was picking
@@ -1246,6 +1334,10 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         "torsion_od", "inv_od4",
         "front_camber",
         "torsion_turns",       # front torsion bar preload (Ferrari/Acura; 0→excluded on BMW/Porsche)
+        # GT3 paired-coil (W7.2) — zero on GTP IBTs, populated on GT3 IBTs.
+        "front_corner_spring", "inv_front_corner_spring",
+        "front_bump_rubber_gap",
+        "fuel_x_inv_front_corner_spring",
     }
     _REAR_AXIS_NAMES = {
         "rear_pushrod", "rear_pushrod_sq",
@@ -1255,6 +1347,12 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         "rear_camber",
         "fuel_x_inv_spring", "fuel_x_inv_third",
         "rear_torsion_turns",  # rear torsion bar preload (Ferrari/Acura; 0→excluded on BMW/Porsche)
+        # GT3 paired-coil (W7.2) — zero on GTP IBTs, populated on GT3 IBTs.
+        # Splitter height affects rear via the aero balance shift it induces.
+        "rear_corner_spring", "inv_rear_corner_spring",
+        "rear_bump_rubber_gap",
+        "splitter_height",
+        "fuel_x_inv_rear_corner_spring",
     }
     _GLOBAL_NAMES = {"fuel", "wing"}
 
@@ -2138,6 +2236,43 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
     if not models:
         return applied
 
+    # ── GT3 short-circuit (W7.2 audit BLOCKER #22) ──
+    # GT3 cars have ``heave_spring=None`` and ``front_torsion_c=0.0``. Every
+    # write block below targets GTP-shaped attributes (``car.heave_spring.*``,
+    # ``car.deflection.heave_*``, ``car.corner_spring.front_torsion_c``) and
+    # silently swallows AttributeError on GT3, leaving the car uncalibrated
+    # without explanation. Until varied-spring GT3 IBTs land (gated on W10.1
+    # capture), the regression fits are intercept-only — there is nothing to
+    # write into the corner_spring / garage_ranges fields anyway. Detect GT3
+    # structurally via ``suspension_arch.has_heave_third`` and return early
+    # with a documented note so callers know calibration ran but produced no
+    # usable corrections.
+    _arch = getattr(car_obj, "suspension_arch", None)
+    _is_gt3 = _arch is not None and not _arch.has_heave_third
+    if _is_gt3:
+        import logging as _logging
+        _gt3_logger = _logging.getLogger(__name__)
+        _n_setups = getattr(models, "n_unique_setups", 0)
+        _gt3_logger.info(
+            "apply_to_car: GT3 path for '%s' — %d unique setups; regression "
+            "fits are intercept-only until varied-spring IBT data lands "
+            "(W10.1). No GTP-shaped writes attempted.",
+            getattr(car_obj, "canonical_name", "<unknown>"),
+            _n_setups,
+        )
+        applied.append(
+            f"GT3 calibration applied (intercept-only — {_n_setups} unique setups; "
+            "varied-spring IBT data needed for full regression fit, see W10.1)"
+        )
+        # TODO(W10.1): once 5+ varied-front-coil-rate IBTs land for the same
+        # GT3 car at the same track, write fitted compliance back into
+        # ``car_obj.corner_spring.front_baseline_rate_nmm`` (intercept of the
+        # regression on ``static_front_rh_mm`` vs ``inv_front_corner_spring``
+        # gives a baseline; the slope gives compliance). ``garage_ranges``
+        # bump_rubber_gap / splitter_height bounds are driver-tuned, not
+        # regression outputs, so do NOT overwrite those.
+        return applied
+
     def _ok(m, min_coefs: int = 1) -> bool:
         """Return True if model is usable (present, calibrated, has enough coefs, not overfit)."""
         if m is None or len(m.coefficients) < min_coefs:
@@ -2652,6 +2787,32 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
 # Sweep protocol generator (Model 3 of Claude Code's plan)
 # ─────────────────────────────────────────────────────────────────────────────
 
+_GT3_CARS = ("bmw_m4_gt3", "aston_martin_vantage_gt3", "porsche_992_gt3r")
+
+
+_GT3_PROTOCOL_HINT = """\
+GT3 calibration protocol (placeholder — see docs/calibration_guide.md)
+
+GT3 cars (BMW M4 GT3 EVO, Aston Martin Vantage GT3 EVO, Porsche 911 GT3 R)
+have a paired-coil suspension architecture: NO heave springs, NO third
+springs, NO front torsion bar. The calibration sweep is therefore quite
+different from the GTP recipe.
+
+Steps:
+  1. Vary front corner spring rate across the legal garage range (e.g.
+     BMW M4 GT3 EVO: 190–340 N/mm, step 10 N/mm). Take an IBT for each
+     setting (3+ clean laps each).
+  2. Repeat for rear corner spring rate.
+  3. Optionally: vary bump rubber gap (front + rear) and splitter height
+     to populate those axes; these are typically driver-tuned and don't
+     need varied-spring sweeps.
+  4. Run: python -m car_model.auto_calibrate --car {car} --ibt-dir <dir>
+  5. Until 5+ varied-spring IBTs land at the same track, the regression
+     fits are intercept-only and apply_to_car() does not write anything
+     into car.corner_spring.* / car.garage_ranges.* (W10.1 unblocks this).
+"""
+
+
 _CAR_PROTOCOL_HINTS: dict[str, dict] = {
     "ferrari": {
         "spring_param": "front torsion bar OD",
@@ -2711,14 +2872,53 @@ _CAR_PROTOCOL_HINTS: dict[str, dict] = {
 }
 
 
+def _car_protocol_hint(car: str) -> str:
+    """Return a human-readable protocol hint for *car*.
+
+    GT3 cars get a generic GT3 paired-coil hint (W7.2 audit DEGRADED #18) so
+    they no longer fall through to the BMW GTP hint, which references
+    nonexistent heave / torsion bar parameters. Other cars use the existing
+    per-car hint dict.
+    """
+    if car in _GT3_CARS:
+        return _GT3_PROTOCOL_HINT.format(car=car)
+    if car in _CAR_PROTOCOL_HINTS:
+        # Backwards-compat: format the dict block similar to legacy callers.
+        h = _CAR_PROTOCOL_HINTS[car]
+        return h.get("extra_note", "") if isinstance(h, dict) else str(h)
+    # Unknown car: keep the legacy fall-through to BMW so existing GTP
+    # consumers still work. Future audit cleanups may tighten this.
+    legacy = _CAR_PROTOCOL_HINTS.get("bmw", {})
+    return legacy.get("extra_note", "") if isinstance(legacy, dict) else str(legacy)
+
+
 def generate_protocol(car: str, verbose: bool = True) -> str:
     """Generate step-by-step iRacing calibration sweep instructions.
 
     Based on Claude Code's calibration plan (docs/auto_calibration_plan.md):
     Each step changes ONE parameter to isolate physics effects.
+
+    For GT3 cars (W7.2 audit DEGRADED #18) the protocol diverges entirely
+    from the GTP heave/torsion sweep — there are no heave springs, no front
+    torsion bar — so we emit the generic GT3 hint instead of falling through
+    to the BMW GTP hint dict.
     """
     points = load_calibration_points(car)
     models = load_calibrated_models(car)
+    if car in _GT3_CARS:
+        # GT3: short-circuit to the paired-coil protocol. The full status
+        # block below assumes GTP-shaped models so we render a focused GT3
+        # block instead.
+        n_unique = len({_setup_key(pt) for pt in points})
+        return (
+            f"\n{'=' * 60}\n"
+            f"  {car.upper()} Calibration Protocol\n"
+            f"  (GT3 paired-coil architecture)\n"
+            f"{'=' * 60}\n\n"
+            f"  {n_unique} unique setups collected so far "
+            f"(need {_MIN_SESSIONS_FOR_FIT} minimum)\n\n"
+            f"{_GT3_PROTOCOL_HINT.format(car=car)}"
+        )
     hints = _CAR_PROTOCOL_HINTS.get(car, _CAR_PROTOCOL_HINTS["bmw"])
 
     unique: set[tuple] = set()
@@ -3224,8 +3424,19 @@ Examples:
   python -m car_model.auto_calibrate --car ferrari --status
 """,
     )
+    # Pull car choices from the canonical registry so adding a new car here
+    # doesn't drift from ``car_model/cars.py:_CARS``. Fall back to the legacy
+    # static list if the import fails (e.g. partial install).
+    try:
+        from car_model.cars import _CARS as _ALL_CARS
+        _car_choices = sorted(_ALL_CARS.keys())
+    except Exception:
+        _car_choices = [
+            "bmw", "cadillac", "ferrari", "acura", "porsche",
+            "bmw_m4_gt3", "aston_martin_vantage_gt3", "porsche_992_gt3r",
+        ]
     parser.add_argument("--car", required=True,
-                        choices=["bmw", "cadillac", "ferrari", "acura", "porsche"],
+                        choices=_car_choices,
                         help="Car to calibrate")
     parser.add_argument("--ibt", nargs="+", default=None,
                         help="One or more IBT files to add to the calibration dataset")

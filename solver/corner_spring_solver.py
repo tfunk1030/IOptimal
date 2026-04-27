@@ -154,6 +154,13 @@ class CornerSpringSolution:
     # car model to compute wheel rate. See rear_wheel_rate_nmm property.
     rear_motion_ratio: float = 1.0
 
+    # GT3 paired front coil rate (N/mm).  Zero for GTP/torsion-bar and Porsche-
+    # roll-spring cars.  When >0 the GT3 architecture branch fired and this is
+    # the authoritative front-axle rate (front_torsion_od_mm will be 0.0).
+    front_coil_rate_nmm: float = 0.0
+    # GT3 paired front coil perch offset (mm).  Mirrors rear_spring_perch_mm.
+    front_coil_perch_mm: float = 0.0
+
     # Torsion bar preload turns (Ferrari: -0.250 to +0.250 at all 4 corners).
     # For Ferrari these are authoritative solver outputs computed by
     # _solve_ferrari_torsion_bar_turns(); for all other cars they remain 0.0.
@@ -182,15 +189,34 @@ class CornerSpringSolution:
 
     def summary(self) -> str:
         """Human-readable summary of the solution."""
-        # Detect roll spring car: OD=0 and roll spring rate set
-        _is_roll_spring = (self.front_torsion_od_mm == 0.0 and self.front_roll_spring_nmm > 0)
+        # Detect architecture from the solution:
+        #   - GT3 paired front coil: front_coil_rate_nmm > 0
+        #   - Porsche-GTP roll spring: OD=0 AND front_roll_spring_nmm > 0
+        #   - GTP torsion bar: OD > 0
+        _is_gt3_coil = self.front_coil_rate_nmm > 0
+        _is_roll_spring = (
+            not _is_gt3_coil
+            and self.front_torsion_od_mm == 0.0
+            and self.front_roll_spring_nmm > 0
+        )
+        # GT3: no heave spring exists, so heave/corner ratio is meaningless.
+        _has_heave = self.total_front_heave_nmm > 2 * self.front_wheel_rate_nmm + 1e-3
         lines = [
             "===========================================================",
             "  STEP 3: CORNER SPRING SOLUTION",
             "===========================================================",
             "",
         ]
-        if _is_roll_spring:
+        if _is_gt3_coil:
+            lines += [
+                "  FRONT COIL SPRING (paired)",
+                f"    Coil spring rate:    {self.front_coil_rate_nmm:6.0f} N/mm",
+                f"    Wheel rate:          {self.front_wheel_rate_nmm:6.1f} N/mm",
+                f"    Natural frequency:   {self.front_natural_freq_hz:6.2f} Hz",
+                f"    Freq isolation:      {self.front_freq_isolation_ratio:6.1f}x "
+                f"(target: >2.5x)",
+            ]
+        elif _is_roll_spring:
             lines += [
                 "  FRONT ROLL SPRING",
                 f"    Roll spring rate:    {self.front_roll_spring_nmm:6.0f} N/mm",
@@ -212,7 +238,7 @@ class CornerSpringSolution:
                 f"    Freq isolation:      {self.front_freq_isolation_ratio:6.1f}x "
                 f"(target: >2.5x)",
             ]
-        lines += [
+        rear_block = [
             "",
             f"  REAR {'TORSION BAR' if self.rear_torsion_od_mm else 'COIL SPRING'}",
             *(
@@ -223,16 +249,33 @@ class CornerSpringSolution:
             f"    Wheel rate:          {self.rear_wheel_rate_nmm:6.1f} N/mm"
             f"  (MR={self.rear_motion_ratio:.3f})",
             f"    Natural frequency:   {self.rear_natural_freq_hz:6.2f} Hz",
-            f"    Third/corner ratio:  {self.rear_third_corner_ratio:6.1f}x "
-            f"(guideline: 1.5-3.5x)",
+        ]
+        if _has_heave:
+            rear_block += [
+                f"    Third/corner ratio:  {self.rear_third_corner_ratio:6.1f}x "
+                f"(guideline: 1.5-3.5x)",
+            ]
+        rear_block += [
             f"    Freq isolation:      {self.rear_freq_isolation_ratio:6.1f}x",
             f"    Perch offset:        {self.rear_spring_perch_mm:6.1f} mm (baseline)",
             "",
-            "  TOTAL HEAVE STIFFNESS (heave/third + 2 * corner wheel rate)",
-            f"    Front:  {self.total_front_heave_nmm:6.0f} N/mm "
-            f"(heave alone: {self.total_front_heave_nmm - 2*self.front_wheel_rate_nmm:.0f})",
-            f"    Rear:   {self.total_rear_heave_nmm:6.0f} N/mm "
-            f"(third alone: {self.total_rear_heave_nmm - 2*self.rear_wheel_rate_nmm:.0f})",
+        ]
+        if _has_heave:
+            rear_block += [
+                "  TOTAL HEAVE STIFFNESS (heave/third + 2 * corner wheel rate)",
+                f"    Front:  {self.total_front_heave_nmm:6.0f} N/mm "
+                f"(heave alone: {self.total_front_heave_nmm - 2*self.front_wheel_rate_nmm:.0f})",
+                f"    Rear:   {self.total_rear_heave_nmm:6.0f} N/mm "
+                f"(third alone: {self.total_rear_heave_nmm - 2*self.rear_wheel_rate_nmm:.0f})",
+            ]
+        else:
+            # GT3 architecture: no heave spring; "total" is just 2 × corner.
+            rear_block += [
+                "  TOTAL AXLE WHEEL RATE (2 x corner — no heave spring)",
+                f"    Front:  {self.total_front_heave_nmm:6.0f} N/mm",
+                f"    Rear:   {self.total_rear_heave_nmm:6.0f} N/mm",
+            ]
+        lines += rear_block + [
             "",
             "  TRACK SURFACE MATCHING",
             f"    Track bump frequency:  {self.track_bump_freq_hz:.1f} Hz",
@@ -328,14 +371,31 @@ class CornerSpringSolver:
         front_target_freq = bump_freq / front_freq_ratio
         front_target_rate = self.rate_for_freq(front_target_freq, m_f_corner)
 
-        # Check heave-to-corner ratio constraint
+        # Check heave-to-corner ratio constraint.
+        # GTP path: clamp front_rate so heave/corner stays within the
+        # 1.5-3.5x guideline. GT3 path: no heave spring exists (Step 2 was
+        # skipped, front_heave_nmm == 0), so the ratio clamp is meaningless
+        # and would collapse front_rate to zero. Instead, clamp directly to
+        # the GT3 paired-coil garage range. (See audit C-1.)
         ratio_lo, ratio_hi = csm.heave_corner_ratio_range
-        front_max_for_ratio = front_heave_nmm / ratio_lo  # Upper bound from ratio
-        front_min_for_ratio = front_heave_nmm / ratio_hi  # Lower bound from ratio
-
-        # Clamp to ratio bounds
-        front_rate = max(front_target_rate, front_min_for_ratio)
-        front_rate = min(front_rate, front_max_for_ratio)
+        front_coil_rate_nmm = 0.0  # Populated only on GT3 paired-coil path
+        if front_heave_nmm > 0:
+            # GTP heave-spring path
+            front_max_for_ratio = front_heave_nmm / ratio_lo  # Upper bound from ratio
+            front_min_for_ratio = front_heave_nmm / ratio_hi  # Lower bound from ratio
+            front_rate = max(front_target_rate, front_min_for_ratio)
+            front_rate = min(front_rate, front_max_for_ratio)
+        elif csm.front_spring_range_nmm[1] > 0:
+            # GT3 paired-coil path — no heave spring; clamp to coil range.
+            lo_coil, hi_coil = csm.front_spring_range_nmm
+            front_rate = max(front_target_rate, lo_coil)
+            front_rate = min(front_rate, hi_coil)
+        else:
+            # No heave spring AND no GT3 coil range — leave the physics
+            # frequency target untouched (GTP roll-spring car will clamp
+            # later in its own branch). This preserves the prior behaviour
+            # for the Porsche-GTP roll-spring path.
+            front_rate = front_target_rate
 
         # Convert to torsion bar OD (skip for cars with no front torsion bar, e.g. Porsche)
         if csm.front_torsion_c > 0 and csm.front_torsion_od_options:
@@ -348,6 +408,13 @@ class CornerSpringSolver:
 
             # Recalculate actual rate from snapped OD
             front_rate = csm.torsion_bar_rate(front_od)
+        elif csm.front_spring_range_nmm[1] > 0:
+            # GT3 paired front coils: front spring rate set directly in N/mm
+            # via the garage. Snap to the resolution grid; no torsion bar.
+            # (See audit C-2.)
+            front_rate = csm.snap_front_rate(front_rate)
+            front_coil_rate_nmm = front_rate
+            front_od = 0.0
         elif csm.front_roll_spring_range_nmm[1] > 0:
             # Porsche: front corner stiffness comes from adjustable roll spring (100-320 N/mm)
             # Snap computed rate to the roll spring garage range and step
@@ -394,12 +461,14 @@ class CornerSpringSolver:
         # heuristic gave coil=105 which forced rear ARB to collapse to
         # blade 1 (LLTD missed target by 4.3pp).
         _physics_rear_rate: float | None = None
-        if current_rear_spring_nmm is not None and current_rear_spring_nmm > 0:
-            # Compute what physics alone would give
+        if rear_third_nmm > 0 and current_rear_spring_nmm is not None and current_rear_spring_nmm > 0:
+            # GTP path with driver anchor: compute what physics alone would give.
             _physics_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
             _physics_rear_rate = rear_third_nmm / _physics_ratio
+            # Guard the relative-gap divide against a degenerate _physics_rear_rate.
+            denom = max(_physics_rear_rate, 1.0)
             # Soft preference: use driver's value only if within 20% of physics
-            if abs(float(current_rear_spring_nmm) - _physics_rear_rate) / _physics_rear_rate <= 0.20:
+            if abs(float(current_rear_spring_nmm) - _physics_rear_rate) / denom <= 0.20:
                 rear_target_rate = float(current_rear_spring_nmm)
                 logger.info(
                     "Rear spring anchored to driver-loaded %.0f N/mm "
@@ -419,9 +488,33 @@ class CornerSpringSolver:
                 rear_target_ratio = float(current_rear_third_nmm) / float(current_rear_spring_nmm)
             else:
                 rear_target_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
-        else:
+        elif rear_third_nmm > 0:
+            # GTP path without driver anchor: third/corner ratio.
             rear_target_ratio = self._surface_severity_to_heave_ratio(rear_sv_p99)
             rear_target_rate = rear_third_nmm / rear_target_ratio
+        else:
+            # GT3 path: no third spring → no third/corner ratio. Pick the
+            # rear corner rate by frequency-isolation directly. (See audit
+            # C-3.) The driver-anchor `/0` at C-4 is unreachable here
+            # because the GTP branches above already require rear_third_nmm > 0.
+            rear_target_freq = bump_freq / rear_freq_ratio
+            rear_target_rate = self.rate_for_freq(rear_target_freq, m_r_corner)
+            # Optional driver anchor: GT3 has no third/corner ratio, but if
+            # the driver loaded a coil within the legal range we still
+            # respect it as a soft anchor (mirrors the GTP path policy).
+            if current_rear_spring_nmm is not None and current_rear_spring_nmm > 0:
+                _phys = max(rear_target_rate, 1.0)
+                if abs(float(current_rear_spring_nmm) - rear_target_rate) / _phys <= 0.20:
+                    _physics_rear_rate = rear_target_rate
+                    rear_target_rate = float(current_rear_spring_nmm)
+                    logger.info(
+                        "Rear spring anchored to driver-loaded %.0f N/mm "
+                        "(GT3 frequency target: %.0f N/mm, within 20%%)",
+                        rear_target_rate, _physics_rear_rate,
+                    )
+            # Synthetic ratio for the frequency-check downstream — without a
+            # third spring this is effectively zero, but we keep the shape.
+            rear_target_ratio = 0.0
 
         # Clamp to valid range and snap
         if csm.rear_is_torsion_bar:
@@ -442,6 +535,13 @@ class CornerSpringSolver:
 
         rear_freq = self.natural_freq(rear_rate, m_r_corner)
 
+        # Choose which front-rate kwarg to forward into the explicit builder.
+        # GT3 paired-coil cars set front_coil_rate_nmm > 0 above; Porsche-GTP
+        # roll-spring cars satisfy front_is_roll_spring; torsion-bar cars use
+        # the snapped front_od. Pass front_roll_spring_nmm only on the GTP
+        # roll-spring path so GT3's coil rate isn't accidentally re-snapped to
+        # the (zero) roll-spring range.
+        is_gt3_coil = csm.front_spring_range_nmm[1] > 0
         sol = self.solution_from_explicit_rates(
             front_heave_nmm=front_heave_nmm,
             rear_third_nmm=rear_third_nmm,
@@ -450,7 +550,12 @@ class CornerSpringSolver:
             fuel_load_l=fuel_load_l,
             rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
             rear_torsion_od_mm=rear_od,
-            front_roll_spring_nmm=front_rate if (csm.front_is_roll_spring or csm.front_torsion_c == 0.0) else None,
+            front_roll_spring_nmm=(
+                front_rate
+                if (csm.front_is_roll_spring and not is_gt3_coil)
+                else None
+            ),
+            front_coil_rate_nmm=front_rate if is_gt3_coil else None,
         )
         # Annotate solution with anchor provenance so trace consumers see final values
         if _physics_rear_rate is not None:
@@ -475,26 +580,56 @@ class CornerSpringSolver:
         front_heave_perch_mm: float | None = None,
         rear_third_perch_mm: float | None = None,
         front_roll_spring_nmm: float | None = None,
+        front_coil_rate_nmm: float | None = None,
+        front_coil_perch_mm: float | None = None,
     ) -> CornerSpringSolution:
         """Build a corner-spring solution from explicit garage selections.
 
         Args:
-            front_roll_spring_nmm: For roll-spring cars (Porsche), the explicit
-                front roll spring rate (N/mm). When provided, overrides the
-                torsion bar path entirely. Ignored for torsion bar cars.
+            front_roll_spring_nmm: For roll-spring cars (Porsche GTP), the
+                explicit front roll spring rate (N/mm). When provided,
+                overrides the torsion bar path entirely. Ignored for torsion
+                bar and GT3 paired-coil cars.
+            front_coil_rate_nmm: For GT3 paired front coil cars, the explicit
+                front spring rate (N/mm). When provided, overrides any other
+                front-rate path. Ignored for GTP architecture.
+            front_coil_perch_mm: GT3 front spring perch offset (mm). Mirrors
+                ``rear_spring_perch_mm``. Defaults to 0.0 when not provided.
         """
         if fuel_load_l is None:
             fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
         csm = self.car.corner_spring
-        # Roll spring cars: skip torsion bar entirely
-        if csm.front_is_roll_spring or csm.front_torsion_c == 0.0:
+        # Architecture dispatch — three mutually-exclusive front arms:
+        #   1. GT3 paired front coils (front_spring_range_nmm[1] > 0)
+        #   2. Porsche-GTP roll spring (front_is_roll_spring True)
+        #   3. GTP torsion bar (front_torsion_c > 0, OD options present)
+        # Audit C-5: previously the legacy `front_torsion_c == 0.0` predicate
+        # also matched GT3 (front_torsion_c=0.0) and routed it into the
+        # roll-spring branch, which then fell back to
+        # csm.front_roll_spring_rate_nmm (0.0 for GT3) — emitting zero
+        # front rate. Add the explicit GT3 arm BEFORE the roll-spring arm.
+        front_coil_rate_out = 0.0
+        if csm.front_spring_range_nmm[1] > 0:
+            # GT3 paired coil path
+            if front_coil_rate_nmm is not None and front_coil_rate_nmm > 0:
+                front_rate = csm.snap_front_rate(front_coil_rate_nmm)
+            elif csm.front_baseline_rate_nmm > 0:
+                front_rate = csm.snap_front_rate(csm.front_baseline_rate_nmm)
+            else:
+                # Last-ditch: use the lower bound. Should not normally fire
+                # since stubs all set front_baseline_rate_nmm.
+                front_rate = csm.front_spring_range_nmm[0]
+            front_torsion_od_mm = 0.0
+            front_coil_rate_out = front_rate
+        elif csm.front_is_roll_spring or csm.front_torsion_c == 0.0:
+            # Porsche-GTP roll spring path (or genuinely unmodeled front)
             if front_roll_spring_nmm is not None and front_roll_spring_nmm > 0:
                 front_rate = csm.snap_front_roll_spring(front_roll_spring_nmm)
             else:
                 front_rate = csm.front_roll_spring_rate_nmm
             front_torsion_od_mm = 0.0
         else:
-            # Torsion bar car: snap OD to discrete garage option
+            # GTP torsion bar path: snap OD to discrete garage option
             front_torsion_od_mm = csm.snap_torsion_od(front_torsion_od_mm)
             front_rate = csm.torsion_bar_rate(front_torsion_od_mm)
         # Snap rear spring/torsion to garage step
@@ -591,6 +726,10 @@ class CornerSpringSolver:
             constraints=constraints,
             front_torsion_bar_turns=front_tb_turns,
             rear_torsion_bar_turns=rear_tb_turns,
+            front_coil_rate_nmm=round(front_coil_rate_out, 1),
+            front_coil_perch_mm=(
+                front_coil_perch_mm if front_coil_perch_mm is not None else 0.0
+            ),
         )
 
     def solve_candidates(
@@ -637,9 +776,29 @@ class CornerSpringSolver:
             current_rear_spring_nmm=current_rear_spring_nmm,
         )
 
-        # Build list of front options (torsion OD or roll spring)
-        use_front_roll_spring = (csm.front_is_roll_spring or csm.front_torsion_c == 0.0)
-        if not use_front_roll_spring and csm.front_torsion_od_options:
+        # Build list of front options. Three architecture branches:
+        #   1. GT3 paired front coils (front_spring_range_nmm[1] > 0)
+        #   2. Porsche-GTP roll spring (front_is_roll_spring True)
+        #   3. GTP torsion bar (front_torsion_od_options non-empty)
+        # Audit C-9: previously a GT3 car had `front_torsion_c == 0.0` which
+        # set `use_front_roll_spring=True`, but `front_roll_spring_range_nmm`
+        # is (0, 0) for GT3 — falling through to a single-element list of 0.0
+        # and emitting only one (degenerate) candidate.
+        use_gt3_coil = csm.front_spring_range_nmm[1] > 0
+        use_front_roll_spring = (
+            (csm.front_is_roll_spring or csm.front_torsion_c == 0.0)
+            and not use_gt3_coil
+        )
+        if use_gt3_coil:
+            # GT3 paired coil — sample on the resolution grid.
+            lo_c, hi_c = csm.front_spring_range_nmm
+            step_c = csm.front_spring_resolution_nmm or 10.0
+            front_ods = []
+            v = lo_c
+            while v <= hi_c + 1e-9:
+                front_ods.append(round(v, 3))
+                v += step_c
+        elif not use_front_roll_spring and csm.front_torsion_od_options:
             front_ods = list(csm.front_torsion_od_options)
         elif use_front_roll_spring and csm.front_roll_spring_range_nmm[1] > 0:
             # Porsche roll spring — sample in 10 N/mm steps
@@ -683,13 +842,19 @@ class CornerSpringSolver:
                 sol = self.solution_from_explicit_rates(
                     front_heave_nmm=front_heave_nmm,
                     rear_third_nmm=rear_third_nmm,
-                    front_torsion_od_mm=0.0 if use_front_roll_spring else f_od,
+                    front_torsion_od_mm=0.0 if (use_front_roll_spring or use_gt3_coil) else f_od,
                     rear_spring_rate_nmm=rear_rate,
                     fuel_load_l=fuel_load_l,
                     rear_torsion_od_mm=rear_torsion_od,
                     front_roll_spring_nmm=f_od if use_front_roll_spring else None,
+                    front_coil_rate_nmm=f_od if use_gt3_coil else None,
                 )
-                key = (sol.front_torsion_od_mm, sol.rear_spring_rate_nmm)
+                # On GT3 the front_torsion_od_mm is always 0, so use front_coil_rate_nmm
+                # in the dedupe key to keep distinct GT3 candidates separate.
+                if use_gt3_coil:
+                    key = (sol.front_coil_rate_nmm, sol.rear_spring_rate_nmm)
+                else:
+                    key = (sol.front_torsion_od_mm, sol.rear_spring_rate_nmm)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -710,14 +875,21 @@ class CornerSpringSolver:
         # Sort descending by score
         scored.sort(key=lambda x: x[0], reverse=True)
 
-        # Ensure base solution is included and first
-        base_key = (base.front_torsion_od_mm, base.rear_spring_rate_nmm)
+        # Ensure base solution is included and first. On GT3 the front_torsion
+        # axis is always 0; key on front_coil_rate_nmm for dedupe.
+        if use_gt3_coil:
+            base_key = (base.front_coil_rate_nmm, base.rear_spring_rate_nmm)
+        else:
+            base_key = (base.front_torsion_od_mm, base.rear_spring_rate_nmm)
         results = [base]
         seen_keys: set[tuple[float, float]] = {base_key}
         for _, sol in scored:
             if len(results) >= max_candidates:
                 break
-            key = (sol.front_torsion_od_mm, sol.rear_spring_rate_nmm)
+            if use_gt3_coil:
+                key = (sol.front_coil_rate_nmm, sol.rear_spring_rate_nmm)
+            else:
+                key = (sol.front_torsion_od_mm, sol.rear_spring_rate_nmm)
             if key not in seen_keys:
                 seen_keys.add(key)
                 results.append(sol)
@@ -743,6 +915,13 @@ class CornerSpringSolver:
         garage step.
         """
         csm = self.car.corner_spring
+        # Audit C-7: this helper assumes a Porsche-GTP roll-spring kinematic
+        # (single roll spring with installation_ratio ≈ 0.882). For GT3 paired
+        # front coils (or any car without a roll spring), the formula
+        # K_roll = k * IR^2 * (t/2)^2 is wrong (paired-corner roll stiffness
+        # is `2 * k_wheel * (t/2)^2`). Early-return so GT3 cars never enter.
+        if not csm.front_is_roll_spring:
+            return front_rate
         arb = self.car.arb
 
         # Determine the LLTD target (same logic as arb_solver.py)

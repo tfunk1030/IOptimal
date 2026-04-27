@@ -64,12 +64,47 @@ class PipelineInputError(RuntimeError):
     """User-facing pipeline input error."""
 
 
-def _normalize_grid_search_params_for_overrides(params: dict[str, object] | None) -> dict[str, object]:
+def _is_gt3_car(car: object | None) -> bool:
+    """W5.1: GT3 architecture dispatch helper.
+
+    Returns True when ``car`` is a GT3-class car (no heave/third architecture).
+    Mirrors the pattern in ``output/report.py:_is_gt3``. Used by pipeline
+    orchestration to gate heave/third reads, payloads, and report sections.
+    """
+    if car is None:
+        return False
+    arch = getattr(car, "suspension_arch", None)
+    if arch is None:
+        return False
+    return getattr(arch, "has_heave_third", True) is False
+
+
+def _step2_present(step2: object | None) -> bool:
+    """W5.1: True when ``step2`` carries real heave/third data.
+
+    Returns False for both ``None`` (calibration-blocked) and
+    ``HeaveSolution.null()`` GT3 placeholders (``present=False``).
+    """
+    if step2 is None:
+        return False
+    return bool(getattr(step2, "present", True))
+
+
+def _normalize_grid_search_params_for_overrides(
+    params: dict[str, object] | None,
+    *,
+    car: object | None = None,
+) -> dict[str, object]:
     """Normalize grid-search param aliases to canonical override keys.
 
     Grid search can surface keys that don't match solve-chain field names
     directly (e.g. *_spring_nmm, *_arb_blade, *_toe_deg aliases). Convert those
     into the canonical param set expected by canonical_params_to_overrides().
+
+    W5.1: For GT3 cars (``car.suspension_arch.has_heave_third`` False), the
+    heave/third/torsion alias entries are dropped — those keys are meaningless
+    on GT3 architectures and emitting them as solve-chain overrides would
+    inject phantom heave/third spring writes that the GT3 chain cannot satisfy.
     """
     raw = dict(params or {})
     normalized = dict(raw)
@@ -84,6 +119,18 @@ def _normalize_grid_search_params_for_overrides(params: dict[str, object] | None
         "front_toe_deg": "front_toe_mm",
         "rear_toe_deg": "rear_toe_mm",
     }
+    if _is_gt3_car(car):
+        # W5.1 F1: GT3 has no heave/third/torsion architecture — drop those
+        # alias entries before override expansion. Coil rates are surfaced via
+        # candidate-search per-corner spring keys, not via heave aliases.
+        _gt3_drop = {
+            "front_heave_nmm",
+            "rear_third_nmm",
+            "front_heave_spring_nmm",
+            "rear_third_spring_nmm",
+            "front_torsion_od_mm",
+        }
+        alias_map = {k: v for k, v in alias_map.items() if k not in _gt3_drop}
     for source_key, target_key in alias_map.items():
         if source_key in raw and target_key not in normalized:
             normalized[target_key] = raw[source_key]
@@ -410,14 +457,17 @@ def produce(
             # events, braking pitch, and direction changes that inflate the estimate.
             # A calibrated m_eff (from heave sweep or cars.py) is more reliable.
             # If the learned value is >2x the existing, it's contaminated.
-            if learned.heave_m_eff_front_kg is not None:
-                _existing_front = car.heave_spring.front_m_eff_kg
-                if _existing_front > 0 and learned.heave_m_eff_front_kg <= _existing_front * 2.0:
-                    car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
-            if learned.heave_m_eff_rear_kg is not None:
-                _existing_rear = car.heave_spring.rear_m_eff_kg
-                if _existing_rear > 0 and learned.heave_m_eff_rear_kg <= _existing_rear * 2.0:
-                    car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
+            # W5.1 F2: GT3 cars have car.heave_spring=None (no heave architecture).
+            # Skip the m_eff update silently rather than crashing on attribute access.
+            if car.heave_spring is not None:
+                if learned.heave_m_eff_front_kg is not None:
+                    _existing_front = car.heave_spring.front_m_eff_kg
+                    if _existing_front > 0 and learned.heave_m_eff_front_kg <= _existing_front * 2.0:
+                        car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
+                if learned.heave_m_eff_rear_kg is not None:
+                    _existing_rear = car.heave_spring.rear_m_eff_kg
+                    if _existing_rear > 0 and learned.heave_m_eff_rear_kg <= _existing_rear * 2.0:
+                        car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
             # NOTE: aero_compression_{front,rear}_mm are intentionally NOT applied here.
             # The IBT LFrideHeight/LRrideHeight sensor channels are in a different
             # coordinate frame than the aero maps (AeroCalc reference). Applying the
@@ -958,11 +1008,17 @@ def produce(
     stint_result = None
     try:
         from solver.stint_model import analyze_stint
+        # W5.1 F4: GT3 cars have no heave/third architecture; pass None so
+        # analyze_stint (W3.3 GT3-aware) skips heave evolution rather than
+        # consuming zero placeholders. step2 may also be None when the
+        # calibration gate blocks Step 2 — same downstream behaviour.
+        _stint_heave = step2.front_heave_nmm if _step2_present(step2) else None
+        _stint_third = step2.rear_third_nmm if _step2_present(step2) else None
         stint_result = analyze_stint(
             car=car,
             stint_laps=getattr(args, "stint_laps", 30),
-            base_heave_nmm=step2.front_heave_nmm,
-            base_third_nmm=step2.rear_third_nmm,
+            base_heave_nmm=_stint_heave,
+            base_third_nmm=_stint_third,
             v_p99_front_mps=track.shock_vel_p99_front_mps,
             v_p99_rear_mps=track.shock_vel_p99_rear_mps,
             evolution=stint_evolution,
@@ -1006,6 +1062,13 @@ def produce(
         raise  # re-raise programming errors — don't hide bugs
 
     # ── Phase J: Output ──
+    # W5.1 F5: For GT3 cars step2 is HeaveSolution.null() (present=False), but
+    # the dataclass instance is non-None and legality may still run for the
+    # corner-spring axes. The "blocked-by-calibration" gate continues to use
+    # ``step2 is None`` since GT3 step2 must NOT be None — calibration_gate
+    # routes GT3 Step 2 through ``not_applicable`` (W1.1), not blocked. Inside
+    # validate_solution_legality the heave-spring range check is gated on
+    # ``step2.present`` (legality_engine GT3 awareness lives in W4.3 / W5.x).
     if step1 is None or step2 is None or step3 is None:
         from solver.legality_engine import LegalValidation
         legal_validation = LegalValidation(
@@ -1035,6 +1098,7 @@ def produce(
         supporting=supporting,
         legality=legal_validation,
         fallback_reasons=list(getattr(measured, "fallback_reasons", []) or []),
+        car=car,
     )
 
     base_solve_result.step1 = step1
@@ -1223,7 +1287,9 @@ def produce(
                 if _gs_best is not None and not _gs_best.hard_vetoed:
                     try:
                         from solver.solve_chain import materialize_overrides
-                        _gs_params = _normalize_grid_search_params_for_overrides(_gs_best.params or {})
+                        _gs_params = _normalize_grid_search_params_for_overrides(
+                            _gs_best.params or {}, car=car,
+                        )
                         _gs_overrides = canonical_params_to_overrides(
                             base_solve_result,
                             _gs_params,
@@ -1307,24 +1373,60 @@ def produce(
                     if top_pool:
                         log()
                         log(f"  ── TOP-{len(top_pool)} CANDIDATES (--top-n {top_n_req}) ──────────────────────────────────────────────────────────────────────────────────────────────")
-                        log(f"  {'Rank':<5} {'Score':>8}  {'Family':<18}  {'Wing':>5}  {'FH-Spg':>7}  {'R3-Spg':>7}  {'Trsn':>6}  {'FARB':>5}  {'RARB':>5}  Penalties")
-                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        # W5.1 F10: GT3 cars have no heave/third/torsion columns —
+                        # surface per-corner spring rates instead. The dispatch
+                        # is per-car, not per-candidate, since families share an
+                        # architecture for a given run.
+                        _gt3_table = _is_gt3_car(car)
+                        if _gt3_table:
+                            log(f"  {'Rank':<5} {'Score':>8}  {'Family':<18}  {'Wing':>5}  {'LF-Spg':>7}  {'RR-Spg':>7}  {'FARB':>5}  {'RARB':>5}  Penalties")
+                            log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        else:
+                            log(f"  {'Rank':<5} {'Score':>8}  {'Family':<18}  {'Wing':>5}  {'FH-Spg':>7}  {'R3-Spg':>7}  {'Trsn':>6}  {'FARB':>5}  {'RARB':>5}  Penalties")
+                            log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
                         for rank, ev in enumerate(top_pool, start=1):
                             p = ev.params or {}
                             penalty_str = "; ".join(ev.soft_penalties[:2]) if ev.soft_penalties else "—"
                             marker = " ← applied" if rank == 1 else ""
-                            log(
-                                f"  {rank:<5} {ev.score:>+8.1f}  "
-                                f"{(ev.family or ''):<18}  "
-                                f"{p.get('wing_angle_deg', 0):>5.0f}  "
-                                f"{p.get('front_heave_spring_nmm', 0):>7.1f}  "
-                                f"{p.get('rear_third_spring_nmm', 0):>7.1f}  "
-                                f"{p.get('front_torsion_od_mm', 0):>6.2f}  "
-                                f"{int(p.get('front_arb_blade', 0)):>5}  "
-                                f"{int(p.get('rear_arb_blade', 0)):>5}  "
-                                f"{penalty_str}{marker}"
-                            )
-                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                            if _gt3_table:
+                                _lf_rate = (
+                                    p.get("lf_spring_rate")
+                                    or p.get("front_coil_rate_nmm")
+                                    or p.get("front_spring_rate_nmm")
+                                    or 0.0
+                                )
+                                _rr_rate = (
+                                    p.get("rr_spring_rate")
+                                    or p.get("rear_spring_rate_nmm")
+                                    or p.get("rear_coil_rate_nmm")
+                                    or 0.0
+                                )
+                                log(
+                                    f"  {rank:<5} {ev.score:>+8.1f}  "
+                                    f"{(ev.family or ''):<18}  "
+                                    f"{p.get('wing_angle_deg', 0):>5.0f}  "
+                                    f"{float(_lf_rate):>7.1f}  "
+                                    f"{float(_rr_rate):>7.1f}  "
+                                    f"{int(p.get('front_arb_blade', 0)):>5}  "
+                                    f"{int(p.get('rear_arb_blade', 0)):>5}  "
+                                    f"{penalty_str}{marker}"
+                                )
+                            else:
+                                log(
+                                    f"  {rank:<5} {ev.score:>+8.1f}  "
+                                    f"{(ev.family or ''):<18}  "
+                                    f"{p.get('wing_angle_deg', 0):>5.0f}  "
+                                    f"{p.get('front_heave_spring_nmm', 0):>7.1f}  "
+                                    f"{p.get('rear_third_spring_nmm', 0):>7.1f}  "
+                                    f"{p.get('front_torsion_od_mm', 0):>6.2f}  "
+                                    f"{int(p.get('front_arb_blade', 0)):>5}  "
+                                    f"{int(p.get('rear_arb_blade', 0)):>5}  "
+                                    f"{penalty_str}{marker}"
+                                )
+                        if _gt3_table:
+                            log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        else:
+                            log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
                         log(f"  Rank 1 applied to setup output. Use --top-n 1 to suppress this table.")
                         solve_notes.append(
                             f"Top-{len(top_pool)} candidates surfaced via --top-n "
@@ -1569,7 +1671,15 @@ def produce(
             "decision_trace": [decision.to_dict() for decision in decision_trace],
             "solver_notes": solve_notes,
             "step1_rake": to_public_output_payload(car.canonical_name, step1),
-            "step2_heave": to_public_output_payload(car.canonical_name, step2),
+            # W5.1 F7: GT3 step2 is HeaveSolution.null() (present=False).
+            # Emit a sentinel payload instead of zero-valued heave numerics so
+            # downstream tooling (delta cards, learner ingest, webapp) does
+            # not mistake `front_heave_nmm: 0.0` for real data.
+            "step2_heave": (
+                to_public_output_payload(car.canonical_name, step2)
+                if _step2_present(step2)
+                else {"present": False, "reason": "not_applicable_for_architecture"}
+            ),
             "step3_corner": to_public_output_payload(car.canonical_name, step3),
             "step4_arb": to_public_output_payload(car.canonical_name, step4),
             "step5_geometry": to_public_output_payload(car.canonical_name, step5),
@@ -1689,9 +1799,6 @@ def produce(
                 # Pushrod — solver recalculates this when spring/RH changes (rake_solver.py)
                 "front_pushrod_mm": getattr(step1, "front_pushrod_offset_mm", None),
                 "rear_pushrod_mm": getattr(step1, "rear_pushrod_offset_mm", None),
-                # Use public_output_value to convert to display units (e.g. N/mm → index for Ferrari)
-                "front_heave_nmm": public_output_value(car, "front_heave_nmm", step2.front_heave_nmm),
-                "rear_third_nmm": public_output_value(car, "rear_third_nmm", step2.rear_third_nmm),
                 "torsion_bar_od_mm": public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm),
                 "rear_spring_nmm": public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm),
                 "front_arb_blade": step4.front_arb_blade_start,
@@ -1704,6 +1811,15 @@ def produce(
                 "rear_toe_mm": step5.rear_toe_mm,
                 "wing_angle_deg": wing,
             }
+            # W5.1 F9: GT3 cars have no heave/third architecture; only emit
+            # heave/third recommended values when step2 carries real data.
+            if _step2_present(step2):
+                _recommended_dict["front_heave_nmm"] = public_output_value(
+                    car, "front_heave_nmm", step2.front_heave_nmm
+                )
+                _recommended_dict["rear_third_nmm"] = public_output_value(
+                    car, "rear_third_nmm", step2.rear_third_nmm
+                )
             if supporting is not None:
                 _recommended_dict.update({
                     "diff_preload_nm": getattr(supporting, "diff_preload_nm", None),
@@ -1799,13 +1915,19 @@ def produce(
             )
             # Build solver predictions dict for the feedback loop.
             # These are what the solver PREDICTED for this session's telemetry.
+            # W5.1 F9: heave/third-derived fields are gated on step2.present so
+            # GT3 cars don't store zero placeholders that would bias the
+            # learner's prediction-error feedback loop downstream.
+            _step2_alive = _step2_present(step2)
             solver_predictions = {
-                "front_rh_std_mm": getattr(step2, "front_rh_sigma_mm", 0.0),
-                "rear_rh_std_mm": getattr(step2, "rear_rh_sigma_mm", 0.0),
+                "front_rh_std_mm": getattr(step2, "front_rh_sigma_mm", 0.0) if _step2_alive else None,
+                "rear_rh_std_mm": getattr(step2, "rear_rh_sigma_mm", 0.0) if _step2_alive else None,
                 "lltd_predicted": getattr(step4, "lltd_achieved", 0.0),
                 "body_roll_predicted_deg_per_g": getattr(step4, "roll_gradient_deg_per_g", 0.0),
-                "front_bottoming_predicted": getattr(step2, "bottoming_events_front", 0),
-                "front_heave_travel_used_pct": predicted_telemetry.front_heave_travel_used_pct,
+                "front_bottoming_predicted": getattr(step2, "bottoming_events_front", 0) if _step2_alive else None,
+                "front_heave_travel_used_pct": (
+                    predicted_telemetry.front_heave_travel_used_pct if _step2_alive else None
+                ),
                 "front_excursion_mm": predicted_telemetry.front_excursion_mm,
                 "braking_pitch_deg": predicted_telemetry.braking_pitch_deg,
                 "front_lock_p95": predicted_telemetry.front_lock_p95,
@@ -1815,6 +1937,11 @@ def produce(
                 "understeer_high_deg": predicted_telemetry.understeer_high_deg,
                 "front_pressure_hot_kpa": predicted_telemetry.front_pressure_hot_kpa,
                 "rear_pressure_hot_kpa": predicted_telemetry.rear_pressure_hot_kpa,
+            }
+            # Strip Nones from heave fields so the feedback loop doesn't
+            # interpret null as zero. (GT3: keys are simply absent.)
+            solver_predictions = {
+                k: v for k, v in solver_predictions.items() if v is not None
             }
 
             store = KnowledgeStore()
@@ -1914,9 +2041,17 @@ def produce_result(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="GTP Setup Producer — IBT->.sto physics pipeline"
+        description="IOptimal Setup Producer — IBT->.sto physics pipeline (GTP + GT3)"
     )
-    parser.add_argument("--car", required=True, help="Car name (e.g., bmw)")
+    # GT3 Phase 2 W9.1 — F8 fix. Pull car choices dynamically from the
+    # canonical registry so GT3 canonical names are accepted at parse time.
+    from car_model.cars import _CARS as _CAR_REGISTRY
+    parser.add_argument(
+        "--car",
+        required=True,
+        choices=sorted(_CAR_REGISTRY.keys()),
+        help="Car canonical name. Choices: " + ", ".join(sorted(_CAR_REGISTRY.keys())),
+    )
     parser.add_argument("--track", type=str, default=None,
                         help="Track name hint (e.g., silverstone). If a saved profile exists at "
                              "data/tracks/{name}.json it will be loaded; otherwise the track "

@@ -93,7 +93,17 @@ class MeasuredState:
     rear_dominant_freq_hz: float | None = None
 
     # --- Step 4: Balance ---
-    lltd_measured: float | None = None              # Backward-compatible alias of roll_distribution_proxy
+    # DEPRECATED — this field was historically aliased to ``roll_distribution_proxy``
+    # (a geometric ratio insensitive to spring stiffness; see CLAUDE.md 2026-04-08
+    # entry).  The alias write was removed in W5.3 (analyzer.md:A16) so this field
+    # is no longer populated by ``extract_measured_state``.  It is kept on the
+    # dataclass only because legacy serialised observations and downstream
+    # consumers (learner/empirical_models.py, solver/session_database.py) still
+    # reference it.  Do NOT consume in new code — use ``roll_distribution_proxy``
+    # directly OR a real wheel-force-based LLTD measurement (not yet available
+    # from iRacing IBT).  GT3 cars have no LLTD calibration baseline whatsoever
+    # so the alias is doubly invalid for them.
+    lltd_measured: float | None = None              # DEPRECATED — see comment above
     roll_distribution_proxy: float | None = None    # RH-based proxy, not true LLTD
     roll_gradient_measured_deg_per_g: float | None = None
     body_roll_at_peak_g_deg: float | None = None
@@ -675,7 +685,9 @@ def extract_measurements(
             total_moment = front_moment + rear_moment
             if total_moment > 0.1:
                 state.roll_distribution_proxy = front_moment / total_moment
-                state.lltd_measured = state.roll_distribution_proxy
+                # W5.3 (analyzer.md:A16): no longer write ``lltd_measured`` alias.
+                # The field stays None.  Downstream consumers should read
+                # ``roll_distribution_proxy`` directly.
 
         # --- Speed-dependent roll distribution proxy ---
         # Use 150 kph as the boundary to eliminate the 120-180 kph gap that
@@ -692,7 +704,7 @@ def extract_measurements(
                 total_ls = f_mom_ls + r_mom_ls
                 if total_ls > 0.1:
                     state.roll_distribution_proxy_low_speed = f_mom_ls / total_ls
-                    state.lltd_low_speed = state.roll_distribution_proxy_low_speed
+                    # W5.3: alias ``lltd_low_speed`` no longer written; see A16.
 
             if np.sum(high_speed_corner) > 30:
                 f_defl_hs = np.abs(lf_rh[high_speed_corner] - rf_rh[high_speed_corner])
@@ -702,7 +714,7 @@ def extract_measurements(
                 total_hs = f_mom_hs + r_mom_hs
                 if total_hs > 0.1:
                     state.roll_distribution_proxy_high_speed = f_mom_hs / total_hs
-                    state.lltd_high_speed = state.roll_distribution_proxy_high_speed
+                    # W5.3: alias ``lltd_high_speed`` no longer written; see A16.
 
         # --- Body roll ---
         if ibt.has_channel("Roll"):
@@ -1435,7 +1447,22 @@ def _extract_heave_deflection(
     Channels:
         HFshockDefl — front heave element deflection (meters)
         HRshockDefl — rear heave/third element deflection (may be missing)
+
+    W5.3 (analyzer.md:A17): GT3 cars have no heave element.  If the
+    HFshockDefl/HRshockDefl channels happen to exist on a GT3 IBT they
+    either carry zeros or per-corner travel under a misleading name and
+    the resulting `front_heave_travel_used_pct` / `heave_bottoming_events_*`
+    metrics have no physical meaning — they would also fire phantom
+    critical-severity heave-bottoming alarms in `_check_safety` (A18).
+    Skip the extraction entirely on GT3; per-corner travel already lands
+    in `front_corner_defl_*_mm` via `_extract_corner_shock_defl`.
     """
+    if not car.suspension_arch.has_heave_third:
+        # GT3 (or any future architecture without a heave element) — no
+        # heave/third channels are meaningful.  Leave the heave_*_mm /
+        # heave_*_pct / heave_bottoming_events_* fields at their dataclass
+        # defaults (None / 0).
+        return
     n = end - start + 1
     hsm = car.heave_spring
 

@@ -123,8 +123,8 @@ def validate_and_fix_garage_correlation(
 
     # --- Phase 1: Range-clamp and quantise individual parameters ---
     warnings.extend(_clamp_step1(step1, gr))
-    warnings.extend(_clamp_step2(step2, gr))
-    warnings.extend(_clamp_step3(step3, gr))
+    warnings.extend(_clamp_step2(step2, gr, car=car))
+    warnings.extend(_clamp_step3(step3, gr, car=car))
     if step5 is not None:
         warnings.extend(_clamp_step5(step5, gr))
 
@@ -158,6 +158,24 @@ def validate_and_fix_garage_correlation(
         step3 = _ferrari_orig_step3
 
     # --- Phase 2: Garage-model correlation check ---
+    # GT3 architecture (W4.3): the heave-slider / torsion-bar / front-RH fixers
+    # all reference GTP-only physics (heave perch, torsion OD, pushrod-as-RH-
+    # lever). GT3 RH-correction levers are SpringPerchOffset and BumpRubberGap
+    # per corner — out of scope for this unit (deferred to W7.1 with the GT3
+    # GarageOutputModel). Skip Phase 2 + Phase 3 entirely for GT3; do not call
+    # garage_model.validate (its GTP fixers will mutate null step2/step3 fields
+    # toward meaningless GTP physics).  Audit O17/O19/O20/O21.
+    _is_gt3 = (
+        car is not None
+        and getattr(getattr(car, "suspension_arch", None), "has_heave_third", True) is False
+    )
+    if _is_gt3:
+        # Mark step2 as constraints-OK so downstream report code (which reads
+        # `garage_constraints_ok`) doesn't print a phantom CHECK on GT3.
+        setattr(step2, "garage_constraints_ok", True)
+        setattr(step2, "garage_constraint_notes", [])
+        return warnings
+
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is None:
         canonical = getattr(car, 'canonical_name', '')
@@ -281,8 +299,24 @@ def _clamp_step1(step1, gr) -> list[str]:
     return msgs
 
 
-def _clamp_step2(step2, gr) -> list[str]:
-    """Clamp and quantise Step 2 (heave/third) parameters."""
+def _clamp_step2(step2, gr, car=None) -> list[str]:
+    """Clamp and quantise Step 2 (heave/third) parameters.
+
+    GT3 architecture (W3.1 / W4.1): step2 is a HeaveSolution.null() with all
+    heave/third fields = 0 and `present=False`. The GT3 GarageRanges sentinel
+    tuples are also (0.0, 0.0). Early-return on GT3 — there is nothing to clamp,
+    and snapping a null field produces noisy 0.0 -> 0.0 messages otherwise.
+    Audit O16/O18.
+    """
+    if (
+        car is not None
+        and getattr(getattr(car, "suspension_arch", None), "has_heave_third", True) is False
+    ):
+        return []
+    if getattr(step2, "present", True) is False:
+        # Defense-in-depth: even if `car` was not threaded through, a null
+        # step2 means there's nothing to clamp.
+        return []
     msgs: list[str] = []
 
     old = step2.front_heave_nmm
@@ -312,39 +346,58 @@ def _clamp_step2(step2, gr) -> list[str]:
     return msgs
 
 
-def _clamp_step3(step3, gr) -> list[str]:
-    """Clamp and quantise Step 3 (corner spring) parameters."""
+def _clamp_step3(step3, gr, car=None) -> list[str]:
+    """Clamp and quantise Step 3 (corner spring) parameters.
+
+    GT3 architecture (W4.3): GT3 has no torsion bar (`step3.front_torsion_od_mm`
+    is 0.0 by W2.3 contract). Snapping it to a discrete BMW grid would push it
+    to 13.9 (BMW minimum) — meaningless for GT3 and will silently corrupt the
+    .sto value. Skip the torsion clamp on GT3 but still clamp `rear_spring_rate`
+    against the GT3 rear-spring range. Audit O17 cascade.
+    """
     msgs: list[str] = []
-
-    old = step3.front_torsion_od_mm
-    clamped = _clamp(old, *gr.front_torsion_od_mm)
-    # Snap to discrete options if available and they live in the same numeric
-    # domain as the range.  For Ferrari the range is in index space (0–18) but
-    # the discrete list contains physical OD values (19.99–23.99 mm), so the
-    # two spaces are incompatible — fall back to rounding in that case.
-    discrete_in_range = (
-        gr.front_torsion_od_discrete
-        and min(gr.front_torsion_od_discrete) <= gr.front_torsion_od_mm[1]
+    _is_gt3 = (
+        car is not None
+        and getattr(getattr(car, "suspension_arch", None), "has_heave_third", True) is False
     )
-    if discrete_in_range:
-        val = min(gr.front_torsion_od_discrete, key=lambda x: abs(x - clamped))
-    else:
-        val = round(clamped, 2)
-    if abs(val - old) > 0.01:
-        msgs.append(f"front_torsion_od: {old:.2f} -> {val:.2f} mm (clamped)")
-        step3.front_torsion_od_mm = val
 
+    if not _is_gt3:
+        old = step3.front_torsion_od_mm
+        clamped = _clamp(old, *gr.front_torsion_od_mm)
+        # Snap to discrete options if available and they live in the same numeric
+        # domain as the range.  For Ferrari the range is in index space (0–18) but
+        # the discrete list contains physical OD values (19.99–23.99 mm), so the
+        # two spaces are incompatible — fall back to rounding in that case.
+        discrete_in_range = (
+            gr.front_torsion_od_discrete
+            and min(gr.front_torsion_od_discrete) <= gr.front_torsion_od_mm[1]
+        )
+        if discrete_in_range:
+            val = min(gr.front_torsion_od_discrete, key=lambda x: abs(x - clamped))
+        else:
+            val = round(clamped, 2)
+        if abs(val - old) > 0.01:
+            msgs.append(f"front_torsion_od: {old:.2f} -> {val:.2f} mm (clamped)")
+            step3.front_torsion_od_mm = val
+
+    # rear_spring_rate clamp applies to both GTP and GT3 (GT3 has 4 corner
+    # coil rates; the per-axle range here is reasonable for the rear pair).
+    # TODO(W7.x): GT3 4-corner clamps once CornerSpringSolution carries
+    # lf/rf/lr/rr_spring_rate_nmm independently.
     old = step3.rear_spring_rate_nmm
     val = _snap(_clamp(old, *gr.rear_spring_nmm), gr.rear_spring_resolution_nmm)
     if abs(val - old) > 0.01:
         msgs.append(f"rear_spring_rate: {old:.0f} -> {val:.0f} N/mm (clamped/snapped)")
         step3.rear_spring_rate_nmm = float(val)
 
-    old = step3.rear_spring_perch_mm
-    val = _snap(_clamp(old, *gr.rear_spring_perch_mm), gr.rear_spring_perch_resolution_mm)
-    if abs(val - old) > 0.01:
-        msgs.append(f"rear_spring_perch: {old:.1f} -> {val:.1f} mm (clamped/snapped)")
-        step3.rear_spring_perch_mm = val
+    if not _is_gt3:
+        # GT3 rear spring perch is a per-corner concept, not a paired-rear one.
+        # Skip the GTP perch clamp until W7.x plumbs the GT3 garage state.
+        old = step3.rear_spring_perch_mm
+        val = _snap(_clamp(old, *gr.rear_spring_perch_mm), gr.rear_spring_perch_resolution_mm)
+        if abs(val - old) > 0.01:
+            msgs.append(f"rear_spring_perch: {old:.1f} -> {val:.1f} mm (clamped/snapped)")
+            step3.rear_spring_perch_mm = val
 
     return msgs
 
@@ -384,7 +437,16 @@ def _clamp_step5(step5, gr) -> list[str]:
 
 
 def _fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> list[str]:
-    """Fix heave slider > max_slider_mm by adjusting perch then heave rate."""
+    """Fix heave slider > max_slider_mm by adjusting perch then heave rate.
+
+    GT3 (W4.3): GT3 cars have no heave slider concept (no front heave spring,
+    no slider position). Audit O19. Early-return.
+    """
+    if (
+        car is not None
+        and getattr(getattr(car, "suspension_arch", None), "has_heave_third", True) is False
+    ):
+        return []
     msgs: list[str] = []
     max_slider = garage_model.max_slider_mm
     max_iters = 20  # safety cap
@@ -437,7 +499,20 @@ def _fix_slider(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> li
 
 
 def _fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> list[str]:
-    """Fix front static RH < floor by adjusting front pushrod offset."""
+    """Fix front static RH < floor by adjusting front pushrod offset.
+
+    GT3 (W4.3): GT3 front static RH lever is the spring perch (not pushrod
+    offset) and BumpRubberGap controls travel limits. The pushrod-offset
+    correction here is GTP-only physics. Audit O21. Skip with a deferral note.
+
+    TODO(W7.x): GT3-specific RH fixer using SpringPerchOffset + BumpRubberGap
+    garage state once the plumbing exists.
+    """
+    if (
+        car is not None
+        and getattr(getattr(car, "suspension_arch", None), "has_heave_third", True) is False
+    ):
+        return []
     msgs: list[str] = []
     # Use a safety margin above the floor to account for model RMSE (~0.2mm)
     floor = garage_model.front_rh_floor_mm
@@ -518,7 +593,17 @@ def _fix_front_rh(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> 
 
 
 def _fix_torsion_bar_defl(garage_model, car, step1, step2, step3, step5, fuel_l, gr) -> list[str]:
-    """Fix torsion bar defl > max_torsion_bar_defl_mm by stiffening the bar or adjusting heave perch."""
+    """Fix torsion bar defl > max_torsion_bar_defl_mm by stiffening the bar or adjusting heave perch.
+
+    GT3 (W4.3): GT3 cars have no torsion bars (`step3.front_torsion_od_mm` is
+    0.0). Mutating it from a discrete BMW options list is meaningless. Audit
+    O20. Early-return.
+    """
+    if (
+        car is not None
+        and getattr(getattr(car, "suspension_arch", None), "has_heave_third", True) is False
+    ):
+        return []
     msgs: list[str] = []
     max_defl = garage_model.effective_torsion_bar_defl_limit_mm()
     if max_defl is None:

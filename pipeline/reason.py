@@ -2171,91 +2171,101 @@ def _reason_to_modifiers(
         ))
 
     # ── 8c. Heave floors (bottoming-source validated + pitch-based) ──
-
-    # Pitch-based floor: same threshold as single-session modifier (1.5°).
-    # Uses the authority session's pitch range because that's the car state we're solving for.
-    auth_measured = state.sessions[state.authority_session_idx].measured
-    auth_pitch_range = usable_signal_value(auth_measured, "pitch_range_deg", allow_proxy=True)
-    if auth_pitch_range is None:
-        try:
-            raw_pitch_range = getattr(auth_measured, "pitch_range_deg", None)
-            auth_pitch_range = float(raw_pitch_range) if raw_pitch_range is not None else None
-        except (TypeError, ValueError):
-            auth_pitch_range = None
-    if auth_pitch_range is not None and auth_pitch_range > 1.5:
-        new_floor = max(mods.front_heave_min_floor_nmm, 38.0)
-        if new_floor > mods.front_heave_min_floor_nmm:
-            mods.front_heave_min_floor_nmm = new_floor
-            reasons.append(
-                f"Pitch range {auth_pitch_range:.2f}° > 1.5° → heave floor 38 N/mm"
-            )
-
-    # Check physics validation for bottoming source
-    kerb_dominant_bottoming = False
-    for vc in pr.validations:
-        if "kerb-induced" in vc.hypothesis.lower() and vc.confirmed:
-            kerb_dominant_bottoming = True
-            break
-
-    front_bottoming = [s.measured.bottoming_event_count_front for s in analysis_sessions]
-    rear_bottoming = [s.measured.bottoming_event_count_rear for s in analysis_sessions]
-
-    heave_conf = _compute_modifier_confidence(
-        state, "front_heave_min_floor_nmm",
-        supporting_params=["front_heave_nmm", "rear_third_nmm"],
+    # W5.1 F13: GT3 cars have no heave/third architecture; the entire heave
+    # floor derivation is GTP-only. Skip the section so we don't pollute
+    # modifiers with floor values that have nothing to gate on. (W3.1 already
+    # made the modifier-application sites in solver/modifiers.py GT3-aware,
+    # so a stray non-zero floor here would be ignored downstream — but
+    # building it from GT3 IBT data still produces misleading reasoning text.)
+    _modifier_has_heave_third = getattr(
+        getattr(car, "suspension_arch", None), "has_heave_third", True
     )
 
-    if float(np.mean(front_bottoming)) > 5 and not kerb_dominant_bottoming:
-        heave_rates = [
-            s.setup.front_heave_nmm for s in analysis_sessions
-            if s.setup.front_heave_nmm
-        ]
-        bottoming_at_rate = list(zip(heave_rates, front_bottoming[:len(heave_rates)]))
-        if bottoming_at_rate:
-            good_rates = [r for r, b in bottoming_at_rate if b <= 3]
-            if good_rates:
-                mods.front_heave_min_floor_nmm = min(good_rates)
-            else:
-                mods.front_heave_min_floor_nmm = max(heave_rates)
-            reasons.append(
-                f"Front heave floor {mods.front_heave_min_floor_nmm:.0f} N/mm: "
-                f"clean-track bottoming validated"
-            )
-            details.append(ModifierWithConfidence(
-                field_name="front_heave_min_floor_nmm",
-                value=mods.front_heave_min_floor_nmm,
-                confidence=heave_conf,
-                reasoning=["Clean-track bottoming confirmed by physics validation"],
-            ))
-    elif kerb_dominant_bottoming and float(np.mean(front_bottoming)) > 5:
-        reasons.append(
-            f"Front heave floor NOT raised: bottoming is kerb-induced "
-            f"({float(np.mean(front_bottoming)):.0f} events) — driving line issue"
+    if _modifier_has_heave_third:
+        # Pitch-based floor: same threshold as single-session modifier (1.5°).
+        # Uses the authority session's pitch range because that's the car state we're solving for.
+        auth_measured = state.sessions[state.authority_session_idx].measured
+        auth_pitch_range = usable_signal_value(auth_measured, "pitch_range_deg", allow_proxy=True)
+        if auth_pitch_range is None:
+            try:
+                raw_pitch_range = getattr(auth_measured, "pitch_range_deg", None)
+                auth_pitch_range = float(raw_pitch_range) if raw_pitch_range is not None else None
+            except (TypeError, ValueError):
+                auth_pitch_range = None
+        if auth_pitch_range is not None and auth_pitch_range > 1.5:
+            new_floor = max(mods.front_heave_min_floor_nmm, 38.0)
+            if new_floor > mods.front_heave_min_floor_nmm:
+                mods.front_heave_min_floor_nmm = new_floor
+                reasons.append(
+                    f"Pitch range {auth_pitch_range:.2f}° > 1.5° → heave floor 38 N/mm"
+                )
+
+        # Check physics validation for bottoming source
+        kerb_dominant_bottoming = False
+        for vc in pr.validations:
+            if "kerb-induced" in vc.hypothesis.lower() and vc.confirmed:
+                kerb_dominant_bottoming = True
+                break
+
+        front_bottoming = [s.measured.bottoming_event_count_front for s in analysis_sessions]
+        rear_bottoming = [s.measured.bottoming_event_count_rear for s in analysis_sessions]
+
+        heave_conf = _compute_modifier_confidence(
+            state, "front_heave_min_floor_nmm",
+            supporting_params=["front_heave_nmm", "rear_third_nmm"],
         )
 
-    # Rear third floor (currently never set — now we do)
-    if float(np.mean(rear_bottoming)) > 5 and not kerb_dominant_bottoming:
-        third_rates = [
-            s.setup.rear_third_nmm for s in analysis_sessions
-            if hasattr(s.setup, 'rear_third_nmm') and s.setup.rear_third_nmm
-        ]
-        bottoming_at_rate = list(zip(third_rates, rear_bottoming[:len(third_rates)]))
-        if bottoming_at_rate:
-            good_rates = [r for r, b in bottoming_at_rate if b <= 3]
-            if good_rates:
-                mods.rear_third_min_floor_nmm = min(good_rates)
-            else:
-                mods.rear_third_min_floor_nmm = max(third_rates)
+        if float(np.mean(front_bottoming)) > 5 and not kerb_dominant_bottoming:
+            heave_rates = [
+                s.setup.front_heave_nmm for s in analysis_sessions
+                if s.setup.front_heave_nmm
+            ]
+            bottoming_at_rate = list(zip(heave_rates, front_bottoming[:len(heave_rates)]))
+            if bottoming_at_rate:
+                good_rates = [r for r, b in bottoming_at_rate if b <= 3]
+                if good_rates:
+                    mods.front_heave_min_floor_nmm = min(good_rates)
+                else:
+                    mods.front_heave_min_floor_nmm = max(heave_rates)
+                reasons.append(
+                    f"Front heave floor {mods.front_heave_min_floor_nmm:.0f} N/mm: "
+                    f"clean-track bottoming validated"
+                )
+                details.append(ModifierWithConfidence(
+                    field_name="front_heave_min_floor_nmm",
+                    value=mods.front_heave_min_floor_nmm,
+                    confidence=heave_conf,
+                    reasoning=["Clean-track bottoming confirmed by physics validation"],
+                ))
+        elif kerb_dominant_bottoming and float(np.mean(front_bottoming)) > 5:
             reasons.append(
-                f"Rear third floor {mods.rear_third_min_floor_nmm:.0f} N/mm: "
-                f"rear clean-track bottoming"
+                f"Front heave floor NOT raised: bottoming is kerb-induced "
+                f"({float(np.mean(front_bottoming)):.0f} events) — driving line issue"
             )
-            details.append(ModifierWithConfidence(
-                field_name="rear_third_min_floor_nmm",
-                value=mods.rear_third_min_floor_nmm,
-                confidence=heave_conf,
-                reasoning=["Rear clean-track bottoming across sessions"],
-            ))
+
+        # Rear third floor (currently never set — now we do)
+        if float(np.mean(rear_bottoming)) > 5 and not kerb_dominant_bottoming:
+            third_rates = [
+                s.setup.rear_third_nmm for s in analysis_sessions
+                if hasattr(s.setup, 'rear_third_nmm') and s.setup.rear_third_nmm
+            ]
+            bottoming_at_rate = list(zip(third_rates, rear_bottoming[:len(third_rates)]))
+            if bottoming_at_rate:
+                good_rates = [r for r, b in bottoming_at_rate if b <= 3]
+                if good_rates:
+                    mods.rear_third_min_floor_nmm = min(good_rates)
+                else:
+                    mods.rear_third_min_floor_nmm = max(third_rates)
+                reasons.append(
+                    f"Rear third floor {mods.rear_third_min_floor_nmm:.0f} N/mm: "
+                    f"rear clean-track bottoming"
+                )
+                details.append(ModifierWithConfidence(
+                    field_name="rear_third_min_floor_nmm",
+                    value=mods.rear_third_min_floor_nmm,
+                    confidence=heave_conf,
+                    reasoning=["Rear clean-track bottoming across sessions"],
+                ))
 
     # ── 8d. Damper clicks (speed-regime targeted) ──
 
@@ -3086,18 +3096,28 @@ def reason_and_solve(
             pin_front_min=True,
         )
 
-        heave_solver = HeaveSolver(car, track)
-        _step2 = heave_solver.solve(
-            dynamic_front_rh_mm=_step1.dynamic_front_rh_mm,
-            dynamic_rear_rh_mm=_step1.dynamic_rear_rh_mm,
-            front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
-            rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
-            front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
-            front_pushrod_mm=_step1.front_pushrod_offset_mm,
-            rear_pushrod_mm=_step1.rear_pushrod_offset_mm,
-            fuel_load_l=detected_fuel,
-            front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-        )
+        # GT3 dispatch (W2.1): cars without heave/third skip Step 2 entirely
+        # and use HeaveSolution.null() so Step 3+ can keep running.
+        if car.suspension_arch.has_heave_third:
+            heave_solver = HeaveSolver(car, track)
+            _step2 = heave_solver.solve(
+                dynamic_front_rh_mm=_step1.dynamic_front_rh_mm,
+                dynamic_rear_rh_mm=_step1.dynamic_rear_rh_mm,
+                front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
+                rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+                front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
+                front_pushrod_mm=_step1.front_pushrod_offset_mm,
+                rear_pushrod_mm=_step1.rear_pushrod_offset_mm,
+                fuel_load_l=detected_fuel,
+                front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+            )
+        else:
+            heave_solver = None  # GT3: Step 2 is N/A
+            from solver.heave_solver import HeaveSolution as _HeaveSolutionLocal
+            _step2 = _HeaveSolutionLocal.null(
+                front_dynamic_rh_mm=_step1.dynamic_front_rh_mm,
+                rear_dynamic_rh_mm=_step1.dynamic_rear_rh_mm,
+            )
 
         corner_solver = CornerSpringSolver(car, track)
         _step3 = corner_solver.solve(
@@ -3108,14 +3128,15 @@ def reason_and_solve(
 
         _rear_wheel_rate_nmm = _step3.rear_wheel_rate_nmm
 
-        heave_solver.reconcile_solution(
-            _step1,
-            _step2,
-            _step3,
-            fuel_load_l=detected_fuel,
-            front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
-            verbose=False,
-        )
+        if heave_solver is not None and getattr(_step2, "present", True):
+            heave_solver.reconcile_solution(
+                _step1,
+                _step2,
+                _step3,
+                fuel_load_l=detected_fuel,
+                front_camber_deg=authority.setup.front_camber_deg or car.geometry.front_camber_baseline_deg,
+                verbose=False,
+            )
         reconcile_ride_heights(
             car,
             _step1,
@@ -3370,8 +3391,15 @@ def reason_and_solve(
             # Enforce modifier safety floors on candidate result.
             # Candidates may set spring rates from observed session medians, which
             # can violate physics-derived minimums (heave floor, pitch floor, etc.).
+            # GT3 dispatch (W2.1): the heave floor doesn't apply to cars
+            # without heave/third architecture; step2 is null and stays null.
             heave_floor = mods.front_heave_min_floor_nmm
-            if heave_floor > 0 and step2.front_heave_nmm < heave_floor:
+            if (
+                car.suspension_arch.has_heave_third
+                and getattr(step2, "present", True)
+                and heave_floor > 0
+                and step2.front_heave_nmm < heave_floor
+            ):
                 state.solver_notes.append(
                     f"Candidate heave {step2.front_heave_nmm:.0f} N/mm < floor {heave_floor:.0f} N/mm "
                     f"(from {selected_candidate.family} selection) — re-solving with floor constraint."
@@ -3396,11 +3424,14 @@ def reason_and_solve(
         try:
             from solver.stint_model import analyze_stint
 
+            # W5.1 F4: GT3 step2 has zero heave/third numerics — pass None so
+            # analyze_stint (W3.3-aware) skips the heave evolution path.
+            _stint_alive = step2 is not None and getattr(step2, "present", True)
             stint_report_result = analyze_stint(
                 car=car,
                 stint_laps=max(1, len(state.merged_stint_dataset.usable_laps)),
-                base_heave_nmm=step2.front_heave_nmm,
-                base_third_nmm=step2.rear_third_nmm,
+                base_heave_nmm=step2.front_heave_nmm if _stint_alive else None,
+                base_third_nmm=step2.rear_third_nmm if _stint_alive else None,
                 v_p99_front_mps=getattr(track, "shock_vel_p99_front_mps", 0.0),
                 v_p99_rear_mps=getattr(track, "shock_vel_p99_rear_mps", 0.0),
                 evolution=merged_stint_evolution,
@@ -3743,7 +3774,13 @@ def reason_and_solve(
             "decision_trace": [decision.to_dict() for decision in state.decision_trace],
             "solver_notes": state.solver_notes,
             "step1_rake": to_public_output_payload(car.canonical_name, step1),
-            "step2_heave": to_public_output_payload(car.canonical_name, step2),
+            # W5.1 F7: GT3 step2 is HeaveSolution.null() (present=False). Emit
+            # an architecture-aware sentinel rather than zero-valued numerics.
+            "step2_heave": (
+                to_public_output_payload(car.canonical_name, step2)
+                if step2 is not None and getattr(step2, "present", True)
+                else {"present": False, "reason": "not_applicable_for_architecture"}
+            ),
             "step3_corner": to_public_output_payload(car.canonical_name, step3),
             "step4_arb": to_public_output_payload(car.canonical_name, step4),
             "step5_geometry": to_public_output_payload(car.canonical_name, step5),

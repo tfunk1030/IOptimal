@@ -503,13 +503,272 @@ _ACURA_PARAM_IDS: dict[str, str] = {
     "roof_light_color":         "CarSetup_Systems_Lighting_RoofIdLightColor",
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# BMW M4 GT3 EVO — GT3 architecture (W4.1)
+# Notable differences vs GTP BMW:
+#   - 4 paired coil-overs (no heave/third springs, no torsion bars)
+#   - Per-axle dampers (not per-corner) — 8 channels total
+#   - BumpRubberGap per corner (replaces pushrod offset RH workflow)
+#   - CenterFrontSplitterHeight (new aero param)
+#   - In-car adjusters collapsed into Chassis.InCarAdjustments
+#   - Gears + diff under Chassis.GearsDifferential
+#   - Rear toe is per-wheel (LeftRear.ToeIn / RightRear.ToeIn) — same as BMW GTP
+#   - TC/ABS labels use indexed strings ("4 (TC)", "6 (ABS)")
+#   - Fuel under Chassis.Rear.FuelLevel (NOT BrakesDriveUnit_Fuel_FuelLevel)
+# Source: docs/audits/gt3_phase2/output.md:294-365 (verbatim).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_BMW_M4_GT3_PARAM_IDS: dict[str, str] = {
+    # ── Aero (TiresAero) ─────────────────────────────────────────────
+    "wing_angle":               "CarSetup_Chassis_Rear_WingAngle",
+    "front_rh_at_speed":        "CarSetup_TiresAero_AeroBalanceCalc_FrontRhAtSpeed",
+    "rear_rh_at_speed":         "CarSetup_TiresAero_AeroBalanceCalc_RearRhAtSpeed",
+    "df_balance":               "CarSetup_TiresAero_AeroBalanceCalc_FrontDownforce",
+    # ── Tyres ─────────────────────────────────────────────────────────
+    "lf_pressure":              "CarSetup_TiresAero_LeftFront_StartingPressure",
+    "rf_pressure":              "CarSetup_TiresAero_RightFront_StartingPressure",
+    "lr_pressure":              "CarSetup_TiresAero_LeftRear_StartingPressure",   # NB: no `Tire` suffix
+    "rr_pressure":              "CarSetup_TiresAero_RightRear_StartingPressure",
+    "tyre_type":                "CarSetup_TiresAero_TireType_TireType",
+    # ── Front brakes section (BMW: `FrontBrakes` — Aston/Porsche use `FrontBrakesLights`) ─
+    "front_arb_blades":         "CarSetup_Chassis_FrontBrakes_ArbBlades",
+    "front_toe":                "CarSetup_Chassis_FrontBrakes_TotalToeIn",
+    "front_master_cyl":         "CarSetup_Chassis_FrontBrakes_FrontMasterCyl",
+    "rear_master_cyl":          "CarSetup_Chassis_FrontBrakes_RearMasterCyl",
+    "pad_compound":             "CarSetup_Chassis_FrontBrakes_BrakePads",
+    "front_splitter_height":    "CarSetup_Chassis_FrontBrakes_CenterFrontSplitterHeight",
+    # ── Per-corner: LF/RF/LR/RR ──────────────────────────────────────
+    "lf_corner_weight":         "CarSetup_Chassis_LeftFront_CornerWeight",
+    "lf_ride_height":           "CarSetup_Chassis_LeftFront_RideHeight",
+    "lf_bump_rubber_gap":       "CarSetup_Chassis_LeftFront_BumpRubberGap",
+    "lf_spring_rate":           "CarSetup_Chassis_LeftFront_SpringRate",
+    "lf_camber":                "CarSetup_Chassis_LeftFront_Camber",
+    "rf_corner_weight":         "CarSetup_Chassis_RightFront_CornerWeight",
+    "rf_ride_height":           "CarSetup_Chassis_RightFront_RideHeight",
+    "rf_bump_rubber_gap":       "CarSetup_Chassis_RightFront_BumpRubberGap",
+    "rf_spring_rate":           "CarSetup_Chassis_RightFront_SpringRate",
+    "rf_camber":                "CarSetup_Chassis_RightFront_Camber",
+    "lr_corner_weight":         "CarSetup_Chassis_LeftRear_CornerWeight",
+    "lr_ride_height":           "CarSetup_Chassis_LeftRear_RideHeight",
+    "lr_bump_rubber_gap":       "CarSetup_Chassis_LeftRear_BumpRubberGap",
+    "lr_spring_rate":           "CarSetup_Chassis_LeftRear_SpringRate",
+    "lr_camber":                "CarSetup_Chassis_LeftRear_Camber",
+    "lr_toe":                   "CarSetup_Chassis_LeftRear_ToeIn",
+    "rr_corner_weight":         "CarSetup_Chassis_RightRear_CornerWeight",
+    "rr_ride_height":           "CarSetup_Chassis_RightRear_RideHeight",
+    "rr_bump_rubber_gap":       "CarSetup_Chassis_RightRear_BumpRubberGap",
+    "rr_spring_rate":           "CarSetup_Chassis_RightRear_SpringRate",
+    "rr_camber":                "CarSetup_Chassis_RightRear_Camber",
+    "rr_toe":                   "CarSetup_Chassis_RightRear_ToeIn",
+    # ── Rear section ─────────────────────────────────────────────────
+    "fuel_level":               "CarSetup_Chassis_Rear_FuelLevel",
+    "rear_arb_blades":          "CarSetup_Chassis_Rear_ArbBlades",
+    # ── In-car adjustments ───────────────────────────────────────────
+    "brake_bias":               "CarSetup_Chassis_InCarAdjustments_BrakePressureBias",
+    "abs_setting":              "CarSetup_Chassis_InCarAdjustments_AbsSetting",
+    "tc_setting":               "CarSetup_Chassis_InCarAdjustments_TcSetting",
+    "fwt_dist":                 "CarSetup_Chassis_InCarAdjustments_FWtdist",
+    "cross_weight":             "CarSetup_Chassis_InCarAdjustments_CrossWeight",
+    # ── Gears + diff ──────────────────────────────────────────────────
+    "gear_stack":               "CarSetup_Chassis_GearsDifferential_GearStack",
+    "diff_friction_faces":      "CarSetup_Chassis_GearsDifferential_FrictionFaces",
+    "diff_preload":             "CarSetup_Chassis_GearsDifferential_DiffPreload",
+    # ── Dampers (per-axle, 4 channels each) ──────────────────────────
+    "front_ls_comp":            "CarSetup_Dampers_FrontDampers_LowSpeedCompressionDamping",
+    "front_hs_comp":            "CarSetup_Dampers_FrontDampers_HighSpeedCompressionDamping",
+    "front_ls_rbd":             "CarSetup_Dampers_FrontDampers_LowSpeedReboundDamping",
+    "front_hs_rbd":             "CarSetup_Dampers_FrontDampers_HighSpeedReboundDamping",
+    "rear_ls_comp":             "CarSetup_Dampers_RearDampers_LowSpeedCompressionDamping",
+    "rear_hs_comp":             "CarSetup_Dampers_RearDampers_HighSpeedCompressionDamping",
+    "rear_ls_rbd":              "CarSetup_Dampers_RearDampers_LowSpeedReboundDamping",
+    "rear_hs_rbd":              "CarSetup_Dampers_RearDampers_HighSpeedReboundDamping",
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Aston Martin Vantage GT3 EVO — GT3 architecture (W4.2)
+# Notable differences vs BMW M4 GT3:
+#   - Aero balance section is `AeroBalanceCalculator` (not `AeroBalanceCalc`)
+#   - Wing field is `RearWingAngle` (mirrors to TiresAero.AeroBalanceCalculator
+#     too, but the dict only maps the chassis copy — single emit for now)
+#   - Front section is `FrontBrakesLights` (not `FrontBrakes`)
+#   - Front ARB is `FarbBlades` (not `ArbBlades`)
+#   - Rear ARB is `RarbBlades` (not `ArbBlades`)
+#   - 4 Aston-only fields: EnduranceLights, NightLedStripColor,
+#     ThrottleResponse ("n (RED)"), EpasSetting ("n (PAS)")
+#   - TC label is "n (TC SLIP)" (not "n (TC)")
+#   - Rear toe is per-wheel (LeftRear.ToeIn / RightRear.ToeIn) — same as BMW
+# Source: docs/audits/gt3_phase2/output.md:367-435 (verbatim).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ASTON_MARTIN_VANTAGE_GT3_PARAM_IDS: dict[str, str] = {
+    # ── Aero ──────────────────────────────────────────────────────────
+    "wing_angle":               "CarSetup_Chassis_Rear_RearWingAngle",            # int deg, ALSO mirrors to TiresAero.AeroBalanceCalculator.RearWingAngle
+    "front_rh_at_speed":        "CarSetup_TiresAero_AeroBalanceCalculator_FrontRhAtSpeed",   # NB: Calculator suffix
+    "rear_rh_at_speed":         "CarSetup_TiresAero_AeroBalanceCalculator_RearRhAtSpeed",
+    "df_balance":               "CarSetup_TiresAero_AeroBalanceCalculator_FrontDownforce",
+    # ── Tyres ─────────────────────────────────────────────────────────
+    "lf_pressure":              "CarSetup_TiresAero_LeftFront_StartingPressure",
+    "rf_pressure":              "CarSetup_TiresAero_RightFront_StartingPressure",
+    "lr_pressure":              "CarSetup_TiresAero_LeftRear_StartingPressure",
+    "rr_pressure":              "CarSetup_TiresAero_RightRear_StartingPressure",
+    "tyre_type":                "CarSetup_TiresAero_TireType_TireType",
+    # ── FrontBrakesLights ─────────────────────────────────────────────
+    "front_arb_blades":         "CarSetup_Chassis_FrontBrakesLights_FarbBlades",  # NB: Farb*, not Arb*
+    "front_toe":                "CarSetup_Chassis_FrontBrakesLights_TotalToeIn",
+    "front_master_cyl":         "CarSetup_Chassis_FrontBrakesLights_FrontMasterCyl",
+    "rear_master_cyl":          "CarSetup_Chassis_FrontBrakesLights_RearMasterCyl",
+    "pad_compound":             "CarSetup_Chassis_FrontBrakesLights_BrakePads",
+    "endurance_lights":         "CarSetup_Chassis_FrontBrakesLights_EnduranceLights",  # ASTON ONLY
+    "night_led_strip_color":    "CarSetup_Chassis_FrontBrakesLights_NightLedStripColor",  # ASTON+PORSCHE
+    "front_splitter_height":    "CarSetup_Chassis_FrontBrakesLights_CenterFrontSplitterHeight",
+    # ── Per-corner ────────────────────────────────────────────────────
+    "lf_corner_weight":         "CarSetup_Chassis_LeftFront_CornerWeight",
+    "lf_ride_height":           "CarSetup_Chassis_LeftFront_RideHeight",
+    "lf_bump_rubber_gap":       "CarSetup_Chassis_LeftFront_BumpRubberGap",
+    "lf_spring_rate":           "CarSetup_Chassis_LeftFront_SpringRate",
+    "lf_camber":                "CarSetup_Chassis_LeftFront_Camber",
+    "rf_corner_weight":         "CarSetup_Chassis_RightFront_CornerWeight",
+    "rf_ride_height":           "CarSetup_Chassis_RightFront_RideHeight",
+    "rf_bump_rubber_gap":       "CarSetup_Chassis_RightFront_BumpRubberGap",
+    "rf_spring_rate":           "CarSetup_Chassis_RightFront_SpringRate",
+    "rf_camber":                "CarSetup_Chassis_RightFront_Camber",
+    "lr_corner_weight":         "CarSetup_Chassis_LeftRear_CornerWeight",
+    "lr_ride_height":           "CarSetup_Chassis_LeftRear_RideHeight",
+    "lr_bump_rubber_gap":       "CarSetup_Chassis_LeftRear_BumpRubberGap",
+    "lr_spring_rate":           "CarSetup_Chassis_LeftRear_SpringRate",
+    "lr_camber":                "CarSetup_Chassis_LeftRear_Camber",
+    "lr_toe":                   "CarSetup_Chassis_LeftRear_ToeIn",
+    "rr_corner_weight":         "CarSetup_Chassis_RightRear_CornerWeight",
+    "rr_ride_height":           "CarSetup_Chassis_RightRear_RideHeight",
+    "rr_bump_rubber_gap":       "CarSetup_Chassis_RightRear_BumpRubberGap",
+    "rr_spring_rate":           "CarSetup_Chassis_RightRear_SpringRate",
+    "rr_camber":                "CarSetup_Chassis_RightRear_Camber",
+    "rr_toe":                   "CarSetup_Chassis_RightRear_ToeIn",
+    # ── Rear section ─────────────────────────────────────────────────
+    "fuel_level":               "CarSetup_Chassis_Rear_FuelLevel",
+    "rear_arb_blades":          "CarSetup_Chassis_Rear_RarbBlades",               # NB: Rarb*, not Arb*
+    # ── In-car adjustments (Aston-extended) ──────────────────────────
+    "brake_bias":               "CarSetup_Chassis_InCarAdjustments_BrakePressureBias",
+    "abs_setting":              "CarSetup_Chassis_InCarAdjustments_AbsSetting",
+    "tc_setting":               "CarSetup_Chassis_InCarAdjustments_TcSetting",     # "n (TC SLIP)" — Aston uses TC SLIP label
+    "throttle_response":        "CarSetup_Chassis_InCarAdjustments_ThrottleResponse",  # ASTON ONLY: "n (RED)"
+    "epas_setting":             "CarSetup_Chassis_InCarAdjustments_EpasSetting",   # ASTON ONLY: "n (PAS)"
+    "fwt_dist":                 "CarSetup_Chassis_InCarAdjustments_FWtdist",
+    "cross_weight":             "CarSetup_Chassis_InCarAdjustments_CrossWeight",
+    # ── Gears + diff ──────────────────────────────────────────────────
+    "gear_stack":               "CarSetup_Chassis_GearsDifferential_GearStack",
+    "diff_friction_faces":      "CarSetup_Chassis_GearsDifferential_FrictionFaces",
+    "diff_preload":             "CarSetup_Chassis_GearsDifferential_DiffPreload",
+    # ── Dampers (per-axle, 4 channels each) — same as BMW M4 GT3 ─────
+    "front_ls_comp":            "CarSetup_Dampers_FrontDampers_LowSpeedCompressionDamping",
+    "front_hs_comp":            "CarSetup_Dampers_FrontDampers_HighSpeedCompressionDamping",
+    "front_ls_rbd":             "CarSetup_Dampers_FrontDampers_LowSpeedReboundDamping",
+    "front_hs_rbd":             "CarSetup_Dampers_FrontDampers_HighSpeedReboundDamping",
+    "rear_ls_comp":             "CarSetup_Dampers_RearDampers_LowSpeedCompressionDamping",
+    "rear_hs_comp":             "CarSetup_Dampers_RearDampers_HighSpeedCompressionDamping",
+    "rear_ls_rbd":              "CarSetup_Dampers_RearDampers_LowSpeedReboundDamping",
+    "rear_hs_rbd":              "CarSetup_Dampers_RearDampers_HighSpeedReboundDamping",
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Porsche 911 GT3 R (992) — GT3 architecture (W4.2)
+# Most divergent of the three GT3 cars.  Differences from BMW M4 GT3:
+#   - Front ARB is `ArbSetting` (single int — NOT a blade index)
+#   - Rear ARB is `RarbSetting` (single int)
+#   - Rear toe is paired (`Chassis.Rear.TotalToeIn`) — NOT per-wheel
+#   - Fuel level is in `FrontBrakesLights` section, NOT `Rear`
+#   - Wing field is `WingSetting` and is mirrored in BOTH `Chassis.Rear` AND
+#     `TiresAero.AeroBalanceCalc` (driver YAML shows both copies)
+#   - 3 Porsche-only fields: ThrottleShapeSetting, DashDisplayPage,
+#     NightLedStripColor
+#   - TC label is "n (TC-LAT)"
+#   - Damper range 0–12 (already wired in W3.2 DamperModel)
+# Source: docs/audits/gt3_phase2/output.md:443-513 (verbatim).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PORSCHE_992_GT3R_PARAM_IDS: dict[str, str] = {
+    # ── Aero ──────────────────────────────────────────────────────────
+    "wing_angle":               "CarSetup_Chassis_Rear_WingSetting",              # NB: WingSetting (Porsche uses this name in BOTH chassis-rear AND aero-balance)
+    "front_rh_at_speed":        "CarSetup_TiresAero_AeroBalanceCalc_FrontRhAtSpeed",
+    "rear_rh_at_speed":         "CarSetup_TiresAero_AeroBalanceCalc_RearRhAtSpeed",
+    "df_balance":               "CarSetup_TiresAero_AeroBalanceCalc_FrontDownforce",
+    # ── Tyres ─────────────────────────────────────────────────────────
+    "lf_pressure":              "CarSetup_TiresAero_LeftFront_StartingPressure",
+    "rf_pressure":              "CarSetup_TiresAero_RightFront_StartingPressure",
+    "lr_pressure":              "CarSetup_TiresAero_LeftRear_StartingPressure",
+    "rr_pressure":              "CarSetup_TiresAero_RightRear_StartingPressure",
+    "tyre_type":                "CarSetup_TiresAero_TireType_TireType",
+    # ── FrontBrakesLights ─────────────────────────────────────────────
+    "front_arb_setting":        "CarSetup_Chassis_FrontBrakesLights_ArbSetting",  # **INT, not blade — Porsche-unique**
+    "front_toe":                "CarSetup_Chassis_FrontBrakesLights_TotalToeIn",
+    "fuel_level":               "CarSetup_Chassis_FrontBrakesLights_FuelLevel",   # **PORSCHE-UNIQUE: fuel here, not in Rear**
+    "front_master_cyl":         "CarSetup_Chassis_FrontBrakesLights_FrontMasterCyl",
+    "rear_master_cyl":          "CarSetup_Chassis_FrontBrakesLights_RearMasterCyl",
+    "pad_compound":             "CarSetup_Chassis_FrontBrakesLights_BrakePads",
+    "night_led_strip_color":    "CarSetup_Chassis_FrontBrakesLights_NightLedStripColor",
+    "front_splitter_height":    "CarSetup_Chassis_FrontBrakesLights_CenterFrontSplitterHeight",
+    # ── Per-corner ────────────────────────────────────────────────────
+    "lf_corner_weight":         "CarSetup_Chassis_LeftFront_CornerWeight",
+    "lf_ride_height":           "CarSetup_Chassis_LeftFront_RideHeight",
+    "lf_bump_rubber_gap":       "CarSetup_Chassis_LeftFront_BumpRubberGap",
+    "lf_spring_rate":           "CarSetup_Chassis_LeftFront_SpringRate",
+    "lf_camber":                "CarSetup_Chassis_LeftFront_Camber",
+    "rf_corner_weight":         "CarSetup_Chassis_RightFront_CornerWeight",
+    "rf_ride_height":           "CarSetup_Chassis_RightFront_RideHeight",
+    "rf_bump_rubber_gap":       "CarSetup_Chassis_RightFront_BumpRubberGap",
+    "rf_spring_rate":           "CarSetup_Chassis_RightFront_SpringRate",
+    "rf_camber":                "CarSetup_Chassis_RightFront_Camber",
+    "lr_corner_weight":         "CarSetup_Chassis_LeftRear_CornerWeight",
+    "lr_ride_height":           "CarSetup_Chassis_LeftRear_RideHeight",
+    "lr_bump_rubber_gap":       "CarSetup_Chassis_LeftRear_BumpRubberGap",
+    "lr_spring_rate":           "CarSetup_Chassis_LeftRear_SpringRate",
+    "lr_camber":                "CarSetup_Chassis_LeftRear_Camber",
+    # NO lr_toe / rr_toe per-wheel — Porsche uses paired rear toe (see below)
+    "rr_corner_weight":         "CarSetup_Chassis_RightRear_CornerWeight",
+    "rr_ride_height":           "CarSetup_Chassis_RightRear_RideHeight",
+    "rr_bump_rubber_gap":       "CarSetup_Chassis_RightRear_BumpRubberGap",
+    "rr_spring_rate":           "CarSetup_Chassis_RightRear_SpringRate",
+    "rr_camber":                "CarSetup_Chassis_RightRear_Camber",
+    # ── Rear section (Porsche-specific) ───────────────────────────────
+    "rear_arb_setting":         "CarSetup_Chassis_Rear_RarbSetting",              # **INT, not blade**
+    "rear_toe":                 "CarSetup_Chassis_Rear_TotalToeIn",               # **PAIRED rear toe — Porsche-unique**
+    # NO Chassis.Rear.FuelLevel — see FrontBrakesLights.FuelLevel above
+    # ── In-car adjustments (Porsche-extended) ────────────────────────
+    "brake_bias":               "CarSetup_Chassis_InCarAdjustments_BrakePressureBias",
+    "abs_setting":              "CarSetup_Chassis_InCarAdjustments_AbsSetting",
+    "tc_setting":               "CarSetup_Chassis_InCarAdjustments_TcSetting",    # "n (TC-LAT)" — Porsche label
+    "throttle_shape_setting":   "CarSetup_Chassis_InCarAdjustments_ThrottleShapeSetting",  # PORSCHE ONLY
+    "dash_display_page":        "CarSetup_Chassis_InCarAdjustments_DashDisplayPage",       # PORSCHE ONLY
+    "fwt_dist":                 "CarSetup_Chassis_InCarAdjustments_FWtdist",
+    "cross_weight":             "CarSetup_Chassis_InCarAdjustments_CrossWeight",
+    # ── Gears + diff ──────────────────────────────────────────────────
+    "gear_stack":               "CarSetup_Chassis_GearsDifferential_GearStack",
+    "diff_friction_faces":      "CarSetup_Chassis_GearsDifferential_FrictionFaces",
+    "diff_preload":             "CarSetup_Chassis_GearsDifferential_DiffPreload",
+    # ── Dampers (per-axle, 4 channels each).  Range 0–12 (W3.2). ─────
+    "front_ls_comp":            "CarSetup_Dampers_FrontDampers_LowSpeedCompressionDamping",
+    "front_hs_comp":            "CarSetup_Dampers_FrontDampers_HighSpeedCompressionDamping",
+    "front_ls_rbd":             "CarSetup_Dampers_FrontDampers_LowSpeedReboundDamping",
+    "front_hs_rbd":             "CarSetup_Dampers_FrontDampers_HighSpeedReboundDamping",
+    "rear_ls_comp":             "CarSetup_Dampers_RearDampers_LowSpeedCompressionDamping",
+    "rear_hs_comp":             "CarSetup_Dampers_RearDampers_HighSpeedCompressionDamping",
+    "rear_ls_rbd":              "CarSetup_Dampers_RearDampers_LowSpeedReboundDamping",
+    "rear_hs_rbd":              "CarSetup_Dampers_RearDampers_HighSpeedReboundDamping",
+}
+
+
 # Master dispatch table
 _CAR_PARAM_IDS: dict[str, dict[str, str]] = {
-    "bmw":      _BMW_PARAM_IDS,
-    "ferrari":  _FERRARI_PARAM_IDS,
-    "porsche":  _PORSCHE_PARAM_IDS,
-    "cadillac": _CADILLAC_PARAM_IDS,
-    "acura":    _ACURA_PARAM_IDS,
+    "bmw":                       _BMW_PARAM_IDS,
+    "ferrari":                   _FERRARI_PARAM_IDS,
+    "porsche":                   _PORSCHE_PARAM_IDS,
+    "cadillac":                  _CADILLAC_PARAM_IDS,
+    "acura":                     _ACURA_PARAM_IDS,
+    "bmw_m4_gt3":                _BMW_M4_GT3_PARAM_IDS,
+    "aston_martin_vantage_gt3":  _ASTON_MARTIN_VANTAGE_GT3_PARAM_IDS,
+    "porsche_992_gt3r":          _PORSCHE_992_GT3R_PARAM_IDS,
 }
 
 
@@ -551,27 +810,40 @@ def _validate_setup_values(
             )
         setattr(obj, attr, clamped)
 
+    # GT3 architecture: no heave/third springs, no torsion bars. The clamp
+    # block below would be a no-op (sentinel ranges from W3.1 are (0.0, 0.0)
+    # and step2 is a HeaveSolution.null()), but skipping it explicitly avoids
+    # mutating null fields and makes the GT3 path auditable. Audit: O14/O15.
+    _is_gt3_validation = (
+        car is not None
+        and getattr(getattr(car, "suspension_arch", None), "has_heave_third", True) is False
+    )
+
     # Ride heights (static)
     _clamp_field(step1, "static_front_rh_mm", *gr.static_rh_mm, "front_static_rh", "mm")
     _clamp_field(step1, "static_rear_rh_mm", *gr.static_rh_mm, "rear_static_rh", "mm")
 
     # Pushrod offsets
-    _clamp_field(step1, "front_pushrod_offset_mm", *gr.front_pushrod_mm, "front_pushrod", "mm")
-    _clamp_field(step1, "rear_pushrod_offset_mm", *gr.rear_pushrod_mm, "rear_pushrod", "mm")
+    if not _is_gt3_validation:
+        # GT3 has no pushrod-offset RH workflow (uses BumpRubberGap/spring
+        # perch). Step1 carries 0.0 placeholders; skip clamping.
+        _clamp_field(step1, "front_pushrod_offset_mm", *gr.front_pushrod_mm, "front_pushrod", "mm")
+        _clamp_field(step1, "rear_pushrod_offset_mm", *gr.rear_pushrod_mm, "rear_pushrod", "mm")
 
-    # Heave / third spring
-    _clamp_field(step2, "front_heave_nmm", *gr.front_heave_nmm, "front_heave", " N/mm")
-    _clamp_field(step2, "rear_third_nmm", *gr.rear_third_nmm, "rear_third", " N/mm")
+    if not _is_gt3_validation:
+        # Heave / third spring
+        _clamp_field(step2, "front_heave_nmm", *gr.front_heave_nmm, "front_heave", " N/mm")
+        _clamp_field(step2, "rear_third_nmm", *gr.rear_third_nmm, "rear_third", " N/mm")
 
-    # Perch offsets
-    _clamp_field(step2, "perch_offset_front_mm", *gr.front_heave_perch_mm, "front_heave_perch", "mm")
-    _clamp_field(step2, "perch_offset_rear_mm", *gr.rear_third_perch_mm, "rear_third_perch", "mm")
+        # Perch offsets
+        _clamp_field(step2, "perch_offset_front_mm", *gr.front_heave_perch_mm, "front_heave_perch", "mm")
+        _clamp_field(step2, "perch_offset_rear_mm", *gr.rear_third_perch_mm, "rear_third_perch", "mm")
 
-    # Corner springs — skip torsion OD clamping for roll-spring cars (Porsche)
-    if gr.front_torsion_od_mm != (0.0, 0.0):
-        _clamp_field(step3, "front_torsion_od_mm", *gr.front_torsion_od_mm, "front_torsion_od", "mm")
-    _clamp_field(step3, "rear_spring_rate_nmm", *gr.rear_spring_nmm, "rear_spring_rate", " N/mm")
-    _clamp_field(step3, "rear_spring_perch_mm", *gr.rear_spring_perch_mm, "rear_spring_perch", "mm")
+        # Corner springs — skip torsion OD clamping for roll-spring cars (Porsche)
+        if gr.front_torsion_od_mm != (0.0, 0.0):
+            _clamp_field(step3, "front_torsion_od_mm", *gr.front_torsion_od_mm, "front_torsion_od", "mm")
+        _clamp_field(step3, "rear_spring_rate_nmm", *gr.rear_spring_nmm, "rear_spring_rate", " N/mm")
+        _clamp_field(step3, "rear_spring_perch_mm", *gr.rear_spring_perch_mm, "rear_spring_perch", "mm")
 
     # ARB blades
     if step4 is not None:
@@ -845,6 +1117,40 @@ def write_sto(
     is_acura = car_canonical.lower() == "acura"
     is_porsche = car_canonical.lower() == "porsche"
     has_roll_dampers = is_acura or is_porsche
+    # GT3 architecture flag (W4.1). True when the car has no heave/third
+    # spring (SuspensionArchitecture.GT3_COIL_4WHEEL). Gates every GTP-only
+    # write block below: heave/third spring writes, torsion bar writes,
+    # pushrod offsets, per-corner damper writes, GTP roll/3rd damper paths.
+    # Replaces those with GT3-equivalent writes (4 corner spring rates,
+    # BumpRubberGap × 4, splitter height, per-axle dampers, indexed TC/ABS
+    # label strings).
+    is_gt3 = (
+        _car is not None
+        and getattr(getattr(_car, "suspension_arch", None), "has_heave_third", True) is False
+    )
+    # W4.3 NOTE: iRacing schema round-trip validation requires loading the
+    # written .sto into a live iRacing client and confirming the garage UI
+    # accepts every field without dropping or overriding values.  The repo
+    # has no offline copy of iRacing's CarSetup XSD; round-trip validation
+    # is a manual driver-side QA step performed before each GT3 release.
+    # The current .sto write is well-formed XML with all required CarSetup_*
+    # fields present (verified in tests/test_setup_writer_gt3_*.py); the open
+    # question is whether iRacing's parser accepts the BumpRubberGap +
+    # CenterFrontSplitterHeight + per-car ARB encodings without further
+    # massaging.  TODO(W4.3-deferred): add a fixture-based round-trip test
+    # once we have a known-good iRacing-emitted GT3 .sto to compare against.
+    # W4.2: GT3 sub-dispatch.  All three GT3 cars share the GT3 architecture
+    # (single `is_gt3` flag), but diverge inside the GT3 path on:
+    #  - rear toe per-wheel (BMW/Aston) vs paired (Porsche `Chassis.Rear.TotalToeIn`)
+    #  - ARB blade int (BMW/Aston use `*ArbBlades`/`*Blades`) vs single int
+    #    (Porsche `ArbSetting`/`RarbSetting`)
+    #  - fuel section (BMW/Aston in `Chassis.Rear`, Porsche in `Chassis.FrontBrakesLights`)
+    #  - TC label suffix (`(TC)` BMW / `(TC SLIP)` Aston / `(TC-LAT)` Porsche)
+    #  - Aston-only display fields: throttle_response, epas_setting, endurance_lights
+    #  - Porsche-only display fields: throttle_shape_setting, dash_display_page
+    is_bmw_gt3 = is_gt3 and car_canonical.lower() == "bmw_m4_gt3"
+    is_aston_gt3 = is_gt3 and car_canonical.lower() == "aston_martin_vantage_gt3"
+    is_porsche_gt3 = is_gt3 and car_canonical.lower() == "porsche_992_gt3r"
 
     # Build XML tree
     root = Element("LDXFile", Version="1.6", Locale="English")
@@ -879,95 +1185,121 @@ def write_sto(
     _w_num("rr_ride_height", _decimal_1(step1.static_rear_rh_mm),  "mm")
 
     # === Pushrod offsets ===
-    _w_num("front_pushrod_offset", round(step1.front_pushrod_offset_mm * 2) / 2, "mm")
-    _w_num("rear_pushrod_offset",  round(step1.rear_pushrod_offset_mm * 2) / 2,  "mm")
+    if not is_gt3:
+        # GT3 has no pushrod-offset RH workflow; static RH is set via
+        # SpringPerchOffset + BumpRubberGap (per corner). The GT3 PARAM_IDS
+        # dict has no `front_pushrod_offset` key so this would TODO-comment;
+        # gate explicitly so the comment isn't emitted.
+        _w_num("front_pushrod_offset", round(step1.front_pushrod_offset_mm * 2) / 2, "mm")
+        _w_num("rear_pushrod_offset",  round(step1.rear_pushrod_offset_mm * 2) / 2,  "mm")
 
-    # === Heave / Third springs ===
-    _w_num("front_heave_spring",   int(round(step2.front_heave_nmm)),      "N/mm")
-    _w_num("front_heave_perch",    _snap_to_step(step2.perch_offset_front_mm, front_perch_step), "mm")
-    _w_num("rear_third_spring",    int(round(step2.rear_third_nmm)),        "N/mm")
-    _w_num("rear_third_perch",     _snap_to_step(step2.perch_offset_rear_mm, rear_third_perch_step),  "mm")
+    if not is_gt3:
+        # === Heave / Third springs (GTP) ===
+        _w_num("front_heave_spring",   int(round(step2.front_heave_nmm)),      "N/mm")
+        _w_num("front_heave_perch",    _snap_to_step(step2.perch_offset_front_mm, front_perch_step), "mm")
+        _w_num("rear_third_spring",    int(round(step2.rear_third_nmm)),        "N/mm")
+        _w_num("rear_third_perch",     _snap_to_step(step2.perch_offset_rear_mm, rear_third_perch_step),  "mm")
 
-    # === Corner springs ===
-    # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
-    _front_torsion_value = (
-        int(round(step3.front_torsion_od_mm))
-        if car_canonical.lower() == "ferrari"
-        else step3.front_torsion_od_mm
-    )
-    _w_num("lf_torsion_od", _front_torsion_value, "mm")
-    _w_num("rf_torsion_od", _front_torsion_value, "mm")
-    # Torsion bar turns — adjustable parameter on both BMW and Ferrari
-    if front_tb_turns is not None:
-        _tb_turns = round(front_tb_turns, 3)
-    elif hasattr(step3, 'front_torsion_bar_turns'):
-        _tb_turns = round(step3.front_torsion_bar_turns, 3)
-    elif garage_outputs is not None:
-        _tb_turns = round(garage_outputs.torsion_bar_turns, 3)
-    elif car_canonical.lower() == "ferrari":
-        # Ferrari torsion bar turns: calibrated from 59 indexed sessions.
-        # turns = f(1/heave_rate, perch, 1/torsion_rate), R^2=0.51, RMSE=0.003
-        _tb_turns = round(
-            0.1364
-            + 0.3292 / max(_ferrari_front_heave_phys, 1)
-            + 0.000484 * _ferrari_front_perch_phys
-            + -8.4804 / max(_ferrari_front_torsion_rate, 1),
-            3,
+        # === Corner springs (GTP — torsion bar front, coil/torsion rear) ===
+        # BMW: torsion bar OD + turns; other cars: fallback to TODO stubs
+        _front_torsion_value = (
+            int(round(step3.front_torsion_od_mm))
+            if car_canonical.lower() == "ferrari"
+            else step3.front_torsion_od_mm
         )
-    elif car_canonical.lower() in ("bmw", "cadillac"):
-        # Dallara chassis torsion bar turns formula (calibrated from BMW Sebring)
-        _tb_turns = round(
-            0.0989
-            + 0.432 / max(step2.front_heave_nmm, 1)
-            + 0.000699 * step2.perch_offset_front_mm
-            + 0.000002 * step3.front_torsion_od_mm,
-            3,
-        )
-    elif car_canonical.lower() == "porsche":
-        # Porsche has no front torsion bar turns
-        _tb_turns = 0.0
-    else:
-        # Ferrari/Acura handled by their own paths; fallback to 0
-        _tb_turns = 0.0
-    _w_num("lf_torsion_turns", _tb_turns, "Turns")
-    _w_num("rf_torsion_turns", _tb_turns, "Turns")
-    # Ferrari also has rear torsion bar turns
-    if "lr_torsion_turns" in ids:
-        if rear_tb_turns is not None:
-            _rear_tb_turns = round(rear_tb_turns, 3)
-        elif hasattr(step3, 'rear_torsion_bar_turns') and step3.rear_torsion_bar_turns != 0.0:
-            _rear_tb_turns = round(step3.rear_torsion_bar_turns, 3)
+        _w_num("lf_torsion_od", _front_torsion_value, "mm")
+        _w_num("rf_torsion_od", _front_torsion_value, "mm")
+        # Torsion bar turns — adjustable parameter on both BMW and Ferrari
+        if front_tb_turns is not None:
+            _tb_turns = round(front_tb_turns, 3)
+        elif hasattr(step3, 'front_torsion_bar_turns'):
+            _tb_turns = round(step3.front_torsion_bar_turns, 3)
+        elif garage_outputs is not None:
+            _tb_turns = round(garage_outputs.torsion_bar_turns, 3)
         elif car_canonical.lower() == "ferrari":
-            # Rear turns: calibrated from 59 indexed sessions using rear-specific
-            # features (1/third_rate, rear_perch, 1/rear_torsion_rate). R^2=0.55
-            _rear_tb_turns = round(
-                0.1239
-                + 4.5102 / max(_ferrari_rear_third_phys, 1)
-                + 0.000964 * _ferrari_rear_perch_phys
-                + 7.1109 / max(_ferrari_rear_torsion_rate, 1),
+            # Ferrari torsion bar turns: calibrated from 59 indexed sessions.
+            # turns = f(1/heave_rate, perch, 1/torsion_rate), R^2=0.51, RMSE=0.003
+            _tb_turns = round(
+                0.1364
+                + 0.3292 / max(_ferrari_front_heave_phys, 1)
+                + 0.000484 * _ferrari_front_perch_phys
+                + -8.4804 / max(_ferrari_front_torsion_rate, 1),
                 3,
             )
+        elif car_canonical.lower() in ("bmw", "cadillac"):
+            # Dallara chassis torsion bar turns formula (calibrated from BMW Sebring)
+            _tb_turns = round(
+                0.0989
+                + 0.432 / max(step2.front_heave_nmm, 1)
+                + 0.000699 * step2.perch_offset_front_mm
+                + 0.000002 * step3.front_torsion_od_mm,
+                3,
+            )
+        elif car_canonical.lower() == "porsche":
+            # Porsche has no front torsion bar turns
+            _tb_turns = 0.0
         else:
-            _rear_tb_turns = round(_tb_turns * 0.55, 3)
-        _w_num("lr_torsion_turns", _rear_tb_turns, "Turns")
-        _w_num("rr_torsion_turns", _rear_tb_turns, "Turns")
-    # Porsche roll spring (only if car maps it)
-    if "lf_roll_spring" in ids:
-        _numeric(details, ids["lf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
-        _numeric(details, ids["rf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
-    # Rear spring / torsion bar
-    if is_acura:
-        # Acura rear uses torsion bar OD (mapped via lr_spring_rate -> TorsionBarOD)
-        _rear_od = step3.rear_torsion_od_mm if hasattr(step3, 'rear_torsion_od_mm') and step3.rear_torsion_od_mm else 13.9
-        _w_num("lr_spring_rate", _rear_od, "mm")
-        _w_num("rr_spring_rate", _rear_od, "mm")
+            # Ferrari/Acura handled by their own paths; fallback to 0
+            _tb_turns = 0.0
+        _w_num("lf_torsion_turns", _tb_turns, "Turns")
+        _w_num("rf_torsion_turns", _tb_turns, "Turns")
+        # Ferrari also has rear torsion bar turns
+        if "lr_torsion_turns" in ids:
+            if rear_tb_turns is not None:
+                _rear_tb_turns = round(rear_tb_turns, 3)
+            elif hasattr(step3, 'rear_torsion_bar_turns') and step3.rear_torsion_bar_turns != 0.0:
+                _rear_tb_turns = round(step3.rear_torsion_bar_turns, 3)
+            elif car_canonical.lower() == "ferrari":
+                # Rear turns: calibrated from 59 indexed sessions using rear-specific
+                # features (1/third_rate, rear_perch, 1/rear_torsion_rate). R^2=0.55
+                _rear_tb_turns = round(
+                    0.1239
+                    + 4.5102 / max(_ferrari_rear_third_phys, 1)
+                    + 0.000964 * _ferrari_rear_perch_phys
+                    + 7.1109 / max(_ferrari_rear_torsion_rate, 1),
+                    3,
+                )
+            else:
+                _rear_tb_turns = round(_tb_turns * 0.55, 3)
+            _w_num("lr_torsion_turns", _rear_tb_turns, "Turns")
+            _w_num("rr_torsion_turns", _rear_tb_turns, "Turns")
+        # Porsche roll spring (only if car maps it)
+        if "lf_roll_spring" in ids:
+            _numeric(details, ids["lf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
+            _numeric(details, ids["rf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
+        # Rear spring / torsion bar
+        if is_acura:
+            # Acura rear uses torsion bar OD (mapped via lr_spring_rate -> TorsionBarOD)
+            _rear_od = step3.rear_torsion_od_mm if hasattr(step3, 'rear_torsion_od_mm') and step3.rear_torsion_od_mm else 13.9
+            _w_num("lr_spring_rate", _rear_od, "mm")
+            _w_num("rr_spring_rate", _rear_od, "mm")
+        else:
+            _w_num("lr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
+            _w_num("rr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
+        # Ferrari/Acura have no rear coil spring perch — skip if unmapped or suppressed
+        if ids.get("lr_spring_perch"):
+            _w_num("lr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
+            _w_num("rr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
     else:
-        _w_num("lr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
-        _w_num("rr_spring_rate",   int(round(step3.rear_spring_rate_nmm)), "N/mm")
-    # Ferrari/Acura have no rear coil spring perch — skip if unmapped or suppressed
-    if ids.get("lr_spring_perch"):
-        _w_num("lr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
-        _w_num("rr_spring_perch",  round(step3.rear_spring_perch_mm, 1),   "mm")
+        # === GT3 corner springs (W4.1): 4 paired coil-overs ===
+        # Front + rear axles each pair LF==RF and LR==RR. Source rates from
+        # step3 (W2.3 added front_coil_rate_nmm; rear_spring_rate_nmm is the
+        # rear coil rate). The PARAM_IDS dict has no torsion_od / torsion_turns
+        # entries so the GTP block above would TODO-comment them.
+        _front_rate_nmm = float(step3.front_coil_rate_nmm)
+        _rear_rate_nmm = float(step3.rear_spring_rate_nmm)
+        _w_num("lf_spring_rate", int(round(_front_rate_nmm)), "N/mm")
+        _w_num("rf_spring_rate", int(round(_front_rate_nmm)), "N/mm")  # paired
+        _w_num("lr_spring_rate", int(round(_rear_rate_nmm)),  "N/mm")
+        _w_num("rr_spring_rate", int(round(_rear_rate_nmm)),  "N/mm")  # paired
+        # === GT3 BumpRubberGap × 4 + CenterFrontSplitterHeight ===
+        # Defaults to 0.0 mm placeholder. W4.3 will source these from the GT3
+        # garage state once the plumbing exists. The fields MUST appear in the
+        # .sto so iRacing's schema validator doesn't reject the file for
+        # missing required GT3 garage params.
+        for _corner in ("lf", "rf", "lr", "rr"):
+            _w_num(f"{_corner}_bump_rubber_gap", 0.0, "mm")
+        _w_num("front_splitter_height", 0.0, "mm")
     # Shock deflection maxes (computed by iRacing)
     if include_computed:
         _w_num("lf_shock_defl_max", 100, "mm")
@@ -979,7 +1311,9 @@ def write_sto(
     # These are display-only values that iRacing computes internally.
     # Including them in the .sto causes iRacing to reject the file.
     # Only write them when include_computed=True (for engineering reports).
-    if include_computed:
+    # GT3 cars don't have heave/third/torsion display fields — skip the whole
+    # block. Corner weights for GT3 are emitted separately below.
+    if include_computed and not is_gt3:
         if garage_outputs is not None:
             _lf_sd = round(garage_outputs.front_shock_defl_static_mm, 1)
             _lr_sd = round(garage_outputs.rear_shock_defl_static_mm, 1)
@@ -1082,12 +1416,33 @@ def write_sto(
         _w_num("lr_corner_weight", _lr_cw, "N")
         _w_num("rr_corner_weight", _rr_cw, "N")
 
+    if include_computed and is_gt3:
+        # GT3 corner weights still emit; heave/torsion deflections do not.
+        _w_num("lf_corner_weight", _lf_cw, "N")
+        _w_num("rf_corner_weight", _rf_cw, "N")
+        _w_num("lr_corner_weight", _lr_cw, "N")
+        _w_num("rr_corner_weight", _rr_cw, "N")
+
     # === ARBs ===
     if step4 is not None:
-        _w_str("front_arb_size",   step4.front_arb_size)
-        _w_num("front_arb_blades", step4.front_arb_blade_start, "")
-        _w_str("rear_arb_size",    step4.rear_arb_size)
-        _w_num("rear_arb_blades",  step4.rear_arb_blade_start, "")
+        if not is_gt3:
+            # GTP cars: separate size string + blade int.
+            _w_str("front_arb_size",   step4.front_arb_size)
+            _w_num("front_arb_blades", step4.front_arb_blade_start, "")
+            _w_str("rear_arb_size",    step4.rear_arb_size)
+            _w_num("rear_arb_blades",  step4.rear_arb_blade_start, "")
+        elif is_porsche_gt3:
+            # W4.2: Porsche 992 GT3 R uses a single integer ArbSetting (not
+            # blade index).  Both axles read off step4.*_arb_blade_start
+            # (already an int; the GT3 ARB solver writes ints from W2.4).
+            _w_num("front_arb_setting", step4.front_arb_blade_start, "")
+            _w_num("rear_arb_setting",  step4.rear_arb_blade_start, "")
+        else:
+            # BMW M4 GT3 + Aston Vantage GT3: blade ints under car-specific
+            # XML IDs (BMW: ArbBlades, Aston: FarbBlades / RarbBlades).  The
+            # PARAM_IDS dict handles the XML name divergence.
+            _w_num("front_arb_blades", step4.front_arb_blade_start, "")
+            _w_num("rear_arb_blades",  step4.rear_arb_blade_start, "")
 
     # === Cross weight (computed by iRacing) ===
     if include_computed:
@@ -1100,14 +1455,20 @@ def write_sto(
         _w_num("lr_camber",  step5.rear_camber_deg,  "deg")
         _w_num("rr_camber",  step5.rear_camber_deg,  "deg")
         _w_num("front_toe",  step5.front_toe_mm,     "mm")
-        if is_acura:
+        # Rear toe dispatch:
+        #   - Acura: paired (`rear_toe`)
+        #   - Porsche 992 GT3 R: paired (`rear_toe` -> `Chassis.Rear.TotalToeIn`) — W4.2
+        #   - BMW M4 GT3 + Aston Vantage GT3: per-wheel (LeftRear.ToeIn / RightRear.ToeIn)
+        #   - GTP BMW/Ferrari/Cadillac: per-wheel
+        if is_acura or is_porsche_gt3:
             _w_num("rear_toe", step5.rear_toe_mm, "mm")
         else:
             _w_num("lr_toe",     step5.rear_toe_mm,      "mm")
             _w_num("rr_toe",     step5.rear_toe_mm,      "mm")
 
     # === Dampers ===
-    if step6 is not None:
+    if step6 is not None and not is_gt3:
+        # GTP per-corner dampers (5 channels × 4 corners = 20 writes)
         _w_num("lf_ls_comp",  step6.lf.ls_comp,  "clicks")
         _w_num("lf_ls_rbd",   step6.lf.ls_rbd,   "clicks")
         _w_num("lf_hs_comp",  step6.lf.hs_comp,  "clicks")
@@ -1128,13 +1489,30 @@ def write_sto(
         _w_num("rr_hs_comp",  step6.rr.hs_comp,  "clicks")
         _w_num("rr_hs_rbd",   step6.rr.hs_rbd,   "clicks")
         _w_num("rr_hs_slope", step6.rr.hs_slope, "clicks")
+    elif step6 is not None and is_gt3:
+        # === GT3 per-axle dampers (W4.1) ===
+        # GT3 cars expose dampers per-axle (4 channels × 2 axles = 8 writes).
+        # W3.2 already collapsed L/R adjustments to per-axle averages in
+        # damper_solver, so step6.lf.* == step6.rf.* and step6.lr.* == step6.rr.*
+        # for GT3. We use the LF/LR side as authoritative; no L/R divergence
+        # is preserved on .sto write (the GT3 garage UI doesn't expose it).
+        _w_num("front_ls_comp", step6.lf.ls_comp, "clicks")
+        _w_num("front_hs_comp", step6.lf.hs_comp, "clicks")
+        _w_num("front_ls_rbd",  step6.lf.ls_rbd,  "clicks")
+        _w_num("front_hs_rbd",  step6.lf.hs_rbd,  "clicks")
+        _w_num("rear_ls_comp",  step6.lr.ls_comp, "clicks")
+        _w_num("rear_hs_comp",  step6.lr.hs_comp, "clicks")
+        _w_num("rear_ls_rbd",   step6.lr.ls_rbd,  "clicks")
+        _w_num("rear_hs_rbd",   step6.lr.hs_rbd,  "clicks")
 
     # === Roll dampers (Porsche / Acura — heave+roll architecture) ===
     # Per-axle gating: Porsche has FRONT roll damper but NO rear roll damper
     # (rear roll motion is implicit in per-corner shocks). Acura ARX-06 has
     # both. Writing CarSetup_Dampers_RearRoll_* for Porsche emits XML IDs
     # that don't exist in iRacing's Porsche garage schema — phantom output.
-    if has_roll_dampers and step6 is not None:
+    # GT3 cars have NO roll dampers (per audit O23) — guard against canonical
+    # name collision (e.g. if dispatch ever normalizes to "porsche").
+    if has_roll_dampers and step6 is not None and not is_gt3:
         _has_front_roll = bool(getattr(getattr(_car, "damper", None), "has_front_roll_damper", False))
         _has_rear_roll = bool(getattr(getattr(_car, "damper", None), "has_rear_roll_damper", False))
         # Backward-compat: if has_roll_dampers is True but neither per-axle flag
@@ -1161,7 +1539,8 @@ def write_sto(
             _w_num("rear_roll_hs",  _roll_hs_r,  "clicks")
 
     # === Rear 3rd damper (Porsche only) ===
-    if is_porsche and step6 is not None:
+    # GT3 has no 3rd damper (audit O24).
+    if is_porsche and step6 is not None and not is_gt3:
         _3rd_ls = getattr(step6, 'rear_3rd_ls_comp', None)
         _3rd_hs = getattr(step6, 'rear_3rd_hs_comp', None)
         _3rd_ls_rbd = getattr(step6, 'rear_3rd_ls_rbd', None)
@@ -1196,8 +1575,71 @@ def write_sto(
         _w_str("diff_coast_drive_ramp", diff_coast_drive_ramp)
     _w_num("diff_clutch_plates",    diff_clutch_plates,   "")
     _w_num("diff_preload",          None if diff_preload_nm is None else int(round(diff_preload_nm)), "Nm")
-    _w_num("tc_gain", tc_gain, "")
-    _w_num("tc_slip", tc_slip, "")
+    if is_gt3:
+        # GT3: TC/ABS are indexed STRINGS with car-specific labels.  W4.2
+        # extends the per-car suffix dispatch from W4.1's BMW-only path:
+        #   - BMW M4 GT3:        "n (TC)"      / "n (ABS)"
+        #   - Aston Vantage GT3: "n (TC SLIP)" / "n (ABS)"
+        #   - Porsche 992 GT3 R: "n (TC-LAT)"  / "n (ABS)"
+        # tc_slip is reused as the ABS index (single combined TC integer on
+        # GT3 — the GTP TC slip channel doesn't exist).  Source values:
+        # YAML samples in docs/gt3_session_info_*.yaml line up with this.
+        if is_porsche_gt3:
+            _tc_suffix = "TC-LAT"
+        elif is_aston_gt3:
+            _tc_suffix = "TC SLIP"
+        else:  # is_bmw_gt3 (or future GT3 fallback)
+            _tc_suffix = "TC"
+        if tc_gain is not None:
+            _w_str("tc_setting", f"{int(tc_gain)} ({_tc_suffix})")
+        # ABS suffix is "(ABS)" for all three GT3 cars (verified in YAMLs).
+        _abs_value = tc_slip if tc_slip is not None else tc_gain
+        if _abs_value is not None:
+            _w_str("abs_setting", f"{int(_abs_value)} (ABS)")
+        # === Aston-only display fields ===
+        # Defaults sourced from docs/gt3_session_info_aston_vantage_spielberg_2026-04-26.yaml:
+        #   ThrottleResponse: "4 (RED)"  EpasSetting: "3 (PAS)"
+        #   EnduranceLights:  "Not Fitted"   NightLedStripColor: "false"
+        # TODO(W4.3): wire current_setup passthrough so driver-loaded values
+        # take precedence over these statics.
+        if is_aston_gt3:
+            _w_str("throttle_response",   "4 (RED)")
+            _w_str("epas_setting",        "3 (PAS)")
+            _w_str("endurance_lights",    "Not Fitted")
+            _w_str("night_led_strip_color", "false")
+        # === Porsche 992-only display fields ===
+        # Defaults sourced from docs/gt3_session_info_porsche_992_gt3r_spielberg_2026-04-26.yaml:
+        #   ThrottleShapeSetting: 3   DashDisplayPage: "Race 2"
+        #   NightLedStripColor:   "White"
+        # TODO(W4.3): wire current_setup passthrough so driver-loaded values
+        # take precedence over these statics.
+        if is_porsche_gt3:
+            _w_num("throttle_shape_setting", 3, "")
+            _w_str("dash_display_page",      "Race 2")
+            _w_str("night_led_strip_color",  "White")
+            # Porsche emits WingSetting in BOTH chassis-rear AND aero-balance.
+            # The dict only maps `wing_angle` to chassis-rear; emit the
+            # aero-balance copy explicitly here. (Audit Open Question 1.)
+            if wing is not None:
+                _numeric(
+                    details,
+                    "CarSetup_TiresAero_AeroBalanceCalc_WingSetting",
+                    wing,
+                    "deg",
+                )
+        # Aston also mirrors RearWingAngle to TiresAero.AeroBalanceCalculator
+        # (per audit comment on the wing_angle line).  The dict maps the
+        # chassis-rear copy; emit the aero-balance copy explicitly.
+        if is_aston_gt3 and wing is not None:
+            _numeric(
+                details,
+                "CarSetup_TiresAero_AeroBalanceCalculator_RearWingAngle",
+                wing,
+                "deg",
+            )
+    else:
+        _w_num("tc_gain", tc_gain, "")
+        _w_num("tc_slip", tc_slip, "")
     _w_num("brake_bias_migration", brake_bias_migration,  "")
     _w_num("brake_bias_target",    brake_bias_target,     "")
     _w_num("brake_bias_migration_gain", brake_bias_migration_gain, "")

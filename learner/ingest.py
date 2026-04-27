@@ -754,9 +754,24 @@ def _generate_insights(
         if conf in ("high", "medium") and d.get("key_finding"):
             insights["key_insights"].append(d["key_finding"])
 
-    # Setup parameter trends
-    params_to_track = ["front_heave_nmm", "rear_third_nmm", "rear_arb_blade",
-                        "front_camber_deg", "rear_camber_deg"]
+    # Setup parameter trends — architecture-aware (audit DEGRADED #12).
+    # For GT3 cars, surface corner-spring + splitter trends; for GTP cars,
+    # surface heave/third trends.
+    try:
+        from car_model.cars import SuspensionArchitecture, get_car
+        car_obj = get_car(car, apply_calibration=False)
+        is_gt3 = car_obj.suspension_arch is SuspensionArchitecture.GT3_COIL_4WHEEL
+    except Exception:
+        is_gt3 = False
+    if is_gt3:
+        params_to_track = [
+            "front_corner_spring_nmm", "rear_corner_spring_nmm",
+            "rear_arb_blade", "front_camber_deg", "rear_camber_deg",
+            "splitter_height_mm",
+        ]
+    else:
+        params_to_track = ["front_heave_nmm", "rear_third_nmm", "rear_arb_blade",
+                            "front_camber_deg", "rear_camber_deg"]
     for param in params_to_track:
         values = []
         for obs in observations:
@@ -804,7 +819,19 @@ def main():
     parser = argparse.ArgumentParser(
         description="IOptimal Learner — ingest IBT sessions and build knowledge"
     )
-    parser.add_argument("--car", type=str, help="Car name (e.g., bmw)")
+    # GT3 Phase 2 W9.1 — F9 fix. Pre-W9.1 the help string was empty; with
+    # GT3 canonical names landing in the registry the user needs to know
+    # which keys are valid. The choices list is enforced at parse time so
+    # mistyped GT3 names fail loudly.
+    from car_model.cars import _CARS as _CAR_REGISTRY
+    _car_choices = sorted(_CAR_REGISTRY.keys())
+    parser.add_argument(
+        "--car",
+        type=str,
+        choices=_car_choices,
+        help="Car canonical name. Choices: " + ", ".join(_car_choices) +
+             " (e.g., bmw, bmw_m4_gt3, porsche_992_gt3r).",
+    )
     parser.add_argument("--ibt", type=str, help="Path to IBT file")
     parser.add_argument("--wing", type=float, help="Wing angle override")
     parser.add_argument("--lap", type=int, help="Specific lap number to analyze")

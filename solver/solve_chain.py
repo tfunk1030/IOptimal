@@ -21,7 +21,7 @@ from solver.corner_spring_solver import CornerSpringSolver
 from solver.damper_solver import CornerDamperSettings, DamperSolver
 from solver.decision_trace import build_parameter_decisions
 from solver.full_setup_optimizer import optimize_if_supported
-from solver.heave_solver import HeaveSolver
+from solver.heave_solver import HeaveSolution, HeaveSolver
 from solver.legality_engine import LegalValidation, validate_solution_legality
 from solver.modifiers import SolverModifiers
 from solver.params_util import solver_steps_to_params
@@ -315,6 +315,7 @@ def _finalize_result(
         supporting=supporting,
         legality=legal_validation,
         fallback_reasons=list(getattr(inputs.measured, "fallback_reasons", []) or []),
+        car=inputs.car,
     )
     prediction, prediction_confidence = predict_candidate_telemetry(
         current_setup=inputs.current_setup,
@@ -396,24 +397,34 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         pin_front_min=inputs.pin_front_min,
     )
 
-    heave_solver = HeaveSolver(car, track)
+    # GT3 dispatch (W2.1): cars without heave/third architecture skip the
+    # HeaveSolver constructor (which raises on car.heave_spring=None) and
+    # propagate Step 1's dynamic RH targets through HeaveSolution.null().
     _k_current = None if _physics_mode else (getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None)
     _k_rear_current = None if _physics_mode else (getattr(inputs.current_setup, "rear_third_nmm", None) if inputs.current_setup else None)
-    step2 = heave_solver.solve(
-        dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-        dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-        front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
-        rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
-        front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
-        front_pushrod_mm=step1.front_pushrod_offset_mm,
-        rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-        fuel_load_l=fuel,
-        front_camber_deg=_front_camber(inputs),
-        measured=inputs.measured,
-        front_heave_current_nmm=_k_current,
-        rear_third_current_nmm=_k_rear_current,
-        prediction_corrections=inputs.prediction_corrections or None,
-    )
+    if car.suspension_arch.has_heave_third:
+        heave_solver = HeaveSolver(car, track)
+        step2 = heave_solver.solve(
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
+            rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+            front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
+            front_pushrod_mm=step1.front_pushrod_offset_mm,
+            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+            fuel_load_l=fuel,
+            front_camber_deg=_front_camber(inputs),
+            measured=inputs.measured,
+            front_heave_current_nmm=_k_current,
+            rear_third_current_nmm=_k_rear_current,
+            prediction_corrections=inputs.prediction_corrections or None,
+        )
+    else:
+        heave_solver = None  # GT3: Step 2 is N/A
+        step2 = HeaveSolution.null(
+            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+        )
 
     corner_solver = CornerSpringSolver(car, track)
     _curr_rear_coil = None if _physics_mode else (
@@ -429,14 +440,17 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     )
     rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
-    heave_solver.reconcile_solution(
-        step1,
-        step2,
-        step3,
-        fuel_load_l=fuel,
-        front_camber_deg=_front_camber(inputs),
-        verbose=False,
-    )
+    # Backward-compat: legacy SimpleNamespace step2 mocks lack `.present`,
+    # treat as present=True (GTP behaviour).
+    if heave_solver is not None and getattr(step2, "present", True):
+        heave_solver.reconcile_solution(
+            step1,
+            step2,
+            step3,
+            fuel_load_l=fuel,
+            front_camber_deg=_front_camber(inputs),
+            verbose=False,
+        )
     reconcile_ride_heights(
         car,
         step1,
@@ -574,24 +588,36 @@ def _run_branching_solver(
 
     # ── Step 2: Heave candidates ──
     _physics_mode = inputs.optimization_mode == "physics"
-    heave_solver = HeaveSolver(car, track)
     _k_current = None if _physics_mode else (getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None)
     _k_rear_current = None if _physics_mode else (getattr(inputs.current_setup, "rear_third_nmm", None) if inputs.current_setup else None)
-    heave_candidates = heave_solver.solve_candidates(
-        dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-        dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-        front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
-        rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
-        front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
-        front_pushrod_mm=step1.front_pushrod_offset_mm,
-        rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-        fuel_load_l=fuel,
-        front_camber_deg=_front_camber(inputs),
-        measured=inputs.measured,
-        front_heave_current_nmm=_k_current,
-        rear_third_current_nmm=_k_rear_current,
-        n_candidates=max_heave,
-    )
+    # GT3 dispatch (W2.1): no heave/third architecture → single null candidate
+    # so the outer branching loop runs exactly once and only Step 3+ corner /
+    # ARB axes fan out.
+    if car.suspension_arch.has_heave_third:
+        heave_solver = HeaveSolver(car, track)
+        heave_candidates = heave_solver.solve_candidates(
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
+            rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+            front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
+            front_pushrod_mm=step1.front_pushrod_offset_mm,
+            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+            fuel_load_l=fuel,
+            front_camber_deg=_front_camber(inputs),
+            measured=inputs.measured,
+            front_heave_current_nmm=_k_current,
+            rear_third_current_nmm=_k_rear_current,
+            n_candidates=max_heave,
+        )
+    else:
+        heave_solver = None  # GT3: Step 2 is N/A
+        heave_candidates = [
+            HeaveSolution.null(
+                front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+                rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            )
+        ]
 
     corner_solver = CornerSpringSolver(car, track)
     _curr_rear_coil = None if _physics_mode else (
@@ -632,9 +658,10 @@ def _run_branching_solver(
             s3_copy = copy.copy(s3)
 
             # Reconcile ride heights with this spring combo
-            heave_solver.reconcile_solution(s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
-                                           front_camber_deg=_front_camber(inputs),
-                                           verbose=False)
+            if heave_solver is not None and getattr(s2_copy, "present", True):
+                heave_solver.reconcile_solution(s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
+                                               front_camber_deg=_front_camber(inputs),
+                                               verbose=False)
             reconcile_ride_heights(car, s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
                                   track_name=track.track_name, verbose=False,
                                   surface=inputs.surface, track=track,
@@ -1142,7 +1169,13 @@ def materialize_overrides(
 
     rebuild_step23 = earliest <= 3
     if rebuild_step23:
-        heave_solver = HeaveSolver(car, track)
+        # GT3 dispatch (W2.1): no HeaveSolver — Step 2 is null, but Step 3 is
+        # still re-solved through the corner spring path below.
+        heave_solver = (
+            HeaveSolver(car, track)
+            if car.suspension_arch.has_heave_third
+            else None
+        )
         corner_solver = CornerSpringSolver(car, track)
         step2_targets = {
             "front_heave_nmm": overrides.step2.get(
@@ -1191,7 +1224,14 @@ def materialize_overrides(
         }
 
         explicit_step2 = bool(overrides.step2 or overrides.step3)
-        if explicit_step2:
+        if heave_solver is None:
+            # GT3 dispatch (W2.1): null Step 2; downstream Step 3 corner spring
+            # is rebuilt below from step1 dynamic RH + corner overrides.
+            step2 = HeaveSolution.null(
+                front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+                rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            )
+        elif explicit_step2:
             step2 = heave_solver.solution_from_explicit_settings(
                 dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
                 dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
@@ -1259,14 +1299,15 @@ def materialize_overrides(
                 current_rear_spring_nmm=_curr_rc,
             )
         rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
-        heave_solver.reconcile_solution(
-            step1,
-            step2,
-            step3,
-            fuel_load_l=inputs.fuel_load_l,
-            front_camber_deg=_front_camber(inputs),
-            verbose=False,
-        )
+        if heave_solver is not None and getattr(step2, "present", True):
+            heave_solver.reconcile_solution(
+                step1,
+                step2,
+                step3,
+                fuel_load_l=inputs.fuel_load_l,
+                front_camber_deg=_front_camber(inputs),
+                verbose=False,
+            )
         reconcile_ride_heights(
             car,
             step1,
@@ -1298,7 +1339,10 @@ def materialize_overrides(
             _prev_step6.c_hs_rear if _prev_step6 is not None else 0.0
         )
 
-        if explicit_step2:
+        if heave_solver is None:
+            # GT3 dispatch (W2.1): step2 already null from above; nothing to do.
+            pass
+        elif explicit_step2:
             step2 = heave_solver.solution_from_explicit_settings(
                 dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
                 dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
@@ -1363,15 +1407,16 @@ def materialize_overrides(
                 current_rear_spring_nmm=_curr_rc,
             )
         rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
-        heave_solver.reconcile_solution(
-            step1,
-            step2,
-            step3,
-            fuel_load_l=inputs.fuel_load_l,
-            front_camber_deg=_front_camber(inputs),
-            front_hs_damper_nsm=_prov_hs_front,
-            verbose=False,
-        )
+        if heave_solver is not None and getattr(step2, "present", True):
+            heave_solver.reconcile_solution(
+                step1,
+                step2,
+                step3,
+                fuel_load_l=inputs.fuel_load_l,
+                front_camber_deg=_front_camber(inputs),
+                front_hs_damper_nsm=_prov_hs_front,
+                verbose=False,
+            )
         reconcile_ride_heights(
             car,
             step1,

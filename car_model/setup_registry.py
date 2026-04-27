@@ -14,9 +14,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field as dc_field
 from decimal import Decimal, ROUND_HALF_UP
+import logging
 import re
 
 from car_model.cars import get_car
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -536,12 +539,24 @@ _ACURA_SPECS: dict[str, CarFieldSpec] = {
     "rear_master_cyl_mm":       _S("Systems.BrakeSpec.RearMasterCyl",                 "CarSetup_Systems_BrakeSpec_RearMasterCyl"),
 }
 
+# GT3 stub spec dicts.  Wave 4 (W4.1, W4.2, W4.3) will populate these with the
+# real per-car PARAM_IDS (BumpRubberGap, CenterFrontSplitterHeight, etc.).  For
+# Wave 1 they exist solely so that ``get_car_spec("bmw_m4_gt3", ...)`` returns
+# None instead of silently falling back to the GTP BMW spec set, which would
+# emit wrong STO writes for every GT3 setup.
+_BMW_M4_GT3_SPECS: dict[str, CarFieldSpec] = {}  # populated in Wave 4 (W4.1)
+_ASTON_MARTIN_VANTAGE_GT3_SPECS: dict[str, CarFieldSpec] = {}  # populated in Wave 4 (W4.2)
+_PORSCHE_992_GT3R_SPECS: dict[str, CarFieldSpec] = {}  # populated in Wave 4 (W4.2)
+
 CAR_FIELD_SPECS: dict[str, dict[str, CarFieldSpec]] = {
     "bmw": _BMW_SPECS,
     "ferrari": _FERRARI_SPECS,
     "porsche": _PORSCHE_SPECS,
     "cadillac": _CADILLAC_SPECS,
     "acura": _ACURA_SPECS,
+    "bmw_m4_gt3": _BMW_M4_GT3_SPECS,
+    "aston_martin_vantage_gt3": _ASTON_MARTIN_VANTAGE_GT3_SPECS,
+    "porsche_992_gt3r": _PORSCHE_992_GT3R_SPECS,
 }
 
 
@@ -636,6 +651,25 @@ def detect_car_adapter(yaml_keys: set[str]) -> str:
         return "acura"
     if any("Systems." in k or "Dampers." in k for k in yaml_keys):
         return "ferrari"
+    # GT3 fingerprint: BumpRubberGap and CenterFrontSplitterHeight are unique
+    # to the GT3 chassis YAML schema (not present in any GTP car).  We can
+    # detect "this is a GT3" but cannot distinguish BMW M4 vs Aston vs Porsche
+    # GT3 from YAML keys alone — Wave 4 (W4.x) will add per-car GT3 fingerprints
+    # (e.g. EpasSetting=Aston, FuelLevel-position=Porsche RR-layout).
+    if any("BumpRubberGap" in k or "CenterFrontSplitterHeight" in k for k in yaml_keys):
+        # TODO(W4.1): per-car GT3 dispatch.  Until then this path silently
+        # routes the setup through the BMW spec set, which is wrong for Aston
+        # and Porsche GT3.  Callers MUST resolve the car explicitly via
+        # car_model.registry.resolve_car_from_ibt() and not rely on this
+        # structural fallback when a GT3 chassis is detected.
+        logger.warning(
+            "detect_car_adapter: GT3 schema detected (BumpRubberGap / "
+            "CenterFrontSplitterHeight) but cannot distinguish BMW M4 vs "
+            "Aston Vantage vs Porsche 992 GT3 R from YAML keys alone. "
+            "Falling back to 'bmw' — resolve the car explicitly via "
+            "car_model.registry.resolve_car_from_ibt() instead."
+        )
+        return "bmw"  # Caller MUST resolve via registry instead
     return "bmw"
 
 
@@ -655,11 +689,27 @@ def get_writer_param_ids(car: str) -> dict[str, str]:
 def _car_name(car_or_name: object | str | None) -> str:
     if isinstance(car_or_name, str):
         text = car_or_name.lower()
-        for canonical_name in ("bmw", "ferrari", "cadillac", "porsche", "acura"):
+        # Order matters: longer/more-specific names MUST come first.  Without
+        # this ordering "bmw_m4_gt3" silently mapped to "bmw" (first hit on
+        # substring "bmw"), which routed every GT3 IBT through the GTP BMW
+        # spec set and corrupted every downstream solver/learner output.
+        for canonical_name in (
+            "bmw_m4_gt3", "aston_martin_vantage_gt3", "porsche_992_gt3r",
+            "bmw", "ferrari", "cadillac", "porsche", "acura",
+        ):
             if canonical_name in text:
                 return canonical_name
         return text
     if car_or_name is None:
+        # TODO(W1.3 follow-up): Principle 8 (no silent fallbacks) ideally
+        # wants this to ``raise ValueError(...)``.  Today there is exactly
+        # one real caller that propagates None to here:
+        # ``solver/bmw_rotation_search.py:665`` calls
+        # ``_extract_target_maps(base_result)`` without a ``car`` argument,
+        # which threads None through ``public_output_value(...)``.  That
+        # path is BMW-only (gated by ``_is_bmw_sebring``) so the silent BMW
+        # default is harmless in that single context — but the proper fix
+        # is to plumb the car explicitly and then make this a raise.
         return "bmw"
     return str(getattr(car_or_name, "canonical_name", "bmw")).lower()
 

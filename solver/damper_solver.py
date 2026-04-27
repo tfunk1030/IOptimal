@@ -441,7 +441,7 @@ class DamperSolver:
         rear_wheel_rate_nmm: float,
         front_dynamic_rh_mm: float,
         rear_dynamic_rh_mm: float,
-        fuel_load_l: float = 89.0,
+        fuel_load_l: float | None = None,
         damping_ratio_scale: float = 1.0,
         measured: "MeasuredState | None" = None,
         front_heave_nmm: float | None = None,
@@ -460,10 +460,23 @@ class DamperSolver:
         8. Compute HS slope from track surface distribution
 
         Args:
+            fuel_load_l: Stint fuel load in litres. REQUIRED — no implicit
+                BMW-GTP default. Caller must pass an explicit value (typically
+                ``inputs.fuel_load_l`` from the solve chain). GT3 cars have
+                100/104/106L tanks vs GTP 89L; silently defaulting would
+                under-state corner mass for GT3.
             damping_ratio_scale: Multiplier on ζ targets from solver modifiers.
                 >1.0 = stiffer damping (e.g. erratic driver needs more control),
                 <1.0 = softer damping (e.g. smooth driver benefits from compliance).
         """
+        # W3.3 (F3): fuel_load_l is required — GT3 tanks differ from GTP.
+        if fuel_load_l is None:
+            raise ValueError(
+                f"DamperSolver.solve() requires explicit fuel_load_l "
+                f"(car {self.car.name} max {self.car.fuel_capacity_l:.0f}L). "
+                f"Pass a stint fuel level — never rely on a default."
+            )
+
         d = self.car.damper
 
         # ─── STRICT MODE: refuse to produce values without calibrated zeta ───
@@ -672,6 +685,19 @@ class DamperSolver:
                         lr_hs_comp_adj = -adj
                     else:
                         rr_hs_comp_adj = -adj
+
+        # W3.2 / Audit F2: GT3 garage YAML exposes only per-axle damper clicks
+        # (FrontDampers/RearDampers, not per-corner LF/RF/LR/RR). Any L/R
+        # asymmetric adjustment computed above would be silently dropped on the
+        # .sto write — the second corner of each axle would simply overwrite the
+        # first. Collapse asymmetric adjustments to per-axle averages so the
+        # solver's intent (e.g. "soften the busier side") is preserved as the
+        # axle-mean, not lost. GTP retains true per-corner asymmetry.
+        if not self.car.suspension_arch.has_heave_third:
+            front_avg = (lf_hs_comp_adj + rf_hs_comp_adj) // 2
+            rear_avg = (lr_hs_comp_adj + rr_hs_comp_adj) // 2
+            lf_hs_comp_adj = rf_hs_comp_adj = front_avg
+            lr_hs_comp_adj = rr_hs_comp_adj = rear_avg
 
         lf = CornerDamperSettings(
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
@@ -1001,13 +1027,17 @@ class DamperSolver:
         rf: CornerDamperSettings,
         lr: CornerDamperSettings,
         rr: CornerDamperSettings,
-        fuel_load_l: float = 89.0,
+        fuel_load_l: float | None = None,
         damping_ratio_scale: float = 1.0,
         measured: "MeasuredState | None" = None,
         front_heave_nmm: float | None = None,
         rear_third_nmm: float | None = None,
     ) -> DamperSolution:
-        """Build a Step 6 solution from explicit click/slope settings."""
+        """Build a Step 6 solution from explicit click/slope settings.
+
+        W3.3 (F4): ``fuel_load_l`` is required (no implicit BMW-GTP default).
+        ``self.solve()`` will raise ``ValueError`` if the caller forgets it.
+        """
         base = self.solve(
             front_wheel_rate_nmm=front_wheel_rate_nmm,
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,

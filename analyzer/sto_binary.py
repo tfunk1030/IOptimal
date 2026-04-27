@@ -26,6 +26,11 @@ _ENVELOPE_SIZE = 40
 _MIN_UTF16_ASCII_CHARS = 6
 
 _CAR_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # W5.2 — GT3 entries listed FIRST so that filenames like "bmwm4gt3-spielberg.sto"
+    # match the GT3 BMW path before the bare "bmw" fallback below.
+    (re.compile(r"(bmwm4gt3)", re.IGNORECASE), "bmwm4gt3"),
+    (re.compile(r"(amvantageevogt3)", re.IGNORECASE), "amvantageevogt3"),
+    (re.compile(r"(porsche992rgt3)", re.IGNORECASE), "porsche992rgt3"),
     (re.compile(r"(acura|arx06|arxgtp)", re.IGNORECASE), "acuraarx06gtp"),
     (re.compile(r"(bmw|bmwlmdh)", re.IGNORECASE), "bmwlmdh"),
     (re.compile(r"(cadillac|vseries)", re.IGNORECASE), "cadillacvseriesr"),
