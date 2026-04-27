@@ -5,7 +5,7 @@
 
 The 12 audit docs are the source of truth — this is a synthesis layer that pulls them into one buildable Phase 2 implementation plan with ordering, dependencies, and concrete PR-sized work units.
 
-> **Implementation status (2026-04-27, latest batch W5.1 + W6.1):** Wave 1 (W1.1–W1.3) + Wave 2 (W2.1–W2.4) + Wave 3 (W3.1–W3.3) + Wave 4 (W4.1–W4.3) + Wave 5 (W5.1–W5.3) + W6.1 shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. 17 of 22 work units done (~296 h shipped, ~58%). 703 tests pass, 0 new regressions. GT3 IBT runs end-to-end through pipeline → solver → objective scoring → writer cleanly with GT3-aware report rendering and no phantom heave alarms. Pipeline orchestrator drops heave/third keys from JSON output, reports 4 corner spring rates, and skips phantom heave-bottoming. Objective scoring runs on GT3 without crashing (m_eff via sprung-mass proxy; LLTD fuel window skipped; envelope/realism penalties contribute 0). **GT3 LLTD scoring still has a quality bias** (front_wheel_rate=0 silently underweights candidates) — corrected when W6.x wires the GT3 corner-spring axis as a candidate. **iRacing schema round-trip validation requires manual driver-side QA**. Wave 6 W6.2 + W6.3 (learner GT3 awareness) and the critical-path Wave 7 (auto-calibrate + GarageOutputModel) remain. See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the full progress log.
+> **Implementation status (2026-04-27, latest batch W6.2 + W6.3):** Wave 1 (W1.1–W1.3) + Wave 2 (W2.1–W2.4) + Wave 3 (W3.1–W3.3) + Wave 4 (W4.1–W4.3) + Wave 5 (W5.1–W5.3) + Wave 6 (W6.1–W6.3) shipped on `claude/merge-audits-wave1-DDFyg`. All 12 audit PRs merged into the same branch. **19 of 22 work units done (~320 h shipped, ~63%)**. 720 tests pass, 0 new regressions. GT3 IBT runs end-to-end through pipeline → solver → objective scoring → writer cleanly. Learner now recognises GT3 corner-spring deltas, generates physical hypotheses, and accumulates empirical fits for `front_corner_spring_nmm → front_rh_std_mm`. **iRacing schema round-trip validation requires manual driver-side QA**. Critical-path Wave 7 (auto-calibrate + GarageOutputModel — gated on more IBT capture for W7.2) and Wave 8 / Wave 9 / Wave 10 remain. See [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) for the full progress log.
 
 ## Aggregate findings
 
@@ -122,13 +122,13 @@ Sequenced by dependency. Each work unit becomes one PR. Effort estimates per uni
 | W5.2 | Analyzer setup_reader GT3 schema dispatch | `analyzer/setup_reader.py` adapter_name whitelist, GT3 per-axle damper branch, `analyzer/setup_schema.py` `_KNOWN_FIELD_MAP` GT3 paths, `analyzer/sto_adapters.py` GT3 entries | 24 h | **DONE** | W1.3 |
 | W5.3 | Analyzer diagnose + extract GT3 awareness | `analyzer/diagnose.py` skip heave-bottoming for GT3, `analyzer/extract.py` heave channels optional, `analyzer/causal_graph.py` GT3 nodes | 14 h | **DONE** | W5.2 |
 
-### Wave 6 — learner + scoring (3 units; ~56 h) — **W6.1 done; W6.2 + W6.3 remain**
+### Wave 6 — learner + scoring (3 units; ~56 h) — **DONE 2026-04-27**
 
 | # | Title | Files | Effort | Status | Depends on |
 |---|---|---|---|---|---|
 | W6.1 | Objective + sensitivity GT3 guards | `solver/objective.py` `_compute_lltd_fuel_window` GT3 branch, `solver/sensitivity.py` `step2.present` guards, `solver/laptime_sensitivity.py` `_front_heave_sensitivity` skip | 14 h | **DONE** | W2.1, W3.1 |
-| W6.2 | Learner KNOWN_CAUSALITY GT3 entries (23 tuples) + STEP_GROUPS | `learner/delta_detector.py` `STEP_GROUPS["step3_corner_combined"]` for GT3, 23 new causality tuples | 6 h | TODO (next batch) | W5.3 |
-| W6.3 | Learner empirical models + observation schema GT3 | `learner/observation.py` GT3 setup-dict fields, `learner/empirical_models.py` heave-fitter no-op + `_fit_corner_to_variance`, `learner/setup_clusters.py` GT3 cluster keys, `learner/recall.py` GT3 lookups | 18 h | TODO (next batch) | W6.2, W5.3 |
+| W6.2 | Learner KNOWN_CAUSALITY GT3 entries (23 tuples) + STEP_GROUPS | `learner/delta_detector.py` `STEP_GROUPS["step3_corner_combined"]` for GT3, 23 new causality tuples | 6 h | **DONE** | W5.3 |
+| W6.3 | Learner empirical models + observation schema GT3 | `learner/observation.py` GT3 setup-dict fields, `learner/empirical_models.py` heave-fitter no-op + `_fit_corner_to_variance`, `learner/setup_clusters.py` GT3 cluster keys, `learner/recall.py` GT3 lookups | 18 h | **DONE** | W6.2, W5.3 |
 
 ### Wave 7 — auto-calibrate + GarageOutputModel (2 units; ~80 h)
 
