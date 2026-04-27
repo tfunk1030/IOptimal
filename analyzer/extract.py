@@ -288,6 +288,13 @@ class MeasuredState:
     metric_fallbacks: list[str] = field(default_factory=list)
     fallback_reasons: list[str] = field(default_factory=list)
 
+    # --- Speed-band stratified aero compression (per-IBT V^2 fit) ---
+    # Populated by analyzer.extractors.aero_speed_bands. Keys include
+    # front_<lo>_<hi>, rear_<lo>_<hi>, samples_<lo>_<hi>, v2_mid_<lo>_<hi>,
+    # alpha_front, beta_front, r2_front, n_bins_front (and rear), plus
+    # car_canonical. See analyzer/extractors/aero_speed_bands.py.
+    aero_compression_by_speed_kph: dict[str, object] = field(default_factory=dict)
+
     # --- Telemetry truth metadata ---
     front_settle_total_events: int = 0
     rear_settle_total_events: int = 0
@@ -870,6 +877,21 @@ def extract_measurements(
     state.rf_shock_vel_p95_mps = float(np.percentile(rf_sv, 95))
     state.lr_shock_vel_p95_mps = float(np.percentile(lr_sv, 95))
     state.rr_shock_vel_p95_mps = float(np.percentile(rr_sv, 95))
+
+    # --- Speed-band stratified aero compression (additive extractor) ---
+    # Wrapped in try/except so a regression here cannot abort the rest of
+    # extract_measurements(). On failure we leave the dict empty and log
+    # a fallback reason for downstream provenance.
+    try:
+        from analyzer.extractors.aero_speed_bands import (
+            extract_aero_compression_by_speed_band,
+        )
+        state.aero_compression_by_speed_kph = extract_aero_compression_by_speed_band(
+            ibt, car, start=start, end=end,
+        )
+    except Exception as exc:
+        state.aero_compression_by_speed_kph = {}
+        state.fallback_reasons.append(f"aero_speed_bands:{exc}")
 
     # --- Telemetry truth map ---
     state.telemetry_signals = build_signal_map(state)
