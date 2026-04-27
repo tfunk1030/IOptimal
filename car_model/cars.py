@@ -1108,6 +1108,15 @@ class CornerSpringModel:
     front_is_roll_spring: bool = False
     front_roll_spring_installation_ratio: float = 0.882  # CALIBRATED: back-calculated from measured LLTD 50.3% at Algarve
 
+    # GT3 paired front coil springs (no torsion bar, not a roll spring).
+    # When front_spring_range_nmm[1] > 0 the car has paired front coils whose
+    # rate is set directly in N/mm via the garage. (0, 0) = not a GT3 paired-coil
+    # car (GTP torsion-bar or Porsche-roll-spring). Used by Step 3 to branch
+    # front-rate selection for the GT3 architecture.
+    front_spring_range_nmm: tuple[float, float] = (0.0, 0.0)
+    front_spring_resolution_nmm: float = 5.0   # Garage step size (default 5 N/mm)
+    front_baseline_rate_nmm: float = 0.0       # Default front coil rate (used when no anchor)
+
     def torsion_bar_rate(self, od_mm: float) -> float:
         """Wheel rate (N/mm) from torsion bar OD.
 
@@ -1125,6 +1134,24 @@ class CornerSpringModel:
         step = self.front_roll_spring_step_nmm
         k_snapped = round(round(k_nmm / step) * step, 0)
         return float(max(lo, min(hi, k_snapped)))
+
+    def snap_front_rate(self, rate_nmm: float) -> float:
+        """Snap GT3 paired front coil rate to nearest legal garage step.
+
+        For GT3 cars (paired front coils), iRacing exposes the front spring rate
+        directly in N/mm. This helper clamps to ``front_spring_range_nmm`` and
+        snaps to the ``front_spring_resolution_nmm`` step grid (origin = lower
+        bound). For non-GT3 cars where ``front_spring_range_nmm[1] <= 0`` the
+        input is returned unchanged so GTP/torsion-bar paths are not affected.
+        """
+        if self.front_spring_range_nmm[1] <= 0:
+            return rate_nmm  # GTP / torsion-bar or roll-spring car: untouched
+        lo, hi = self.front_spring_range_nmm
+        clamped = max(lo, min(hi, rate_nmm))
+        step = self.front_spring_resolution_nmm
+        if step <= 0:
+            return float(clamped)
+        return float(round((clamped - lo) / step) * step + lo)
 
     def torsion_bar_od_for_rate(self, k_wheel_nmm: float) -> float:
         """Torsion bar OD (mm) needed for a target wheel rate."""
@@ -3263,6 +3290,10 @@ BMW_M4_GT3 = CarModel(
         rear_spring_range_nmm=(130.0, 250.0),  # MANUAL: rear 130-250 N/mm step 10
         rear_spring_step_nmm=10.0,
         rear_spring_perch_baseline_mm=0.0,
+        # MANUAL V3: front 190-340 N/mm step 10 (16 options). Driver baseline ~220.
+        front_spring_range_nmm=(190.0, 340.0),
+        front_spring_resolution_nmm=10.0,
+        front_baseline_rate_nmm=220.0,
         track_width_mm=1700.0,              # PENDING_IBT (FIA GT3 typical ~1700 mm)
         cg_height_mm=350.0,                 # PENDING_IBT
     ),
@@ -3386,6 +3417,11 @@ ASTON_MARTIN_VANTAGE_GT3 = CarModel(
         rear_spring_range_nmm=(120.0, 280.0),  # PENDING manual decode (community range)
         rear_spring_step_nmm=10.0,
         rear_spring_perch_baseline_mm=0.0,
+        # PENDING_IBT: front coil range from manual V1 not yet decoded.
+        # Use a conservative GT3-typical span (community/iRacing range).
+        front_spring_range_nmm=(180.0, 320.0),
+        front_spring_resolution_nmm=10.0,
+        front_baseline_rate_nmm=220.0,
         track_width_mm=1700.0,
         cg_height_mm=350.0,
     ),
@@ -3512,6 +3548,11 @@ PORSCHE_992_GT3R = CarModel(
         rear_spring_range_nmm=(150.0, 350.0),  # PENDING manual decode (driver loaded 260 N/mm)
         rear_spring_step_nmm=10.0,
         rear_spring_perch_baseline_mm=0.0,
+        # PENDING_IBT: front coil range from manual V2 not yet decoded.
+        # Driver loaded 220 N/mm — span seeded from BMW/Aston manual values.
+        front_spring_range_nmm=(170.0, 320.0),
+        front_spring_resolution_nmm=10.0,
+        front_baseline_rate_nmm=220.0,
         track_width_mm=1700.0,
         cg_height_mm=350.0,
     ),
