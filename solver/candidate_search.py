@@ -309,12 +309,17 @@ def _extract_target_maps(base_result: SolveChainResult, car: Any | None = None) 
             "static_front_rh_mm": s1.static_front_rh_mm,
             "static_rear_rh_mm": s1.static_rear_rh_mm,
         } if s1 is not None else {},
+        # Step 2 emits an empty target dict when (a) calibration gate skipped
+        # the step (s2 is None) OR (b) the car has no heave/third architecture
+        # and HeaveSolution.null() was used (present=False). An empty dict
+        # cleanly skips the snap pass for these fields downstream — see
+        # _snap_targets_to_garage which only reads keys that are present.
         "step2": {
             "front_heave_nmm": public_output_value(car, "front_heave_nmm", s2.front_heave_nmm),
             "rear_third_nmm": public_output_value(car, "rear_third_nmm", s2.rear_third_nmm),
             "perch_offset_front_mm": s2.perch_offset_front_mm,
             "perch_offset_rear_mm": s2.perch_offset_rear_mm,
-        } if s2 is not None else {},
+        } if s2 is not None and getattr(s2, "present", True) else {},
         "step3": {
             "front_torsion_od_mm": public_output_value(car, "front_torsion_od_mm", s3.front_torsion_od_mm),
             "rear_spring_rate_nmm": public_output_value(car, "rear_spring_rate_nmm", s3.rear_spring_rate_nmm),

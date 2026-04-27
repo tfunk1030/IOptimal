@@ -52,11 +52,20 @@ class TrackIdentity:
 # ─── Car registry ──────────────────────────────────────────────────────────
 
 _CAR_REGISTRY: list[CarIdentity] = [
+    # GTP class (Hypercar / LMDh)
     CarIdentity("bmw",      "BMW M Hybrid V8",    "BMW M Hybrid V8",    "bmwlmdh",         "bmw"),
     CarIdentity("porsche",  "Porsche 963",        "Porsche 963",        "porsche963",      "porsche"),
     CarIdentity("ferrari",  "Ferrari 499P",       "Ferrari 499P",       "ferrari499p",     "ferrari"),
     CarIdentity("cadillac", "Cadillac V-Series.R", "Cadillac V-Series.R", "cadillacvseriesr", "cadillac"),
     CarIdentity("acura",    "Acura ARX-06",       "Acura ARX-06",       "acuraarx06gtp",   "acura"),
+    # GT3 class — canonical names match car_model/cars.py BMW_M4_GT3 / ASTON_MARTIN_VANTAGE_GT3 /
+    # PORSCHE_992_GT3R. Without these entries, the substring fallback at lines 91-104 silently
+    # routed every GT3 IBT through the GTP BMW spec set (e.g. "bmwm4gt3" → "bmw"), corrupting
+    # learner observations and emitting wrong setups. The longest-key-wins rule in the
+    # substring fallback now picks the GT3 entry over the bare "bmw" key.
+    CarIdentity("bmw_m4_gt3",                "BMW M4 GT3 EVO",                  "BMW M4 GT3 EVO",                  "bmwm4gt3",          "bmw_m4_gt3"),
+    CarIdentity("aston_martin_vantage_gt3",  "Aston Martin Vantage GT3 EVO",    "Aston Martin Vantage GT3 EVO",    "amvantageevogt3",   "aston_martin_vantage_gt3"),
+    CarIdentity("porsche_992_gt3r",          "Porsche 911 GT3 R (992)",         "Porsche 911 GT3 R (992)",         "porsche992rgt3",    "porsche_992_gt3r"),
 ]
 
 # Build lookup indices once at import time.

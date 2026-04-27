@@ -537,6 +537,7 @@ def _refresh_decision_trace(result: "SolveChainResult", inputs: "SolveChainInput
         supporting=result.supporting,
         legality=result.legal_validation,
         fallback_reasons=list(getattr(inputs.measured, "fallback_reasons", []) or []),
+        car=inputs.car,
     )
 
 

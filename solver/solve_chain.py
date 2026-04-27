@@ -315,6 +315,7 @@ def _finalize_result(
         supporting=supporting,
         legality=legal_validation,
         fallback_reasons=list(getattr(inputs.measured, "fallback_reasons", []) or []),
+        car=inputs.car,
     )
     prediction, prediction_confidence = predict_candidate_telemetry(
         current_setup=inputs.current_setup,

@@ -1035,6 +1035,7 @@ def produce(
         supporting=supporting,
         legality=legal_validation,
         fallback_reasons=list(getattr(measured, "fallback_reasons", []) or []),
+        car=car,
     )
 
     base_solve_result.step1 = step1

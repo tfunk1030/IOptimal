@@ -252,6 +252,20 @@ class HeaveSolver:
     """
 
     def __init__(self, car: CarModel, track: TrackProfile):
+        # Defense-in-depth: HeaveSolver only applies to architectures that
+        # actually have heave/third springs (GTP). On GT3_COIL_4WHEEL the
+        # solver chain MUST skip Step 2 and use HeaveSolution.null(...).
+        # If a future caller forgets, fail loudly here rather than silently
+        # producing zero-derived garbage values that downstream consumers
+        # would treat as real spring rates (Key Principle 8).
+        if not car.suspension_arch.has_heave_third:
+            raise ValueError(
+                f"HeaveSolver does not apply to {car.canonical_name} "
+                f"(suspension_arch={car.suspension_arch.name}, "
+                f"has_heave_third=False). "
+                f"Use HeaveSolution.null(...) and skip Step 2 for this "
+                f"architecture (e.g. GT3_COIL_4WHEEL)."
+            )
         self.car = car
         self.track = track
 
