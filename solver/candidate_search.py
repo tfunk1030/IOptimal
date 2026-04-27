@@ -711,14 +711,54 @@ def _apply_family_state_adjustments(
     _adjust_numeric(targets["step5"], "front_toe_mm", -0.05 * entry_push * family_intensity, decimals=3)
 
     if targets.get("step6"):
+        # Damper adjustment bounds and direction are per-car. The sign convention
+        # of "stiffer = +N clicks" only holds for higher-stiffer polarity (BMW,
+        # Aston, Porsche 992, Mercedes, Ferrari, Acura, Lambo, Mustang). For
+        # inverted-polarity cars (Audi R8 LMS, McLaren 720S, Corvette Z06) the
+        # same intent of "+N stiffer" must invert to "-N clicks". Bounds also
+        # come from the per-car damper range (e.g. Porsche 992 = 0-12, BMW =
+        # 0-11; future inverted cars: McLaren HS = 0-50).
+        d = getattr(car, "damper", None) if car is not None else None
+        polarity = getattr(d, "click_polarity", "higher_stiffer")
+        polarity_sign = 1 if polarity == "higher_stiffer" else -1
+        hs_comp_lo, hs_comp_hi = (
+            d.hs_comp_range if d is not None else (0, 20)
+        )
+        ls_rbd_lo, ls_rbd_hi = (
+            d.ls_rbd_range if d is not None else (0, 20)
+        )
         for corner_name in ("lf", "rf"):
             if corner_name in targets["step6"]:
-                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * front_support * family_intensity)), lo=0, hi=20)
-                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round((front_support + front_lock) * family_intensity)), lo=0, hi=20)
+                _adjust_integer(
+                    targets["step6"][corner_name],
+                    "hs_comp",
+                    polarity_sign * int(round(1.5 * front_support * family_intensity)),
+                    lo=hs_comp_lo,
+                    hi=hs_comp_hi,
+                )
+                _adjust_integer(
+                    targets["step6"][corner_name],
+                    "ls_rbd",
+                    polarity_sign * int(round((front_support + front_lock) * family_intensity)),
+                    lo=ls_rbd_lo,
+                    hi=ls_rbd_hi,
+                )
         for corner_name in ("lr", "rr"):
             if corner_name in targets["step6"]:
-                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * rear_support * family_intensity)), lo=0, hi=20)
-                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round(rear_support * family_intensity)), lo=0, hi=20)
+                _adjust_integer(
+                    targets["step6"][corner_name],
+                    "hs_comp",
+                    polarity_sign * int(round(1.5 * rear_support * family_intensity)),
+                    lo=hs_comp_lo,
+                    hi=hs_comp_hi,
+                )
+                _adjust_integer(
+                    targets["step6"][corner_name],
+                    "ls_rbd",
+                    polarity_sign * int(round(rear_support * family_intensity)),
+                    lo=ls_rbd_lo,
+                    hi=ls_rbd_hi,
+                )
 
     _adjust_numeric(targets["supporting"], "brake_bias_pct", -0.3 * front_lock * family_intensity, decimals=3)
     _adjust_numeric(targets["supporting"], "brake_bias_target", -0.5 * front_lock * family_intensity, decimals=3)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Literal
 
 from car_model.garage import GarageOutputModel
 from vertical_dynamics import damped_excursion_mm
@@ -1274,8 +1275,22 @@ class ARBModel:
     track_width_front_mm: float = 1730.0
     track_width_rear_mm: float = 1650.0
     is_calibrated: bool = False      # True when stiffness values are derived from measured data
+    # Audit A-3..A-6 (W2.4) forward-compat: direction in which higher size_labels =
+    # stiffer ("ascending") vs softer ("descending"). Most cars (BMW/Aston/Porsche/
+    # Ferrari) are ascending. Corvette Z06 GT3.R is documented as 0=stiff → 6=soft
+    # (descending). The live-tuning slow/fast direction in arb_solver dispatches
+    # on this flag.
+    arb_direction: str = "ascending"
 
     def blade_factor(self, blade: int, max_blade: int) -> float:
+        # Audit A-9 (W2.4): For paired-blade GT3 ARB encodings (e.g. BMW M4 GT3
+        # D1-D1..D6-D6) the size_label IS the entire ARB configuration and the
+        # blade dimension is a no-op (blade_count==1, blade==1). The legacy
+        # formula 0.30 + 0.70*(0)/max(0, 1) = 0.30, multiplying ARB stiffness by
+        # 0.30 for every GT3 setup. When there is only a single blade slot, the
+        # blade factor must be 1.0 (full bar stiffness as encoded in the size table).
+        if max_blade <= 1:
+            return 1.0
         return 0.30 + 0.70 * (blade - 1) / max(max_blade - 1, 1)
 
     def front_roll_stiffness(self, size_label: str, blade: int) -> float:
@@ -1345,6 +1360,13 @@ class DamperModel:
     hs_rbd_range: tuple[int, int] = (0, 11)
     hs_slope_range: tuple[int, int] = (0, 11)
     hs_slope_rbd_range: tuple[int, int] | None = None  # Ferrari only (lfHSSlopeRbdDampSetting)
+    # Damper click polarity. "higher_stiffer" = BMW/Mercedes/Ferrari/Aston/
+    # Porsche 992/Acura/Lambo/Mustang convention (0=fully closed, more clicks=
+    # softer in that the engine is letting more flow). "lower_stiffer" =
+    # Audi R8 LMS / McLaren 720S / Corvette Z06 (Penske inverted convention).
+    # Affects: legality_engine soft penalties, candidate_search adjustment
+    # direction. Default preserves BMW behaviour.
+    click_polarity: Literal["higher_stiffer", "lower_stiffer"] = "higher_stiffer"
     # Force-per-click ESTIMATED by reverse-engineering from physics:
     # c_damping * v_ref / clicks = fpc
     # Front LS: 5060 * 0.025 / 7 = 18.1 N/click
@@ -3340,7 +3362,11 @@ BMW_M4_GT3 = CarModel(
     brake_bias_pct=52.0,
     # Diff preload from IBT (Spielberg setup): 100 Nm
     default_diff_preload_nm=100.0,
-    measured_lltd_target=None,     # Will use OptimumG physics formula (W_f=46.4% → ~0.51)
+    # W2.4 / Audit A-1: BMW M4 GT3 is FR layout (W_f=0.464). OptimumG +5pp rule
+    # validated for FR/MR cars → target ~0.51. Set explicitly so the solver hits
+    # a physically-valid target rather than relying on the bare formula path.
+    # Source: docs/audits/gt3_phase2/solver-rake-corner-arb.md body line 350-365.
+    measured_lltd_target=0.51,
     lltd_target_source="physics_formula",
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=0.0,    # GT3 RH not pinned — varies with springs
@@ -3462,7 +3488,12 @@ ASTON_MARTIN_VANTAGE_GT3 = CarModel(
     brake_bias_pct=55.8,
     # Diff preload from IBT (Spielberg setup): 110 Nm
     default_diff_preload_nm=110.0,
-    measured_lltd_target=None,     # OptimumG physics formula will derive
+    # W2.4 / Audit A-1: Aston Martin Vantage GT3 is FR layout (W_f=0.480).
+    # OptimumG +5pp rule validated for FR/MR cars → target ~0.53. Set explicitly
+    # so the solver hits a physically-valid target rather than relying on the
+    # bare formula path. Source: docs/audits/gt3_phase2/solver-rake-corner-arb.md
+    # body line 350-365.
+    measured_lltd_target=0.53,
     lltd_target_source="physics_formula",
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=0.0,
@@ -3577,6 +3608,10 @@ PORSCHE_992_GT3R = CarModel(
         # Driver-loaded values reach 12 (HSC front=12, LSR rear=12) — implies
         # 0-12 click range, wider than BMW/Aston (which cap at 11). Manual
         # does not state range. PENDING click-sweep IBT.
+        ls_comp_range=(0, 12),
+        ls_rbd_range=(0, 12),
+        hs_comp_range=(0, 12),
+        hs_rbd_range=(0, 12),
         has_roll_dampers=False,
         has_front_roll_damper=False,
         has_rear_roll_damper=False,
@@ -3596,7 +3631,16 @@ PORSCHE_992_GT3R = CarModel(
     # weight transfer onto front under braking is large because static rear is heavy)
     brake_bias_pct=51.7,
     default_diff_preload_nm=110.0,  # IBT
-    measured_lltd_target=None,     # OptimumG: 0.449 + (0.20/0.20)*0.05 = 0.499 (LOWER than FR/MR)
+    # W2.4 / Audit A-1: Porsche 992 GT3 R is RR layout (W_f=0.449). The OptimumG
+    # +5pp rule was validated for FR/MR cars (W_f ~0.50) — for RR cars the bare
+    # formula gives 0.499 but empirically the target is closer to ~0.45 (per
+    # docs/audits/gt3_phase2/solver-rake-corner-arb.md body line 350-365 and the
+    # known Porsche-963 GTP epistemic gap pattern). Set explicitly so the rear
+    # ARB search isn't pushed too soft by an over-targeted LLTD.
+    # NOTE: docs/gt3_per_car_spec.md line 148 cites a different W_f (0.38) and
+    # derives 0.43; the audit body uses W_f=0.449 (matching the IBT-measured
+    # value here) and recommends ~0.45. We follow the audit recommendation.
+    measured_lltd_target=0.45,
     lltd_target_source="physics_formula",
     pushrod=PushrodGeometry(
         front_pinned_rh_mm=0.0,

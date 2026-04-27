@@ -673,6 +673,19 @@ class DamperSolver:
                     else:
                         rr_hs_comp_adj = -adj
 
+        # W3.2 / Audit F2: GT3 garage YAML exposes only per-axle damper clicks
+        # (FrontDampers/RearDampers, not per-corner LF/RF/LR/RR). Any L/R
+        # asymmetric adjustment computed above would be silently dropped on the
+        # .sto write — the second corner of each axle would simply overwrite the
+        # first. Collapse asymmetric adjustments to per-axle averages so the
+        # solver's intent (e.g. "soften the busier side") is preserved as the
+        # axle-mean, not lost. GTP retains true per-corner asymmetry.
+        if not self.car.suspension_arch.has_heave_third:
+            front_avg = (lf_hs_comp_adj + rf_hs_comp_adj) // 2
+            rear_avg = (lr_hs_comp_adj + rr_hs_comp_adj) // 2
+            lf_hs_comp_adj = rf_hs_comp_adj = front_avg
+            lr_hs_comp_adj = rr_hs_comp_adj = rear_avg
+
         lf = CornerDamperSettings(
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, front_hs_comp + lf_hs_comp_adj)),

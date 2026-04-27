@@ -878,7 +878,14 @@ def _build_dimension(
         ),
     }
 
-    # Damper ranges from car.damper
+    # Damper ranges from car.damper. The numeric range itself is polarity-
+    # independent — the search axis just enumerates [lo, hi] integers — so
+    # no polarity dispatch is needed here. Polarity matters only for SCORING
+    # (legality_engine soft penalties, candidate_search adjustment direction),
+    # which already dispatch on car.damper.click_polarity.
+    # TODO(W6.1): once Audi/McLaren/Corvette stubs land in W10.1 with their
+    # inverted polarity, audit any place in legal_space scoring that reasons
+    # directionally (e.g. "stiffer = +N") and apply polarity dispatch there.
     d = car.damper
     damper_ranges = {
         "front_ls_comp": d.ls_comp_range,
