@@ -384,6 +384,14 @@ def build_observation(
         "live_tc_slip": getattr(m, "live_tc_slip", None),
         "live_front_arb_blade": getattr(m, "live_front_arb_blade", None),
         "live_rear_arb_blade": getattr(m, "live_rear_arb_blade", None),
+        # Kerb-event step-response damper ID (Unit 3)
+        "front_step_response_zeta_p50": getattr(m, "front_step_response_zeta_p50", None),
+        "front_step_response_zeta_p95": getattr(m, "front_step_response_zeta_p95", None),
+        "front_step_response_freq_hz_p50": getattr(m, "front_step_response_freq_hz_p50", None),
+        "rear_step_response_zeta_p50": getattr(m, "rear_step_response_zeta_p50", None),
+        "rear_step_response_zeta_p95": getattr(m, "rear_step_response_zeta_p95", None),
+        "rear_step_response_freq_hz_p50": getattr(m, "rear_step_response_freq_hz_p50", None),
+        "kerb_strike_count": getattr(m, "kerb_strike_count", 0),
     }
 
     # ── Driver ──
