@@ -3300,7 +3300,11 @@ BMW_M4_GT3 = CarModel(
     aero_axes_swapped=False,  # GT3 xlsx labels are direct (rows = front RH, cols = rear RH)
     # GT3 dynamic RH operating envelope (manual: max-DF target dyn front 35.0 ±2.5,
     # dyn rear 80.0 ±2.5; min-drag F/R both 17.5 ±2.5).
-    min_front_rh_static=50.0,  # Manual implies static floor ~50 mm; verify in garage
+    # Driver-loaded IBT static front RH ≈ 72.6 mm; with ~27 mm aero compression
+    # at 230 kph the static floor is well above the original 50 mm placeholder.
+    # Bumped to 60 mm 2026-04-27 after Road Atlanta IBT showed the search
+    # converging to the floor and recommending front RH 22 mm below driver value.
+    min_front_rh_static=60.0,
     max_front_rh_static=95.0,
     min_rear_rh_static=50.0,   # Manual: rear legal range 50-95 mm
     max_rear_rh_static=95.0,
@@ -3355,7 +3359,15 @@ BMW_M4_GT3 = CarModel(
         rear_baseline_size="D2-D2",
         rear_baseline_blade=1,
     ),
-    geometry=WheelGeometryModel(),  # PENDING_IBT
+    # Camber baselines from BMW M4 GT3 Spielberg + Road Atlanta IBTs
+    # (consistent across both tracks: front -4.0°, rear -2.8°). GT3 slicks
+    # need more aggressive negative camber than GTP — was using GTP defaults
+    # (-2.9 / -1.9) and recommending -1.5 / -1.4 vs driver -4.0 / -3.0.
+    # Bumped 2026-04-27 after Road Atlanta IBT post-mortem.
+    geometry=WheelGeometryModel(
+        front_camber_baseline_deg=-4.0,   # IBT: LeftFront / RightFront Camber = -4.0°
+        rear_camber_baseline_deg=-2.8,    # IBT: LeftRear / RightRear Camber = -2.8°
+    ),
     damper=DamperModel(
         # Manual: 4-way per corner, 0-11 click range, NO heave/roll dampers
         has_roll_dampers=False,
@@ -3443,7 +3455,10 @@ ASTON_MARTIN_VANTAGE_GT3 = CarModel(
     aero_axes_swapped=False,
     # GT3 RH operating envelope. Manual: max-DF wing +10.5 → dyn F 35.0±2.5,
     # dyn R 70.0±2.5; min-drag wing +0.5 → F/R 17.5±2.5.
-    min_front_rh_static=50.0,  # PENDING manual decode
+    # Driver-loaded IBT static front RH ≈ 70 mm at Spielberg; bumped from
+    # 50 mm placeholder to 60 mm 2026-04-27 to match the W4.x BMW M4 GT3
+    # post-mortem (search was converging to the floor).
+    min_front_rh_static=60.0,
     max_front_rh_static=95.0,
     min_rear_rh_static=50.0,
     max_rear_rh_static=95.0,
@@ -3486,7 +3501,13 @@ ASTON_MARTIN_VANTAGE_GT3 = CarModel(
         rear_baseline_size="B5",
         rear_baseline_blade=1,
     ),
-    geometry=WheelGeometryModel(),
+    # Camber baselines from Spielberg IBT (front -4.0°, rear ~-2.8° estimated
+    # from BMW M4 GT3 spec — Aston rear value not in YAML excerpt).
+    # Bumped from GTP defaults 2026-04-27.
+    geometry=WheelGeometryModel(
+        front_camber_baseline_deg=-4.0,   # IBT: front Camber = -4.0°
+        rear_camber_baseline_deg=-2.8,    # PENDING_IBT — pinned to BMW M4 GT3 reference
+    ),
     damper=DamperModel(
         # Real-world Aston has 5-way adjustable; iRacing IBT YAML exposes 4-way
         # per-axle (FrontDampers/RearDampers, LSC/HSC/LSR/HSR clicks).
@@ -3583,7 +3604,9 @@ PORSCHE_992_GT3R = CarModel(
     # GT3 RH operating envelope. Manual does NOT publish max-DF/min-drag aero
     # targets for this car (notable gap among GT3 manuals). Step 1 will need to
     # discover them empirically from the parsed aero map.
-    min_front_rh_static=50.0,
+    # RR-layout cars sit higher at the front; bumped from 50 mm placeholder
+    # to 60 mm 2026-04-27 to match the W4.x post-mortem.
+    min_front_rh_static=60.0,
     max_front_rh_static=95.0,
     min_rear_rh_static=50.0,
     max_rear_rh_static=95.0,
@@ -3628,7 +3651,14 @@ PORSCHE_992_GT3R = CarModel(
         rear_baseline_size="7",
         rear_baseline_blade=1,
     ),
-    geometry=WheelGeometryModel(),
+    # Camber baselines from Spielberg IBT (front -4.0°, rear -3.0°).
+    # Porsche 992 GT3 R runs marginally more rear camber than BMW/Aston
+    # (RR layout puts more steady-state load on rear). Bumped from GTP
+    # defaults 2026-04-27.
+    geometry=WheelGeometryModel(
+        front_camber_baseline_deg=-4.0,   # IBT: front Camber = -4.0°
+        rear_camber_baseline_deg=-3.0,    # IBT: rear Camber = -3.0°
+    ),
     damper=DamperModel(
         # Driver-loaded values reach 12 (HSC front=12, LSR rear=12) — implies
         # 0-12 click range, wider than BMW/Aston (which cap at 11). Manual
