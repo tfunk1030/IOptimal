@@ -1156,6 +1156,20 @@ This is the most common misuse. The full cascade:
 | Porsche | Done ✅ (10 setups) | Done ✅ (LLTD + ARB from telemetry) | Done ✅ (zeta from 35 sessions) | Done ✅ |
 | Acura | 6 sessions (heave + third sweep) | 6 sessions (ARB sweep) | 6 sessions (LS + HS sweep) | ~19 |
 
+To get a forecast for a specific (car, track) instead of the table-wide
+estimates above, run:
+
+```bash
+python -m validation.calibration_confidence --car cadillac --track silverstone
+python -m validation.calibration_confidence --car porsche --track algarve --gate-r2 0.95
+```
+
+The reporter re-fits the regression on bootstrapped subsets of the on-disk
+calibration corpus, plots the LOO R² vs n_samples curve, and forecasts how
+many additional sessions are needed to reach a given R² gate. Use it before
+collecting more IBTs — sometimes the asymptote is already below the gate
+(model is feature-limited, not data-limited).
+
 ---
 
 ## What "Calibrated" Actually Means Here
