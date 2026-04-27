@@ -1,0 +1,26 @@
+{
+  "car": "porsche_992_gt3r",
+  "wing_angles": [
+    5.7,
+    6.7,
+    7.7,
+    8.7,
+    9.7,
+    10.7,
+    11.7,
+    12.7
+  ],
+  "front_rh_range": [
+    5.0,
+    119.0
+  ],
+  "rear_rh_range": [
+    5.0,
+    99.0
+  ],
+  "grid_shape": [
+    58,
+    48
+  ],
+  "balance_only": true
+}

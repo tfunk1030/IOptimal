@@ -100,6 +100,48 @@ class HeaveSolution:
     parameter_search_status: dict = None
     parameter_search_evidence: dict = None
 
+    # True when this solution carries real Step-2 output (heave/third springs
+    # were solved). False when the car has no heave/third architecture (e.g.
+    # GT3 SuspensionArchitecture.GT3_COIL_4WHEEL) and Step 2 was skipped — all
+    # numeric fields are zero placeholders. Downstream consumers MUST guard on
+    # `step2.present` before reading heave-specific values; reading them on a
+    # null solution will return 0.0 silently, which would violate Key Principle
+    # 8 ("no silent fallbacks") if treated as real data.
+    present: bool = True
+
+    @classmethod
+    def null(
+        cls,
+        front_dynamic_rh_mm: float = 0.0,
+        rear_dynamic_rh_mm: float = 0.0,
+    ) -> "HeaveSolution":
+        """Build a null Step-2 solution for cars with no heave/third springs.
+
+        Used when SuspensionArchitecture.GT3_COIL_4WHEEL skips Step 2. Numeric
+        fields are zero; `present=False` signals downstream solvers to source
+        equivalents (front/rear stiffness, dynamic RH variance) from corner
+        spring rates via Step 3 instead.
+        """
+        return cls(
+            front_heave_nmm=0.0,
+            rear_third_nmm=0.0,
+            front_dynamic_rh_mm=front_dynamic_rh_mm,
+            front_shock_vel_p99_mps=0.0,
+            front_excursion_at_rate_mm=0.0,
+            front_bottoming_margin_mm=0.0,
+            front_sigma_at_rate_mm=0.0,
+            front_binding_constraint="not_applicable",
+            rear_dynamic_rh_mm=rear_dynamic_rh_mm,
+            rear_shock_vel_p99_mps=0.0,
+            rear_excursion_at_rate_mm=0.0,
+            rear_bottoming_margin_mm=0.0,
+            rear_sigma_at_rate_mm=0.0,
+            rear_binding_constraint="not_applicable",
+            perch_offset_front_mm=0.0,
+            perch_offset_rear_mm=0.0,
+            present=False,
+        )
+
     def __post_init__(self):
         if self.parameter_search_status is None:
             self.parameter_search_status = {
