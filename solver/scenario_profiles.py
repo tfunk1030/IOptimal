@@ -141,12 +141,19 @@ _SCENARIOS: dict[str, ScenarioProfile] = {
         ),
         preferred_result_key="best_robust",
     ),
-    # TODO(W3.3+ / W6.x): no GT3-specific race profile. The thresholds below
-    # (max_front_heave_travel_used_pct=95.5, etc.) are GTP-physics — GT3 has
-    # no front heave spring, so the equivalent constraint would be
-    # max_bump_rubber_gap_pct or similar against `BumpRubberGap`. Out of scope
-    # for W3.3; tracked for W6.x. See SP3 in
-    # docs/audits/gt3_phase2/solver-damper-legality.md.
+    # TODO(W6.x / W10.1): GT3-specific scenario profile.
+    # Sanity windows for ``max_front_heave_travel_used_pct``,
+    # ``max_front_excursion_mm``, and ``max_rear_rh_std_mm`` are GTP-tuned.
+    # GT3 has no heave channel; the equivalent constraint is
+    # ``max_bump_rubber_contact_pct`` (or per-axle excursion against
+    # ``BumpRubberGap`` / per-corner coil rate). GT3 RH magnitudes also
+    # differ (BMW M4 GT3 dynamic F=68/R=70, Porsche 992 F=69/R=61
+    # *reverse rake*). Both fixes are data-gated on a varied-spring GT3
+    # IBT corpus that doesn't yet exist; do NOT add GT3 sanity constants
+    # here from physics alone — that would silently penalise GT3
+    # candidates against unverified thresholds. See F20 in
+    # ``docs/audits/gt3_phase2/webapp-cli-tests-docs.md`` and SP3 in
+    # ``docs/audits/gt3_phase2/solver-damper-legality.md``.
     "race": ScenarioProfile(
         name="race",
         label="Race",

@@ -66,7 +66,14 @@ class GroupSpec:
     rows: tuple[RowSpec, ...]
 
 
-SETUP_GROUP_SPECS: tuple[GroupSpec, ...] = (
+# GT3 Phase 2 W9.1 — F2 fix. The webapp Setup Diff card historically rendered a
+# fixed list of platform rows assuming GTP architecture (heave / third spring /
+# torsion bar). GT3 cars carry `heave_spring=None` and `front_torsion_c=0.0` so
+# those rows render as '-' and waste UI real-estate; worse, GT3 corner springs
+# diverge per-axle (BMW M4 GT3 driver-loaded F=252, R=179 N/mm) and were not
+# represented at all. The selector below resolves the architecture from the
+# canonical car name and returns the appropriate group specs.
+_GTP_SETUP_GROUP_SPECS: tuple[GroupSpec, ...] = (
     GroupSpec(
         "Platform",
         "Ride heights, springs, and pushrods that set the platform.",
@@ -126,6 +133,131 @@ SETUP_GROUP_SPECS: tuple[GroupSpec, ...] = (
 )
 
 
+# GT3 platform layout — coil springs at all four corners, with bump rubber gap
+# (front + rear) and splitter height as the iRacing-exposed garage parameters.
+# Heave / third / torsion rows are intentionally omitted (those don't exist in
+# GT3 garage XML). Step3 returns paired LF==RF and LR==RR coil rates per W3.1
+# / W4.1; we surface them as Front spring + Rear spring rows here.
+_GT3_SETUP_GROUP_SPECS: tuple[GroupSpec, ...] = (
+    GroupSpec(
+        "Platform",
+        "Ride heights, coil springs, and bump rubber gap that set the GT3 platform.",
+        (
+            RowSpec("Wing angle", ("current_setup.wing_angle_deg",), ("wing",), "deg", 0),
+            RowSpec("Front pushrod", ("current_setup.front_pushrod_mm",), ("step1.front_pushrod_offset_mm",), "mm", 1, True),
+            RowSpec("Rear pushrod", ("current_setup.rear_pushrod_mm",), ("step1.rear_pushrod_offset_mm",), "mm", 1, True),
+            RowSpec("Rear ride height", ("current_setup.static_rear_rh_mm",), ("step1.static_rear_rh_mm",), "mm", 1),
+            RowSpec("Front spring", ("current_setup.front_corner_spring_nmm",), ("step3.front_coil_rate_nmm",), "N/mm", 0),
+            RowSpec("Rear spring", ("current_setup.rear_corner_spring_nmm", "current_setup.rear_spring_nmm"), ("step3.rear_spring_rate_nmm", "step3.rear_spring_nmm"), "N/mm", 0),
+            RowSpec("Front bump rubber gap", ("current_setup.front_bump_rubber_gap_mm",), ("step2.front_bump_rubber_gap_mm",), "mm", 1),
+            RowSpec("Rear bump rubber gap", ("current_setup.rear_bump_rubber_gap_mm",), ("step2.rear_bump_rubber_gap_mm",), "mm", 1),
+            RowSpec("Splitter height", ("current_setup.splitter_height_mm",), ("step1.splitter_height_mm",), "mm", 1),
+        ),
+    ),
+    GroupSpec(
+        "Balance",
+        "Roll balance, brake bias, and differential preload that tune rotation.",
+        (
+            RowSpec("Front ARB blade", ("current_setup.front_arb_blade",), ("step4.front_arb_blade_start", "step4.farb_blade_locked"), "", 0),
+            RowSpec("Rear ARB blade", ("current_setup.rear_arb_blade",), ("step4.rear_arb_blade_start", "step4.rarb_blade_slow_corner"), "", 0),
+            RowSpec("Brake bias", ("current_setup.brake_bias_pct",), ("supporting.brake_bias_pct",), "%", 1),
+            RowSpec("Diff preload", ("current_setup.diff_preload_nm",), ("supporting.diff_preload_nm",), "Nm", 0),
+        ),
+    ),
+    GroupSpec(
+        "Geometry",
+        "Camber and toe settings that control contact patch and turn-in shape.",
+        (
+            RowSpec("Front camber", ("current_setup.front_camber_deg",), ("step5.front_camber_deg",), "deg", 1, True),
+            RowSpec("Rear camber", ("current_setup.rear_camber_deg",), ("step5.rear_camber_deg",), "deg", 1, True),
+            RowSpec("Front toe", ("current_setup.front_toe_mm",), ("step5.front_toe_mm",), "mm", 1, True),
+            RowSpec("Rear toe", ("current_setup.rear_toe_mm",), ("step5.rear_toe_mm",), "mm", 1, True),
+        ),
+    ),
+    GroupSpec(
+        "Dampers",
+        "Low-speed and high-speed damping clicks grouped by axle (per-axle on GT3, not per-corner).",
+        (
+            RowSpec("Front LS comp", ("current_setup.front_ls_comp",), ("step6.lf.ls_comp",), "click", 0),
+            RowSpec("Front LS rebound", ("current_setup.front_ls_rbd",), ("step6.lf.ls_rbd",), "click", 0),
+            RowSpec("Front HS comp", ("current_setup.front_hs_comp",), ("step6.lf.hs_comp",), "click", 0),
+            RowSpec("Front HS rebound", ("current_setup.front_hs_rbd",), ("step6.lf.hs_rbd",), "click", 0),
+            RowSpec("Rear LS comp", ("current_setup.rear_ls_comp",), ("step6.lr.ls_comp",), "click", 0),
+            RowSpec("Rear LS rebound", ("current_setup.rear_ls_rbd",), ("step6.lr.ls_rbd",), "click", 0),
+            RowSpec("Rear HS comp", ("current_setup.rear_hs_comp",), ("step6.lr.hs_comp",), "click", 0),
+            RowSpec("Rear HS rebound", ("current_setup.rear_hs_rbd",), ("step6.lr.hs_rbd",), "click", 0),
+        ),
+    ),
+    GroupSpec(
+        "Driver Aids",
+        "Drive-unit settings the driver will feel directly on throttle application.",
+        (
+            RowSpec("TC gain", ("current_setup.tc_gain",), ("supporting.tc_gain",), "", 0),
+            RowSpec("TC slip", ("current_setup.tc_slip",), ("supporting.tc_slip",), "", 0),
+        ),
+    ),
+)
+
+
+# Backward compatibility: legacy callers (and tests pre-W9.1) can still import
+# ``SETUP_GROUP_SPECS`` and get the GTP layout. New code should prefer
+# ``setup_group_specs_for(canonical_car_name)``.
+SETUP_GROUP_SPECS: tuple[GroupSpec, ...] = _GTP_SETUP_GROUP_SPECS
+
+
+def setup_group_specs_for(car_canonical: str | None) -> tuple[GroupSpec, ...]:
+    """Return the architecture-appropriate ``SETUP_GROUP_SPECS`` for a car.
+
+    GT3 cars (``car.suspension_arch.has_heave_third == False``) drop the
+    heave / third / torsion rows and surface 4 corner spring rates plus
+    bump rubber gap (front+rear) and splitter height instead. GTP cars
+    keep the legacy layout.
+
+    Falls back to the GTP layout when ``car_canonical`` is unknown so the
+    UI always renders something — the platform mismatch will be caught
+    downstream by the calibration gate / writer.
+    """
+    if not car_canonical:
+        return _GTP_SETUP_GROUP_SPECS
+    try:
+        car = get_car(car_canonical)
+    except (KeyError, AttributeError):
+        return _GTP_SETUP_GROUP_SPECS
+    arch = getattr(car, "suspension_arch", None)
+    if arch is None:
+        return _GTP_SETUP_GROUP_SPECS
+    if not getattr(arch, "has_heave_third", True):
+        return _GT3_SETUP_GROUP_SPECS
+    return _GTP_SETUP_GROUP_SPECS
+
+
+def list_supported_cars(class_filter: str | None = None) -> list[tuple[str, str, str]]:
+    """Return all supported cars as ``(canonical, display_name, class)`` triples.
+
+    ``class`` is "GTP" or "GT3" derived from the car's
+    ``SuspensionArchitecture``. The webapp uses this to render an
+    ``<optgroup>`` per class in the car selector. ``class_filter`` may be
+    "GTP" or "GT3" to restrict the list to a single class.
+    """
+    from car_model.cars import _CARS  # canonical car registry
+
+    rows: list[tuple[str, str, str]] = []
+    for canonical, car in _CARS.items():
+        arch = getattr(car, "suspension_arch", None)
+        if arch is None:
+            klass = "GTP"
+        elif getattr(arch, "has_heave_third", True):
+            klass = "GTP"
+        else:
+            klass = "GT3"
+        if class_filter is not None and klass != class_filter:
+            continue
+        display = getattr(car, "name", canonical)
+        rows.append((canonical, display, klass))
+    rows.sort(key=lambda item: (item[2], item[1]))
+    return rows
+
+
 # Plain-English explanations for each setup parameter.
 PARAM_EXPLANATIONS: dict[str, str] = {
     "Wing angle": "Rear wing angle. Higher adds downforce and drag — more grip in corners but lower top speed.",
@@ -154,6 +286,17 @@ PARAM_EXPLANATIONS: dict[str, str] = {
     "Rear HS rebound": "Rear high-speed rebound damping. Controls rear recovery — too high causes oscillation.",
     "TC gain": "Traction control gain. Higher intervenes earlier to prevent wheelspin.",
     "TC slip": "Traction control slip target. Higher allows more wheelspin before TC activates.",
+    # GT3 Phase 2 W9.1 — F4 fix. GT3 cars use coil springs at all four corners
+    # plus bump rubber gap and (BMW/Aston) splitter height as the iRacing-
+    # exposed garage parameters. The labels below are surfaced by
+    # ``_GT3_SETUP_GROUP_SPECS`` and use the same plain-English voice as the
+    # GTP entries above. Initial copy reviewed against
+    # ``docs/gt3_per_car_spec.md`` cross-cutting facts; revisit once telemetry
+    # is available to refine the trade-off language.
+    "Front spring": "Front corner spring (coil-over) rate. Stiffer reduces front compliance and roll, softer adds mechanical grip and bump compliance.",
+    "Front bump rubber gap": "Gap to the front bump rubber. Smaller gap engages the rubber sooner under aero load — extra heave stiffness when needed without changing the coil rate. Larger gap keeps the platform on the spring across more of the operating range.",
+    "Rear bump rubber gap": "Gap to the rear bump rubber. Smaller gap stiffens up the rear under load; larger keeps the rear on the coil rate longer.",
+    "Splitter height": "Splitter ride height (BMW M4 GT3 / Aston Vantage). Lower splitter increases front downforce but raises stall risk if the front floats off the floor; higher reduces front DF for a safer aero window.",
 }
 
 
@@ -325,7 +468,7 @@ class IOptimalWebService:
             "step6": result["step6"],
             "supporting": result["supporting"],
         }
-        setup_groups = _build_setup_groups(context)
+        setup_groups = _build_setup_groups(context, getattr(result.get("car"), "canonical_name", request.car))
         top_changes = _pick_top_changes(setup_groups)
         telemetry = _build_telemetry_views(result["measured"], predicted, context)
         problems = _build_problem_views(result.get("diagnosis"))
@@ -438,7 +581,7 @@ class IOptimalWebService:
             "step6": summary_payload.get("step6_dampers", {}),
             "supporting": {},
         }
-        setup_groups = _build_setup_groups(context)
+        setup_groups = _build_setup_groups(context, getattr(car, "canonical_name", request.car))
         _tier_info_ts = _load_support_tier(getattr(car, "canonical_name", "bmw"), request.track) or {}
         summary = SessionResultView(
             result_kind="track_solve",
@@ -586,7 +729,8 @@ class IOptimalWebService:
                     "step5": getattr(synthesis, "step5", {}),
                     "step6": getattr(synthesis, "step6", {}),
                     "supporting": getattr(synthesis, "supporting", {}),
-                }
+                },
+                getattr(car, "canonical_name", request.car),
             ) if synthesis is not None else [],
             engineering_notes=list(getattr(synthesis, "solver_notes", [])) if synthesis is not None else [],
             report_text=report_text,
@@ -619,9 +763,13 @@ def _lookup(root: Any, path: str | Iterable[str], default: Any = None) -> Any:
     return default
 
 
-def _build_setup_groups(context: dict[str, Any]) -> list[SetupGroupView]:
+def _build_setup_groups(context: dict[str, Any], car_canonical: str | None = None) -> list[SetupGroupView]:
     groups: list[SetupGroupView] = []
-    for group_spec in SETUP_GROUP_SPECS:
+    # GT3 Phase 2 W9.1 — F2 fix. Resolve specs from the car's architecture
+    # rather than a fixed module-level constant; falls back to GTP layout
+    # for unknown / missing cars.
+    specs = setup_group_specs_for(car_canonical) if car_canonical else SETUP_GROUP_SPECS
+    for group_spec in specs:
         rows: list[ChangeView] = []
         for row_spec in group_spec.rows:
             current_value = _lookup(context, row_spec.current_paths)

@@ -1,7 +1,8 @@
-"""IOptimal — unified GTP setup solver.
+"""IOptimal — unified physics-based setup solver for iRacing GTP and GT3.
 
 Canonical CLI entry point with subcommands:
     python -m ioptimal produce --car bmw --ibt session.ibt --wing 17
+    python -m ioptimal produce --car bmw_m4_gt3 --ibt session.ibt --wing 0
     python -m ioptimal analyze --car bmw --ibt session.ibt
     python -m ioptimal solve --car bmw --track sebring --wing 17
     python -m ioptimal ingest --car bmw --ibt session.ibt
@@ -17,6 +18,20 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+
+
+# GT3 Phase 2 W9.1 — F5/F6 fix. Build the ``--car`` choices and help text
+# once from the canonical car registry; previously every subparser hardcoded
+# the GTP-only list ``bmw|cadillac|ferrari|porsche|acura``, silently
+# rejecting GT3 canonical names.
+def _car_choices() -> list[str]:
+    from car_model.cars import _CARS
+    return sorted(_CARS.keys())
+
+
+def _car_help() -> str:
+    choices = _car_choices()
+    return f"Car canonical name. Choices: {', '.join(choices)}"
 
 # ── Fix Windows console encoding before ANY output ──────────────────────────
 # Must happen before argparse, imports, or pipeline modules print anything.
@@ -465,7 +480,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ioptimal",
-        description="IOptimal — GTP setup solver (pipeline + physics)",
+        description="IOptimal — physics-based setup solver for iRacing GTP and GT3 classes",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -487,7 +502,8 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     produce_parser.add_argument("--car", required=True,
-                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+                        choices=_car_choices(),
+                        help=_car_help())
     produce_parser.add_argument("--ibt", action="append", default=None, metavar="IBT",
                         help="IBT telemetry file. Repeat for multiple files: "
                              "--ibt f1.ibt --ibt f2.ibt → per-file reports + comparison table.")
@@ -539,7 +555,8 @@ def main() -> None:
         help='Analyze one IBT session (diagnose setup, driver style, handling)',
     )
     analyze_parser.add_argument("--car", required=True,
-                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+                        choices=_car_choices(),
+                        help=_car_help())
     analyze_parser.add_argument("--ibt", required=True,
                         help="Path to IBT telemetry file")
     analyze_parser.add_argument("--lap", type=int, default=None,
@@ -553,7 +570,8 @@ def main() -> None:
         help='Standalone physics solver (no IBT required)',
     )
     solve_parser.add_argument("--car", required=True,
-                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+                        choices=_car_choices(),
+                        help=_car_help())
     solve_parser.add_argument("--track", required=True,
                         help="Track name (e.g., sebring)")
     solve_parser.add_argument("--wing", type=float, required=True,
@@ -580,8 +598,12 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     calibrate_parser.add_argument("--car", required=True,
-                        choices=["bmw", "cadillac", "ferrari", "acura", "porsche"],
-                        help="Car to calibrate")
+                        # GT3 Phase 2 W9.1 — F5 fix. Pull dynamically from
+                        # the canonical car registry so adding a GT3 entry
+                        # to ``car_model.cars._CARS`` automatically lights
+                        # up the calibrate subcommand without a code edit.
+                        choices=_car_choices(),
+                        help=_car_help())
     calibrate_parser.add_argument("--ibt", nargs="+", default=None,
                         help="One or more IBT files to add to the calibration dataset")
     calibrate_parser.add_argument("--ibt-dir", default=None, dest="ibt_dir",
@@ -603,7 +625,8 @@ def main() -> None:
         help='Ingest IBT into knowledge base (learning system)',
     )
     ingest_parser.add_argument("--car", required=True,
-                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+                        choices=_car_choices(),
+                        help=_car_help())
     ingest_parser.add_argument("--ibt", required=True,
                         help="Path to IBT telemetry file")
     ingest_parser.add_argument("--wing", type=float, default=None,
@@ -620,7 +643,8 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     run_parser.add_argument("--car", required=True,
-                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+                        choices=_car_choices(),
+                        help=_car_help())
     run_parser.add_argument("--ibt", action="append", required=True, metavar="IBT",
                         help="IBT telemetry file(s)")
     run_parser.add_argument("--wing", type=float, default=None,
@@ -786,13 +810,14 @@ def main_legacy() -> None:
     """
     parser = argparse.ArgumentParser(
         prog="ioptimal",
-        description="IOptimal — GTP setup solver (pipeline + physics)",
+        description="IOptimal — physics-based setup solver for iRacing GTP and GT3 classes",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     # ── Car / session ──
     parser.add_argument("--car", required=True,
-                        help="Car canonical name (bmw | ferrari | porsche | cadillac | acura)")
+                        choices=_car_choices(),
+                        help=_car_help())
     parser.add_argument("--ibt", action="append", default=None, metavar="IBT",
                         help="IBT telemetry file. Repeat for multiple files")
     parser.add_argument("--track", default=None,

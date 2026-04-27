@@ -46,12 +46,29 @@
       </div>
       <div class="field">
         <label for="car">Car</label>
-        <select id="car" name="car">
-          <option value="bmw">BMW M Hybrid V8</option>
-          <option value="cadillac">Cadillac V-Series.R</option>
-          <option value="ferrari">Ferrari 499P</option>
-          <option value="porsche">Porsche 963</option>
-          <option value="acura">Acura ARX-06</option>
+        <select id="car" name="car" required>
+          {# GT3 Phase 2 W9.1 — F1 fix. GTP and GT3 cars are grouped via
+             <optgroup> so the user can tell the classes apart at a glance.
+             The list is built from ``services.list_supported_cars()`` and
+             passed in as ``supported_cars_grouped`` (dict of class →
+             list of (canonical, display)). #}
+          {% if supported_cars_grouped %}
+            {% for klass, cars in supported_cars_grouped.items() %}
+              <optgroup label="{{ klass }}">
+                {% for canonical, display in cars %}
+                  <option value="{{ canonical }}">{{ display }}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          {% else %}
+            {# Defensive fallback: render legacy GTP options if the context
+               key is missing (e.g. a cached template render path). #}
+            <option value="bmw">BMW M Hybrid V8</option>
+            <option value="cadillac">Cadillac V-Series.R</option>
+            <option value="ferrari">Ferrari 499P</option>
+            <option value="porsche">Porsche 963</option>
+            <option value="acura">Acura ARX-06</option>
+          {% endif %}
         </select>
       </div>
       <div class="field" data-mode-panel="single_session">

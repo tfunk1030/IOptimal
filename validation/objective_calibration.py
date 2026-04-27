@@ -122,16 +122,51 @@ def _find_track_profile() -> Path | None:
     return None
 
 
-def load_observations() -> list[ObservationRow]:
+def load_observations(
+    car_filter: list[str] | None = None,
+    track_filter: list[str] | None = None,
+) -> list[ObservationRow]:
+    """Load observation rows for objective recalibration.
+
+    GT3 Phase 2 W9.1 — F18 fix. Pre-W9.1 the loader hardcoded BMW/Sebring;
+    callers now choose the (car, track) filter. Defaults preserve the
+    legacy BMW/Sebring behaviour so existing CLI invocations don't change
+    output. Pass ``car_filter=["bmw_m4_gt3"]`` /
+    ``track_filter=["spielberg"]`` (matching the canonical short track key)
+    for GT3 calibration.
+    """
+    if car_filter is None:
+        car_filter = ["bmw"]
+    if track_filter is None:
+        track_filter = ["sebring_international_raceway"]
+    car_filter_norm = {c.lower() for c in car_filter}
+    track_slugs = {slugify(t) for t in track_filter}
+    # Also accept the canonical short keys so callers can pass "spielberg"
+    # and we still match observations stored under "Red Bull Ring" etc.
+    try:
+        from car_model.registry import track_key
+        track_short = {track_key(t) for t in track_filter}
+    except Exception:
+        track_short = set()
+
     rows: list[ObservationRow] = []
-    for path in sorted(OBS_DIR.glob("bmw_*.json")):
+    # Glob pattern is broader now; restrict by ``car`` field on each
+    # payload instead. ``bmw_*.json`` matched ``bmw_m4_gt3_*.json`` too,
+    # which previously slipped through the inner filter — now we want
+    # them when GT3 is requested.
+    for path in sorted(OBS_DIR.glob("*.json")):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if str(payload.get("car") or "").strip().lower() != "bmw":
+        car_value = str(payload.get("car") or "").strip().lower()
+        if car_value not in car_filter_norm:
             continue
-        if slugify(str(payload.get("track") or "")) != "sebring_international_raceway":
+        track_value = str(payload.get("track") or "")
+        if (
+            slugify(track_value) not in track_slugs
+            and slugify(track_value) not in track_short
+        ):
             continue
         # Exclude "dangerous" observations — critical safety issues contaminate calibration
         assessment = (payload.get("diagnosis", {}) or {}).get("assessment", "")
@@ -148,7 +183,7 @@ def load_observations() -> list[ObservationRow]:
             ObservationRow(
                 filename=path.name,
                 lap_time_s=lap_time_s,
-                params=normalize_setup_to_canonical_params(setup, car="bmw"),
+                params=normalize_setup_to_canonical_params(setup, car=car_value),
                 telemetry=payload.get("telemetry", {}) or {},
                 performance=perf,
             )

@@ -2041,9 +2041,17 @@ def produce_result(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="GTP Setup Producer — IBT->.sto physics pipeline"
+        description="IOptimal Setup Producer — IBT->.sto physics pipeline (GTP + GT3)"
     )
-    parser.add_argument("--car", required=True, help="Car name (e.g., bmw)")
+    # GT3 Phase 2 W9.1 — F8 fix. Pull car choices dynamically from the
+    # canonical registry so GT3 canonical names are accepted at parse time.
+    from car_model.cars import _CARS as _CAR_REGISTRY
+    parser.add_argument(
+        "--car",
+        required=True,
+        choices=sorted(_CAR_REGISTRY.keys()),
+        help="Car canonical name. Choices: " + ", ".join(sorted(_CAR_REGISTRY.keys())),
+    )
     parser.add_argument("--track", type=str, default=None,
                         help="Track name hint (e.g., silverstone). If a saved profile exists at "
                              "data/tracks/{name}.json it will be loaded; otherwise the track "

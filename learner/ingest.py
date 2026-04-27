@@ -819,7 +819,19 @@ def main():
     parser = argparse.ArgumentParser(
         description="IOptimal Learner — ingest IBT sessions and build knowledge"
     )
-    parser.add_argument("--car", type=str, help="Car name (e.g., bmw)")
+    # GT3 Phase 2 W9.1 — F9 fix. Pre-W9.1 the help string was empty; with
+    # GT3 canonical names landing in the registry the user needs to know
+    # which keys are valid. The choices list is enforced at parse time so
+    # mistyped GT3 names fail loudly.
+    from car_model.cars import _CARS as _CAR_REGISTRY
+    _car_choices = sorted(_CAR_REGISTRY.keys())
+    parser.add_argument(
+        "--car",
+        type=str,
+        choices=_car_choices,
+        help="Car canonical name. Choices: " + ", ".join(_car_choices) +
+             " (e.g., bmw, bmw_m4_gt3, porsche_992_gt3r).",
+    )
     parser.add_argument("--ibt", type=str, help="Path to IBT file")
     parser.add_argument("--wing", type=float, help="Wing angle override")
     parser.add_argument("--lap", type=int, help="Specific lap number to analyze")
