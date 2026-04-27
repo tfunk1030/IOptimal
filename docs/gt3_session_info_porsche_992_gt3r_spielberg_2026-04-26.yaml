@@ -1,0 +1,90 @@
+UpdateCount: 3
+TiresAero:
+  TireType:
+    TireType: Dry
+  LeftFront:
+    StartingPressure: 159 kPa
+    LastHotPressure: 159 kPa
+    LastTempsOMI: 35C, 35C, 35C
+    TreadRemaining: 100%, 100%, 100%
+  LeftRear:
+    StartingPressure: 159 kPa
+    LastHotPressure: 159 kPa
+    LastTempsOMI: 35C, 35C, 35C
+    TreadRemaining: 100%, 100%, 100%
+  RightFront:
+    StartingPressure: 159 kPa
+    LastHotPressure: 159 kPa
+    LastTempsIMO: 35C, 35C, 35C
+    TreadRemaining: 100%, 100%, 100%
+  RightRear:
+    StartingPressure: 159 kPa
+    LastHotPressure: 159 kPa
+    LastTempsIMO: 35C, 35C, 35C
+    TreadRemaining: 100%, 100%, 100%
+  AeroBalanceCalc:
+    FrontRhAtSpeed: 69 mm
+    RearRhAtSpeed: 61 mm
+    WingSetting: 5.7 degrees
+    FrontDownforce: 36.0%
+Chassis:
+  FrontBrakesLights:
+    ArbSetting: 7
+    TotalToeIn: -3.9 mm
+    FuelLevel: 99.0 L
+    FrontMasterCyl: 20.2 mm
+    RearMasterCyl: 18.8 mm
+    BrakePads: Low friction
+    NightLedStripColor: White
+    CenterFrontSplitterHeight: 76.6 mm
+  LeftFront:
+    CornerWeight: 3278 N
+    RideHeight: 69.8 mm
+    BumpRubberGap: 30 mm
+    SpringRate: 220 N/mm
+    Camber: -4.0 deg
+  LeftRear:
+    CornerWeight: 4019 N
+    RideHeight: 70.5 mm
+    BumpRubberGap: 51 mm
+    SpringRate: 260 N/mm
+    Camber: -3.0 deg
+  Rear:
+    RarbSetting: 7
+    TotalToeIn: +3.0 mm
+    WingSetting: 5.7 degrees
+  InCarAdjustments:
+    BrakePressureBias: 51.7%
+    AbsSetting: 5 (ABS)
+    TcSetting: 3 (TC-LAT)
+    ThrottleShapeSetting: 3
+    DashDisplayPage: Race 2
+    FWtdist: 44.9%
+    CrossWeight: 50.0%
+  RightFront:
+    CornerWeight: 3279 N
+    RideHeight: 69.8 mm
+    BumpRubberGap: 30 mm
+    SpringRate: 220 N/mm
+    Camber: -4.0 deg
+  RightRear:
+    CornerWeight: 4020 N
+    RideHeight: 70.5 mm
+    BumpRubberGap: 51 mm
+    SpringRate: 260 N/mm
+    Camber: -3.0 deg
+  GearsDifferential:
+    GearStack: FIA
+    FrictionFaces: 8
+    DiffPreload: 110 Nm
+Dampers:
+  FrontDampers:
+    LowSpeedCompressionDamping: 8 clicks
+    HighSpeedCompressionDamping: 12 clicks
+    LowSpeedReboundDamping: 6 clicks
+    HighSpeedReboundDamping: 9 clicks
+  RearDampers:
+    LowSpeedCompressionDamping: 8 clicks
+    HighSpeedCompressionDamping: 3 clicks
+    LowSpeedReboundDamping: 12 clicks
+    HighSpeedReboundDamping: 7 clicks
