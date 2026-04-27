@@ -1,0 +1,27 @@
+{
+  "car": "bmw_m4_gt3",
+  "wing_angles": [
+    -2.0,
+    -1.0,
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0
+  ],
+  "front_rh_range": [
+    5.0,
+    119.0
+  ],
+  "rear_rh_range": [
+    5.0,
+    75.0
+  ],
+  "grid_shape": [
+    58,
+    36
+  ],
+  "balance_only": true
+}
