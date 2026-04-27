@@ -76,6 +76,14 @@ class CornerAnalysis:
     delta_to_min_time_s: float = 0.0  # backward-compatible alias of bounded total
     corner_confidence: float = 0.0
 
+    # Per-corner roll-stiffness micro-experiment (Unit 4):
+    # Each corner gives one (lat_g_mean, body_roll_mean) datapoint. The ratio
+    # body_roll / lat_g is a unit-less roll-gradient measurement. With ~14
+    # corners per lap and N valid laps, this produces 14*N independent samples
+    # for ARB / roll-stiffness fitting downstream. None when |lat_g_mean| <= 0.5
+    # or no body-roll signal is available.
+    roll_gradient_deg_per_g: float | None = None
+
 
 def _classify_speed(apex_speed_kph: float) -> str:
     """Classify corner by apex speed into aero-relevance bands."""
@@ -275,6 +283,18 @@ def segment_lap(
         understeer_rad = road_wheel_angle - car.wheelbase_m * yaw_rate / safe_speed
         understeer_deg = np.degrees(understeer_rad)
 
+    # Body roll for per-corner roll-gradient (Unit 4). Roll channel is in
+    # radians; the RH-differential fallback mirrors extract.py:707-740 for
+    # cars without a Roll channel. lf_rh / rf_rh and track_w_mm are both in
+    # mm so the ratio is dimensionless before arctan.
+    body_roll_deg: np.ndarray | None = None
+    if ibt.has_channel("Roll"):
+        body_roll_deg = np.degrees(ibt.channel("Roll")[start:end + 1])
+    elif has_rh and car is not None:
+        track_w_mm = car.arb.track_width_front_mm
+        if track_w_mm > 0:
+            body_roll_deg = np.degrees(np.arctan((lf_rh - rf_rh) / track_w_mm))
+
     # Body slip
     body_slip_deg: np.ndarray | None = None
     if ibt.has_channel("VelocityX") and ibt.has_channel("VelocityY"):
@@ -341,6 +361,21 @@ def segment_lap(
         if body_slip_deg is not None:
             seg_bs = body_slip_deg[cs:ce]
             bs_peak = float(np.max(np.abs(seg_bs))) if len(seg_bs) > 0 else 0.0
+
+        # Per-corner roll-stiffness micro-experiment (Unit 4). Filter to
+        # |lat_g| > 0.5 because body roll outside the corner is dominated by
+        # undamped chassis pitch, not steady-state roll. The 0.5g floor on
+        # lat_mean guards against divide-by-near-zero in tight chicanes
+        # where signed lat_g averages near zero across the segment.
+        roll_gradient_dpg: float | None = None
+        if body_roll_deg is not None:
+            seg_roll = body_roll_deg[cs:ce]
+            corn_mask = np.abs(seg_lat) > 0.5
+            if int(np.sum(corn_mask)) >= 5:
+                lat_mean = float(np.mean(seg_lat[corn_mask]))
+                roll_mean = float(np.mean(seg_roll[corn_mask]))
+                if abs(lat_mean) > 0.5:
+                    roll_gradient_dpg = roll_mean / lat_mean
 
         # Trail braking: fraction of pre-apex samples (turn-in to apex) with brake > 5%
         apex_local = ca - cs
@@ -491,6 +526,9 @@ def segment_lap(
             traction_risk_flags=traction_flags,
             delta_to_min_time_s=0.0,
             corner_confidence=round(confidence, 3),
+            roll_gradient_deg_per_g=(
+                round(roll_gradient_dpg, 4) if roll_gradient_dpg is not None else None
+            ),
         ))
 
     # Sort by lap distance

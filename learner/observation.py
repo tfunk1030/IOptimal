@@ -102,6 +102,15 @@ class Observation:
     # Populated by build_observation() if the fingerprinting module is available.
     # Used to match and soft/hard-veto clusters in run_base_solve().
 
+    # ── Per-corner roll-stiffness micro-experiments (Unit 4) ──
+    # Each corner's (lat_g_mean, body_roll_mean) ratio is one independent
+    # roll-gradient sample. With ~14 corners × N laps a single IBT yields
+    # 14*N datapoints for ARB / roll-stiffness fitting, vs the single
+    # session-mean roll gradient stored in telemetry["roll_gradient_deg_per_g"].
+    roll_gradient_corner_p50_deg_per_g: float | None = None
+    roll_gradient_corner_p95_deg_per_g: float | None = None
+    roll_gradient_corner_count: int = 0
+
     # ── Corner-by-Corner Performance ──
     corner_performance: list[dict] = field(default_factory=list)
     # Each: {corner_id, lap_dist_m, direction, speed_class, speed_kph,
@@ -474,7 +483,27 @@ def build_observation(
                 "entry_pitch_severity": getattr(c, "entry_pitch_severity", 0.0),
                 "aero_collapse_severity": getattr(c, "aero_collapse_severity", 0.0),
                 "exit_slip_severity": getattr(c, "exit_slip_severity", 0.0),
+                # Unit 4 — per-corner roll-stiffness micro-experiment.
+                "roll_gradient_deg_per_g": getattr(c, "roll_gradient_deg_per_g", None),
             })
+
+    # ── Per-corner roll-stiffness aggregates (Unit 4) ──
+    # Prefer aggregates already on MeasuredState (populated by pipeline.produce
+    # via aggregate_corner_roll_gradients). Fall back to recomputing from the
+    # corners list if the analyzer caller didn't run the aggregator. Wrapped
+    # in try/except so a malformed CornerAnalysis can never break ingest.
+    rg_p50: float | None = getattr(m, "roll_gradient_corner_p50_deg_per_g", None)
+    rg_p95: float | None = getattr(m, "roll_gradient_corner_p95_deg_per_g", None)
+    rg_count: int = int(getattr(m, "roll_gradient_corner_count", 0) or 0)
+    if rg_count == 0 and corners:
+        try:
+            from analyzer.extract import aggregate_corner_roll_gradients
+            agg = aggregate_corner_roll_gradients(corners)
+            rg_p50 = agg.get("roll_gradient_corner_p50")
+            rg_p95 = agg.get("roll_gradient_corner_p95")
+            rg_count = int(agg.get("roll_gradient_corner_count") or 0)
+        except Exception:  # noqa: BLE001 — additive only; never block ingest
+            pass
 
     return Observation(
         session_id=session_id,
@@ -504,4 +533,7 @@ def build_observation(
         diagnosis=diagnosis_dict,
         conditions=conditions,
         corner_performance=corner_perf,
+        roll_gradient_corner_p50_deg_per_g=rg_p50,
+        roll_gradient_corner_p95_deg_per_g=rg_p95,
+        roll_gradient_corner_count=rg_count,
     )
