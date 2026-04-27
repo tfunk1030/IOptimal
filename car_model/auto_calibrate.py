@@ -1302,26 +1302,35 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         """
         primary = _fit_one_pool(target_col_name, model_name, pool, min_std,
                                seed_features=seed_features)
-        if fallback_pool is None or primary is None:
-            return primary
-        fallback = _fit_one_pool(target_col_name, model_name + "_fallback",
-                                 fallback_pool, min_std, seed_features=seed_features)
-        if fallback is None:
-            return primary
-        # Compare LOO RMSE — the honest generalization metric
-        p_loo = primary.loo_rmse
-        f_loo = fallback.loo_rmse
-        if not np.isnan(p_loo) and not np.isnan(f_loo) and f_loo < p_loo:
-            import logging
-            logging.getLogger(__name__).info(
-                "Pool fallback for '%s': universal pool LOO=%.3f beats "
-                "physics-aware LOO=%.3f",
-                model_name, f_loo, p_loo,
-            )
-            # Fallback wins — restore the original model name
-            fallback.name = model_name
-            return fallback
-        return primary
+        free_fit = primary
+        if fallback_pool is not None and primary is not None:
+            fallback = _fit_one_pool(target_col_name, model_name + "_fallback",
+                                     fallback_pool, min_std, seed_features=seed_features)
+            if fallback is not None:
+                # Compare LOO RMSE — the honest generalization metric
+                p_loo = primary.loo_rmse
+                f_loo = fallback.loo_rmse
+                if not np.isnan(p_loo) and not np.isnan(f_loo) and f_loo < p_loo:
+                    import logging
+                    logging.getLogger(__name__).info(
+                        "Pool fallback for '%s': universal pool LOO=%.3f beats "
+                        "physics-aware LOO=%.3f",
+                        model_name, f_loo, p_loo,
+                    )
+                    # Fallback wins — restore the original model name
+                    fallback.name = model_name
+                    free_fit = fallback
+                else:
+                    free_fit = primary
+
+        # Unit 6 hook: physics-anchored compliance fit. The free fit needs
+        # ~3× the feature count in samples; the anchored fit is 2 parameters,
+        # so it can converge with as few as 5 setups. We keep whichever has
+        # the lower LOO RMSE.
+        from car_model.calibration import maybe_replace_with_anchored
+        return maybe_replace_with_anchored(
+            free_fit, rows, _car_obj, target_col_name,
+        )
 
     # ─── 1. Front Ride Height ───
     _front_rh_std = np.std(col("static_front_rh_mm"))
