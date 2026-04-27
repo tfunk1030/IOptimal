@@ -80,7 +80,13 @@ def _setup_key(pt) -> tuple:
     status, CLI, and protocol to avoid counting discrepancies.
 
     Parameters included:
-    - Springs: front heave, rear third, front torsion OD/index, rear spring
+    - Springs (GTP): front heave, rear third, front torsion OD/index, rear spring
+    - Springs (GT3, W7.1 audit BLOCKER #6): front/rear paired coil rate, bump
+      rubber gap front/rear, splitter height. For GTP cars these getattrs return
+      0.0 so the appended tuple slots are no-ops. For GT3 cars these are the
+      actual differentiators — without them, two GT3 IBTs varying only by front
+      coil rate would collapse to the same fingerprint and one would be silently
+      dropped at L2726/L2847/L3300/L3318/L3379/L3410.
     - Perches: front heave perch, rear third perch, rear spring perch
     - Geometry: front/rear pushrod, front/rear camber
     - ARB: front/rear size (string) and blade (integer) — affect roll stiffness
@@ -91,6 +97,9 @@ def _setup_key(pt) -> tuple:
         # Track — different tracks produce different ride heights and deflections
         # at the same setup due to aero load, surface, and speed profile differences.
         # Pooling cross-track data causes 27x-103x LOO/train overfitting ratios.
+        # TODO(W7.x audit COSMETIC #25): re-read once more GT3 tracks land — today
+        # all 3 GT3 IBTs are at Spielberg + Nürburgring so the track key carries
+        # most of the variance.
         str(getattr(pt, "track", "") or ""),
         round(pt.front_heave_setting, 1),
         round(pt.rear_third_setting, 1),
@@ -111,6 +120,17 @@ def _setup_key(pt) -> tuple:
         int(pt.front_arb_blade or 0),
         str(pt.rear_arb_size or ""),
         int(pt.rear_arb_blade or 0),
+        # ── GT3 paired-coil + bump-rubber + splitter (W7.1, audit BLOCKER #6) ──
+        # Append-to-tuple so legacy GTP keys stay equivalent (these slots are 0.0
+        # for GTP). W7.2 will add the corresponding fields to ``CalibrationPoint``
+        # itself; until then these getattrs return 0.0 and are no-ops. Once W7.2
+        # populates them from GT3 IBTs, this key correctly distinguishes setups
+        # that differ only by front/rear coil rate or bump rubber gap.
+        round(float(getattr(pt, "front_corner_spring_nmm", 0.0)), 1),
+        round(float(getattr(pt, "rear_corner_spring_nmm", 0.0)), 1),
+        round(float(getattr(pt, "front_bump_rubber_gap_mm", 0.0)), 1),
+        round(float(getattr(pt, "rear_bump_rubber_gap_mm", 0.0)), 1),
+        round(float(getattr(pt, "splitter_height_mm", 0.0)), 1),
     )
 
 # Alias for backward compatibility

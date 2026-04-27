@@ -60,6 +60,16 @@ class GarageSetupState:
     # IBT observation data when available; defaults to 0.0 in solver-path.
     torsion_bar_turns: float = 0.0
     rear_torsion_bar_turns: float = 0.0
+    # ── GT3 paired-coil + bump-rubber + splitter fields (W7.1, audit BLOCKER #4) ──
+    # All 0.0 for GTP cars; populated for GT3 (SuspensionArchitecture.GT3_COIL_4WHEEL).
+    # Field names match the W6.3 ``learner/observation.py`` keys so observations
+    # and garage-state share schema. Per-axle (LF/RF averaged into front_*; LR/RR
+    # averaged into rear_*) — analyzer/setup_reader.py averages on read.
+    front_corner_spring_nmm: float = 0.0       # paired front coil rate (avg LF/RF)
+    rear_corner_spring_nmm: float = 0.0        # paired rear coil rate (avg LR/RR)
+    front_bump_rubber_gap_mm: float = 0.0      # avg per-axle bump rubber gap, front
+    rear_bump_rubber_gap_mm: float = 0.0       # avg per-axle bump rubber gap, rear
+    splitter_height_mm: float = 0.0            # CenterFrontSplitterHeight
 
     @classmethod
     def from_current_setup(cls, setup: Any, car: Any = None) -> "GarageSetupState":
@@ -73,24 +83,63 @@ class GarageSetupState:
         rear_spring_nmm = float(getattr(setup, "rear_spring_nmm", 0.0))
         front_torsion_od_mm = float(getattr(setup, "front_torsion_od_mm", 0.0))
 
-        # Index decoding for indexed cars (Ferrari, Acura)
+        # Index decoding for indexed cars (Ferrari, Acura).
+        # GT3 cars have ``heave_spring=None`` (no heave/third architecture) — we
+        # guard on ``hsm is not None`` so the index-decode block doesn't blow up
+        # when the W7.1 GT3 path calls this function.
         if car is not None:
             hsm = car.heave_spring
             csm = car.corner_spring
-            if (hsm.front_setting_index_range is not None
-                    and front_heave_nmm <= hsm.front_setting_index_range[1] + 0.5):
-                front_heave_nmm = hsm.front_rate_from_setting(front_heave_nmm)
-            if (hsm.rear_setting_index_range is not None
-                    and rear_third_nmm <= hsm.rear_setting_index_range[1] + 0.5):
-                rear_third_nmm = hsm.rear_rate_from_setting(rear_third_nmm)
-            if (hasattr(csm, 'rear_setting_index_range')
-                    and csm.rear_setting_index_range is not None
-                    and rear_spring_nmm <= csm.rear_setting_index_range[1] + 0.5):
-                rear_spring_nmm = csm.rear_bar_rate_from_setting(rear_spring_nmm)
-            if (hasattr(csm, 'front_setting_index_range')
-                    and csm.front_setting_index_range is not None
-                    and front_torsion_od_mm <= csm.front_setting_index_range[1] + 0.5):
-                front_torsion_od_mm = csm.front_torsion_od_from_setting(front_torsion_od_mm)
+            if hsm is not None:
+                if (hsm.front_setting_index_range is not None
+                        and front_heave_nmm <= hsm.front_setting_index_range[1] + 0.5):
+                    front_heave_nmm = hsm.front_rate_from_setting(front_heave_nmm)
+                if (hsm.rear_setting_index_range is not None
+                        and rear_third_nmm <= hsm.rear_setting_index_range[1] + 0.5):
+                    rear_third_nmm = hsm.rear_rate_from_setting(rear_third_nmm)
+            if csm is not None:
+                if (hasattr(csm, 'rear_setting_index_range')
+                        and csm.rear_setting_index_range is not None
+                        and rear_spring_nmm <= csm.rear_setting_index_range[1] + 0.5):
+                    rear_spring_nmm = csm.rear_bar_rate_from_setting(rear_spring_nmm)
+                if (hasattr(csm, 'front_setting_index_range')
+                        and csm.front_setting_index_range is not None
+                        and front_torsion_od_mm <= csm.front_setting_index_range[1] + 0.5):
+                    front_torsion_od_mm = csm.front_torsion_od_from_setting(front_torsion_od_mm)
+
+        # ── GT3 paired-coil + bump-rubber + splitter (W7.1, audit BLOCKER #4/#16) ──
+        # Always populate via getattr-with-defaults so GTP observations carry
+        # zeros and GT3 observations carry the real values. analyzer/setup_reader
+        # stores the avg of LF/RF SpringRate into ``front_corner_spring_nmm`` and
+        # the per-corner bump rubber gaps into ``{lf,rf,lr,rr}_bump_rubber_gap_mm``.
+        # We average per axle here to mirror observation.py's contract.
+        front_corner_spring_nmm = float(getattr(setup, "front_corner_spring_nmm", 0.0))
+        # ``rear_corner_spring_nmm`` is the GT3-canonical alias of rear_spring_nmm
+        # — analyzer stores the avg of LR/RR SpringRate into rear_spring_nmm for
+        # GT3 (analyzer/setup_reader.py:235). Surface it under the canonical key
+        # when the architecture is GT3 so DirectRegression models with a
+        # ``inv_rear_corner_spring`` feature can fire.
+        is_gt3 = (
+            front_corner_spring_nmm > 0.0
+            and not float(getattr(setup, "front_heave_nmm", 0.0))
+            and not float(getattr(setup, "front_torsion_od_mm", 0.0))
+        )
+        rear_corner_spring_nmm = (
+            rear_spring_nmm if is_gt3
+            else float(getattr(setup, "rear_corner_spring_nmm", 0.0))
+        )
+        lf_gap = float(getattr(setup, "lf_bump_rubber_gap_mm", 0.0))
+        rf_gap = float(getattr(setup, "rf_bump_rubber_gap_mm", 0.0))
+        lr_gap = float(getattr(setup, "lr_bump_rubber_gap_mm", 0.0))
+        rr_gap = float(getattr(setup, "rr_bump_rubber_gap_mm", 0.0))
+        front_bump_rubber_gap_mm = (
+            (lf_gap + rf_gap) / 2.0 if (lf_gap or rf_gap)
+            else float(getattr(setup, "front_bump_rubber_gap_mm", 0.0))
+        )
+        rear_bump_rubber_gap_mm = (
+            (lr_gap + rr_gap) / 2.0 if (lr_gap or rr_gap)
+            else float(getattr(setup, "rear_bump_rubber_gap_mm", 0.0))
+        )
 
         return cls(
             front_pushrod_mm=float(getattr(setup, "front_pushrod_mm", 0.0)),
@@ -110,6 +159,11 @@ class GarageSetupState:
             rear_arb_blade=float(getattr(setup, "rear_arb_blade", 0) or 0),
             torsion_bar_turns=float(getattr(setup, "torsion_bar_turns", 0.0)),
             rear_torsion_bar_turns=float(getattr(setup, "rear_torsion_bar_turns", 0.0)),
+            front_corner_spring_nmm=front_corner_spring_nmm,
+            rear_corner_spring_nmm=rear_corner_spring_nmm,
+            front_bump_rubber_gap_mm=front_bump_rubber_gap_mm,
+            rear_bump_rubber_gap_mm=rear_bump_rubber_gap_mm,
+            splitter_height_mm=float(getattr(setup, "splitter_height_mm", 0.0)),
         )
 
     @classmethod
@@ -219,6 +273,36 @@ class DirectRegression:
             # feature is auto-excluded when fitting those cars — see _pool_to_matrix).
             "torsion_turns": lambda s: s.torsion_bar_turns,
             "rear_torsion_turns": lambda s: s.rear_torsion_bar_turns,
+            # ── GT3 paired-coil + bump-rubber + splitter features (W7.1, audit BLOCKER #5) ──
+            # Compliance form (1/k) is the primary feature for ride-height-vs-spring
+            # relationships under aero load (project's "compliance physics" principle,
+            # CLAUDE.md). Linear forms are also exposed for cases where the regression
+            # selects k directly (e.g. dynamic excursion ∝ k for a constant force band).
+            # All extractors guard against zero (GTP setups) by returning 0.0.
+            "front_corner_spring": lambda s: s.front_corner_spring_nmm,
+            "inv_front_corner_spring": (
+                lambda s: 1.0 / s.front_corner_spring_nmm
+                if s.front_corner_spring_nmm > 0 else 0.0
+            ),
+            "rear_corner_spring": lambda s: s.rear_corner_spring_nmm,
+            "inv_rear_corner_spring": (
+                lambda s: 1.0 / s.rear_corner_spring_nmm
+                if s.rear_corner_spring_nmm > 0 else 0.0
+            ),
+            "front_bump_rubber_gap": lambda s: s.front_bump_rubber_gap_mm,
+            "rear_bump_rubber_gap": lambda s: s.rear_bump_rubber_gap_mm,
+            "splitter_height": lambda s: s.splitter_height_mm,
+            # Fuel-coupled GT3 compliance features — analogue of the GTP
+            # ``fuel_x_inv_spring`` / ``fuel_x_inv_third`` features that capture
+            # the rear-axle-mass × spring-compliance interaction term.
+            "fuel_x_inv_front_corner_spring": (
+                lambda s: s.fuel_l / s.front_corner_spring_nmm
+                if s.front_corner_spring_nmm > 0 else 0.0
+            ),
+            "fuel_x_inv_rear_corner_spring": (
+                lambda s: s.fuel_l / s.rear_corner_spring_nmm
+                if s.rear_corner_spring_nmm > 0 else 0.0
+            ),
         }
         return cls(
             intercept=model_coefficients[0] if model_coefficients else 0.0,
@@ -290,6 +374,19 @@ class GarageOutputModel:
     default_rear_camber_deg: float = -1.9
     default_front_shock_defl_max_mm: float = 100.0
     default_rear_shock_defl_max_mm: float = 150.0
+
+    # ── GT3 paired-coil + bump-rubber + splitter defaults (W7.1, audit DEGRADED #23) ──
+    # Mid-range BMW M4 GT3 EVO baseline (audit ``output.md:540-555`` driver-bracketed
+    # ranges; we pick the middle of each range so a freshly-constructed GarageOutputModel
+    # without per-car overrides has a meaningful baseline state for any GT3 car). Per-car
+    # GarageOutputModel instances populated from real fits will override these.
+    # Used only by ``default_state(car=...)`` when ``car.suspension_arch.has_heave_third``
+    # is False; GTP cars never read these.
+    default_front_corner_spring_nmm: float = 220.0     # BMW M4 GT3 mid (range 190-340 N/mm)
+    default_rear_corner_spring_nmm: float = 180.0      # BMW M4 GT3 mid
+    default_front_bump_rubber_gap_mm: float = 15.0     # BMW M4 GT3 driver-anchor
+    default_rear_bump_rubber_gap_mm: float = 50.0      # BMW M4 GT3 driver-anchor
+    default_splitter_height_mm: float = 20.0           # mid-range across all 3 GT3 stubs
     front_rh_floor_mm: float = 30.0
     max_slider_mm: float = 45.0
     min_static_defl_mm: float = 3.0
@@ -377,8 +474,37 @@ class GarageOutputModel:
         haystack = track_name.lower().replace("_", " ")
         return any(keyword.lower() in haystack for keyword in self.track_keywords)
 
-    def default_state(self, fuel_l: float = 0.0) -> GarageSetupState:
-        """Baseline state used before later solver stages fill in all inputs."""
+    def default_state(self, fuel_l: float = 0.0, *, car: Any = None) -> GarageSetupState:
+        """Baseline state used before later solver stages fill in all inputs.
+
+        Architecture-aware (W7.1, audit DEGRADED #23): when *car* has a non-GTP
+        ``suspension_arch`` (i.e. ``has_heave_third`` is False), returns a state
+        with GT3 paired-coil + bump-rubber + splitter fields populated and
+        heave/third/torsion fields zeroed. When *car* is None or a GTP car,
+        returns the legacy GTP baseline so existing callers see no change.
+        """
+        if car is not None and not car.suspension_arch.has_heave_third:
+            # GT3 baseline: coil rates + bump-rubber + splitter populated; the
+            # heave/third/torsion fields stay 0.0 via dataclass default.
+            return GarageSetupState(
+                front_pushrod_mm=self.default_front_pushrod_mm,
+                rear_pushrod_mm=self.default_rear_pushrod_mm,
+                front_heave_nmm=0.0,
+                front_heave_perch_mm=0.0,
+                rear_third_nmm=0.0,
+                rear_third_perch_mm=0.0,
+                front_torsion_od_mm=0.0,
+                rear_spring_nmm=0.0,
+                rear_spring_perch_mm=0.0,
+                front_camber_deg=self.default_front_camber_deg,
+                rear_camber_deg=self.default_rear_camber_deg,
+                fuel_l=fuel_l,
+                front_corner_spring_nmm=self.default_front_corner_spring_nmm,
+                rear_corner_spring_nmm=self.default_rear_corner_spring_nmm,
+                front_bump_rubber_gap_mm=self.default_front_bump_rubber_gap_mm,
+                rear_bump_rubber_gap_mm=self.default_rear_bump_rubber_gap_mm,
+                splitter_height_mm=self.default_splitter_height_mm,
+            )
         return GarageSetupState(
             front_pushrod_mm=self.default_front_pushrod_mm,
             rear_pushrod_mm=self.default_rear_pushrod_mm,

@@ -30,6 +30,14 @@ class ObservationCreateRequest(BaseModel):
     best_lap_time_s: Optional[float] = None
     lap_count: Optional[int] = None
     observation_json: dict[str, Any]
+    # GT3 Phase 2 — F2 + F6 (audit infra-teamdb-watcher-desktop.md). The
+    # architecture string is validated against the team's CarDefinition
+    # before persistence. A default of `gtp_heave_third_torsion_front`
+    # keeps legacy GTP clients (which never send the field) compatible
+    # with the new schema.
+    suspension_arch: str = "gtp_heave_third_torsion_front"
+    bop_version: Optional[str] = None
+    iracing_car_path: Optional[str] = None
 
 
 class ObservationOut(BaseModel):
@@ -43,6 +51,9 @@ class ObservationOut(BaseModel):
     best_lap_time_s: Optional[float] = None
     lap_count: Optional[int] = None
     observation_json: dict[str, Any]
+    suspension_arch: Optional[str] = None
+    bop_version: Optional[str] = None
+    iracing_car_path: Optional[str] = None
     created_at: datetime
 
 
@@ -60,7 +71,8 @@ async def create_observation(
     result = await db.execute(
         select(CarDefinition).where(CarDefinition.team_id == member.team_id, CarDefinition.car_name == body.car)
     )
-    if result.scalar_one_or_none() is None:
+    car_def = result.scalar_one_or_none()
+    if car_def is None:
         car_def = CarDefinition(
             id=uuid.uuid4().hex,
             team_id=member.team_id,
@@ -68,9 +80,31 @@ async def create_observation(
             car_class=body.car_class or "unknown",
             display_name=body.car,
             support_tier="exploratory",
+            # GT3 Phase 2 — F1. New rows record the architecture stamp
+            # the client supplied so downstream validation has something
+            # to compare against. Auto-registered CarDefinitions trust
+            # the first uploader's arch string by definition.
+            suspension_arch=body.suspension_arch,
+            bop_version=body.bop_version,
+            iracing_car_path=body.iracing_car_path,
             created_at=datetime.now(timezone.utc),
         )
         db.add(car_def)
+    else:
+        # GT3 Phase 2 — F6. If a CarDefinition already exists with a
+        # populated `suspension_arch`, the upload must match. This is
+        # the data-corruption guardrail: a misconfigured client
+        # uploading a GT3 IBT under `car="bmw"` would otherwise silently
+        # pollute the GTP empirical models.
+        if car_def.suspension_arch and car_def.suspension_arch != body.suspension_arch:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"suspension_arch mismatch: car {body.car!r} is registered "
+                    f"as {car_def.suspension_arch!r}, observation declares "
+                    f"{body.suspension_arch!r}"
+                ),
+            )
 
     obs = Observation(
         id=uuid.uuid4().hex,
@@ -83,6 +117,10 @@ async def create_observation(
         best_lap_time_s=body.best_lap_time_s,
         lap_count=body.lap_count,
         observation_json=body.observation_json,
+        # F2: persist the discriminator + provenance on every row.
+        suspension_arch=body.suspension_arch,
+        bop_version=body.bop_version,
+        iracing_car_path=body.iracing_car_path,
         created_at=datetime.now(timezone.utc),
     )
     db.add(obs)
@@ -112,6 +150,9 @@ async def create_observation(
         best_lap_time_s=obs.best_lap_time_s,
         lap_count=obs.lap_count,
         observation_json=obs.observation_json,
+        suspension_arch=obs.suspension_arch,
+        bop_version=obs.bop_version,
+        iracing_car_path=obs.iracing_car_path,
         created_at=obs.created_at,
     )
 
@@ -148,6 +189,9 @@ async def list_observations(
             best_lap_time_s=o.best_lap_time_s,
             lap_count=o.lap_count,
             observation_json=o.observation_json,
+            suspension_arch=o.suspension_arch,
+            bop_version=o.bop_version,
+            iracing_car_path=o.iracing_car_path,
             created_at=o.created_at,
         )
         for o in result.scalars().all()
