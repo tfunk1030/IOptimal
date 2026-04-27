@@ -63,6 +63,7 @@ class DesktopApp:
             sync_queue=sync_queue,
             auto_ingest=self.config.auto_ingest,
             car_filter=self.config.car_filter or None,
+            class_filter=self.config.class_filter or None,
         )
         self._watcher_service.start()
         logger.info("Watcher started: %s", self.config.telemetry_dir)

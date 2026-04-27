@@ -57,6 +57,13 @@ class AppConfig:
 
     # Filtering
     car_filter: list[str] = field(default_factory=list)  # empty = all cars
+    # Race-class filter ("GTP" / "GT3").  Empty list means accept all
+    # classes; otherwise only IBTs whose suspension architecture maps to
+    # one of the listed classes are ingested.  Coarser than ``car_filter``
+    # and orthogonal to it — both filters must pass.  Added for W8.2 so a
+    # multi-class league member can hide their GTP test sessions while
+    # keeping GT3 race observations.
+    class_filter: list[str] = field(default_factory=list)
 
     # UI
     sound_enabled: bool = True

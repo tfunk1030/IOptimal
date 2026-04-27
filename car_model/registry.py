@@ -38,6 +38,14 @@ class CarIdentity:
     screen_name: str     # iRacing CarScreenName (from IBT DriverInfo)
     sto_id: str          # STO binary car ID: "bmwlmdh"
     aero_folder: str     # Folder name under data/aeromaps_parsed/
+    # iRacing CarPath (DriverInfo.Drivers[me].CarPath) — the stable, locale-
+    # independent identifier from the IBT session YAML. This is the preferred
+    # key for resolving an IBT to a CarIdentity because CarScreenName drifts
+    # with locale + EVO/year suffixes. For GTP cars the CarPath today happens
+    # to equal sto_id; for GT3 cars they also coincide. Default to sto_id
+    # when omitted so legacy GTP entries keep working without restating the
+    # tag. Empty string means "no known CarPath; fall back to other indices".
+    iracing_car_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -52,46 +60,61 @@ class TrackIdentity:
 # ─── Car registry ──────────────────────────────────────────────────────────
 
 _CAR_REGISTRY: list[CarIdentity] = [
-    # GTP class (Hypercar / LMDh)
-    CarIdentity("bmw",      "BMW M Hybrid V8",    "BMW M Hybrid V8",    "bmwlmdh",         "bmw"),
-    CarIdentity("porsche",  "Porsche 963",        "Porsche 963",        "porsche963",      "porsche"),
-    CarIdentity("ferrari",  "Ferrari 499P",       "Ferrari 499P",       "ferrari499p",     "ferrari"),
-    CarIdentity("cadillac", "Cadillac V-Series.R", "Cadillac V-Series.R", "cadillacvseriesr", "cadillac"),
-    CarIdentity("acura",    "Acura ARX-06",       "Acura ARX-06",       "acuraarx06gtp",   "acura"),
+    # GTP class (Hypercar / LMDh).  iracing_car_path mirrors sto_id today; once
+    # iRacing exposes a divergent CarPath the seventh column lets us track them
+    # separately without touching call sites.
+    CarIdentity("bmw",      "BMW M Hybrid V8",    "BMW M Hybrid V8",    "bmwlmdh",          "bmw",      "bmwlmdh"),
+    CarIdentity("porsche",  "Porsche 963",        "Porsche 963",        "porsche963",       "porsche",  "porsche963"),
+    CarIdentity("ferrari",  "Ferrari 499P",       "Ferrari 499P",       "ferrari499p",      "ferrari",  "ferrari499p"),
+    CarIdentity("cadillac", "Cadillac V-Series.R", "Cadillac V-Series.R", "cadillacvseriesr", "cadillac", "cadillacvseriesr"),
+    CarIdentity("acura",    "Acura ARX-06",       "Acura ARX-06",       "acuraarx06gtp",    "acura",    "acuraarx06gtp"),
     # GT3 class — canonical names match car_model/cars.py BMW_M4_GT3 / ASTON_MARTIN_VANTAGE_GT3 /
     # PORSCHE_992_GT3R. Without these entries, the substring fallback at lines 91-104 silently
     # routed every GT3 IBT through the GTP BMW spec set (e.g. "bmwm4gt3" → "bmw"), corrupting
     # learner observations and emitting wrong setups. The longest-key-wins rule in the
     # substring fallback now picks the GT3 entry over the bare "bmw" key.
-    CarIdentity("bmw_m4_gt3",                "BMW M4 GT3 EVO",                  "BMW M4 GT3 EVO",                  "bmwm4gt3",          "bmw_m4_gt3"),
-    CarIdentity("aston_martin_vantage_gt3",  "Aston Martin Vantage GT3 EVO",    "Aston Martin Vantage GT3 EVO",    "amvantageevogt3",   "aston_martin_vantage_gt3"),
-    CarIdentity("porsche_992_gt3r",          "Porsche 911 GT3 R (992)",         "Porsche 911 GT3 R (992)",         "porsche992rgt3",    "porsche_992_gt3r"),
+    CarIdentity("bmw_m4_gt3",                "BMW M4 GT3 EVO",                  "BMW M4 GT3 EVO",                  "bmwm4gt3",          "bmw_m4_gt3",                "bmwm4gt3"),
+    CarIdentity("aston_martin_vantage_gt3",  "Aston Martin Vantage GT3 EVO",    "Aston Martin Vantage GT3 EVO",    "amvantageevogt3",   "aston_martin_vantage_gt3", "amvantageevogt3"),
+    CarIdentity("porsche_992_gt3r",          "Porsche 911 GT3 R (992)",         "Porsche 911 GT3 R (992)",         "porsche992rgt3",    "porsche_992_gt3r",          "porsche992rgt3"),
 ]
 
 # Build lookup indices once at import time.
 _BY_CANONICAL: dict[str, CarIdentity] = {c.canonical: c for c in _CAR_REGISTRY}
 _BY_SCREEN_NAME: dict[str, CarIdentity] = {c.screen_name: c for c in _CAR_REGISTRY}
 _BY_STO_ID: dict[str, CarIdentity] = {c.sto_id: c for c in _CAR_REGISTRY}
+# Index by iRacing CarPath (DriverInfo.Drivers[me].CarPath).  This is the
+# preferred index because CarPath is locale-independent and free of EVO/year
+# suffix drift.  Built post-W8.2; see watcher.service._detect_car_and_track
+# for the dispatch order (CarPath -> CarScreenName -> None).
+_BY_IRACING_PATH: dict[str, CarIdentity] = {
+    c.iracing_car_path: c for c in _CAR_REGISTRY if c.iracing_car_path
+}
 
 # Lowercase index for fuzzy fallback (maps every known string form).
 _BY_LOWER: dict[str, CarIdentity] = {}
 for _car in _CAR_REGISTRY:
     for _key in (_car.canonical, _car.display_name, _car.screen_name,
-                 _car.sto_id, _car.aero_folder):
-        _BY_LOWER[_key.lower()] = _car
+                 _car.sto_id, _car.aero_folder, _car.iracing_car_path):
+        if _key:
+            _BY_LOWER[_key.lower()] = _car
 
 
 def resolve_car(name: str) -> CarIdentity | None:
     """Resolve any form of car name to a ``CarIdentity``.
 
-    Tries, in order: canonical, screen name, STO ID, case-insensitive
-    fallback across all known strings, then substring containment
-    (handles iRacing appending suffixes like "GTP" to screen names).
-    Returns ``None`` for unknown cars.
+    Tries, in order: iRacing CarPath, canonical, screen name, STO ID,
+    case-insensitive fallback across all known strings, then substring
+    containment (handles iRacing appending suffixes like "GTP" to screen
+    names).  Returns ``None`` for unknown cars.
     """
     if not name:
         return None
-    hit = _BY_CANONICAL.get(name) or _BY_SCREEN_NAME.get(name) or _BY_STO_ID.get(name)
+    hit = (
+        _BY_IRACING_PATH.get(name)
+        or _BY_CANONICAL.get(name)
+        or _BY_SCREEN_NAME.get(name)
+        or _BY_STO_ID.get(name)
+    )
     if hit:
         return hit
     hit = _BY_LOWER.get(name.lower())
@@ -115,8 +138,20 @@ def resolve_car(name: str) -> CarIdentity | None:
 
 
 def resolve_car_from_ibt(ibt: "IBTFile") -> CarIdentity | None:
-    """Extract car identity directly from an opened IBT file."""
+    """Extract car identity directly from an opened IBT file.
+
+    Prefers the iRacing CarPath (locale-independent, no EVO/year drift) and
+    falls back to CarScreenName when CarPath is missing or unknown.  GT3
+    sessions whose screen name is localised (e.g. "BMW M4 GT3 EVO" → various
+    languages) used to be silently dropped pre-W8.2 because the substring
+    fallback returned ``None``; the CarPath path resolves them cleanly.
+    """
     car_info = ibt.car_info()
+    car_path = car_info.get("iracing_car_path", "") or car_info.get("car_path", "")
+    if car_path:
+        hit = resolve_car(car_path)
+        if hit is not None:
+            return hit
     screen_name = car_info.get("car", "")
     return resolve_car(screen_name)
 
@@ -146,6 +181,12 @@ _TRACK_ALIASES: dict[str, str] = {
     "circuit de barcelona-catalunya": "barcelona",
     "circuit des 24 heures du mans": "le_mans",
     "nürburgring": "nurburgring",
+    # GT3 Phase 2 (W7.2) — Spielberg / Red Bull Ring is the track for all 3
+    # sampled GT3 IBTs; iRacing exposes the layout-suffixed display name.
+    "red bull ring": "spielberg",
+    "red bull ring grand prix": "spielberg",
+    "red bull ring short": "spielberg",
+    "spielberg": "spielberg",
     "suzuka international racing course": "suzuka",
     "circuit de spa-francorchamps": "spa",
     "indianapolis motor speedway": "indianapolis",
