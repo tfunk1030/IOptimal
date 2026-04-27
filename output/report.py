@@ -109,6 +109,22 @@ def to_public_output_payload(car_name: str, obj: Any) -> Any:
     return remap_public_output_keys(car_name, _asdict_safe(obj))
 
 
+def _is_gt3(car: Any) -> bool:
+    """W4.3: GT3 architecture dispatch helper.
+
+    GT3 cars (`SuspensionArchitecture.GT3_COIL_4WHEEL`) have no heave/third
+    springs, no torsion bars, no per-corner heave slider. Step 2 returns
+    `HeaveSolution.null()` and the report layer must not read those null
+    fields. Audit O28-O33.
+    """
+    if car is None:
+        return False
+    arch = getattr(car, "suspension_arch", None)
+    if arch is None:
+        return False
+    return getattr(arch, "has_heave_third", True) is False
+
+
 def _hdr(title: str) -> str:
     pad = (W - len(title) - 2) // 2
     return "─" * pad + f" {title} " + "─" * (W - pad - len(title) - 2)
@@ -244,9 +260,14 @@ def print_full_setup_report(
     a = lines.append
     garage_model = None
 
-    if car is not None:
+    # W4.3: GT3 architecture dispatch — gate every heave/third read.
+    _is_gt3_car = _is_gt3(car)
+
+    if car is not None and not _is_gt3_car:
+        # GT3 (W4.3): no GarageOutputModel calibrated yet (W7.1 territory).
+        # Skip the entire heave-aware garage prediction path on GT3.
         garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track_name)
-    if garage_outputs is None and garage_model is not None:
+    if garage_outputs is None and garage_model is not None and not _is_gt3_car:
         if garage_model is not None:
             garage_outputs = garage_model.predict(
                 GarageSetupState.from_solver_steps(
@@ -289,10 +310,27 @@ def print_full_setup_report(
                          and getattr(car.corner_spring, "rear_is_torsion_bar", False))
     _has_roll_dampers = (car is not None and hasattr(car, "damper")
                          and getattr(car.damper, "has_roll_dampers", False))
-    display_front_heave = float(public_output_value(car, "front_heave_nmm", step2.front_heave_nmm))
-    display_rear_heave = float(public_output_value(car, "rear_third_nmm", step2.rear_third_nmm))
-    display_front_torsion = float(public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
-    display_rear_torsion = float(public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+    # W4.3: GT3 cars carry HeaveSolution.null() — reading heave/third on GT3
+    # would render "0 N/mm" garbage. Use 0.0 sentinels and branch on
+    # `_is_gt3_car` at every display site below.
+    if _is_gt3_car:
+        display_front_heave = 0.0
+        display_rear_heave = 0.0
+        display_front_torsion = 0.0
+        display_rear_torsion = 0.0
+        # GT3 4-corner spring rates from step3 (W2.3).  Front is paired
+        # (LF==RF) and rear is paired (LR==RR) until W7.x splits them.
+        _gt3_front_rate = float(getattr(step3, "front_coil_rate_nmm", 0.0))
+        _gt3_rear_rate = float(getattr(step3, "rear_spring_rate_nmm", 0.0))
+        _gt3_lf_rate = _gt3_rf_rate = _gt3_front_rate
+        _gt3_lr_rate = _gt3_rr_rate = _gt3_rear_rate
+    else:
+        display_front_heave = float(public_output_value(car, "front_heave_nmm", step2.front_heave_nmm))
+        display_rear_heave = float(public_output_value(car, "rear_third_nmm", step2.rear_third_nmm))
+        display_front_torsion = float(public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+        display_rear_torsion = float(public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+        _gt3_front_rate = _gt3_rear_rate = 0.0
+        _gt3_lf_rate = _gt3_rf_rate = _gt3_lr_rate = _gt3_rr_rate = 0.0
 
     brake_bias_str = f"{brake_bias_val:.1f}%" if brake_bias_val is not None else "(pipeline)"
     diff_preload_str = f"{diff_preload_val:.0f} Nm" if diff_preload_val is not None else "(pipeline)"
@@ -318,6 +356,10 @@ def print_full_setup_report(
         _tb_turns = round(front_tb_turns_override, 3)
     elif garage_outputs is not None and getattr(garage_outputs, "torsion_bar_turns", 0) > 0:
         _tb_turns = round(float(garage_outputs.torsion_bar_turns), 3)
+    elif _is_gt3_car:
+        # GT3: no torsion bar — display as 0.000 turns (the field is never
+        # rendered for GT3 below; the variable is kept for downstream code).
+        _tb_turns = 0.0
     else:
         _tb_turns = round(
             0.1089 - 0.1642 / max(step2.front_heave_nmm, 1) + 0.000368 * step2.perch_offset_front_mm, 3
@@ -369,7 +411,31 @@ def print_full_setup_report(
     a(_setting("Rear static RH target", f"{step1.static_rear_rh_mm:.1f} mm", changed=_changed_marker("rear_rh_static", step1.static_rear_rh_mm, current_params)))
     a(_setting("Front pushrod", f"{step1.front_pushrod_offset_mm:+.1f} mm"))
     a(_setting("Rear pushrod", f"{step1.rear_pushrod_offset_mm:+.1f} mm"))
-    if _is_ferrari:
+    # Pre-init variables that the GTP else-branch sets so later report
+    # sections (BALANCE & PLATFORM, garage diff table) don't NameError on GT3.
+    _is_porsche = car is not None and getattr(car, "canonical_name", "") == "porsche"
+    _no_front_torsion = (
+        not _is_gt3_car
+        and car is not None
+        and hasattr(car, "corner_spring")
+        and getattr(car.corner_spring, "front_torsion_c", 1.0) == 0.0
+    )
+    if _is_gt3_car:
+        # W4.3: GT3 4-corner coil-over architecture — no heave/third/torsion.
+        # Render 4 spring rates (paired LF==RF, LR==RR until W7.x splits them)
+        # plus BumpRubberGap × 4 + CenterFrontSplitterHeight placeholders.
+        a(_setting("LF spring rate", f"{_gt3_lf_rate:.0f} N/mm", changed=_changed_marker("lf_spring_rate", _gt3_lf_rate, current_params)))
+        a(_setting("RF spring rate", f"{_gt3_rf_rate:.0f} N/mm", changed=_changed_marker("rf_spring_rate", _gt3_rf_rate, current_params)))
+        a(_setting("LR spring rate", f"{_gt3_lr_rate:.0f} N/mm", changed=_changed_marker("lr_spring_rate", _gt3_lr_rate, current_params)))
+        a(_setting("RR spring rate", f"{_gt3_rr_rate:.0f} N/mm", changed=_changed_marker("rr_spring_rate", _gt3_rr_rate, current_params)))
+        # BumpRubberGap + splitter — TODO(W7.x): source from GT3 garage state.
+        # For now, render placeholders so the report layout is GT3-aware.
+        a(_setting("LF bump rubber gap", "(pipeline) mm"))
+        a(_setting("RF bump rubber gap", "(pipeline) mm"))
+        a(_setting("LR bump rubber gap", "(pipeline) mm"))
+        a(_setting("RR bump rubber gap", "(pipeline) mm"))
+        a(_setting("Front splitter height", "(pipeline) mm"))
+    elif _is_ferrari:
         a(_setting("Front heave index", f"{display_front_heave:.0f} idx", changed=_changed_marker("front_heave_nmm", display_front_heave, current_params)))
         a(_setting("Front heave perch", f"{step2.perch_offset_front_mm:+.1f} mm"))
         a(_setting("Rear heave index", f"{display_rear_heave:.0f} idx", changed=_changed_marker("rear_third_nmm", display_rear_heave, current_params)))
@@ -386,9 +452,6 @@ def print_full_setup_report(
         _rear_perch_label = "Rear heave perch" if _is_acura else "Rear third perch"
         a(_setting(_rear_heave_label, f"{step2.rear_third_nmm:.0f} N/mm", changed=_changed_marker("rear_third_nmm", step2.rear_third_nmm, current_params)))
         a(_setting(_rear_perch_label, f"{step2.perch_offset_rear_mm:+.1f} mm"))
-        _is_porsche = car is not None and getattr(car, "canonical_name", "") == "porsche"
-        _no_front_torsion = (car is not None and hasattr(car, "corner_spring")
-                             and getattr(car.corner_spring, "front_torsion_c", 1.0) == 0.0)
         if _no_front_torsion:
             # Porsche/Multimatic: front corner stiffness from roll spring, not torsion bar
             _roll_spring = getattr(step3, "front_roll_spring_nmm", None) or getattr(car.corner_spring, "front_roll_spring_rate_nmm", 0)
@@ -493,6 +556,15 @@ def print_full_setup_report(
     a(_full("  DAMPERS"))
     if step6 is None:
         a(_setting("Dampers", "(blocked — uncalibrated)"))
+    elif _is_gt3_car:
+        # W4.3: GT3 dampers are per-axle (4 channels × 2 axles = 8 writes).
+        # The solver's W3.2 collapse leaves step6.lf==step6.rf and step6.lr==step6.rr
+        # for GT3, so we render Front/Rear once instead of LF/RF/LR/RR ×4.
+        # No hs_slope channel on GT3.
+        a(_setting("Front LS comp / rbd", f"{step6.lf.ls_comp} / {step6.lf.ls_rbd} clicks"))
+        a(_setting("Front HS comp / rbd", f"{step6.lf.hs_comp} / {step6.lf.hs_rbd} clicks"))
+        a(_setting("Rear LS comp / rbd",  f"{step6.lr.ls_comp} / {step6.lr.ls_rbd} clicks"))
+        a(_setting("Rear HS comp / rbd",  f"{step6.lr.hs_comp} / {step6.lr.hs_rbd} clicks"))
     elif _has_roll_dampers:
         # ORECA heave+roll architecture: front/rear heave + roll dampers
         a(_setting("Front Heave LS comp / rbd", f"{step6.lf.ls_comp} / {step6.lf.ls_rbd} clicks"))
@@ -529,11 +601,14 @@ def print_full_setup_report(
     else:
         a(_setting("LLTD", "(uncalibrated)"))
     a(_setting("Dynamic RH front / rear", f"{step1.dynamic_front_rh_mm:.1f} / {step1.dynamic_rear_rh_mm:.1f} mm"))
-    a(_setting(
-        "Heave travel margin",
-        f"{(garage_outputs.travel_margin_front_mm if garage_outputs is not None else step2.travel_margin_front_mm):.1f} mm",
-    ))
-    a(_setting("Front bottoming margin", f"{step2.front_bottoming_margin_mm:.1f} mm"))
+    if not _is_gt3_car:
+        # W4.3: GT3 has no heave travel / front bottoming margin (no heave
+        # spring). BumpRubberGap-managed travel is W7.x territory.
+        a(_setting(
+            "Heave travel margin",
+            f"{(garage_outputs.travel_margin_front_mm if garage_outputs is not None else step2.travel_margin_front_mm):.1f} mm",
+        ))
+        a(_setting("Front bottoming margin", f"{step2.front_bottoming_margin_mm:.1f} mm"))
     a(_setting("Stall margin", f"{step1.vortex_burst_margin_mm:+.1f} mm", _ok(stall_ok)))
     if garage_outputs is not None:
         a(_setting(
@@ -548,7 +623,15 @@ def print_full_setup_report(
         a(_box_top("VALIDATION SUMMARY"))
         a(_full(f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}    target {target_balance:.2f}%"))
         a(_full(f"  Front static RH: {step1.static_front_rh_mm:.1f} mm    Rear static RH: {step1.static_rear_rh_mm:.1f} mm"))
-        if garage_outputs is not None:
+        if _is_gt3_car:
+            # W4.3: GT3 has no heave slider / heave travel / torsion defl.
+            # Render 4 corner spring rates (paired) instead so the compact
+            # validation summary remains physically meaningful for GT3.
+            a(_full(
+                f"  Springs F/R: {_gt3_front_rate:.0f} / {_gt3_rear_rate:.0f} N/mm"
+                f"    (paired LF==RF, LR==RR)"
+            ))
+        elif garage_outputs is not None:
             a(_full(
                 f"  Heave slider: {garage_outputs.heave_slider_defl_static_mm:.1f}/{garage_outputs.heave_slider_defl_max_mm:.1f} mm"
                 f"    Travel margin: {garage_outputs.travel_margin_front_mm:.1f} mm"
@@ -603,7 +686,19 @@ def print_full_setup_report(
     a(_box_top("GARAGE CARD"))
     a(_blank())
     a(_row("  RIDE HEIGHTS & PUSHRODS", "  SPRINGS"))
-    if _is_ferrari:
+    if _is_gt3_car:
+        # W4.3: GT3 — 4 corner spring rates, no heave/third/torsion. Front
+        # pushrod fields are 0.0 placeholders on GT3 (audit O7), so we omit
+        # them in favor of bump rubber gap rows.
+        a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
+               f"  LF Spring:  {_gt3_lf_rate:5.0f} N/mm"))
+        a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
+               f"  RF Spring:  {_gt3_rf_rate:5.0f} N/mm"))
+        a(_row(f"  Rake:          {step1.rake_static_mm:5.1f} mm",
+               f"  LR Spring:  {_gt3_lr_rate:5.0f} N/mm"))
+        a(_row("",
+               f"  RR Spring:  {_gt3_rr_rate:5.0f} N/mm"))
+    elif _is_ferrari:
         a(_row(f"  Front static:  {step1.static_front_rh_mm:5.1f} mm",
                f"  Heave F:      {display_front_heave:3.0f} idx  perch {step2.perch_offset_front_mm:+.0f}mm"))
         a(_row(f"  Rear static:   {step1.static_rear_rh_mm:5.1f} mm",
@@ -946,14 +1041,23 @@ def print_full_setup_report(
         a(f"  RARB 1→{step4.rarb_blade_fast_corner} range: {step4.lltd_at_rarb_min:.1%}→{step4.lltd_at_rarb_max:.1%}")
     else:
         a("  LLTD: [blocked — ARB uncalibrated]")
-    if _is_ferrari:
+    if _is_gt3_car:
+        # W4.3: GT3 — no heave/third/torsion. Render 4 corner spring rates.
+        a(f"  Springs: LF/RF {_gt3_lf_rate:.0f}/{_gt3_rf_rate:.0f} N/mm  "
+          f"LR/RR {_gt3_lr_rate:.0f}/{_gt3_rr_rate:.0f} N/mm")
+    elif _is_ferrari:
         a(f"  Heave: {display_front_heave:.0f} idx  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
     else:
         a(f"  Heave: {step2.front_heave_nmm:.0f} N/mm  (bottom margin: {step2.front_bottoming_margin_mm:.1f}mm)")
     if garage_outputs is not None:
         a(f"  Heave slider: {garage_outputs.heave_slider_defl_static_mm:.1f}/{garage_outputs.heave_slider_defl_max_mm:.1f} mm  "
           f"travel margin: {garage_outputs.travel_margin_front_mm:.1f} mm")
-    if _is_ferrari:
+    if _is_gt3_car:
+        # W4.3: GT3 — no torsion bar / no third spring. The "front_heave_corner_ratio"
+        # and "rear_third_corner_ratio" fields on step3 are 0.0 sentinels for GT3.
+        # Skip the natural-freq / heave-ratio diagnostic line entirely.
+        pass
+    elif _is_ferrari:
         a(f"  F TB OD: {display_front_torsion:.0f} idx  {step3.front_natural_freq_hz:.2f}Hz  "
           f"heave/corner: {step3.front_heave_corner_ratio:.1f}x")
         a(f"  R TB OD: {display_rear_torsion:.0f} idx  {step3.rear_natural_freq_hz:.2f}Hz  "
@@ -1013,27 +1117,51 @@ def print_comparison_table(
     a(_full(f"  {'Parameter':<24}  {'Current':>10}  {'Recommended':>12}  {'Change':>10}"))
     a(_full("  " + "─" * (W - 4)))
 
-    # Detect Ferrari for label/unit adjustments
+    # Detect Ferrari + GT3 for label/unit adjustments (W4.3).
     _is_ferrari = hasattr(current_setup, "source") and getattr(current_setup, "_car_name", "") == "ferrari"
+    _car_name_lower = getattr(current_setup, "_car_name", "").lower()
+    _is_gt3_table = "_gt3" in _car_name_lower or _car_name_lower.endswith("gt3") or "gt3r" in _car_name_lower
     _heave_unit = "idx" if _is_ferrari else "N/mm"
     _tb_unit = "idx" if _is_ferrari else "mm"
+    # Pre-existing bug: _has_rear_torsion / _is_acura referenced here are not
+    # defined in this scope.  Default them to False on GT3 to keep the diff
+    # table physically meaningful; leave the GTP path untouched.
+    _has_rear_torsion_local = False
+    _is_acura_local = False
     _rear_spring_label = (
         "Rear torsion bar index" if _is_ferrari else "Rear torsion bar OD"
-    ) if (_is_ferrari or _has_rear_torsion) else "Rear coil spring"
-    _rear_heave_label = "Rear heave index" if _is_ferrari else ("Rear heave spring" if _is_acura else "Rear third spring")
+    ) if (_is_ferrari or _has_rear_torsion_local) else "Rear coil spring"
+    _rear_heave_label = "Rear heave index" if _is_ferrari else ("Rear heave spring" if _is_acura_local else "Rear third spring")
 
-    param_map = {
-        "front_rh_mm":          ("Front static RH",    current_setup.front_rh_static_mm,    "mm"),
-        "rear_rh_mm":           ("Rear static RH",     current_setup.rear_rh_static_mm,     "mm"),
-        "front_heave_nmm":      (("Front heave index" if _is_ferrari else "Front heave spring"), current_setup.front_heave_nmm, _heave_unit),
-        "rear_third_nmm":       (_rear_heave_label,    current_setup.rear_third_nmm,        _heave_unit),
-        "torsion_bar_od_mm":    (("Front torsion bar index" if _is_ferrari else "Front torsion bar OD"), current_setup.front_torsion_od_mm, _tb_unit),
-        "rear_spring_nmm":      (_rear_spring_label,   current_setup.rear_spring_rate_nmm,  _heave_unit),
-        "rear_arb_blade":       ("RARB blade",         current_setup.rear_arb_blade_start,  "blade"),
-        "front_camber_deg":     ("Front camber",       current_setup.front_camber_deg,      "°"),
-        "rear_camber_deg":      ("Rear camber",        current_setup.rear_camber_deg,       "°"),
-        "brake_bias_pct":       ("Brake bias",         current_setup.brake_bias_pct,        "%"),
-    }
+    if _is_gt3_table:
+        # W4.3: GT3 — compare 4 corner spring rates instead of heave/third/torsion.
+        # Uses lf/rf/lr/rr_spring_rate_nmm if the current_setup object exposes them
+        # (W5.2 added these fields to the GT3 SetupReader); falls back to 0 otherwise.
+        param_map = {
+            "front_rh_mm":          ("Front static RH",    current_setup.front_rh_static_mm,    "mm"),
+            "rear_rh_mm":           ("Rear static RH",     current_setup.rear_rh_static_mm,     "mm"),
+            "lf_spring_rate":       ("LF spring rate",     getattr(current_setup, "lf_spring_rate_nmm", None), "N/mm"),
+            "rf_spring_rate":       ("RF spring rate",     getattr(current_setup, "rf_spring_rate_nmm", None), "N/mm"),
+            "lr_spring_rate":       ("LR spring rate",     getattr(current_setup, "lr_spring_rate_nmm", None), "N/mm"),
+            "rr_spring_rate":       ("RR spring rate",     getattr(current_setup, "rr_spring_rate_nmm", None), "N/mm"),
+            "rear_arb_blade":       ("RARB blade",         current_setup.rear_arb_blade_start,  "blade"),
+            "front_camber_deg":     ("Front camber",       current_setup.front_camber_deg,      "°"),
+            "rear_camber_deg":      ("Rear camber",        current_setup.rear_camber_deg,       "°"),
+            "brake_bias_pct":       ("Brake bias",         current_setup.brake_bias_pct,        "%"),
+        }
+    else:
+        param_map = {
+            "front_rh_mm":          ("Front static RH",    current_setup.front_rh_static_mm,    "mm"),
+            "rear_rh_mm":           ("Rear static RH",     current_setup.rear_rh_static_mm,     "mm"),
+            "front_heave_nmm":      (("Front heave index" if _is_ferrari else "Front heave spring"), current_setup.front_heave_nmm, _heave_unit),
+            "rear_third_nmm":       (_rear_heave_label,    current_setup.rear_third_nmm,        _heave_unit),
+            "torsion_bar_od_mm":    (("Front torsion bar index" if _is_ferrari else "Front torsion bar OD"), current_setup.front_torsion_od_mm, _tb_unit),
+            "rear_spring_nmm":      (_rear_spring_label,   current_setup.rear_spring_rate_nmm,  _heave_unit),
+            "rear_arb_blade":       ("RARB blade",         current_setup.rear_arb_blade_start,  "blade"),
+            "front_camber_deg":     ("Front camber",       current_setup.front_camber_deg,      "°"),
+            "rear_camber_deg":      ("Rear camber",        current_setup.rear_camber_deg,       "°"),
+            "brake_bias_pct":       ("Brake bias",         current_setup.brake_bias_pct,        "%"),
+        }
 
     any_change = False
     for param, (label, cur_val, units) in param_map.items():

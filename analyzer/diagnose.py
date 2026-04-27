@@ -96,11 +96,12 @@ def diagnose(
     diag = Diagnosis(
         lap_time_s=measured.lap_time_s,
         lap_number=measured.lap_number,
-        lltd_pct=(
-            _positive_or_zero(measured.roll_distribution_proxy) * 100
-            if _positive_or_zero(measured.roll_distribution_proxy) > 0.0
-            else _positive_or_zero(measured.lltd_measured) * 100
-        ),
+        # W5.3 (analyzer.md:A16+A28): drop the deprecated `lltd_measured`
+        # alias.  The field is no longer written by `extract_measured_state`
+        # (see extract.py:688), so reading `roll_distribution_proxy` directly
+        # is the only correct source.  Note this remains a GEOMETRIC proxy,
+        # not real LLTD — the report layer should label it as such.
+        lltd_pct=_positive_or_zero(measured.roll_distribution_proxy) * 100,
         weight_dist_front_pct=car.weight_dist_front * 100,
     )
 
@@ -138,11 +139,13 @@ def diagnose(
     problems.sort(key=lambda p: (p.priority, severity_order.get(p.severity, 3)))
     diag.problems = problems
 
-    # Causal analysis: trace problems back to root causes
+    # Causal analysis: trace problems back to root causes.
+    # W5.3 (A19): pass `car` so analyze_causes can filter architecture-only
+    # root causes (e.g. drop `heave_too_soft` for GT3 cars).
     if problems:
         try:
             from analyzer.causal_graph import analyze_causes
-            diag.causal_diagnosis = analyze_causes(problems)
+            diag.causal_diagnosis = analyze_causes(problems, car=car)
         except Exception:
             diag.causal_diagnosis = None  # causal analysis is advisory — never block
     else:
@@ -176,12 +179,16 @@ def _check_safety(
 ) -> None:
     """Check safety-critical items: vortex burst and bottoming.
 
-    TODO(W5.3): heave-travel exhaustion checks (`front_heave_travel_used_pct
-    > 85`) fire phantom critical-severity alarms on GT3 cars (no heave
-    element exists).  Branch on ``car.suspension_arch is GT3_COIL_4WHEEL``
-    and route to per-corner bottoming.  See
-    docs/audits/gt3_phase2/analyzer.md:A18.
+    W5.3 (analyzer.md:A18): heave-travel exhaustion checks
+    (`front_heave_travel_used_pct > 85`, `front_heave_travel_used_braking_pct`,
+    `rear_heave_travel_used_pct`, `heave_bottoming_events_*`) only apply to
+    cars with a heave element.  On GT3 (`suspension_arch=GT3_COIL_4WHEEL`,
+    `heave_spring is None`) those metrics are either unset or meaningless
+    (W5.3:A17 short-circuits the extractor) and the recommendations point
+    at a parameter (`front_heave_nmm`) that does not exist.  We gate the
+    heave-specific predicates on `car.suspension_arch.has_heave_third`.
     """
+    has_heave_third = car.suspension_arch.has_heave_third
 
     # Vortex burst events at speed
     if m.vortex_burst_event_count > 0:
@@ -207,12 +214,18 @@ def _check_safety(
     front_clean = (m.bottoming_event_count_front_clean
                    if m.bottoming_event_count_front_clean > 0 or m.bottoming_event_count_front_kerb > 0
                    else m.bottoming_event_count_front)  # fallback for old data
-    front_direct_bottoming = (
-        m.heave_bottoming_events_front > 0
-        or m.splitter_scrape_events > 0
-        or (m.front_heave_travel_used_pct or 0) > 85.0
-        or (m.front_heave_travel_used_braking_pct or 0) > 85.0
-    )
+    # W5.3 (A18): heave-element predicates only apply when the car has a
+    # front heave/third element.  On GT3 we still allow `splitter_scrape_events`
+    # which is sourced from CFSRrideHeight (a real GT3 channel).
+    if has_heave_third:
+        front_direct_bottoming = (
+            m.heave_bottoming_events_front > 0
+            or m.splitter_scrape_events > 0
+            or (m.front_heave_travel_used_pct or 0) > 85.0
+            or (m.front_heave_travel_used_braking_pct or 0) > 85.0
+        )
+    else:
+        front_direct_bottoming = m.splitter_scrape_events > 0
     if front_clean > front_bottom_thresh and (front_direct_bottoming or front_clean > front_bottom_thresh * 3):
         sev = "critical" if front_clean > front_bottom_thresh * 4 else "significant"
         problems.append(Problem(
@@ -269,10 +282,15 @@ def _check_safety(
     rear_clean = (m.bottoming_event_count_rear_clean
                   if m.bottoming_event_count_rear_clean > 0 or m.bottoming_event_count_rear_kerb > 0
                   else m.bottoming_event_count_rear)
-    rear_direct_bottoming = (
-        m.heave_bottoming_events_rear > 0
-        or (m.rear_heave_travel_used_pct or 0) > 85.0
-    )
+    # W5.3 (A18): heave-element predicates skipped on GT3 (no rear third
+    # spring exists).
+    if has_heave_third:
+        rear_direct_bottoming = (
+            m.heave_bottoming_events_rear > 0
+            or (m.rear_heave_travel_used_pct or 0) > 85.0
+        )
+    else:
+        rear_direct_bottoming = False
     if rear_clean > rear_bottom_thresh and (rear_direct_bottoming or rear_clean > rear_bottom_thresh * 3):
         sev = "critical" if rear_clean > rear_bottom_thresh * 4 else "significant"
         problems.append(Problem(
@@ -325,7 +343,8 @@ def _check_safety(
     # Front heave spring travel exhaustion (direct deflection measurement)
     # When deflection approaches DeflMax, the spring bottoms out.
     # Under braking this causes: entry rotation (spring compressing) → mid-corner push (bottomed).
-    if (m.front_heave_travel_used_braking_pct or 0) > 85.0:
+    # W5.3 (A18): only fires on architectures with a front heave element.
+    if has_heave_third and (m.front_heave_travel_used_braking_pct or 0) > 85.0:
         sev = "critical" if m.front_heave_travel_used_braking_pct > 95.0 else "significant"
         problems.append(Problem(
             category="safety",
@@ -350,7 +369,8 @@ def _check_safety(
         ))
 
     # Front heave spring travel exhaustion at speed (non-braking)
-    if (m.front_heave_travel_used_pct or 0) > 85.0:
+    # W5.3 (A18): only fires on architectures with a front heave element.
+    if has_heave_third and (m.front_heave_travel_used_pct or 0) > 85.0:
         sev = "critical" if m.front_heave_travel_used_pct > 95.0 else "significant"
         problems.append(Problem(
             category="safety",
@@ -373,7 +393,8 @@ def _check_safety(
         ))
 
     # Rear heave spring travel exhaustion at speed
-    if (m.rear_heave_travel_used_pct or 0) > 85.0:
+    # W5.3 (A18): only fires on architectures with a rear third element.
+    if has_heave_third and (m.rear_heave_travel_used_pct or 0) > 85.0:
         sev = "critical" if m.rear_heave_travel_used_pct > 95.0 else "significant"
         problems.append(Problem(
             category="safety",
@@ -438,7 +459,8 @@ def _check_safety(
         ))
 
     # Direct heave bottoming events (from deflection channel, not ride height proxy)
-    if m.heave_bottoming_events_front > 0:
+    # W5.3 (A18): only fires on architectures with a front heave element.
+    if has_heave_third and m.heave_bottoming_events_front > 0:
         sev = "critical" if m.heave_bottoming_events_front > 10 else "significant"
         problems.append(Problem(
             category="safety",
@@ -460,7 +482,8 @@ def _check_safety(
         ))
 
     # Rear heave bottoming events (from deflection channel)
-    if m.heave_bottoming_events_rear > 0:
+    # W5.3 (A18): only fires on architectures with a rear third element.
+    if has_heave_third and m.heave_bottoming_events_rear > 0:
         sev = "critical" if m.heave_bottoming_events_rear > 10 else "significant"
         problems.append(Problem(
             category="safety",
@@ -692,10 +715,10 @@ def _check_balance(
                 priority=2,
             ))
 
-    # Ride-height-based roll distribution proxy check
+    # Ride-height-based roll distribution proxy check.
+    # W5.3 (analyzer.md:A16): drop the `lltd_measured` alias fallback.
+    # The field is no longer written in extract.py.
     roll_proxy = _positive_or_zero(m.roll_distribution_proxy)
-    if roll_proxy <= 0.0:
-        roll_proxy = _positive_or_zero(m.lltd_measured)
     if roll_proxy > 0:
         target_lltd = car.weight_dist_front + 0.05  # 5% above front weight dist (OptimumG baseline)
         lltd_delta = roll_proxy - target_lltd

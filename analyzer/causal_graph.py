@@ -12,15 +12,22 @@ Key benefits:
 4. Avoids redundant recommendations
 
 The causal graph is defined from domain physics (not learned from data).
+
+W5.3 (analyzer.md:A19): some root-cause nodes only apply to specific
+suspension architectures (heave-bearing GTP cars vs coil-4-corner GT3).
+We tag those nodes with `gtp_only` / `gt3_only` flags so downstream
+consumers (e.g. `applicable_nodes(car)` and `analyze_causes(...)`) can
+filter the graph by architecture.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from analyzer.diagnose import Problem
+    from car_model.cars import CarModel
 
 
 # ── Causal Graph Definition ────────────────────────────────────────────
@@ -36,6 +43,12 @@ class CausalNode:
     parameter: str = ""
     # Direction of the fix ("increase" | "decrease" | "")
     fix_direction: str = ""
+    # W5.3 (A19): architecture restrictions.  When `gtp_only=True` the node
+    # only applies to cars with a front heave element (GTP).  When
+    # `gt3_only=True` the node only applies to coil-4-corner GT3 cars.
+    # Both default to False (architecture-agnostic).
+    gtp_only: bool = False
+    gt3_only: bool = False
 
 
 @dataclass
@@ -118,16 +131,40 @@ NODES: dict[str, CausalNode] = {
         "heave_too_soft", "Front heave spring too soft",
         "root_cause", "platform",
         parameter="front_heave_nmm", fix_direction="increase",
+        gtp_only=True,  # W5.3 (A19): GT3 has no heave element
     ),
     "heave_too_stiff": CausalNode(
         "heave_too_stiff", "Front heave spring too stiff",
         "root_cause", "platform",
         parameter="front_heave_nmm", fix_direction="decrease",
+        gtp_only=True,  # W5.3 (A19): GT3 has no heave element
     ),
     "third_too_soft": CausalNode(
         "third_too_soft", "Rear third spring too soft",
         "root_cause", "platform",
         parameter="rear_third_nmm", fix_direction="increase",
+        gtp_only=True,  # W5.3 (A19): GT3 has no rear third element
+    ),
+    # W5.3 (A19): GT3-only equivalents — paired front/rear coil-over springs.
+    # These map to `front_corner_spring_nmm` / `rear_spring_nmm` on
+    # `CurrentSetup` (already populated by `setup_reader.from_ibt` for GT3 IBTs).
+    "front_corner_spring_too_soft": CausalNode(
+        "front_corner_spring_too_soft", "Front corner springs too soft",
+        "root_cause", "platform",
+        parameter="front_corner_spring_nmm", fix_direction="increase",
+        gt3_only=True,
+    ),
+    "front_corner_spring_too_stiff": CausalNode(
+        "front_corner_spring_too_stiff", "Front corner springs too stiff",
+        "root_cause", "platform",
+        parameter="front_corner_spring_nmm", fix_direction="decrease",
+        gt3_only=True,
+    ),
+    "rear_corner_spring_too_soft": CausalNode(
+        "rear_corner_spring_too_soft", "Rear corner springs too soft",
+        "root_cause", "platform",
+        parameter="rear_spring_nmm", fix_direction="increase",
+        gt3_only=True,
     ),
     "rarb_too_stiff": CausalNode(
         "rarb_too_stiff", "Rear ARB too stiff",
@@ -325,6 +362,20 @@ EDGES: list[CausalEdge] = [
     CausalEdge("third_too_soft", "symptom_rear_bottoming",
                "Softer third → rear excursion exceeds dynamic RH"),
 
+    # ── W5.3 (A19): GT3 corner spring root causes ──
+    # Mirror the heave/third edges but skip the aero-floor symptoms
+    # (`symptom_excursion_high`, `symptom_vortex_burst`) — those are
+    # GTP-specific concepts tied to the front splitter+heave architecture
+    # and have no direct GT3 equivalent today.
+    CausalEdge("front_corner_spring_too_soft", "excessive_rh_variance",
+               "Softer front coil → larger ride height oscillation (σ ~ 1/√k)"),
+    CausalEdge("front_corner_spring_too_soft", "symptom_front_bottoming",
+               "Softer front coil → larger excursion → hits bump rubbers"),
+    CausalEdge("rear_corner_spring_too_soft", "symptom_rear_rh_variance",
+               "Softer rear coil → larger rear ride height oscillation"),
+    CausalEdge("rear_corner_spring_too_soft", "symptom_rear_bottoming",
+               "Softer rear coil → rear excursion exceeds dynamic RH"),
+
     # ── ARB imbalance ──
     CausalEdge("rarb_too_stiff", "high_lltd",
                "Stiff rear ARB → more rear roll stiffness → higher LLTD"),
@@ -448,6 +499,36 @@ def _match_problem_to_symptom(problem: Problem) -> str | None:
 
 # ── Graph traversal ───────────────────────────────────────────────────
 
+def applicable_nodes(car: "CarModel") -> Iterator[CausalNode]:
+    """Yield the subset of NODES that apply to the given car's architecture.
+
+    W5.3 (A19): GT3 cars (no heave element) skip `gtp_only` nodes;
+    GTP cars skip `gt3_only` nodes.  Architecture-agnostic nodes
+    (the default) yield for every car.
+    """
+    is_gt3 = not car.suspension_arch.has_heave_third
+    for node in NODES.values():
+        if is_gt3 and node.gtp_only:
+            continue
+        if not is_gt3 and node.gt3_only:
+            continue
+        yield node
+
+
+def _is_node_applicable(node: "CausalNode | None", car: "CarModel | None") -> bool:
+    """Return True iff the node applies to `car`'s architecture (or `car is None`)."""
+    if node is None:
+        return False
+    if car is None:
+        return True
+    is_gt3 = not car.suspension_arch.has_heave_third
+    if is_gt3 and node.gtp_only:
+        return False
+    if not is_gt3 and node.gt3_only:
+        return False
+    return True
+
+
 def _build_adjacency() -> dict[str, list[CausalEdge]]:
     """Build forward adjacency list: cause_id → [edges]."""
     adj: dict[str, list[CausalEdge]] = {}
@@ -518,7 +599,10 @@ def _build_causal_chain(root_id: str, edges: list[CausalEdge]) -> CausalChain:
 
 # ── Main analysis ─────────────────────────────────────────────────────
 
-def analyze_causes(problems: list[Problem]) -> CausalDiagnosis:
+def analyze_causes(
+    problems: list[Problem],
+    car: "CarModel | None" = None,
+) -> CausalDiagnosis:
     """Perform causal analysis on a list of diagnosed problems.
 
     Maps each problem to symptom nodes in the causal graph, traces
@@ -526,6 +610,10 @@ def analyze_causes(problems: list[Problem]) -> CausalDiagnosis:
 
     Args:
         problems: List of Problem objects from diagnose()
+        car: Optional CarModel — when supplied, root causes whose
+             `gtp_only`/`gt3_only` flags don't match the car's architecture
+             are filtered out (W5.3:A19).  Backwards-compatible default
+             (`None`) preserves the old behaviour and yields every node.
 
     Returns:
         CausalDiagnosis with root causes, causal chains, and unexplained symptoms
@@ -551,6 +639,11 @@ def analyze_causes(problems: list[Problem]) -> CausalDiagnosis:
         traces = _find_root_causes_for_symptom(symptom_id, reverse_adj)
 
         for root_id, edges in traces:
+            # W5.3 (A19): drop architecture-mismatched root causes (e.g. a
+            # GT3 session must not surface `heave_too_soft`).
+            root_node = NODES.get(root_id)
+            if root_node is None or not _is_node_applicable(root_node, car):
+                continue
             if root_id not in root_cause_groups:
                 root_cause_groups[root_id] = {
                     "symptom_ids": set(),
@@ -593,6 +686,12 @@ def analyze_causes(problems: list[Problem]) -> CausalDiagnosis:
     # Check for symptoms with multiple root causes
     for symptom_id in symptom_map:
         traces = _find_root_causes_for_symptom(symptom_id, reverse_adj)
+        # W5.3 (A19): filter out architecture-mismatched roots before
+        # counting "multiple possible causes" for the disambiguation note.
+        traces = [
+            (root_id, edges) for root_id, edges in traces
+            if _is_node_applicable(NODES.get(root_id), car)
+        ]
         if len(traces) > 1:
             root_labels = [NODES[t[0]].label for t in traces]
             symptom_label = NODES[symptom_id].label

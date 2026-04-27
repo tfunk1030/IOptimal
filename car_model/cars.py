@@ -1549,6 +1549,20 @@ class GarageRanges:
     rear_shock_defl_min_mm: float = 15.0
     rear_spring_defl_max_mm: float = 24.9
 
+    # GT3-specific garage parameters (W4.3 / audit O7).
+    # Each axle has a per-corner BumpRubberGap (mm) — a GT3 garage parameter that
+    # replaces the GTP pushrod-offset RH workflow.  CenterFrontSplitterHeight (mm)
+    # is a GT3-only Chassis.FrontBrakesLights field that affects front DF.
+    # Default (0.0, 0.0) sentinel keeps GTP cars unaffected.  Per-axle ranges
+    # are derived from driver-loaded values (BMW M4 GT3 F=15/R=52, Aston F=17/
+    # R=54, Porsche F=30/R=51) plus GT3-typical engineering bounds (front bump
+    # rubbers tend to live closer to the bottom; rear has more travel).
+    bump_rubber_gap_front_mm: tuple[float, float] = (0.0, 0.0)
+    bump_rubber_gap_rear_mm: tuple[float, float] = (0.0, 0.0)
+    bump_rubber_gap_resolution_mm: float = 1.0
+    splitter_height_mm: tuple[float, float] = (0.0, 0.0)
+    splitter_height_resolution_mm: float = 1.0
+
 
 @dataclass
 class CarModel:
@@ -3383,6 +3397,13 @@ BMW_M4_GT3 = CarModel(
     garage_ranges=GarageRanges(
         camber_front_deg=(-4.0, 0.0),  # PENDING_IBT
         camber_rear_deg=(-3.0, 0.0),   # PENDING_IBT
+        # W4.3: BumpRubberGap + CenterFrontSplitterHeight (GT3-only).
+        # Driver-loaded values at Spielberg: F=15 mm, R=52 mm.  Range chosen
+        # to bracket driver-loaded value with engineering headroom.  PENDING
+        # iRacing manual decode (V1 PDF is image-based).
+        bump_rubber_gap_front_mm=(0.0, 30.0),
+        bump_rubber_gap_rear_mm=(0.0, 60.0),
+        splitter_height_mm=(0.0, 30.0),
     ),
 )
 
@@ -3512,6 +3533,10 @@ ASTON_MARTIN_VANTAGE_GT3 = CarModel(
     garage_ranges=GarageRanges(
         camber_front_deg=(-4.0, 0.0),
         camber_rear_deg=(-3.0, 0.0),
+        # W4.3: Aston driver-loaded F=17, R=54 mm.  PENDING manual decode.
+        bump_rubber_gap_front_mm=(0.0, 30.0),
+        bump_rubber_gap_rear_mm=(0.0, 60.0),
+        splitter_height_mm=(0.0, 30.0),
     ),
 )
 
@@ -3660,6 +3685,12 @@ PORSCHE_992_GT3R = CarModel(
     garage_ranges=GarageRanges(
         camber_front_deg=(-4.5, 0.0),
         camber_rear_deg=(-3.5, 0.0),
+        # W4.3: Porsche driver-loaded F=30, R=51 mm — front uses larger gap
+        # consistent with the higher front static RH (RR layout sits low at
+        # the rear, high at the front).
+        bump_rubber_gap_front_mm=(0.0, 40.0),
+        bump_rubber_gap_rear_mm=(0.0, 60.0),
+        splitter_height_mm=(0.0, 30.0),
     ),
 )
 

@@ -314,6 +314,10 @@ def format_report(
     front_slip_p95 = _num("front_slip_ratio_p95")
     yaw_corr = _num("yaw_rate_correlation")
     roll_proxy_direct = _num("roll_distribution_proxy")
+    # W5.3 (analyzer.md:A16): the legacy `lltd_measured` field is deprecated
+    # and no longer written by `extract_measured_state`.  Keep the read so
+    # historical observation JSON still renders, but `roll_distribution_proxy`
+    # is the primary source.
     lltd_measured = _num("lltd_measured")
     roll_gradient = _num("roll_gradient_measured_deg_per_g")
     roll_rate = _num("roll_rate_p95_deg_per_s")

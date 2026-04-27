@@ -1128,6 +1128,17 @@ def write_sto(
         _car is not None
         and getattr(getattr(_car, "suspension_arch", None), "has_heave_third", True) is False
     )
+    # W4.3 NOTE: iRacing schema round-trip validation requires loading the
+    # written .sto into a live iRacing client and confirming the garage UI
+    # accepts every field without dropping or overriding values.  The repo
+    # has no offline copy of iRacing's CarSetup XSD; round-trip validation
+    # is a manual driver-side QA step performed before each GT3 release.
+    # The current .sto write is well-formed XML with all required CarSetup_*
+    # fields present (verified in tests/test_setup_writer_gt3_*.py); the open
+    # question is whether iRacing's parser accepts the BumpRubberGap +
+    # CenterFrontSplitterHeight + per-car ARB encodings without further
+    # massaging.  TODO(W4.3-deferred): add a fixture-based round-trip test
+    # once we have a known-good iRacing-emitted GT3 .sto to compare against.
     # W4.2: GT3 sub-dispatch.  All three GT3 cars share the GT3 architecture
     # (single `is_gt3` flag), but diverge inside the GT3 path on:
     #  - rear toe per-wheel (BMW/Aston) vs paired (Porsche `Chassis.Rear.TotalToeIn`)
