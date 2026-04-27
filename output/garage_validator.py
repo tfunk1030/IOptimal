@@ -123,7 +123,7 @@ def validate_and_fix_garage_correlation(
 
     # --- Phase 1: Range-clamp and quantise individual parameters ---
     warnings.extend(_clamp_step1(step1, gr))
-    warnings.extend(_clamp_step2(step2, gr))
+    warnings.extend(_clamp_step2(step2, gr, car=car))
     warnings.extend(_clamp_step3(step3, gr))
     if step5 is not None:
         warnings.extend(_clamp_step5(step5, gr))
@@ -281,8 +281,24 @@ def _clamp_step1(step1, gr) -> list[str]:
     return msgs
 
 
-def _clamp_step2(step2, gr) -> list[str]:
-    """Clamp and quantise Step 2 (heave/third) parameters."""
+def _clamp_step2(step2, gr, car=None) -> list[str]:
+    """Clamp and quantise Step 2 (heave/third) parameters.
+
+    GT3 architecture (W3.1 / W4.1): step2 is a HeaveSolution.null() with all
+    heave/third fields = 0 and `present=False`. The GT3 GarageRanges sentinel
+    tuples are also (0.0, 0.0). Early-return on GT3 — there is nothing to clamp,
+    and snapping a null field produces noisy 0.0 -> 0.0 messages otherwise.
+    Audit O16/O18.
+    """
+    if (
+        car is not None
+        and getattr(getattr(car, "suspension_arch", None), "has_heave_third", True) is False
+    ):
+        return []
+    if getattr(step2, "present", True) is False:
+        # Defense-in-depth: even if `car` was not threaded through, a null
+        # step2 means there's nothing to clamp.
+        return []
     msgs: list[str] = []
 
     old = step2.front_heave_nmm

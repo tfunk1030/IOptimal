@@ -116,6 +116,7 @@ class HeaveRecommendation:
     avg_fuel_nmm: float = 0.0        # heave spring for average fuel (optimal)
     compromise_nmm: float = 0.0      # recommended compromise
     avg_fuel_l: float = 0.0          # average fuel load used for calculation
+    full_fuel_l: float = 0.0         # full-tank fuel load (per-car capacity)
     reasoning: str = ""
 
 
@@ -177,11 +178,11 @@ class StintStrategy:
             lines.append("")
             lines.append("  HEAVE SPRING FUEL-LOAD OPTIMISATION")
             lines.append("  " + "-" * (width - 4))
-            # TODO(W3.3): hardcoded 89L (GTP fuel cap) — for GT3 cars the tank
-            # is 100/104/106 L per car. See ST1 in
-            # docs/audits/gt3_phase2/solver-damper-legality.md.
+            # W3.3 (ST1): per-car fuel capacity from HeaveRecommendation. GT3
+            # tanks (100/104/106 L) differ from GTP (89 L); the literal here
+            # was leaking the GTP capacity into every car's display string.
             lines.append(
-                f"    Full fuel ({89:.0f}L):   {hr.full_fuel_nmm:.0f} N/mm  "
+                f"    Full fuel ({hr.full_fuel_l:.0f}L):   {hr.full_fuel_nmm:.0f} N/mm  "
                 f"(safety constraint)"
             )
             lines.append(
@@ -271,9 +272,12 @@ FUEL_TANK_POSITION_FRACTION = 0.55  # 55% of wheelbase from front
 
 # Pushrod correction per fuel load change
 # From per-car-quirks.md: BMW 89L → 12L needs ~0.5mm pushrod correction.
-# TODO(W3.3): the constant 77 is the BMW GTP fuel mass range (kg). For GT3 cars
-# the range is approximately 88 kg (100 L → 12 L) so the per-kg ratio drifts
-# ~14%. See ST2 in docs/audits/gt3_phase2/solver-damper-legality.md.
+# TODO(W7.2): the divisor 77 is the BMW GTP fuel-mass range (kg). For GT3 the
+# range is ~66 kg (100 L → 10 L × 0.73), so the per-kg ratio is approximately
+# right but drifts ~10–14%. The audit ST2 finding (DEGRADED, small numerical
+# drift) flags this as a "needs per-car calibration" item — a real fix waits
+# for GT3 IBT pushrod-vs-fuel sweeps to land. See ST2 in
+# docs/audits/gt3_phase2/solver-damper-legality.md.
 PUSHROD_CORRECTION_MM_PER_KG = 0.5 / (77 * FUEL_DENSITY_KG_PER_L)
 
 
@@ -285,15 +289,22 @@ def compute_fuel_states(
 
     Args:
         car: Car model
-        fuel_levels_l: Fuel levels to compute (default: [89, 50, 12])
+        fuel_levels_l: Fuel levels to compute. When None, derived per-car from
+            ``car.fuel_capacity_l`` (full) and ``car.fuel_stint_end_l`` (end)
+            with the midpoint as the average. BMW GTP -> [88.96, ~54.5, 20];
+            BMW M4 GT3 -> [100, 55, 10]; Aston GT3 -> [106, 58, 10].
 
     Returns:
         List of FuelState objects
     """
-    # TODO(W3.3): hardcoded GTP fuel range. GT3 tanks are 100/104/106 L. See
-    # ST3 in docs/audits/gt3_phase2/solver-damper-legality.md.
+    # W3.3 (ST3): per-car fuel range. Previously hardcoded to GTP [89, 50, 12]
+    # which under-stated GT3 full tanks by 11–17 L. See ST3 in
+    # docs/audits/gt3_phase2/solver-damper-legality.md.
     if fuel_levels_l is None:
-        fuel_levels_l = [89.0, 50.0, 12.0]
+        fuel_full = float(car.fuel_capacity_l)
+        fuel_end = float(car.fuel_stint_end_l)
+        fuel_mid = (fuel_full + fuel_end) / 2.0
+        fuel_levels_l = [fuel_full, fuel_mid, fuel_end]
 
     dry_mass_kg = car.mass_car_kg + car.mass_driver_kg  # car + driver mass without fuel
     wheelbase_m = car.wheelbase_m
@@ -660,6 +671,7 @@ def _compute_heave_recommendation(
         avg_fuel_nmm=float(avg_heave),
         compromise_nmm=float(compromise),
         avg_fuel_l=avg_fuel_l,
+        full_fuel_l=float(full_fuel_l),
         reasoning=reasoning,
     )
 
@@ -724,10 +736,14 @@ def analyze_stint(
                 stint_laps = max(stint_laps, len(snapshots))
                 base_understeer_deg = start_snap.understeer_mean_deg
 
-    # TODO(W3.3): hardcoded GTP fuel range — same as compute_fuel_states. See
-    # ST3 in docs/audits/gt3_phase2/solver-damper-legality.md.
+    # W3.3 (ST3): per-car fuel range, derived from car.fuel_capacity_l and
+    # car.fuel_stint_end_l. Mirror of compute_fuel_states default so analyze_stint
+    # produces a self-consistent fuel sweep regardless of which fixture was used.
     if fuel_levels_l is None:
-        fuel_levels_l = [89.0, 50.0, 12.0]
+        fuel_full = float(car.fuel_capacity_l)
+        fuel_end = float(car.fuel_stint_end_l)
+        fuel_mid = (fuel_full + fuel_end) / 2.0
+        fuel_levels_l = [fuel_full, fuel_mid, fuel_end]
 
     # Compute fuel states
     fuel_states = compute_fuel_states(car, fuel_levels_l)

@@ -141,6 +141,12 @@ _SCENARIOS: dict[str, ScenarioProfile] = {
         ),
         preferred_result_key="best_robust",
     ),
+    # TODO(W3.3+ / W6.x): no GT3-specific race profile. The thresholds below
+    # (max_front_heave_travel_used_pct=95.5, etc.) are GTP-physics — GT3 has
+    # no front heave spring, so the equivalent constraint would be
+    # max_bump_rubber_gap_pct or similar against `BumpRubberGap`. Out of scope
+    # for W3.3; tracked for W6.x. See SP3 in
+    # docs/audits/gt3_phase2/solver-damper-legality.md.
     "race": ScenarioProfile(
         name="race",
         label="Race",
