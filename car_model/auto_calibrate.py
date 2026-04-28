@@ -245,6 +245,15 @@ class CalibrationPoint:
     rear_bump_rubber_gap_mm: float = 0.0
     splitter_height_mm: float = 0.0
 
+    # ── Provenance: synthesised vs real (Unit 9 — virtual data anchors) ──
+    # When True, this point was generated from car physics in
+    # ``car_model.calibration.virtual_anchors`` rather than ingested from
+    # an IBT session. Real-data dedupe / min-sessions / display logic
+    # filters on this flag so synthesised points never inflate the
+    # ``len(unique) >= _MIN_SESSIONS_FOR_FIT`` gate that decides whether
+    # fitting is attempted.
+    synthesized: bool = False
+
 
 @dataclass
 class FittedModel:
@@ -1176,8 +1185,37 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
     models.n_unique_setups = len(unique)
 
-    if len(unique) < _MIN_SESSIONS_FOR_FIT:
-        models.status["deflection_model"] = f"insufficient data ({len(unique)}/{_MIN_SESSIONS_FOR_FIT} unique setups)"
+    # ── Unit 9: virtual-anchor-relaxed minimum gate ──
+    # Real data alone needs ``_MIN_SESSIONS_FOR_FIT`` (5) unique setups; with
+    # physics-anchored virtual rows we accept as few as 2 real points provided
+    # the virtual count brings total samples ≥ _MIN_SESSIONS_FOR_FIT. The
+    # generated anchors are cached and reused below so we avoid a duplicate
+    # generation pass when the gate passes.
+    _MIN_REAL_WITH_VIRTUAL_ANCHORS = 2
+    _virtual_anchors_by_target: dict[str, list] = {}
+    if _car_obj is not None and len(unique) >= _MIN_REAL_WITH_VIRTUAL_ANCHORS:
+        try:
+            from car_model.calibration.virtual_anchors import (
+                generate_virtual_anchors as _gen_anchors,
+                supported_targets as _supp_targets,
+            )
+            for _t in _supp_targets():
+                _a = _gen_anchors(_car_obj, _t)
+                if _a:
+                    _virtual_anchors_by_target[_t] = _a
+        except Exception as _e:
+            import logging
+            logging.getLogger(__name__).debug(
+                "virtual anchor generation skipped: %s", _e,
+            )
+
+    _virtual_count = sum(len(v) for v in _virtual_anchors_by_target.values())
+    _effective_n = len(unique) + _virtual_count
+    if len(unique) < _MIN_SESSIONS_FOR_FIT and _effective_n < _MIN_SESSIONS_FOR_FIT:
+        models.status["deflection_model"] = (
+            f"insufficient data ({len(unique)}/{_MIN_SESSIONS_FOR_FIT} unique "
+            f"setups; +{_virtual_count} virtual = {_effective_n})"
+        )
         return models
 
     rows = [asdict(pt) for pt in unique]
@@ -1241,8 +1279,34 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                     row["rear_spring_setting"]
                 )
 
+    # ── Unit 9: append physics-anchored virtual rows ──
+    # Anchors live AFTER the real-data dedupe gate so they never inflate
+    # ``models.n_unique_setups``; they DO contribute as samples to the
+    # least-squares solve, anchoring intercept and asymptote when sparse.
+    _virtual_anchor_index: dict[str, list[int]] = {}
+    for _target, _anchors in _virtual_anchors_by_target.items():
+        _idx_start = len(rows)
+        for _pt in _anchors:
+            rows.append(asdict(_pt))
+        _virtual_anchor_index[_target] = list(range(_idx_start, len(rows)))
+
     def col(name: str) -> np.ndarray:
         return _col(rows, name)
+
+    # Mask used by std-checks and direct _fit() callsites that don't have a
+    # virtual_anchors target — drops ALL synthesised rows so y=0.0 sentinels
+    # for unrelated targets don't poison the regression.
+    if _virtual_anchor_index:
+        _real_only_mask = np.ones(len(rows), dtype=bool)
+        for _idxs in _virtual_anchor_index.values():
+            for _i in _idxs:
+                _real_only_mask[_i] = False
+    else:
+        _real_only_mask = None
+
+    def _real(arr: np.ndarray) -> np.ndarray:
+        """Slice an array down to real (non-synthesised) rows."""
+        return arr if _real_only_mask is None else arr[_real_only_mask]
 
     heave = col("front_heave_setting")
     od4 = col("front_torsion_od_mm") ** 4
@@ -1365,29 +1429,145 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     _FRONT_POOL = _filter_pool(_FRONT_AXIS_NAMES | _GLOBAL_NAMES)
     _REAR_POOL = _filter_pool(_REAR_AXIS_NAMES | _GLOBAL_NAMES)
 
-    def _pool_to_matrix(pool=None):
-        """Build X matrix and names from feature pool, excluding constants."""
+    def _pool_to_matrix(pool=None, row_mask: np.ndarray | None = None):
+        """Build X matrix and names from feature pool, excluding constants.
+
+        ``row_mask`` (Unit 9): boolean array selecting which rows to include
+        in the X arrays. Used to drop synthesised virtual anchors when their
+        inclusion makes the LOO fit worse than the real-only fit.
+        """
         if pool is None:
             pool = _UNIVERSAL_POOL
         X_cols, names = [], []
         for arr, name in pool:
-            if len(np.unique(arr)) >= 2 and np.std(arr) > 1e-6:
-                X_cols.append(arr)
+            arr_view = arr if row_mask is None else arr[row_mask]
+            if len(np.unique(arr_view)) >= 2 and np.std(arr_view) > 1e-6:
+                X_cols.append(arr_view)
                 names.append(name)
         return X_cols, names
 
+    def _virtual_target_for(col_name: str) -> str | None:
+        """Map a y-column name → the virtual_anchors target key, or None."""
+        col_to_target = {
+            "static_front_rh_mm": "front_static_rh",
+            "static_rear_rh_mm": "rear_static_rh",
+            "front_shock_defl_static_mm": "front_shock_defl_static",
+            "rear_shock_defl_static_mm": "rear_shock_defl_static",
+            "rear_spring_defl_static_mm": "rear_spring_defl_static",
+            "third_spring_defl_static_mm": "third_spring_defl_static",
+            "heave_spring_defl_static_mm": "heave_spring_defl_static",
+        }
+        return col_to_target.get(col_name)
+
+    def _row_mask_for_target(target_col_name: str, include_virtual: bool) -> np.ndarray | None:
+        """Return a boolean row mask. None means "all rows".
+
+        When ``include_virtual`` is False, virtual rows for non-matching
+        targets are still included if they wrote to a different output
+        column — but rows whose synthesised target is the *current* target
+        get dropped. This keeps the augmentation per-target rather than
+        global so different regression outputs can independently opt in/out.
+        """
+        if not _virtual_anchor_index:
+            return None
+        n_rows = len(rows)
+        mask = np.ones(n_rows, dtype=bool)
+        target_key = _virtual_target_for(target_col_name)
+        if target_key is None:
+            # No virtual anchors registered for this output; drop ALL synth rows
+            # so virtual data for unrelated targets doesn't bleed into y=0.0.
+            for idxs in _virtual_anchor_index.values():
+                for i in idxs:
+                    mask[i] = False
+            return mask
+        # Drop virtual rows that target a DIFFERENT output (their y for the
+        # current target is 0.0 from the dataclass default — would poison y).
+        for tgt_key, idxs in _virtual_anchor_index.items():
+            if tgt_key == target_key:
+                if not include_virtual:
+                    for i in idxs:
+                        mask[i] = False
+            else:
+                for i in idxs:
+                    mask[i] = False
+        return mask
+
     def _fit_one_pool(target_col_name, model_name, pool, min_std=0.5,
-                      seed_features=None):
-        """Internal: fit a single pool. Returns FittedModel or None."""
-        y = col(target_col_name)
+                      seed_features=None, include_virtual: bool = True):
+        """Internal: fit a single pool. Returns FittedModel or None.
+
+        ``include_virtual`` (Unit 9): when False, virtual anchors for THIS
+        target are excluded from the X/y matrices. Used by _fit_from_pool
+        to compare augmented-vs-real-only LOO RMSE.
+        """
+        row_mask = _row_mask_for_target(target_col_name, include_virtual)
+        y_full = col(target_col_name)
+        y = y_full if row_mask is None else y_full[row_mask]
         if np.std(y) < min_std:
             return None
-        X_cols, names = _pool_to_matrix(pool)
+        X_cols, names = _pool_to_matrix(pool, row_mask=row_mask)
         if not X_cols:
             return None
         X = np.column_stack(X_cols)
         X, names = _select_features(X, y, names, seed_features=seed_features)
         return _fit(X, y, names, model_name)
+
+    def _fit_with_anchor_check(target_col_name, model_name, pool, min_std=0.5,
+                                seed_features=None):
+        """Fit twice (with and without virtual anchors); return the better one.
+
+        This is the LOO-guarded augmentation. Virtual anchors only ship if
+        they don't make the model demonstrably worse on real-data
+        leave-one-out.
+
+        Selection rules (in priority order):
+          1. If the augmented fit is force-uncalibrated by ``_fit``'s
+             LOO/train > 10x guard but the real-only fit is calibrated,
+             return the real-only fit.
+          2. Otherwise compare LOO RMSE on the model's own row set; the
+             augmented fit wins when its LOO is lower OR within 5% of
+             real-only LOO (small ties favour anchored intercept).
+        """
+        target_key = _virtual_target_for(target_col_name)
+        # No virtual anchors for this target — single fit, single result.
+        if target_key is None or target_key not in _virtual_anchor_index:
+            return _fit_one_pool(target_col_name, model_name, pool, min_std,
+                                  seed_features=seed_features,
+                                  include_virtual=False)
+        augmented = _fit_one_pool(target_col_name, model_name, pool, min_std,
+                                   seed_features=seed_features,
+                                   include_virtual=True)
+        real_only = _fit_one_pool(target_col_name, model_name + "_real",
+                                   pool, min_std,
+                                   seed_features=seed_features,
+                                   include_virtual=False)
+        if augmented is None:
+            return real_only
+        if real_only is None:
+            return augmented
+        import logging
+        _log = logging.getLogger(__name__)
+        # Rule 1: if anchor-augmented fit is force-uncalibrated but real
+        # alone is calibrated, prefer real-only.
+        if real_only.is_calibrated and not augmented.is_calibrated:
+            _log.info(
+                "Virtual anchors disabled for '%s': augmented LOO/train "
+                "ratio rejected, real-only fit accepted",
+                model_name,
+            )
+            return real_only
+        a_loo = augmented.loo_rmse
+        r_loo = real_only.loo_rmse
+        if (not np.isnan(a_loo) and not np.isnan(r_loo)
+                and r_loo < a_loo * 0.95):
+            _log.info(
+                "Virtual anchors disabled for '%s': real-only LOO=%.3f "
+                "beats augmented LOO=%.3f",
+                model_name, r_loo, a_loo,
+            )
+            real_only.name = model_name
+            return real_only
+        return augmented
 
     def _fit_from_pool(target_col_name, model_name, pool=None, min_std=0.5,
                        fallback_pool=None, seed_features=None):
@@ -1401,12 +1581,18 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         serving as effective regularization (e.g. Porsche, Acura small datasets
         with multicollinear physics terms).
         """
-        primary = _fit_one_pool(target_col_name, model_name, pool, min_std,
-                               seed_features=seed_features)
+        # Unit 9 inner: _fit_with_anchor_check wraps _fit_one_pool with
+        # virtual-data-anchor augmentation (selects augmented vs real-only
+        # by LOO comparison; falls back to real-only when augmented fails
+        # the LOO/train guard).
+        primary = _fit_with_anchor_check(target_col_name, model_name, pool,
+                                          min_std, seed_features=seed_features)
         free_fit = primary
         if fallback_pool is not None and primary is not None:
-            fallback = _fit_one_pool(target_col_name, model_name + "_fallback",
-                                     fallback_pool, min_std, seed_features=seed_features)
+            fallback = _fit_with_anchor_check(target_col_name,
+                                               model_name + "_fallback",
+                                               fallback_pool, min_std,
+                                               seed_features=seed_features)
             if fallback is not None:
                 # Compare LOO RMSE — the honest generalization metric
                 p_loo = primary.loo_rmse
@@ -1424,24 +1610,27 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                 else:
                     free_fit = primary
 
-        # Unit 6 hook: physics-anchored compliance fit. The free fit needs
-        # ~3× the feature count in samples; the anchored fit is 2 parameters,
-        # so it can converge with as few as 5 setups. We keep whichever has
-        # the lower LOO RMSE.
+        # Unit 6 outer: compliance-anchored physics fit. 2-parameter α/β
+        # against F_aero / k_total — converges with ~5 setups vs ~21 for
+        # the free fit. Keep whichever has lower LOO RMSE.
         from car_model.calibration import maybe_replace_with_anchored
         return maybe_replace_with_anchored(
             free_fit, rows, _car_obj, target_col_name,
         )
 
     # ─── 1. Front Ride Height ───
-    _front_rh_std = np.std(col("static_front_rh_mm"))
+    # Use real-only std for the gate so virtual-anchor y=0 sentinels for
+    # OTHER targets (rear RH, deflections) don't artificially inflate the
+    # std and trigger an unwanted fit. The actual fit (_fit_from_pool) will
+    # include the front_static_rh virtual rows via _row_mask_for_target.
+    _front_rh_std = np.std(_real(col("static_front_rh_mm")))
     if _front_rh_std > 0.5:
         models.front_ride_height = _fit_from_pool(
             "static_front_rh_mm", "front_ride_height",
             pool=_FRONT_POOL, fallback_pool=_UNIVERSAL_POOL)
     elif len(unique) >= _MIN_SESSIONS_FOR_FIT and _front_rh_std > 0:
         # Near-constant front RH: create a constant model (intercept-only)
-        _mean_frh = float(np.mean(col("static_front_rh_mm")))
+        _mean_frh = float(np.mean(_real(col("static_front_rh_mm"))))
         models.front_ride_height = FittedModel(
             name="front_ride_height",
             feature_names=[],
@@ -1459,7 +1648,7 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # selection can drop them due to multicollinearity with other features,
     # causing 3mm+ errors at extreme spring settings.
     _REAR_RH_SEEDS = ["inv_rear_third", "inv_rear_spring", "rear_pushrod"]
-    if np.std(col("static_rear_rh_mm")) > 0.5:
+    if np.std(_real(col("static_rear_rh_mm"))) > 0.5:
         models.rear_ride_height = _fit_from_pool(
             "static_rear_rh_mm", "rear_ride_height",
             pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL,
@@ -1467,15 +1656,16 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
     # ─── 3. Torsion Bar Turns ───
     _tb_turns = col("torsion_bar_turns")
-    _tb_valid = _tb_turns[_tb_turns > 0]
-    if len(_tb_valid) > 0 and np.std(_tb_turns) > 0.005:
+    _tb_turns_real = _real(_tb_turns)
+    _tb_valid = _tb_turns_real[_tb_turns_real > 0]
+    if len(_tb_valid) > 0 and np.std(_tb_turns_real) > 0.005:
         X = np.column_stack([
-            1.0 / np.maximum(heave, 1.0),
-            col("front_heave_perch_mm"),
-            col("front_torsion_od_mm"),
+            _real(1.0 / np.maximum(heave, 1.0)),
+            _real(col("front_heave_perch_mm")),
+            _real(col("front_torsion_od_mm")),
         ])
         models.torsion_bar_turns = _fit(
-            X, col("torsion_bar_turns"),
+            X, _real(col("torsion_bar_turns")),
             ["1/front_heave", "front_heave_perch", "torsion_od"],
             "torsion_bar_turns",
         )
@@ -1494,10 +1684,13 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         )
 
     # ─── 4. Torsion Bar Deflection ───
-    if np.std(col("torsion_bar_defl_mm")) > 0.5:
-        # Fit the load form (defl * OD^4) for DeflectionModel compatibility
-        y_load = col("torsion_bar_defl_mm") * od4
-        X_load = np.column_stack([heave, col("front_heave_perch_mm")])
+    if np.std(_real(col("torsion_bar_defl_mm"))) > 0.5:
+        # Fit the load form (defl * OD^4) for DeflectionModel compatibility.
+        # Real-only (no virtual anchors) — torsion_bar_defl_mm is not a
+        # virtual_anchors target, so synth rows would have y=0 and poison
+        # the load-form fit.
+        y_load = _real(col("torsion_bar_defl_mm") * od4)
+        X_load = np.column_stack([_real(heave), _real(col("front_heave_perch_mm"))])
         models.torsion_bar_defl = _fit(
             X_load, y_load,
             ["front_heave", "front_heave_perch"],
@@ -1565,10 +1758,12 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # ─── 14. Third Slider Static ───
     # Fit BOTH the chained model (from third_spring_defl) and a direct model
     # (from setup features). The direct model bypasses chained error amplification.
-    if np.std(col("third_slider_defl_static_mm")) > 0.5:
-        X = np.column_stack([col("third_spring_defl_static_mm")])
+    # Real-only for the chained fit — third_slider y is not a virtual target,
+    # so synth rows would have y=0 and poison the slope.
+    if np.std(_real(col("third_slider_defl_static_mm"))) > 0.5:
+        X = np.column_stack([_real(col("third_spring_defl_static_mm"))])
         models.third_slider_defl_static = _fit(
-            X, col("third_slider_defl_static_mm"),
+            X, _real(col("third_slider_defl_static_mm")),
             ["third_spring_defl"],
             "third_slider_defl_static",
         )
