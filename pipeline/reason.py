@@ -3181,18 +3181,27 @@ def reason_and_solve(
         )
 
         damper_solver = DamperSolver(car, track)
-        _step6 = damper_solver.solve(
-            front_wheel_rate_nmm=_step3.front_wheel_rate_nmm,
-            rear_wheel_rate_nmm=_rear_wheel_rate_nmm,
-            front_dynamic_rh_mm=_step1.dynamic_front_rh_mm,
-            rear_dynamic_rh_mm=_step1.dynamic_rear_rh_mm,
-            fuel_load_l=detected_fuel,
-            damping_ratio_scale=mods.damping_ratio_scale,
-            measured=authority_measured,
-            front_heave_nmm=_step2.front_heave_nmm,
-            rear_third_nmm=_step2.rear_third_nmm,
-        )
-        _apply_damper_modifiers(_step6, mods, car)
+        _step6 = None
+        try:
+            _step6 = damper_solver.solve(
+                front_wheel_rate_nmm=_step3.front_wheel_rate_nmm,
+                rear_wheel_rate_nmm=_rear_wheel_rate_nmm,
+                front_dynamic_rh_mm=_step1.dynamic_front_rh_mm,
+                rear_dynamic_rh_mm=_step1.dynamic_rear_rh_mm,
+                fuel_load_l=detected_fuel,
+                damping_ratio_scale=mods.damping_ratio_scale,
+                measured=authority_measured,
+                front_heave_nmm=_step2.front_heave_nmm,
+                rear_third_nmm=_step2.rear_third_nmm,
+            )
+            _apply_damper_modifiers(_step6, mods, car)
+        except ValueError:
+            # Damper solver raises when zeta targets are uncalibrated for this
+            # car. Mirror solve_chain.py:512-529 — return step6=None so the
+            # pipeline can continue and emit output for the calibrated steps.
+            # The calibration gate has already flagged Step 6 as uncalibrated;
+            # downstream report/writer paths handle step6=None gracefully.
+            pass
         return _step1, _step2, _step3, _step4, _step5, _step6, _rear_wheel_rate_nmm
 
     # Try constrained optimizer first
