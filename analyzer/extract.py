@@ -367,6 +367,27 @@ class MeasuredState:
     roll_gradient_corner_p95_deg_per_g: float | None = None
     roll_gradient_corner_count: int = 0
 
+    # --- Roll shock deflection (FROLLshockDefl / RROLLshockDefl) ---
+    # Available on Porsche 963, Acura ARX-06, and other heave+roll architectures.
+    front_roll_shock_defl_mean_mm: float | None = None   # Mean at speed
+    front_roll_shock_defl_p99_mm: float | None = None    # p99 peak
+    front_roll_shock_defl_std_mm: float | None = None    # Variance at speed
+    rear_roll_shock_defl_mean_mm: float | None = None
+    rear_roll_shock_defl_p99_mm: float | None = None
+    rear_roll_shock_defl_std_mm: float | None = None
+
+    # --- Direct downforce from IBT (DownforceFront / DownforceRear) ---
+    # Direct aero force values when available; validates ride-height-derived estimates.
+    downforce_front_n: float | None = None               # Mean DownforceFront at speed (N)
+    downforce_rear_n: float | None = None                # Mean DownforceRear at speed (N)
+    downforce_total_n: float | None = None               # Front + Rear total
+    downforce_balance_pct: float | None = None           # Front share of total (%)
+    downforce_front_vs_rh_delta_pct: float | None = None # % diff: direct vs RH-derived front
+    downforce_rear_vs_rh_delta_pct: float | None = None  # % diff: direct vs RH-derived rear
+
+    # --- BrakeABSactive direct channel flag ---
+    brake_abs_channel_present: bool = False               # True when direct BrakeABSactive IBT channel exists
+
 
 def extract_bottoming_events(
     ibt,
@@ -933,6 +954,15 @@ def extract_measurements(
 
     # --- Wind ---
     _extract_wind(ibt, state)
+
+    # --- Roll shock deflection (FROLLshockDefl / RROLLshockDefl) ---
+    _extract_roll_shock_defl(ibt, start, end, speed_kph, state)
+
+    # --- Direct downforce (DownforceFront / DownforceRear) ---
+    _extract_direct_downforce(ibt, start, end, speed_kph, state)
+
+    # --- BrakeABSactive channel presence flag ---
+    state.brake_abs_channel_present = ibt.has_channel("BrakeABSactive")
 
     # --- Per-corner shock velocities ---
     state.lf_shock_vel_p95_mps = float(np.percentile(lf_sv, 95))
@@ -2176,3 +2206,102 @@ def _extract_wind(
         wind_dir = ibt.channel("WindDir")
         if wind_dir is not None and len(wind_dir) > 0:
             state.wind_dir_deg = round(float(np.mean(np.degrees(wind_dir))), 1)
+
+
+def _extract_roll_shock_defl(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    speed_kph: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract roll spring/damper travel from FROLLshockDefl / RROLLshockDefl.
+
+    Available on Porsche 963, Acura ARX-06, and other heave+roll architectures.
+    These channels report roll-element deflection independently of the heave
+    springs, enabling direct validation of roll stiffness distribution.
+    """
+    at_speed = speed_kph > 150
+    n_at_speed = int(np.sum(at_speed))
+    if n_at_speed < 30:
+        return
+
+    if ibt.has_channel("FROLLshockDefl"):
+        froll_defl = ibt.channel("FROLLshockDefl")[start:end + 1]
+        froll_at_speed = froll_defl[at_speed]
+        state.front_roll_shock_defl_mean_mm = round(float(np.mean(froll_at_speed)) * 1000, 2)
+        state.front_roll_shock_defl_p99_mm = round(float(np.percentile(np.abs(froll_at_speed), 99)) * 1000, 2)
+        state.front_roll_shock_defl_std_mm = round(float(np.std(froll_at_speed)) * 1000, 3)
+
+    if ibt.has_channel("RROLLshockDefl"):
+        rroll_defl = ibt.channel("RROLLshockDefl")[start:end + 1]
+        rroll_at_speed = rroll_defl[at_speed]
+        state.rear_roll_shock_defl_mean_mm = round(float(np.mean(rroll_at_speed)) * 1000, 2)
+        state.rear_roll_shock_defl_p99_mm = round(float(np.percentile(np.abs(rroll_at_speed), 99)) * 1000, 2)
+        state.rear_roll_shock_defl_std_mm = round(float(np.std(rroll_at_speed)) * 1000, 3)
+
+
+def _extract_direct_downforce(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    speed_kph: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract direct aero downforce from DownforceFront / DownforceRear channels.
+
+    These channels provide the simulator's actual aero force values, which can
+    validate the ride-height-derived aero compression estimates used by the solver.
+    When both direct and RH-derived estimates are available, the delta quantifies
+    how much model error exists in the aero map lookup.
+    """
+    at_speed = speed_kph > 150
+    n_at_speed = int(np.sum(at_speed))
+    if n_at_speed < 30:
+        return
+
+    has_front = ibt.has_channel("DownforceFront")
+    has_rear = ibt.has_channel("DownforceRear")
+    if not has_front and not has_rear:
+        return
+
+    if has_front:
+        df_front = ibt.channel("DownforceFront")[start:end + 1]
+        state.downforce_front_n = round(float(np.mean(df_front[at_speed])), 1)
+
+    if has_rear:
+        df_rear = ibt.channel("DownforceRear")[start:end + 1]
+        state.downforce_rear_n = round(float(np.mean(df_rear[at_speed])), 1)
+
+    if state.downforce_front_n is not None and state.downforce_rear_n is not None:
+        total = state.downforce_front_n + state.downforce_rear_n
+        state.downforce_total_n = round(total, 1)
+        if total > 10.0:
+            state.downforce_balance_pct = round(
+                state.downforce_front_n / total * 100, 1
+            )
+
+    # Compare with ride-height-derived aero compression if available.
+    # Aero compression (mm) is proportional to downforce, so a % delta
+    # between the two indicates aero map model error.
+    if (
+        state.downforce_front_n is not None
+        and state.aero_compression_front_mm is not None
+        and state.aero_compression_front_mm > 0.5
+        and state.downforce_front_n > 10.0
+    ):
+        # Normalise: downforce per mm of compression at speed
+        # Both are mean-at-speed so the comparison is apples-to-apples.
+        # We report the delta as (direct - rh_derived) / rh_derived * 100
+        # where rh_derived force is proxied by compression_mm * spring_rate.
+        # Without spring rate we just flag whether the channels are present
+        # and leave detailed comparison to the aero validation step.
+        state.downforce_front_vs_rh_delta_pct = None  # Needs spring rate; placeholder
+
+    if (
+        state.downforce_rear_n is not None
+        and state.aero_compression_rear_mm is not None
+        and state.aero_compression_rear_mm > 0.5
+        and state.downforce_rear_n > 10.0
+    ):
+        state.downforce_rear_vs_rh_delta_pct = None  # Needs spring rate; placeholder

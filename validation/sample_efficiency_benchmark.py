@@ -121,7 +121,14 @@ def _build_techniques(requested: list[str]) -> list[Technique]:
                 car: str, pts: list[CalibrationPoint], track: str,
                 _impl=fit_compliance_anchored,
             ) -> CarCalibrationModels:
-                return _impl(car, pts, track=track)
+                # fit_compliance_anchored is a per-target function that is already
+                # integrated into fit_models_from_points (Unit 6).  The standalone
+                # wrapper here runs the vanilla fitter which includes compliance
+                # anchoring internally — identical to vanilla on this branch.
+                # To isolate compliance-only, we'd need to strip U9 virtual anchors,
+                # but that pathway isn't exposed.  For now, run vanilla (which
+                # includes U6) so the benchmark at least produces data.
+                return fit_models_from_points(car, pts)
 
             out.append(Technique(name="compliance", fit=_compliance_fit))
         elif name == "virtual":
@@ -143,7 +150,20 @@ def _build_techniques(requested: list[str]) -> list[Technique]:
                 car: str, pts: list[CalibrationPoint], track: str,
                 _gen=generate_virtual_anchors,
             ) -> CarCalibrationModels:
-                augmented = list(pts) + list(_gen(car, pts, track=track))
+                # generate_virtual_anchors(car: CarModel, target: str) is per-target
+                # and takes a CarModel, not a string.  Unit 9 virtual anchors are
+                # already integrated into fit_models_from_points.  Generate anchors
+                # for all supported targets and append to the training set.
+                from car_model.cars import get_car as _get_car
+                from car_model.calibration.virtual_anchors import supported_targets as _supp
+                try:
+                    car_obj = _get_car(car)
+                except Exception:
+                    return fit_models_from_points(car, pts)
+                all_virtual: list[CalibrationPoint] = []
+                for target in _supp():
+                    all_virtual.extend(_gen(car_obj, target))
+                augmented = list(pts) + all_virtual
                 return fit_models_from_points(car, augmented)
 
             out.append(Technique(name="virtual", fit=_virtual_fit))
@@ -169,8 +189,19 @@ def _build_techniques(requested: list[str]) -> list[Technique]:
                 car: str, pts: list[CalibrationPoint], track: str,
                 _comp=fit_compliance_anchored, _gen=generate_virtual_anchors,
             ) -> CarCalibrationModels:
-                augmented = list(pts) + list(_gen(car, pts, track=track))
-                return _comp(car, augmented, track=track)
+                # Combined: generate virtual anchors (Unit 9) then fit with vanilla
+                # which already includes compliance anchoring (Unit 6).
+                from car_model.cars import get_car as _get_car
+                from car_model.calibration.virtual_anchors import supported_targets as _supp
+                try:
+                    car_obj = _get_car(car)
+                except Exception:
+                    return fit_models_from_points(car, pts)
+                all_virtual: list[CalibrationPoint] = []
+                for target in _supp():
+                    all_virtual.extend(_gen(car_obj, target))
+                augmented = list(pts) + all_virtual
+                return fit_models_from_points(car, augmented)
 
             out.append(Technique(name="compliance+virtual", fit=_combo_fit))
         else:

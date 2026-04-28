@@ -435,6 +435,49 @@ def format_report(
 
         lines.append("")
 
+    # --- Roll Shock Deflection (Porsche/Acura heave+roll architecture) ---
+    if measured is not None and (
+        (measured.front_roll_shock_defl_mean_mm or 0) != 0
+        or (measured.rear_roll_shock_defl_mean_mm or 0) != 0
+    ):
+        lines.append(section("ROLL SHOCK DEFLECTION"))
+        lines.append("")
+        if measured.front_roll_shock_defl_mean_mm is not None:
+            lines.append(f"  Front roll defl (mean):     {measured.front_roll_shock_defl_mean_mm:.2f} mm")
+            if measured.front_roll_shock_defl_p99_mm is not None:
+                lines.append(f"  Front roll defl (p99):      {measured.front_roll_shock_defl_p99_mm:.2f} mm")
+            if measured.front_roll_shock_defl_std_mm is not None:
+                lines.append(f"  Front roll defl (std):      {measured.front_roll_shock_defl_std_mm:.3f} mm")
+        if measured.rear_roll_shock_defl_mean_mm is not None:
+            lines.append(f"  Rear roll defl (mean):      {measured.rear_roll_shock_defl_mean_mm:.2f} mm")
+            if measured.rear_roll_shock_defl_p99_mm is not None:
+                lines.append(f"  Rear roll defl (p99):       {measured.rear_roll_shock_defl_p99_mm:.2f} mm")
+            if measured.rear_roll_shock_defl_std_mm is not None:
+                lines.append(f"  Rear roll defl (std):       {measured.rear_roll_shock_defl_std_mm:.3f} mm")
+        lines.append("")
+
+    # --- Direct Downforce (DownforceFront / DownforceRear) ---
+    if measured is not None and (
+        (measured.downforce_front_n or 0) > 0
+        or (measured.downforce_rear_n or 0) > 0
+    ):
+        lines.append(section("DIRECT DOWNFORCE"))
+        lines.append("")
+        if measured.downforce_front_n is not None:
+            lines.append(f"  Front downforce:            {measured.downforce_front_n:.0f} N")
+        if measured.downforce_rear_n is not None:
+            lines.append(f"  Rear downforce:             {measured.downforce_rear_n:.0f} N")
+        if measured.downforce_total_n is not None:
+            lines.append(f"  Total downforce:            {measured.downforce_total_n:.0f} N")
+        if measured.downforce_balance_pct is not None:
+            lines.append(f"  Aero balance (front %):     {measured.downforce_balance_pct:.1f}%")
+        # Cross-reference with RH-derived compression
+        if (measured.aero_compression_front_mm or 0) > 0 and measured.downforce_front_n:
+            lines.append(f"  RH-derived compression:     F={measured.aero_compression_front_mm:.1f} mm"
+                         f"  R={measured.aero_compression_rear_mm:.1f} mm"
+                         if measured.aero_compression_rear_mm else "")
+        lines.append("")
+
     lines.append("=" * width)
 
     return "\n".join(lines)

@@ -122,6 +122,21 @@ class MeasuredState:
     # Used to V^2-scale aero compression to the solver's reference speed
     mean_speed_at_speed_kph: float = 0.0
 
+    # --- Roll shock deflection (FROLLshockDefl / RROLLshockDefl) ---
+    front_roll_shock_defl_mean_mm: float = 0.0
+    front_roll_shock_defl_p99_mm: float = 0.0
+    rear_roll_shock_defl_mean_mm: float = 0.0
+    rear_roll_shock_defl_p99_mm: float = 0.0
+
+    # --- Direct downforce (DownforceFront / DownforceRear) ---
+    downforce_front_n: float = 0.0
+    downforce_rear_n: float = 0.0
+    downforce_total_n: float = 0.0
+    downforce_balance_pct: float = 0.0
+
+    # --- BrakeABSactive direct channel flag ---
+    brake_abs_channel_present: bool = False
+
 
 def extract_measurements(
     ibt_path: str | Path,
@@ -348,6 +363,35 @@ def extract_measurements(
 
     # --- Tyre thermal / wear / pressure ---
     _extract_tyre_data(ibt, start, end, speed_kph, state)
+
+    # --- Roll shock deflection (FROLLshockDefl / RROLLshockDefl) ---
+    at_speed_150 = speed_kph > 150
+    if np.sum(at_speed_150) > 30:
+        if ibt.has_channel("FROLLshockDefl"):
+            froll = ibt.channel("FROLLshockDefl")[start:end + 1]
+            state.front_roll_shock_defl_mean_mm = round(float(np.mean(froll[at_speed_150])) * 1000, 2)
+            state.front_roll_shock_defl_p99_mm = round(float(np.percentile(np.abs(froll[at_speed_150]), 99)) * 1000, 2)
+        if ibt.has_channel("RROLLshockDefl"):
+            rroll = ibt.channel("RROLLshockDefl")[start:end + 1]
+            state.rear_roll_shock_defl_mean_mm = round(float(np.mean(rroll[at_speed_150])) * 1000, 2)
+            state.rear_roll_shock_defl_p99_mm = round(float(np.percentile(np.abs(rroll[at_speed_150]), 99)) * 1000, 2)
+
+    # --- Direct downforce (DownforceFront / DownforceRear) ---
+    if np.sum(at_speed_150) > 30:
+        if ibt.has_channel("DownforceFront"):
+            df_f = ibt.channel("DownforceFront")[start:end + 1]
+            state.downforce_front_n = round(float(np.mean(df_f[at_speed_150])), 1)
+        if ibt.has_channel("DownforceRear"):
+            df_r = ibt.channel("DownforceRear")[start:end + 1]
+            state.downforce_rear_n = round(float(np.mean(df_r[at_speed_150])), 1)
+        if state.downforce_front_n > 0 and state.downforce_rear_n > 0:
+            state.downforce_total_n = round(state.downforce_front_n + state.downforce_rear_n, 1)
+            total = state.downforce_front_n + state.downforce_rear_n
+            if total > 10.0:
+                state.downforce_balance_pct = round(state.downforce_front_n / total * 100, 1)
+
+    # --- BrakeABSactive direct channel flag ---
+    state.brake_abs_channel_present = ibt.has_channel("BrakeABSactive")
 
     # --- Rebuild full track profile (for next-iteration use) ---
     # Use build_profile for the full extraction; it uses best lap by default
