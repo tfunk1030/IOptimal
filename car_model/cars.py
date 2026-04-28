@@ -3244,6 +3244,11 @@ ACURA_ARX06 = CarModel(
         front_torsion_od_options=[         # CONFIRMED from garage dropdown
             13.90, 14.34, 14.76, 15.14, 15.51, 15.86,  # EXPANDED: full usable range
         ],
+        # ORECA chassis has a dedicated front roll spring (separate from torsion bars)
+        front_roll_spring_rate_nmm=150.0,  # Baseline from registry midpoint
+        front_roll_spring_range_nmm=(50.0, 300.0),  # Registry: 50-300 N/mm
+        front_is_roll_spring=True,  # ORECA chassis: dedicated front roll spring
+        front_roll_spring_step_nmm=10.0,
         # Rear also uses torsion bars (ORECA, not Dallara) — same discrete options
         rear_torsion_c=0.0008036,         # ESTIMATE — same C constant, needs calibration
         rear_torsion_od_range_mm=(13.9, 18.20),

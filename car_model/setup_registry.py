@@ -534,6 +534,7 @@ _ACURA_SPECS: dict[str, CarFieldSpec] = {
     "diff_ramp_angles":         _S("Systems.RearDiffSpec.DiffRampAngles",             "CarSetup_Systems_RearDiffSpec_DiffRampAngles",      parse_fn="string"),
     # Brakes
     "brake_bias_pct":           _S("Systems.BrakeSpec.BrakePressureBias",             "CarSetup_Systems_BrakeSpec_BrakePressureBias",      range_min=40.0, range_max=60.0, resolution=0.25),
+    "brake_bias_target":        _S("Systems.BrakeSpec.BrakeBiasTarget",               "CarSetup_Systems_BrakeSpec_BrakeBiasTarget",        range_min=-5.0, range_max=5.0, resolution=0.5),
     "pad_compound":             _S("Systems.BrakeSpec.PadCompound",                   "CarSetup_Systems_BrakeSpec_PadCompound",            parse_fn="string"),
     "front_master_cyl_mm":      _S("Systems.BrakeSpec.FrontMasterCyl",                "CarSetup_Systems_BrakeSpec_FrontMasterCyl"),
     "rear_master_cyl_mm":       _S("Systems.BrakeSpec.RearMasterCyl",                 "CarSetup_Systems_BrakeSpec_RearMasterCyl"),
