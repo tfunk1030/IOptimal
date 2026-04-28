@@ -727,10 +727,13 @@ def _run_branching_solver(
                             s1_copy, s2_copy, s3_copy, s4, s5, s6, car=car,
                         )
                         _physics = _branching_obj.evaluate_physics(_params)
-                        # Hard veto: negative bottoming or vortex stall margin
+                        # Hard veto: negative bottoming or insufficient stall margin.
+                        # Stall margin minimum of 2mm prevents solutions from sitting
+                        # right at the vortex burst threshold (0.0mm margin is unsafe).
+                        _MIN_STALL_MARGIN_MM = 2.0
                         if _physics.front_bottoming_margin_mm < 0 or _physics.rear_bottoming_margin_mm < 0:
                             score = -1e6
-                        elif _physics.stall_margin_mm is not None and _physics.stall_margin_mm < 0:
+                        elif _physics.stall_margin_mm is not None and _physics.stall_margin_mm < _MIN_STALL_MARGIN_MM:
                             score = -1e6
                         else:
                             # Primary score: lap gain from calibrated physics hierarchy

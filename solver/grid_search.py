@@ -826,11 +826,13 @@ class GridSearchEngine:
         # Best overall: highest score
         best_overall = final_pool[0] if final_pool else None
 
-        # Best robust: highest score with no soft penalties and positive stall margin
+        # Best robust: highest score with no soft penalties and sufficient stall margin.
+        # Minimum 2mm stall margin prevents solutions sitting at vortex burst threshold.
+        _MIN_STALL_MARGIN_MM = 2.0
         robust_pool = [
             e for e in final_pool
             if not e.soft_penalties
-            and (e.physics is None or e.physics.stall_margin_mm >= 0)
+            and (e.physics is None or e.physics.stall_margin_mm >= _MIN_STALL_MARGIN_MM)
         ]
         best_robust = robust_pool[0] if robust_pool else best_overall
 

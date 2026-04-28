@@ -384,20 +384,24 @@ def compute_modifiers(
     # correctly across BMW (range 0-900, _heave_min=90), Porsche (150-600, 45),
     # and Acura (90-1800, 171). Hardcoded absolute N/mm values would be either
     # too tight for Porsche or meaningless for BMW.
+    # NOTE: multipliers halved (2025-04) — the original 2.0× on BMW (_heave_min=90)
+    # produced floors of 180 N/mm, 2-3× above the fastest validated setup (80 N/mm).
+    # The post-scaling floors are safety nets, not optimization targets; they should
+    # prevent dangerously soft springs without overriding the solver's own physics.
     # GT3 short-circuit: heave floors don't apply.
     travel_pct = measured.front_heave_travel_used_pct or 0.0
     if _has_heave_third:
         if travel_pct >= 90.0:
-            _travel_floor_post = _heave_min * 2.0   # same ratio as diagnosis block above
+            _travel_floor_post = _heave_min * 1.0   # BMW: 90, Porsche: 45 (below their min, won't bind)
             mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
         elif travel_pct >= 80.0:
-            _travel_floor_post = _heave_min * 1.67
+            _travel_floor_post = _heave_min * 0.83
             mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
         elif travel_pct >= 70.0:
-            _travel_floor_post = _heave_min * 1.33
+            _travel_floor_post = _heave_min * 0.67
             mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
         if pitch_range_deg > 1.5:
-            _pitch_floor_post = _heave_min * 1.27   # same ratio as diagnosis block above
+            _pitch_floor_post = _heave_min * 0.67   # BMW: ~60, reasonable safety net
             mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _pitch_floor_post)
 
     # Clamp cumulative offsets to reasonable ranges

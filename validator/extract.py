@@ -137,6 +137,22 @@ class MeasuredState:
     # --- BrakeABSactive direct channel flag ---
     brake_abs_channel_present: bool = False
 
+    def __getattr__(self, name: str):
+        """Provide ``_clean`` suffixed aliases for bottoming event fields.
+
+        Several solver modules (decision_trace, candidate_search, constraints)
+        reference ``bottoming_event_count_front_clean`` / ``..._rear_clean``
+        which are identical to the base fields for now (kerb filtering is
+        not yet implemented).  This fallback prevents silent ``None`` returns
+        that caused rear bottoming events to be ignored entirely.
+        """
+        if name.endswith("_clean"):
+            base = name[: -len("_clean")]
+            # Only proxy known bottoming fields to avoid masking real errors
+            if base in ("bottoming_event_count_front", "bottoming_event_count_rear"):
+                return getattr(self, base)
+        raise AttributeError(f"'MeasuredState' has no attribute {name!r}")
+
 
 def extract_measurements(
     ibt_path: str | Path,
