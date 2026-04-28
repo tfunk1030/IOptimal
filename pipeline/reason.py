@@ -3124,6 +3124,7 @@ def reason_and_solve(
             front_heave_nmm=_step2.front_heave_nmm,
             rear_third_nmm=_step2.rear_third_nmm,
             fuel_load_l=detected_fuel,
+            current_setup=authority.setup,
         )
 
         _rear_wheel_rate_nmm = _step3.rear_wheel_rate_nmm
