@@ -45,6 +45,11 @@ from output.report import (
     _build_not_solved_section,
     _build_estimate_warnings_section,
 )
+from solver.objective import (
+    COHERENCE_METRICS,
+    COHERENCE_PENALTY_MS_PER_METRIC,
+    COHERENCE_THRESHOLD_WORSENING,
+)
 
 
 def _corner_impact_blocks(corners: list[Any], impacts: dict[str, float] | None) -> list[tuple[str, list[str]]]:
@@ -145,6 +150,131 @@ def _prediction_unavailable_reason(
     if value in (None, "", 0, 0.0):
         return "baseline metric unavailable"
     return "predictor did not return an estimate"
+
+
+def _build_why_this_candidate_lines(
+    generated_candidates: list[Any] | None,
+) -> list[str]:
+    """Format the WHY THIS CANDIDATE WAS CHOSEN audit section.
+
+    Decomposes the selected candidate's score (safety / performance /
+    stability / confidence / disruption / coherence) and shows per-metric
+    classification (improves / neutral / worsens) for each of the 9
+    coherence axes. If 5+ axes worsen, surfaces the coherence penalty
+    and the rejection-tradeoff explanation.
+    """
+    lines: list[str] = []
+    if not generated_candidates:
+        return lines
+
+    selected = next(
+        (c for c in generated_candidates if getattr(c, "selected", False)),
+        None,
+    )
+    if selected is None:
+        return lines
+
+    score = getattr(selected, "score", None)
+    if score is None:
+        return lines
+
+    # ── Per-axis score breakdown ─────────────────────────────────────
+    family = getattr(selected, "family", "unknown")
+    desc = getattr(selected, "description", "") or ""
+    lines.append(f"Selected: {family}  (total score {score.total:.3f})")
+    if desc:
+        lines.append(f"  Description: {desc[:60]}")
+    lines.append(
+        f"  Safety={score.safety:.3f}  Performance={score.performance:.3f}  "
+        f"Stability={score.stability:.3f}"
+    )
+    lines.append(
+        f"  Confidence={score.confidence:.3f}  Disruption={score.disruption_cost:.3f}"
+    )
+
+    # ── Coherence detail (the audit trail user asked for) ────────────
+    coh_penalty = float(getattr(score, "coherence_penalty_ms", 0.0))
+    coh_worsen = list(getattr(score, "coherence_worsening", ()) or ())
+    coh_improve = list(getattr(score, "coherence_improving", ()) or ())
+    coh_detail = dict(getattr(score, "coherence_detail", {}) or {})
+
+    n_worsen = len(coh_worsen)
+    n_improve = len(coh_improve)
+
+    lines.append("")
+    lines.append(
+        "  Coherence audit (Mission Principle 6 — net-positive impact):"
+    )
+    lines.append(
+        f"    {n_improve} improving / {n_worsen} worsening of "
+        f"{len(coh_detail) or len(COHERENCE_METRICS)} measured axes"
+    )
+
+    if coh_detail:
+        for metric, (base, pred, classification) in coh_detail.items():
+            label = metric.replace("_", " ")
+            if classification == "unavailable":
+                lines.append(f"    {label:32s}  unavailable")
+                continue
+            base_str = f"{base:.3f}" if base is not None else "?"
+            pred_str = f"{pred:.3f}" if pred is not None else "?"
+            try:
+                delta = float(pred) - float(base)
+                delta_str = f"{delta:+.3f}"
+            except (TypeError, ValueError):
+                delta_str = "?"
+            tag = {
+                "improves": "improves",
+                "worsens":  "WORSENS",
+                "neutral":  "neutral",
+            }.get(classification, classification)
+            lines.append(
+                f"    {label:32s}  {base_str} -> {pred_str}  "
+                f"({delta_str}, {tag})"
+            )
+
+    if coh_penalty > 0.0:
+        lines.append("")
+        lines.append(
+            f"  Coherence penalty: {coh_penalty:.0f} ms applied "
+            f"(threshold={COHERENCE_THRESHOLD_WORSENING} worsening axes; "
+            f"{COHERENCE_PENALTY_MS_PER_METRIC:.0f}ms per axis beyond "
+            f"{COHERENCE_THRESHOLD_WORSENING - 1})."
+        )
+        # Surface the tradeoff explanation
+        lines.append(
+            f"  Tradeoff: {n_worsen} axes worsen, {n_improve} improve. "
+            "Selected because the surviving candidates' positive gains "
+            "(safety/stability/performance) still outweigh the penalty."
+        )
+    elif n_worsen == 0 and n_improve > 0:
+        lines.append("")
+        lines.append(
+            f"  Coherence: net-positive on all comparable axes "
+            f"({n_improve} improving)."
+        )
+
+    # ── Skipped candidates (coherence-rejected) ──────────────────────
+    rejected = [
+        c for c in generated_candidates
+        if not getattr(c, "selected", False)
+        and getattr(c, "status", "") == "coherence_rejected"
+    ]
+    if rejected:
+        lines.append("")
+        lines.append(f"  Skipped {len(rejected)} candidate(s) for coherence:")
+        for cand in rejected:
+            cscore = getattr(cand, "score", None)
+            if cscore is None:
+                continue
+            cpen = float(getattr(cscore, "coherence_penalty_ms", 0.0))
+            cworsen = len(getattr(cscore, "coherence_worsening", ()) or ())
+            lines.append(
+                f"    - {cand.family}: penalty {cpen:.0f}ms, "
+                f"{cworsen} worsening axes"
+            )
+
+    return lines
 
 
 def _build_prediction_lines(
@@ -260,6 +390,7 @@ def generate_report(
     selected_candidate_family: str | None = None,
     selected_candidate_score: float | None = None,
     corner_impacts: dict[str, float] | None = None,
+    generated_candidates: list[Any] | None = None,
     compact: bool = False,
     cal_gate: object = None,
     coupling_changes: list[Any] | None = None,
@@ -358,6 +489,10 @@ def generate_report(
             report += f"  Selected family: {selected_candidate_family}\n"
             if selected_candidate_score is not None:
                 report += f"  Candidate score: {selected_candidate_score:.3f}\n"
+        why_lines = _build_why_this_candidate_lines(generated_candidates)
+        if why_lines:
+            report += "\n" + _hdr("WHY THIS CANDIDATE WAS CHOSEN") + "\n"
+            report += "\n".join(f"  {line}" for line in why_lines)
         report += "\n" + _hdr("PREDICTED IMPROVEMENTS") + "\n"
         report += "\n".join(f"  {line}" for line in prediction_lines)
         for header, block_lines in _corner_impact_blocks(corners, corner_impacts):
@@ -482,6 +617,13 @@ def generate_report(
         a(f"  Selected family: {selected_candidate_family}")
         if selected_candidate_score is not None:
             a(f"  Candidate score: {selected_candidate_score:.3f}")
+        a("")
+
+    why_lines = _build_why_this_candidate_lines(generated_candidates)
+    if why_lines:
+        a(_hdr("WHY THIS CANDIDATE WAS CHOSEN"))
+        for line in why_lines:
+            a(f"  {line}")
         a("")
 
     a(_hdr("PREDICTED IMPROVEMENTS"))

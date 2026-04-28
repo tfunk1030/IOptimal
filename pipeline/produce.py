@@ -1990,6 +1990,7 @@ def produce(
             selected_candidate_family=selected_candidate_family_output,
             selected_candidate_score=selected_candidate_score_output,
             corner_impacts=selected_candidate_corner_impacts,
+            generated_candidates=generated_candidates,
             solve_context_lines=solve_notes,
             compact=report_compact,
             cal_gate=cal_gate,
