@@ -2480,6 +2480,7 @@ CADILLAC_VSERIES_R = CarModel(
     ride_height_model=RideHeightModel.uncalibrated(),
     deflection=DeflectionModel.uncalibrated(),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+    default_diff_preload_nm=35.0,  # CORRECTED 2026-04-28: .sto confirms Preload=35 Nm (was inheriting BMW 12.0)
     # NOTE: Cadillac ride height model is NOT YET CALIBRATED.
     # Front RH depends on: pushrod (payload length), heave perch, torsion bar OD,
     # torsion bar turns, camber, and fuel weight. The PushrodGeometry above provides
