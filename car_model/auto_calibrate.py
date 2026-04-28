@@ -555,6 +555,15 @@ def _dict_to_models(d: dict) -> CarCalibrationModels:
         elif k in CarCalibrationModels.__dataclass_fields__:
             kwargs[k] = v
 
+    # Stub models.json files store ``status`` as a flat string ("uncalibrated"),
+    # but rich-format calibrated models store it as a dict. The dataclass
+    # declares dict[str, str]; coerce flat strings to a dict here so downstream
+    # callsites (calibration_status, _build_subsystem_status, etc.) can safely
+    # call ``.get()`` without per-site isinstance guards.
+    _status = kwargs.get("status")
+    if isinstance(_status, str):
+        kwargs["status"] = {"_legacy_stub": _status}
+
     return CarCalibrationModels(**kwargs)
 
 
