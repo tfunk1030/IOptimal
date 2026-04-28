@@ -349,6 +349,15 @@ class MeasuredState:
     rear_axle_damping_ratio: float | None = None
     suspension_psd_raw: dict[str, float | str] = field(default_factory=dict, repr=False)
 
+    # --- Kerb-event step-response damper ID (Unit 3) ---
+    front_step_response_zeta_p50: float | None = None
+    front_step_response_zeta_p95: float | None = None
+    front_step_response_freq_hz_p50: float | None = None
+    rear_step_response_zeta_p50: float | None = None
+    rear_step_response_zeta_p95: float | None = None
+    rear_step_response_freq_hz_p50: float | None = None
+    kerb_strike_count: int = 0
+
 
 def extract_bottoming_events(
     ibt,
@@ -965,6 +974,30 @@ def extract_measurements(
     except Exception as exc:
         state.extraction_attempts.append(
             {"phase": "suspension_psd", "source": "scipy.welch",
+             "status": f"failed: {exc}"}
+        )
+
+    # --- Kerb-event step-response damper ID (Unit 3) ---
+    # Each kerb strike is a free step input. Extract ζ + ω_n per axle from the
+    # post-strike ride-height ringdown. Wrapped in try/except to avoid breaking
+    # extraction on any per-car telemetry quirk.
+    try:
+        from analyzer.extractors.kerb_events import extract_kerb_step_responses
+        _kerb_resp = extract_kerb_step_responses(ibt, car)
+        state.front_step_response_zeta_p50 = _kerb_resp["front_step_response_zeta_p50"]
+        state.front_step_response_zeta_p95 = _kerb_resp["front_step_response_zeta_p95"]
+        state.front_step_response_freq_hz_p50 = _kerb_resp["front_step_response_freq_hz_p50"]
+        state.rear_step_response_zeta_p50 = _kerb_resp["rear_step_response_zeta_p50"]
+        state.rear_step_response_zeta_p95 = _kerb_resp["rear_step_response_zeta_p95"]
+        state.rear_step_response_freq_hz_p50 = _kerb_resp["rear_step_response_freq_hz_p50"]
+        state.kerb_strike_count = int(_kerb_resp["kerb_strike_count"])
+        state.extraction_attempts.append(
+            {"phase": "kerb_step_response", "source": "extractors.kerb_events",
+             "status": f"ok:{state.kerb_strike_count}_strikes"}
+        )
+    except Exception as exc:
+        state.extraction_attempts.append(
+            {"phase": "kerb_step_response", "source": "extractors.kerb_events",
              "status": f"failed: {exc}"}
         )
 

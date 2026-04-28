@@ -491,6 +491,14 @@ def build_observation(
         "front_axle_damping_ratio": getattr(m, "front_axle_damping_ratio", None),
         "rear_axle_natural_freq_hz": getattr(m, "rear_axle_natural_freq_hz", None),
         "rear_axle_damping_ratio": getattr(m, "rear_axle_damping_ratio", None),
+        # Kerb-event step-response damper ID (Unit 3)
+        "front_step_response_zeta_p50": getattr(m, "front_step_response_zeta_p50", None),
+        "front_step_response_zeta_p95": getattr(m, "front_step_response_zeta_p95", None),
+        "front_step_response_freq_hz_p50": getattr(m, "front_step_response_freq_hz_p50", None),
+        "rear_step_response_zeta_p50": getattr(m, "rear_step_response_zeta_p50", None),
+        "rear_step_response_zeta_p95": getattr(m, "rear_step_response_zeta_p95", None),
+        "rear_step_response_freq_hz_p50": getattr(m, "rear_step_response_freq_hz_p50", None),
+        "kerb_strike_count": getattr(m, "kerb_strike_count", 0),
     }
 
     # ── Driver ──
