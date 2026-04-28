@@ -419,8 +419,10 @@ def _rotation_search_lines(step3: Any, step4: Any, step5: Any, supporting: Any) 
         return []
     lines: list[str] = []
     groups = [
-        ("Diff search", ("diff_preload_nm", "diff_ramp_option_idx", "diff_clutch_plates")),
-        ("Spring search", ("front_torsion_od_mm", "rear_spring_rate_nmm")),
+        ("Diff search", ("diff_preload_nm", "diff_ramp_coast", "diff_ramp_drive",
+                         "diff_ramp_option_idx", "diff_clutch_plates")),
+        ("Spring search", ("front_torsion_od_mm", "rear_spring_rate_nmm",
+                           "front_torsion_bar_turns", "rear_torsion_bar_turns")),
         ("Geo search", ("front_toe_mm", "rear_toe_mm", "front_camber_deg", "rear_camber_deg")),
         ("RARB search", ("rear_arb_size", "rear_arb_blade")),
     ]
@@ -430,6 +432,20 @@ def _rotation_search_lines(step3: Any, step4: Any, step5: Any, supporting: Any) 
             continue
         summary = max(set(group_status), key=group_status.count)
         lines.append(f"{label}: {summary}")
+
+    # F2 surface: list every parameter currently in fallback_preserve_driver
+    # mode so the engineering report shows a clear `[FALLBACK]` warning the
+    # user can act on (calibrate the car, capture more IBTs, etc.).
+    fallback_fields = sorted(
+        field for field, label in status.items()
+        if label == "fallback_preserve_driver"
+    )
+    if fallback_fields:
+        lines.append(
+            "[FALLBACK — driver value preserved due to insufficient calibration]: "
+            + ", ".join(fallback_fields)
+        )
+
     sample_evidence = next((value for value in evidence.values() if value), [])
     if sample_evidence:
         if isinstance(sample_evidence, dict):
@@ -439,7 +455,7 @@ def _rotation_search_lines(step3: Any, step4: Any, step5: Any, supporting: Any) 
             lines.append(f"Rotation evidence: {'; '.join(str(e) for e in items)}")
         except (TypeError, KeyError):
             pass
-    return lines[:4]
+    return lines[:6]
 
 
 def print_full_setup_report(

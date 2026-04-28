@@ -687,10 +687,14 @@ class SupportingSolver:
             pss["brake_migration_type"] = "user_set"
             pss["brake_migration_gain_pct"] = "user_set"
 
-        # ── Differential: all user_set ──
-        pss["diff_preload_nm"] = "user_set"
-        pss["diff_ramp_coast"] = "user_set"
-        pss["diff_ramp_drive"] = "user_set"
+        # ── Differential: status from DiffSolver (Unit F2) ──
+        # The diff solver now emits per-parameter physics_formula /
+        # fallback_preserve_driver labels.  Inherit those when available.
+        diff_sol = getattr(sol, "_diff_solution", None)
+        diff_pss = getattr(diff_sol, "parameter_search_status", None) or {}
+        pss["diff_preload_nm"] = diff_pss.get("diff_preload_nm", "physics_formula")
+        pss["diff_ramp_coast"] = diff_pss.get("diff_ramp_coast", "physics_formula")
+        pss["diff_ramp_drive"] = diff_pss.get("diff_ramp_drive", "physics_formula")
         pss["diff_clutch_plates"] = "user_set"
         if is_ferrari:
             pss["front_diff_preload_nm"] = "user_set"
