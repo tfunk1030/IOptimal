@@ -18,6 +18,12 @@ from car_model.setup_registry import (
 )
 from solver.arb_solver import ARBSolver
 from solver.corner_spring_solver import CornerSpringSolver
+from solver.coupling_graph import (
+    CouplingChange,
+    apply_coupled_changes_to_steps,
+    propagate_couplings,
+    solver_outputs_to_dict,
+)
 from solver.damper_solver import CornerDamperSettings, DamperSolver
 from solver.decision_trace import build_parameter_decisions
 from solver.full_setup_optimizer import optimize_if_supported
@@ -120,6 +126,10 @@ class SolveChainResult:
     ferrari_passthrough: bool = False
     # Solver path taken: "optimizer" | "sequential" | "sequential_fallback"
     solver_path: str = "sequential"
+    # Parameter coupling adjustments applied after the forward solver chain
+    # (see solver/coupling_graph.py). Each entry records one downstream
+    # parameter that was re-derived because an upstream parameter changed.
+    coupling_changes: list[CouplingChange] = field(default_factory=list)
 
 
 def apply_damper_modifiers(
@@ -293,6 +303,37 @@ def _finalize_result(
     candidate_vetoes: list[CandidateVeto] | None = None,
     optimizer_used: bool = False,
 ) -> SolveChainResult:
+    # ─── Coupled-adjuster pass (Unit C1) ─────────────────────────────────
+    # The 6-step solver runs forward only. After it finishes, propagate
+    # physical couplings so dependent parameters (dampers, ARB feasible
+    # range, dynamic RH) reflect any upstream changes (heave/third, ARB
+    # blade, torsion bar, pushrod). Mutates step6 in place; ARB-range
+    # and dynamic-RH outputs are advisory and surfaced via notes.
+    coupling_changes: list[CouplingChange] = []
+    try:
+        coupled_outputs = solver_outputs_to_dict(
+            step1=step1, step2=step2, step3=step3,
+            step4=step4, step5=step5, step6=step6,
+            current_setup=inputs.current_setup,
+        )
+        coupling_setup = {
+            "fuel_load_l": inputs.fuel_load_l,
+            "track": inputs.track,
+        }
+        coupled_outputs, coupling_changes = propagate_couplings(
+            setup_dict=coupling_setup,
+            solver_outputs=coupled_outputs,
+            car=inputs.car,
+        )
+        apply_coupled_changes_to_steps(
+            step6=step6,
+            coupled_outputs=coupled_outputs,
+            changes=coupling_changes,
+        )
+    except Exception as e:
+        logger.debug("Coupling pass failed: %s; shipping uncoupled steps", e)
+        coupling_changes = []
+
     legal_validation = validate_solution_legality(
         car=inputs.car,
         track_name=inputs.track.track_name,
@@ -345,6 +386,7 @@ def _finalize_result(
         optimizer_used=optimizer_used,
         ferrari_passthrough=False,
         solver_path="optimizer" if optimizer_used else "sequential",
+        coupling_changes=list(coupling_changes),
     )
 
 

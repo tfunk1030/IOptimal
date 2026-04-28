@@ -1577,6 +1577,12 @@ def produce(
             "supporting": to_public_output_payload(car.canonical_name, supporting),
             "calibration_blocked": sorted(_steps_blocked) if _steps_blocked else [],
             "calibration_instructions": cal_report.format_header() if _steps_blocked else "",
+            # Parameter coupling cascade (Unit C1). Each entry is a dict
+            # {param, old, new, rationale, iteration}. Empty list when
+            # nothing was re-derived.
+            "coupling_changes": [
+                ch.to_dict() for ch in getattr(base_solve_result, "coupling_changes", [])
+            ],
             # Provenance: where each calibrated subsystem's value came from.
             # User can audit exactly what's data-derived vs what's weak/missing.
             "calibration_provenance": cal_gate.provenance(),
@@ -1630,6 +1636,7 @@ def produce(
             selected_candidate_score=selected_candidate_score_output,
             solve_context_lines=solve_notes,
             compact=report_compact,
+            coupling_changes=getattr(base_solve_result, "coupling_changes", []),
         )
     if _emit_report:
         print(report)
