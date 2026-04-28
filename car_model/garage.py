@@ -780,6 +780,9 @@ class GarageOutputModel:
                 fuel_l=fuel_l,
                 wing_deg=wing_deg if wing_deg is not None else 0.0,
             )
+            # Pre-populate torsion turns so the DirectRegression receives
+            # correct feature values (Ferrari: coeff=159.47 on torsion_turns).
+            template = self._ensure_torsion_turns_populated(template)
             return self._bisect_pushrod(
                 self._direct_front_rh, template, target, "front_pushrod_mm",
                 fallback=self.default_front_pushrod_mm,
@@ -844,6 +847,9 @@ class GarageOutputModel:
                 fuel_l=fuel_l,
                 wing_deg=wing_deg if wing_deg is not None else 0.0,
             )
+            # Pre-populate torsion turns so the DirectRegression receives
+            # correct feature values (Ferrari: coeff=217.20 on rear_torsion_turns).
+            template = self._ensure_torsion_turns_populated(template)
             return self._bisect_pushrod(
                 self._direct_rear_rh, template, target_rh_mm, "rear_pushrod_mm",
                 fallback=self.default_rear_pushrod_mm,
@@ -867,12 +873,52 @@ class GarageOutputModel:
         )
         return (target_rh_mm - other) / self.rear_coeff_pushrod
 
+    def _ensure_torsion_turns_populated(
+        self, setup: GarageSetupState,
+    ) -> GarageSetupState:
+        """Pre-populate torsion_bar_turns and rear_torsion_bar_turns if zero.
+
+        DirectRegression models (especially Ferrari) can have massive coefficients
+        for ``torsion_turns`` (159.47) and ``rear_torsion_turns`` (217.20).
+        When the solver path leaves these at 0.0, the models under-predict RH
+        by 15–25mm, causing catastrophic pushrod extrapolation (+40mm) and
+        front/rear RH swaps in the .sto output.
+
+        Front turns: use ``predict_torsion_turns()`` (constant model for Ferrari: 0.096).
+        Rear turns: estimate from front turns × 0.5 (empirical ratio from Ferrari
+        IBT data: front ≈ 0.096, rear ≈ 0.048).
+        """
+        changed = {}
+        if setup.torsion_bar_turns == 0.0:
+            # Use a nominal front_rh (30mm) — for Ferrari the torsion turns model
+            # is constant (no front_rh dependency), so the value doesn't matter.
+            _front_turns = self.predict_torsion_turns(setup, front_static_rh_mm=30.0)
+            if _front_turns != 0.0:
+                changed["torsion_bar_turns"] = _front_turns
+        if setup.rear_torsion_bar_turns == 0.0:
+            _front_turns = changed.get(
+                "torsion_bar_turns", setup.torsion_bar_turns
+            )
+            if _front_turns > 0.0:
+                # Rear turns are typically ~50% of front turns (Ferrari IBT data:
+                # front ≈ 0.096, rear ≈ 0.048 from setup_writer rear formula).
+                changed["rear_torsion_bar_turns"] = _front_turns * 0.5
+        if changed:
+            setup = replace(setup, **changed)
+        return setup
+
     def predict(
         self,
         setup: GarageSetupState,
         front_excursion_p99_mm: float = 0.0,
     ) -> GarageOutputs:
         """Predict the unified set of garage outputs for a setup."""
+        # Pre-populate torsion turns BEFORE front/rear RH predictions.
+        # DirectRegression models can include torsion_turns / rear_torsion_turns
+        # as features with large coefficients (Ferrari: 159.47 / 217.20).
+        # Without this, the solver path (torsion_bar_turns=0.0) under-predicts
+        # RH by 15–25mm → pushrod extrapolation → front/rear RH swap in .sto.
+        setup = self._ensure_torsion_turns_populated(setup)
         if self._direct_front_rh:
             front_static_rh = self._direct_front_rh.predict(setup)
         else:
@@ -882,15 +928,9 @@ class GarageOutputModel:
         else:
             rear_static_rh = self.predict_rear_static_rh(setup)
         torsion_turns = self.predict_torsion_turns(setup, front_static_rh)
-        # Augment the setup state with the predicted front torsion bar turns so
-        # that DirectRegression models using the `torsion_turns` feature receive
-        # the correct value.  In the IBT-observation path, `setup.torsion_bar_turns`
-        # is already set from the measured data; `predict_torsion_turns()` would
-        # produce a similar value.  In the solver path (no measured turns), this
-        # ensures models that depend on `torsion_turns` are evaluated correctly.
-        # `rear_torsion_bar_turns` is left as-is: actual measurements populate it
-        # in the IBT path; solver path keeps 0.0 (conservative, feature excluded
-        # at zero contribution).
+        # Augment the setup state with the refined torsion bar turns so
+        # that downstream DirectRegression models (heave_defl, slider, etc.)
+        # receive the correct value.
         if setup.torsion_bar_turns == 0.0 and torsion_turns != 0.0:
             setup = replace(setup, torsion_bar_turns=torsion_turns)
         # Use direct regressions when available (higher accuracy), fall back
