@@ -1794,6 +1794,7 @@ def produce(
             selected_candidate_score=selected_candidate_score_output,
             solve_context_lines=solve_notes,
             compact=report_compact,
+            cal_gate=cal_gate,
         )
     if _emit_report:
         print(report)

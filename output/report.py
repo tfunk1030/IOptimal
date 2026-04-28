@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import dataclasses
+import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -123,6 +124,222 @@ def _is_gt3(car: Any) -> bool:
     if arch is None:
         return False
     return getattr(arch, "has_heave_third", True) is False
+
+
+# Subsystem display order for the ESTIMATE WARNINGS block (Unit 5).
+_ESTIMATE_SUBSYSTEM_ORDER = (
+    "track_profile", "aero_compression", "ride_height_model",
+    "deflection_model", "spring_rates", "pushrod_geometry",
+    "damper_zeta", "arb_stiffness", "lltd_target", "roll_gains",
+)
+
+
+def _wrap_block(text: str, width: int, indent: str = "    ") -> list[str]:
+    """Word-wrap each line of *text* to *width* columns, prefixed with *indent*.
+
+    Empty input lines are preserved as empty output lines so the visual
+    paragraph structure of multi-line CLI instructions survives the wrap.
+    """
+    out: list[str] = []
+    for raw in text.splitlines():
+        if not raw.strip():
+            out.append("")
+            continue
+        wrapped = textwrap.wrap(
+            raw,
+            width=width,
+            initial_indent=indent,
+            subsequent_indent=indent,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+        out.extend(wrapped if wrapped else [indent.rstrip()])
+    return out
+
+
+def _format_ideal_mc(ideal: Any) -> str:
+    """Format the return value of `car.compute_ideal_mc_sizes()` as text."""
+    if isinstance(ideal, (tuple, list)) and len(ideal) >= 2:
+        return f"ideal front {float(ideal[0]):.1f} / rear {float(ideal[1]):.1f} mm"
+    if isinstance(ideal, dict) and "front" in ideal and "rear" in ideal:
+        return (
+            f"ideal front {float(ideal['front']):.1f} / "
+            f"rear {float(ideal['rear']):.1f} mm"
+        )
+    return str(ideal)
+
+
+def _build_not_solved_section(
+    car: Any,
+    current_setup: Any,
+    supporting: Any,
+    width: int = 70,
+) -> str:
+    """Return a NOT SOLVED block listing parameters preserved from driver setup.
+
+    Each line uses the format
+        "PARAMETER: preserved from driver setup -> CURRENT_VALUE.
+         SUGGESTION: <text or 'no model'>"
+
+    Surfaces master cylinder (with `compute_ideal_mc_sizes` suggestion when
+    the car model exposes it), pad compound, gear stack, hybrid config,
+    roof light color, and cooling ducts. Cars that don't carry a given
+    field on `current_setup` simply skip that line.
+    """
+    if current_setup is None:
+        return ""
+
+    entries: list[str] = []
+
+    def _entry(label: str, value: str, suggestion: str) -> None:
+        entries.append(f"  {label}: preserved from driver setup -> {value}.")
+        entries.append(f"    SUGGESTION: {suggestion}")
+
+    front_mc = float(getattr(current_setup, "front_master_cyl_mm", 0.0) or 0.0)
+    rear_mc = float(getattr(current_setup, "rear_master_cyl_mm", 0.0) or 0.0)
+    if front_mc > 0 or rear_mc > 0:
+        suggestion = "no model"
+        ideal_fn = getattr(car, "compute_ideal_mc_sizes", None)
+        if callable(ideal_fn):
+            try:
+                ideal = ideal_fn()
+                if ideal is not None:
+                    suggestion = _format_ideal_mc(ideal)
+            except Exception:
+                suggestion = "no model (compute_ideal_mc_sizes raised)"
+        _entry(
+            "Master cylinder",
+            f"front {front_mc:.1f} mm / rear {rear_mc:.1f} mm",
+            suggestion,
+        )
+
+    pad = getattr(current_setup, "pad_compound", "") or ""
+    if pad:
+        _entry("Pad compound", pad, "no model (driver choice; track temp dependent)")
+
+    gear = getattr(current_setup, "gear_stack", "") or ""
+    if gear:
+        _entry("Gear stack", gear, "no model (track-specific driver choice)")
+
+    hybrid_enabled = getattr(current_setup, "hybrid_rear_drive_enabled", "") or ""
+    hybrid_pct = float(getattr(current_setup, "hybrid_rear_drive_corner_pct", 0.0) or 0.0)
+    if hybrid_enabled or hybrid_pct:
+        parts = [hybrid_enabled] if hybrid_enabled else []
+        if hybrid_pct:
+            parts.append(f"corner {hybrid_pct:.0f}%")
+        _entry("Hybrid config", ", ".join(parts), "no model (driver/strategy choice)")
+
+    roof = getattr(current_setup, "roof_light_color", "") or ""
+    if roof:
+        _entry(
+            "Roof light color",
+            roof,
+            "no model (cosmetic / endurance class indicator)",
+        )
+
+    for attr in ("brake_duct_front", "brake_duct_rear", "engine_duct", "cooling_duct"):
+        val = getattr(current_setup, attr, None)
+        if val not in (None, "", 0, 0.0):
+            _entry(
+                attr.replace("_", " ").title(),
+                str(val),
+                "no model (track temp / aero cooling balance)",
+            )
+
+    if not entries:
+        return ""
+
+    return "\n".join([
+        _hdr("NOT SOLVED — preserved from driver setup"),
+        "",
+        "  The solver does not model these parameters; values below are",
+        "  carried verbatim from the driver-loaded setup.",
+        "",
+        *entries,
+        "",
+    ])
+
+
+def _build_estimate_warnings_section(
+    car: Any,
+    track_name: str,
+    cal_gate: Any = None,
+    width: int = 70,
+) -> str:
+    """Return an ESTIMATE WARNINGS block enumerating uncalibrated subsystems.
+
+    Each row carries the subsystem name, the gate's reason, and the
+    `SubsystemCalibration.instructions` CLI fix command (populated by
+    the gate's INSTRUCTIONS templates). Falls back to the legacy
+    car-level calibration flags when *cal_gate* is None.
+    """
+    rows: list[tuple[str, str, str]] = []
+    if cal_gate is not None:
+        try:
+            subsystems = cal_gate.subsystems()
+        except Exception:
+            subsystems = {}
+        ordered = [n for n in _ESTIMATE_SUBSYSTEM_ORDER if n in subsystems] + [
+            n for n in subsystems if n not in _ESTIMATE_SUBSYSTEM_ORDER
+        ]
+        for name in ordered:
+            sub = subsystems[name]
+            if sub.status == "uncalibrated":
+                reason = f"no measured data ({sub.source})" if sub.source else "no measured data"
+                rows.append((name, reason, sub.instructions or ""))
+            elif sub.status == "weak" and sub.warnings:
+                reason = (
+                    f"weak fit ({sub.source}): {sub.warnings[0]}"
+                    if sub.source else f"weak fit: {sub.warnings[0]}"
+                )
+                rows.append((name, reason, sub.instructions or ""))
+
+    legacy_warnings: list[str] = []
+    if hasattr(car, "deflection") and not getattr(car.deflection, "is_calibrated", True):
+        legacy_warnings.append(
+            "Deflection predictions use uncalibrated model — verify garage "
+            "display values manually"
+        )
+    if hasattr(car, "ride_height_model") and not getattr(
+        car.ride_height_model, "is_calibrated", True
+    ):
+        legacy_warnings.append("Ride height predictions use uncalibrated model")
+    if hasattr(car, "damper") and not getattr(car.damper, "zeta_is_calibrated", True):
+        legacy_warnings.append(
+            "Damper zeta targets are conservative defaults — verify damper "
+            "feel on track"
+        )
+    garage_model_fn = getattr(car, "active_garage_output_model", None)
+    if callable(garage_model_fn):
+        try:
+            if garage_model_fn(track_name) is None:
+                legacy_warnings.append(
+                    "No garage output model — .sto display values are physics "
+                    "estimates only"
+                )
+        except Exception:
+            pass
+
+    if not rows and not legacy_warnings:
+        return ""
+
+    lines: list[str] = [_hdr("ESTIMATE WARNINGS"), ""]
+    if rows:
+        lines.append("  Uncalibrated subsystems (calibration commands below):")
+        lines.append("")
+        for name, reason, instructions in rows:
+            lines.append(f"  • {name}: {reason}")
+            if instructions:
+                lines.extend(_wrap_block(instructions, width, indent="      "))
+            else:
+                lines.append("      (no calibration instructions registered)")
+            lines.append("")
+    if legacy_warnings:
+        lines.append("  Model-level estimates:")
+        for warning in legacy_warnings:
+            lines.extend(_wrap_block(f"• {warning}", width, indent="    "))
+        lines.append("")
+    return "\n".join(lines)
 
 
 def _hdr(title: str) -> str:
