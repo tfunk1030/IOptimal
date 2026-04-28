@@ -491,6 +491,7 @@ def produce(
         )
         log("  [WARNING] Calibration loading will use pooled/default models.")
     car = get_car(args.car)
+    cal_models = None  # Kept in scope for downstream corner-causal impact prediction (Unit P1).
     try:
         from car_model.auto_calibrate import load_calibrated_models, apply_to_car
         cal_models = load_calibrated_models(car.canonical_name, track=_track_key_for_cal)
@@ -1360,6 +1361,78 @@ def produce(
                     "Preserved BMW/Sebring second-stage rotation controls after candidate-family rematerialization."
                 )
 
+    # ── Per-corner phase causal impact prediction (Unit P1) ───────────────
+    # If sibling unit D3 has populated cal_models.corner_phase_models with
+    # per-corner regressions, predict per-(corner, phase, metric) impact for
+    # every generated candidate, then prefer Pareto-dominant candidates
+    # (no corner-phase metric regresses) over score-only selection. The
+    # impacts dict is empty until D3 lands or until enough varied IBTs have
+    # been ingested — in which case selection is unchanged.
+    selected_candidate_corner_impacts: dict[str, float] = {}
+    import logging as _p1_logging
+    _p1_logger = _p1_logging.getLogger(__name__)
+    try:
+        from solver.candidate_search import pareto_reselect_winner
+        from solver.corner_causal import (
+            predict_corner_phase_impact,
+            setup_dict_from_current,
+            setup_dict_from_steps,
+        )
+        _baseline_setup = setup_dict_from_current(current_setup, fuel_l=fuel)
+        _have_any_impacts = False
+        for cand in generated_candidates:
+            try:
+                _cand_setup = setup_dict_from_steps(
+                    step1=cand.step1,
+                    step2=cand.step2,
+                    step3=cand.step3,
+                    step5=cand.step5,
+                    fuel_l=fuel,
+                    wing_deg=wing,
+                )
+            except Exception as e:
+                _p1_logger.debug(
+                    "corner-causal: skip candidate %s setup-dict build: %s",
+                    cand.family, e,
+                )
+                continue
+            _impacts = predict_corner_phase_impact(
+                cal_models, _cand_setup, _baseline_setup
+            )
+            try:
+                setattr(cand, "corner_impacts", _impacts)
+            except Exception:
+                pass
+            if _impacts:
+                _have_any_impacts = True
+        # Only re-select if we actually have impact data to evaluate;
+        # otherwise the original score-based selection stands.
+        if _have_any_impacts:
+            new_winner = pareto_reselect_winner(generated_candidates)
+            if new_winner is not None and new_winner is not selected_candidate:
+                solve_notes.append(
+                    f"Pareto re-selection: switched from "
+                    f"{getattr(selected_candidate, 'family', 'n/a')} to "
+                    f"{new_winner.family} (Pareto-dominant)."
+                )
+            selected_candidate = new_winner
+            selected_candidate_family_output = (
+                getattr(selected_candidate, "family", None)
+                if selected_candidate is not None
+                else None
+            )
+            selected_candidate_score_output = (
+                selected_candidate.score.total
+                if selected_candidate is not None and selected_candidate.score is not None
+                else None
+            )
+        if selected_candidate is not None:
+            selected_candidate_corner_impacts = (
+                getattr(selected_candidate, "corner_impacts", None) or {}
+            )
+    except Exception as exc:
+        _p1_logger.debug("corner-causal impact prediction failed: %s", exc)
+
     # ── Legal-manifold search (--explore-legal-space / --search-mode) ─────
     search_mode = getattr(args, "search_mode", None)
     do_legal_search = should_run_legal_manifold_search(
@@ -1916,6 +1989,7 @@ def produce(
             prediction_corrections={},
             selected_candidate_family=selected_candidate_family_output,
             selected_candidate_score=selected_candidate_score_output,
+            corner_impacts=selected_candidate_corner_impacts,
             solve_context_lines=solve_notes,
             compact=report_compact,
             cal_gate=cal_gate,

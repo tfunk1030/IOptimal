@@ -1128,6 +1128,75 @@ def generate_candidate_families(
     return candidates
 
 
+def pareto_reselect_winner(
+    candidates: list[SetupCandidate],
+    *,
+    worse_threshold: float = 1e-6,
+) -> SetupCandidate | None:
+    """Re-select the winning candidate to prefer Pareto-dominant ones.
+
+    Unit P1: when ``corner_impacts`` have been attached to candidates (by the
+    pipeline's per-corner causal block), prefer the highest-scoring candidate
+    that does NOT make any corner-phase metric worse than baseline. If no
+    Pareto-dominant candidate exists, the original score-based winner is kept
+    and a tradeoff note is appended to its ``notes`` list.
+
+    Returns the (possibly re-selected) winner, or None if there are no
+    selectable candidates. Mutates ``candidate.selected`` on the survivors.
+    """
+    selectable = [c for c in candidates if c.selectable]
+    if not selectable:
+        return None
+    # Gather candidates that have any corner_impacts data attached.
+    with_impacts = [c for c in selectable if getattr(c, "corner_impacts", None)]
+    # No impact data anywhere — nothing to do; respect the existing selection.
+    if not with_impacts:
+        return next((c for c in selectable if c.selected), None) or max(
+            selectable,
+            key=lambda c: c.score.total if c.score is not None else -1.0,
+        )
+
+    try:
+        from solver.corner_causal import find_pareto_dominant, pareto_summary
+    except Exception:
+        return next((c for c in selectable if c.selected), None)
+
+    pareto_dominant: list[SetupCandidate] = list(
+        find_pareto_dominant(with_impacts, worse_threshold=worse_threshold)
+    )
+
+    # Clear all selections, then choose:
+    #  - prefer Pareto-dominant candidate with highest score, else
+    #  - fall back to highest score with a tradeoff note.
+    for cand in candidates:
+        cand.selected = False
+    if pareto_dominant:
+        winner = max(
+            pareto_dominant,
+            key=lambda c: c.score.total if c.score is not None else -1.0,
+        )
+        winner.selected = True
+        winner.notes.append(
+            "Pareto-dominant: no per-corner metric regresses vs baseline."
+        )
+        return winner
+    # No Pareto-dominant candidate. Pick by score and surface tradeoff.
+    winner = max(
+        selectable,
+        key=lambda c: c.score.total if c.score is not None else -1.0,
+    )
+    winner.selected = True
+    impacts = getattr(winner, "corner_impacts", None) or {}
+    if impacts:
+        summary = pareto_summary(impacts, worse_threshold=worse_threshold)
+        winner.notes.append(
+            f"No Pareto-dominant candidate; tradeoff: "
+            f"{summary.improved} corner-phase metric(s) improve, "
+            f"{summary.worsened} worsen."
+        )
+    return winner
+
+
 def candidate_to_dict(candidate: SetupCandidate) -> dict[str, Any]:
     return {
         "family": candidate.family,

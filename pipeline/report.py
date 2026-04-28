@@ -46,6 +46,30 @@ from output.report import (
     _build_estimate_warnings_section,
 )
 
+
+def _corner_impact_blocks(corners: list[Any], impacts: dict[str, float] | None) -> list[tuple[str, list[str]]]:
+    """Build (header, lines) blocks for PER-CORNER IMPACT and PARETO TRADEOFFS.
+
+    Returns an empty list when ``impacts`` is empty or formatting fails.
+    """
+    if not impacts:
+        return []
+    try:
+        from solver.corner_causal import (
+            format_corner_impact_lines,
+            format_pareto_tradeoff_lines,
+        )
+    except Exception:
+        return []
+    blocks: list[tuple[str, list[str]]] = []
+    ci = format_corner_impact_lines(corners, impacts)
+    if ci:
+        blocks.append(("PER-CORNER IMPACT", ci))
+    tl = format_pareto_tradeoff_lines(impacts)
+    if tl:
+        blocks.append(("PARETO TRADEOFFS", tl))
+    return blocks
+
 W = 70
 
 
@@ -235,6 +259,7 @@ def generate_report(
     prediction_corrections: dict[str, float] | None = None,
     selected_candidate_family: str | None = None,
     selected_candidate_score: float | None = None,
+    corner_impacts: dict[str, float] | None = None,
     compact: bool = False,
     cal_gate: object = None,
     coupling_changes: list[Any] | None = None,
@@ -335,6 +360,9 @@ def generate_report(
                 report += f"  Candidate score: {selected_candidate_score:.3f}\n"
         report += "\n" + _hdr("PREDICTED IMPROVEMENTS") + "\n"
         report += "\n".join(f"  {line}" for line in prediction_lines)
+        for header, block_lines in _corner_impact_blocks(corners, corner_impacts):
+            report += "\n" + _hdr(header) + "\n"
+            report += "\n".join(f"  {line}" for line in block_lines)
         if solve_context_lines:
             report += "\n" + _hdr("SOLVE CONTEXT") + "\n"
             report += "\n".join(f"  {line}" for line in solve_context_lines)
@@ -460,6 +488,12 @@ def generate_report(
     for line in prediction_lines:
         a(f"  {line}")
     a("")
+
+    for header, block_lines in _corner_impact_blocks(corners, corner_impacts):
+        a(_hdr(header))
+        for line in block_lines:
+            a(f"  {line}")
+        a("")
 
     # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
     try:
