@@ -487,6 +487,7 @@ def print_full_setup_report(
     front_diff_preload_nm: float | None = None,
     bias_migration_gain: float | None = None,
     current_params: dict | None = None,
+    coupling_changes: list[Any] | None = None,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
@@ -1318,6 +1319,31 @@ def print_full_setup_report(
     else:
         a("  Roll / camber / conditioning: [blocked — geometry uncalibrated]")
     a("")
+
+    # ── PARAMETER COUPLING (Unit C1) ──────────────────────────────────
+    if coupling_changes:
+        def _coup_get(ch: Any, key: str, default: Any = None) -> Any:
+            return ch.get(key, default) if isinstance(ch, dict) else getattr(ch, key, default)
+
+        def _coup_fmt(v: Any) -> str:
+            if v is None:
+                return "—"
+            if isinstance(v, tuple):
+                return "[" + ", ".join(str(x) for x in v) + "]"
+            if isinstance(v, float):
+                return f"{v:.2f}"
+            return str(v)
+
+        a(_hdr(f"PARAMETER COUPLING ({len(coupling_changes)} cascading adjustments)"))
+        for ch in coupling_changes:
+            param = _coup_get(ch, "param", "?")
+            old = _coup_get(ch, "old")
+            new = _coup_get(ch, "new")
+            rationale = _coup_get(ch, "rationale", "")
+            a(f"  {param}: {_coup_fmt(old)} → {_coup_fmt(new)}")
+            if rationale:
+                a(f"      {rationale}")
+        a("")
 
     # ── VALIDATION CHECKLIST ──────────────────────────────────────────
     a(_hdr("VALIDATION CHECKLIST"))

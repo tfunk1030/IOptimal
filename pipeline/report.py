@@ -237,6 +237,7 @@ def generate_report(
     selected_candidate_score: float | None = None,
     compact: bool = False,
     cal_gate: object = None,
+    coupling_changes: list[Any] | None = None,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
 
@@ -325,6 +326,7 @@ def generate_report(
             hybrid_corner_pct=_hybrid_corner_pct,
             front_diff_preload_nm=_front_diff_preload_nm,
             bias_migration_gain=_bias_migration_gain,
+            coupling_changes=coupling_changes,
         )
         if selected_candidate_family is not None:
             report += "\n" + _hdr("CANDIDATE SELECTION") + "\n"
@@ -486,6 +488,7 @@ def generate_report(
         hybrid_corner_pct=_hybrid_corner_pct,
         front_diff_preload_nm=_front_diff_preload_nm,
         bias_migration_gain=_bias_migration_gain,
+        coupling_changes=coupling_changes,
     )
         a(_setup_report)
     except (AttributeError, TypeError) as exc:
