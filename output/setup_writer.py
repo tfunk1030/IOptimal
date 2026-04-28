@@ -1314,6 +1314,13 @@ def write_sto(
         # Front roll perch offset (Porsche — preloads the roll spring)
         if "front_roll_perch" in ids:
             _w_num("front_roll_perch", _snap_to_step(front_roll_perch_mm, 0.5), "mm")
+        # Acura front roll spring + perch (ORECA chassis)
+        if "front_roll_spring_nmm" in ids:
+            _roll_spring = getattr(step3, 'front_roll_spring_nmm', 0.0)
+            if _roll_spring > 0:
+                _w_num("front_roll_spring_nmm", round(_roll_spring, 1), "N/mm")
+                _w_num("front_roll_perch_mm", round(
+                    _snap_to_step(front_roll_perch_mm, 0.5), 1), "mm")
         # Rear spring / torsion bar
         if is_acura:
             # Acura rear uses torsion bar OD (mapped via lr_spring_rate -> TorsionBarOD)
