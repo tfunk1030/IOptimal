@@ -393,36 +393,20 @@ class ARBSolver:
                         best_size = rear_size
                         best_blade = blade
 
-            # ── Driver anchor fallback ──
-            # If even the best searched setup is far from target (>3 pp),
-            # the LLTD physics model is mis-calibrated for this car/track
-            # combo and the IBT-validated current setup is more reliable
-            # than any model-derived guess. Anchor to the driver's loaded
-            # ARB and accept the model's LLTD reading is wrong.
-            #
-            # Validated 2026-04-07 against Porsche/Algarve where:
-            #   measured LLTD target = 0.503 (from 14 IBT sessions)
-            #   model says driver setup (Stiff/10) gives LLTD = 0.391
-            #   → 11.2 pp gap means the rear-roll-stiffness contribution
-            #     is over-stated. Solver picks Soft/1 (LLTD=0.43) as
-            #     "closest" but driver's Stiff/10 actually achieves the
-            #     target in real telemetry. Anchor to driver.
-            if (best_lltd_error > 0.03
-                    and current_rear_arb_size is not None
-                    and current_rear_arb_blade is not None
-                    and current_rear_arb_size in arb.rear_size_labels
-                    and current_rear_arb_size.lower() != "disconnected"
-                    and 1 <= int(current_rear_arb_blade) <= arb.rear_blade_count):
-                best_size = current_rear_arb_size
-                best_blade = int(current_rear_arb_blade)
-                # Recompute the model's LLTD at the anchored setup (will
-                # show the model's mis-calibration in step4 output for
-                # later analysis).
-                lltd_anchor, _, _, _, _ = self._compute_lltd(
-                    farb_size, farb_blade, best_size, best_blade,
-                    k_springs_front, k_springs_rear
-                )
-                best_lltd_error = abs(lltd_anchor - target_lltd)
+            # ── Per Unit F2: NO driver-anchor escape hatch ──
+            # The previous "if best_lltd_error > 0.03 → anchor to driver"
+            # branch was a Type-B/F preserve-driver fallback. It silently
+            # masked physics signals: when the OptimumG LLTD target
+            # disagreed with the model's k_front/k_total reading by more
+            # than 3 pp, the solver gave up and copied the driver's loaded
+            # ARB. F2 retracts this — when no ARB combo achieves target
+            # within 3 pp, we still emit the **closest physics solution**
+            # and label it `physics_search_no_target_match` so the report
+            # surfaces the gap honestly. The caller (Step 4 audit logic)
+            # can flag this for the LLTD epistemic gap (see CLAUDE.md
+            # "LLTD CALIBRATION GAP"). Preserve-driver is reserved for
+            # the case where physics cannot run at all (no spring rates,
+            # no roll stiffness inputs).
 
         # Compute full solution at chosen ARB setup
         lltd, k_farb, k_rarb, k_front, k_rear = self._compute_lltd(
@@ -520,12 +504,24 @@ class ARBSolver:
                 "Cold tyre out-lap: softer RARB to prevent snap oversteer.",
             ]
 
-        # parameter_search_status: classify ARB settings as user-set
+        # F2 parameter_search_status: physics-search result, with an
+        # honest label when the model couldn't reach the LLTD target
+        # within tolerance.
+        if best_lltd_error <= 0.015:
+            _rear_arb_status = "physics_search"
+        elif best_lltd_error <= 0.03:
+            _rear_arb_status = "physics_search_low_confidence"
+        else:
+            # Honest label: physics found the closest combo but couldn't
+            # reach target. The LLTD calibration target may itself be a
+            # geometric proxy (see CLAUDE.md "LLTD epistemic gap"); we
+            # surface the gap rather than masking it with a driver anchor.
+            _rear_arb_status = "physics_search_no_target_match"
         pss = {
-            "front_arb_size": "user_set",
-            "front_arb_blade": "user_set",
-            "rear_arb_size": "user_set",
-            "rear_arb_blade": "user_set",
+            "front_arb_size": "physics_baseline",
+            "front_arb_blade": "physics_baseline",
+            "rear_arb_size": _rear_arb_status,
+            "rear_arb_blade": _rear_arb_status,
         }
 
         return ARBSolution(

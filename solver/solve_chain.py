@@ -426,6 +426,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         fuel_load_l=fuel,
         current_rear_third_nmm=None if _physics_mode else _k_rear_current,
         current_rear_spring_nmm=_curr_rear_coil,
+        current_setup=None if _physics_mode else inputs.current_setup,
     )
     rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
@@ -620,6 +621,7 @@ def _run_branching_solver(
             current_rear_third_nmm=_k_rear_current,
             current_rear_spring_nmm=_curr_rear_coil,
             max_candidates=max_corner,
+            current_setup=None if _physics_mode else inputs.current_setup,
         )
 
         for s3 in corner_candidates:
@@ -1241,6 +1243,7 @@ def materialize_overrides(
                 rear_spring_perch_mm=decoded_step3_targets["rear_spring_perch_mm"],
                 rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
                 front_roll_spring_nmm=decoded_step3_targets.get("front_roll_spring_nmm"),
+                current_setup=inputs.current_setup,
             )
         else:
             _curr_rt = (
@@ -1257,6 +1260,7 @@ def materialize_overrides(
                 fuel_load_l=inputs.fuel_load_l,
                 current_rear_third_nmm=_curr_rt,
                 current_rear_spring_nmm=_curr_rc,
+                current_setup=inputs.current_setup,
             )
         rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
         heave_solver.reconcile_solution(
@@ -1345,6 +1349,7 @@ def materialize_overrides(
                 rear_spring_perch_mm=decoded_step3_targets["rear_spring_perch_mm"],
                 rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
                 front_roll_spring_nmm=decoded_step3_targets.get("front_roll_spring_nmm"),
+                current_setup=inputs.current_setup,
             )
         else:
             _curr_rt = (
@@ -1361,6 +1366,7 @@ def materialize_overrides(
                 fuel_load_l=inputs.fuel_load_l,
                 current_rear_third_nmm=_curr_rt,
                 current_rear_spring_nmm=_curr_rc,
+                current_setup=inputs.current_setup,
             )
         rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
         heave_solver.reconcile_solution(
