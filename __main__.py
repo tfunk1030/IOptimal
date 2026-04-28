@@ -470,6 +470,8 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         sys.argv.extend(['--lap', str(args.lap)])
     if hasattr(args, 'all_laps') and args.all_laps:
         sys.argv.append('--all-laps')
+    if hasattr(args, 'single_lap') and args.single_lap:
+        sys.argv.append('--single-lap')
 
     try:
         ingest_main()
@@ -634,7 +636,9 @@ def main() -> None:
     ingest_parser.add_argument("--lap", type=int, default=None,
                         help="Specific lap number to analyze")
     ingest_parser.add_argument("--all-laps", action="store_true",
-                        help="Ingest every valid lap as a separate observation")
+                        help="(Default behaviour — kept for backward compatibility)")
+    ingest_parser.add_argument("--single-lap", action="store_true", dest="single_lap",
+                        help="Legacy: ingest only the best lap as one observation")
 
     # ── run subcommand (unified: does everything, outputs to folder) ──
     run_parser = subparsers.add_parser(
@@ -749,7 +753,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     for ibt_path in ibt_paths:
         try:
             ingest_ns = argparse.Namespace(
-                car=car_name, ibt=ibt_path, wing=args.wing, lap=None, all_laps=False,
+                car=car_name, ibt=ibt_path, wing=args.wing, lap=None,
+                all_laps=False, single_lap=True,
             )
             cmd_ingest(ingest_ns)
             print(f"  Ingested: {ibt_path}")

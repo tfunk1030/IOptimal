@@ -122,6 +122,17 @@ class Observation:
     # Each: {corner_id, lap_dist_m, direction, speed_class, speed_kph,
     #         understeer_deg, body_slip_deg, shock_vel_p95, time_delta_s}
 
+    # ── Within-IBT Measurement-Noise Floor ──
+    # Std of mean values across all valid laps from the SAME IBT (same setup).
+    # Cross-IBT variance is the actual setup-effect signal; within-IBT variance
+    # is driver/noise/conditions and gives the auto_calibrate fitter a
+    # measurement-noise floor. Populated only when ingested via --all-laps with
+    # >= 2 valid laps; otherwise None / 0.
+    setup_noise_floor_front_rh_mm: float | None = None
+    setup_noise_floor_rear_rh_mm: float | None = None
+    setup_noise_floor_lap_time_s: float | None = None
+    setup_noise_floor_n_laps: int = 0
+
     def to_dict(self) -> dict:
         return asdict(self)
 

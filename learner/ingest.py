@@ -10,9 +10,10 @@ This is the main entry point for the learning system. Each call:
 7. Prints what was learned
 
 Usage:
-    python -m learner.ingest --car bmw --ibt path/to/session.ibt
+    python -m learner.ingest --car bmw --ibt path/to/session.ibt          # all-laps default
     python -m learner.ingest --car bmw --ibt path/to/session.ibt --wing 17
-    python -m learner.ingest --car bmw --ibt path/to/session.ibt --all-laps
+    python -m learner.ingest --car bmw --ibt path/to/session.ibt --single-lap   # legacy: best lap only
+    python -m learner.ingest --car bmw --ibt path/to/session.ibt --lap 5        # specific lap (single)
     python -m learner.ingest --status                    # show what we know
     python -m learner.ingest --car bmw --track sebring --recall  # knowledge dump
 """
@@ -405,6 +406,68 @@ def ingest_ibt(
     return result
 
 
+def _apply_within_ibt_noise_floor(
+    store: KnowledgeStore,
+    lap_results: list[dict],
+    *,
+    verbose: bool = True,
+) -> None:
+    """Compute std-of-means across per-lap observations from one IBT and write
+    the noise-floor fields back to each observation.
+
+    The same setup ran each lap, so cross-lap variance in mean front_rh /
+    rear_rh / lap_time is measurement noise, NOT setup effect. The fitter
+    can use this as a per-IBT noise floor.
+    """
+    import statistics
+
+    stored_ids = [r.get("session_id") for r in lap_results
+                  if r.get("observation_stored") and r.get("session_id")]
+    if len(stored_ids) < 2:
+        return  # Single observation: noise floor is meaningless.
+
+    obs_list: list[dict] = []
+    for sid in stored_ids:
+        data = store.load_observation(sid)
+        if data:
+            obs_list.append(data)
+    if len(obs_list) < 2:
+        return
+
+    front_rh_means = [o.get("telemetry", {}).get("dynamic_front_rh_mm") for o in obs_list]
+    rear_rh_means = [o.get("telemetry", {}).get("dynamic_rear_rh_mm") for o in obs_list]
+    lap_times = [o.get("performance", {}).get("best_lap_time_s") for o in obs_list]
+
+    def _std(xs):
+        clean = [float(x) for x in xs if isinstance(x, (int, float)) and x > 0]
+        if len(clean) < 2:
+            return None
+        return float(statistics.pstdev(clean))
+
+    front_rh_std = _std(front_rh_means)
+    rear_rh_std = _std(rear_rh_means)
+    lap_time_std = _std(lap_times)
+    n_laps = len(obs_list)
+
+    for sid, data in zip(stored_ids, obs_list):
+        data["setup_noise_floor_front_rh_mm"] = front_rh_std
+        data["setup_noise_floor_rear_rh_mm"] = rear_rh_std
+        data["setup_noise_floor_lap_time_s"] = lap_time_std
+        data["setup_noise_floor_n_laps"] = n_laps
+        store.save_observation(sid, data)
+
+    if verbose:
+        parts = []
+        if front_rh_std is not None:
+            parts.append(f"front_rh σ={front_rh_std:.3f}mm")
+        if rear_rh_std is not None:
+            parts.append(f"rear_rh σ={rear_rh_std:.3f}mm")
+        if lap_time_std is not None:
+            parts.append(f"lap_time σ={lap_time_std:.3f}s")
+        if parts:
+            print(f"  [noise-floor] across {n_laps} laps: " + ", ".join(parts))
+
+
 def ingest_all_laps(
     car_name: str,
     ibt_path: str,
@@ -540,6 +603,12 @@ def ingest_all_laps(
             "lap_number": lap_num,
             "lap_time_s": lap_time,
         })
+
+    # ── Within-IBT measurement-noise floor ────────────────────────────
+    # Same setup, multiple laps → std-of-means is driver/conditions/noise,
+    # not setup effect. Write back to each per-lap Observation so the
+    # auto_calibrate fitter can use it as a heteroscedastic weight.
+    _apply_within_ibt_noise_floor(store, results, verbose=verbose)
 
     # Fit models with all accumulated observations for this car/track.
     all_obs = store.list_observations(car=car_name, track=track.track_name)
@@ -834,9 +903,16 @@ def main():
     )
     parser.add_argument("--ibt", type=str, help="Path to IBT file")
     parser.add_argument("--wing", type=float, help="Wing angle override")
-    parser.add_argument("--lap", type=int, help="Specific lap number to analyze")
-    parser.add_argument("--all-laps", action="store_true",
-                        help="Ingest every valid lap as a separate observation")
+    parser.add_argument("--lap", type=int,
+                        help="Specific lap number to analyze (implies --single-lap)")
+    # --all-laps is now the DEFAULT behaviour. The flag is kept as a
+    # backward-compatible no-op so existing scripts don't break.
+    parser.add_argument("--all-laps", action="store_true", default=False,
+                        dest="all_laps_legacy",
+                        help="(Default behaviour — kept for backward compatibility)")
+    parser.add_argument("--single-lap", action="store_true", default=False,
+                        dest="single_lap",
+                        help="Legacy: ingest only the best lap as one observation")
     parser.add_argument("--status", action="store_true",
                         help="Show knowledge store status")
     parser.add_argument("--recall", action="store_true",
@@ -872,19 +948,22 @@ def main():
         print("Usage: python -m learner.ingest --car bmw --ibt path/to/session.ibt")
         sys.exit(1)
 
-    if args.all_laps:
-        ingest_all_laps(
-            car_name=args.car,
-            ibt_path=args.ibt,
-            wing=args.wing,
-            store=store,
-        )
-    else:
+    # Default: all-laps. Switch to single-lap when --single-lap is passed
+    # OR when a specific --lap N is requested (single-lap by definition).
+    use_single_lap = args.single_lap or (args.lap is not None)
+    if use_single_lap:
         ingest_ibt(
             car_name=args.car,
             ibt_path=args.ibt,
             wing=args.wing,
             lap=args.lap,
+            store=store,
+        )
+    else:
+        ingest_all_laps(
+            car_name=args.car,
+            ibt_path=args.ibt,
+            wing=args.wing,
             store=store,
         )
 
