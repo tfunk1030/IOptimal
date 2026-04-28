@@ -3,6 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from solver.objective import (
+    COHERENCE_METRICS,
+    COHERENCE_PENALTY_MS_PER_METRIC,
+    COHERENCE_THRESHOLD_WORSENING,
+    compute_coherence_outcome,
+)
+
 
 @dataclass
 class CandidateScore:
@@ -13,6 +20,12 @@ class CandidateScore:
     confidence: float
     disruption_cost: float
     notes: list[str] = field(default_factory=list)
+    # Coherence audit: predicted-improvements vs baseline_measured.
+    # Mission Principle 6 — per-corner-phase impact must be net-positive.
+    coherence_penalty_ms: float = 0.0
+    coherence_worsening: tuple[str, ...] = ()
+    coherence_improving: tuple[str, ...] = ()
+    coherence_detail: dict[str, tuple[float | None, float | None, str]] = field(default_factory=dict)
 
 
 def _safe(value: Any) -> float | None:
@@ -93,7 +106,7 @@ def score_from_prediction(
     """Score a candidate from predicted telemetry changes."""
     notes = list(notes or [])
     if predicted is None:
-        return combine_candidate_score(
+        empty_score = combine_candidate_score(
             safety=0.45,
             performance=0.45,
             stability=0.45,
@@ -101,6 +114,16 @@ def score_from_prediction(
             disruption_cost=disruption_cost,
             notes=notes + ["No predicted telemetry available; using neutral score."],
         )
+        # No predicted telemetry: coherence check cannot run (returns 0.0
+        # penalty + unavailable detail for every metric).
+        coh_penalty, coh_worsen, coh_improve, coh_detail = compute_coherence_outcome(
+            None, baseline_measured,
+        )
+        empty_score.coherence_penalty_ms = coh_penalty
+        empty_score.coherence_worsening = coh_worsen
+        empty_score.coherence_improving = coh_improve
+        empty_score.coherence_detail = coh_detail
+        return empty_score
 
     safety = (
         _improvement(_safe(getattr(baseline_measured, "front_heave_travel_used_pct", None)), _safe(getattr(predicted, "front_heave_travel_used_pct", None)), lower_better=True, scale=20.0)
@@ -169,4 +192,27 @@ def score_from_prediction(
         score.notes.append("Legality warning reduced total score.")
     if state_risk > 0.0:
         score.total = round(max(0.0, score.total - min(0.05, state_risk * 0.01)), 3)
+
+    # ── Coherence (Mission Principle 6) ──────────────────────────────────
+    # Penalise candidates whose own predictions worsen 5+ measured axes vs
+    # baseline_measured. The `total` here is on a 0–1 scale; we map the
+    # ms-domain penalty onto it so a 100ms penalty (5 worsening) drops the
+    # total by ~0.10, a 200ms penalty (6 worsening) drops by ~0.20, etc.
+    # This guarantees orthogonal terms can never rescue a candidate that
+    # is incoherent on its own predictions.
+    coh_penalty, coh_worsen, coh_improve, coh_detail = compute_coherence_outcome(
+        predicted, baseline_measured,
+    )
+    score.coherence_penalty_ms = coh_penalty
+    score.coherence_worsening = coh_worsen
+    score.coherence_improving = coh_improve
+    score.coherence_detail = coh_detail
+    if coh_penalty > 0.0:
+        # 100ms ↔ 0.10 score units (max drop 0.50 at 9-of-9 worsening = 500ms)
+        score.total = round(max(0.0, score.total - min(0.50, coh_penalty / 1000.0)), 3)
+        score.notes.append(
+            f"Coherence penalty {coh_penalty:.0f}ms — predicted to worsen on "
+            f"{len(coh_worsen)} of {len(COHERENCE_METRICS)} measured axes "
+            f"({', '.join(coh_worsen[:3])}{'...' if len(coh_worsen) > 3 else ''})"
+        )
     return score

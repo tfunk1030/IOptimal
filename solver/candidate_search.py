@@ -1078,10 +1078,52 @@ def generate_candidate_families(
             candidate.notes.append(f"Context penalty applied for {family}: -{family_penalty[family]:.2f}.")
         candidates.append(candidate)
 
+    # ── Coherence filter (Mission Principle 6) ───────────────────────────
+    # Reject candidates whose own predictions worsen on 5+ measured axes
+    # vs the driver-loaded baseline UNLESS the score's positive gains
+    # (safety/stability/performance × score-unit weight) outweigh the
+    # coherence penalty by ≥ 2x. This is a hard guard that prevents
+    # orthogonal terms (envelope, uncertainty, family priors) from rescuing
+    # a candidate that is incoherent on its own physics predictions.
+    skipped_coherence: list[tuple[str, float, int]] = []
+    for candidate in candidates:
+        if candidate.score is None or not candidate.selectable:
+            continue
+        coh_penalty = float(getattr(candidate.score, "coherence_penalty_ms", 0.0))
+        if coh_penalty <= 0.0:
+            continue
+        # Translate coherence penalty into score-unit equivalent (100ms ↔ 0.10),
+        # then compare to the candidate's "positive gains" (its 0–1 score
+        # before the coherence drop). If the penalty exceeds half the gains,
+        # mark non-selectable so it cannot win.
+        coh_score_drop = min(0.50, coh_penalty / 1000.0)
+        # candidate.score.total ALREADY had coh_score_drop subtracted in
+        # score_from_prediction(); back out for the gain comparison.
+        positive_gains = candidate.score.total + coh_score_drop
+        n_worsen = len(getattr(candidate.score, "coherence_worsening", ()))
+        if coh_score_drop > positive_gains * 0.5:
+            candidate.selectable = False
+            candidate.status = "coherence_rejected"
+            candidate.notes.append(
+                f"REJECTED for coherence: predicted to worsen on {n_worsen} "
+                f"axes (penalty {coh_penalty:.0f}ms > 0.5× positive gains "
+                f"{positive_gains:.2f})."
+            )
+            skipped_coherence.append((candidate.family, coh_penalty, n_worsen))
+
     selectable = [candidate for candidate in candidates if candidate.selectable]
     if selectable:
         winner = max(selectable, key=lambda candidate: candidate.score.total if candidate.score is not None else -1.0)
         winner.selected = True
+        if skipped_coherence and winner.score is not None:
+            winner.notes.append(
+                "Coherence filter skipped "
+                f"{len(skipped_coherence)} candidate(s): "
+                + ", ".join(
+                    f"{fam} (penalty {pen:.0f}ms, {nw} worsening)"
+                    for fam, pen, nw in skipped_coherence
+                )
+            )
     return candidates
 
 
@@ -1219,6 +1261,9 @@ def candidate_to_dict(candidate: SetupCandidate) -> dict[str, Any]:
                 "confidence": candidate.score.confidence,
                 "disruption_cost": candidate.score.disruption_cost,
                 "notes": candidate.score.notes,
+                "coherence_penalty_ms": getattr(candidate.score, "coherence_penalty_ms", 0.0),
+                "coherence_worsening": list(getattr(candidate.score, "coherence_worsening", ()) or ()),
+                "coherence_improving": list(getattr(candidate.score, "coherence_improving", ()) or ()),
             }
             if candidate.score is not None
             else None

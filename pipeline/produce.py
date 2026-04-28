@@ -1628,6 +1628,7 @@ def produce(
             prediction_corrections={},
             selected_candidate_family=selected_candidate_family_output,
             selected_candidate_score=selected_candidate_score_output,
+            generated_candidates=generated_candidates,
             solve_context_lines=solve_notes,
             compact=report_compact,
         )
