@@ -39,7 +39,12 @@ if TYPE_CHECKING:
     from solver.wheel_geometry_solver import WheelGeometrySolution
     from track_model.profile import TrackProfile
 
-from output.report import print_full_setup_report, _load_support_tier
+from output.report import (
+    print_full_setup_report,
+    _load_support_tier,
+    _build_not_solved_section,
+    _build_estimate_warnings_section,
+)
 
 W = 70
 
@@ -203,6 +208,7 @@ def generate_report(
     selected_candidate_family: str | None = None,
     selected_candidate_score: float | None = None,
     compact: bool = False,
+    cal_gate: object = None,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
 
@@ -671,51 +677,25 @@ def generate_report(
     except Exception:
         pass
 
-    # ── ESTIMATE WARNINGS ─────────────────────────────────────────────
-    estimate_warnings = []
+    # ── NOT SOLVED — preserved-from-driver parameters ─────────────────
+    # Surface every parameter the solver does NOT model so the user knows
+    # where the solver stopped (master cylinder, pad compound, gear stack,
+    # hybrid config, roof light color, cooling ducts).
+    not_solved_block = _build_not_solved_section(
+        car=car, current_setup=current_setup, supporting=supporting, width=W,
+    )
+    if not_solved_block:
+        a(not_solved_block)
 
-    # Check deflection model calibration
-    if hasattr(car, 'deflection') and not getattr(car.deflection, 'is_calibrated', True):
-        estimate_warnings.append(
-            "ESTIMATE: Deflection predictions use uncalibrated model — "
-            "verify garage display values manually"
-        )
-
-    # Check ride height model calibration
-    if hasattr(car, 'ride_height_model') and not getattr(car.ride_height_model, 'is_calibrated', True):
-        estimate_warnings.append(
-            "ESTIMATE: Ride height predictions use uncalibrated model"
-        )
-
-    # Check damper zeta calibration
-    if hasattr(car, 'damper') and not getattr(car.damper, 'zeta_is_calibrated', True):
-        estimate_warnings.append(
-            "ESTIMATE: Damper zeta targets are conservative defaults — "
-            "verify damper feel on track"
-        )
-
-    # Check garage output model
-    garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
-    if garage_model is None:
-        estimate_warnings.append(
-            "ESTIMATE: No garage output model — .sto display values are physics estimates only"
-        )
-
-    if estimate_warnings:
-        a(_hdr("ESTIMATE WARNINGS"))
-        for warning in estimate_warnings:
-            # Wrap long warnings at word boundaries to fit width
-            words = warning.split()
-            current_line = "  • "
-            for word in words:
-                if len(current_line) + len(word) + 1 <= W:
-                    current_line += word + " "
-                else:
-                    a(current_line.rstrip())
-                    current_line = "    " + word + " "
-            if current_line.strip():
-                a(current_line.rstrip())
-        a("")
+    # ── ESTIMATE WARNINGS — uncalibrated subsystems + CLI fix commands ─
+    # Enumerate every uncalibrated subsystem from the calibration gate's
+    # provenance, with the exact CLI command to fix it. Falls back to the
+    # legacy generic warnings if no cal_gate is supplied.
+    estimate_block = _build_estimate_warnings_section(
+        car=car, track_name=track.track_name, cal_gate=cal_gate, width=W,
+    )
+    if estimate_block:
+        a(estimate_block)
 
     a("═" * W)
     return "\n".join(lines)
