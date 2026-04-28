@@ -38,7 +38,7 @@ from analyzer.setup_schema import apply_live_control_overrides, build_setup_sche
 from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
 from car_model.calibration_gate import CalibrationGate
-from output.report import to_public_output_payload
+from output.report import _build_recommendations_section, to_public_output_payload
 from car_model.setup_registry import public_output_value
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
@@ -301,6 +301,102 @@ def _apply_calibration_step_blocks(
     if 6 in blocked_steps:
         step6 = None
     return step1, step2, step3, step4, step5, step6
+
+
+def _build_calibration_recommendations(
+    car_canonical: str,
+    track_short: str,
+    *,
+    n_recs: int = 3,
+) -> list[dict]:
+    """Invoke car_model.calibration_recommender for the gate-blocked car/track.
+
+    Returns a list of structured recommendation dicts ready for
+    output.report._build_recommendations_section(). On any error (import
+    failure, missing setup_registry, runtime exception) logs explicitly and
+    returns an empty list — never raises into the pipeline.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        from car_model.calibration_recommender import (
+            _filter_points_by_track,
+            _format_value,
+            baseline_extremes,
+            enumerate_axes,
+            rank_candidates,
+        )
+        from car_model.auto_calibrate import (
+            _setup_key as _ac_setup_key,
+            load_calibration_points,
+        )
+        from car_model.cars import get_car
+    except Exception as exc:
+        log.warning("calibration_recommender unavailable: %s", exc)
+        return []
+
+    try:
+        car = get_car(car_canonical, apply_calibration=False)
+        axes = enumerate_axes(car, car_canonical)
+        if not axes:
+            log.info("calibration_recommender: no tunable axes for %s", car_canonical)
+            return []
+
+        all_points = load_calibration_points(car_canonical)
+        track_points = _filter_points_by_track(all_points, track_short)
+        # Unique-setup count uses auto_calibrate's canonical fingerprint so
+        # the "currently N" / "after N+1" maths matches what the gate counts.
+        current_unique = len({_ac_setup_key(p) for p in track_points})
+
+        def _format_values(cand: dict[str, float]) -> list[tuple[str, str]]:
+            return [
+                (axis.display_name, _format_value(axis, cand[axis.name]))
+                for axis in axes if axis.name in cand
+            ]
+
+        # Each candidate, run alone, adds at most 1 unique setup to the
+        # design matrix. The D-optimal score implicitly favours candidates
+        # whose fingerprint differs from existing points.
+        next_unique = current_unique + 1
+
+        if not track_points:
+            return [
+                {
+                    "rank": rank,
+                    "info_gain_nats": None,
+                    "values": _format_values(cand),
+                    "expected_unique_setups": next_unique,
+                    "current_unique_setups": current_unique,
+                    "is_bootstrap": True,
+                }
+                for rank, cand in enumerate(
+                    baseline_extremes(axes, n=n_recs), start=1
+                )
+            ]
+
+        scored, _diag = rank_candidates(
+            track_points, axes,
+            n_samples=200,
+            n_recommendations=n_recs,
+            seed=0,
+        )
+        return [
+            {
+                "rank": rank,
+                "info_gain_nats": float(gain),
+                "values": _format_values(cand),
+                "expected_unique_setups": next_unique,
+                "current_unique_setups": current_unique,
+                "is_bootstrap": False,
+            }
+            for rank, (gain, cand) in enumerate(scored, start=1)
+        ]
+    except Exception as exc:
+        log.warning(
+            "calibration_recommender failed for %s/%s: %s",
+            car_canonical, track_short, exc,
+        )
+        return []
 
 
 def _resolve_scenario_profile(args: argparse.Namespace) -> str:
@@ -1810,6 +1906,19 @@ def produce(
             print("=" * 63)
             print(cal_report.format_header())
             print()
+
+            # Auto-invoke the D-optimal recommender so the user sees concrete
+            # next-test setups to unblock the gate. Failures degrade gracefully
+            # (logged + skipped) — never crash the pipeline.
+            _recs = _build_calibration_recommendations(
+                car.canonical_name, _track_short, n_recs=3,
+            )
+            for line in _build_recommendations_section(
+                _recs,
+                car_display=getattr(car, "display_name", None) or car.name,
+                track_display=track.track_name,
+            ):
+                print(line)
 
     # ── Delta card output (--delta-card flag) ────────────────────────
     if getattr(args, "delta_card", False) and current_setup is not None:
