@@ -6,7 +6,7 @@
   <Layers>
     <Details>
       <String Id="Event" Value="GTP Setup Builder" Unit="" />
-      <String Id="Session" Value="Generated 2026-04-28 18:19 UTC" Unit="" />
+      <String Id="Session" Value="Generated 2026-04-28 18:38 UTC" Unit="" />
       <String Id="Venue" Value="Autodromo Internacional do Algarve — Grand Prix" Unit="" />
       <String Id="Vehicle Type" Value="Car" Unit="" />
       <Numeric Id="CarSetup_TiresAero_AeroSettings_RearWingAngle" Value="17.0" Unit="deg" />

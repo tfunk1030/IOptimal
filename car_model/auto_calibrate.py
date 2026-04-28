@@ -2936,29 +2936,59 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
         # regression outputs, so do NOT overwrite those.
         return applied
 
-    def _ok(m, min_coefs: int = 1) -> bool:
-        """Return True if model is usable (tier ∈ {high, medium, low} and has enough coefs).
+    # Deflection-model names whose predictions feed legality / travel-budget
+    # checks (heave bottoming, available-travel margin).  These must be
+    # tier ≥ medium because tier=low predictions can produce non-physical
+    # values (e.g. DeflMax≈0) that flag the setup INVALID.  Low-tier
+    # predictions are useful as scoring inputs but unreliable for
+    # safety-critical static-travel headroom calculations.
+    _SAFETY_CRITICAL_MODEL_NAMES = frozenset({
+        "heave_spring_defl_max",
+        "third_spring_defl_max",
+        "rear_spring_defl_max",
+        "heave_spring_defl_static",
+        "third_spring_defl_static",
+        "rear_spring_defl_static",
+        "front_shock_defl_static",
+        "rear_shock_defl_static",
+        "third_slider_defl_static",
+        "heave_slider_defl_static",
+        "front_ride_height",
+        "rear_ride_height",
+    })
 
-        Models at tier ``insufficient`` are rejected here.  Tier ``low`` is
-        accepted (Principle 4: solver uses ALL non-insufficient tiers) and
-        the caller name is recorded in ``_low_tier_applied`` for warning.
+    def _ok(m, min_coefs: int = 1) -> bool:
+        """Return True if model is usable.
+
+        Tier policy (Principle 4 — continuous learning, tiered confidence):
+          - ``insufficient``: rejected unconditionally.
+          - ``low``: rejected for safety-critical models (deflection /
+            travel-budget / static-RH); accepted for advisory models
+            (per-corner-phase, sensitivity scoring).
+          - ``high`` / ``medium``: accepted.
+
+        Safety-critical models that escape this gate would corrupt the
+        legality engine (e.g. predict DeflMax≈0 → "0 mm available travel"
+        → all setups marked INVALID).  We'd rather fall back to physics
+        defaults than ship an INVALID recommended setup.
         """
         if m is None or len(m.coefficients) < min_coefs:
             return False
         # Never apply a model that the fitting process itself flagged as uncalibrated.
-        # A model with R²=0.23 and is_calibrated=False would silently corrupt the car
-        # object (e.g., front RH becomes a flat constant if features don't map).
         if not getattr(m, "is_calibrated", True):
             return False
         if _is_overfit(m):
-            # Tier == "insufficient" (or legacy LOO/train > 10× when tier is
-            # missing).  Skip and record for the combined warning below.
             if m.name not in _skipped_overfit:
                 _skipped_overfit.append(m.name)
             return False
-        # Track "low" tier applications so the caller can warn about reduced
-        # confidence even though the model is being applied (Principle 4).
-        if getattr(m, "confidence_tier", "high") == "low":
+        tier = getattr(m, "confidence_tier", "high")
+        if tier == "low":
+            if m.name in _SAFETY_CRITICAL_MODEL_NAMES:
+                # Reject — would feed legality / travel-budget logic with
+                # unreliable predictions.  Use physics fallback instead.
+                if m.name not in _skipped_overfit:
+                    _skipped_overfit.append(f"{m.name} (low-tier, safety-critical)")
+                return False
             if m.name not in _low_tier_applied:
                 _low_tier_applied.append(m.name)
         return True

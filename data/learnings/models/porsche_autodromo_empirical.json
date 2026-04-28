@@ -3761,7 +3761,7 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-04-28T18:19:34.422684+00:00",
+  "last_updated": "2026-04-28T18:38:20.474015+00:00",
   "observation_count": 62,
   "most_sensitive_parameters": [],
   "corrections": {
@@ -3779,7 +3779,7 @@
     "calibrated_heave_var_r2": 0.48014269044591573,
     "lap_time_surrogate_regularized": 1.0,
     "lap_time_surrogate_sample_weight": 0.0,
-    "roll_gradient_measured_mean": 0.169341767101485,
+    "roll_gradient_measured_mean": 0.16934176710148502,
     "roll_gradient_measured_std": 0.03534600661861507,
     "roll_gradient_sample_count": 43,
     "m_eff_front_values": [
