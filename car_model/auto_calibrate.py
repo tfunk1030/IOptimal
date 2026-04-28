@@ -80,17 +80,29 @@ def _setup_key(pt) -> tuple:
     status, CLI, and protocol to avoid counting discrepancies.
 
     Parameters included:
-    - Springs: front heave, rear third, front torsion OD/index, rear spring
+    - Springs (GTP): front heave, rear third, front torsion OD/index, rear spring
+    - Springs (GT3, W7.1 audit BLOCKER #6): front/rear paired coil rate, bump
+      rubber gap front/rear, splitter height. For GTP cars these getattrs return
+      0.0 so the appended tuple slots are no-ops. For GT3 cars these are the
+      actual differentiators — without them, two GT3 IBTs varying only by front
+      coil rate would collapse to the same fingerprint and one would be silently
+      dropped at L2726/L2847/L3300/L3318/L3379/L3410.
     - Perches: front heave perch, rear third perch, rear spring perch
     - Geometry: front/rear pushrod, front/rear camber
     - ARB: front/rear size (string) and blade (integer) — affect roll stiffness
       and must be distinguished for accurate regression coverage
     - Load: fuel level
+    - Dampers: LF/LR LS/HS comp/rbd clicks — same suspension with different
+      damper clicks drives shock-velocity telemetry differences the regression
+      sees, so sessions must count as distinct setups for fitting purposes.
     """
     return (
         # Track — different tracks produce different ride heights and deflections
         # at the same setup due to aero load, surface, and speed profile differences.
         # Pooling cross-track data causes 27x-103x LOO/train overfitting ratios.
+        # TODO(W7.x audit COSMETIC #25): re-read once more GT3 tracks land — today
+        # all 3 GT3 IBTs are at Spielberg + Nürburgring so the track key carries
+        # most of the variance.
         str(getattr(pt, "track", "") or ""),
         round(pt.front_heave_setting, 1),
         round(pt.rear_third_setting, 1),
@@ -111,6 +123,36 @@ def _setup_key(pt) -> tuple:
         int(pt.front_arb_blade or 0),
         str(pt.rear_arb_size or ""),
         int(pt.rear_arb_blade or 0),
+        # ── GT3 paired-coil + bump-rubber + splitter (W7.1, audit BLOCKER #6) ──
+        # Append-to-tuple so legacy GTP keys stay equivalent (these slots are 0.0
+        # for GTP). W7.2 will add the corresponding fields to ``CalibrationPoint``
+        # itself; until then these getattrs return 0.0 and are no-ops. Once W7.2
+        # populates them from GT3 IBTs, this key correctly distinguishes setups
+        # that differ only by front/rear coil rate or bump rubber gap.
+        round(float(getattr(pt, "front_corner_spring_nmm", 0.0)), 1),
+        round(float(getattr(pt, "rear_corner_spring_nmm", 0.0)), 1),
+        round(float(getattr(pt, "front_bump_rubber_gap_mm", 0.0)), 1),
+        round(float(getattr(pt, "rear_bump_rubber_gap_mm", 0.0)), 1),
+        round(float(getattr(pt, "splitter_height_mm", 0.0)), 1),
+        # Damper clicks (Unit 2) — appended at END so existing fingerprints
+        # don't shift. getattr-with-default keeps legacy CalibrationPoint JSON
+        # (no damper fields) loadable; legacy points all collapse to
+        # (0,0,0,0,0,0,0,0). New differentiation only fires when fresh
+        # extract_point_from_ibt populates these fields.
+        round(getattr(pt, "lf_ls_comp", 0.0), 1),
+        round(getattr(pt, "lf_hs_comp", 0.0), 1),
+        round(getattr(pt, "lf_ls_rbd", 0.0), 1),
+        round(getattr(pt, "lf_hs_rbd", 0.0), 1),
+        round(getattr(pt, "lr_ls_comp", 0.0), 1),
+        round(getattr(pt, "lr_hs_comp", 0.0), 1),
+        round(getattr(pt, "lr_ls_rbd", 0.0), 1),
+        round(getattr(pt, "lr_hs_rbd", 0.0), 1),
+        # Lap number (Unit D1) — disambiguates per-lap CalibrationPoints from
+        # the same IBT. Setup features are identical across laps, so without
+        # this slot all per-lap rows collapse to one fingerprint and the
+        # regression sees N=1. Legacy single-point-per-IBT files have
+        # lap_number=0 and remain equivalent to the old fingerprint shape.
+        round(getattr(pt, "lap_number", 0), 0),
     )
 
 # Alias for backward compatibility
@@ -205,10 +247,92 @@ class CalibrationPoint:
     front_heave_rate_nmm: float = 0.0         # front heave spring physics rate
     rear_heave_rate_nmm: float = 0.0          # rear heave/third physics rate
 
+    # ── GT3 paired-coil + bump-rubber + splitter fields (W7.2) ───────────
+    # GT3 cars (BMW M4 GT3 EVO, Aston Martin Vantage GT3 EVO, Porsche 911
+    # GT3 R 992) use paired front coils + paired rear coils + bump rubber gap
+    # × 2 axles + splitter height. They have no heave/third springs and no
+    # front torsion bar (`heave_spring=None`, `front_torsion_c=0.0`), so the
+    # GTP fields above stay 0.0 for GT3 IBTs — the std-filter at L1293 drops
+    # them automatically. Field names align with `learner/observation.py`
+    # (W6.3) and `car_model/garage.py:GarageSetupState` (W7.1) so the same
+    # canonical names propagate observation → calibration → garage.
+    #
+    # NOTE: until varied-spring GT3 IBTs land (gated on W10.1 capture), these
+    # will be (near-)constant in the dataset and the regression will be
+    # intercept-only. The scaffolding below ensures no further code changes
+    # are needed once the data arrives.
+    front_corner_spring_nmm: float = 0.0
+    rear_corner_spring_nmm: float = 0.0
+    front_bump_rubber_gap_mm: float = 0.0
+    rear_bump_rubber_gap_mm: float = 0.0
+    splitter_height_mm: float = 0.0
+
+    # ── Provenance: synthesised vs real (Unit 9 — virtual data anchors) ──
+    # When True, this point was generated from car physics in
+    # ``car_model.calibration.virtual_anchors`` rather than ingested from
+    # an IBT session. Real-data dedupe / min-sessions / display logic
+    # filters on this flag so synthesised points never inflate the
+    # ``len(unique) >= _MIN_SESSIONS_FOR_FIT`` gate that decides whether
+    # fitting is attempted.
+    synthesized: bool = False
+
+    # ── Damper clicks (Unit 2 — left-side; right-side mirrors for per-corner cars) ──
+    # For per-corner cars (BMW, Cadillac, Ferrari) lf maps to LeftFront and lr
+    # to LeftRear. For heave-architecture cars (Porsche/Acura) lf maps to
+    # FrontHeave and lr to RearHeave/LeftRear depending on car. The reader
+    # exposes these as setup.front_* / setup.rear_* (already normalized).
+    # These are part of the setup fingerprint so click-sweep IBTs at otherwise
+    # identical suspension count as distinct calibration points.
+    lf_ls_comp: float = 0.0
+    lf_hs_comp: float = 0.0
+    lf_ls_rbd: float = 0.0
+    lf_hs_rbd: float = 0.0
+    lr_ls_comp: float = 0.0
+    lr_hs_comp: float = 0.0
+    lr_ls_rbd: float = 0.0
+    lr_hs_rbd: float = 0.0
+
+    # ── Per-corner per-phase telemetry (Unit D3) ──
+    # Flat dict of {f"corner_{idx}_{phase}_{metric}" -> float}; populated by
+    # `analyzer.segment.compute_corner_phase_metrics`. Empty dict if no corners
+    # were detected or extraction failed. Idx is 1-based and stable across
+    # IBTs of the same track (corners are sorted by lap distance).
+    # Phases: entry / mid / exit. Metrics: understeer_deg, body_slip_deg,
+    # lat_g, long_g, throttle_pos, brake_pos.
+    corner_phase_metrics: dict[str, float] = field(default_factory=dict)
+
+    # ── Per-lap covariates (Unit D1 — every lap is data) ─────────────
+    # ``lap_number == 0`` means "best-lap-aggregated" (legacy single-point
+    # per IBT); a non-zero value identifies a specific lap. lap_number is
+    # part of the setup fingerprint (see ``_setup_key``) so per-lap rows
+    # from the same IBT do NOT collapse to one regression sample. Per-lap
+    # variance correlates with fuel/tyre/driver factors and IS signal,
+    # not noise.
+    #
+    # Note: the existing ``lap_time_s`` field above is already populated
+    # from ``measured.lap_time_s``, which honours the ``lap`` argument
+    # to ``extract_measurements`` — when ``lap_idx`` is set, ``lap_time_s``
+    # is the per-lap time. ``lap_number`` disambiguates which lap.
+    lap_number: int = 0
+    fuel_remaining_l: float = 0.0
+    tyre_temp_avg_c: float = 0.0
+    driver_aggression_idx: float = 0.0
+
 
 @dataclass
 class FittedModel:
-    """Fitted regression coefficients for one calibration model."""
+    """Fitted regression coefficients for one calibration model.
+
+    Confidence tiers (computed by ``_compute_tier``):
+      - ``high``         R² ≥ 0.85, LOO/train < 2.0, n ≥ 3 × n_features
+      - ``medium``       R² ≥ 0.70, LOO/train < 5.0, n ≥ 2 × n_features
+      - ``low``          R² ≥ 0.30, LOO/train < 20.0 (still usable, with warning)
+      - ``insufficient`` anything below — solver must NOT use this model
+
+    The legacy ``is_calibrated`` boolean is kept for backward compatibility and
+    is derived as ``confidence_tier != "insufficient"``.  New code should read
+    ``confidence_tier`` directly.
+    """
     name: str
     feature_names: list[str]
     coefficients: list[float]   # [intercept, beta_1, beta_2, ...]
@@ -218,6 +342,7 @@ class FittedModel:
     n_samples: int = 0
     is_calibrated: bool = True
     q_squared: float | None = None  # LOO R² = 1 - (LOO_RMSE² × n) / SS_total
+    confidence_tier: str = "insufficient"  # "high"|"medium"|"low"|"insufficient"
 
 
 @dataclass
@@ -289,6 +414,14 @@ class CarCalibrationModels:
     aero_rear_compression_mm: float | None = None
     aero_n_sessions: int = 0
 
+    # Per-(corner, phase, metric) regressions (Unit D3)
+    # Keyed by the same "corner_{idx}_{phase}_{metric}" string used in
+    # CalibrationPoint.corner_phase_metrics. Each FittedModel uses the
+    # _UNIVERSAL_POOL features so downstream consumers (Unit P1) can predict
+    # phase-level effects from setup deltas. Only triplets present in ≥
+    # _MIN_SESSIONS_FOR_FIT distinct setups with non-trivial variance are fit.
+    corner_phase_models: dict[str, FittedModel] = field(default_factory=dict)
+
     # Calibration status per component
     status: dict[str, str] = field(default_factory=dict)
     # e.g., {"deflection_model": "calibrated (R²=0.93)", "spring_lookup": "partial (3/9 indices)"}
@@ -323,6 +456,23 @@ def _safe_track_slug(track: str) -> str:
     # Collapse consecutive underscores and strip leading/trailing ones
     slug = re.sub(r"_+", "_", slug).strip("_")
     return slug or "unknown"
+
+
+def _track_slug(track_name: str) -> str:
+    """Resolve a track display name to its canonical short slug.
+
+    Wraps :func:`car_model.registry.track_key` so callers in this module
+    (and tests) get the alias-aware short slug ("Red Bull Ring Grand Prix"
+    → ``"spielberg"``, "Sebring International Raceway" → ``"sebring"``)
+    rather than a raw underscore-substituted display name. Per audit
+    finding #11 (W7.2), the per-track partition writer must use this
+    rather than ``pt.track.replace(" ", "_")`` so unknown long display
+    names land on conventional short slugs.
+    """
+    if not track_name:
+        return ""
+    from car_model.registry import track_key as _track_key
+    return _track_key(track_name)
 
 
 def _models_path_for_track(car: str, track: str) -> Path:
@@ -379,7 +529,10 @@ def load_calibrated_models(car: str, track: str = "") -> CarCalibrationModels | 
         raw = json.load(f)
     # Legacy migrations: proxy-derived LLTD targets must not override curated
     # car definitions. Keep the status note for provenance, but clear the value.
-    if raw.get("status", {}).get("lltd_target", "").startswith("DISABLED"):
+    # Stub models.json files use a flat string for "status" (e.g. "uncalibrated"),
+    # so guard the dict access.
+    _status = raw.get("status")
+    if isinstance(_status, dict) and _status.get("lltd_target", "").startswith("DISABLED"):
         raw["measured_lltd_target"] = None
     return _dict_to_models(raw)
 
@@ -456,7 +609,15 @@ def _dict_to_models(d: dict) -> CarCalibrationModels:
     def _to_fitted(raw: dict | None) -> FittedModel | None:
         if raw is None:
             return None
-        return FittedModel(**{k: v for k, v in raw.items() if k in FittedModel.__dataclass_fields__})
+        kwargs = {k: v for k, v in raw.items() if k in FittedModel.__dataclass_fields__}
+        # Backward-compat: legacy models.json files saved before the tier
+        # system existed don't carry a ``confidence_tier`` key.  Derive one
+        # so the gate doesn't see every legacy model as "insufficient".
+        if "confidence_tier" not in kwargs:
+            kwargs["confidence_tier"] = tier_from_raw_model(raw) or (
+                "medium" if kwargs.get("is_calibrated", False) else "insufficient"
+            )
+        return FittedModel(**kwargs)
 
     def _to_lookup(raw: dict | None) -> SpringLookupTable | None:
         if raw is None:
@@ -483,8 +644,29 @@ def _dict_to_models(d: dict) -> CarCalibrationModels:
             kwargs[k] = _to_fitted(v)
         elif k in lookup_keys:
             kwargs[k] = _to_lookup(v)
+        elif k == "corner_phase_models":
+            # Dict of {triplet_key: FittedModel-as-dict}
+            if isinstance(v, dict):
+                kwargs[k] = {
+                    name: fitted
+                    for name, fitted in (
+                        (n, _to_fitted(raw)) for n, raw in v.items()
+                    )
+                    if fitted is not None
+                }
+            else:
+                kwargs[k] = {}
         elif k in CarCalibrationModels.__dataclass_fields__:
             kwargs[k] = v
+
+    # Stub models.json files store ``status`` as a flat string ("uncalibrated"),
+    # but rich-format calibrated models store it as a dict. The dataclass
+    # declares dict[str, str]; coerce flat strings to a dict here so downstream
+    # callsites (calibration_status, _build_subsystem_status, etc.) can safely
+    # call ``.get()`` without per-site isinstance guards.
+    _status = kwargs.get("status")
+    if isinstance(_status, str):
+        kwargs["status"] = {"_legacy_stub": _status}
 
     return CarCalibrationModels(**kwargs)
 
@@ -493,11 +675,23 @@ def _dict_to_models(d: dict) -> CarCalibrationModels:
 # IBT extraction
 # ─────────────────────────────────────────────────────────────────────────────
 
-def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> CalibrationPoint | None:
+def extract_point_from_ibt(
+    ibt_path: str | Path,
+    car_name: str = "",
+    lap_idx: int | None = None,
+) -> CalibrationPoint | None:
     """Extract a CalibrationPoint from an IBT file.
 
     Reads ALL data from the IBT session info YAML (setup + computed values)
     and from the telemetry channels (measured outcomes).
+
+    When ``lap_idx`` is None (default) the legacy best-lap-aggregated
+    behavior is preserved (back-compat for existing callers). When
+    ``lap_idx`` is an int, telemetry is extracted from that specific lap
+    so per-lap variance feeds the regression instead of being collapsed
+    to a per-IBT mean. The setup-fingerprint hash includes ``lap_number``
+    (set by the caller via ``pt.lap_number = lap_idx``) so the regression
+    sees N rows instead of 1.
     """
     from track_model.ibt_parser import IBTFile
     from analyzer.setup_reader import CurrentSetup
@@ -534,10 +728,14 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
     front_shock_p99 = 0.0
     rear_shock_p99 = 0.0
     lap_time = 0.0
+    fuel_remaining_l = 0.0
+    tyre_temp_avg_c = 0.0
+    driver_aggression_idx = 0.0
 
+    car_obj = _get_dummy_car(car_name)
     try:
         from analyzer.extract import extract_measurements
-        measured = extract_measurements(str(ibt_path), _get_dummy_car(car_name))
+        measured = extract_measurements(str(ibt_path), car_obj, lap=lap_idx)
         dynamic_front_rh = measured.mean_front_rh_at_speed_mm or 0.0
         dynamic_rear_rh = measured.mean_rear_rh_at_speed_mm or 0.0
         front_sigma = measured.front_rh_std_mm or 0.0
@@ -550,12 +748,51 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         if lltd_m is None:
             lltd_m = getattr(measured, "lltd_measured", None)
         lltd_m = lltd_m or 0.0
+
+        # Per-lap fuel level — captures fuel burn across the stint so the
+        # regression can disambiguate fuel-driven RH/deflection drift from
+        # setup-driven changes within a single IBT.
+        fuel_remaining_l = (
+            getattr(measured, "fuel_level_at_measurement_l", None)
+            or float(setup.fuel_l)
+            or 0.0
+        )
+        temps = [
+            t for t in (
+                getattr(measured, "front_carcass_mean_c", None),
+                getattr(measured, "rear_carcass_mean_c", None),
+            ) if t is not None
+        ]
+        tyre_temp_avg_c = float(sum(temps) / len(temps)) if temps else 0.0
+        # Front shock-vel p99 is an honest per-lap aggression indicator
+        # (kerb riding + braking bumps). The regression treats it as a
+        # covariate when explaining per-lap RH variance.
+        driver_aggression_idx = float(front_shock_p99)
     except Exception as e:
         # Telemetry extraction is optional for calibration; skip gracefully
         import logging
         logging.getLogger(__name__).debug("Telemetry extraction skipped: %s", e)
         roll_grad = 0.0
         lltd_m = 0.0
+
+    # Per-corner per-phase metrics (Unit D3). Best-effort: any failure (missing
+    # channels, no valid lap, bad corner detection) yields an empty dict so
+    # calibration still proceeds.
+    corner_phase_metrics: dict[str, float] = {}
+    try:
+        from analyzer.segment import compute_corner_phase_metrics
+        best = ibt.best_lap_indices()
+        if best is not None:
+            cp_start, cp_end = best
+            corner_phase_metrics = compute_corner_phase_metrics(
+                ibt, cp_start, cp_end, car=car_obj,
+            )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(
+            "Corner-phase metric extraction skipped: %s", e
+        )
+        corner_phase_metrics = {}
 
     import hashlib
     session_id = hashlib.sha256((str(ibt_path) + str(Path(ibt_path).stat().st_mtime)).encode()).hexdigest()[:16]
@@ -622,6 +859,23 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         # Historical field name retained for JSON compatibility.  Value is the
         # roll_distribution_proxy, not a true LLTD calibration target.
         lltd_measured=lltd_m,
+        # Damper clicks — setup_reader normalizes to front_* / rear_* (LF/LR
+        # for per-corner cars; FrontHeave/RearHeave for heave-architecture).
+        lf_ls_comp=float(setup.front_ls_comp),
+        lf_hs_comp=float(setup.front_hs_comp),
+        lf_ls_rbd=float(setup.front_ls_rbd),
+        lf_hs_rbd=float(setup.front_hs_rbd),
+        lr_ls_comp=float(setup.rear_ls_comp),
+        lr_hs_comp=float(setup.rear_hs_comp),
+        lr_ls_rbd=float(setup.rear_ls_rbd),
+        lr_hs_rbd=float(setup.rear_hs_rbd),
+        # Per-corner per-phase metrics (Unit D3). May be empty if no valid
+        # corners were detected; downstream regression fitting tolerates this.
+        corner_phase_metrics=corner_phase_metrics,
+        lap_number=int(lap_idx) if lap_idx is not None else 0,
+        fuel_remaining_l=float(fuel_remaining_l),
+        tyre_temp_avg_c=float(tyre_temp_avg_c),
+        driver_aggression_idx=float(driver_aggression_idx),
     )
 
 
@@ -727,8 +981,129 @@ def ingest_sto_json(car: str, sto_json_path: str | Path) -> dict[str, float]:
 # Regression fitting
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str) -> FittedModel:
-    """Fit y = X @ beta via least squares with LOO cross-validation."""
+def _compute_tier(
+    r2: float,
+    loo_rmse: float,
+    train_rmse: float,
+    n_samples: int,
+    n_features: int,
+    *,
+    noise_floor_rmse: float | None = None,
+) -> str:
+    """Classify a fitted model into one of four confidence tiers.
+
+    The tiers replace the binary ``is_calibrated`` flag.  Solver consumers
+    use ALL non-``insufficient`` tiers; the tier label tells them how much
+    confidence to attach to the prediction.
+
+    Tier definitions:
+      - ``high``         R² ≥ 0.85, LOO/train < 2.0, n ≥ 3 × n_features
+      - ``medium``       R² ≥ 0.70, LOO/train < 5.0, n ≥ 2 × n_features
+      - ``low``          R² ≥ 0.30, LOO/train < 20.0
+      - ``insufficient`` anything below — solver must NOT use this model
+
+    Train-RMSE floor (the metric-validity fix): when the regression has
+    enough degrees of freedom to drive train residuals below physical
+    measurement noise, the LOO/train ratio diverges to astronomical
+    values that say nothing about generalization (the model just fit
+    sub-noise micro-variation).  We floor ``train_rmse`` at the
+    measurement-noise estimate before computing the ratio:
+
+      - If ``noise_floor_rmse`` is provided (e.g. within-IBT std of the
+        same metric, populated by ``Observation.setup_noise_floor_*``)
+        we use that — that's the true measurement noise of the channel.
+      - Otherwise we fall back to ``loo_rmse * 0.1`` as a heuristic
+        floor: a model whose train RMSE is < 10% of its LOO RMSE is by
+        definition fitting numerical noise; further driving the ratio
+        up is meaningless.
+
+    NaN ``loo_rmse`` (n < 5, LOO skipped) is treated as ratio = 0 — the
+    n-bound checks in the higher tiers still gate small-sample cases.
+    """
+    # Hard floors: too few samples or terrible fit → insufficient.
+    if r2 < 0.30:
+        return "insufficient"
+    if n_samples < max(n_features, 1):
+        return "insufficient"
+
+    if not np.isnan(loo_rmse):
+        # Measurement-noise floor for train RMSE (see docstring).
+        if noise_floor_rmse is not None and noise_floor_rmse > 0:
+            train_floor = float(noise_floor_rmse)
+        else:
+            # Heuristic: floor at max(absolute_min, 10% of LOO).  10% of
+            # LOO is the boundary where ratio loses meaning — anything
+            # smaller is sub-noise overfit, not better generalization.
+            train_floor = max(1e-3, 0.10 * loo_rmse)
+        loo_ratio = loo_rmse / max(train_rmse, train_floor)
+    else:
+        # LOO not computed (n < 5).  Treat as best-case for ratio, but the
+        # n_samples checks below still keep us in "low" or "insufficient".
+        loo_ratio = 0.0
+
+    if r2 >= 0.85 and loo_ratio < 2.0 and n_samples >= 3 * max(n_features, 1):
+        return "high"
+    if r2 >= 0.70 and loo_ratio < 5.0 and n_samples >= 2 * max(n_features, 1):
+        return "medium"
+    if r2 >= 0.30 and loo_ratio < 20.0:
+        return "low"
+    return "insufficient"
+
+
+_TIER_NAMES = ("high", "medium", "low", "insufficient")
+
+
+def tier_from_raw_model(raw: dict | None) -> str | None:
+    """Extract / derive a ``confidence_tier`` from a raw fitted-model dict.
+
+    Returns the explicit ``confidence_tier`` field when present, otherwise
+    derives one from the saved (R², RMSE, LOO RMSE, n_samples, feature
+    names) using :func:`_compute_tier` so legacy on-disk models pre-dating
+    the tier system are still classified consistently.  Returns None when
+    *raw* is not a dict or has no usable fields.
+    """
+    if not isinstance(raw, dict):
+        return None
+    explicit = raw.get("confidence_tier")
+    if isinstance(explicit, str) and explicit.lower() in _TIER_NAMES:
+        return explicit.lower()
+    try:
+        loo = raw.get("loo_rmse")
+        loo_val = float(loo) if loo is not None else float("nan")
+    except (TypeError, ValueError):
+        loo_val = float("nan")
+    try:
+        feats = raw.get("feature_names") or []
+        return _compute_tier(
+            float(raw.get("r_squared", 0.0) or 0.0),
+            loo_val,
+            float(raw.get("rmse", 0.0) or 0.0),
+            int(raw.get("n_samples", 0) or 0),
+            len(feats) if isinstance(feats, list) else 0,
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _fit(
+    X: np.ndarray,
+    y: np.ndarray,
+    feature_names: list[str],
+    model_name: str,
+    *,
+    noise_floor_rmse: float | None = None,
+) -> FittedModel:
+    """Fit y = X @ beta via least squares with LOO cross-validation.
+
+    ``noise_floor_rmse`` (optional) is the measurement-noise floor for the
+    target channel — typically the within-IBT lap-to-lap std of the same
+    output, populated by ``Observation.setup_noise_floor_*``.  When the
+    regression is over-parameterised relative to the number of distinct
+    physical setups, train RMSE drives below this physical floor; the
+    LOO/train ratio then explodes for non-physical reasons.  Floor train
+    RMSE at ``noise_floor_rmse`` before computing the ratio so the tier
+    classification reflects real generalization, not numerical noise.
+    """
     ones = np.ones((X.shape[0], 1))
     X_aug = np.hstack([ones, X])
 
@@ -739,7 +1114,7 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
         import logging
         logging.getLogger(__name__).warning(
             "Model '%s': underdetermined (%d samples, %d parameters) — "
-            "marking as uncalibrated",
+            "marking as insufficient",
             model_name, X.shape[0], n_params,
         )
         return FittedModel(
@@ -751,6 +1126,7 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
             loo_rmse=float("inf"),
             n_samples=X.shape[0],
             is_calibrated=False,
+            confidence_tier="insufficient",
         )
 
     beta, *_ = np.linalg.lstsq(X_aug, y, rcond=None)
@@ -780,17 +1156,20 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
         # Q² = 1 - (LOO_RMSE² × n) / SS_total
         q_squared = float(1.0 - (loo_rmse ** 2 * n) / max(ss_tot, 1e-12))
 
-    # A model is only considered calibrated if its R² meets the gate threshold.
-    # Writing an under-threshold model to disk would let it appear "calibrated" on
-    # the next load before the gate re-checks. Guard here prevents that.
-    from car_model.calibration_gate import R2_THRESHOLD_BLOCK
-    is_cal = r2 >= R2_THRESHOLD_BLOCK
-
-    # Overfit warning: if LOO RMSE is more than 2x training RMSE, the model
-    # may not generalize. Also warn if sample-to-feature ratio is below 3:1.
+    # Classify into a confidence tier (high/medium/low/insufficient). This is
+    # the new truth for "is this model usable?". ``is_calibrated`` is derived
+    # from this tier for backward compatibility (Mission Principle 4).
+    # Replaces the legacy R2_THRESHOLD_BLOCK / MIN_R2_FLOOR binary gate.
     n_features = X.shape[1]
+    tier = _compute_tier(
+        r2, loo_rmse, rmse, n, n_features,
+        noise_floor_rmse=noise_floor_rmse,
+    )
+    is_cal = tier != "insufficient"
+
+    # Surface non-fatal warnings about generalisation quality.
     _overfit_warnings: list[str] = []
-    if loo_rmse > 2.0 * max(rmse, 1e-6) and n >= 5:
+    if not np.isnan(loo_rmse) and loo_rmse > 2.0 * max(rmse, 1e-6) and n >= 5:
         _overfit_warnings.append(
             f"LOO RMSE ({loo_rmse:.3f}) > 2x training RMSE ({rmse:.3f}) — "
             f"possible overfit"
@@ -800,14 +1179,15 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
             f"Only {n} samples for {n_features} features (recommend "
             f"{_min_sessions_for_features(n_features)}+)"
         )
-    # Defense-in-depth: if LOO is catastrophically worse than training (>10x),
-    # the model is memorizing noise and won't generalize. Mark uncalibrated
-    # even if R² looks great on the training set.
-    if is_cal and n >= 5 and not np.isnan(loo_rmse) and loo_rmse > 10.0 * max(rmse, 1e-6):
-        is_cal = False
+    if tier == "low":
         _overfit_warnings.append(
-            f"LOO/train ratio {loo_rmse / max(rmse, 1e-6):.0f}x — "
-            f"marking uncalibrated despite R²={r2:.3f}"
+            f"tier=low (R²={r2:.3f}, LOO/train={loo_rmse / max(rmse, 1e-6):.1f}x) — "
+            f"model is usable but predictions carry reduced confidence"
+        )
+    elif tier == "insufficient" and r2 >= 0.30 and n >= 5 and not np.isnan(loo_rmse):
+        _overfit_warnings.append(
+            f"tier=insufficient (R²={r2:.3f}, LOO/train={loo_rmse / max(rmse, 1e-6):.0f}x) — "
+            f"model REJECTED, solver will skip"
         )
     if _overfit_warnings:
         import logging
@@ -825,6 +1205,7 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
         n_samples=n,
         is_calibrated=is_cal,
         q_squared=q_squared,
+        confidence_tier=tier,
     )
 
 
@@ -1116,8 +1497,37 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
     models.n_unique_setups = len(unique)
 
-    if len(unique) < _MIN_SESSIONS_FOR_FIT:
-        models.status["deflection_model"] = f"insufficient data ({len(unique)}/{_MIN_SESSIONS_FOR_FIT} unique setups)"
+    # ── Unit 9: virtual-anchor-relaxed minimum gate ──
+    # Real data alone needs ``_MIN_SESSIONS_FOR_FIT`` (5) unique setups; with
+    # physics-anchored virtual rows we accept as few as 2 real points provided
+    # the virtual count brings total samples ≥ _MIN_SESSIONS_FOR_FIT. The
+    # generated anchors are cached and reused below so we avoid a duplicate
+    # generation pass when the gate passes.
+    _MIN_REAL_WITH_VIRTUAL_ANCHORS = 2
+    _virtual_anchors_by_target: dict[str, list] = {}
+    if _car_obj is not None and len(unique) >= _MIN_REAL_WITH_VIRTUAL_ANCHORS:
+        try:
+            from car_model.calibration.virtual_anchors import (
+                generate_virtual_anchors as _gen_anchors,
+                supported_targets as _supp_targets,
+            )
+            for _t in _supp_targets():
+                _a = _gen_anchors(_car_obj, _t)
+                if _a:
+                    _virtual_anchors_by_target[_t] = _a
+        except Exception as _e:
+            import logging
+            logging.getLogger(__name__).debug(
+                "virtual anchor generation skipped: %s", _e,
+            )
+
+    _virtual_count = sum(len(v) for v in _virtual_anchors_by_target.values())
+    _effective_n = len(unique) + _virtual_count
+    if len(unique) < _MIN_SESSIONS_FOR_FIT and _effective_n < _MIN_SESSIONS_FOR_FIT:
+        models.status["deflection_model"] = (
+            f"insufficient data ({len(unique)}/{_MIN_SESSIONS_FOR_FIT} unique "
+            f"setups; +{_virtual_count} virtual = {_effective_n})"
+        )
         return models
 
     rows = [asdict(pt) for pt in unique]
@@ -1133,7 +1543,13 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # with raw indices and others with pre-decoded physical rates. We detect
     # this by checking if the value exceeds the index range maximum. If it
     # does, the value is already in physical units and should NOT be converted.
-    if _car_obj is not None:
+    # GT3 cars have ``heave_spring=None`` and ``front_torsion_c=0.0``, so the
+    # index→N/mm decode path below is skipped entirely. The GT3 corner spring
+    # rates arrive in N/mm directly (no index conversion needed) and there are
+    # no heave/third/torsion fields to decode. W7.2 audit BLOCKER #10.
+    _arch = getattr(_car_obj, "suspension_arch", None) if _car_obj else None
+    _is_gt3_fit = _arch is not None and not _arch.has_heave_third
+    if _car_obj is not None and not _is_gt3_fit:
         _hsm = _car_obj.heave_spring
         _csm = _car_obj.corner_spring
 
@@ -1175,8 +1591,34 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                     row["rear_spring_setting"]
                 )
 
+    # ── Unit 9: append physics-anchored virtual rows ──
+    # Anchors live AFTER the real-data dedupe gate so they never inflate
+    # ``models.n_unique_setups``; they DO contribute as samples to the
+    # least-squares solve, anchoring intercept and asymptote when sparse.
+    _virtual_anchor_index: dict[str, list[int]] = {}
+    for _target, _anchors in _virtual_anchors_by_target.items():
+        _idx_start = len(rows)
+        for _pt in _anchors:
+            rows.append(asdict(_pt))
+        _virtual_anchor_index[_target] = list(range(_idx_start, len(rows)))
+
     def col(name: str) -> np.ndarray:
         return _col(rows, name)
+
+    # Mask used by std-checks and direct _fit() callsites that don't have a
+    # virtual_anchors target — drops ALL synthesised rows so y=0.0 sentinels
+    # for unrelated targets don't poison the regression.
+    if _virtual_anchor_index:
+        _real_only_mask = np.ones(len(rows), dtype=bool)
+        for _idxs in _virtual_anchor_index.values():
+            for _i in _idxs:
+                _real_only_mask[_i] = False
+    else:
+        _real_only_mask = None
+
+    def _real(arr: np.ndarray) -> np.ndarray:
+        """Slice an array down to real (non-synthesised) rows."""
+        return arr if _real_only_mask is None else arr[_real_only_mask]
 
     heave = col("front_heave_setting")
     od4 = col("front_torsion_od_mm") ** 4
@@ -1231,6 +1673,79 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     _UNIVERSAL_POOL.append((col("torsion_bar_turns"), "torsion_turns"))
     _UNIVERSAL_POOL.append((col("rear_torsion_bar_turns"), "rear_torsion_turns"))
 
+    # ── GT3 paired-coil + bump-rubber + splitter features (W7.2) ─────────
+    # For GTP IBTs these columns are all zeros (CalibrationPoint defaults),
+    # so the std-filter at L1293 drops them automatically — same dict, no
+    # GTP behavioural change. For GT3 IBTs the legacy GTP features above are
+    # zero and these are populated. Compliance physics: defl ∝ F/k, so
+    # `inv_front_corner_spring` (1/k) drives static RH and deflection just as
+    # `inv_front_heave` does for GTP. `splitter_height` is a downforce/balance
+    # axis; `bump_rubber_gap` affects platform stiffness in the bump zone.
+    _front_coil = col("front_corner_spring_nmm")
+    _rear_coil = col("rear_corner_spring_nmm")
+    _UNIVERSAL_POOL.append((_front_coil, "front_corner_spring"))
+    _UNIVERSAL_POOL.append((_rear_coil, "rear_corner_spring"))
+    _UNIVERSAL_POOL.append((1.0 / np.maximum(_front_coil, 1.0), "inv_front_corner_spring"))
+    _UNIVERSAL_POOL.append((1.0 / np.maximum(_rear_coil, 1.0), "inv_rear_corner_spring"))
+    _UNIVERSAL_POOL.append((col("front_bump_rubber_gap_mm"), "front_bump_rubber_gap"))
+    _UNIVERSAL_POOL.append((col("rear_bump_rubber_gap_mm"), "rear_bump_rubber_gap"))
+    _UNIVERSAL_POOL.append((col("splitter_height_mm"), "splitter_height"))
+    # Fuel × compliance for GT3 (mirror of GTP fuel_x_inv_third / inv_spring).
+    _UNIVERSAL_POOL.append(
+        (_fuel / np.maximum(_front_coil, 1.0), "fuel_x_inv_front_corner_spring")
+    )
+    _UNIVERSAL_POOL.append(
+        (_fuel / np.maximum(_rear_coil, 1.0), "fuel_x_inv_rear_corner_spring")
+    )
+
+    # ── D1 per-lap covariates (Unit D1 wiring) ─────────────────────────────
+    # When ingested via --all-laps, ``CalibrationPoint`` carries lap-specific
+    # values for fuel_remaining_l (vs fuel_l = stint start), tyre_temp_avg_c,
+    # and driver_aggression_idx (front_shock_vel_p99 as a proxy).  Per-lap
+    # variance in these IS signal — laps with hot tyres at low fuel have
+    # different RH/deflection than the same setup with cold tyres at full
+    # fuel. Add linear + interaction features so the regression can use them.
+    #
+    # **Bimodal-data guard:** legacy rows ingested before D1 have
+    # tyre_temp_avg_c == 0.0 (default).  If left as zero, the regression
+    # mis-interprets "tyre_temp=0" as a real cold-tyre datapoint and
+    # learns a spurious slope between cold/warm rows that's actually
+    # legacy-vs-per-lap data noise.  Replace zeros with the median of
+    # the non-zero values so legacy rows contribute neutrally on the
+    # tyre_temp / aggression axes (the rest of their features still vary,
+    # so they contribute to OTHER coefficients honestly).
+    _tyre_t_raw = col("tyre_temp_avg_c")
+    _tyre_t_warm = _tyre_t_raw[_tyre_t_raw > 10.0]
+    _tyre_t_median = float(np.median(_tyre_t_warm)) if _tyre_t_warm.size > 0 else 60.0
+    _tyre_t = np.where(_tyre_t_raw > 10.0, _tyre_t_raw, _tyre_t_median)
+    _aggr_raw = col("driver_aggression_idx")
+    _aggr_nonzero = _aggr_raw[_aggr_raw > 1e-3]
+    _aggr_median = float(np.median(_aggr_nonzero)) if _aggr_nonzero.size > 0 else 0.0
+    _aggr = np.where(_aggr_raw > 1e-3, _aggr_raw, _aggr_median)
+    _UNIVERSAL_POOL.append((_tyre_t, "tyre_temp"))
+    _UNIVERSAL_POOL.append((_aggr, "driver_aggression"))
+    # Tyre temp × spring compliance: hotter tyres = lower vertical stiffness
+    # (smaller tyre k); shifts effective RH at speed proportional to 1/k.
+    _UNIVERSAL_POOL.append((_tyre_t / np.maximum(_rear_spring, 1.0),
+                            "tyre_temp_x_inv_spring"))
+    _UNIVERSAL_POOL.append((_tyre_t / np.maximum(_rear_third, 1.0),
+                            "tyre_temp_x_inv_third"))
+    _UNIVERSAL_POOL.append((_tyre_t / np.maximum(_front_coil, 1.0),
+                            "tyre_temp_x_inv_front_corner_spring"))
+    # Driver aggression × damper-domain proxy (front_shock_vel p99): high
+    # aggression on soft springs = more bottoming, on stiff = more grip
+    # loss. Captures driver-style × setup interaction.
+    _UNIVERSAL_POOL.append((_aggr / np.maximum(_rear_spring, 1.0),
+                            "aggression_x_inv_spring"))
+    _UNIVERSAL_POOL.append((_aggr / np.maximum(_rear_third, 1.0),
+                            "aggression_x_inv_third"))
+    # Per-lap fuel from D1 (separate from stint-start fuel_l). When the
+    # legacy row has fuel_remaining_l=0 the std-filter drops this; on
+    # per-lap rows the linear and squared terms capture fuel-burn drift.
+    _fuel_rem = col("fuel_remaining_l")
+    _UNIVERSAL_POOL.append((_fuel_rem, "fuel_remaining"))
+    _UNIVERSAL_POOL.append((_fuel_rem * _fuel_rem, "fuel_remaining_sq"))
+
     # ── Physics-aware per-output feature pools ──
     # Each garage output is driven by features from a specific axle. The
     # universal forward selection (LOO RMSE-driven, physics-blind) was picking
@@ -1246,6 +1761,12 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         "torsion_od", "inv_od4",
         "front_camber",
         "torsion_turns",       # front torsion bar preload (Ferrari/Acura; 0→excluded on BMW/Porsche)
+        # GT3 paired-coil (W7.2) — zero on GTP IBTs, populated on GT3 IBTs.
+        "front_corner_spring", "inv_front_corner_spring",
+        "front_bump_rubber_gap",
+        "fuel_x_inv_front_corner_spring",
+        # D1 per-lap covariates: tyre warmup affects front-axle tyre rate.
+        "tyre_temp_x_inv_front_corner_spring",
     }
     _REAR_AXIS_NAMES = {
         "rear_pushrod", "rear_pushrod_sq",
@@ -1255,8 +1776,22 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         "rear_camber",
         "fuel_x_inv_spring", "fuel_x_inv_third",
         "rear_torsion_turns",  # rear torsion bar preload (Ferrari/Acura; 0→excluded on BMW/Porsche)
+        # GT3 paired-coil (W7.2) — zero on GTP IBTs, populated on GT3 IBTs.
+        # Splitter height affects rear via the aero balance shift it induces.
+        "rear_corner_spring", "inv_rear_corner_spring",
+        "rear_bump_rubber_gap",
+        "splitter_height",
+        "fuel_x_inv_rear_corner_spring",
+        # D1 per-lap covariates: rear axle carries fuel weight directly.
+        "tyre_temp_x_inv_spring", "tyre_temp_x_inv_third",
+        "aggression_x_inv_spring", "aggression_x_inv_third",
     }
-    _GLOBAL_NAMES = {"fuel", "wing"}
+    _GLOBAL_NAMES = {
+        "fuel", "wing",
+        # D1 per-lap covariates that affect both axles symmetrically.
+        "tyre_temp", "driver_aggression",
+        "fuel_remaining", "fuel_remaining_sq",
+    }
 
     def _filter_pool(allowed_names: set[str]) -> list[tuple]:
         return [(arr, name) for (arr, name) in _UNIVERSAL_POOL if name in allowed_names]
@@ -1264,29 +1799,145 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     _FRONT_POOL = _filter_pool(_FRONT_AXIS_NAMES | _GLOBAL_NAMES)
     _REAR_POOL = _filter_pool(_REAR_AXIS_NAMES | _GLOBAL_NAMES)
 
-    def _pool_to_matrix(pool=None):
-        """Build X matrix and names from feature pool, excluding constants."""
+    def _pool_to_matrix(pool=None, row_mask: np.ndarray | None = None):
+        """Build X matrix and names from feature pool, excluding constants.
+
+        ``row_mask`` (Unit 9): boolean array selecting which rows to include
+        in the X arrays. Used to drop synthesised virtual anchors when their
+        inclusion makes the LOO fit worse than the real-only fit.
+        """
         if pool is None:
             pool = _UNIVERSAL_POOL
         X_cols, names = [], []
         for arr, name in pool:
-            if len(np.unique(arr)) >= 2 and np.std(arr) > 1e-6:
-                X_cols.append(arr)
+            arr_view = arr if row_mask is None else arr[row_mask]
+            if len(np.unique(arr_view)) >= 2 and np.std(arr_view) > 1e-6:
+                X_cols.append(arr_view)
                 names.append(name)
         return X_cols, names
 
+    def _virtual_target_for(col_name: str) -> str | None:
+        """Map a y-column name → the virtual_anchors target key, or None."""
+        col_to_target = {
+            "static_front_rh_mm": "front_static_rh",
+            "static_rear_rh_mm": "rear_static_rh",
+            "front_shock_defl_static_mm": "front_shock_defl_static",
+            "rear_shock_defl_static_mm": "rear_shock_defl_static",
+            "rear_spring_defl_static_mm": "rear_spring_defl_static",
+            "third_spring_defl_static_mm": "third_spring_defl_static",
+            "heave_spring_defl_static_mm": "heave_spring_defl_static",
+        }
+        return col_to_target.get(col_name)
+
+    def _row_mask_for_target(target_col_name: str, include_virtual: bool) -> np.ndarray | None:
+        """Return a boolean row mask. None means "all rows".
+
+        When ``include_virtual`` is False, virtual rows for non-matching
+        targets are still included if they wrote to a different output
+        column — but rows whose synthesised target is the *current* target
+        get dropped. This keeps the augmentation per-target rather than
+        global so different regression outputs can independently opt in/out.
+        """
+        if not _virtual_anchor_index:
+            return None
+        n_rows = len(rows)
+        mask = np.ones(n_rows, dtype=bool)
+        target_key = _virtual_target_for(target_col_name)
+        if target_key is None:
+            # No virtual anchors registered for this output; drop ALL synth rows
+            # so virtual data for unrelated targets doesn't bleed into y=0.0.
+            for idxs in _virtual_anchor_index.values():
+                for i in idxs:
+                    mask[i] = False
+            return mask
+        # Drop virtual rows that target a DIFFERENT output (their y for the
+        # current target is 0.0 from the dataclass default — would poison y).
+        for tgt_key, idxs in _virtual_anchor_index.items():
+            if tgt_key == target_key:
+                if not include_virtual:
+                    for i in idxs:
+                        mask[i] = False
+            else:
+                for i in idxs:
+                    mask[i] = False
+        return mask
+
     def _fit_one_pool(target_col_name, model_name, pool, min_std=0.5,
-                      seed_features=None):
-        """Internal: fit a single pool. Returns FittedModel or None."""
-        y = col(target_col_name)
+                      seed_features=None, include_virtual: bool = True):
+        """Internal: fit a single pool. Returns FittedModel or None.
+
+        ``include_virtual`` (Unit 9): when False, virtual anchors for THIS
+        target are excluded from the X/y matrices. Used by _fit_from_pool
+        to compare augmented-vs-real-only LOO RMSE.
+        """
+        row_mask = _row_mask_for_target(target_col_name, include_virtual)
+        y_full = col(target_col_name)
+        y = y_full if row_mask is None else y_full[row_mask]
         if np.std(y) < min_std:
             return None
-        X_cols, names = _pool_to_matrix(pool)
+        X_cols, names = _pool_to_matrix(pool, row_mask=row_mask)
         if not X_cols:
             return None
         X = np.column_stack(X_cols)
         X, names = _select_features(X, y, names, seed_features=seed_features)
         return _fit(X, y, names, model_name)
+
+    def _fit_with_anchor_check(target_col_name, model_name, pool, min_std=0.5,
+                                seed_features=None):
+        """Fit twice (with and without virtual anchors); return the better one.
+
+        This is the LOO-guarded augmentation. Virtual anchors only ship if
+        they don't make the model demonstrably worse on real-data
+        leave-one-out.
+
+        Selection rules (in priority order):
+          1. If the augmented fit is force-uncalibrated by ``_fit``'s
+             LOO/train > 10x guard but the real-only fit is calibrated,
+             return the real-only fit.
+          2. Otherwise compare LOO RMSE on the model's own row set; the
+             augmented fit wins when its LOO is lower OR within 5% of
+             real-only LOO (small ties favour anchored intercept).
+        """
+        target_key = _virtual_target_for(target_col_name)
+        # No virtual anchors for this target — single fit, single result.
+        if target_key is None or target_key not in _virtual_anchor_index:
+            return _fit_one_pool(target_col_name, model_name, pool, min_std,
+                                  seed_features=seed_features,
+                                  include_virtual=False)
+        augmented = _fit_one_pool(target_col_name, model_name, pool, min_std,
+                                   seed_features=seed_features,
+                                   include_virtual=True)
+        real_only = _fit_one_pool(target_col_name, model_name + "_real",
+                                   pool, min_std,
+                                   seed_features=seed_features,
+                                   include_virtual=False)
+        if augmented is None:
+            return real_only
+        if real_only is None:
+            return augmented
+        import logging
+        _log = logging.getLogger(__name__)
+        # Rule 1: if anchor-augmented fit is force-uncalibrated but real
+        # alone is calibrated, prefer real-only.
+        if real_only.is_calibrated and not augmented.is_calibrated:
+            _log.info(
+                "Virtual anchors disabled for '%s': augmented LOO/train "
+                "ratio rejected, real-only fit accepted",
+                model_name,
+            )
+            return real_only
+        a_loo = augmented.loo_rmse
+        r_loo = real_only.loo_rmse
+        if (not np.isnan(a_loo) and not np.isnan(r_loo)
+                and r_loo < a_loo * 0.95):
+            _log.info(
+                "Virtual anchors disabled for '%s': real-only LOO=%.3f "
+                "beats augmented LOO=%.3f",
+                model_name, r_loo, a_loo,
+            )
+            real_only.name = model_name
+            return real_only
+        return augmented
 
     def _fit_from_pool(target_col_name, model_name, pool=None, min_std=0.5,
                        fallback_pool=None, seed_features=None):
@@ -1300,38 +1951,56 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         serving as effective regularization (e.g. Porsche, Acura small datasets
         with multicollinear physics terms).
         """
-        primary = _fit_one_pool(target_col_name, model_name, pool, min_std,
-                               seed_features=seed_features)
-        if fallback_pool is None or primary is None:
-            return primary
-        fallback = _fit_one_pool(target_col_name, model_name + "_fallback",
-                                 fallback_pool, min_std, seed_features=seed_features)
-        if fallback is None:
-            return primary
-        # Compare LOO RMSE — the honest generalization metric
-        p_loo = primary.loo_rmse
-        f_loo = fallback.loo_rmse
-        if not np.isnan(p_loo) and not np.isnan(f_loo) and f_loo < p_loo:
-            import logging
-            logging.getLogger(__name__).info(
-                "Pool fallback for '%s': universal pool LOO=%.3f beats "
-                "physics-aware LOO=%.3f",
-                model_name, f_loo, p_loo,
-            )
-            # Fallback wins — restore the original model name
-            fallback.name = model_name
-            return fallback
-        return primary
+        # Unit 9 inner: _fit_with_anchor_check wraps _fit_one_pool with
+        # virtual-data-anchor augmentation (selects augmented vs real-only
+        # by LOO comparison; falls back to real-only when augmented fails
+        # the LOO/train guard).
+        primary = _fit_with_anchor_check(target_col_name, model_name, pool,
+                                          min_std, seed_features=seed_features)
+        free_fit = primary
+        if fallback_pool is not None and primary is not None:
+            fallback = _fit_with_anchor_check(target_col_name,
+                                               model_name + "_fallback",
+                                               fallback_pool, min_std,
+                                               seed_features=seed_features)
+            if fallback is not None:
+                # Compare LOO RMSE — the honest generalization metric
+                p_loo = primary.loo_rmse
+                f_loo = fallback.loo_rmse
+                if not np.isnan(p_loo) and not np.isnan(f_loo) and f_loo < p_loo:
+                    import logging
+                    logging.getLogger(__name__).info(
+                        "Pool fallback for '%s': universal pool LOO=%.3f beats "
+                        "physics-aware LOO=%.3f",
+                        model_name, f_loo, p_loo,
+                    )
+                    # Fallback wins — restore the original model name
+                    fallback.name = model_name
+                    free_fit = fallback
+                else:
+                    free_fit = primary
+
+        # Unit 6 outer: compliance-anchored physics fit. 2-parameter α/β
+        # against F_aero / k_total — converges with ~5 setups vs ~21 for
+        # the free fit. Keep whichever has lower LOO RMSE.
+        from car_model.calibration import maybe_replace_with_anchored
+        return maybe_replace_with_anchored(
+            free_fit, rows, _car_obj, target_col_name,
+        )
 
     # ─── 1. Front Ride Height ───
-    _front_rh_std = np.std(col("static_front_rh_mm"))
+    # Use real-only std for the gate so virtual-anchor y=0 sentinels for
+    # OTHER targets (rear RH, deflections) don't artificially inflate the
+    # std and trigger an unwanted fit. The actual fit (_fit_from_pool) will
+    # include the front_static_rh virtual rows via _row_mask_for_target.
+    _front_rh_std = np.std(_real(col("static_front_rh_mm")))
     if _front_rh_std > 0.5:
         models.front_ride_height = _fit_from_pool(
             "static_front_rh_mm", "front_ride_height",
             pool=_FRONT_POOL, fallback_pool=_UNIVERSAL_POOL)
     elif len(unique) >= _MIN_SESSIONS_FOR_FIT and _front_rh_std > 0:
         # Near-constant front RH: create a constant model (intercept-only)
-        _mean_frh = float(np.mean(col("static_front_rh_mm")))
+        _mean_frh = float(np.mean(_real(col("static_front_rh_mm"))))
         models.front_ride_height = FittedModel(
             name="front_ride_height",
             feature_names=[],
@@ -1349,7 +2018,7 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # selection can drop them due to multicollinearity with other features,
     # causing 3mm+ errors at extreme spring settings.
     _REAR_RH_SEEDS = ["inv_rear_third", "inv_rear_spring", "rear_pushrod"]
-    if np.std(col("static_rear_rh_mm")) > 0.5:
+    if np.std(_real(col("static_rear_rh_mm"))) > 0.5:
         models.rear_ride_height = _fit_from_pool(
             "static_rear_rh_mm", "rear_ride_height",
             pool=_REAR_POOL, fallback_pool=_UNIVERSAL_POOL,
@@ -1357,15 +2026,16 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 
     # ─── 3. Torsion Bar Turns ───
     _tb_turns = col("torsion_bar_turns")
-    _tb_valid = _tb_turns[_tb_turns > 0]
-    if len(_tb_valid) > 0 and np.std(_tb_turns) > 0.005:
+    _tb_turns_real = _real(_tb_turns)
+    _tb_valid = _tb_turns_real[_tb_turns_real > 0]
+    if len(_tb_valid) > 0 and np.std(_tb_turns_real) > 0.005:
         X = np.column_stack([
-            1.0 / np.maximum(heave, 1.0),
-            col("front_heave_perch_mm"),
-            col("front_torsion_od_mm"),
+            _real(1.0 / np.maximum(heave, 1.0)),
+            _real(col("front_heave_perch_mm")),
+            _real(col("front_torsion_od_mm")),
         ])
         models.torsion_bar_turns = _fit(
-            X, col("torsion_bar_turns"),
+            X, _real(col("torsion_bar_turns")),
             ["1/front_heave", "front_heave_perch", "torsion_od"],
             "torsion_bar_turns",
         )
@@ -1384,10 +2054,13 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         )
 
     # ─── 4. Torsion Bar Deflection ───
-    if np.std(col("torsion_bar_defl_mm")) > 0.5:
-        # Fit the load form (defl * OD^4) for DeflectionModel compatibility
-        y_load = col("torsion_bar_defl_mm") * od4
-        X_load = np.column_stack([heave, col("front_heave_perch_mm")])
+    if np.std(_real(col("torsion_bar_defl_mm"))) > 0.5:
+        # Fit the load form (defl * OD^4) for DeflectionModel compatibility.
+        # Real-only (no virtual anchors) — torsion_bar_defl_mm is not a
+        # virtual_anchors target, so synth rows would have y=0 and poison
+        # the load-form fit.
+        y_load = _real(col("torsion_bar_defl_mm") * od4)
+        X_load = np.column_stack([_real(heave), _real(col("front_heave_perch_mm"))])
         models.torsion_bar_defl = _fit(
             X_load, y_load,
             ["front_heave", "front_heave_perch"],
@@ -1455,10 +2128,12 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # ─── 14. Third Slider Static ───
     # Fit BOTH the chained model (from third_spring_defl) and a direct model
     # (from setup features). The direct model bypasses chained error amplification.
-    if np.std(col("third_slider_defl_static_mm")) > 0.5:
-        X = np.column_stack([col("third_spring_defl_static_mm")])
+    # Real-only for the chained fit — third_slider y is not a virtual target,
+    # so synth rows would have y=0 and poison the slope.
+    if np.std(_real(col("third_slider_defl_static_mm"))) > 0.5:
+        X = np.column_stack([_real(col("third_spring_defl_static_mm"))])
         models.third_slider_defl_static = _fit(
-            X, col("third_slider_defl_static_mm"),
+            X, _real(col("third_slider_defl_static_mm")),
             ["third_spring_defl"],
             "third_slider_defl_static",
         )
@@ -1768,6 +2443,68 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
                 f"constant ({len(m_effs_rear)} points, mean {models.m_eff_rear_kg:.0f} kg)"
             )
 
+    # ─── 15c. Per-corner per-phase regressions (Unit D3) ────────────────────
+    # For every (corner_id, phase, metric) triplet observed in ≥
+    # _MIN_SESSIONS_FOR_FIT distinct setups with non-trivial variance, fit a
+    # regression using _UNIVERSAL_POOL features. Unit P1 (sibling) consumes
+    # these to produce per-corner predicted impacts of setup deltas.
+    # Implements Principle 6 (corner-by-corner causal): aggregate metrics alone
+    # cannot tell the user *which* corners a change will hurt or help.
+    try:
+        # Collect every key seen across all unique calibration points.
+        triplet_to_values: dict[str, list[float]] = {}
+        triplet_to_indices: dict[str, list[int]] = {}
+        for idx, pt in enumerate(unique):
+            cpm = getattr(pt, "corner_phase_metrics", None) or {}
+            for key, val in cpm.items():
+                if not isinstance(val, (int, float)):
+                    continue
+                if not np.isfinite(val):
+                    continue
+                triplet_to_values.setdefault(key, []).append(float(val))
+                triplet_to_indices.setdefault(key, []).append(idx)
+
+        # Need enough coverage AND variance to fit. Same gates as the other
+        # regressions (3:1 sample-to-feature, std > epsilon).
+        # Minimum: every unique setup must report this triplet so the X matrix
+        # rows align — requires len(values) == len(unique).
+        # Variance gate: std > 0.01 in metric units (deg / g / fraction).
+        n_fit_triplets = 0
+        for key, values in triplet_to_values.items():
+            if len(values) != len(unique):
+                continue
+            if len(values) < _MIN_SESSIONS_FOR_FIT:
+                continue
+            arr = np.asarray(values, dtype=float)
+            if np.std(arr) < 0.01:
+                continue
+            X_cols, names = _pool_to_matrix(_UNIVERSAL_POOL)
+            if not X_cols:
+                continue
+            X = np.column_stack(X_cols)
+            X, names = _select_features(X, arr, names)
+            fitted = _fit(X, arr, names, key)
+            # Keep only models that pass the calibration gate; otherwise the
+            # fit will mislead Unit P1 with high-R²-but-LOO-collapsed terms.
+            if fitted.is_calibrated:
+                models.corner_phase_models[key] = fitted
+                n_fit_triplets += 1
+
+        if n_fit_triplets > 0:
+            models.status["corner_phase_models"] = (
+                f"calibrated ({n_fit_triplets} (corner, phase, metric) triplets fit)"
+            )
+        elif triplet_to_values:
+            models.status["corner_phase_models"] = (
+                f"insufficient data ({len(triplet_to_values)} triplets observed, "
+                f"none passed gate)"
+            )
+    except Exception as _cpm_err:
+        import logging
+        logging.getLogger(__name__).debug(
+            "Corner-phase model fitting skipped: %s", _cpm_err
+        )
+
     # ─── 16. Measured LLTD target ───
     # IBT 'lltd_measured' is actually roll_distribution_proxy — a geometric
     # ratio (t_f^3/(t_f^3+t_r^3)) insensitive to spring stiffness. NOT usable
@@ -1806,22 +2543,31 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 # Build GarageOutputModel from calibration regressions
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Threshold matches the defense-in-depth guard in _fit(): if a model's
-# leave-one-out RMSE is more than 10x its training RMSE it has memorized
-# noise and won't generalize. Skip applying such models to the car.
+# Legacy threshold preserved for status messages.  The tier system has fully
+# replaced this as the gate: ``confidence_tier == "insufficient"`` is the
+# canonical signal for "do not apply this model".
 _OVERFIT_LOO_TRAIN_RATIO = 10.0
 
 
 def _is_overfit(model) -> bool:
-    """Return True if a fitted model fails the LOO/train generalization check.
+    """Return True if a fitted model is too unreliable to apply.
 
-    Mirrors the defense-in-depth guard in `_fit()`. Used by `_mk_direct()` and
-    `apply_to_car()` to refuse using catastrophically overfit models for
-    garage prediction or .sto serialization, even when the model has high
-    training R².
+    Under the tier system this delegates to ``confidence_tier == "insufficient"``
+    so the legacy LOO/train > 10× heuristic and the new tier rules cannot
+    drift apart.  Models at tier ``low`` (LOO/train 10×–20×) are NOT flagged
+    as overfit — the solver applies them with a warning, in line with
+    Principle 4 (continuous learning, tiered confidence).
+
+    Used by ``_mk_direct()`` and ``apply_to_car()`` to refuse catastrophically
+    overfit models for garage prediction or .sto serialization.
     """
     if model is None:
         return False
+    tier = getattr(model, "confidence_tier", None)
+    if tier is not None:
+        return tier == "insufficient"
+    # Backward-compat path for legacy FittedModel dicts loaded before tiers
+    # existed: fall through to the original LOO/train threshold.
     rmse = getattr(model, "rmse", None)
     loo_rmse = getattr(model, "loo_rmse", None)
     n = getattr(model, "n_samples", 0)
@@ -1832,18 +2578,34 @@ def _is_overfit(model) -> bool:
     return loo_rmse > _OVERFIT_LOO_TRAIN_RATIO * max(rmse, 1e-6)
 
 
+_SAFETY_CRITICAL_DIRECT_MODELS = frozenset({
+    "heave_spring_defl_max",
+    "third_spring_defl_max",
+    "rear_spring_defl_max",
+    "heave_spring_defl_static",
+    "third_spring_defl_static",
+    "rear_spring_defl_static",
+    "front_shock_defl_static",
+    "rear_shock_defl_static",
+    "third_slider_defl_static",
+    "heave_slider_defl_static",
+    "front_ride_height",
+    "rear_ride_height",
+})
+
+
 def _mk_direct(fitted_model) -> "DirectRegression | None":
     """Build a DirectRegression from a fitted model.
 
-    Accepts any model with R² > 0.30 (reasonable fit). The strict R² >= 0.85
-    calibration gate is for blocking SOLVER steps, not garage predictions.
-    A fitted model with R²=0.60 still gives better garage predictions than
-    the fallback coefficient path which may have stale/mismatched coefficients.
+    Tier policy (matches apply_to_car safety-critical gate):
+      - ``insufficient``: rejected (R²<0.30, overfit, or n<features).
+      - ``low``: rejected for safety-critical model names (deflection /
+        travel-budget / static-RH).  These feed legality + heave travel
+        budget calculations, where unreliable predictions produce
+        non-physical outputs (e.g. DeflMax≈0 → INVALID setup).
+      - ``low`` non-safety-critical, ``medium``, ``high``: accepted.
 
-    Returns None when the model is absent, has no coefficients, has R² so low
-    it would produce worse predictions than a constant, OR is flagged as
-    overfit by the LOO/train ratio guard (defense-in-depth: high training R²
-    on memorized data still fails generalization).
+    Returns None when rejected.
     """
     if fitted_model is None or not fitted_model.coefficients:
         return None
@@ -1857,13 +2619,52 @@ def _mk_direct(fitted_model) -> "DirectRegression | None":
     if _is_overfit(fitted_model):
         import logging
         ratio = fitted_model.loo_rmse / max(fitted_model.rmse, 1e-6)
+        tier = getattr(fitted_model, "confidence_tier", "n/a")
         logging.getLogger(__name__).warning(
-            "DirectRegression skipped for '%s' — LOO/train ratio %.0fx exceeds %.0fx threshold",
-            fitted_model.name, ratio, _OVERFIT_LOO_TRAIN_RATIO,
+            "DirectRegression skipped for '%s' — tier=%s, LOO/train ratio %.0fx",
+            fitted_model.name, tier, ratio,
         )
         return None
+    # Safety-critical gate (a): low-tier deflection / RH models can produce
+    # non-physical predictions at default lap-conditions (e.g. DeflMax≈0)
+    # that corrupt the legality engine.
+    tier = getattr(fitted_model, "confidence_tier", "high")
+    if tier == "low" and fitted_model.name in _SAFETY_CRITICAL_DIRECT_MODELS:
+        import logging
+        logging.getLogger(__name__).warning(
+            "DirectRegression skipped for '%s' — tier=low and "
+            "safety-critical (would corrupt legality / travel-budget). "
+            "Garage predictions for this output fall back to physics defaults.",
+            fitted_model.name,
+        )
+        return None
+    # Safety-critical gate (b): physical-range sanity check on the
+    # intercept.  A deflection_max regression intercept of -119 mm or
+    # 0 mm is non-physical regardless of how good R²/LOO look (per-track
+    # fits with limited data can produce high-confidence-but-wrong
+    # coefficients).  Spring max-deflection intercepts must be in a
+    # plausible range (50–250 mm for heave/third/rear; the regression
+    # adjusts via slope×spring_rate from there).
+    if (fitted_model.name in _SAFETY_CRITICAL_DIRECT_MODELS
+            and "defl_max" in fitted_model.name
+            and len(fitted_model.coefficients) > 0):
+        intercept = fitted_model.coefficients[0]
+        if not (50.0 <= intercept <= 250.0):
+            import logging
+            logging.getLogger(__name__).warning(
+                "DirectRegression skipped for '%s' — intercept %.1f mm "
+                "outside physical range [50, 250] (overfit per-track "
+                "regression with non-physical coefficients).  Garage "
+                "predictions fall back to physics defaults.",
+                fitted_model.name, intercept,
+            )
+            return None
     from car_model.garage import DirectRegression
-    return DirectRegression.from_model(fitted_model.coefficients, fitted_model.feature_names)
+    return DirectRegression.from_model(
+        fitted_model.coefficients,
+        fitted_model.feature_names,
+        confidence_tier=getattr(fitted_model, "confidence_tier", "low"),
+    )
 
 
 def _mk_direct_torsion(fitted_model, torsion_c: float) -> "DirectRegression | None":
@@ -1876,7 +2677,11 @@ def _mk_direct_torsion(fitted_model, torsion_c: float) -> "DirectRegression | No
     if fitted_model is None or not fitted_model.is_calibrated:
         return None
     from car_model.garage import DirectRegression
-    return DirectRegression.from_model(fitted_model.coefficients, fitted_model.feature_names)
+    return DirectRegression.from_model(
+        fitted_model.coefficients,
+        fitted_model.feature_names,
+        confidence_tier=getattr(fitted_model, "confidence_tier", "low"),
+    )
 
 
 def build_garage_output_model(car_obj, models: CarCalibrationModels):
@@ -1987,15 +2792,41 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
                 elif feat == "inv_od4":
                     heave_defl_coeff_inv_od4 = coeffs[i + 1]  # 1/OD^4 coefficient
 
-    # Heave defl max from calibration
-    defl_max_intercept = 0.0
-    defl_max_slope = 0.0
-    if models.heave_spring_defl_max:
+    # Heave defl max from calibration.
+    # Initialise from car's HeaveSpringModel physics defaults (106.43,
+    # -0.310 for Dallara LMDh; populated per-car).  Only overwrite with
+    # regression coefficients when the model is non-safety-critical or
+    # tier ≥ medium — at tier=low the regression can produce coefficients
+    # that give DeflMax≈0 mm at typical heave rates, corrupting the
+    # legality engine.
+    defl_max_intercept = float(getattr(hsm, "heave_spring_defl_max_intercept_mm", 106.43) or 106.43)
+    defl_max_slope = float(getattr(hsm, "heave_spring_defl_max_slope", -0.310) or -0.310)
+    _dm_tier = getattr(models.heave_spring_defl_max, "confidence_tier", "high") if models.heave_spring_defl_max else None
+    _dm_safe = (_dm_tier in ("high", "medium")) or (
+        _dm_tier == "low"
+        and "heave_spring_defl_max" not in _SAFETY_CRITICAL_DIRECT_MODELS
+    )
+    if models.heave_spring_defl_max and _dm_safe:
         dm = models.heave_spring_defl_max
-        defl_max_intercept = dm.coefficients[0] if len(dm.coefficients) > 0 else 0.0
-        for i, feat in enumerate(dm.feature_names):
-            if i + 1 < len(dm.coefficients) and feat == "front_heave":
-                defl_max_slope = dm.coefficients[i + 1]
+        _candidate_intercept = dm.coefficients[0] if len(dm.coefficients) > 0 else defl_max_intercept
+        # Physical-range sanity: spring max-deflection intercepts must be
+        # in the plausible [50, 250] mm range.  Per-track fits with
+        # limited variance can produce high-confidence-but-wrong
+        # coefficients (intercept=-119 mm, etc.).  Reject and use
+        # physics fallback when the fitted intercept is unphysical.
+        if 50.0 <= _candidate_intercept <= 250.0:
+            defl_max_intercept = _candidate_intercept
+            for i, feat in enumerate(dm.feature_names):
+                if i + 1 < len(dm.coefficients) and feat == "front_heave":
+                    defl_max_slope = dm.coefficients[i + 1]
+        else:
+            import logging
+            logging.getLogger(__name__).warning(
+                "GarageOutputModel: heave_spring_defl_max intercept "
+                "%.1f mm outside physical [50, 250] range — falling "
+                "back to physics default %.1f mm.",
+                _candidate_intercept, defl_max_intercept,
+            )
 
     # Torsion turns from calibration
     torsion_turns_intercept = 0.0
@@ -2127,30 +2958,115 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
 
     Modifies the car object in-place. Returns list of applied correction notes.
 
-    Models flagged as overfit (LOO/train RMSE ratio > 10x) are skipped and
-    their names recorded for a single combined warning. Skipping prevents
-    catastrophically non-generalizing fits from driving deflection
-    predictions or .sto serialization.
+    Tier handling (Principle 4 — continuous learning, tiered confidence):
+      - ``high`` / ``medium`` — applied silently
+      - ``low`` — applied with a logged warning and an "applied at low tier"
+        note in the returned list
+      - ``insufficient`` — skipped entirely (no application, no silent corruption)
+
+    Models flagged as ``insufficient`` (the new tier name for the legacy
+    LOO/train > 10× guard) are skipped and their names recorded for a
+    single combined warning.
     """
     applied = []
     _skipped_overfit: list[str] = []
+    _low_tier_applied: list[str] = []
 
     if not models:
         return applied
 
+    # ── GT3 short-circuit (W7.2 audit BLOCKER #22) ──
+    # GT3 cars have ``heave_spring=None`` and ``front_torsion_c=0.0``. Every
+    # write block below targets GTP-shaped attributes (``car.heave_spring.*``,
+    # ``car.deflection.heave_*``, ``car.corner_spring.front_torsion_c``) and
+    # silently swallows AttributeError on GT3, leaving the car uncalibrated
+    # without explanation. Until varied-spring GT3 IBTs land (gated on W10.1
+    # capture), the regression fits are intercept-only — there is nothing to
+    # write into the corner_spring / garage_ranges fields anyway. Detect GT3
+    # structurally via ``suspension_arch.has_heave_third`` and return early
+    # with a documented note so callers know calibration ran but produced no
+    # usable corrections.
+    _arch = getattr(car_obj, "suspension_arch", None)
+    _is_gt3 = _arch is not None and not _arch.has_heave_third
+    if _is_gt3:
+        import logging as _logging
+        _gt3_logger = _logging.getLogger(__name__)
+        _n_setups = getattr(models, "n_unique_setups", 0)
+        _gt3_logger.info(
+            "apply_to_car: GT3 path for '%s' — %d unique setups; regression "
+            "fits are intercept-only until varied-spring IBT data lands "
+            "(W10.1). No GTP-shaped writes attempted.",
+            getattr(car_obj, "canonical_name", "<unknown>"),
+            _n_setups,
+        )
+        applied.append(
+            f"GT3 calibration applied (intercept-only — {_n_setups} unique setups; "
+            "varied-spring IBT data needed for full regression fit, see W10.1)"
+        )
+        # TODO(W10.1): once 5+ varied-front-coil-rate IBTs land for the same
+        # GT3 car at the same track, write fitted compliance back into
+        # ``car_obj.corner_spring.front_baseline_rate_nmm`` (intercept of the
+        # regression on ``static_front_rh_mm`` vs ``inv_front_corner_spring``
+        # gives a baseline; the slope gives compliance). ``garage_ranges``
+        # bump_rubber_gap / splitter_height bounds are driver-tuned, not
+        # regression outputs, so do NOT overwrite those.
+        return applied
+
+    # Deflection-model names whose predictions feed legality / travel-budget
+    # checks (heave bottoming, available-travel margin).  These must be
+    # tier ≥ medium because tier=low predictions can produce non-physical
+    # values (e.g. DeflMax≈0) that flag the setup INVALID.  Low-tier
+    # predictions are useful as scoring inputs but unreliable for
+    # safety-critical static-travel headroom calculations.
+    _SAFETY_CRITICAL_MODEL_NAMES = frozenset({
+        "heave_spring_defl_max",
+        "third_spring_defl_max",
+        "rear_spring_defl_max",
+        "heave_spring_defl_static",
+        "third_spring_defl_static",
+        "rear_spring_defl_static",
+        "front_shock_defl_static",
+        "rear_shock_defl_static",
+        "third_slider_defl_static",
+        "heave_slider_defl_static",
+        "front_ride_height",
+        "rear_ride_height",
+    })
+
     def _ok(m, min_coefs: int = 1) -> bool:
-        """Return True if model is usable (present, calibrated, has enough coefs, not overfit)."""
+        """Return True if model is usable.
+
+        Tier policy (Principle 4 — continuous learning, tiered confidence):
+          - ``insufficient``: rejected unconditionally.
+          - ``low``: rejected for safety-critical models (deflection /
+            travel-budget / static-RH); accepted for advisory models
+            (per-corner-phase, sensitivity scoring).
+          - ``high`` / ``medium``: accepted.
+
+        Safety-critical models that escape this gate would corrupt the
+        legality engine (e.g. predict DeflMax≈0 → "0 mm available travel"
+        → all setups marked INVALID).  We'd rather fall back to physics
+        defaults than ship an INVALID recommended setup.
+        """
         if m is None or len(m.coefficients) < min_coefs:
             return False
         # Never apply a model that the fitting process itself flagged as uncalibrated.
-        # A model with R²=0.23 and is_calibrated=False would silently corrupt the car
-        # object (e.g., front RH becomes a flat constant if features don't map).
         if not getattr(m, "is_calibrated", True):
             return False
         if _is_overfit(m):
             if m.name not in _skipped_overfit:
                 _skipped_overfit.append(m.name)
             return False
+        tier = getattr(m, "confidence_tier", "high")
+        if tier == "low":
+            if m.name in _SAFETY_CRITICAL_MODEL_NAMES:
+                # Reject — would feed legality / travel-budget logic with
+                # unreliable predictions.  Use physics fallback instead.
+                if m.name not in _skipped_overfit:
+                    _skipped_overfit.append(f"{m.name} (low-tier, safety-critical)")
+                return False
+            if m.name not in _low_tier_applied:
+                _low_tier_applied.append(m.name)
         return True
 
     # Apply DeflectionModel coefficients — apply whatever is available
@@ -2629,20 +3545,32 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             car_obj.garage_output_model = new_gom
             applied.append("GarageOutputModel rebuilt from calibration models")
 
-    # Surface any models that were skipped because they failed the LOO/train
-    # generalization guard. Users need to know which submodels were dropped so
-    # they can either collect more data or accept the reduced coverage.
+    # Surface tier-related model handling (Principle 4 — continuous learning,
+    # tiered confidence).  ``insufficient`` models were skipped entirely;
+    # ``low`` models were applied but predictions carry reduced confidence.
     if _skipped_overfit:
-        import logging as _logging
-        _logger = _logging.getLogger(__name__)
-        _logger.warning(
-            "apply_to_car: skipped %d overfit model(s) (LOO/train > %.0fx): %s",
+        import logging
+        logging.getLogger(__name__).warning(
+            "apply_to_car: skipped %d insufficient-tier model(s) "
+            "(LOO/train > %.0fx or R² < 0.30): %s",
             len(_skipped_overfit), _OVERFIT_LOO_TRAIN_RATIO,
             ", ".join(sorted(_skipped_overfit)),
         )
         applied.append(
-            f"⚠ skipped {len(_skipped_overfit)} overfit model(s): "
+            f"⚠ skipped {len(_skipped_overfit)} insufficient model(s): "
             f"{', '.join(sorted(_skipped_overfit))}"
+        )
+    if _low_tier_applied:
+        import logging
+        logging.getLogger(__name__).warning(
+            "apply_to_car: applied %d low-tier model(s) "
+            "(R²≥0.30 or LOO/train≥2×): %s",
+            len(_low_tier_applied),
+            ", ".join(sorted(_low_tier_applied)),
+        )
+        applied.append(
+            f"⚠ applied {len(_low_tier_applied)} low-tier model(s) "
+            f"(reduced confidence): {', '.join(sorted(_low_tier_applied))}"
         )
 
     return applied
@@ -2651,6 +3579,32 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Sweep protocol generator (Model 3 of Claude Code's plan)
 # ─────────────────────────────────────────────────────────────────────────────
+
+_GT3_CARS = ("bmw_m4_gt3", "aston_martin_vantage_gt3", "porsche_992_gt3r")
+
+
+_GT3_PROTOCOL_HINT = """\
+GT3 calibration protocol (placeholder — see docs/calibration_guide.md)
+
+GT3 cars (BMW M4 GT3 EVO, Aston Martin Vantage GT3 EVO, Porsche 911 GT3 R)
+have a paired-coil suspension architecture: NO heave springs, NO third
+springs, NO front torsion bar. The calibration sweep is therefore quite
+different from the GTP recipe.
+
+Steps:
+  1. Vary front corner spring rate across the legal garage range (e.g.
+     BMW M4 GT3 EVO: 190–340 N/mm, step 10 N/mm). Take an IBT for each
+     setting (3+ clean laps each).
+  2. Repeat for rear corner spring rate.
+  3. Optionally: vary bump rubber gap (front + rear) and splitter height
+     to populate those axes; these are typically driver-tuned and don't
+     need varied-spring sweeps.
+  4. Run: python -m car_model.auto_calibrate --car {car} --ibt-dir <dir>
+  5. Until 5+ varied-spring IBTs land at the same track, the regression
+     fits are intercept-only and apply_to_car() does not write anything
+     into car.corner_spring.* / car.garage_ranges.* (W10.1 unblocks this).
+"""
+
 
 _CAR_PROTOCOL_HINTS: dict[str, dict] = {
     "ferrari": {
@@ -2711,14 +3665,53 @@ _CAR_PROTOCOL_HINTS: dict[str, dict] = {
 }
 
 
+def _car_protocol_hint(car: str) -> str:
+    """Return a human-readable protocol hint for *car*.
+
+    GT3 cars get a generic GT3 paired-coil hint (W7.2 audit DEGRADED #18) so
+    they no longer fall through to the BMW GTP hint, which references
+    nonexistent heave / torsion bar parameters. Other cars use the existing
+    per-car hint dict.
+    """
+    if car in _GT3_CARS:
+        return _GT3_PROTOCOL_HINT.format(car=car)
+    if car in _CAR_PROTOCOL_HINTS:
+        # Backwards-compat: format the dict block similar to legacy callers.
+        h = _CAR_PROTOCOL_HINTS[car]
+        return h.get("extra_note", "") if isinstance(h, dict) else str(h)
+    # Unknown car: keep the legacy fall-through to BMW so existing GTP
+    # consumers still work. Future audit cleanups may tighten this.
+    legacy = _CAR_PROTOCOL_HINTS.get("bmw", {})
+    return legacy.get("extra_note", "") if isinstance(legacy, dict) else str(legacy)
+
+
 def generate_protocol(car: str, verbose: bool = True) -> str:
     """Generate step-by-step iRacing calibration sweep instructions.
 
     Based on Claude Code's calibration plan (docs/auto_calibration_plan.md):
     Each step changes ONE parameter to isolate physics effects.
+
+    For GT3 cars (W7.2 audit DEGRADED #18) the protocol diverges entirely
+    from the GTP heave/torsion sweep — there are no heave springs, no front
+    torsion bar — so we emit the generic GT3 hint instead of falling through
+    to the BMW GTP hint dict.
     """
     points = load_calibration_points(car)
     models = load_calibrated_models(car)
+    if car in _GT3_CARS:
+        # GT3: short-circuit to the paired-coil protocol. The full status
+        # block below assumes GTP-shaped models so we render a focused GT3
+        # block instead.
+        n_unique = len({_setup_key(pt) for pt in points})
+        return (
+            f"\n{'=' * 60}\n"
+            f"  {car.upper()} Calibration Protocol\n"
+            f"  (GT3 paired-coil architecture)\n"
+            f"{'=' * 60}\n\n"
+            f"  {n_unique} unique setups collected so far "
+            f"(need {_MIN_SESSIONS_FOR_FIT} minimum)\n\n"
+            f"{_GT3_PROTOCOL_HINT.format(car=car)}"
+        )
     hints = _CAR_PROTOCOL_HINTS.get(car, _CAR_PROTOCOL_HINTS["bmw"])
 
     unique: set[tuple] = set()
@@ -2871,6 +3864,7 @@ def calibration_status(car: str) -> dict[str, Any]:
                     "r_squared": round(m.r_squared, 3),
                     "rmse": round(m.rmse, 3),
                     "n": m.n_samples,
+                    "confidence_tier": getattr(m, "confidence_tier", "insufficient"),
                 }
         status["fitted_models"] = fitted_models
 
@@ -2925,9 +3919,20 @@ def print_status(car: str) -> None:
 
     if s.get("fitted_models"):
         print(f"\n  Regression models:")
+        _tier_icon = {
+            "high": "✅",
+            "medium": "✅",
+            "low": "⚠️",
+            "insufficient": "❌",
+        }
         for name, m in s["fitted_models"].items():
-            bar = "✅" if m["r_squared"] >= 0.80 else ("⚠️" if m["r_squared"] >= 0.50 else "❌")
-            print(f"    {bar} {name:<35} R²={m['r_squared']:.3f}  RMSE={m['rmse']:.2f}  n={m['n']}")
+            tier = m.get("confidence_tier", "insufficient")
+            bar = _tier_icon.get(tier, "❌")
+            tier_tag = f"  tier={tier}"
+            print(
+                f"    {bar} {name:<35} R²={m['r_squared']:.3f}  "
+                f"RMSE={m['rmse']:.2f}  n={m['n']}{tier_tag}"
+            )
 
     if s.get("spring_lookups"):
         print(f"\n  Spring lookup tables:")
@@ -3224,8 +4229,19 @@ Examples:
   python -m car_model.auto_calibrate --car ferrari --status
 """,
     )
+    # Pull car choices from the canonical registry so adding a new car here
+    # doesn't drift from ``car_model/cars.py:_CARS``. Fall back to the legacy
+    # static list if the import fails (e.g. partial install).
+    try:
+        from car_model.cars import _CARS as _ALL_CARS
+        _car_choices = sorted(_ALL_CARS.keys())
+    except Exception:
+        _car_choices = [
+            "bmw", "cadillac", "ferrari", "acura", "porsche",
+            "bmw_m4_gt3", "aston_martin_vantage_gt3", "porsche_992_gt3r",
+        ]
     parser.add_argument("--car", required=True,
-                        choices=["bmw", "cadillac", "ferrari", "acura", "porsche"],
+                        choices=_car_choices,
                         help="Car to calibrate")
     parser.add_argument("--ibt", nargs="+", default=None,
                         help="One or more IBT files to add to the calibration dataset")

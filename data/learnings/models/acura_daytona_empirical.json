@@ -1,0 +1,27 @@
+{
+  "car": "acura",
+  "track": "Daytona International Speedway",
+  "relationships": {},
+  "last_updated": "2026-04-28T00:53:40.913957+00:00",
+  "observation_count": 2,
+  "most_sensitive_parameters": [],
+  "corrections": {
+    "roll_distribution_proxy_mean": 0.5237398710706828,
+    "roll_distribution_proxy_std": 0.01734497336063201,
+    "roll_distribution_proxy_sample_count": 2,
+    "lltd_measured_mean": 0.5237398710706828,
+    "lltd_measured_std": 0.01734497336063201,
+    "lltd_is_proxy": true,
+    "aero_compression_front_mean_mm": 10.433603286743164,
+    "aero_compression_front_std_mm": 2.3920764923095703,
+    "aero_compression_rear_mean_mm": 13.797493362426756,
+    "aero_compression_rear_std_mm": 2.5628604888916016,
+    "lap_time_surrogate_regularized": 1.0,
+    "lap_time_surrogate_sample_weight": 0.0,
+    "m_eff_front_values": [
+      116.9
+    ],
+    "m_eff_front_empirical_mean": 116.9,
+    "m_eff_front_empirical_std": 0.0
+  }
+}

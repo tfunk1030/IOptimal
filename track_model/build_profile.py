@@ -703,7 +703,10 @@ def main():
     if args.output:
         out_path = Path(args.output)
     else:
-        out_path = Path("data/tracks") / f"{profile.track_name.lower().replace(' ', '_')}_{profile.track_config.lower()}.json"
+        track_name_slug = (profile.track_name or "unknown").lower().replace(' ', '_')
+        config_slug = (profile.track_config or "").lower().replace(' ', '_')
+        suffix = f"_{config_slug}" if config_slug else ""
+        out_path = Path("data/tracks") / f"{track_name_slug}{suffix}.json"
 
     profile.save(out_path)
     print(f"\nSaved: {out_path}")

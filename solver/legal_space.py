@@ -65,34 +65,31 @@ FRONT_HEAVE_PERCH_K = 0.001614   # mm_RH / (N/mm)  — from front RH empirical m
 REAR_SPRING_PERCH_K = 0.8        # mm_perch / (N/mm) — rough empirical, rear spring dominant
 REAR_THIRD_PERCH_K = 0.3         # mm_perch / (N/mm) — rear third spring contribution
 
-# BMW-Sebring fallback reference values (perch = 0 at these spring rates).
-# These are used ONLY when the car doesn't define its own baselines.
-# Per-car values are derived from car.heave_spring and car.corner_spring.
-_BMW_FRONT_HEAVE_SPRING_REF = 50.0    # N/mm
-_BMW_REAR_THIRD_SPRING_REF = 450.0    # N/mm
-_BMW_REAR_SPRING_REF = 160.0          # N/mm
-
-
 def _car_spring_refs(car: CarModel) -> tuple[float, float, float]:
     """Return (front_heave_ref, rear_third_ref, rear_spring_ref) for a car.
 
     Uses the car's baseline spring rates as reference points for perch offset
     computation. All fields are required on CarModel — no BMW fallbacks.
+
+    GT3 architecture (no heave/third) returns (0.0, 0.0, rear_spring_ref) — the
+    heave/third refs are sentinel zeros and callers MUST check
+    ``car.suspension_arch.has_heave_third`` before using them.
     """
+    if not car.corner_spring.rear_spring_range_nmm:
+        raise ValueError(
+            f"{car.canonical_name}: corner_spring.rear_spring_range_nmm is unset; "
+            "every CarModel must populate this — no BMW fallback."
+        )
+    rspr_lo, rspr_hi = car.corner_spring.rear_spring_range_nmm
+    rear_spring_ref = float((rspr_lo + rspr_hi) / 2.0)
+
+    # GT3 short-circuit: heave_spring is None — heave/third refs are not real.
+    if not car.suspension_arch.has_heave_third:
+        return 0.0, 0.0, rear_spring_ref
+
     front_heave_ref = float(car.front_heave_spring_nmm)
     rear_third_ref = float(car.rear_third_spring_nmm)
-    if car.corner_spring.rear_spring_range_nmm:
-        rspr_lo, rspr_hi = car.corner_spring.rear_spring_range_nmm
-        rear_spring_ref = float((rspr_lo + rspr_hi) / 2.0)
-    else:
-        rear_spring_ref = _BMW_REAR_SPRING_REF
     return front_heave_ref, rear_third_ref, rear_spring_ref
-
-
-# Backward-compat aliases (legacy callers may import these names)
-FRONT_HEAVE_SPRING_REF = _BMW_FRONT_HEAVE_SPRING_REF
-REAR_THIRD_SPRING_REF = _BMW_REAR_THIRD_SPRING_REF
-REAR_SPRING_REF = _BMW_REAR_SPRING_REF
 
 
 def compute_perch_offsets(params: dict, car: CarModel) -> dict:
@@ -119,6 +116,15 @@ def compute_perch_offsets(params: dict, car: CarModel) -> dict:
     Returns:
         Dict with front_heave_perch_mm, rear_third_perch_mm, rear_spring_perch_mm
     """
+    # GT3 short-circuit: GT3 cars have coil-overs at all four corners, no
+    # heave/third spring, no torsion bar. Perch offsets for those non-existent
+    # springs cannot be derived. Callers must NOT write
+    # front_heave_perch_mm / rear_third_perch_mm / rear_spring_perch_mm into a
+    # GT3 candidate dict — see LS1, LS2, LS4 in
+    # docs/audits/gt3_phase2/solver-damper-legality.md.
+    if car is not None and not car.suspension_arch.has_heave_third:
+        return {}
+
     if car is not None and car.canonical_name == "ferrari":
         preserved: dict[str, float] = {}
         for key in ("front_heave_perch_mm", "rear_third_perch_mm", "rear_spring_perch_mm"):
@@ -249,6 +255,35 @@ TIER_B_KEYS: list[str] = [
 ]
 
 LOCAL_REFINE_KEYS: list[str] = list(PERCH_KEYS)
+
+# Keys that DON'T apply to GT3 cars (no heave/third spring, no torsion bar).
+# These are filtered out of TIER_A_KEYS / PERCH_KEYS / LOCAL_REFINE_KEYS when
+# the car has GT3 architecture (`car.suspension_arch.has_heave_third == False`).
+_GT3_EXCLUDED_KEYS: frozenset[str] = frozenset({
+    "front_heave_spring_nmm",
+    "rear_third_spring_nmm",
+    "front_torsion_od_mm",
+    "front_heave_perch_mm",
+    "rear_third_perch_mm",
+})
+
+
+def _tier_a_keys_for(car: CarModel | None) -> list[str]:
+    """Return the searchable Tier A keys for the given car's architecture.
+
+    GT3 cars (no heave/third/torsion) use a filtered subset; GTP cars use the
+    full TIER_A_KEYS list.
+    """
+    if car is not None and not car.suspension_arch.has_heave_third:
+        return [k for k in TIER_A_KEYS if k not in _GT3_EXCLUDED_KEYS]
+    return list(TIER_A_KEYS)
+
+
+def _perch_keys_for(car: CarModel | None) -> list[str]:
+    """Return the perch keys applicable to this car's architecture."""
+    if car is not None and not car.suspension_arch.has_heave_third:
+        return [k for k in PERCH_KEYS if k not in _GT3_EXCLUDED_KEYS]
+    return list(PERCH_KEYS)
 
 
 @dataclass
@@ -756,7 +791,8 @@ class LegalSpace:
         specs = CAR_FIELD_SPECS.get(car_name, {})
         dimensions: list[SearchDimension] = []
 
-        active_keys = list(TIER_A_KEYS)
+        # Architecture-aware tier-A key set: GT3 cars have no heave/third/torsion.
+        active_keys = _tier_a_keys_for(car)
         if include_tier_b:
             active_keys += TIER_B_KEYS
 
@@ -786,6 +822,12 @@ def _build_dimension(
     tier: str,
 ) -> SearchDimension | None:
     """Build a SearchDimension from field definition and car specs."""
+    # GT3 architecture: heave/third/torsion fields are not searchable. Even if
+    # a caller passes one of these keys explicitly, return None so the dim is
+    # never added to the LegalSpace.
+    if car is not None and not car.suspension_arch.has_heave_third:
+        if key in _GT3_EXCLUDED_KEYS:
+            return None
     gr = car.garage_ranges
 
     # Map canonical keys to car model ranges
@@ -820,7 +862,14 @@ def _build_dimension(
         ),
     }
 
-    # Damper ranges from car.damper
+    # Damper ranges from car.damper. The numeric range itself is polarity-
+    # independent — the search axis just enumerates [lo, hi] integers — so
+    # no polarity dispatch is needed here. Polarity matters only for SCORING
+    # (legality_engine soft penalties, candidate_search adjustment direction),
+    # which already dispatch on car.damper.click_polarity.
+    # TODO(W6.1): once Audi/McLaren/Corvette stubs land in W10.1 with their
+    # inverted polarity, audit any place in legal_space scoring that reasons
+    # directionally (e.g. "stiffer = +N") and apply polarity dispatch there.
     d = car.damper
     damper_ranges = {
         "front_ls_comp": d.ls_comp_range,

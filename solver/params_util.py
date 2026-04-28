@@ -44,13 +44,31 @@ def solver_steps_to_params(
         params["rear_pushrod_offset_mm"] = step1.rear_pushrod_offset_mm
 
     # ── Step 2: Heave / Third Springs ──
-    if step2 is not None:
+    # Skip when step2 is a HeaveSolution.null() instance (present=False) — for GT3
+    # cars there is no heave/third architecture and the numeric fields are zero
+    # placeholders. Reading them into params would write 0.0 garbage that
+    # downstream consumers treat as a real driver-loaded value (Key Principle 8:
+    # no silent fallbacks). Default `present=True` keeps GTP behaviour unchanged
+    # and tolerates legacy/mock objects that lack the attribute.
+    if step2 is not None and getattr(step2, "present", True):
         params["front_heave_spring_nmm"] = step2.front_heave_nmm
         params["rear_third_spring_nmm"] = step2.rear_third_nmm
 
     # ── Step 3: Corner Springs ──
+    # On GT3 (suspension_arch=GT3_COIL_4WHEEL) the front torsion bar does not
+    # exist — `step3.front_torsion_od_mm` is a zero placeholder. Skip writing it
+    # to avoid polluting params with a fake torsion OD that downstream consumers
+    # would treat as real. Rear spring is still valid on GT3 (coil-over rear).
+    # Guarded on `car.suspension_arch.has_front_torsion_bar` when `car` is
+    # available; falls back to the legacy GTP behaviour if `car` is None.
     if step3 is not None:
-        params["front_torsion_od_mm"] = step3.front_torsion_od_mm
+        _has_front_torsion = True
+        if car is not None:
+            _arch = getattr(car, "suspension_arch", None)
+            if _arch is not None:
+                _has_front_torsion = bool(getattr(_arch, "has_front_torsion_bar", True))
+        if _has_front_torsion:
+            params["front_torsion_od_mm"] = step3.front_torsion_od_mm
         params["rear_spring_rate_nmm"] = step3.rear_spring_rate_nmm
 
     # ── Step 4: ARBs ──

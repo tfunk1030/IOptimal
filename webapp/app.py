@@ -18,10 +18,20 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from webapp.jobs import RunJobManager
-from webapp.services import IOptimalWebService
+from webapp.services import IOptimalWebService, list_supported_cars
 from webapp.settings import AppSettings
 from webapp.storage import RunRepository
 from webapp.types import RunCreateRequest
+
+
+def _build_supported_cars_grouped() -> dict[str, list[tuple[str, str]]]:
+    """Group ``list_supported_cars()`` output by class for the runs_new
+    template. GT3 Phase 2 W9.1 — F1 fix.
+    """
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    for canonical, display, klass in list_supported_cars():
+        grouped.setdefault(klass, []).append((canonical, display))
+    return grouped
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -69,14 +79,23 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         return templates.TemplateResponse(
             request,
             "runs_new.html",
-            _page_context(request, "new_run", selected_mode=selected_mode, error=error),
+            _page_context(
+                request,
+                "new_run",
+                selected_mode=selected_mode,
+                error=error,
+                supported_cars_grouped=_build_supported_cars_grouped(),
+            ),
         )
 
     @app.post("/runs")
     async def create_run(
         request: Request,
         mode: str = Form("single_session"),
-        car: str = Form("bmw"),
+        # GT3 Phase 2 W9.1 — F3 fix. Car is now required (no GTP default).
+        # Pre-W9.1 a missing car silently routed to BMW M Hybrid V8 which is
+        # both a GTP car and the wrong physics for any GT3 IBT.
+        car: str = Form(...),
         track: str | None = Form(None),
         wing: float | None = Form(None),
         lap: int | None = Form(None),
@@ -155,17 +174,25 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 continue
             ibt_paths.append(ibt_p)
             if car is None:
-                car = obs.get("car", "bmw")
+                car = obs.get("car")
 
         if errors:
             return JSONResponse({"ok": False, "message": "; ".join(errors)})
         if not ibt_paths:
             return JSONResponse({"ok": False, "message": "No valid IBT files found"})
+        if not car:
+            # GT3 Phase 2 W9.1 — F3 fix. Pre-W9.1 we silently defaulted to
+            # ``bmw`` here, which routed every observation without a car
+            # field through the GTP BMW solver path. Surface the missing
+            # field instead so the user / caller sees the failure.
+            return JSONResponse(
+                {"ok": False, "message": "No car identified on selected sessions; ingest with --car set."}
+            )
 
         run_id = uuid4().hex
         run_request = RunCreateRequest(
             mode=mode if mode in {"single_session", "comparison"} else "single_session",
-            car=car or "bmw",
+            car=car,
             ibt_paths=ibt_paths,
             track=None,
             wing=None,

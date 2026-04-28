@@ -432,10 +432,11 @@ def _cadillac_schema() -> CarParamSchema:
     """Cadillac V-Series.R — LMDh Dallara chassis.
 
     Similar to BMW but:
-    - No separate diff (open diff, no preload adjustment).
+    - Diff with preload, ramp angles, and clutch plates (confirmed from .sto).
     - Torsion bar OD: 3 discrete options (13.90, 14.34, 14.76).
     - Rear spring: N/mm (coil, same as BMW pattern).
     - ARB: only Soft front, Soft/Medium rear.
+    - TC gain and TC slip both available (confirmed from .sto).
     """
     s = CarParamSchema(car="cadillac")
     s.front_heave = ParamDef(
@@ -523,22 +524,32 @@ def _cadillac_schema() -> CarParamSchema:
     )
     s.diff_preload = ParamDef(
         canonical="diff_preload_nm", display_label="Diff Preload",
-        unit="Nm", value_type="physical", exists=False,
-        # Cadillac has open diff, no preload
+        unit="Nm", value_type="physical", exists=True,
+        min_val=0.0, max_val=150.0,
+        # CORRECTED 2026-04-28: .sto confirms Preload=35 Nm; NOT open diff
     )
     s.diff_ramp = ParamDef(
-        canonical="diff_ramp_label", display_label="Diff Ramp",
-        unit="", value_type="label", exists=False,
+        canonical="diff_ramp_label", display_label="Diff Ramp Angles",
+        unit="", value_type="label", exists=True,
+        # CORRECTED 2026-04-28: .sto confirms CoastDriveRampAngles="45/70"
+    )
+    s.diff_clutch_plates = ParamDef(
+        canonical="diff_clutch_plates", display_label="Clutch Friction Plates",
+        unit="", value_type="clicks", exists=True,
+        min_val=1, max_val=10,
+        # ADDED 2026-04-28: .sto confirms ClutchFrictionPlates=6
     )
     s.tc_gain = ParamDef(
         canonical="tc_gain", display_label="TC Gain",
         unit="", value_type="clicks", min_val=0, max_val=11,
-        exists=False,  # Cadillac observed tc_gain=0.0 (no TC in data)
+        exists=True,
+        # CORRECTED 2026-04-28: .sto confirms TractionControlGain=6
     )
     s.tc_slip = ParamDef(
         canonical="tc_slip", display_label="TC Slip",
         unit="", value_type="clicks", min_val=0, max_val=11,
-        exists=False,
+        exists=True,
+        # CORRECTED 2026-04-28: .sto confirms TractionControlSlip=5
     )
     s.dampers = DamperDef(
         ls_clicks=11, hs_clicks=11, has_hs_slope=True,

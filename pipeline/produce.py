@@ -30,6 +30,7 @@ from analyzer.adaptive_thresholds import compute_adaptive_thresholds
 from analyzer.diagnose import diagnose
 from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 from analyzer.extract import extract_measurements
+from analyzer.corner_balance import run_corner_balance_analysis, format_balance_report
 from analyzer.segment import segment_lap
 from analyzer.stint_analysis import build_stint_dataset, dataset_to_evolution
 from analyzer.setup_reader import CurrentSetup
@@ -37,7 +38,7 @@ from analyzer.setup_schema import apply_live_control_overrides, build_setup_sche
 from analyzer.telemetry_truth import summarize_signal_quality
 from car_model.cars import get_car
 from car_model.calibration_gate import CalibrationGate
-from output.report import to_public_output_payload
+from output.report import _build_recommendations_section, to_public_output_payload
 from car_model.setup_registry import public_output_value
 from output.setup_writer import write_sto
 from pipeline.report import generate_report
@@ -64,12 +65,47 @@ class PipelineInputError(RuntimeError):
     """User-facing pipeline input error."""
 
 
-def _normalize_grid_search_params_for_overrides(params: dict[str, object] | None) -> dict[str, object]:
+def _is_gt3_car(car: object | None) -> bool:
+    """W5.1: GT3 architecture dispatch helper.
+
+    Returns True when ``car`` is a GT3-class car (no heave/third architecture).
+    Mirrors the pattern in ``output/report.py:_is_gt3``. Used by pipeline
+    orchestration to gate heave/third reads, payloads, and report sections.
+    """
+    if car is None:
+        return False
+    arch = getattr(car, "suspension_arch", None)
+    if arch is None:
+        return False
+    return getattr(arch, "has_heave_third", True) is False
+
+
+def _step2_present(step2: object | None) -> bool:
+    """W5.1: True when ``step2`` carries real heave/third data.
+
+    Returns False for both ``None`` (calibration-blocked) and
+    ``HeaveSolution.null()`` GT3 placeholders (``present=False``).
+    """
+    if step2 is None:
+        return False
+    return bool(getattr(step2, "present", True))
+
+
+def _normalize_grid_search_params_for_overrides(
+    params: dict[str, object] | None,
+    *,
+    car: object | None = None,
+) -> dict[str, object]:
     """Normalize grid-search param aliases to canonical override keys.
 
     Grid search can surface keys that don't match solve-chain field names
     directly (e.g. *_spring_nmm, *_arb_blade, *_toe_deg aliases). Convert those
     into the canonical param set expected by canonical_params_to_overrides().
+
+    W5.1: For GT3 cars (``car.suspension_arch.has_heave_third`` False), the
+    heave/third/torsion alias entries are dropped — those keys are meaningless
+    on GT3 architectures and emitting them as solve-chain overrides would
+    inject phantom heave/third spring writes that the GT3 chain cannot satisfy.
     """
     raw = dict(params or {})
     normalized = dict(raw)
@@ -84,6 +120,18 @@ def _normalize_grid_search_params_for_overrides(params: dict[str, object] | None
         "front_toe_deg": "front_toe_mm",
         "rear_toe_deg": "rear_toe_mm",
     }
+    if _is_gt3_car(car):
+        # W5.1 F1: GT3 has no heave/third/torsion architecture — drop those
+        # alias entries before override expansion. Coil rates are surfaced via
+        # candidate-search per-corner spring keys, not via heave aliases.
+        _gt3_drop = {
+            "front_heave_nmm",
+            "rear_third_nmm",
+            "front_heave_spring_nmm",
+            "rear_third_spring_nmm",
+            "front_torsion_od_mm",
+        }
+        alias_map = {k: v for k, v in alias_map.items() if k not in _gt3_drop}
     for source_key, target_key in alias_map.items():
         if source_key in raw and target_key not in normalized:
             normalized[target_key] = raw[source_key]
@@ -255,6 +303,102 @@ def _apply_calibration_step_blocks(
     return step1, step2, step3, step4, step5, step6
 
 
+def _build_calibration_recommendations(
+    car_canonical: str,
+    track_short: str,
+    *,
+    n_recs: int = 3,
+) -> list[dict]:
+    """Invoke car_model.calibration_recommender for the gate-blocked car/track.
+
+    Returns a list of structured recommendation dicts ready for
+    output.report._build_recommendations_section(). On any error (import
+    failure, missing setup_registry, runtime exception) logs explicitly and
+    returns an empty list — never raises into the pipeline.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        from car_model.calibration_recommender import (
+            _filter_points_by_track,
+            _format_value,
+            baseline_extremes,
+            enumerate_axes,
+            rank_candidates,
+        )
+        from car_model.auto_calibrate import (
+            _setup_key as _ac_setup_key,
+            load_calibration_points,
+        )
+        from car_model.cars import get_car
+    except Exception as exc:
+        log.warning("calibration_recommender unavailable: %s", exc)
+        return []
+
+    try:
+        car = get_car(car_canonical, apply_calibration=False)
+        axes = enumerate_axes(car, car_canonical)
+        if not axes:
+            log.info("calibration_recommender: no tunable axes for %s", car_canonical)
+            return []
+
+        all_points = load_calibration_points(car_canonical)
+        track_points = _filter_points_by_track(all_points, track_short)
+        # Unique-setup count uses auto_calibrate's canonical fingerprint so
+        # the "currently N" / "after N+1" maths matches what the gate counts.
+        current_unique = len({_ac_setup_key(p) for p in track_points})
+
+        def _format_values(cand: dict[str, float]) -> list[tuple[str, str]]:
+            return [
+                (axis.display_name, _format_value(axis, cand[axis.name]))
+                for axis in axes if axis.name in cand
+            ]
+
+        # Each candidate, run alone, adds at most 1 unique setup to the
+        # design matrix. The D-optimal score implicitly favours candidates
+        # whose fingerprint differs from existing points.
+        next_unique = current_unique + 1
+
+        if not track_points:
+            return [
+                {
+                    "rank": rank,
+                    "info_gain_nats": None,
+                    "values": _format_values(cand),
+                    "expected_unique_setups": next_unique,
+                    "current_unique_setups": current_unique,
+                    "is_bootstrap": True,
+                }
+                for rank, cand in enumerate(
+                    baseline_extremes(axes, n=n_recs), start=1
+                )
+            ]
+
+        scored, _diag = rank_candidates(
+            track_points, axes,
+            n_samples=200,
+            n_recommendations=n_recs,
+            seed=0,
+        )
+        return [
+            {
+                "rank": rank,
+                "info_gain_nats": float(gain),
+                "values": _format_values(cand),
+                "expected_unique_setups": next_unique,
+                "current_unique_setups": current_unique,
+                "is_bootstrap": False,
+            }
+            for rank, (gain, cand) in enumerate(scored, start=1)
+        ]
+    except Exception as exc:
+        log.warning(
+            "calibration_recommender failed for %s/%s: %s",
+            car_canonical, track_short, exc,
+        )
+        return []
+
+
 def _resolve_scenario_profile(args: argparse.Namespace) -> str:
     explicit = getattr(args, "scenario_profile", None)
     if explicit:
@@ -347,6 +491,7 @@ def produce(
         )
         log("  [WARNING] Calibration loading will use pooled/default models.")
     car = get_car(args.car)
+    cal_models = None  # Kept in scope for downstream corner-causal impact prediction (Unit P1).
     try:
         from car_model.auto_calibrate import load_calibrated_models, apply_to_car
         cal_models = load_calibrated_models(car.canonical_name, track=_track_key_for_cal)
@@ -366,11 +511,6 @@ def produce(
     from output.run_trace import RunTrace
     run_trace = RunTrace()
 
-    # Resolve DF balance target from car model if not explicitly set
-    if getattr(args, "balance", None) is None:
-        args.balance = car.default_df_balance_pct
-        log(f"Using car-specific DF balance target: {args.balance:.2f}%")
-
     # ── Parse IBT ──
     ibt = IBTFile(ibt_path)
     log(f"IBT: {ibt_path}")
@@ -387,6 +527,20 @@ def produce(
     wing = args.wing or current_setup.wing_angle_deg
     fuel = args.fuel or current_setup.fuel_l or 89.0
     log(f"  Wing: {wing}°, Fuel: {fuel:.0f} L")
+
+    # ── Resolve DF balance target (physics-first) ────────────────────────
+    # Priority order:
+    #   1. Explicit --balance flag (operator override)
+    #   2. Car-level ``default_df_balance_pct`` (calibrated per-car;
+    #      should be derived from per-track calibration data when
+    #      available, not from driver-loaded values).
+    # Driver-loaded df_balance_pct is intentionally NOT used as an
+    # anchor — drivers iterate setups based on lap times and feel,
+    # not physics optima.  Per project mission: "physics first, not
+    # pattern matching".
+    if getattr(args, "balance", None) is None:
+        args.balance = car.default_df_balance_pct
+        log(f"Using car-specific DF balance target: {args.balance:.2f}%")
 
     # ── Apply learned corrections (default: auto, --no-learn to disable) ──
     learned = None
@@ -410,14 +564,17 @@ def produce(
             # events, braking pitch, and direction changes that inflate the estimate.
             # A calibrated m_eff (from heave sweep or cars.py) is more reliable.
             # If the learned value is >2x the existing, it's contaminated.
-            if learned.heave_m_eff_front_kg is not None:
-                _existing_front = car.heave_spring.front_m_eff_kg
-                if _existing_front > 0 and learned.heave_m_eff_front_kg <= _existing_front * 2.0:
-                    car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
-            if learned.heave_m_eff_rear_kg is not None:
-                _existing_rear = car.heave_spring.rear_m_eff_kg
-                if _existing_rear > 0 and learned.heave_m_eff_rear_kg <= _existing_rear * 2.0:
-                    car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
+            # W5.1 F2: GT3 cars have car.heave_spring=None (no heave architecture).
+            # Skip the m_eff update silently rather than crashing on attribute access.
+            if car.heave_spring is not None:
+                if learned.heave_m_eff_front_kg is not None:
+                    _existing_front = car.heave_spring.front_m_eff_kg
+                    if _existing_front > 0 and learned.heave_m_eff_front_kg <= _existing_front * 2.0:
+                        car.heave_spring.front_m_eff_kg = learned.heave_m_eff_front_kg
+                if learned.heave_m_eff_rear_kg is not None:
+                    _existing_rear = car.heave_spring.rear_m_eff_kg
+                    if _existing_rear > 0 and learned.heave_m_eff_rear_kg <= _existing_rear * 2.0:
+                        car.heave_spring.rear_m_eff_kg = learned.heave_m_eff_rear_kg
             # NOTE: aero_compression_{front,rear}_mm are intentionally NOT applied here.
             # The IBT LFrideHeight/LRrideHeight sensor channels are in a different
             # coordinate frame than the aero maps (AeroCalc reference). Applying the
@@ -610,11 +767,64 @@ def produce(
     corners = segment_lap(ibt, start, end, car=car, tick_rate=ibt.tick_rate)
     log(f"  Detected {len(corners)} corners")
 
+    # Per-corner roll-stiffness micro-experiments (Unit 4):
+    # turn each corner's (lat_g_mean, body_roll_mean) into one roll-gradient
+    # datapoint, then surface p50/p95/count on the MeasuredState so downstream
+    # learner / auto_calibrate can use 14*N samples instead of one mean.
+    try:
+        from analyzer.extract import aggregate_corner_roll_gradients
+        agg = aggregate_corner_roll_gradients(corners, state=measured)
+        _rg_count = int(agg.get("roll_gradient_corner_count") or 0)
+        _rg_p50 = agg.get("roll_gradient_corner_p50")
+        _rg_p95 = agg.get("roll_gradient_corner_p95")
+        if _rg_count > 0:
+            log(
+                f"  roll_gradient_corner: count={_rg_count} "
+                f"p50={_rg_p50} p95={_rg_p95} deg_per_g"
+            )
+    except Exception:  # noqa: BLE001 — never block the pipeline on aggregates
+        pass
+
     corner_classes = {}
     for c in corners:
         corner_classes[c.speed_class] = corner_classes.get(c.speed_class, 0) + 1
     for cls, cnt in sorted(corner_classes.items()):
         log(f"    {cls}: {cnt}")
+
+    # ── Phase C.5: Corner-by-corner balance analysis ──
+    log("Analyzing corner-by-corner balance...")
+    corner_balances = None
+    balance_summary = None
+    balance_param_changes = None
+    try:
+        # Build corner_indices from CornerAnalysis sample indices (M3: avoid re-detection)
+        _corner_indices = [
+            (c.sample_start_idx, c.sample_apex_idx, c.sample_end_idx)
+            for c in corners
+            if c.sample_start_idx >= 0
+        ] if corners else None
+        if _corner_indices is not None and len(_corner_indices) != len(corners):
+            _corner_indices = None  # mismatch — fall back to re-detection
+        corner_balances, balance_summary, balance_param_changes = run_corner_balance_analysis(
+            ibt, start, end, car=car, corners=corners, tick_rate=ibt.tick_rate,
+            corner_indices=_corner_indices,
+        )
+        log(f"  Analyzed {len(corner_balances)} corners")
+        if balance_summary:
+            log(f"  Entry: {balance_summary.dominant_entry_issue} "
+                f"(US={balance_summary.entry_understeer_pct:.0f}%)")
+            log(f"  Mid:   {balance_summary.dominant_mid_issue} "
+                f"(US={balance_summary.mid_understeer_pct:.0f}%)")
+            log(f"  Exit:  {balance_summary.dominant_exit_issue} "
+                f"(US={balance_summary.exit_understeer_pct:.0f}%)")
+            if balance_summary.priority_fix:
+                log(f"  ** PRIORITY FIX: {balance_summary.priority_fix} **")
+            if balance_param_changes:
+                for param, delta in balance_param_changes.items():
+                    if not param.startswith("_"):
+                        log(f"    {param}: {delta:+.2f}")
+    except Exception as exc:  # noqa: BLE001 — never block pipeline on balance analysis
+        log(f"  Corner balance analysis skipped: {exc}")
 
     # ── Phase D: Analyze driver style ──
     log("Analyzing driver style...")
@@ -857,6 +1067,10 @@ def produce(
         failed_validation_clusters=failed_clusters,
         corners=corners,
         optimization_mode=getattr(args, "opt_mode", "driver") or "driver",
+        # --force opts the damper solver into textbook physics defaults for
+        # cars whose zeta targets are not yet calibrated (Cadillac/Acura/Ferrari)
+        # so step6 carries usable damper clicks instead of being None.
+        force_physics_estimate=getattr(args, "force", False),
     )
     base_solve_result = run_base_solve(solve_inputs)
     step1 = base_solve_result.step1
@@ -958,11 +1172,17 @@ def produce(
     stint_result = None
     try:
         from solver.stint_model import analyze_stint
+        # W5.1 F4: GT3 cars have no heave/third architecture; pass None so
+        # analyze_stint (W3.3 GT3-aware) skips heave evolution rather than
+        # consuming zero placeholders. step2 may also be None when the
+        # calibration gate blocks Step 2 — same downstream behaviour.
+        _stint_heave = step2.front_heave_nmm if _step2_present(step2) else None
+        _stint_third = step2.rear_third_nmm if _step2_present(step2) else None
         stint_result = analyze_stint(
             car=car,
             stint_laps=getattr(args, "stint_laps", 30),
-            base_heave_nmm=step2.front_heave_nmm,
-            base_third_nmm=step2.rear_third_nmm,
+            base_heave_nmm=_stint_heave,
+            base_third_nmm=_stint_third,
             v_p99_front_mps=track.shock_vel_p99_front_mps,
             v_p99_rear_mps=track.shock_vel_p99_rear_mps,
             evolution=stint_evolution,
@@ -1006,6 +1226,13 @@ def produce(
         raise  # re-raise programming errors — don't hide bugs
 
     # ── Phase J: Output ──
+    # W5.1 F5: For GT3 cars step2 is HeaveSolution.null() (present=False), but
+    # the dataclass instance is non-None and legality may still run for the
+    # corner-spring axes. The "blocked-by-calibration" gate continues to use
+    # ``step2 is None`` since GT3 step2 must NOT be None — calibration_gate
+    # routes GT3 Step 2 through ``not_applicable`` (W1.1), not blocked. Inside
+    # validate_solution_legality the heave-spring range check is gated on
+    # ``step2.present`` (legality_engine GT3 awareness lives in W4.3 / W5.x).
     if step1 is None or step2 is None or step3 is None:
         from solver.legality_engine import LegalValidation
         legal_validation = LegalValidation(
@@ -1035,6 +1262,7 @@ def produce(
         supporting=supporting,
         legality=legal_validation,
         fallback_reasons=list(getattr(measured, "fallback_reasons", []) or []),
+        car=car,
     )
 
     base_solve_result.step1 = step1
@@ -1142,6 +1370,78 @@ def produce(
                     "Preserved BMW/Sebring second-stage rotation controls after candidate-family rematerialization."
                 )
 
+    # ── Per-corner phase causal impact prediction (Unit P1) ───────────────
+    # If sibling unit D3 has populated cal_models.corner_phase_models with
+    # per-corner regressions, predict per-(corner, phase, metric) impact for
+    # every generated candidate, then prefer Pareto-dominant candidates
+    # (no corner-phase metric regresses) over score-only selection. The
+    # impacts dict is empty until D3 lands or until enough varied IBTs have
+    # been ingested — in which case selection is unchanged.
+    selected_candidate_corner_impacts: dict[str, float] = {}
+    import logging as _p1_logging
+    _p1_logger = _p1_logging.getLogger(__name__)
+    try:
+        from solver.candidate_search import pareto_reselect_winner
+        from solver.corner_causal import (
+            predict_corner_phase_impact,
+            setup_dict_from_current,
+            setup_dict_from_steps,
+        )
+        _baseline_setup = setup_dict_from_current(current_setup, fuel_l=fuel)
+        _have_any_impacts = False
+        for cand in generated_candidates:
+            try:
+                _cand_setup = setup_dict_from_steps(
+                    step1=cand.step1,
+                    step2=cand.step2,
+                    step3=cand.step3,
+                    step5=cand.step5,
+                    fuel_l=fuel,
+                    wing_deg=wing,
+                )
+            except Exception as e:
+                _p1_logger.debug(
+                    "corner-causal: skip candidate %s setup-dict build: %s",
+                    cand.family, e,
+                )
+                continue
+            _impacts = predict_corner_phase_impact(
+                cal_models, _cand_setup, _baseline_setup
+            )
+            try:
+                setattr(cand, "corner_impacts", _impacts)
+            except Exception:
+                pass
+            if _impacts:
+                _have_any_impacts = True
+        # Only re-select if we actually have impact data to evaluate;
+        # otherwise the original score-based selection stands.
+        if _have_any_impacts:
+            new_winner = pareto_reselect_winner(generated_candidates)
+            if new_winner is not None and new_winner is not selected_candidate:
+                solve_notes.append(
+                    f"Pareto re-selection: switched from "
+                    f"{getattr(selected_candidate, 'family', 'n/a')} to "
+                    f"{new_winner.family} (Pareto-dominant)."
+                )
+            selected_candidate = new_winner
+            selected_candidate_family_output = (
+                getattr(selected_candidate, "family", None)
+                if selected_candidate is not None
+                else None
+            )
+            selected_candidate_score_output = (
+                selected_candidate.score.total
+                if selected_candidate is not None and selected_candidate.score is not None
+                else None
+            )
+        if selected_candidate is not None:
+            selected_candidate_corner_impacts = (
+                getattr(selected_candidate, "corner_impacts", None) or {}
+            )
+    except Exception as exc:
+        _p1_logger.debug("corner-causal impact prediction failed: %s", exc)
+
     # ── Legal-manifold search (--explore-legal-space / --search-mode) ─────
     search_mode = getattr(args, "search_mode", None)
     do_legal_search = should_run_legal_manifold_search(
@@ -1223,7 +1523,9 @@ def produce(
                 if _gs_best is not None and not _gs_best.hard_vetoed:
                     try:
                         from solver.solve_chain import materialize_overrides
-                        _gs_params = _normalize_grid_search_params_for_overrides(_gs_best.params or {})
+                        _gs_params = _normalize_grid_search_params_for_overrides(
+                            _gs_best.params or {}, car=car,
+                        )
                         _gs_overrides = canonical_params_to_overrides(
                             base_solve_result,
                             _gs_params,
@@ -1307,24 +1609,60 @@ def produce(
                     if top_pool:
                         log()
                         log(f"  ── TOP-{len(top_pool)} CANDIDATES (--top-n {top_n_req}) ──────────────────────────────────────────────────────────────────────────────────────────────")
-                        log(f"  {'Rank':<5} {'Score':>8}  {'Family':<18}  {'Wing':>5}  {'FH-Spg':>7}  {'R3-Spg':>7}  {'Trsn':>6}  {'FARB':>5}  {'RARB':>5}  Penalties")
-                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        # W5.1 F10: GT3 cars have no heave/third/torsion columns —
+                        # surface per-corner spring rates instead. The dispatch
+                        # is per-car, not per-candidate, since families share an
+                        # architecture for a given run.
+                        _gt3_table = _is_gt3_car(car)
+                        if _gt3_table:
+                            log(f"  {'Rank':<5} {'Score':>8}  {'Family':<18}  {'Wing':>5}  {'LF-Spg':>7}  {'RR-Spg':>7}  {'FARB':>5}  {'RARB':>5}  Penalties")
+                            log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        else:
+                            log(f"  {'Rank':<5} {'Score':>8}  {'Family':<18}  {'Wing':>5}  {'FH-Spg':>7}  {'R3-Spg':>7}  {'Trsn':>6}  {'FARB':>5}  {'RARB':>5}  Penalties")
+                            log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
                         for rank, ev in enumerate(top_pool, start=1):
                             p = ev.params or {}
                             penalty_str = "; ".join(ev.soft_penalties[:2]) if ev.soft_penalties else "—"
                             marker = " ← applied" if rank == 1 else ""
-                            log(
-                                f"  {rank:<5} {ev.score:>+8.1f}  "
-                                f"{(ev.family or ''):<18}  "
-                                f"{p.get('wing_angle_deg', 0):>5.0f}  "
-                                f"{p.get('front_heave_spring_nmm', 0):>7.1f}  "
-                                f"{p.get('rear_third_spring_nmm', 0):>7.1f}  "
-                                f"{p.get('front_torsion_od_mm', 0):>6.2f}  "
-                                f"{int(p.get('front_arb_blade', 0)):>5}  "
-                                f"{int(p.get('rear_arb_blade', 0)):>5}  "
-                                f"{penalty_str}{marker}"
-                            )
-                        log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
+                            if _gt3_table:
+                                _lf_rate = (
+                                    p.get("lf_spring_rate")
+                                    or p.get("front_coil_rate_nmm")
+                                    or p.get("front_spring_rate_nmm")
+                                    or 0.0
+                                )
+                                _rr_rate = (
+                                    p.get("rr_spring_rate")
+                                    or p.get("rear_spring_rate_nmm")
+                                    or p.get("rear_coil_rate_nmm")
+                                    or 0.0
+                                )
+                                log(
+                                    f"  {rank:<5} {ev.score:>+8.1f}  "
+                                    f"{(ev.family or ''):<18}  "
+                                    f"{p.get('wing_angle_deg', 0):>5.0f}  "
+                                    f"{float(_lf_rate):>7.1f}  "
+                                    f"{float(_rr_rate):>7.1f}  "
+                                    f"{int(p.get('front_arb_blade', 0)):>5}  "
+                                    f"{int(p.get('rear_arb_blade', 0)):>5}  "
+                                    f"{penalty_str}{marker}"
+                                )
+                            else:
+                                log(
+                                    f"  {rank:<5} {ev.score:>+8.1f}  "
+                                    f"{(ev.family or ''):<18}  "
+                                    f"{p.get('wing_angle_deg', 0):>5.0f}  "
+                                    f"{p.get('front_heave_spring_nmm', 0):>7.1f}  "
+                                    f"{p.get('rear_third_spring_nmm', 0):>7.1f}  "
+                                    f"{p.get('front_torsion_od_mm', 0):>6.2f}  "
+                                    f"{int(p.get('front_arb_blade', 0)):>5}  "
+                                    f"{int(p.get('rear_arb_blade', 0)):>5}  "
+                                    f"{penalty_str}{marker}"
+                                )
+                        if _gt3_table:
+                            log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*5}  {'-'*5}  {'-'*40}")
+                        else:
+                            log(f"  {'-'*5} {'-'*8}  {'-'*18}  {'-'*5}  {'-'*7}  {'-'*7}  {'-'*6}  {'-'*5}  {'-'*5}  {'-'*40}")
                         log(f"  Rank 1 applied to setup output. Use --top-n 1 to suppress this table.")
                         solve_notes.append(
                             f"Top-{len(top_pool)} candidates surfaced via --top-n "
@@ -1411,19 +1749,38 @@ def produce(
         garage_warnings = validate_and_fix_garage_correlation(
             car, step1, step2, step3, step5,
             fuel_l=fuel, track_name=track.track_name,
+            current_setup=current_setup,
         )
         for w in garage_warnings:
             print(f"[garage] {w}")
 
-        # Print ESTIMATE warnings for uncalibrated models
+        # Print ESTIMATE warnings for uncalibrated models. Where the
+        # calibration gate has classified a subsystem with a confidence
+        # tier (high/medium/low/insufficient), surface the tier so the
+        # operator knows whether the prediction is high-confidence,
+        # reduced-confidence (low tier), or absent (insufficient tier).
         estimate_warnings = []
+        try:
+            _gate_provenance = cal_gate.provenance()
+        except Exception:
+            _gate_provenance = {}
+        _rh_tier = (_gate_provenance.get("ride_height_model") or {}).get("confidence_tier")
+        _defl_tier = (_gate_provenance.get("deflection_model") or {}).get("confidence_tier")
         if hasattr(car, 'deflection') and not getattr(car.deflection, 'is_calibrated', True):
             estimate_warnings.append(
                 "Deflection predictions use uncalibrated model — verify garage display values manually"
             )
+        elif _defl_tier in ("low",):
+            estimate_warnings.append(
+                f"Deflection model at tier={_defl_tier} — predictions usable but reduced confidence"
+            )
         if hasattr(car, 'ride_height_model') and not getattr(car.ride_height_model, 'is_calibrated', True):
             estimate_warnings.append(
                 "Ride height predictions use uncalibrated model"
+            )
+        elif _rh_tier in ("low",):
+            estimate_warnings.append(
+                f"Ride height model at tier={_rh_tier} — predictions usable but reduced confidence"
             )
         if hasattr(car, 'damper') and not getattr(car.damper, 'zeta_is_calibrated', True):
             estimate_warnings.append(
@@ -1512,6 +1869,7 @@ def produce(
                 step4=step4, step5=step5, step6=step6,
                 output_path=args.sto,
                 car_canonical=car.canonical_name,
+                current_setup=current_setup,
                 **_extra_kw,
             )
             print(f"\niRacing .sto setup saved to: {sto_path}")
@@ -1569,7 +1927,15 @@ def produce(
             "decision_trace": [decision.to_dict() for decision in decision_trace],
             "solver_notes": solve_notes,
             "step1_rake": to_public_output_payload(car.canonical_name, step1),
-            "step2_heave": to_public_output_payload(car.canonical_name, step2),
+            # W5.1 F7: GT3 step2 is HeaveSolution.null() (present=False).
+            # Emit a sentinel payload instead of zero-valued heave numerics so
+            # downstream tooling (delta cards, learner ingest, webapp) does
+            # not mistake `front_heave_nmm: 0.0` for real data.
+            "step2_heave": (
+                to_public_output_payload(car.canonical_name, step2)
+                if _step2_present(step2)
+                else {"present": False, "reason": "not_applicable_for_architecture"}
+            ),
             "step3_corner": to_public_output_payload(car.canonical_name, step3),
             "step4_arb": to_public_output_payload(car.canonical_name, step4),
             "step5_geometry": to_public_output_payload(car.canonical_name, step5),
@@ -1577,6 +1943,12 @@ def produce(
             "supporting": to_public_output_payload(car.canonical_name, supporting),
             "calibration_blocked": sorted(_steps_blocked) if _steps_blocked else [],
             "calibration_instructions": cal_report.format_header() if _steps_blocked else "",
+            # Parameter coupling cascade (Unit C1). Each entry is a dict
+            # {param, old, new, rationale, iteration}. Empty list when
+            # nothing was re-derived.
+            "coupling_changes": [
+                ch.to_dict() for ch in getattr(base_solve_result, "coupling_changes", [])
+            ],
             # Provenance: where each calibrated subsystem's value came from.
             # User can audit exactly what's data-derived vs what's weak/missing.
             "calibration_provenance": cal_gate.provenance(),
@@ -1628,11 +2000,19 @@ def produce(
             prediction_corrections={},
             selected_candidate_family=selected_candidate_family_output,
             selected_candidate_score=selected_candidate_score_output,
+            corner_impacts=selected_candidate_corner_impacts,
+            generated_candidates=generated_candidates,
             solve_context_lines=solve_notes,
             compact=report_compact,
+            cal_gate=cal_gate,
+            coupling_changes=getattr(base_solve_result, "coupling_changes", []),
         )
     if _emit_report:
         print(report)
+        # Corner-by-corner balance analysis section
+        if balance_summary and balance_summary.corners:
+            print()
+            print(format_balance_report(balance_summary))
         if _steps_blocked:
             print()
             print("=" * 63)
@@ -1641,6 +2021,19 @@ def produce(
             print("=" * 63)
             print(cal_report.format_header())
             print()
+
+            # Auto-invoke the D-optimal recommender so the user sees concrete
+            # next-test setups to unblock the gate. Failures degrade gracefully
+            # (logged + skipped) — never crash the pipeline.
+            _recs = _build_calibration_recommendations(
+                car.canonical_name, _track_short, n_recs=3,
+            )
+            for line in _build_recommendations_section(
+                _recs,
+                car_display=getattr(car, "display_name", None) or car.name,
+                track_display=track.track_name,
+            ):
+                print(line)
 
     # ── Delta card output (--delta-card flag) ────────────────────────
     if getattr(args, "delta_card", False) and current_setup is not None:
@@ -1689,9 +2082,6 @@ def produce(
                 # Pushrod — solver recalculates this when spring/RH changes (rake_solver.py)
                 "front_pushrod_mm": getattr(step1, "front_pushrod_offset_mm", None),
                 "rear_pushrod_mm": getattr(step1, "rear_pushrod_offset_mm", None),
-                # Use public_output_value to convert to display units (e.g. N/mm → index for Ferrari)
-                "front_heave_nmm": public_output_value(car, "front_heave_nmm", step2.front_heave_nmm),
-                "rear_third_nmm": public_output_value(car, "rear_third_nmm", step2.rear_third_nmm),
                 "torsion_bar_od_mm": public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm),
                 "rear_spring_nmm": public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm),
                 "front_arb_blade": step4.front_arb_blade_start,
@@ -1704,6 +2094,15 @@ def produce(
                 "rear_toe_mm": step5.rear_toe_mm,
                 "wing_angle_deg": wing,
             }
+            # W5.1 F9: GT3 cars have no heave/third architecture; only emit
+            # heave/third recommended values when step2 carries real data.
+            if _step2_present(step2):
+                _recommended_dict["front_heave_nmm"] = public_output_value(
+                    car, "front_heave_nmm", step2.front_heave_nmm
+                )
+                _recommended_dict["rear_third_nmm"] = public_output_value(
+                    car, "rear_third_nmm", step2.rear_third_nmm
+                )
             if supporting is not None:
                 _recommended_dict.update({
                     "diff_preload_nm": getattr(supporting, "diff_preload_nm", None),
@@ -1799,13 +2198,19 @@ def produce(
             )
             # Build solver predictions dict for the feedback loop.
             # These are what the solver PREDICTED for this session's telemetry.
+            # W5.1 F9: heave/third-derived fields are gated on step2.present so
+            # GT3 cars don't store zero placeholders that would bias the
+            # learner's prediction-error feedback loop downstream.
+            _step2_alive = _step2_present(step2)
             solver_predictions = {
-                "front_rh_std_mm": getattr(step2, "front_rh_sigma_mm", 0.0),
-                "rear_rh_std_mm": getattr(step2, "rear_rh_sigma_mm", 0.0),
+                "front_rh_std_mm": getattr(step2, "front_rh_sigma_mm", 0.0) if _step2_alive else None,
+                "rear_rh_std_mm": getattr(step2, "rear_rh_sigma_mm", 0.0) if _step2_alive else None,
                 "lltd_predicted": getattr(step4, "lltd_achieved", 0.0),
                 "body_roll_predicted_deg_per_g": getattr(step4, "roll_gradient_deg_per_g", 0.0),
-                "front_bottoming_predicted": getattr(step2, "bottoming_events_front", 0),
-                "front_heave_travel_used_pct": predicted_telemetry.front_heave_travel_used_pct,
+                "front_bottoming_predicted": getattr(step2, "bottoming_events_front", 0) if _step2_alive else None,
+                "front_heave_travel_used_pct": (
+                    predicted_telemetry.front_heave_travel_used_pct if _step2_alive else None
+                ),
                 "front_excursion_mm": predicted_telemetry.front_excursion_mm,
                 "braking_pitch_deg": predicted_telemetry.braking_pitch_deg,
                 "front_lock_p95": predicted_telemetry.front_lock_p95,
@@ -1815,6 +2220,11 @@ def produce(
                 "understeer_high_deg": predicted_telemetry.understeer_high_deg,
                 "front_pressure_hot_kpa": predicted_telemetry.front_pressure_hot_kpa,
                 "rear_pressure_hot_kpa": predicted_telemetry.rear_pressure_hot_kpa,
+            }
+            # Strip Nones from heave fields so the feedback loop doesn't
+            # interpret null as zero. (GT3: keys are simply absent.)
+            solver_predictions = {
+                k: v for k, v in solver_predictions.items() if v is not None
             }
 
             store = KnowledgeStore()
@@ -1914,9 +2324,17 @@ def produce_result(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="GTP Setup Producer — IBT->.sto physics pipeline"
+        description="IOptimal Setup Producer — IBT->.sto physics pipeline (GTP + GT3)"
     )
-    parser.add_argument("--car", required=True, help="Car name (e.g., bmw)")
+    # GT3 Phase 2 W9.1 — F8 fix. Pull car choices dynamically from the
+    # canonical registry so GT3 canonical names are accepted at parse time.
+    from car_model.cars import _CARS as _CAR_REGISTRY
+    parser.add_argument(
+        "--car",
+        required=True,
+        choices=sorted(_CAR_REGISTRY.keys()),
+        help="Car canonical name. Choices: " + ", ".join(sorted(_CAR_REGISTRY.keys())),
+    )
     parser.add_argument("--track", type=str, default=None,
                         help="Track name hint (e.g., silverstone). If a saved profile exists at "
                              "data/tracks/{name}.json it will be loaded; otherwise the track "

@@ -34,38 +34,6 @@
       "empirical_prediction_at_mean": 0.0,
       "correction_factor": 1.0
     },
-    "lltd_vs_rear_arb": {
-      "name": "LLTD vs rear ARB blade",
-      "x_param": "rear_arb_blade",
-      "y_param": "lltd_measured",
-      "fit_type": "linear",
-      "coefficients": [
-        0.0007535084918759579,
-        0.5077709521436233
-      ],
-      "r_squared": 0.5306613537866227,
-      "sample_count": 5,
-      "residual_std": 0.0011338159484826594,
-      "x_values": [
-        2.0,
-        5.0,
-        3.0,
-        5.0,
-        1.0
-      ],
-      "y_values": [
-        0.5077555020744042,
-        0.5119198227130433,
-        0.5117969171680364,
-        0.5106550634818139,
-        0.5087835911508354
-      ],
-      "x_min": 1.0,
-      "x_max": 5.0,
-      "physics_prediction_at_mean": 0.0,
-      "empirical_prediction_at_mean": 0.0,
-      "correction_factor": 1.0
-    },
     "front_rh_var_vs_heave": {
       "name": "Front RH variance vs heave spring",
       "x_param": "front_heave_nmm",
@@ -803,10 +771,16 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-04-12T17:57:14.511215+00:00",
+  "last_updated": "2026-04-28T05:50:12.054384+00:00",
   "observation_count": 5,
   "most_sensitive_parameters": [],
   "corrections": {
+    "roll_distribution_proxy_mean": 0.5101994226837127,
+    "roll_distribution_proxy_std": 0.0016550053553376905,
+    "roll_distribution_proxy_sample_count": 5,
+    "lltd_measured_mean": 0.5101994226837127,
+    "lltd_measured_std": 0.0016550053553376905,
+    "lltd_is_proxy": true,
     "aero_compression_front_mean_mm": 11.904528999328615,
     "aero_compression_front_std_mm": 3.102022439000976,
     "aero_compression_rear_mean_mm": 16.992386322021485,
@@ -816,8 +790,6 @@
     "roll_gradient_measured_mean": 0.38364280137848367,
     "roll_gradient_measured_std": 0.06777433142421989,
     "roll_gradient_sample_count": 5,
-    "lltd_measured_mean": 0.5101994226837129,
-    "lltd_measured_std": 0.0016550053553376905,
     "m_eff_front_values": [
       835.9,
       741.9,
@@ -826,6 +798,45 @@
       739.3
     ],
     "m_eff_front_empirical_mean": 949.6800000000001,
-    "m_eff_front_empirical_std": 343.9156431452341
+    "m_eff_front_empirical_std": 343.9156431452341,
+    "prediction_correction_front_rh_std_mm": 6.3052,
+    "prediction_correction_front_rh_std_mm_std": 1.0613,
+    "prediction_correction_front_rh_std_mm_n": 4,
+    "prediction_correction_rear_rh_std_mm": 6.303,
+    "prediction_correction_rear_rh_std_mm_std": 0.777,
+    "prediction_correction_rear_rh_std_mm_n": 4,
+    "prediction_correction_body_roll_predicted_deg_per_g": 0.3901,
+    "prediction_correction_body_roll_predicted_deg_per_g_std": 0.0745,
+    "prediction_correction_body_roll_predicted_deg_per_g_n": 4,
+    "prediction_correction_front_bottoming_predicted": 3.2257,
+    "prediction_correction_front_bottoming_predicted_std": 2.7732,
+    "prediction_correction_front_bottoming_predicted_n": 4,
+    "prediction_correction_front_excursion_mm": 5.6573,
+    "prediction_correction_front_excursion_mm_std": 2.481,
+    "prediction_correction_front_excursion_mm_n": 4,
+    "prediction_correction_braking_pitch_deg": 0.4489,
+    "prediction_correction_braking_pitch_deg_std": 0.1042,
+    "prediction_correction_braking_pitch_deg_n": 4,
+    "prediction_correction_front_lock_p95": 0.0219,
+    "prediction_correction_front_lock_p95_std": 0.0053,
+    "prediction_correction_front_lock_p95_n": 4,
+    "prediction_correction_rear_power_slip_p95": 0.0159,
+    "prediction_correction_rear_power_slip_p95_std": 0.0071,
+    "prediction_correction_rear_power_slip_p95_n": 4,
+    "prediction_correction_body_slip_p95_deg": -0.0722,
+    "prediction_correction_body_slip_p95_deg_std": 0.1418,
+    "prediction_correction_body_slip_p95_deg_n": 4,
+    "prediction_correction_understeer_low_deg": -0.1551,
+    "prediction_correction_understeer_low_deg_std": 0.0604,
+    "prediction_correction_understeer_low_deg_n": 4,
+    "prediction_correction_understeer_high_deg": -0.1492,
+    "prediction_correction_understeer_high_deg_std": 0.0612,
+    "prediction_correction_understeer_high_deg_n": 4,
+    "prediction_correction_front_pressure_hot_kpa": 0.0136,
+    "prediction_correction_front_pressure_hot_kpa_std": 0.1993,
+    "prediction_correction_front_pressure_hot_kpa_n": 4,
+    "prediction_correction_rear_pressure_hot_kpa": -0.2647,
+    "prediction_correction_rear_pressure_hot_kpa_std": 0.1668,
+    "prediction_correction_rear_pressure_hot_kpa_n": 4
   }
 }

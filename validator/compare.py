@@ -140,6 +140,19 @@ def compare_all(solver_json: dict, measured: MeasuredState) -> list[Comparison]:
 
     comparisons.append(Comparison(
         step=1,
+        parameter="bottoming_events_rear",
+        predicted=0,
+        measured=measured.bottoming_event_count_rear,
+        delta=measured.bottoming_event_count_rear,
+        delta_pct=0,
+        tolerance_abs=5,
+        rethink_abs=20,
+        units="events",
+        physics_note="Rear spring too soft or rear RH too low at speed.",
+    ))
+
+    comparisons.append(Comparison(
+        step=1,
         parameter="vortex_burst_events",
         predicted=0,
         measured=measured.vortex_burst_event_count,

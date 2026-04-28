@@ -5,6 +5,7 @@ identical output. This is the safety net for the overhaul: any unintended
 change to BMW or Porsche setup generation will fail these tests.
 
 Regenerating fixtures (only when an intentional change is made):
+    # GTP baselines
     python -m pipeline.produce --car bmw \\
         --ibt "data/telemetry/bmwlmdh_sebring international 2026-03-11 10-17-38.ibt" \\
         --wing 17 --sto tests/fixtures/baselines/bmw_sebring_baseline.sto
@@ -12,6 +13,19 @@ Regenerating fixtures (only when an intentional change is made):
     python -m pipeline.produce --car porsche \\
         --ibt "ibtfiles/porsche963gtp_algarve gp 2026-04-06 16-46-36.ibt" \\
         --fuel 58 --wing 17 --sto tests/fixtures/baselines/porsche_algarve_baseline.sto
+
+    # GT3 baselines (W9.2; --force bypasses calibration gate — GT3 is intercept-only)
+    python -m pipeline.produce --car bmw_m4_gt3 \\
+        --ibt "data/gt3_ibts/bmwm4gt3_spielberg gp 2026-04-26 21-34-43.ibt" \\
+        --force --sto tests/fixtures/baselines/bmw_m4_gt3_spielberg_baseline.sto
+
+    python -m pipeline.produce --car aston_martin_vantage_gt3 \\
+        --ibt "data/gt3_ibts/amvantageevogt3_spielberg gp 2026-04-26 21-25-55.ibt" \\
+        --force --sto tests/fixtures/baselines/aston_vantage_gt3_spielberg_baseline.sto
+
+    python -m pipeline.produce --car porsche_992_gt3r \\
+        --ibt "data/gt3_ibts/porsche992rgt3_spielberg gp 2026-04-26 21-42-39.ibt" \\
+        --force --sto tests/fixtures/baselines/porsche_992_gt3r_spielberg_baseline.sto
 """
 
 from __future__ import annotations
@@ -20,7 +34,10 @@ import re
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "baselines"
@@ -32,23 +49,98 @@ SETUP_KEY_PATTERN = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class RegressionCase:
+    """One parametrized regression scenario."""
+
+    label: str
+    car: str
+    ibt: str
+    wing: int | None
+    fuel: int | None
+    baseline: str
+    force: bool = False  # GT3 cars need --force until calibration lands
+
+
+# Parametrized cases. GTP entries pin against full-pipeline calibrated output;
+# GT3 entries lock the W1-W8 intercept-only pipeline output (the .sto values
+# are estimates per the ESTIMATE WARNINGS block, but the structure + per-car
+# PARAM_IDS dispatch is what we're guarding against drift).
+REGRESSION_CASES: list[RegressionCase] = [
+    RegressionCase(
+        label="BMW/Sebring",
+        car="bmw",
+        ibt="data/telemetry/bmwlmdh_sebring international 2026-03-11 10-17-38.ibt",
+        wing=17,
+        fuel=None,
+        baseline="bmw_sebring_baseline.sto",
+    ),
+    RegressionCase(
+        label="Porsche/Algarve",
+        car="porsche",
+        ibt="ibtfiles/porsche963gtp_algarve gp 2026-04-06 16-46-36.ibt",
+        wing=17,
+        fuel=58,
+        baseline="porsche_algarve_baseline.sto",
+    ),
+    RegressionCase(
+        label="BMW M4 GT3/Spielberg",
+        car="bmw_m4_gt3",
+        ibt="data/gt3_ibts/bmwm4gt3_spielberg gp 2026-04-26 21-34-43.ibt",
+        wing=None,
+        fuel=None,
+        baseline="bmw_m4_gt3_spielberg_baseline.sto",
+        force=True,
+    ),
+    RegressionCase(
+        label="Aston Vantage GT3/Spielberg",
+        car="aston_martin_vantage_gt3",
+        ibt="data/gt3_ibts/amvantageevogt3_spielberg gp 2026-04-26 21-25-55.ibt",
+        wing=None,
+        fuel=None,
+        baseline="aston_vantage_gt3_spielberg_baseline.sto",
+        force=True,
+    ),
+    RegressionCase(
+        label="Porsche 992 GT3R/Spielberg",
+        car="porsche_992_gt3r",
+        ibt="data/gt3_ibts/porsche992rgt3_spielberg gp 2026-04-26 21-42-39.ibt",
+        wing=None,
+        fuel=None,
+        baseline="porsche_992_gt3r_spielberg_baseline.sto",
+        force=True,
+    ),
+]
+
+
 def _extract_setup_values(sto_path: Path) -> dict[str, str]:
     """Parse a .sto XML file and return {parameter_id: value_string}."""
     text = sto_path.read_text(encoding="utf-8")
     return dict(SETUP_KEY_PATTERN.findall(text))
 
 
-def _run_pipeline(car: str, ibt: str, wing: int, fuel: int | None, out_sto: Path) -> None:
+def _run_pipeline(
+    car: str,
+    ibt: str,
+    wing: int | None,
+    fuel: int | None,
+    out_sto: Path,
+    *,
+    force: bool = False,
+) -> None:
     """Run pipeline.produce with given args and write output to out_sto."""
     cmd = [
         sys.executable, "-m", "pipeline.produce",
         "--car", car,
         "--ibt", ibt,
-        "--wing", str(wing),
         "--sto", str(out_sto),
     ]
+    if wing is not None:
+        cmd += ["--wing", str(wing)]
     if fuel is not None:
         cmd += ["--fuel", str(fuel)]
+    if force:
+        cmd += ["--force"]
     result = subprocess.run(
         cmd, cwd=REPO_ROOT, capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=300,
@@ -87,38 +179,29 @@ def _assert_setup_matches(baseline: Path, current: Path, label: str) -> None:
         raise AssertionError(msg)
 
 
-def test_bmw_sebring_regression(tmp_path: Path) -> None:
-    """BMW/Sebring pipeline output must match fixture exactly."""
-    baseline = FIXTURES / "bmw_sebring_baseline.sto"
+@pytest.mark.parametrize(
+    "case",
+    REGRESSION_CASES,
+    ids=[c.label for c in REGRESSION_CASES],
+)
+def test_setup_regression(tmp_path: Path, case: RegressionCase) -> None:
+    """Pipeline output for each (car, track) baseline must match its fixture."""
+    baseline = FIXTURES / case.baseline
     if not baseline.exists():
-        import pytest
         pytest.skip(f"Baseline fixture missing (regenerate with pipeline.produce): {baseline}")
-    current = tmp_path / "bmw_current.sto"
+    ibt_path = REPO_ROOT / case.ibt
+    if not ibt_path.exists():
+        pytest.skip(f"IBT not present in checkout (LFS / gitignored): {ibt_path}")
+    current = tmp_path / f"{case.car}_current.sto"
     _run_pipeline(
-        car="bmw",
-        ibt="data/telemetry/bmwlmdh_sebring international 2026-03-11 10-17-38.ibt",
-        wing=17,
-        fuel=None,
+        car=case.car,
+        ibt=case.ibt,
+        wing=case.wing,
+        fuel=case.fuel,
         out_sto=current,
+        force=case.force,
     )
-    _assert_setup_matches(baseline, current, "BMW/Sebring")
-
-
-def test_porsche_algarve_regression(tmp_path: Path) -> None:
-    """Porsche/Algarve pipeline output must match fixture exactly."""
-    baseline = FIXTURES / "porsche_algarve_baseline.sto"
-    if not baseline.exists():
-        import pytest
-        pytest.skip(f"Baseline fixture missing (regenerate with pipeline.produce): {baseline}")
-    current = tmp_path / "porsche_current.sto"
-    _run_pipeline(
-        car="porsche",
-        ibt="ibtfiles/porsche963gtp_algarve gp 2026-04-06 16-46-36.ibt",
-        wing=17,
-        fuel=58,
-        out_sto=current,
-    )
-    _assert_setup_matches(baseline, current, "Porsche/Algarve")
+    _assert_setup_matches(baseline, current, case.label)
 
 
 if __name__ == "__main__":
@@ -132,17 +215,11 @@ if __name__ == "__main__":
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        try:
-            test_bmw_sebring_regression(tmp_path)
-            print("[OK] BMW/Sebring regression")
-        except AssertionError as e:
-            print(f"[FAIL] BMW/Sebring: {e}")
-        except _PytestSkipped as e:  # type: ignore[misc]
-            print(f"[SKIP] BMW/Sebring: {e}")
-        try:
-            test_porsche_algarve_regression(tmp_path)
-            print("[OK] Porsche/Algarve regression")
-        except AssertionError as e:
-            print(f"[FAIL] Porsche/Algarve: {e}")
-        except _PytestSkipped as e:  # type: ignore[misc]
-            print(f"[SKIP] Porsche/Algarve: {e}")
+        for case in REGRESSION_CASES:
+            try:
+                test_setup_regression(tmp_path, case)
+                print(f"[OK] {case.label} regression")
+            except AssertionError as e:
+                print(f"[FAIL] {case.label}: {e}")
+            except _PytestSkipped as e:  # type: ignore[misc]
+                print(f"[SKIP] {case.label}: {e}")

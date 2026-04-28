@@ -113,13 +113,26 @@ def compute_modifiers(
     """
     mods = SolverModifiers()
 
+    # GT3 architecture short-circuit: GT3 cars have no heave/third spring, so
+    # heave-floor / heave-perch modifiers are meaningless. We still compute the
+    # non-heave modifiers (LLTD offset, DF balance, dampers, driver-style)
+    # below — but anything that reads `_heave_min` or writes
+    # `front_heave_min_floor_nmm` / `front_heave_perch_target_mm` is gated on
+    # this flag. See MD2/MD3/MD4 in
+    # docs/audits/gt3_phase2/solver-damper-legality.md.
+    _has_heave_third = (
+        car is None
+        or (car.heave_spring is not None and car.suspension_arch.has_heave_third)
+    )
+
     # Per-car heave spring minimum for scaling floor thresholds.
     # BMW range starts at ~30 N/mm; Porsche at ~180 N/mm; Acura at ~90 N/mm.
     # Using absolute BMW values would never trigger for stiffer-sprung cars.
     # Use 10% of range as base increment, NOT the range minimum.
     # For BMW (0-900): _heave_step = 90. For Porsche (150-600): _heave_step = 45.
-    _heave_min = 30.0  # fallback only if car is None (standalone mode)
-    if car is not None:
+    # Fallback fires for: car is None (standalone mode) OR GT3 (heave_spring is None).
+    _heave_min = 30.0
+    if car is not None and car.heave_spring is not None:
         _range = car.heave_spring.front_spring_range_nmm
         if len(_range) >= 2:
             _heave_min = (_range[1] - _range[0]) * 0.10
@@ -158,7 +171,8 @@ def compute_modifiers(
 
         # Safety: bottoming → heave floor (only for clean-track bottoming,
         # not kerb-only — kerb bottoming is a driving choice, not a setup failure)
-        if cat == "safety" and "bottoming" in symptom and "kerb" not in symptom:
+        # GT3 short-circuit: GT3 has no heave spring, so no heave-floor modifier.
+        if _has_heave_third and cat == "safety" and "bottoming" in symptom and "kerb" not in symptom:
             if "front" in symptom and problem.measured > 5:
                 # Floor estimate: use heave spring natural frequency constraint
                 # Higher shock velocity → stiffer spring needed to control platform
@@ -175,7 +189,8 @@ def compute_modifiers(
         # Safety: splitter scrape → heave floor
         # Splitter scraping means the front is too low at speed. Stiffen heave spring
         # to reduce aero compression and prevent underbody damage + aero stall.
-        if cat == "safety" and "splitter scrape" in symptom:
+        # GT3 short-circuit: GT3 has no heave spring.
+        if _has_heave_third and cat == "safety" and "splitter scrape" in symptom:
             scrape_count = int(problem.measured)
             if scrape_count > 20:
                 # Critical: frequent scraping, need significant stiffening
@@ -196,7 +211,8 @@ def compute_modifiers(
 
         # Safety: heave spring travel exhaustion -> perch adjustment
         # Match both "exhausted under braking" and "used at speed" symptom strings
-        if cat == "safety" and "travel" in symptom and ("exhausted" in symptom or "used" in symptom):
+        # GT3 short-circuit: GT3 has no heave spring or perch.
+        if _has_heave_third and cat == "safety" and "travel" in symptom and ("exhausted" in symptom or "used" in symptom):
             travel_pct = problem.measured
             if travel_pct > 85:
                 # When the front heave spring is running out of travel, the perch
@@ -206,8 +222,8 @@ def compute_modifiers(
                 #   delta  = excess * 20% of |baseline|, at least 2mm
                 # This moves the perch toward zero (less negative for BMW-like cars)
                 # or further positive (for Porsche-like cars), both recovering travel.
-                _perch_baseline = -11.0  # fallback only if car is None
-                if car is not None:
+                _perch_baseline = -11.0  # fallback only if car is None or heave_spring is None
+                if car is not None and car.heave_spring is not None:
                     _perch_baseline = car.heave_spring.perch_offset_front_baseline_mm
                 _excess = min(1.0, (travel_pct - 85.0) / 15.0)
                 _delta = max(2.0, abs(_perch_baseline) * 0.20 * _excess)
@@ -238,13 +254,16 @@ def compute_modifiers(
     front_heave_vel_hs_pct = _num(measured.front_heave_vel_hs_pct)
     front_heave_vel_p95 = _num(measured.front_heave_vel_p95_mps)
     pitch_range_deg = _num(measured.pitch_range_deg)
-    if front_heave_vel_hs_pct > 33:
+    # GT3 short-circuit: heave velocity / heave-floor modifiers don't apply.
+    if _has_heave_third and front_heave_vel_hs_pct > 33:
         # >33% of heave velocity in HS regime = platform is getting pounded by surface
         _hs_floor = _heave_min * 1.33  # ~40 N/mm for BMW (30*1.33)
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _hs_floor)
         mods.reasons.append(
             f"Heave HS regime {front_heave_vel_hs_pct:.0f}% > 33% → heave floor {_hs_floor:.0f} N/mm"
         )
+    # The HS-comp offset is a damper modifier — applies on every architecture
+    # (GT3 dampers exist), so do NOT gate on _has_heave_third.
     if front_heave_vel_p95 > 0.35:
         # Very high heave velocity → increase HS damping to control platform
         mods.front_hs_comp_offset += 1
@@ -253,7 +272,8 @@ def compute_modifiers(
         )
 
     # ── From Pitch Dynamics (platform stability) ──
-    if pitch_range_deg > 1.5:
+    # GT3 short-circuit: no heave-floor concept on GT3.
+    if _has_heave_third and pitch_range_deg > 1.5:
         _pitch_floor = _heave_min * 1.27  # ~38 N/mm for BMW (30*1.27)
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _pitch_floor)
         mods.reasons.append(
@@ -263,19 +283,21 @@ def compute_modifiers(
     # ── From Heave Travel Utilization ──
     # If p99 heave spring travel > 80%, the spring is too soft — bottoming risk at peak events
     # even if the p99 bottoming model passes (it uses shock velocity p99 which misses extreme events).
+    # GT3 short-circuit: heave travel doesn't exist as a per-axle channel.
     travel_pct = measured.front_heave_travel_used_pct or 0.0
-    if travel_pct >= 90.0:
-        _travel_floor = _heave_min * 2.0  # ~60 N/mm for BMW (30*2.0), ~180 for Porsche
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
-        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 90% → heave floor {_travel_floor:.0f} N/mm (bottoming risk)")
-    elif travel_pct >= 80.0:
-        _travel_floor = _heave_min * 1.67  # ~50 N/mm for BMW (30*1.67)
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
-        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 80% → heave floor {_travel_floor:.0f} N/mm")
-    elif travel_pct >= 70.0:
-        _travel_floor = _heave_min * 1.33  # ~40 N/mm for BMW (30*1.33)
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
-        mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 70% → heave floor {_travel_floor:.0f} N/mm")
+    if _has_heave_third:
+        if travel_pct >= 90.0:
+            _travel_floor = _heave_min * 2.0  # ~60 N/mm for BMW (30*2.0), ~180 for Porsche
+            mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
+            mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 90% → heave floor {_travel_floor:.0f} N/mm (bottoming risk)")
+        elif travel_pct >= 80.0:
+            _travel_floor = _heave_min * 1.67  # ~50 N/mm for BMW (30*1.67)
+            mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
+            mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 80% → heave floor {_travel_floor:.0f} N/mm")
+        elif travel_pct >= 70.0:
+            _travel_floor = _heave_min * 1.33  # ~40 N/mm for BMW (30*1.33)
+            mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor)
+            mods.reasons.append(f"Front heave travel {travel_pct:.0f}% ≥ 70% → heave floor {_travel_floor:.0f} N/mm")
 
     # ── From Directional Understeer (balance weighting) ──
     us_left = _num(measured.understeer_left_turn_deg)
@@ -295,8 +317,9 @@ def compute_modifiers(
             )
 
     # ── From Corner Deflections (travel proximity) ──
+    # GT3 short-circuit: no heave-floor on GT3.
     front_corner_defl = _num(measured.front_corner_defl_p99_mm)
-    if front_corner_defl > 30:
+    if _has_heave_third and front_corner_defl > 30:
         mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, 35.0)
         mods.reasons.append(
             f"Front corner defl p99 {front_corner_defl:.1f}mm > 30mm "
@@ -361,19 +384,25 @@ def compute_modifiers(
     # correctly across BMW (range 0-900, _heave_min=90), Porsche (150-600, 45),
     # and Acura (90-1800, 171). Hardcoded absolute N/mm values would be either
     # too tight for Porsche or meaningless for BMW.
+    # NOTE: multipliers halved (2025-04) — the original 2.0× on BMW (_heave_min=90)
+    # produced floors of 180 N/mm, 2-3× above the fastest validated setup (80 N/mm).
+    # The post-scaling floors are safety nets, not optimization targets; they should
+    # prevent dangerously soft springs without overriding the solver's own physics.
+    # GT3 short-circuit: heave floors don't apply.
     travel_pct = measured.front_heave_travel_used_pct or 0.0
-    if travel_pct >= 90.0:
-        _travel_floor_post = _heave_min * 2.0   # same ratio as diagnosis block above
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
-    elif travel_pct >= 80.0:
-        _travel_floor_post = _heave_min * 1.67
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
-    elif travel_pct >= 70.0:
-        _travel_floor_post = _heave_min * 1.33
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
-    if pitch_range_deg > 1.5:
-        _pitch_floor_post = _heave_min * 1.27   # same ratio as diagnosis block above
-        mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _pitch_floor_post)
+    if _has_heave_third:
+        if travel_pct >= 90.0:
+            _travel_floor_post = _heave_min * 1.0   # BMW: 90, Porsche: 45 (below their min, won't bind)
+            mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
+        elif travel_pct >= 80.0:
+            _travel_floor_post = _heave_min * 0.83
+            mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
+        elif travel_pct >= 70.0:
+            _travel_floor_post = _heave_min * 0.67
+            mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _travel_floor_post)
+        if pitch_range_deg > 1.5:
+            _pitch_floor_post = _heave_min * 0.67   # BMW: ~60, reasonable safety net
+            mods.front_heave_min_floor_nmm = max(mods.front_heave_min_floor_nmm, _pitch_floor_post)
 
     # Clamp cumulative offsets to reasonable ranges
     mods.lltd_offset = max(-0.05, min(0.05, mods.lltd_offset))

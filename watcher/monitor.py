@@ -23,6 +23,15 @@ logger = logging.getLogger(__name__)
 # How long to wait (seconds) for the file to stop growing before declaring
 # it "fully written".  iRacing writes IBT continuously during a session;
 # the file stops growing once the driver exits the car / ends the session.
+#
+# TODO(W8.2-followup, audit F14): GT3 hot-lap practice IBTs can be < 90 s
+# total. The 3 s stable window is empirically fine for GTP endurance stints
+# (multi-lap, slow taper) and for the few GT3 IBTs we've validated to date,
+# but bursty I/O (anti-virus scans, OneDrive sync) on a short GT3 file can
+# trigger a false "stable" inside the run.  If GT3 false-stables become a
+# real problem, raise the window to 5 s for files < 5 MB or add an
+# explicit "session ended" watcher on the iRacing process.  Cosmetic for
+# now — flagged here so reviewers don't have to re-derive from the audit.
 _STABLE_WAIT_S = 3.0
 _STABLE_POLL_S = 0.5
 _MAX_RETRIES = 3

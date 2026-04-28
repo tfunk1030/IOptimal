@@ -395,8 +395,16 @@ def _front_heave_sensitivity(
     step2: "HeaveSolution",
     track: "TrackProfile",
     measured: "MeasuredState | None" = None,
-) -> ParameterSensitivity:
-    """Front heave (weight 0.75): 10 N/mm → bottoming margin → DF stability."""
+) -> "ParameterSensitivity | None":
+    """Front heave (weight 0.75): 10 N/mm → bottoming margin → DF stability.
+
+    W6.1 (F-LT-1): GT3 cars skip Step 2 (HeaveSolution.null(), present=False);
+    return None so the caller can filter the entry out of the sensitivity
+    table. A GT3-shaped corner-spring sensitivity is a Phase 3 follow-on
+    (TODO(W6.x)).
+    """
+    if not getattr(step2, "present", True):
+        return None
     # Softer heave → more bottoming → DF instability → lap time cost
     # Each bottoming event ≈ 20ms, at soft limit ~0.5 events/lap
     # Each 10 N/mm reduction ≈ 0.5 extra bottoming events → 10ms
@@ -596,8 +604,13 @@ def _rear_third_sensitivity(
     step2: "HeaveSolution",
     track: "TrackProfile",
     measured: "MeasuredState | None" = None,
-) -> ParameterSensitivity:
-    """Rear third spring: platform stability for rear axle."""
+) -> "ParameterSensitivity | None":
+    """Rear third spring: platform stability for rear axle.
+
+    W6.1 (F-LT-1): GT3 cars skip Step 2; return None on null Step 2.
+    """
+    if not getattr(step2, "present", True):
+        return None
     track_scale = (track.track_length_m or 6000.0) / 6020.0
     dt_ms = HEAVE_MS_PER_10NMM * 0.7 * track_scale  # rear third slightly less critical than front heave
     margin = step2.rear_bottoming_margin_mm if hasattr(step2, "rear_bottoming_margin_mm") else 40.0
@@ -889,8 +902,13 @@ def _wing_angle_sensitivity(
 def _heave_perch_sensitivity(
     step2: "HeaveSolution",
     track: "TrackProfile",
-) -> ParameterSensitivity:
-    """Front heave perch offset: dependent variable, controls preload and slider position."""
+) -> "ParameterSensitivity | None":
+    """Front heave perch offset: dependent variable, controls preload and slider position.
+
+    W6.1 (F-LT-2): GT3 cars skip Step 2; return None on null Step 2.
+    """
+    if not getattr(step2, "present", True):
+        return None
     return ParameterSensitivity(
         parameter="front_heave_perch_mm",
         current_value=step2.perch_offset_front_mm,
@@ -912,8 +930,13 @@ def _heave_perch_sensitivity(
 def _rear_third_perch_sensitivity(
     step2: "HeaveSolution",
     track: "TrackProfile",
-) -> ParameterSensitivity:
-    """Rear third perch offset: dependent variable."""
+) -> "ParameterSensitivity | None":
+    """Rear third perch offset: dependent variable.
+
+    W6.1 (F-LT-2): GT3 cars skip Step 2; return None on null Step 2.
+    """
+    if not getattr(step2, "present", True):
+        return None
     return ParameterSensitivity(
         parameter="rear_third_perch_mm",
         current_value=step2.perch_offset_rear_mm,
@@ -1374,15 +1397,23 @@ def compute_laptime_sensitivity(
     Returns:
         LaptimeSensitivityReport sorted by |delta_per_unit_ms|
     """
-    sensitivities = [
+    # W6.1 (F-LT-1, F-LT-2): GT3 cars (suspension_arch=GT3_COIL_4WHEEL) skip
+    # Step 2; HeaveSolution.null() carries `present=False` and zero numeric
+    # fields. The four heave / third / perch sensitivity functions below now
+    # return None when `step2.present is False` so the caller can filter the
+    # phantom rows out of the table. A GT3-shaped corner-spring sensitivity
+    # is a Phase 3 follow-on — TODO(W6.x).
+    _step2_present = getattr(step2, "present", True)
+
+    sensitivities: list["ParameterSensitivity | None"] = [
         # ── Ride heights (highest sensitivity) ──
         _rear_rh_sensitivity(step1, track, measured),
         _front_rh_sensitivity(step1, track, measured),
         # ── Wing ──
         _wing_angle_sensitivity(wing, track),
-        # ── Springs ──
-        _front_heave_sensitivity(step2, track, measured),
-        _rear_third_sensitivity(step2, track, measured),
+        # ── Springs (heave/third only when Step 2 was solved) ──
+        _front_heave_sensitivity(step2, track, measured) if _step2_present else None,
+        _rear_third_sensitivity(step2, track, measured) if _step2_present else None,
         # Front corner spring: torsion bar OR roll spring depending on car architecture
         *(
             [_front_roll_spring_sensitivity(step3, step4, track)]
@@ -1391,9 +1422,9 @@ def compute_laptime_sensitivity(
                   _torsion_turns_sensitivity(step3, track)]
         ),
         _rear_spring_sensitivity(step3, track),
-        # ── Perch offsets (dependent variables) ──
-        _heave_perch_sensitivity(step2, track),
-        _rear_third_perch_sensitivity(step2, track),
+        # ── Perch offsets (dependent variables; heave-only on GTP) ──
+        _heave_perch_sensitivity(step2, track) if _step2_present else None,
+        _rear_third_perch_sensitivity(step2, track) if _step2_present else None,
         _rear_spring_perch_sensitivity(step3, track),
         # ── Pushrods ──
         _front_pushrod_sensitivity(step1, track),
@@ -1411,6 +1442,8 @@ def compute_laptime_sensitivity(
         # ── Brakes ──
         _brake_bias_sensitivity(brake_bias_pct, track),
     ]
+    # Drop the None placeholders (heave entries skipped on GT3 / null Step 2).
+    sensitivities = [s for s in sensitivities if s is not None]
 
     # ── Supporting parameters (if available) ──
     if supporting is not None:

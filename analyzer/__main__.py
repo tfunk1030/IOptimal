@@ -29,10 +29,14 @@ def main() -> None:
         prog="analyzer",
         description="Analyze one iRacing IBT with the production reasoning pipeline.",
     )
+    # GT3 Phase 2 W9.1 — F8 fix. Pull dynamically from the canonical car
+    # registry so GT3 canonical names (``bmw_m4_gt3`` etc.) are accepted.
+    from car_model.cars import _CARS as _CAR_REGISTRY
     parser.add_argument(
         "--car",
         required=True,
-        help="Car name (bmw, ferrari, porsche, cadillac, acura)",
+        choices=sorted(_CAR_REGISTRY.keys()),
+        help="Car canonical name. Choices: " + ", ".join(sorted(_CAR_REGISTRY.keys())),
     )
     parser.add_argument(
         "--ibt",

@@ -65,6 +65,29 @@ from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
 
+def _live_rarb_blade_targets(arb) -> tuple[int, int]:
+    """Recommended slow-corner / fast-corner rear ARB blades for live tuning.
+
+    Slow corners want softer-than-baseline (max rotation, no aero help).
+    Fast corners want stiffer-than-baseline (front bite via load transfer).
+
+    Legacy GTP behavior (5-blade cars: BMW/Cadillac/Acura/Ferrari) is preserved
+    exactly with `slow=1, fast=4` so existing setups don't shift. Wide-range
+    cars (Porsche 963: 1–16 blades, baseline 6) get baseline-relative spreads
+    instead — the historical `min(4, count)` cap put Porsche fast-corner blade
+    *softer* than baseline, exactly the opposite of intent.
+    """
+    count = arb.rear_blade_count
+    baseline = arb.rear_baseline_blade
+    if count <= 6:
+        return 1, min(4, count)
+    softer_range = baseline - 1
+    stiffer_range = count - baseline
+    slow = max(1, baseline - max(2, softer_range // 2))
+    fast = min(count, baseline + max(2, stiffer_range // 3))
+    return slow, fast
+
+
 @dataclass
 class ARBConstraintCheck:
     """Result of a single ARB constraint check."""
@@ -120,6 +143,13 @@ class ARBSolution:
     parameter_search_status: dict[str, str] = field(default_factory=dict)
     parameter_search_evidence: dict[str, list[str]] = field(default_factory=dict)
 
+    # W2.4 / Audit A-3..A-6: live RARB SIZE-LABEL range — populated when the
+    # car's ARB encoding collapses the blade dimension (rear_blade_count <= 1)
+    # and the size_label IS the live tuning variable. None for legacy GTP cars
+    # that tune via blade count.
+    rarb_size_slow_corner: str | None = None
+    rarb_size_fast_corner: str | None = None
+
     def summary(self) -> str:
         lines = [
             "===========================================================",
@@ -148,13 +178,27 @@ class ARBSolution:
             f"    Rear TOTAL:     {self.k_roll_rear_total:8.0f}",
             "",
             "  LIVE RARB STRATEGY (corner-by-corner adjustment)",
-            f"    RARB sensitivity:       {self.rarb_sensitivity_per_blade:+.1%} LLTD per blade step",
-            f"    Slow corners (<80kph):  blade {self.rarb_blade_slow_corner}  "
-            f"(LLTD {self.lltd_at_rarb_min:.1%}  — soft for rotation)",
-            f"    Fast corners (>2.5g):   blade {self.rarb_blade_fast_corner}  "
-            f"(LLTD {self.lltd_at_rarb_max:.1%}  — stiff for front bite)",
-            f"    FARB blade:             {self.farb_blade_locked}  (keep here — RARB is the variable)",
         ]
+        if self.rarb_size_slow_corner is not None and self.rarb_size_fast_corner is not None:
+            # GT3 / paired-blade encoding: the size LABEL is the tuning unit; the
+            # blade dimension is collapsed.
+            lines += [
+                f"    RARB sensitivity:       {self.rarb_sensitivity_per_blade:+.1%} LLTD per size step",
+                f"    Slow corners (<80kph):  size {self.rarb_size_slow_corner}  "
+                f"(LLTD {self.lltd_at_rarb_min:.1%}  — soft for rotation)",
+                f"    Fast corners (>2.5g):   size {self.rarb_size_fast_corner}  "
+                f"(LLTD {self.lltd_at_rarb_max:.1%}  — stiff for front bite)",
+                f"    FARB size:              {self.front_arb_size}  (keep here — rear size is the variable)",
+            ]
+        else:
+            lines += [
+                f"    RARB sensitivity:       {self.rarb_sensitivity_per_blade:+.1%} LLTD per blade step",
+                f"    Slow corners (<80kph):  blade {self.rarb_blade_slow_corner}  "
+                f"(LLTD {self.lltd_at_rarb_min:.1%}  — soft for rotation)",
+                f"    Fast corners (>2.5g):   blade {self.rarb_blade_fast_corner}  "
+                f"(LLTD {self.lltd_at_rarb_max:.1%}  — stiff for front bite)",
+                f"    FARB blade:             {self.farb_blade_locked}  (keep here — RARB is the variable)",
+            ]
         if self.constraints:
             lines += ["", "  CONSTRAINT CHECKS"]
             for c in self.constraints:
@@ -236,6 +280,63 @@ class ARBSolver:
         lltd = self._lltd_from_roll_stiffness(k_front, k_rear)
         return lltd, k_farb, k_rarb, k_front, k_rear
 
+    # W2.4 / Audit A-7: extract the front-roll-stiffness branch into a single
+    # helper so all three call sites (solve, solve_candidates,
+    # solution_from_explicit_settings) dispatch on the same logic. This is the
+    # natural extension point for a future fourth arm (e.g. asymmetric track-
+    # width or a different paired-coil installation ratio).
+    def _front_spring_roll_stiffness(self, front_wheel_rate_nmm: float) -> float:
+        """Front-axle spring roll stiffness contribution (N·m/deg).
+
+        Dispatches on the corner-spring architecture:
+        - Porsche-GTP roll-spring: single spring with installation ratio.
+            K = k * IR^2 * (t_half)^2 (no factor of 2)
+        - Conventional paired (BMW/Ferrari/GT3 paired coils): two corner
+          springs in roll, classic K_roll = 2 * k_wheel * (t_half)^2.
+        """
+        arb = self.car.arb
+        csm = self.car.corner_spring
+        if getattr(csm, "front_is_roll_spring", False):
+            ir = getattr(csm, "front_roll_spring_installation_ratio", 1.0)
+            k_wheel_nm = front_wheel_rate_nmm * 1000.0
+            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
+            return k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
+        return self._corner_spring_roll_stiffness(
+            front_wheel_rate_nmm, arb.track_width_front_mm,
+        )
+
+    # W2.4 / Audit A-3..A-6: when a car's ARB encoding collapses the blade
+    # dimension (rear_blade_count == 1, e.g. all 3 GT3 stubs), the size_label
+    # IS the live tuning variable. Iterate blades only when there's a real
+    # blade range; otherwise yield a single fixed blade=1.
+    @staticmethod
+    def _iter_blade_options(blade_count: int):
+        if blade_count <= 1:
+            return [1]
+        return list(range(1, blade_count + 1))
+
+    @staticmethod
+    def _neighbor_size(labels: list[str], chosen: str, delta: int,
+                       arb_direction: str = "ascending") -> str:
+        """Return the size label `delta` steps stiffer (positive) or softer
+        (negative) than `chosen`. Direction is reversed for descending ARB
+        encodings (e.g. Corvette where 0=stiff → 6=soft).
+
+        Skips the "Disconnected" sentinel if it's at index 0.
+        """
+        if chosen not in labels:
+            return chosen
+        idx = labels.index(chosen)
+        # Determine valid index range — skip a leading "Disconnected" entry.
+        lo_idx = 0
+        if labels and labels[0].lower() == "disconnected":
+            lo_idx = 1
+        hi_idx = len(labels) - 1
+        if arb_direction == "descending":
+            delta = -delta
+        new_idx = max(lo_idx, min(hi_idx, idx + delta))
+        return labels[new_idx]
+
     def solve(
         self,
         front_wheel_rate_nmm: float,
@@ -268,25 +369,27 @@ class ARBSolver:
         """
         arb = self.car.arb
 
+        # W2.4 / Audit A-2: loud-fail safety net. Step 3 must produce a non-zero
+        # front wheel rate. If a regression (e.g. corner_spring_solver dispatch
+        # mis-routes GT3 paired coils through a torsion-bar branch and emits 0)
+        # silently feeds in 0 here, LLTD becomes 0 / (0 + k_rear) = 0 and the
+        # rear ARB search snaps to its softest config. Fail loudly instead.
+        if not (front_wheel_rate_nmm > 0):
+            raise ValueError(
+                f"ARB Step 4 received zero/negative front wheel rate "
+                f"({front_wheel_rate_nmm}) — Step 3 produced a null front coil. "
+                f"Check corner_spring_solver dispatch (suspension_arch="
+                f"{getattr(self.car.suspension_arch, 'name', '?')})."
+            )
+
         # Roll stiffness from springs
         # Rear: always paired corner springs → K = 2 * k_wheel * (t/2)²
         k_springs_rear = self._corner_spring_roll_stiffness(
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )
-        # Front: depends on architecture
-        csm = self.car.corner_spring
-        if csm.front_is_roll_spring:
-            # Multimatic (Porsche): single roll spring, not a pair.
-            # K_roll = k * IR² * (t/2)²  (no factor of 2)
-            ir = csm.front_roll_spring_installation_ratio
-            k_wheel_nm = front_wheel_rate_nmm * 1000.0
-            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
-            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
-        else:
-            # Conventional (BMW/Ferrari/etc): paired corner springs
-            k_springs_front = self._corner_spring_roll_stiffness(
-                front_wheel_rate_nmm, arb.track_width_front_mm,
-            )
+        # Front: dispatched via the helper (W2.4 / A-7 — single source of truth
+        # for roll-spring vs paired-coil branching).
+        k_springs_front = self._front_spring_roll_stiffness(front_wheel_rate_nmm)
 
         # Target LLTD — use measured value if available, otherwise physics-based formula.
         #
@@ -354,6 +457,13 @@ class ARBSolver:
         best_blade = arb.rear_baseline_blade
         best_lltd_error = float("inf")
 
+        # W2.4 / Audit A-3..A-6: enumerate the size labels as the primary search
+        # axis; iterate blades only when the car's ARB encoding has a real blade
+        # range (rear_blade_count > 1, e.g. BMW GTP 5 blades). For GT3 cars the
+        # blade dimension collapses (rear_blade_count == 1) and the size_label
+        # IS the live tuning unit.
+        blade_options = self._iter_blade_options(arb.rear_blade_count)
+
         # Prefer current setup's ARB size — only change size if no blade within
         # the current size achieves an acceptable LLTD (within 0.015 = 1.5%).
         # Changing ARB bar size has massive feel implications and shouldn't be
@@ -362,7 +472,7 @@ class ARBSolver:
         preferred_best_blade = arb.rear_baseline_blade
         preferred_best_error = float("inf")
         if preferred_size in arb.rear_size_labels and preferred_size.lower() != "disconnected":
-            for blade in range(1, arb.rear_blade_count + 1):
+            for blade in blade_options:
                 lltd, _, _, _, _ = self._compute_lltd(
                     farb_size, farb_blade, preferred_size, blade,
                     k_springs_front, k_springs_rear
@@ -382,7 +492,7 @@ class ARBSolver:
             for rear_size in arb.rear_size_labels:
                 if rear_size.lower() == "disconnected":
                     continue
-                for blade in range(1, arb.rear_blade_count + 1):
+                for blade in blade_options:
                     lltd, _, _, _, _ = self._compute_lltd(
                         farb_size, farb_blade, rear_size, blade,
                         k_springs_front, k_springs_rear
@@ -393,36 +503,20 @@ class ARBSolver:
                         best_size = rear_size
                         best_blade = blade
 
-            # ── Driver anchor fallback ──
-            # If even the best searched setup is far from target (>3 pp),
-            # the LLTD physics model is mis-calibrated for this car/track
-            # combo and the IBT-validated current setup is more reliable
-            # than any model-derived guess. Anchor to the driver's loaded
-            # ARB and accept the model's LLTD reading is wrong.
-            #
-            # Validated 2026-04-07 against Porsche/Algarve where:
-            #   measured LLTD target = 0.503 (from 14 IBT sessions)
-            #   model says driver setup (Stiff/10) gives LLTD = 0.391
-            #   → 11.2 pp gap means the rear-roll-stiffness contribution
-            #     is over-stated. Solver picks Soft/1 (LLTD=0.43) as
-            #     "closest" but driver's Stiff/10 actually achieves the
-            #     target in real telemetry. Anchor to driver.
-            if (best_lltd_error > 0.03
-                    and current_rear_arb_size is not None
-                    and current_rear_arb_blade is not None
-                    and current_rear_arb_size in arb.rear_size_labels
-                    and current_rear_arb_size.lower() != "disconnected"
-                    and 1 <= int(current_rear_arb_blade) <= arb.rear_blade_count):
-                best_size = current_rear_arb_size
-                best_blade = int(current_rear_arb_blade)
-                # Recompute the model's LLTD at the anchored setup (will
-                # show the model's mis-calibration in step4 output for
-                # later analysis).
-                lltd_anchor, _, _, _, _ = self._compute_lltd(
-                    farb_size, farb_blade, best_size, best_blade,
-                    k_springs_front, k_springs_rear
-                )
-                best_lltd_error = abs(lltd_anchor - target_lltd)
+            # ── Per Unit F2: NO driver-anchor escape hatch ──
+            # The previous "if best_lltd_error > 0.03 → anchor to driver"
+            # branch was a Type-B/F preserve-driver fallback. It silently
+            # masked physics signals: when the OptimumG LLTD target
+            # disagreed with the model's k_front/k_total reading by more
+            # than 3 pp, the solver gave up and copied the driver's loaded
+            # ARB. F2 retracts this — when no ARB combo achieves target
+            # within 3 pp, we still emit the **closest physics solution**
+            # and label it `physics_search_no_target_match` so the report
+            # surfaces the gap honestly. The caller (Step 4 audit logic)
+            # can flag this for the LLTD epistemic gap (see CLAUDE.md
+            # "LLTD CALIBRATION GAP"). Preserve-driver is reserved for
+            # the case where physics cannot run at all (no spring rates,
+            # no roll stiffness inputs).
 
         # Compute full solution at chosen ARB setup
         lltd, k_farb, k_rarb, k_front, k_rear = self._compute_lltd(
@@ -430,28 +524,81 @@ class ARBSolver:
             k_springs_front, k_springs_rear
         )
 
-        # RARB sensitivity: ΔLLTD per blade step at the chosen rear size
-        k_rarb_step_plus = self.car.arb.rear_roll_stiffness(best_size, min(best_blade + 1, arb.rear_blade_count))
-        k_rarb_step_minus = self.car.arb.rear_roll_stiffness(best_size, max(best_blade - 1, 1))
-        lltd_plus = self._lltd_from_roll_stiffness(k_front, k_rear - k_rarb + k_rarb_step_plus)
-        lltd_minus = self._lltd_from_roll_stiffness(k_front, k_rear - k_rarb + k_rarb_step_minus)
-        sensitivity = (lltd_plus - lltd_minus) / 2
+        # W2.4 / Audit A-3..A-6: live RARB tuning dispatches on encoding.
+        # - GTP cars (rear_blade_count > 1): walk the BLADE within the chosen size.
+        # - GT3 / collapsed-blade cars (rear_blade_count == 1): walk the SIZE LABEL
+        #   index ±1 (sensitivity) and ±2 (slow/fast) from the chosen size.
+        rarb_size_slow: str | None = None
+        rarb_size_fast: str | None = None
+        if arb.rear_blade_count > 1:
+            # GTP path — blade-based live tuning (legacy behavior)
+            k_rarb_step_plus = self.car.arb.rear_roll_stiffness(
+                best_size, min(best_blade + 1, arb.rear_blade_count)
+            )
+            k_rarb_step_minus = self.car.arb.rear_roll_stiffness(
+                best_size, max(best_blade - 1, 1)
+            )
+            lltd_plus = self._lltd_from_roll_stiffness(
+                k_front, k_rear - k_rarb + k_rarb_step_plus
+            )
+            lltd_minus = self._lltd_from_roll_stiffness(
+                k_front, k_rear - k_rarb + k_rarb_step_minus
+            )
+            sensitivity = (lltd_plus - lltd_minus) / 2
 
-        # Live blade range for slow vs fast corners
-        rarb_slow_blade = 1   # softest: maximum rotation, needed without aero
-        rarb_fast_blade = min(4, arb.rear_blade_count)  # stiff for front bite
+            rarb_slow_blade, rarb_fast_blade = _live_rarb_blade_targets(arb)
 
-        # LLTD at extreme blade positions
-        lltd_min, _, _, _, _ = self._compute_lltd(
-            farb_size, farb_blade, best_size, rarb_slow_blade,
-            k_springs_front, k_springs_rear
-        )
-        lltd_max, _, _, _, _ = self._compute_lltd(
-            farb_size, farb_blade, best_size, rarb_fast_blade,
-            k_springs_front, k_springs_rear
-        )
+            lltd_min, _, _, _, _ = self._compute_lltd(
+                farb_size, farb_blade, best_size, rarb_slow_blade,
+                k_springs_front, k_springs_rear
+            )
+            lltd_max, _, _, _, _ = self._compute_lltd(
+                farb_size, farb_blade, best_size, rarb_fast_blade,
+                k_springs_front, k_springs_rear
+            )
+        else:
+            # GT3 / collapsed-blade path — size-label live tuning. The blade
+            # value stays at 1; slow/fast walk the size-label index instead.
+            rarb_slow_blade = 1
+            rarb_fast_blade = 1
 
-        # Constraint checks
+            arb_dir = getattr(arb, "arb_direction", "ascending")
+            # Sensitivity: one step stiffer minus one step softer, in label space.
+            stiffer_one = self._neighbor_size(
+                arb.rear_size_labels, best_size, +1, arb_dir
+            )
+            softer_one = self._neighbor_size(
+                arb.rear_size_labels, best_size, -1, arb_dir
+            )
+            k_rarb_plus = self.car.arb.rear_roll_stiffness(stiffer_one, 1)
+            k_rarb_minus = self.car.arb.rear_roll_stiffness(softer_one, 1)
+            lltd_plus = self._lltd_from_roll_stiffness(
+                k_front, k_rear - k_rarb + k_rarb_plus
+            )
+            lltd_minus = self._lltd_from_roll_stiffness(
+                k_front, k_rear - k_rarb + k_rarb_minus
+            )
+            sensitivity = (lltd_plus - lltd_minus) / 2
+
+            # Live slow/fast: walk ±2 size-label steps from the chosen size.
+            rarb_size_slow = self._neighbor_size(
+                arb.rear_size_labels, best_size, -2, arb_dir
+            )
+            rarb_size_fast = self._neighbor_size(
+                arb.rear_size_labels, best_size, +2, arb_dir
+            )
+            lltd_min, _, _, _, _ = self._compute_lltd(
+                farb_size, farb_blade, rarb_size_slow, 1,
+                k_springs_front, k_springs_rear
+            )
+            lltd_max, _, _, _, _ = self._compute_lltd(
+                farb_size, farb_blade, rarb_size_fast, 1,
+                k_springs_front, k_springs_rear
+            )
+
+        # Constraint checks. The "covers slow-corner" check now passes when
+        # either a blade range exists (legacy GTP) OR a slow size label exists
+        # (GT3 size-label live tuning).
         constraints = [
             ARBConstraintCheck(
                 name="LLTD target",
@@ -462,18 +609,25 @@ class ARBSolver:
                 note=f"Error: {abs(lltd - target_lltd):.1%}",
             ),
             ARBConstraintCheck(
-                name="RARB range covers slow-corner blade",
-                passed=rarb_slow_blade >= 1,
+                name="RARB range covers slow-corner setting",
+                passed=(rarb_slow_blade >= 1) or (rarb_size_slow is not None),
                 value=float(rarb_slow_blade),
                 target=1.0,
-                units="blade",
+                units="blade" if rarb_size_slow is None else "size_label",
             ),
             ARBConstraintCheck(
                 name="RARB sensitivity within useful range",
-                passed=0.005 < abs(sensitivity) < 0.05,
+                # GT3 ARB stiffness tables are uncalibrated stubs (PENDING_IBT,
+                # all zeros) so sensitivity will be 0 until ARB stiffness data
+                # lands. Skip the lower bound when ARB is uncalibrated.
+                passed=(
+                    abs(sensitivity) < 0.05
+                    if not getattr(arb, "is_calibrated", False)
+                    else 0.005 < abs(sensitivity) < 0.05
+                ),
                 value=abs(sensitivity),
                 target=0.02,
-                units="LLTD/blade",
+                units="LLTD/blade" if rarb_size_slow is None else "LLTD/size_step",
                 note="<0.005 = insensitive (wrong bar size), >0.05 = too sensitive (step down)",
             ),
         ]
@@ -511,6 +665,19 @@ class ARBSolver:
                 "Softer RARB -> more rear stability.",
                 "Cold tyre out-lap: RARB at blade 1 to prevent snap oversteer.",
             ]
+        elif rarb_size_slow is not None and rarb_size_fast is not None:
+            # W2.4 / Audit A-8: generic GT3 / collapsed-blade ARB note. The
+            # size_label is the live tuning unit; the blade dimension is a
+            # no-op for these ARB encodings.
+            notes = [
+                f"{self.car.name}: Front ARB '{farb_size}', Rear ARB '{best_size}' "
+                "(blade dimension collapsed — size label is the live tuning unit).",
+                f"Live RARB walk: slow corners -> '{rarb_size_slow}' (softer for rotation), "
+                f"fast corners -> '{rarb_size_fast}' (stiffer for front bite via LLTD shift).",
+                "Cold tyre out-lap: softer rear ARB size to prevent snap oversteer.",
+                "NOTE: GT3 ARB stiffness tables are PENDING_IBT — sensitivity readings "
+                "will be 0 until per-size stiffness is calibrated.",
+            ]
         else:
             notes = [
                 f"{self.car.name}: Front ARB '{farb_size}'/blade {farb_blade}, "
@@ -520,12 +687,24 @@ class ARBSolver:
                 "Cold tyre out-lap: softer RARB to prevent snap oversteer.",
             ]
 
-        # parameter_search_status: classify ARB settings as user-set
+        # F2 parameter_search_status: physics-search result, with an
+        # honest label when the model couldn't reach the LLTD target
+        # within tolerance.
+        if best_lltd_error <= 0.015:
+            _rear_arb_status = "physics_search"
+        elif best_lltd_error <= 0.03:
+            _rear_arb_status = "physics_search_low_confidence"
+        else:
+            # Honest label: physics found the closest combo but couldn't
+            # reach target. The LLTD calibration target may itself be a
+            # geometric proxy (see CLAUDE.md "LLTD epistemic gap"); we
+            # surface the gap rather than masking it with a driver anchor.
+            _rear_arb_status = "physics_search_no_target_match"
         pss = {
-            "front_arb_size": "user_set",
-            "front_arb_blade": "user_set",
-            "rear_arb_size": "user_set",
-            "rear_arb_blade": "user_set",
+            "front_arb_size": "physics_baseline",
+            "front_arb_blade": "physics_baseline",
+            "rear_arb_size": _rear_arb_status,
+            "rear_arb_blade": _rear_arb_status,
         }
 
         return ARBSolution(
@@ -552,6 +731,8 @@ class ARBSolver:
             constraints=constraints,
             car_specific_notes=notes,
             parameter_search_status=pss,
+            rarb_size_slow_corner=rarb_size_slow,
+            rarb_size_fast_corner=rarb_size_fast,
         )
 
     def solve_candidates(
@@ -590,32 +771,28 @@ class ARBSolver:
         )
 
         arb = self.car.arb
-        csm = self.car.corner_spring
 
-        # Compute spring roll stiffness (same as solve())
+        # Compute spring roll stiffness (same as solve()) — via the W2.4 helper
+        # so the front-architecture branching has a single source of truth.
         k_springs_rear = self._corner_spring_roll_stiffness(
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )
-        if getattr(csm, "front_is_roll_spring", False):
-            ir = csm.front_roll_spring_installation_ratio
-            k_wheel_nm = front_wheel_rate_nmm * 1000.0
-            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
-            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
-        else:
-            k_springs_front = self._corner_spring_roll_stiffness(
-                front_wheel_rate_nmm, arb.track_width_front_mm,
-            )
+        k_springs_front = self._front_spring_roll_stiffness(front_wheel_rate_nmm)
 
         target_lltd = base.lltd_target
         farb_size = arb.front_baseline_size
         farb_blade = arb.front_baseline_blade
+
+        # W2.4 / Audit A-3..A-6: enumerate the size labels as the primary axis;
+        # iterate blades only when the encoding has a real blade range.
+        blade_options = self._iter_blade_options(arb.rear_blade_count)
 
         # Enumerate all rear size/blade combos within tolerance
         scored: list[tuple[float, str, int]] = []
         for rear_size in arb.rear_size_labels:
             if rear_size.lower() == "disconnected":
                 continue
-            for blade in range(1, arb.rear_blade_count + 1):
+            for blade in blade_options:
                 lltd, _, _, _, _ = self._compute_lltd(
                     farb_size, farb_blade, rear_size, blade,
                     k_springs_front, k_springs_rear,
@@ -667,16 +844,10 @@ class ARBSolver:
     ) -> ARBSolution:
         """Build a Step 4 solution from explicit ARB settings."""
         arb = self.car.arb
-        csm = self.car.corner_spring
-        if getattr(csm, "front_is_roll_spring", False):
-            ir = getattr(csm, "front_roll_spring_installation_ratio", 1.0)
-            k_wheel_nm = front_wheel_rate_nmm * 1000.0
-            t_half_m = (arb.track_width_front_mm / 2) / 1000.0
-            k_springs_front = k_wheel_nm * (ir ** 2) * (t_half_m ** 2) * (math.pi / 180)
-        else:
-            k_springs_front = self._corner_spring_roll_stiffness(
-                front_wheel_rate_nmm, arb.track_width_front_mm,
-            )
+
+        # W2.4 / Audit A-7: front roll-stiffness via the helper (single source
+        # of truth for roll-spring vs paired-coil branching).
+        k_springs_front = self._front_spring_roll_stiffness(front_wheel_rate_nmm)
         k_springs_rear = self._corner_spring_roll_stiffness(
             rear_wheel_rate_nmm, arb.track_width_rear_mm,
         )
@@ -690,9 +861,29 @@ class ARBSolver:
             hs_correction = 0.01 * pct_hs
             lltd_physics_offset = (tyre_sens / 0.20) * (0.05 + hs_correction)
             target_lltd = self.car.weight_dist_front + lltd_physics_offset + lltd_offset
+
         farb_blade = int(farb_blade_locked if farb_blade_locked is not None else front_arb_blade_start)
-        rarb_slow_blade = int(rarb_blade_slow_corner if rarb_blade_slow_corner is not None else 1)
-        rarb_fast_blade = int(rarb_blade_fast_corner if rarb_blade_fast_corner is not None else min(4, arb.rear_blade_count))
+
+        # W2.4 / Audit A-3..A-6: blade vs size live-tuning dispatch. Mirrors
+        # solve(): if rear_blade_count > 1 the legacy GTP blade walk applies;
+        # otherwise the size-label walk applies.
+        rarb_size_slow_corner: str | None = None
+        rarb_size_fast_corner: str | None = None
+        if arb.rear_blade_count > 1:
+            _slow_default, _fast_default = _live_rarb_blade_targets(arb)
+            rarb_slow_blade = int(rarb_blade_slow_corner if rarb_blade_slow_corner is not None else _slow_default)
+            rarb_fast_blade = int(rarb_blade_fast_corner if rarb_blade_fast_corner is not None else _fast_default)
+        else:
+            rarb_slow_blade = 1
+            rarb_fast_blade = 1
+            arb_dir = getattr(arb, "arb_direction", "ascending")
+            rarb_size_slow_corner = self._neighbor_size(
+                arb.rear_size_labels, rear_arb_size, -2, arb_dir
+            )
+            rarb_size_fast_corner = self._neighbor_size(
+                arb.rear_size_labels, rear_arb_size, +2, arb_dir
+            )
+
         lltd, k_farb, k_rarb, k_front, k_rear = self._compute_lltd(
             front_arb_size,
             int(front_arb_blade_start),
@@ -701,17 +892,47 @@ class ARBSolver:
             k_springs_front,
             k_springs_rear,
         )
-        k_rarb_step_plus = self.car.arb.rear_roll_stiffness(rear_arb_size, min(int(rear_arb_blade_start) + 1, arb.rear_blade_count))
-        k_rarb_step_minus = self.car.arb.rear_roll_stiffness(rear_arb_size, max(int(rear_arb_blade_start) - 1, 1))
+
+        if arb.rear_blade_count > 1:
+            k_rarb_step_plus = self.car.arb.rear_roll_stiffness(
+                rear_arb_size, min(int(rear_arb_blade_start) + 1, arb.rear_blade_count)
+            )
+            k_rarb_step_minus = self.car.arb.rear_roll_stiffness(
+                rear_arb_size, max(int(rear_arb_blade_start) - 1, 1)
+            )
+        else:
+            arb_dir = getattr(arb, "arb_direction", "ascending")
+            stiffer = self._neighbor_size(
+                arb.rear_size_labels, rear_arb_size, +1, arb_dir
+            )
+            softer = self._neighbor_size(
+                arb.rear_size_labels, rear_arb_size, -1, arb_dir
+            )
+            k_rarb_step_plus = self.car.arb.rear_roll_stiffness(stiffer, 1)
+            k_rarb_step_minus = self.car.arb.rear_roll_stiffness(softer, 1)
         lltd_plus = self._lltd_from_roll_stiffness(k_front, k_rear - k_rarb + k_rarb_step_plus)
         lltd_minus = self._lltd_from_roll_stiffness(k_front, k_rear - k_rarb + k_rarb_step_minus)
         sensitivity = (lltd_plus - lltd_minus) / 2
-        lltd_min, _, _, _, _ = self._compute_lltd(
-            front_arb_size, farb_blade, rear_arb_size, rarb_slow_blade, k_springs_front, k_springs_rear
-        )
-        lltd_max, _, _, _, _ = self._compute_lltd(
-            front_arb_size, farb_blade, rear_arb_size, rarb_fast_blade, k_springs_front, k_springs_rear
-        )
+
+        if rarb_size_slow_corner is not None and rarb_size_fast_corner is not None:
+            lltd_min, _, _, _, _ = self._compute_lltd(
+                front_arb_size, farb_blade, rarb_size_slow_corner, 1,
+                k_springs_front, k_springs_rear
+            )
+            lltd_max, _, _, _, _ = self._compute_lltd(
+                front_arb_size, farb_blade, rarb_size_fast_corner, 1,
+                k_springs_front, k_springs_rear
+            )
+        else:
+            lltd_min, _, _, _, _ = self._compute_lltd(
+                front_arb_size, farb_blade, rear_arb_size, rarb_slow_blade,
+                k_springs_front, k_springs_rear
+            )
+            lltd_max, _, _, _, _ = self._compute_lltd(
+                front_arb_size, farb_blade, rear_arb_size, rarb_fast_blade,
+                k_springs_front, k_springs_rear
+            )
+
         constraints = [
             ARBConstraintCheck(
                 name="LLTD target",
@@ -722,18 +943,22 @@ class ARBSolver:
                 note=f"Error: {abs(lltd - target_lltd):.1%}",
             ),
             ARBConstraintCheck(
-                name="RARB range covers slow-corner blade",
-                passed=rarb_slow_blade >= 1,
+                name="RARB range covers slow-corner setting",
+                passed=(rarb_slow_blade >= 1) or (rarb_size_slow_corner is not None),
                 value=float(rarb_slow_blade),
                 target=1.0,
-                units="blade",
+                units="blade" if rarb_size_slow_corner is None else "size_label",
             ),
             ARBConstraintCheck(
                 name="RARB sensitivity within useful range",
-                passed=0.005 < abs(sensitivity) < 0.05,
+                passed=(
+                    abs(sensitivity) < 0.05
+                    if not getattr(arb, "is_calibrated", False)
+                    else 0.005 < abs(sensitivity) < 0.05
+                ),
                 value=abs(sensitivity),
                 target=0.02,
-                units="LLTD/blade",
+                units="LLTD/blade" if rarb_size_slow_corner is None else "LLTD/size_step",
                 note="<0.005 = insensitive (wrong bar size), >0.05 = too sensitive (step down)",
             ),
         ]
@@ -771,4 +996,6 @@ class ARBSolver:
             constraints=constraints,
             car_specific_notes=notes,
             parameter_search_status=pss,
+            rarb_size_slow_corner=rarb_size_slow_corner,
+            rarb_size_fast_corner=rarb_size_fast_corner,
         )

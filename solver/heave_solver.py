@@ -32,7 +32,10 @@ Validated against BMW Sebring telemetry:
 
 from __future__ import annotations
 
+import logging
 import math
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 
 from car_model.garage import GarageSetupState
@@ -44,6 +47,10 @@ from vertical_dynamics import damped_excursion_mm, legacy_mass_to_shared_model_k
 # regardless of how many times solve() / reconcile_solution() / solution_from_explicit_settings()
 # are called during a single pipeline run.
 _heave_index_warning_shown: bool = False
+
+# Calibration-guard warning counters — log detail once, then summarise (audit M2).
+_cal_guard_front_count: int = 0
+_cal_guard_rear_count: int = 0
 
 
 @dataclass
@@ -99,6 +106,48 @@ class HeaveSolution:
     garage_constraint_notes: list[str] = field(default_factory=list)
     parameter_search_status: dict = None
     parameter_search_evidence: dict = None
+
+    # True when this solution carries real Step-2 output (heave/third springs
+    # were solved). False when the car has no heave/third architecture (e.g.
+    # GT3 SuspensionArchitecture.GT3_COIL_4WHEEL) and Step 2 was skipped — all
+    # numeric fields are zero placeholders. Downstream consumers MUST guard on
+    # `step2.present` before reading heave-specific values; reading them on a
+    # null solution will return 0.0 silently, which would violate Key Principle
+    # 8 ("no silent fallbacks") if treated as real data.
+    present: bool = True
+
+    @classmethod
+    def null(
+        cls,
+        front_dynamic_rh_mm: float = 0.0,
+        rear_dynamic_rh_mm: float = 0.0,
+    ) -> "HeaveSolution":
+        """Build a null Step-2 solution for cars with no heave/third springs.
+
+        Used when SuspensionArchitecture.GT3_COIL_4WHEEL skips Step 2. Numeric
+        fields are zero; `present=False` signals downstream solvers to source
+        equivalents (front/rear stiffness, dynamic RH variance) from corner
+        spring rates via Step 3 instead.
+        """
+        return cls(
+            front_heave_nmm=0.0,
+            rear_third_nmm=0.0,
+            front_dynamic_rh_mm=front_dynamic_rh_mm,
+            front_shock_vel_p99_mps=0.0,
+            front_excursion_at_rate_mm=0.0,
+            front_bottoming_margin_mm=0.0,
+            front_sigma_at_rate_mm=0.0,
+            front_binding_constraint="not_applicable",
+            rear_dynamic_rh_mm=rear_dynamic_rh_mm,
+            rear_shock_vel_p99_mps=0.0,
+            rear_excursion_at_rate_mm=0.0,
+            rear_bottoming_margin_mm=0.0,
+            rear_sigma_at_rate_mm=0.0,
+            rear_binding_constraint="not_applicable",
+            perch_offset_front_mm=0.0,
+            perch_offset_rear_mm=0.0,
+            present=False,
+        )
 
     def __post_init__(self):
         if self.parameter_search_status is None:
@@ -210,6 +259,20 @@ class HeaveSolver:
     """
 
     def __init__(self, car: CarModel, track: TrackProfile):
+        # Defense-in-depth: HeaveSolver only applies to architectures that
+        # actually have heave/third springs (GTP). On GT3_COIL_4WHEEL the
+        # solver chain MUST skip Step 2 and use HeaveSolution.null(...).
+        # If a future caller forgets, fail loudly here rather than silently
+        # producing zero-derived garbage values that downstream consumers
+        # would treat as real spring rates (Key Principle 8).
+        if not car.suspension_arch.has_heave_third:
+            raise ValueError(
+                f"HeaveSolver does not apply to {car.canonical_name} "
+                f"(suspension_arch={car.suspension_arch.name}, "
+                f"has_heave_third=False). "
+                f"Use HeaveSolution.null(...) and skip Step 2 for this "
+                f"architecture (e.g. GT3_COIL_4WHEEL)."
+            )
         self.car = car
         self.track = track
 
@@ -1020,6 +1083,33 @@ class HeaveSolver:
             k_front = front_heave_floor_nmm
             front_binding = "modifier_floor"
 
+        # ── Circular-calibration guard (front heave) ───────────────────
+        # front_m_eff_kg is calibrated from the driver's current front
+        # heave spring rate. Recommending a rate >50% different
+        # invalidates the calibration basis. Constrain changes to ±50%
+        # of the car's baseline front heave spring UNLESS the binding
+        # constraint is "bottoming" (real telemetry evidence).
+        _baseline_heave = self.car.front_heave_spring_nmm
+        if _baseline_heave and _baseline_heave > 0 and front_binding != "bottoming":
+            _cal_lo_f = _baseline_heave * 0.50
+            _cal_hi_f = _baseline_heave * 1.50
+            _unconstrained_front = k_front
+            if k_front < _cal_lo_f or k_front > _cal_hi_f:
+                k_front = max(k_front, _cal_lo_f)
+                k_front = min(k_front, _cal_hi_f)
+                global _cal_guard_front_count
+                _cal_guard_front_count += 1
+                if _cal_guard_front_count == 1:
+                    logger.debug(
+                        "Circular-calibration guard: front heave %.0f→%.0f N/mm "
+                        "(baseline %.0f, ±50%% limit). front_m_eff_kg=%.0f was "
+                        "calibrated at this baseline — larger changes need "
+                        "bottoming evidence or re-calibration.",
+                        _unconstrained_front, k_front, _baseline_heave,
+                        m_front,
+                    )
+                front_binding = "calibration_guard"
+
         # Clamp to valid range
         lo_front, hi_front = self._heave_hard_bounds()
         k_front = max(k_front, lo_front)
@@ -1087,6 +1177,35 @@ class HeaveSolver:
         if rear_third_floor_nmm > 0 and k_rear < rear_third_floor_nmm:
             k_rear = rear_third_floor_nmm
             rear_binding = "modifier_floor"
+
+        # ── Circular-calibration guard ─────────────────────────────────────
+        # rear_m_eff_kg is often back-calculated from the driver's current
+        # rear third spring rate (e.g. Porsche: 1232 kg from 120 N/mm).
+        # Recommending a rate that is >50% different invalidates the
+        # calibration basis (m_eff depends on compliance ∝ 1/k).  Constrain
+        # changes to ±50% of the car's baseline rear third spring UNLESS the
+        # binding constraint is "bottoming" — which means real telemetry
+        # evidence (bottoming events) justifies the larger change.
+        _baseline_third = self.car.rear_third_spring_nmm
+        if _baseline_third and _baseline_third > 0 and rear_binding != "bottoming":
+            _cal_lo = _baseline_third * 0.50
+            _cal_hi = _baseline_third * 1.50
+            _unconstrained_rear = k_rear
+            if k_rear < _cal_lo or k_rear > _cal_hi:
+                k_rear = max(k_rear, _cal_lo)
+                k_rear = min(k_rear, _cal_hi)
+                global _cal_guard_rear_count
+                _cal_guard_rear_count += 1
+                if _cal_guard_rear_count == 1:
+                    logger.debug(
+                        "Circular-calibration guard: rear third %.0f→%.0f N/mm "
+                        "(baseline %.0f, ±50%% limit). rear_m_eff_kg=%.0f was "
+                        "calibrated at this baseline — larger changes need "
+                        "bottoming evidence or re-calibration.",
+                        _unconstrained_rear, k_rear, _baseline_third,
+                        m_rear,
+                    )
+                rear_binding = "calibration_guard"
 
         # Clamp and round up to nearest 10 N/mm (iRacing garage step)
         k_rear = max(k_rear, hsm.rear_spring_range_nmm[0])
@@ -1438,14 +1557,27 @@ class HeaveSolver:
                 rear_sigma_target_mm=base.rear_sigma_target_mm,
             )
 
+        # ── Calibration guards for candidate generation ──────────────────
+        # Apply the same ±50% calibration guards from solve() to candidates.
+        # Without these, the pareto ranker picks candidates outside the
+        # calibrated range, invalidating the m_eff basis.
+        _baseline_heave = self.car.front_heave_spring_nmm
+        _baseline_third = self.car.rear_third_spring_nmm
+        _cal_hi_front = hi_front
+        _cal_hi_rear = hi_rear
+        if _baseline_heave and _baseline_heave > 0:
+            _cal_hi_front = min(hi_front, _baseline_heave * 1.50)
+        if _baseline_third and _baseline_third > 0:
+            _cal_hi_rear = min(hi_rear, _baseline_third * 1.50)
+
         # Generate stiffness steps above the minimum (+10, +20, +30 N/mm)
         step = 10.0  # iRacing garage increment
         for i in range(1, n_candidates):
             kf = base.front_heave_nmm + i * step
             kr = base.rear_third_nmm + i * step
-            # Clamp to legal range
-            kf = min(kf, hi_front)
-            kr = min(kr, hi_rear)
+            # Clamp to legal range AND calibration guard
+            kf = min(kf, _cal_hi_front)
+            kr = min(kr, _cal_hi_rear)
             kf = math.ceil(kf / step) * step
             kr = math.ceil(kr / step) * step
             key = (kf, kr)
@@ -1524,6 +1656,12 @@ class HeaveSolver:
         verbose: bool = True,
     ) -> None:
         """Round-trip the front heave travel budget after torsion/spring choices are known."""
+        # GT3 guard: HeaveSolution.null() carries no real heave/perch state and
+        # there is no front heave spring to reconcile. Callers should ideally
+        # skip the call entirely, but defense-in-depth lets a caller pass a
+        # null step2 without crashing on car.heave_spring=None reads downstream.
+        if not getattr(step2, "present", True):
+            return
         garage_model = self.car.active_garage_output_model(self.track.track_name)
         # Auto-built garage models don't have validated travel budget constraints
         if garage_model is None or getattr(garage_model, "_auto_built", False):

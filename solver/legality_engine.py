@@ -49,6 +49,7 @@ def validate_solution_legality(
     step3: Any,
     step5: Any,
     fuel_l: float,
+    current_setup: Any = None,
 ) -> LegalValidation:
     validation_step1 = step1
     validation_step2 = step2
@@ -80,6 +81,7 @@ def validate_solution_legality(
         step5=step5,
         fuel_l=fuel_l,
         track_name=track_name,
+        current_setup=current_setup,
     )
 
     garage_model = car.active_garage_output_model(track_name)
@@ -212,19 +214,68 @@ def validate_candidate_legality(
             soft_penalties.append(f"Unusual heave/third ratio: {ratio:.3f}")
             margin = min(margin, 0.5)
 
-    # Damper hierarchy: front LS comp should >= rear LS comp
+    # Damper hierarchy: front should be stiffer than rear at LS comp/rbd; rear
+    # HS comp should not vastly exceed front. The numeric direction of "stiffer"
+    # depends on per-car click polarity:
+    #   higher_stiffer (BMW/Aston/Porsche 992/Mercedes/Ferrari/Acura/Lambo/
+    #     Mustang): more clicks = stiffer damping.
+    #   lower_stiffer (Audi R8 LMS / McLaren 720S / Corvette Z06 — Penske
+    #     inverted convention): fewer clicks = stiffer damping.
+    # The hierarchy semantics (front softer than rear → entry instability) are
+    # polarity-independent; only the numeric inequality flips.
+    polarity = getattr(getattr(car, "damper", None), "click_polarity", "higher_stiffer")
+    higher_stiffer = polarity == "higher_stiffer"
+
+    # Front LS comp should be at least as stiff as rear LS comp
     fls = params.get("front_ls_comp")
     rls = params.get("rear_ls_comp")
-    if fls is not None and rls is not None and fls < rls:
-        soft_penalties.append("Front LS comp < rear LS comp (entry instability)")
-        margin = min(margin, 0.7)
+    if fls is not None and rls is not None:
+        if higher_stiffer:
+            front_softer_than_rear = fls < rls
+        else:
+            front_softer_than_rear = fls > rls
+        if front_softer_than_rear:
+            soft_penalties.append("Front LS comp softer than rear LS comp (entry instability)")
+            margin = min(margin, 0.7)
 
-    # Rear HS comp should <= front HS comp
+    # Front LS rbd should be at least as stiff as rear LS rbd
+    flr = params.get("front_ls_rbd")
+    rlr = params.get("rear_ls_rbd")
+    if flr is not None and rlr is not None:
+        if higher_stiffer:
+            front_softer_than_rear = flr < rlr
+        else:
+            front_softer_than_rear = flr > rlr
+        if front_softer_than_rear:
+            soft_penalties.append("Front LS rbd softer than rear LS rbd (entry instability)")
+            margin = min(margin, 0.7)
+
+    # Rear HS comp should not be substantially stiffer than front HS comp
+    # (compliance hierarchy violation — rear shouldn't carry significantly
+    # more bump-absorption load than the front).
     fhs = params.get("front_hs_comp")
     rhs = params.get("rear_hs_comp")
-    if fhs is not None and rhs is not None and rhs > fhs + 2:
-        soft_penalties.append("Rear HS comp >> front HS comp (compliance hierarchy violation)")
-        margin = min(margin, 0.6)
+    if fhs is not None and rhs is not None:
+        if higher_stiffer:
+            rear_much_stiffer = rhs > fhs + 2
+        else:
+            # lower_stiffer: rear is "much stiffer" when rear_clicks << front_clicks
+            rear_much_stiffer = rhs < fhs - 2
+        if rear_much_stiffer:
+            soft_penalties.append("Rear HS comp much stiffer than front HS comp (compliance hierarchy violation)")
+            margin = min(margin, 0.6)
+
+    # Rear HS rbd should not be substantially stiffer than front HS rbd
+    fhr = params.get("front_hs_rbd")
+    rhr = params.get("rear_hs_rbd")
+    if fhr is not None and rhr is not None:
+        if higher_stiffer:
+            rear_much_stiffer = rhr > fhr + 2
+        else:
+            rear_much_stiffer = rhr < fhr - 2
+        if rear_much_stiffer:
+            soft_penalties.append("Rear HS rbd much stiffer than front HS rbd (compliance hierarchy violation)")
+            margin = min(margin, 0.6)
 
     return LegalValidation(
         valid=not hard_veto,

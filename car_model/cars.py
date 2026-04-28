@@ -15,9 +15,73 @@ IMPORTANT — Aero map axis swap:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
+from typing import Literal
 
 from car_model.garage import GarageOutputModel
 from vertical_dynamics import damped_excursion_mm
+
+
+class SuspensionArchitecture(Enum):
+    """Discriminator for car-class suspension architecture.
+
+    Drives conditional dispatch in the solver chain. Captures only the
+    coarsest distinctions; finer-grained flags (rear coil vs rear torsion,
+    per-corner vs heave+roll dampers, indexed garage values) live on
+    ``CornerSpringModel``, ``DamperModel``, and ``CarModel`` directly because
+    the GTP architectures don't cleanly partition along a single axis.
+
+    Verified per-car field-name layouts (real IBT YAML, 2026-04-27):
+
+      ===  =================================  =================================  ===============
+      car  front spring                       rear spring                        damper layout
+      ===  =================================  =================================  ===============
+      BMW  HeaveSpring + TorsionBar (mm)      ThirdSpring + Coil (LR.SpringRate) per-corner
+      Cad  HeaveSpring + TorsionBar (mm)      ThirdSpring + Coil (LR.SpringRate) per-corner
+      Por  HeaveSpring + RollSpring (no TB)   ThirdSpring + Coil (LR.SpringRate) FrontHeave+Roll + per-corner-rear
+      Fer  HeaveSpring + TorsionBar (idx)     Rear.HeaveSpring + TorsionBar (idx) per-corner-Dampers
+      Acu  HeaveSpring + TorsionBar (mm)      Rear.HeaveSpring + TorsionBar (mm) Heave+Roll only
+      ===  =================================  =================================  ===============
+
+    Values:
+      GTP_HEAVE_THIRD_TORSION_FRONT — BMW, Cadillac, Acura, Ferrari.
+        All have a heave-mode spring at each axle plus front torsion bars.
+        Rear-spring architecture varies — query
+        ``car.corner_spring.has_rear_torsion_bar`` (True for Ferrari/Acura)
+        vs ``has_rear_coil`` (True for BMW/Cadillac).
+        Damper layout varies — query ``car.damper.has_roll_dampers`` (True
+        for Acura) and the per-section field name dispatch in
+        ``car_model.setup_registry``.
+        Indexed-vs-direct setup values vary — query
+        ``car.has_indexed_setup_values`` (True for Ferrari only).
+      GTP_HEAVE_THIRD_ROLL_FRONT — Porsche 963 (Multimatic). Front roll
+        spring in place of paired front corner springs; rear coil + heave
+        and third.
+      GT3_COIL_4WHEEL — iRacing GT3 class. Coil-overs at all four corners,
+        no heave/third springs. Step 2 of the solver chain is not applicable.
+    """
+    GTP_HEAVE_THIRD_TORSION_FRONT = "gtp_heave_third_torsion_front"
+    GTP_HEAVE_THIRD_ROLL_FRONT = "gtp_heave_third_roll_front"
+    GT3_COIL_4WHEEL = "gt3_coil_4wheel"
+
+    @property
+    def has_heave_third(self) -> bool:
+        return self in (
+            SuspensionArchitecture.GTP_HEAVE_THIRD_TORSION_FRONT,
+            SuspensionArchitecture.GTP_HEAVE_THIRD_ROLL_FRONT,
+        )
+
+    @property
+    def has_front_torsion_bar(self) -> bool:
+        """True if the front spring is a torsion bar.
+
+        Note: this returns True for BMW/Cadillac/Ferrari/Acura but is
+        FALSE for Porsche (which uses a front roll spring instead).
+        Ferrari + Acura also have rear torsion bars — the SuspensionArchitecture
+        enum does NOT capture rear-axle architecture; query
+        ``car.corner_spring.has_rear_torsion_bar`` for that.
+        """
+        return self is SuspensionArchitecture.GTP_HEAVE_THIRD_TORSION_FRONT
 
 
 # ─── Ferrari indexed-control lookup tables ────────────────────────────────────
@@ -1075,6 +1139,34 @@ class CornerSpringModel:
     front_is_roll_spring: bool = False
     front_roll_spring_installation_ratio: float = 0.882  # CALIBRATED: back-calculated from measured LLTD 50.3% at Algarve
 
+    # GT3 paired front coil springs (no torsion bar, not a roll spring).
+    # When front_spring_range_nmm[1] > 0 the car has paired front coils whose
+    # rate is set directly in N/mm via the garage. (0, 0) = not a GT3 paired-coil
+    # car (GTP torsion-bar or Porsche-roll-spring). Used by Step 3 to branch
+    # front-rate selection for the GT3 architecture.
+    front_spring_range_nmm: tuple[float, float] = (0.0, 0.0)
+    front_spring_resolution_nmm: float = 5.0   # Garage step size (default 5 N/mm)
+    front_baseline_rate_nmm: float = 0.0       # Default front coil rate (used when no anchor)
+
+    @property
+    def has_rear_torsion_bar(self) -> bool:
+        """True for cars with rear-axle torsion bars (Ferrari 499P, Acura ARX-06).
+
+        These cars have NO rear corner-coil spring — ``rear_spring_range_nmm``
+        is populated for compatibility but not physically meaningful. Use
+        ``rear_torsion_c`` and ``rear_torsion_od_*`` for stiffness math.
+        """
+        return self.rear_torsion_c is not None and self.rear_torsion_c > 0.0
+
+    @property
+    def has_rear_coil(self) -> bool:
+        """True for cars with rear-axle corner-coil springs (BMW, Cadillac, Porsche).
+
+        These cars expose ``Chassis.LeftRear.SpringRate`` in the IBT YAML
+        and use ``rear_spring_range_nmm`` as the search axis.
+        """
+        return not self.has_rear_torsion_bar
+
     def torsion_bar_rate(self, od_mm: float) -> float:
         """Wheel rate (N/mm) from torsion bar OD.
 
@@ -1092,6 +1184,24 @@ class CornerSpringModel:
         step = self.front_roll_spring_step_nmm
         k_snapped = round(round(k_nmm / step) * step, 0)
         return float(max(lo, min(hi, k_snapped)))
+
+    def snap_front_rate(self, rate_nmm: float) -> float:
+        """Snap GT3 paired front coil rate to nearest legal garage step.
+
+        For GT3 cars (paired front coils), iRacing exposes the front spring rate
+        directly in N/mm. This helper clamps to ``front_spring_range_nmm`` and
+        snaps to the ``front_spring_resolution_nmm`` step grid (origin = lower
+        bound). For non-GT3 cars where ``front_spring_range_nmm[1] <= 0`` the
+        input is returned unchanged so GTP/torsion-bar paths are not affected.
+        """
+        if self.front_spring_range_nmm[1] <= 0:
+            return rate_nmm  # GTP / torsion-bar or roll-spring car: untouched
+        lo, hi = self.front_spring_range_nmm
+        clamped = max(lo, min(hi, rate_nmm))
+        step = self.front_spring_resolution_nmm
+        if step <= 0:
+            return float(clamped)
+        return float(round((clamped - lo) / step) * step + lo)
 
     def torsion_bar_od_for_rate(self, k_wheel_nmm: float) -> float:
         """Torsion bar OD (mm) needed for a target wheel rate."""
@@ -1214,8 +1324,22 @@ class ARBModel:
     track_width_front_mm: float = 1730.0
     track_width_rear_mm: float = 1650.0
     is_calibrated: bool = False      # True when stiffness values are derived from measured data
+    # Audit A-3..A-6 (W2.4) forward-compat: direction in which higher size_labels =
+    # stiffer ("ascending") vs softer ("descending"). Most cars (BMW/Aston/Porsche/
+    # Ferrari) are ascending. Corvette Z06 GT3.R is documented as 0=stiff → 6=soft
+    # (descending). The live-tuning slow/fast direction in arb_solver dispatches
+    # on this flag.
+    arb_direction: str = "ascending"
 
     def blade_factor(self, blade: int, max_blade: int) -> float:
+        # Audit A-9 (W2.4): For paired-blade GT3 ARB encodings (e.g. BMW M4 GT3
+        # D1-D1..D6-D6) the size_label IS the entire ARB configuration and the
+        # blade dimension is a no-op (blade_count==1, blade==1). The legacy
+        # formula 0.30 + 0.70*(0)/max(0, 1) = 0.30, multiplying ARB stiffness by
+        # 0.30 for every GT3 setup. When there is only a single blade slot, the
+        # blade factor must be 1.0 (full bar stiffness as encoded in the size table).
+        if max_blade <= 1:
+            return 1.0
         return 0.30 + 0.70 * (blade - 1) / max(max_blade - 1, 1)
 
     def front_roll_stiffness(self, size_label: str, blade: int) -> float:
@@ -1285,6 +1409,13 @@ class DamperModel:
     hs_rbd_range: tuple[int, int] = (0, 11)
     hs_slope_range: tuple[int, int] = (0, 11)
     hs_slope_rbd_range: tuple[int, int] | None = None  # Ferrari only (lfHSSlopeRbdDampSetting)
+    # Damper click polarity. "higher_stiffer" = BMW/Mercedes/Ferrari/Aston/
+    # Porsche 992/Acura/Lambo/Mustang convention (0=fully closed, more clicks=
+    # softer in that the engine is letting more flow). "lower_stiffer" =
+    # Audi R8 LMS / McLaren 720S / Corvette Z06 (Penske inverted convention).
+    # Affects: legality_engine soft penalties, candidate_search adjustment
+    # direction. Default preserves BMW behaviour.
+    click_polarity: Literal["higher_stiffer", "lower_stiffer"] = "higher_stiffer"
     # Force-per-click ESTIMATED by reverse-engineering from physics:
     # c_damping * v_ref / clicks = fpc
     # Front LS: 5060 * 0.025 / 7 = 18.1 N/click
@@ -1467,6 +1598,20 @@ class GarageRanges:
     rear_shock_defl_min_mm: float = 15.0
     rear_spring_defl_max_mm: float = 24.9
 
+    # GT3-specific garage parameters (W4.3 / audit O7).
+    # Each axle has a per-corner BumpRubberGap (mm) — a GT3 garage parameter that
+    # replaces the GTP pushrod-offset RH workflow.  CenterFrontSplitterHeight (mm)
+    # is a GT3-only Chassis.FrontBrakesLights field that affects front DF.
+    # Default (0.0, 0.0) sentinel keeps GTP cars unaffected.  Per-axle ranges
+    # are derived from driver-loaded values (BMW M4 GT3 F=15/R=52, Aston F=17/
+    # R=54, Porsche F=30/R=51) plus GT3-typical engineering bounds (front bump
+    # rubbers tend to live closer to the bottom; rear has more travel).
+    bump_rubber_gap_front_mm: tuple[float, float] = (0.0, 0.0)
+    bump_rubber_gap_rear_mm: tuple[float, float] = (0.0, 0.0)
+    bump_rubber_gap_resolution_mm: float = 1.0
+    splitter_height_mm: tuple[float, float] = (0.0, 0.0)
+    splitter_height_resolution_mm: float = 1.0
+
 
 @dataclass
 class CarModel:
@@ -1500,7 +1645,16 @@ class CarModel:
     # NOT dynamic weight transfer ratio. Rear MC is physically larger,
     # which handles dynamic compensation. This parameter stays near static
     # weight distribution with small forward correction for stability.
-    brake_bias_pct: float = 46.0     # Default — calibrated below per car
+    # The four fields below are REQUIRED per-car (validated in __post_init__);
+    # the 0.0 defaults are sentinels — every CarModel must override them.
+    brake_bias_pct: float = 0.0
+    # Master cylinder baselines: secondary fallback when IBT current_setup is
+    # unavailable. Primary source is current_setup.{front,rear}_master_cyl_mm.
+    front_master_cyl_baseline_mm: float = 0.0
+    rear_master_cyl_baseline_mm: float = 0.0
+    # Driver dashboard low-fuel threshold; used when neither measured fuel-burn
+    # nor current_setup.fuel_low_warning_l is available.
+    fuel_low_warning_l_default: float = 0.0
 
     # Chassis geometry — needed for handling dynamics (understeer, slip angle)
     wheelbase_m: float = 2.740       # Wheelbase (m). BMW/Dallara = 2.740
@@ -1555,7 +1709,12 @@ class CarModel:
     ))
 
     # Heave spring physics model
-    heave_spring: HeaveSpringModel = field(default_factory=lambda: HeaveSpringModel(
+    # Heave spring physics model.
+    # Optional: GT3 cars (suspension_arch=GT3_COIL_4WHEEL) have no heave/third
+    # springs. The __post_init__ invariant enforces that GTP architectures
+    # require non-null heave_spring, while GT3 must set this to None.
+    # Default preserves backward compat for the 5 existing GTP car definitions.
+    heave_spring: HeaveSpringModel | None = field(default_factory=lambda: HeaveSpringModel(
         front_m_eff_kg=228.0, rear_m_eff_kg=2395.3
     ))
 
@@ -1683,10 +1842,80 @@ class CarModel:
     # Source: objective_validation.md Section 2 + sprint analysis 2026-03-20
     vortex_excursion_pctile: str = "p95"  # "p95" | "p99"
 
+    # Suspension architecture discriminator. Drives conditional dispatch in the
+    # solver chain (e.g. GT3 cars skip Step 2 because they have no heave/third
+    # springs). Default preserves backward compatibility with all existing GTP
+    # car definitions; Porsche 963 and any GT3 cars override this explicitly.
+    suspension_arch: SuspensionArchitecture = SuspensionArchitecture.GTP_HEAVE_THIRD_TORSION_FRONT
+
+    # iRacing Balance of Performance version this car definition is calibrated
+    # against. BoP changes per-season shift mass, restrictor, fuel capacity, and
+    # sometimes legal RH floor. Persisted in saved setups so a regression test
+    # or production solver run can detect drift when iRacing pushes a new BoP.
+    # Format is free-form (e.g. "2026s2_p3" for 2026 Season 2 Patch 3).
+    # Empty string = unspecified / not BoP-tracked (legacy GTP cars).
+    bop_version: str = ""
+
+    # iRacing CarPath (DriverInfo.Drivers[me].CarPath) for IBT-driven car
+    # auto-detection. Empty for legacy GTP cars whose canonical_name already
+    # matches the IBT short name (bmw, porsche, ferrari, cadillac, acura);
+    # populated for GT3 cars where canonical_name is descriptive
+    # (e.g., "bmw_m4_gt3") but iRacing exposes a short tag ("bmwm4gt3").
+    iracing_car_path: str = ""
+
     def __post_init__(self) -> None:
         # Auto-populate garage_ranges discrete torsion OD options from corner spring model
         if not self.garage_ranges.front_torsion_od_discrete and self.corner_spring.front_torsion_od_options:
             self.garage_ranges.front_torsion_od_discrete = list(self.corner_spring.front_torsion_od_options)
+        # Per-car required field validation — enforce no silent BMW-default substitution.
+        # Mission Principle 3: missing per-car data must raise, not substitute.
+        _required = {
+            "brake_bias_pct": self.brake_bias_pct,
+            "front_master_cyl_baseline_mm": self.front_master_cyl_baseline_mm,
+            "rear_master_cyl_baseline_mm": self.rear_master_cyl_baseline_mm,
+            "fuel_low_warning_l_default": self.fuel_low_warning_l_default,
+        }
+        _unset = [name for name, value in _required.items() if not value or value <= 0.0]
+        if _unset:
+            raise ValueError(
+                f"CarModel {self.canonical_name!r} ({self.name!r}) is missing required "
+                f"per-car field(s): {_unset}. Each CarModel must explicitly set these — "
+                f"no BMW-default fallback is permitted."
+            )
+
+        # Architecture invariants — catch misconfiguration at construction.
+        if self.suspension_arch.has_heave_third and self.heave_spring is None:
+            raise ValueError(
+                f"{self.canonical_name}: suspension_arch={self.suspension_arch.value} "
+                "requires non-null heave_spring"
+            )
+        if self.suspension_arch is SuspensionArchitecture.GT3_COIL_4WHEEL:
+            # GT3 cars must not declare front torsion bar physics; Step 2 N/A.
+            if self.corner_spring.front_torsion_c and self.corner_spring.front_torsion_c > 0.0:
+                raise ValueError(
+                    f"{self.canonical_name}: GT3_COIL_4WHEEL suspension_arch is "
+                    "incompatible with non-zero front_torsion_c"
+                )
+            # GT3 must declare heave/third absence by setting heave_spring=None.
+            # The factory default builds a non-null instance, so anyone copying
+            # an existing GTP car without explicitly nulling heave_spring would
+            # silently inherit GTP heave physics — disallow.
+            if self.heave_spring is not None:
+                raise ValueError(
+                    f"{self.canonical_name}: GT3_COIL_4WHEEL must set "
+                    "heave_spring=None (GT3 cars have no heave/third springs)"
+                )
+
+    @property
+    def has_indexed_setup_values(self) -> bool:
+        """True for cars whose iRacing garage exposes spring rates as integer indices.
+
+        Today this is Ferrari 499P only (HeaveSpring, TorsionBarOD, ArbSize all
+        appear as raw indices in the IBT YAML). All other GTP and GT3 cars expose
+        direct N/mm or mm values. Solvers compute in physical units; the writer
+        and reader convert at the boundary via ``ferrari_indexed_controls``.
+        """
+        return self.ferrari_indexed_controls is not None
 
     def total_mass(self, fuel_load_l: float) -> float:
         """Total car mass including driver and fuel (kg)."""
@@ -1754,6 +1983,102 @@ class CarModel:
 
         return track_key(track_name) in set(self.supported_track_keys)
 
+    def nominal_mc_ratio(self, decel_g: float = 1.8) -> float:
+        """Nominal front/rear master-cylinder diameter ratio for ideal brake force distribution.
+
+        Under braking the front axle must produce more braking force than the
+        static weight split because longitudinal weight transfer adds load to
+        the front tyres.  The ideal front braking force fraction is:
+
+            f_front = W_f_static + (h_cg / wheelbase) × decel_g
+
+        where W_f_static is the static front weight fraction, h_cg is the CG
+        height, and decel_g is the typical peak deceleration.
+
+        Hydraulic force ∝ pressure × piston area ∝ diameter².  So the MC
+        diameter ratio that produces this ideal force split is:
+
+            mc_ratio = d_front / d_rear = sqrt(f_front / (1 - f_front))
+
+        For a 47% static front, 350 mm CG, 2.74 m wheelbase at 1.8 g:
+            f_front = 0.47 + (0.35 / 2.74) × 1.8 = 0.47 + 0.230 = 0.700
+            mc_ratio = sqrt(0.700 / 0.300) = 1.528
+
+        In practice iRacing's BrakePressureBias already compensates for some
+        of this, so the MC ratio interacts with the bias %.  This method
+        provides the physics-ideal reference point.
+
+        Args:
+            decel_g: Typical peak deceleration in g.  Default 1.8 is the GTP
+                baseline derived from BMW M Hybrid V8 Sebring telemetry.
+                GT3 cars typically see ~1.4–1.6 g; adjust accordingly.
+        """
+        import math
+        h_cg_m = self.corner_spring.cg_height_mm / 1000.0
+        f_front = self.weight_dist_front + (h_cg_m / max(self.wheelbase_m, 0.1)) * decel_g
+        f_front = max(0.3, min(0.85, f_front))
+        return round(math.sqrt(f_front / max(1.0 - f_front, 0.01)), 3)
+
+    def compute_ideal_mc_sizes(
+        self,
+        decel_g: float = 1.8,
+        fuel_load_l: float | None = None,
+    ) -> tuple[float, float, str]:
+        """Compute recommended front and rear MC diameters from physics.
+
+        Uses the car's CG height, wheelbase, and weight distribution to
+        calculate the ideal hydraulic force split, then selects the closest
+        available MC option pair that produces that ratio.
+
+        Args:
+            decel_g: Typical peak deceleration in g (default 1.8 for GTP).
+            fuel_load_l: If given, adjusts weight distribution for fuel load.
+
+        Returns:
+            (front_mc_mm, rear_mc_mm, reasoning_string)
+        """
+        import math
+
+        h_cg_m = self.corner_spring.cg_height_mm / 1000.0
+        if fuel_load_l is not None:
+            w_f = self.front_weight_at_fuel(fuel_load_l)
+        else:
+            w_f = self.weight_dist_front
+
+        # Ideal front braking force fraction under deceleration
+        f_front = w_f + (h_cg_m / max(self.wheelbase_m, 0.1)) * decel_g
+        f_front = max(0.3, min(0.85, f_front))
+        ideal_ratio = math.sqrt(f_front / max(1.0 - f_front, 0.01))
+
+        mc_opts = list(getattr(self.garage_ranges, "brake_master_cyl_options_mm", []) or [])
+        if not mc_opts:
+            mid = 19.1
+            return mid, mid, "no MC options available"
+
+        # Search all option pairs for the one closest to the ideal ratio
+        best_front = mc_opts[len(mc_opts) // 2]
+        best_rear = mc_opts[len(mc_opts) // 2]
+        best_err = 999.0
+        for f_mc in mc_opts:
+            for r_mc in mc_opts:
+                if r_mc < 1e-6:
+                    continue
+                ratio = f_mc / r_mc
+                err = abs(ratio - ideal_ratio)
+                if err < best_err:
+                    best_err = err
+                    best_front = f_mc
+                    best_rear = r_mc
+
+        actual_ratio = best_front / max(best_rear, 0.01)
+        reason = (
+            f"Physics ideal: f_front={f_front:.3f} at {decel_g:.1f}g -> "
+            f"ideal MC ratio {ideal_ratio:.3f}; "
+            f"best available {best_front:.1f}/{best_rear:.1f} mm "
+            f"(ratio {actual_ratio:.3f}, err {best_err:.3f})"
+        )
+        return best_front, best_rear, reason
+
     def supported_tracks_label(self) -> str:
         """Human-readable list of supported base tracks."""
         if not self.supported_track_keys:
@@ -1791,16 +2116,36 @@ class CarModel:
         This uses the BMW-calibrated effective heave mass and a baseline axle
         spring/damper state so Step 1 and Step 2 are at least directionally
         consistent about how bumps consume ride-height budget.
+
+        For GT3 cars (heave_spring=None) the per-axle effective mass falls
+        back to a coarse axle-share of the dry car mass + driver, since the
+        heave-spring model that normally publishes m_eff doesn't exist for
+        coil-only architectures. This is sufficient for Step 1 directional
+        sizing; Wave-3 GT3 calibration will replace it with measured values.
         """
         is_front = axle.lower().startswith("f")
         if is_front:
-            m_eff = self.heave_spring.front_m_eff_kg
-            k_nmm = spring_rate_nmm if spring_rate_nmm is not None else self.front_heave_spring_nmm
+            if self.heave_spring is not None:
+                m_eff = self.heave_spring.front_m_eff_kg
+                k_nmm = (spring_rate_nmm if spring_rate_nmm is not None
+                         else self.front_heave_spring_nmm)
+            else:
+                # GT3 fallback: front-axle share of sprung mass at zero fuel
+                m_eff = (self.mass_car_kg + self.mass_driver_kg) * self.weight_dist_front
+                # Coil corner spring as the heave-equivalent stiffness reference
+                k_nmm = (spring_rate_nmm if spring_rate_nmm is not None
+                         else 2.0 * self.corner_spring.rear_spring_range_nmm[0])
             c_nsm = damper_coeff_nsm if damper_coeff_nsm is not None else self.damper.front_hs_coefficient_nsm
             tyre_rate_nmm = self.tyre_vertical_rate_front_nmm
         else:
-            m_eff = self.heave_spring.rear_m_eff_kg
-            k_nmm = spring_rate_nmm if spring_rate_nmm is not None else self.rear_third_spring_nmm
+            if self.heave_spring is not None:
+                m_eff = self.heave_spring.rear_m_eff_kg
+                k_nmm = (spring_rate_nmm if spring_rate_nmm is not None
+                         else self.rear_third_spring_nmm)
+            else:
+                m_eff = (self.mass_car_kg + self.mass_driver_kg) * (1.0 - self.weight_dist_front)
+                k_nmm = (spring_rate_nmm if spring_rate_nmm is not None
+                         else 2.0 * self.corner_spring.rear_spring_range_nmm[0])
             c_nsm = damper_coeff_nsm if damper_coeff_nsm is not None else self.damper.rear_hs_coefficient_nsm
             tyre_rate_nmm = self.tyre_vertical_rate_rear_nmm
 
@@ -1872,6 +2217,9 @@ BMW_M_HYBRID_V8 = CarModel(
     weight_dist_front=0.4727,  # Calibrated from 41 sessions (corner weights) at full fuel
     fuel_cg_frac=0.50,        # LMDh reg: central fuel cell. Analysis: per-10L W_f shift=-0.018%
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
+    front_master_cyl_baseline_mm=19.1,  # BMW M Hybrid V8 driver IBT baseline
+    rear_master_cyl_baseline_mm=20.6,   # BMW M Hybrid V8 driver IBT baseline
+    fuel_low_warning_l_default=8.0,     # Class-typical dashboard threshold
     default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
     tyre_load_sensitivity=0.22,    # BMW Michelin GTP compound — moderate sensitivity
     torsion_arb_coupling=0.25,     # Back-calibrated from 73 IBT sessions at Sebring (LLTD=50.99%)
@@ -2163,6 +2511,9 @@ CADILLAC_VSERIES_R = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.485,      # CALIBRATED: IBT corner weights 5500/(5500+5840 N)
     brake_bias_pct=47.5,          # CALIBRATED: IBT BrakePressureBias = 47.5%
+    front_master_cyl_baseline_mm=19.1,  # Dallara LMDh class-typical
+    rear_master_cyl_baseline_mm=22.2,   # Dallara LMDh class-typical
+    fuel_low_warning_l_default=10.0,    # Class-typical dashboard threshold
     default_df_balance_pct=52.0,  # CALIBRATED from aero map sweep: at dyn front RH 21.5mm,
                                     # min achievable balance is 51.9% (wing 12) → 48.9% (wing 17).
                                     # 50.14% (BMW baseline) was unachievable at wing 12-14.
@@ -2178,8 +2529,12 @@ CADILLAC_VSERIES_R = CarModel(
     min_rear_rh_dynamic=25.0,
     max_rear_rh_dynamic=75.0,
     vortex_burst_threshold_mm=2.0,
-    front_heave_spring_nmm=50.0,  # ESTIMATE — needs Cadillac IBT calibration
-    rear_third_spring_nmm=600.0,  # UPDATED: 680 N/mm observed at Silverstone; anchor raised from 530
+    front_heave_spring_nmm=30.0,  # CALIBRATED 2026-04-28: driver runs 30 N/mm at Laguna (88-90% travel)
+                                  # Physics target is 40-50 N/mm for 70-75% travel, but solver should
+                                  # not exceed ±50% of this anchor without bottoming evidence.
+    rear_third_spring_nmm=380.0,  # CALIBRATED 2026-04-28: median across 5 unique setups (320-680 range)
+                                  # was 600 (biased toward stiff Silverstone setup). 380 is center of
+                                  # driver's actual usage range and better reflects multi-track needs.
     aero_compression=AeroCompression(
         ref_speed_kph=230.0,
         front_compression_mm=12.0,  # CALIBRATED: learner mean 11.98mm across 2 sessions
@@ -2194,9 +2549,13 @@ CADILLAC_VSERIES_R = CarModel(
         front_heave_perch_to_rh=-1.955,    # CALIBRATED: LS fit over 4 garage data points
         front_heave_perch_ref_mm=-20.5,    # Reference heave perch for front_base_rh_mm
         rear_base_rh_mm=46.85,              # CALIBRATED: intercept from IBT data
-        rear_pushrod_to_rh=0.042,           # CALIBRATED: 2 data points (+0.5→46.8, -6.0→46.6)
-                                            # Positive and very weak — DIFFERENT from BMW (-0.096)
-                                            # -0.096 gives +2.5mm pushrod; 0.042 gives -6.0mm (correct)
+        rear_pushrod_to_rh=0.0,             # FIXED 2026-04-28: coefficient too weak (was 0.042) to use
+                                            # as RH control. Cadillac rear pushrod is a PRELOAD control,
+                                            # not an RH control. 5 unique setups show pushrod 0.5→-35mm
+                                            # but RH variation (42-47mm) is dominated by 1/third and
+                                            # 1/spring compliance. Using 0.042 causes solver to request
+                                            # absurd pushrod values (-40 to -56mm) for small RH targets.
+        rear_pushrod_default_mm=0.5,        # CALIBRATED: driver's Laguna Seca default (most sessions)
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(
@@ -2255,6 +2614,7 @@ CADILLAC_VSERIES_R = CarModel(
     ride_height_model=RideHeightModel.uncalibrated(),
     deflection=DeflectionModel.uncalibrated(),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+    default_diff_preload_nm=35.0,  # CORRECTED 2026-04-28: .sto confirms Preload=35 Nm (was inheriting BMW 12.0)
     # NOTE: Cadillac ride height model is NOT YET CALIBRATED.
     # Front RH depends on: pushrod (payload length), heave perch, torsion bar OD,
     # torsion bar turns, camber, and fuel weight. The PushrodGeometry above provides
@@ -2352,6 +2712,9 @@ FERRARI_499P = CarModel(
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
     brake_bias_pct=49.0,          # VALIDATED: best lap 87.575s SYSTEMS tab screenshot 2026-04-02 → 49.00%
                                   # Prior value 54.0% was from an older IBT session — overridden by garage screenshot
+    front_master_cyl_baseline_mm=16.8,  # Ferrari driver IBT (single_session.json artifact)
+    rear_master_cyl_baseline_mm=22.2,   # Ferrari driver IBT (single_session.json artifact)
+    fuel_low_warning_l_default=10.0,    # Ferrari driver IBT artifact value
     default_df_balance_pct=48.3,  # CALIBRATED 2026-04-02 from IBT observed operating points:
                                     # 17 Hockenheim sessions at wing=17 run 46.97–48.26% balance naturally.
                                     # Fastest session (87.575s): 47.82%. Mean across session range: 48.3%.
@@ -2705,6 +3068,7 @@ PORSCHE_963 = CarModel(
     name="Porsche 963",
     canonical_name="porsche",
     supported_track_keys=("algarve",),
+    suspension_arch=SuspensionArchitecture.GTP_HEAVE_THIRD_ROLL_FRONT,
     mass_car_kg=1030.0,
     mass_driver_kg=75.0,
     # fuel_capacity_l=88.96 (class default, same as all LMDh GTP — 23.5 gal)
@@ -2719,6 +3083,9 @@ PORSCHE_963 = CarModel(
     #   The old value forced the rake solver to hit the rear pushrod cap on every run.
     tyre_load_sensitivity=0.18,   # DSSV dampers give better contact — lower effective sensitivity
     brake_bias_pct=44.75,         # CALIBRATED: from user's Algarve baseline (was 46.0 BMW default)
+    front_master_cyl_baseline_mm=19.1,  # Porsche 963 Multimatic class-typical
+    rear_master_cyl_baseline_mm=20.6,   # Porsche 963 Multimatic class-typical
+    fuel_low_warning_l_default=8.0,     # Class-typical dashboard threshold
     # LLTD target: PHYSICS-DERIVED via OptimumG/Milliken formula
     # = weight_dist_front + (tyre_sens/0.20) × 0.05 + speed_correction
     # = 0.471 + (0.18/0.20) × 0.05 + ~0.005 = 0.521
@@ -2944,6 +3311,11 @@ ACURA_ARX06 = CarModel(
     mass_car_kg=1030.0,               # PDF: dry weight 1030 kg
     mass_driver_kg=75.0,
     weight_dist_front=0.470,          # IBT: (2706+2706)/(2706+2706+3048+3048) = 0.470
+    brake_bias_pct=47.0,              # ESTIMATE — Acura ARX-06 typical (front-biased, no migration)
+                                      # TODO: replace with IBT-validated value once telemetry confirms
+    front_master_cyl_baseline_mm=19.1,  # ORECA LMDh class-typical
+    rear_master_cyl_baseline_mm=20.6,   # ORECA LMDh class-typical
+    fuel_low_warning_l_default=8.0,     # Class-typical dashboard threshold
     default_df_balance_pct=49.0,      # Sharp front end — risk of snap oversteer
     tyre_load_sensitivity=0.20,       # ESTIMATE — Michelin GTP compound
     aero_axes_swapped=True,
@@ -3017,6 +3389,11 @@ ACURA_ARX06 = CarModel(
         front_torsion_od_options=[         # CONFIRMED from garage dropdown
             13.90, 14.34, 14.76, 15.14, 15.51, 15.86,  # EXPANDED: full usable range
         ],
+        # ORECA chassis has a dedicated front roll spring (separate from torsion bars)
+        front_roll_spring_rate_nmm=150.0,  # Baseline from registry midpoint
+        front_roll_spring_range_nmm=(50.0, 300.0),  # Registry: 50-300 N/mm
+        front_is_roll_spring=True,  # ORECA chassis: dedicated front roll spring
+        front_roll_spring_step_nmm=10.0,
         # Rear also uses torsion bars (ORECA, not Dallara) — same discrete options
         rear_torsion_c=0.0008036,         # ESTIMATE — same C constant, needs calibration
         rear_torsion_od_range_mm=(13.9, 18.20),
@@ -3097,6 +3474,477 @@ ACURA_ARX06 = CarModel(
 )
 
 
+# ─── BMW M4 GT3 ──────────────────────────────────────────────────────────────
+# First GT3 entry. Scaffold-only: every value below is sourced from the iRacing
+# user manual (https://s100.iracing.com/wp-content/uploads/2024/07/BMW-M4-GT3-Manual_V3.pdf)
+# or community-validated public data. NO IBT calibration data exists yet —
+# RideHeightModel and DeflectionModel are uncalibrated. Every solver step
+# except possibly Step 1 (rake/RH against the parsed GT3 aero map) will be
+# blocked by the calibration gate until per-track IBT data is collected.
+#
+# This definition exists to:
+#   1. exercise the SuspensionArchitecture.GT3_COIL_4WHEEL invariants,
+#   2. validate that the Step-2-skip path works end-to-end, and
+#   3. anchor the registry entry for future calibration.
+
+BMW_M4_GT3 = CarModel(
+    name="BMW M4 GT3 EVO",  # IBT screen name 2026-04-26 (iRacing 2026 S2 = EVO version)
+    canonical_name="bmw_m4_gt3",
+    iracing_car_path="bmwm4gt3",  # IBT DriverInfo.CarPath
+    suspension_arch=SuspensionArchitecture.GT3_COIL_4WHEEL,
+    bop_version="2026s2_p3",  # iRacing 2026 Season 2 Patch 3 (2026-04-21)
+    # Two IBTs sampled 2026-04-26: Spielberg (Red Bull Ring) and Nürburgring
+    # Combined (Gesamtstrecke 24h). Both with byte-identical CarSetup — driver
+    # carried the same setup across tracks. Cannot back-solve aero compression
+    # from this pair (no varying static→dynamic point); need 3+ varied-spring
+    # IBTs at the same track for that.
+    supported_track_keys=("spielberg", "nurburgring"),
+    # Mass + chassis (manual: dry 1285 kg, wet w/driver 1411 kg, WB 2916 mm)
+    mass_car_kg=1285.0,
+    mass_driver_kg=75.0,
+    weight_dist_front=0.464,  # IBT: InCarAdjustments.FWtdist = 46.4% (Spielberg setup)
+    fuel_capacity_l=100.0,    # IBT: DriverCarFuelMaxLtr = 100.0
+    fuel_stint_end_l=10.0,
+    fuel_low_warning_l_default=8.0,    # F1: GT3 class-typical dashboard threshold; PENDING_IBT
+    front_master_cyl_baseline_mm=19.1,  # F1: GT3 class-typical; PENDING_IBT
+    rear_master_cyl_baseline_mm=20.6,   # F1: GT3 class-typical; PENDING_IBT
+    wheelbase_m=2.916,
+    steering_ratio=14.0,      # PENDING_IBT (typical GT3 14-16:1)
+    # Aero map axes (parsed from data/aeromaps_parsed/bmw_m4_gt3_aero.npz)
+    aero_axes_swapped=False,  # GT3 xlsx labels are direct (rows = front RH, cols = rear RH)
+    # GT3 dynamic RH operating envelope (manual: max-DF target dyn front 35.0 ±2.5,
+    # dyn rear 80.0 ±2.5; min-drag F/R both 17.5 ±2.5).
+    # Driver-loaded IBT static front RH ≈ 72.6 mm; with ~27 mm aero compression
+    # at 230 kph the static floor is well above the original 50 mm placeholder.
+    # Bumped to 60 mm 2026-04-27 after Road Atlanta IBT showed the search
+    # converging to the floor and recommending front RH 22 mm below driver value.
+    min_front_rh_static=60.0,
+    max_front_rh_static=95.0,
+    min_rear_rh_static=50.0,   # Manual: rear legal range 50-95 mm
+    max_rear_rh_static=95.0,
+    min_front_rh_dynamic=5.0,  # Aero map grid lower bound
+    max_front_rh_dynamic=80.0, # Operating window upper bound
+    min_rear_rh_dynamic=5.0,
+    max_rear_rh_dynamic=95.0,
+    vortex_burst_threshold_mm=2.0,  # PENDING_IBT
+    # No heave/third springs — GT3 architecture invariant requires None
+    heave_spring=None,
+    # Corner springs — coil at all four corners (NOT torsion bar like GTP BMW).
+    # Spring rate ranges from iRacing manual V3:
+    #   Front: 190–340 N/mm in 10 N/mm steps (16 options)
+    #   Rear:  130–250 N/mm in 10 N/mm steps (13 options)
+    corner_spring=CornerSpringModel(
+        front_torsion_c=0.0,                # No torsion bar
+        front_torsion_od_ref_mm=0.0,
+        front_torsion_od_range_mm=(0.0, 0.0),
+        front_torsion_od_options=[],
+        front_is_roll_spring=False,         # Paired front corner coils, NOT a single roll spring
+        front_motion_ratio=1.0,             # PENDING_IBT
+        rear_motion_ratio=1.0,              # PENDING_IBT
+        rear_spring_range_nmm=(130.0, 250.0),  # MANUAL: rear 130-250 N/mm step 10
+        rear_spring_step_nmm=10.0,
+        rear_spring_perch_baseline_mm=0.0,
+        # MANUAL V3: front 190-340 N/mm step 10 (16 options). Driver baseline ~220.
+        front_spring_range_nmm=(190.0, 340.0),
+        front_spring_resolution_nmm=10.0,
+        front_baseline_rate_nmm=220.0,
+        track_width_mm=1700.0,              # PENDING_IBT (FIA GT3 typical ~1700 mm)
+        cg_height_mm=350.0,                 # PENDING_IBT
+    ),
+    # ARB: paired-blade D-codes from manual V3.
+    # Front: 11 configurations D1-D1 through D6-D6
+    # Rear:  7 configurations D1-D1 through D4-D4
+    # Indexed encoding pattern (similar to Ferrari 499P heave/torsion indices) —
+    # `front_size_labels` here represents the 11 distinct ARB selector positions.
+    arb=ARBModel(
+        front_size_labels=[
+            "D1-D1", "D2-D1", "D2-D2", "D3-D2", "D3-D3",
+            "D4-D3", "D4-D4", "D5-D4", "D5-D5", "D6-D5", "D6-D6",
+        ],
+        front_stiffness_nmm_deg=[0.0] * 11,  # PENDING_IBT — discovered from setup sweep
+        front_blade_count=1,                 # Single selector (the label IS the position)
+        front_baseline_size="D3-D3",
+        front_baseline_blade=1,
+        rear_size_labels=[
+            "D1-D1", "D2-D1", "D2-D2", "D3-D2", "D3-D3", "D4-D3", "D4-D4",
+        ],
+        rear_stiffness_nmm_deg=[0.0] * 7,    # PENDING_IBT
+        rear_blade_count=1,
+        rear_baseline_size="D2-D2",
+        rear_baseline_blade=1,
+    ),
+    # Camber baselines from BMW M4 GT3 Spielberg + Road Atlanta IBTs
+    # (consistent across both tracks: front -4.0°, rear -2.8°). GT3 slicks
+    # need more aggressive negative camber than GTP — was using GTP defaults
+    # (-2.9 / -1.9) and recommending -1.5 / -1.4 vs driver -4.0 / -3.0.
+    # Bumped 2026-04-27 after Road Atlanta IBT post-mortem.
+    geometry=WheelGeometryModel(
+        front_camber_baseline_deg=-4.0,   # IBT: LeftFront / RightFront Camber = -4.0°
+        rear_camber_baseline_deg=-2.8,    # IBT: LeftRear / RightRear Camber = -2.8°
+    ),
+    damper=DamperModel(
+        # Manual: 4-way per corner, 0-11 click range, NO heave/roll dampers
+        has_roll_dampers=False,
+        has_front_roll_damper=False,
+        has_rear_roll_damper=False,
+        zeta_is_calibrated=False,  # PENDING_IBT click-sweep calibration
+    ),
+    # Tyre compliance PENDING_IBT
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    default_df_balance_pct=44.0,  # COMMUNITY-typical GT3 (manual aero target wing+6 → F35/R80)
+    tyre_load_sensitivity=0.20,
+    ride_height_model=RideHeightModel.uncalibrated(),
+    deflection=DeflectionModel.uncalibrated(),
+    # Wing angle range from parsed aero map (-2 to +6, 1° steps)
+    wing_angles=[-2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+    # Brake bias from IBT (Spielberg setup): 52.0% front
+    brake_bias_pct=52.0,
+    # Diff preload from IBT (Spielberg setup): 100 Nm
+    default_diff_preload_nm=100.0,
+    # W2.4 / Audit A-1: BMW M4 GT3 is FR layout (W_f=0.464). OptimumG +5pp rule
+    # validated for FR/MR cars → target ~0.51. Set explicitly so the solver hits
+    # a physically-valid target rather than relying on the bare formula path.
+    # Source: docs/audits/gt3_phase2/solver-rake-corner-arb.md body line 350-365.
+    measured_lltd_target=0.51,
+    lltd_target_source="physics_formula",
+    pushrod=PushrodGeometry(
+        front_pinned_rh_mm=0.0,    # GT3 RH not pinned — varies with springs
+        front_pushrod_default_mm=0.0,
+        rear_base_rh_mm=80.0,
+        rear_pushrod_to_rh=0.0,    # PENDING_IBT
+    ),
+    rh_variance=RideHeightVariance(dominant_bump_freq_hz=4.0),  # PENDING_IBT
+    aero_compression=AeroCompression(
+        ref_speed_kph=200.0,
+        front_compression_mm=10.0,  # PENDING_IBT
+        rear_compression_mm=8.0,    # PENDING_IBT
+    ),
+    garage_ranges=GarageRanges(
+        camber_front_deg=(-4.0, 0.0),  # PENDING_IBT
+        camber_rear_deg=(-3.0, 0.0),   # PENDING_IBT
+        # W4.3: BumpRubberGap + CenterFrontSplitterHeight (GT3-only).
+        # Driver-loaded values at Spielberg: F=15 mm, R=52 mm.  Range chosen
+        # to bracket driver-loaded value with engineering headroom.  PENDING
+        # iRacing manual decode (V1 PDF is image-based).
+        bump_rubber_gap_front_mm=(0.0, 30.0),
+        bump_rubber_gap_rear_mm=(0.0, 60.0),
+        splitter_height_mm=(0.0, 30.0),
+    ),
+)
+
+
+# ─── Aston Martin Vantage GT3 EVO ────────────────────────────────────────────
+# Second GT3 entry. Seeded from iRacing user manual V1 (2026-01) + verified IBT
+# session_info from a Spielberg/Red Bull Ring session 2026-04-26. Some fields
+# remain PENDING_IBT pending more setup variation across multiple sessions.
+#
+# Distinctive properties from the IBT YAML:
+#   - Front section is named `FrontBrakesLights` (not `FrontBrakes`); ARB field
+#     is `FarbBlades`/`RarbBlades` (not `ArbBlades`).
+#   - Aero balance section is named `AeroBalanceCalculator` (not
+#     `AeroBalanceCalc`); wing field is `RearWingAngle` (not `WingSetting`).
+#   - Extra in-car adjusters: `ThrottleResponse`, `EpasSetting` (electronic
+#     power steering) — Aston-specific, not present on BMW.
+#   - Endurance light fields (`EnduranceLights`, `NightLedStripColor`) present.
+#
+# These car-specific YAML field names will need per-car PARAM_IDS encoding in
+# `output/setup_writer.py` once that module gets its GT3 dispatch table.
+
+ASTON_MARTIN_VANTAGE_GT3 = CarModel(
+    name="Aston Martin Vantage GT3 EVO",
+    canonical_name="aston_martin_vantage_gt3",
+    iracing_car_path="amvantageevogt3",  # IBT DriverInfo.CarPath
+    suspension_arch=SuspensionArchitecture.GT3_COIL_4WHEEL,
+    bop_version="2026s2_p3",
+    supported_track_keys=("spielberg",),  # Have one IBT at Spielberg
+    # Mass + chassis (real-world FIA: dry ~1265 kg; iRacing wet ~1330 kg).
+    mass_car_kg=1265.0,
+    mass_driver_kg=75.0,
+    weight_dist_front=0.480,  # IBT: InCarAdjustments.FWtdist = 48.0% (Spielberg setup)
+    fuel_capacity_l=106.0,    # IBT: DriverCarFuelMaxLtr = 106.0
+    fuel_stint_end_l=10.0,
+    fuel_low_warning_l_default=8.0,     # F1: GT3 class-typical; PENDING_IBT
+    front_master_cyl_baseline_mm=19.1,  # F1: GT3 class-typical; PENDING_IBT
+    rear_master_cyl_baseline_mm=20.6,   # F1: GT3 class-typical; PENDING_IBT
+    wheelbase_m=2.704,        # PENDING manual decode (V1 PDF is image-based); 2018 platform reference
+    steering_ratio=14.0,      # PENDING_IBT
+    aero_axes_swapped=False,
+    # GT3 RH operating envelope. Manual: max-DF wing +10.5 → dyn F 35.0±2.5,
+    # dyn R 70.0±2.5; min-drag wing +0.5 → F/R 17.5±2.5.
+    # Driver-loaded IBT static front RH ≈ 70 mm at Spielberg; bumped from
+    # 50 mm placeholder to 60 mm 2026-04-27 to match the W4.x BMW M4 GT3
+    # post-mortem (search was converging to the floor).
+    min_front_rh_static=60.0,
+    max_front_rh_static=95.0,
+    min_rear_rh_static=50.0,
+    max_rear_rh_static=95.0,
+    min_front_rh_dynamic=5.0,
+    max_front_rh_dynamic=80.0,
+    min_rear_rh_dynamic=5.0,
+    max_rear_rh_dynamic=95.0,
+    vortex_burst_threshold_mm=2.0,  # PENDING_IBT
+    heave_spring=None,
+    corner_spring=CornerSpringModel(
+        front_torsion_c=0.0,
+        front_torsion_od_ref_mm=0.0,
+        front_torsion_od_range_mm=(0.0, 0.0),
+        front_torsion_od_options=[],
+        front_is_roll_spring=False,
+        front_motion_ratio=1.0,
+        rear_motion_ratio=1.0,
+        rear_spring_range_nmm=(120.0, 280.0),  # PENDING manual decode (community range)
+        rear_spring_step_nmm=10.0,
+        rear_spring_perch_baseline_mm=0.0,
+        # PENDING_IBT: front coil range from manual V1 not yet decoded.
+        # Use a conservative GT3-typical span (community/iRacing range).
+        front_spring_range_nmm=(180.0, 320.0),
+        front_spring_resolution_nmm=10.0,
+        front_baseline_rate_nmm=220.0,
+        track_width_mm=1700.0,
+        cg_height_mm=350.0,
+    ),
+    # ARB: blade counts PENDING manual decode (V1 PDF image-based).
+    # IBT uses `FarbBlades` / `RarbBlades` field naming (vs BMW's `ArbBlades`).
+    arb=ARBModel(
+        front_size_labels=[f"B{i}" for i in range(1, 11)],  # PENDING — assumed 10 blades
+        front_stiffness_nmm_deg=[0.0] * 10,
+        front_blade_count=1,
+        front_baseline_size="B5",
+        front_baseline_blade=1,
+        rear_size_labels=[f"B{i}" for i in range(1, 11)],
+        rear_stiffness_nmm_deg=[0.0] * 10,
+        rear_blade_count=1,
+        rear_baseline_size="B5",
+        rear_baseline_blade=1,
+    ),
+    # Camber baselines from Spielberg IBT (front -4.0°, rear ~-2.8° estimated
+    # from BMW M4 GT3 spec — Aston rear value not in YAML excerpt).
+    # Bumped from GTP defaults 2026-04-27.
+    geometry=WheelGeometryModel(
+        front_camber_baseline_deg=-4.0,   # IBT: front Camber = -4.0°
+        rear_camber_baseline_deg=-2.8,    # PENDING_IBT — pinned to BMW M4 GT3 reference
+    ),
+    damper=DamperModel(
+        # Real-world Aston has 5-way adjustable; iRacing IBT YAML exposes 4-way
+        # per-axle (FrontDampers/RearDampers, LSC/HSC/LSR/HSR clicks).
+        # Click range PENDING — driver-loaded values were 9–11 across the board
+        # which suggests a 0–11 scale similar to BMW.
+        has_roll_dampers=False,
+        has_front_roll_damper=False,
+        has_rear_roll_damper=False,
+        zeta_is_calibrated=False,
+    ),
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    default_df_balance_pct=44.0,  # IBT: 40.5% measured (driver setup at Spielberg, wing +5)
+    tyre_load_sensitivity=0.20,
+    ride_height_model=RideHeightModel.uncalibrated(),
+    deflection=DeflectionModel.uncalibrated(),
+    # Wing angle range from parsed aero map: 5 to 13 (9 angles, 1° steps)
+    wing_angles=[5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0],
+    # Brake bias from IBT (Spielberg setup): 55.8% front
+    brake_bias_pct=55.8,
+    # Diff preload from IBT (Spielberg setup): 110 Nm
+    default_diff_preload_nm=110.0,
+    # W2.4 / Audit A-1: Aston Martin Vantage GT3 is FR layout (W_f=0.480).
+    # OptimumG +5pp rule validated for FR/MR cars → target ~0.53. Set explicitly
+    # so the solver hits a physically-valid target rather than relying on the
+    # bare formula path. Source: docs/audits/gt3_phase2/solver-rake-corner-arb.md
+    # body line 350-365.
+    measured_lltd_target=0.53,
+    lltd_target_source="physics_formula",
+    pushrod=PushrodGeometry(
+        front_pinned_rh_mm=0.0,
+        front_pushrod_default_mm=0.0,
+        rear_base_rh_mm=76.0,  # IBT: rear static RH = 76.0 mm
+        rear_pushrod_to_rh=0.0,
+    ),
+    rh_variance=RideHeightVariance(dominant_bump_freq_hz=4.0),
+    aero_compression=AeroCompression(
+        ref_speed_kph=200.0,
+        # IBT static-vs-dynamic delta at Spielberg: front 70.1 → 70 mm (~0 mm),
+        # rear 76.0 → 70 mm (~6 mm). Single sample — PENDING multi-session calibration.
+        front_compression_mm=0.0,
+        rear_compression_mm=6.0,
+    ),
+    garage_ranges=GarageRanges(
+        camber_front_deg=(-4.0, 0.0),
+        camber_rear_deg=(-3.0, 0.0),
+        # W4.3: Aston driver-loaded F=17, R=54 mm.  PENDING manual decode.
+        bump_rubber_gap_front_mm=(0.0, 30.0),
+        bump_rubber_gap_rear_mm=(0.0, 60.0),
+        splitter_height_mm=(0.0, 30.0),
+    ),
+)
+
+
+# ─── Porsche 911 GT3 R (992) ────────────────────────────────────────────────
+# Third GT3 entry. The ONLY rear-engine (RR) GT3 — critical for de-risking the
+# LLTD physics path. Seeded from iRacing user manual V2 (2024-09) + verified
+# IBT session_info from a Spielberg/Red Bull Ring session 2026-04-26.
+#
+# RR-layout signatures verified in the IBT:
+#   - FWtdist = 44.9% (lowest of the three GT3s sampled — BMW 46.4%, Aston 48.0%)
+#   - Rear spring 260 N/mm > front 220 N/mm (rear-stiff to control rear lift,
+#     opposite of FR/MR cars where front is typically stiffer)
+#   - Dynamic RH at speed: front 69 mm > rear 61 mm (reverse rake — opposite of
+#     GTP/MR cars where rear sits higher)
+#
+# Additional IBT YAML field-name divergence vs BMW + Aston:
+#   - Front ARB = `ArbSetting` (single integer, NOT blade-paired like BMW)
+#   - Rear ARB  = `RarbSetting`
+#   - Rear toe is `TotalToeIn` (PAIRED axle-level), not per-wheel ToeIn
+#   - FuelLevel lives in `FrontBrakesLights` section (not `Rear` like BMW/Aston)
+#   - Wing field is `WingSetting` in BOTH aero and chassis-rear sections
+#   - Wing angles use 0.7-degree offsets (5.7, 6.7, ..., not integer)
+#   - Damper driver-loaded values reach 12 — implies a 0-12 click range,
+#     wider than BMW/Aston's 0-11. Manual does not state range; PENDING
+#     a click-sweep IBT to confirm.
+
+PORSCHE_992_GT3R = CarModel(
+    name="Porsche 911 GT3 R (992)",
+    canonical_name="porsche_992_gt3r",
+    iracing_car_path="porsche992rgt3",
+    suspension_arch=SuspensionArchitecture.GT3_COIL_4WHEEL,
+    bop_version="2026s2_p3",
+    supported_track_keys=("spielberg",),
+    # Mass + chassis (manual: dry 1250 kg lightest, wet 1496 kg, WB 2.507 m shortest)
+    mass_car_kg=1250.0,
+    mass_driver_kg=75.0,
+    weight_dist_front=0.449,  # IBT: FWtdist = 44.9% (RR-layout signature)
+    fuel_capacity_l=100.0,    # IBT: DriverCarFuelMaxLtr
+    fuel_stint_end_l=10.0,
+    fuel_low_warning_l_default=8.0,     # F1: GT3 class-typical; PENDING_IBT
+    front_master_cyl_baseline_mm=19.1,  # F1: GT3 class-typical; PENDING_IBT
+    rear_master_cyl_baseline_mm=20.6,   # F1: GT3 class-typical; PENDING_IBT
+    wheelbase_m=2.507,
+    steering_ratio=14.0,
+    aero_axes_swapped=False,
+    # GT3 RH operating envelope. Manual does NOT publish max-DF/min-drag aero
+    # targets for this car (notable gap among GT3 manuals). Step 1 will need to
+    # discover them empirically from the parsed aero map.
+    # RR-layout cars sit higher at the front; bumped from 50 mm placeholder
+    # to 60 mm 2026-04-27 to match the W4.x post-mortem.
+    min_front_rh_static=60.0,
+    max_front_rh_static=95.0,
+    min_rear_rh_static=50.0,
+    max_rear_rh_static=95.0,
+    min_front_rh_dynamic=5.0,
+    max_front_rh_dynamic=80.0,
+    min_rear_rh_dynamic=5.0,
+    max_rear_rh_dynamic=95.0,
+    vortex_burst_threshold_mm=2.0,  # PENDING_IBT
+    heave_spring=None,
+    corner_spring=CornerSpringModel(
+        front_torsion_c=0.0,
+        front_torsion_od_ref_mm=0.0,
+        front_torsion_od_range_mm=(0.0, 0.0),
+        front_torsion_od_options=[],
+        front_is_roll_spring=False,
+        front_motion_ratio=1.0,
+        rear_motion_ratio=1.0,
+        rear_spring_range_nmm=(150.0, 350.0),  # PENDING manual decode (driver loaded 260 N/mm)
+        rear_spring_step_nmm=10.0,
+        rear_spring_perch_baseline_mm=0.0,
+        # PENDING_IBT: front coil range from manual V2 not yet decoded.
+        # Driver loaded 220 N/mm — span seeded from BMW/Aston manual values.
+        front_spring_range_nmm=(170.0, 320.0),
+        front_spring_resolution_nmm=10.0,
+        front_baseline_rate_nmm=220.0,
+        track_width_mm=1700.0,
+        cg_height_mm=350.0,
+    ),
+    # ARB: single-integer ArbSetting / RarbSetting in IBT.
+    # Driver loaded ArbSetting=7 / RarbSetting=7. Manual mentions 35mm/45mm
+    # binary diameters + blade positions but blade count not stated.
+    # Range PENDING a sweep — assume 0–10 placeholder.
+    arb=ARBModel(
+        front_size_labels=[str(i) for i in range(0, 11)],
+        front_stiffness_nmm_deg=[0.0] * 11,
+        front_blade_count=1,
+        front_baseline_size="7",
+        front_baseline_blade=1,
+        rear_size_labels=[str(i) for i in range(0, 11)],
+        rear_stiffness_nmm_deg=[0.0] * 11,
+        rear_blade_count=1,
+        rear_baseline_size="7",
+        rear_baseline_blade=1,
+    ),
+    # Camber baselines from Spielberg IBT (front -4.0°, rear -3.0°).
+    # Porsche 992 GT3 R runs marginally more rear camber than BMW/Aston
+    # (RR layout puts more steady-state load on rear). Bumped from GTP
+    # defaults 2026-04-27.
+    geometry=WheelGeometryModel(
+        front_camber_baseline_deg=-4.0,   # IBT: front Camber = -4.0°
+        rear_camber_baseline_deg=-3.0,    # IBT: rear Camber = -3.0°
+    ),
+    damper=DamperModel(
+        # Driver-loaded values reach 12 (HSC front=12, LSR rear=12) — implies
+        # 0-12 click range, wider than BMW/Aston (which cap at 11). Manual
+        # does not state range. PENDING click-sweep IBT.
+        ls_comp_range=(0, 12),
+        ls_rbd_range=(0, 12),
+        hs_comp_range=(0, 12),
+        hs_rbd_range=(0, 12),
+        has_roll_dampers=False,
+        has_front_roll_damper=False,
+        has_rear_roll_damper=False,
+        zeta_is_calibrated=False,
+    ),
+    tyre_vertical_rate_front_nmm=300.0,
+    tyre_vertical_rate_rear_nmm=320.0,
+    # IBT measured FrontDownforce = 36.0% (lower than BMW/Aston 40-41%) —
+    # consistent with RR layout where rear weight does aero work without splitter.
+    default_df_balance_pct=38.0,
+    tyre_load_sensitivity=0.20,
+    ride_height_model=RideHeightModel.uncalibrated(),
+    deflection=DeflectionModel.uncalibrated(),
+    # Wing angles from parsed aero map: 5.7..12.7 (8 angles, 1° steps with 0.7 offset)
+    wing_angles=[5.7, 6.7, 7.7, 8.7, 9.7, 10.7, 11.7, 12.7],
+    # Brake bias from IBT: 51.7% (slightly forward of 50, consistent with RR —
+    # weight transfer onto front under braking is large because static rear is heavy)
+    brake_bias_pct=51.7,
+    default_diff_preload_nm=110.0,  # IBT
+    # W2.4 / Audit A-1: Porsche 992 GT3 R is RR layout (W_f=0.449). The OptimumG
+    # +5pp rule was validated for FR/MR cars (W_f ~0.50) — for RR cars the bare
+    # formula gives 0.499 but empirically the target is closer to ~0.45 (per
+    # docs/audits/gt3_phase2/solver-rake-corner-arb.md body line 350-365 and the
+    # known Porsche-963 GTP epistemic gap pattern). Set explicitly so the rear
+    # ARB search isn't pushed too soft by an over-targeted LLTD.
+    # NOTE: docs/gt3_per_car_spec.md line 148 cites a different W_f (0.38) and
+    # derives 0.43; the audit body uses W_f=0.449 (matching the IBT-measured
+    # value here) and recommends ~0.45. We follow the audit recommendation.
+    measured_lltd_target=0.45,
+    lltd_target_source="physics_formula",
+    pushrod=PushrodGeometry(
+        front_pinned_rh_mm=0.0,
+        front_pushrod_default_mm=0.0,
+        rear_base_rh_mm=70.5,  # IBT static rear RH
+        rear_pushrod_to_rh=0.0,
+    ),
+    rh_variance=RideHeightVariance(dominant_bump_freq_hz=4.0),
+    # Aero compression at speed (single sample): static F 69.8 → dyn 69 (~0.8 mm),
+    # static R 70.5 → dyn 61 (~9.5 mm). Rear compresses much more — consistent
+    # with RR weight bias. PENDING multi-session calibration.
+    aero_compression=AeroCompression(
+        ref_speed_kph=200.0,
+        front_compression_mm=0.8,
+        rear_compression_mm=9.5,
+    ),
+    garage_ranges=GarageRanges(
+        camber_front_deg=(-4.5, 0.0),
+        camber_rear_deg=(-3.5, 0.0),
+        # W4.3: Porsche driver-loaded F=30, R=51 mm — front uses larger gap
+        # consistent with the higher front static RH (RR layout sits low at
+        # the rear, high at the front).
+        bump_rubber_gap_front_mm=(0.0, 40.0),
+        bump_rubber_gap_rear_mm=(0.0, 60.0),
+        splitter_height_mm=(0.0, 30.0),
+    ),
+)
+
+
 # ─── Registry ────────────────────────────────────────────────────────────────
 
 _CARS = {
@@ -3105,6 +3953,9 @@ _CARS = {
     "ferrari": FERRARI_499P,
     "porsche": PORSCHE_963,
     "acura": ACURA_ARX06,
+    "bmw_m4_gt3": BMW_M4_GT3,
+    "aston_martin_vantage_gt3": ASTON_MARTIN_VANTAGE_GT3,
+    "porsche_992_gt3r": PORSCHE_992_GT3R,
 }
 
 

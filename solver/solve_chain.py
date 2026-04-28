@@ -18,10 +18,16 @@ from car_model.setup_registry import (
 )
 from solver.arb_solver import ARBSolver
 from solver.corner_spring_solver import CornerSpringSolver
+from solver.coupling_graph import (
+    CouplingChange,
+    apply_coupled_changes_to_steps,
+    propagate_couplings,
+    solver_outputs_to_dict,
+)
 from solver.damper_solver import CornerDamperSettings, DamperSolver
 from solver.decision_trace import build_parameter_decisions
 from solver.full_setup_optimizer import optimize_if_supported
-from solver.heave_solver import HeaveSolver
+from solver.heave_solver import HeaveSolution, HeaveSolver
 from solver.legality_engine import LegalValidation, validate_solution_legality
 from solver.modifiers import SolverModifiers
 from solver.params_util import solver_steps_to_params
@@ -57,6 +63,12 @@ class SolveChainInputs:
     supporting_diagnosis: Any | None = None
     corners: list[Any] | None = None
     optimization_mode: str = "driver"  # "driver" or "physics"
+    # When True, the damper solver uses textbook physics defaults (ζ_LS=0.5,
+    # ζ_HS=0.85) for cars with zeta_is_calibrated=False instead of raising.
+    # Threaded from pipeline `--force` so the .sto carries usable damper values
+    # for Cadillac/Acura/Ferrari until per-car calibration lands. The resulting
+    # DamperSolution carries is_estimate=True for downstream labelling.
+    force_physics_estimate: bool = False
 
     def resolved_supporting_driver(self) -> Any:
         return self.supporting_driver if self.supporting_driver is not None else self.driver
@@ -120,6 +132,10 @@ class SolveChainResult:
     ferrari_passthrough: bool = False
     # Solver path taken: "optimizer" | "sequential" | "sequential_fallback"
     solver_path: str = "sequential"
+    # Parameter coupling adjustments applied after the forward solver chain
+    # (see solver/coupling_graph.py). Each entry records one downstream
+    # parameter that was re-derived because an upstream parameter changed.
+    coupling_changes: list[CouplingChange] = field(default_factory=list)
 
 
 def apply_damper_modifiers(
@@ -293,6 +309,37 @@ def _finalize_result(
     candidate_vetoes: list[CandidateVeto] | None = None,
     optimizer_used: bool = False,
 ) -> SolveChainResult:
+    # ─── Coupled-adjuster pass (Unit C1) ─────────────────────────────────
+    # The 6-step solver runs forward only. After it finishes, propagate
+    # physical couplings so dependent parameters (dampers, ARB feasible
+    # range, dynamic RH) reflect any upstream changes (heave/third, ARB
+    # blade, torsion bar, pushrod). Mutates step6 in place; ARB-range
+    # and dynamic-RH outputs are advisory and surfaced via notes.
+    coupling_changes: list[CouplingChange] = []
+    try:
+        coupled_outputs = solver_outputs_to_dict(
+            step1=step1, step2=step2, step3=step3,
+            step4=step4, step5=step5, step6=step6,
+            current_setup=inputs.current_setup,
+        )
+        coupling_setup = {
+            "fuel_load_l": inputs.fuel_load_l,
+            "track": inputs.track,
+        }
+        coupled_outputs, coupling_changes = propagate_couplings(
+            setup_dict=coupling_setup,
+            solver_outputs=coupled_outputs,
+            car=inputs.car,
+        )
+        apply_coupled_changes_to_steps(
+            step6=step6,
+            coupled_outputs=coupled_outputs,
+            changes=coupling_changes,
+        )
+    except Exception as e:
+        logger.debug("Coupling pass failed: %s; shipping uncoupled steps", e)
+        coupling_changes = []
+
     legal_validation = validate_solution_legality(
         car=inputs.car,
         track_name=inputs.track.track_name,
@@ -301,6 +348,7 @@ def _finalize_result(
         step3=step3,
         fuel_l=inputs.fuel_load_l,
         step5=step5,
+        current_setup=inputs.current_setup,
     )
     decision_trace = build_parameter_decisions(
         car_name=inputs.car.canonical_name,
@@ -315,6 +363,7 @@ def _finalize_result(
         supporting=supporting,
         legality=legal_validation,
         fallback_reasons=list(getattr(inputs.measured, "fallback_reasons", []) or []),
+        car=inputs.car,
     )
     prediction, prediction_confidence = predict_candidate_telemetry(
         current_setup=inputs.current_setup,
@@ -345,6 +394,7 @@ def _finalize_result(
         optimizer_used=optimizer_used,
         ferrari_passthrough=False,
         solver_path="optimizer" if optimizer_used else "sequential",
+        coupling_changes=list(coupling_changes),
     )
 
 
@@ -374,6 +424,22 @@ def _decode_ferrari_indexed_setup(car: Any, setup: Any) -> None:
                 setattr(setup, key, float(decoded))
 
 
+def _rake_driver_anchors(inputs: SolveChainInputs) -> tuple[float | None, float | None]:
+    """Driver anchors are DISABLED per physics-first mission.
+
+    Returns ``(None, None)`` always.  Kept as a stub so call sites that
+    still pass ``anchor_dyn_*`` parameters compile; the rake solver
+    treats None as "no anchor — use physics search".
+
+    Rationale: drivers iterate setups based on lap times and feel,
+    which is not equivalent to a physics-optimal operating point.
+    The previous implementation used IBT-measured ride heights as
+    anchors, which violated the project's "physics first, not
+    pattern matching" principle (CLAUDE.md / MISSION.md).
+    """
+    return None, None
+
+
 def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any, Any, Any, float]:
     mods = _default_modifiers(inputs.modifiers)
     car = inputs.car
@@ -388,32 +454,46 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     # setup regardless of what the driver loaded.
     _physics_mode = inputs.optimization_mode == "physics"
 
+    _rake_anchor_dyn_rear, _rake_anchor_dyn_front = _rake_driver_anchors(inputs)
+
     rake_solver = RakeSolver(car, inputs.surface, track)
     step1 = rake_solver.solve(
         target_balance=inputs.target_balance,
         balance_tolerance=inputs.balance_tolerance,
         fuel_load_l=fuel,
         pin_front_min=inputs.pin_front_min,
+        anchor_dyn_rear_mm=_rake_anchor_dyn_rear,
+        anchor_dyn_front_mm=_rake_anchor_dyn_front,
     )
 
-    heave_solver = HeaveSolver(car, track)
+    # GT3 dispatch (W2.1): cars without heave/third architecture skip the
+    # HeaveSolver constructor (which raises on car.heave_spring=None) and
+    # propagate Step 1's dynamic RH targets through HeaveSolution.null().
     _k_current = None if _physics_mode else (getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None)
     _k_rear_current = None if _physics_mode else (getattr(inputs.current_setup, "rear_third_nmm", None) if inputs.current_setup else None)
-    step2 = heave_solver.solve(
-        dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-        dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-        front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
-        rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
-        front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
-        front_pushrod_mm=step1.front_pushrod_offset_mm,
-        rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-        fuel_load_l=fuel,
-        front_camber_deg=_front_camber(inputs),
-        measured=inputs.measured,
-        front_heave_current_nmm=_k_current,
-        rear_third_current_nmm=_k_rear_current,
-        prediction_corrections=inputs.prediction_corrections or None,
-    )
+    if car.suspension_arch.has_heave_third:
+        heave_solver = HeaveSolver(car, track)
+        step2 = heave_solver.solve(
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
+            rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+            front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
+            front_pushrod_mm=step1.front_pushrod_offset_mm,
+            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+            fuel_load_l=fuel,
+            front_camber_deg=_front_camber(inputs),
+            measured=inputs.measured,
+            front_heave_current_nmm=_k_current,
+            rear_third_current_nmm=_k_rear_current,
+            prediction_corrections=inputs.prediction_corrections or None,
+        )
+    else:
+        heave_solver = None  # GT3: Step 2 is N/A
+        step2 = HeaveSolution.null(
+            front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+            rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+        )
 
     corner_solver = CornerSpringSolver(car, track)
     _curr_rear_coil = None if _physics_mode else (
@@ -426,17 +506,21 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         fuel_load_l=fuel,
         current_rear_third_nmm=None if _physics_mode else _k_rear_current,
         current_rear_spring_nmm=_curr_rear_coil,
+        current_setup=None if _physics_mode else inputs.current_setup,
     )
     rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
-    heave_solver.reconcile_solution(
-        step1,
-        step2,
-        step3,
-        fuel_load_l=fuel,
-        front_camber_deg=_front_camber(inputs),
-        verbose=False,
-    )
+    # Backward-compat: legacy SimpleNamespace step2 mocks lack `.present`,
+    # treat as present=True (GTP behaviour).
+    if heave_solver is not None and getattr(step2, "present", True):
+        heave_solver.reconcile_solution(
+            step1,
+            step2,
+            step3,
+            fuel_load_l=fuel,
+            front_camber_deg=_front_camber(inputs),
+            verbose=False,
+        )
     reconcile_ride_heights(
         car,
         step1,
@@ -447,8 +531,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         verbose=False,
         surface=inputs.surface,
         track=track,
-        target_balance=inputs.target_balance,
-    )
+        target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
     # NOTE: Previously a provisional Step 6 (DamperSolver) ran here to refine
     # heave sizing with HS damper values. Removed because it introduces a Step 6
@@ -491,8 +574,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         verbose=False,
         surface=inputs.surface,
         track=track,
-        target_balance=inputs.target_balance,
-    )
+        target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
     step6 = None
     try:
@@ -506,12 +588,14 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
             measured=measured,
             front_heave_nmm=step2.front_heave_nmm,
             rear_third_nmm=step2.rear_third_nmm,
+            force_physics_estimate=inputs.force_physics_estimate,
         )
         apply_damper_modifiers(step6, mods, car)
     except ValueError:
-        # Damper solver raises when zeta targets are uncalibrated for this car.
-        # The calibration gate will null this out downstream; return None so
-        # the pipeline can continue and produce output for calibrated steps.
+        # Damper solver raises when zeta targets are uncalibrated and the
+        # caller did not opt into force_physics_estimate. The calibration gate
+        # will null this out downstream; return None so the pipeline can
+        # continue and produce output for calibrated steps.
         pass
     return step1, step2, step3, step4, step5, step6, rear_wheel_rate_nmm
 
@@ -564,34 +648,49 @@ def _run_branching_solver(
     )
 
     # ── Step 1: Rake (single answer — Brent root-find, no branching) ──
+    _rake_anchor_dyn_rear, _rake_anchor_dyn_front = _rake_driver_anchors(inputs)
     rake_solver = RakeSolver(car, inputs.surface, track)
     step1 = rake_solver.solve(
         target_balance=inputs.target_balance,
         balance_tolerance=inputs.balance_tolerance,
         fuel_load_l=fuel,
         pin_front_min=inputs.pin_front_min,
+        anchor_dyn_rear_mm=_rake_anchor_dyn_rear,
+        anchor_dyn_front_mm=_rake_anchor_dyn_front,
     )
 
     # ── Step 2: Heave candidates ──
     _physics_mode = inputs.optimization_mode == "physics"
-    heave_solver = HeaveSolver(car, track)
     _k_current = None if _physics_mode else (getattr(inputs.current_setup, "front_heave_nmm", None) if inputs.current_setup else None)
     _k_rear_current = None if _physics_mode else (getattr(inputs.current_setup, "rear_third_nmm", None) if inputs.current_setup else None)
-    heave_candidates = heave_solver.solve_candidates(
-        dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
-        dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
-        front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
-        rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
-        front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
-        front_pushrod_mm=step1.front_pushrod_offset_mm,
-        rear_pushrod_mm=step1.rear_pushrod_offset_mm,
-        fuel_load_l=fuel,
-        front_camber_deg=_front_camber(inputs),
-        measured=inputs.measured,
-        front_heave_current_nmm=_k_current,
-        rear_third_current_nmm=_k_rear_current,
-        n_candidates=max_heave,
-    )
+    # GT3 dispatch (W2.1): no heave/third architecture → single null candidate
+    # so the outer branching loop runs exactly once and only Step 3+ corner /
+    # ARB axes fan out.
+    if car.suspension_arch.has_heave_third:
+        heave_solver = HeaveSolver(car, track)
+        heave_candidates = heave_solver.solve_candidates(
+            dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+            dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
+            front_heave_floor_nmm=mods.front_heave_min_floor_nmm,
+            rear_third_floor_nmm=mods.rear_third_min_floor_nmm,
+            front_heave_perch_target_mm=mods.front_heave_perch_target_mm,
+            front_pushrod_mm=step1.front_pushrod_offset_mm,
+            rear_pushrod_mm=step1.rear_pushrod_offset_mm,
+            fuel_load_l=fuel,
+            front_camber_deg=_front_camber(inputs),
+            measured=inputs.measured,
+            front_heave_current_nmm=_k_current,
+            rear_third_current_nmm=_k_rear_current,
+            n_candidates=max_heave,
+        )
+    else:
+        heave_solver = None  # GT3: Step 2 is N/A
+        heave_candidates = [
+            HeaveSolution.null(
+                front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+                rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            )
+        ]
 
     corner_solver = CornerSpringSolver(car, track)
     _curr_rear_coil = None if _physics_mode else (
@@ -620,6 +719,7 @@ def _run_branching_solver(
             current_rear_third_nmm=_k_rear_current,
             current_rear_spring_nmm=_curr_rear_coil,
             max_candidates=max_corner,
+            current_setup=None if _physics_mode else inputs.current_setup,
         )
 
         for s3 in corner_candidates:
@@ -632,13 +732,14 @@ def _run_branching_solver(
             s3_copy = copy.copy(s3)
 
             # Reconcile ride heights with this spring combo
-            heave_solver.reconcile_solution(s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
-                                           front_camber_deg=_front_camber(inputs),
-                                           verbose=False)
+            if heave_solver is not None and getattr(s2_copy, "present", True):
+                heave_solver.reconcile_solution(s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
+                                               front_camber_deg=_front_camber(inputs),
+                                               verbose=False)
             reconcile_ride_heights(car, s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
                                   track_name=track.track_name, verbose=False,
                                   surface=inputs.surface, track=track,
-                                  target_balance=inputs.target_balance)
+                                  target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
             # Step 4: ARB candidates for this spring combo
             arb_candidates = arb_solver_inst.solve_candidates(
@@ -668,8 +769,7 @@ def _run_branching_solver(
                     car, s1_copy, s2_copy, s3_copy, step5=s5,
                     fuel_load_l=fuel, track_name=track.track_name,
                     verbose=False, surface=inputs.surface, track=track,
-                    target_balance=inputs.target_balance,
-                )
+                    target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
                 # Step 6: dampers (fast, deterministic)
                 s6 = None
@@ -684,6 +784,7 @@ def _run_branching_solver(
                         measured=measured,
                         front_heave_nmm=s2_copy.front_heave_nmm,
                         rear_third_nmm=s2_copy.rear_third_nmm,
+                        force_physics_estimate=inputs.force_physics_estimate,
                     )
                     apply_damper_modifiers(s6, mods, car)
                 except ValueError:
@@ -700,10 +801,13 @@ def _run_branching_solver(
                             s1_copy, s2_copy, s3_copy, s4, s5, s6, car=car,
                         )
                         _physics = _branching_obj.evaluate_physics(_params)
-                        # Hard veto: negative bottoming or vortex stall margin
+                        # Hard veto: negative bottoming or insufficient stall margin.
+                        # Stall margin minimum of 2mm prevents solutions from sitting
+                        # right at the vortex burst threshold (0.0mm margin is unsafe).
+                        _MIN_STALL_MARGIN_MM = 2.0
                         if _physics.front_bottoming_margin_mm < 0 or _physics.rear_bottoming_margin_mm < 0:
                             score = -1e6
-                        elif _physics.stall_margin_mm is not None and _physics.stall_margin_mm < 0:
+                        elif _physics.stall_margin_mm is not None and _physics.stall_margin_mm < _MIN_STALL_MARGIN_MM:
                             score = -1e6
                         else:
                             # Primary score: lap gain from calibrated physics hierarchy
@@ -756,6 +860,8 @@ def _iterative_coupling_refinement(
     lltd_tol: float = 0.002,
     sigma_tol_mm: float = 0.1,
 ) -> tuple[Any, Any, Any, Any, Any, Any, float]:
+    # Driver-anchor extracted once per refinement loop (see _rake_driver_anchors).
+    _rake_anchor_dyn_rear, _rake_anchor_dyn_front = _rake_driver_anchors(inputs)
     """Objective-driven iterative coupling resolution.
 
     After the initial solver pass, re-optimizes each step against the full
@@ -867,7 +973,9 @@ def _iterative_coupling_refinement(
                     balance_tolerance=inputs.balance_tolerance,
                     fuel_load_l=fuel,
                     pin_front_min=inputs.pin_front_min,
-                )
+        anchor_dyn_rear_mm=_rake_anchor_dyn_rear,
+        anchor_dyn_front_mm=_rake_anchor_dyn_front,
+    )
                 step1 = new_step1
             except Exception as e:
                 logger.debug("Coupling re-solve Step 1 failed: %s", e)
@@ -947,8 +1055,7 @@ def _iterative_coupling_refinement(
                 car, step1, step2, step3, step5=step5,
                 fuel_load_l=fuel, track_name=track.track_name,
                 verbose=False, surface=inputs.surface, track=track,
-                target_balance=inputs.target_balance,
-            )
+                target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
         if step6 is not None:
             damper_solver = DamperSolver(car, track)
@@ -963,6 +1070,7 @@ def _iterative_coupling_refinement(
                     measured=inputs.measured,
                     front_heave_nmm=step2.front_heave_nmm,
                     rear_third_nmm=step2.rear_third_nmm,
+                    force_physics_estimate=inputs.force_physics_estimate,
                 )
                 apply_damper_modifiers(step6, mods, car)
             except Exception as e:
@@ -1142,7 +1250,13 @@ def materialize_overrides(
 
     rebuild_step23 = earliest <= 3
     if rebuild_step23:
-        heave_solver = HeaveSolver(car, track)
+        # GT3 dispatch (W2.1): no HeaveSolver — Step 2 is null, but Step 3 is
+        # still re-solved through the corner spring path below.
+        heave_solver = (
+            HeaveSolver(car, track)
+            if car.suspension_arch.has_heave_third
+            else None
+        )
         corner_solver = CornerSpringSolver(car, track)
         step2_targets = {
             "front_heave_nmm": overrides.step2.get(
@@ -1191,7 +1305,14 @@ def materialize_overrides(
         }
 
         explicit_step2 = bool(overrides.step2 or overrides.step3)
-        if explicit_step2:
+        if heave_solver is None:
+            # GT3 dispatch (W2.1): null Step 2; downstream Step 3 corner spring
+            # is rebuilt below from step1 dynamic RH + corner overrides.
+            step2 = HeaveSolution.null(
+                front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+                rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+            )
+        elif explicit_step2:
             step2 = heave_solver.solution_from_explicit_settings(
                 dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
                 dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
@@ -1241,6 +1362,7 @@ def materialize_overrides(
                 rear_spring_perch_mm=decoded_step3_targets["rear_spring_perch_mm"],
                 rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
                 front_roll_spring_nmm=decoded_step3_targets.get("front_roll_spring_nmm"),
+                current_setup=inputs.current_setup,
             )
         else:
             _curr_rt = (
@@ -1257,16 +1379,18 @@ def materialize_overrides(
                 fuel_load_l=inputs.fuel_load_l,
                 current_rear_third_nmm=_curr_rt,
                 current_rear_spring_nmm=_curr_rc,
+                current_setup=inputs.current_setup,
             )
         rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
-        heave_solver.reconcile_solution(
-            step1,
-            step2,
-            step3,
-            fuel_load_l=inputs.fuel_load_l,
-            front_camber_deg=_front_camber(inputs),
-            verbose=False,
-        )
+        if heave_solver is not None and getattr(step2, "present", True):
+            heave_solver.reconcile_solution(
+                step1,
+                step2,
+                step3,
+                fuel_load_l=inputs.fuel_load_l,
+                front_camber_deg=_front_camber(inputs),
+                verbose=False,
+            )
         reconcile_ride_heights(
             car,
             step1,
@@ -1277,8 +1401,7 @@ def materialize_overrides(
             verbose=False,
             surface=inputs.surface,
             track=track,
-            target_balance=inputs.target_balance,
-        )
+            target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
         damper_solver = DamperSolver(car, track)
         # COUPLING APPROXIMATION: The heave excursion model has a weak dependency
@@ -1298,7 +1421,10 @@ def materialize_overrides(
             _prev_step6.c_hs_rear if _prev_step6 is not None else 0.0
         )
 
-        if explicit_step2:
+        if heave_solver is None:
+            # GT3 dispatch (W2.1): step2 already null from above; nothing to do.
+            pass
+        elif explicit_step2:
             step2 = heave_solver.solution_from_explicit_settings(
                 dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
                 dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
@@ -1345,6 +1471,7 @@ def materialize_overrides(
                 rear_spring_perch_mm=decoded_step3_targets["rear_spring_perch_mm"],
                 rear_torsion_od_mm=decoded_step3_targets["rear_torsion_od_mm"],
                 front_roll_spring_nmm=decoded_step3_targets.get("front_roll_spring_nmm"),
+                current_setup=inputs.current_setup,
             )
         else:
             _curr_rt = (
@@ -1361,17 +1488,19 @@ def materialize_overrides(
                 fuel_load_l=inputs.fuel_load_l,
                 current_rear_third_nmm=_curr_rt,
                 current_rear_spring_nmm=_curr_rc,
+                current_setup=inputs.current_setup,
             )
         rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
-        heave_solver.reconcile_solution(
-            step1,
-            step2,
-            step3,
-            fuel_load_l=inputs.fuel_load_l,
-            front_camber_deg=_front_camber(inputs),
-            front_hs_damper_nsm=_prov_hs_front,
-            verbose=False,
-        )
+        if heave_solver is not None and getattr(step2, "present", True):
+            heave_solver.reconcile_solution(
+                step1,
+                step2,
+                step3,
+                fuel_load_l=inputs.fuel_load_l,
+                front_camber_deg=_front_camber(inputs),
+                front_hs_damper_nsm=_prov_hs_front,
+                verbose=False,
+            )
         reconcile_ride_heights(
             car,
             step1,
@@ -1382,8 +1511,7 @@ def materialize_overrides(
             verbose=False,
             surface=inputs.surface,
             track=track,
-            target_balance=inputs.target_balance,
-        )
+            target_balance=inputs.target_balance, current_setup=inputs.current_setup)
     else:
         rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
@@ -1464,8 +1592,7 @@ def materialize_overrides(
             verbose=False,
             surface=inputs.surface,
             track=track,
-            target_balance=inputs.target_balance,
-        )
+            target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
     rebuild_step6 = earliest <= 6 or rebuild_step5
     if rebuild_step6:
@@ -1482,6 +1609,7 @@ def materialize_overrides(
                 measured=inputs.measured,
                 front_heave_nmm=step2.front_heave_nmm,
                 rear_third_nmm=step2.rear_third_nmm,
+                force_physics_estimate=inputs.force_physics_estimate,
                 lf=corner_settings["lf"],
                 rf=corner_settings["rf"],
                 lr=corner_settings["lr"],
@@ -1498,6 +1626,7 @@ def materialize_overrides(
                 measured=inputs.measured,
                 front_heave_nmm=step2.front_heave_nmm,
                 rear_third_nmm=step2.rear_third_nmm,
+                force_physics_estimate=inputs.force_physics_estimate,
             )
             apply_damper_modifiers(step6, mods, car)
 

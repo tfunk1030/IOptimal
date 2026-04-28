@@ -21,7 +21,12 @@ from learner.observation import Observation
 from learner.sanity import is_plausible_lap_time
 
 
-# Setup parameters grouped by solver step for attribution
+# Setup parameters grouped by solver step for attribution.
+# This GTP-shaped constant is preserved for backward compatibility — any caller
+# that does not have a ``CarModel`` reference can fall through to the legacy
+# heave/torsion-bar layout. New callers should prefer ``step_groups_for_arch()``
+# below, which dispatches on ``car.suspension_arch`` and returns the correct
+# GT3 layout (corner-spring + bump-rubber + splitter-height).
 STEP_GROUPS = {
     "step1_rake": [
         "front_rh_static", "rear_rh_static", "front_pushrod", "rear_pushrod",
@@ -43,7 +48,76 @@ STEP_GROUPS = {
     "other": ["fuel_l", "brake_bias_pct"],
 }
 
-# Telemetry metrics that matter for causal attribution
+
+def step_groups_for_arch(arch: Any) -> dict[str, list[str]]:
+    """Return architecture-aware ``STEP_GROUPS`` for the given suspension arch.
+
+    GTP cars (heave/third + torsion-bar / roll-spring front) get the legacy
+    ``step2_heave`` + ``step3_springs`` keys. GT3 cars (paired coil-overs at
+    all 4 corners + bump rubbers + splitter) get a single
+    ``step3_corner_combined`` key listing the 5 GT3-specific setup parameters.
+
+    The audit at ``docs/audits/gt3_phase2/learner.md`` BLOCKER #1 documents the
+    physical reasoning: GT3 lacks heave/third springs, so step 2 is N/A for GT3
+    (per ``solver/heave_solver.py:HeaveSolution.null()``), and step 3 uses
+    paired-coil rates rather than torsion-bar OD or rear-coil rate.
+    """
+    # Lazy-import to avoid circular dependency at module import time
+    try:
+        from car_model.cars import SuspensionArchitecture
+    except Exception:  # pragma: no cover - defensive
+        SuspensionArchitecture = None  # type: ignore[assignment]
+
+    base: dict[str, list[str]] = {
+        "step1_rake": [
+            "front_rh_static", "rear_rh_static",
+            "front_pushrod", "rear_pushrod",
+        ],
+        "step4_arb": [
+            "front_arb_size", "front_arb_blade",
+            "rear_arb_size", "rear_arb_blade",
+        ],
+        "step5_geometry": [
+            "front_camber_deg", "rear_camber_deg",
+            "front_toe_mm", "rear_toe_mm",
+        ],
+        "step6_dampers": [],
+        "aero": ["wing"],
+        "other": ["fuel_l", "brake_bias_pct"],
+    }
+
+    has_heave_third = bool(getattr(arch, "has_heave_third", False))
+    is_gt3 = (
+        SuspensionArchitecture is not None
+        and arch is SuspensionArchitecture.GT3_COIL_4WHEEL
+    )
+
+    if has_heave_third:
+        base["step2_heave"] = ["front_heave_nmm", "rear_third_nmm"]
+        base["step3_springs"] = ["torsion_bar_od_mm", "rear_spring_nmm"]
+    elif is_gt3:
+        base["step3_corner_combined"] = [
+            "front_corner_spring_nmm",
+            "rear_corner_spring_nmm",
+            "front_bump_rubber_gap_mm",
+            "rear_bump_rubber_gap_mm",
+            "splitter_height_mm",
+        ]
+    else:
+        # Unknown architecture: fall back to GTP keys for backward compat.
+        base["step2_heave"] = ["front_heave_nmm", "rear_third_nmm"]
+        base["step3_springs"] = ["torsion_bar_od_mm", "rear_spring_nmm"]
+
+    return base
+
+# Telemetry metrics that matter for causal attribution.
+# NOTE(W6.2): The "platform" list mixes GTP heave-only telemetry (e.g.
+# ``front_heave_defl_p99_mm``, ``heave_bottoming_events_*``) with GT3 platform
+# proxies (``splitter_scrape_events``, ``*_bump_rubber_contact_pct``). For GT3
+# observations the GTP-only fields will read 0 from observation defaults and
+# fall through to "noise" classification; for GTP observations the GT3-only
+# fields will likewise read 0. Worth a TODO(W7.x) to split this dict into
+# architecture-aware sub-lists once delta-attribution per-architecture lands.
 EFFECT_METRICS = {
     "platform": [
         "front_rh_std_mm", "rear_rh_std_mm",
@@ -53,6 +127,11 @@ EFFECT_METRICS = {
         "front_heave_travel_used_braking_pct",
         "rear_heave_defl_p99_mm", "rear_heave_travel_used_pct",
         "heave_bottoming_events_front", "heave_bottoming_events_rear",
+        # GT3-specific platform proxies (audit DEGRADED #9):
+        "splitter_scrape_events",
+        "front_bump_rubber_contact_pct",
+        "rear_bump_rubber_contact_pct",
+        "front_rh_settle_time_ms", "rear_rh_settle_time_ms",
     ],
     "balance": [
         "roll_distribution_proxy", "understeer_mean_deg",
@@ -182,6 +261,68 @@ KNOWN_CAUSALITY = {
     ("brake_bias_pct", "+"): [
         ("braking_decel_peak_g", "~"),   # bias change can go either way on decel
     ],
+
+    # ── GT3 (paired coil + bump rubber + splitter) ──
+    # Audit BLOCKER #2 (docs/audits/gt3_phase2/learner.md lines 89-122).
+    # GT3 cars have no heave/third spring, no front torsion bar, and no rear
+    # coil-vs-third split. Spring tuning happens at four corners directly,
+    # secondary stiffness lives in the bump rubbers, and the splitter sets
+    # absolute floor clearance. Reverse-direction entries (e.g.
+    # ("front_corner_spring_nmm", "-")) are auto-generated by the existing
+    # block at ``KNOWN_CAUSALITY.update(_reverse_entries)`` below.
+    ("front_corner_spring_nmm", "+"): [
+        # Stiffer front corner spring → smaller front-RH oscillation under
+        # aero pulse and bumps.
+        ("front_rh_std_mm", "-"),
+        # f_n ∝ √(k/m); stiffer raises natural frequency.
+        ("front_dominant_freq_hz", "+"),
+        # Stiffer spring at fixed ζ settles faster (1/ω_n damped).
+        ("front_rh_settle_time_ms", "-"),
+        # Less compliance → less travel velocity through bumps.
+        ("front_shock_vel_p95_mps", "-"),
+        # Stiffer front contributes to front roll stiffness; total chassis roll falls.
+        ("roll_gradient_deg_per_g", "-"),
+        # Front roll-stiffness up → more LLTD to front, front loses peak grip
+        # first → more steady-state understeer.
+        ("understeer_mean_deg", "+"),
+        # Stiffer spring keeps the corner off the bump rubber.
+        ("front_bump_rubber_contact_pct", "-"),
+        # Less front travel → splitter scrapes less.
+        ("splitter_scrape_events", "-"),
+    ],
+    ("rear_corner_spring_nmm", "+"): [
+        ("rear_rh_std_mm", "-"),
+        ("rear_dominant_freq_hz", "+"),
+        ("rear_rh_settle_time_ms", "-"),
+        ("rear_shock_vel_p95_mps", "-"),
+        # Rear roll stiffness contributes to total roll resistance.
+        ("roll_gradient_deg_per_g", "-"),
+        # Stiffer rear → less rear roll compliance → less terminal oversteer.
+        ("body_slip_p95_deg", "-"),
+        # Stiffer rear shifts roll bias forward → less understeer (relative).
+        ("understeer_mean_deg", "-"),
+        ("rear_bump_rubber_contact_pct", "-"),
+    ],
+    ("front_bump_rubber_gap_mm", "+"): [
+        # Larger gap → bump rubber engaged less often.
+        ("front_bump_rubber_contact_pct", "-"),
+        # Removing the secondary spring stiffness raises platform variance
+        # under high aero.
+        ("front_rh_std_mm", "+"),
+        # Less progressive bump support → more splitter floor strikes.
+        ("splitter_scrape_events", "+"),
+    ],
+    ("rear_bump_rubber_gap_mm", "+"): [
+        ("rear_bump_rubber_contact_pct", "-"),
+        ("rear_rh_std_mm", "+"),
+    ],
+    ("splitter_height_mm", "+"): [
+        # Higher splitter perch → more clearance to floor.
+        ("splitter_scrape_events", "-"),
+        # Splitter ↔ aero balance coupling is real but sign is car-dependent
+        # (audit notes "use ~ if unsure"). Skip the DF-coupling entry until
+        # empirical data confirms the sign for GT3 cars.
+    ],
 }
 
 # Build reverse-direction entries: if (param, "+") has entries,
@@ -286,6 +427,15 @@ def _classify_setup_significance(param: str, delta: float | None) -> str:
         "rear_toe_mm": (0.1, 0.3),
         "wing": (0.5, 1.0),
         "brake_bias_pct": (0.5, 1.5),
+        # GT3 thresholds (audit DEGRADED #10).  Step values from the per-car
+        # spec sheets — BMW M4 step 10 N/mm, Mercedes step 25 N/mm, Lambo step
+        # 30 N/mm. The 5/20 thresholds work for all of them in
+        # "minor / major" classification.
+        "front_corner_spring_nmm": (5.0, 20.0),
+        "rear_corner_spring_nmm": (5.0, 20.0),
+        "front_bump_rubber_gap_mm": (1.0, 3.0),
+        "rear_bump_rubber_gap_mm": (1.0, 3.0),
+        "splitter_height_mm": (1.0, 3.0),
     }
     abs_d = abs(delta)
     if param in thresholds:
@@ -317,6 +467,10 @@ def _classify_effect_significance(metric: str, delta: float, pct: float) -> str:
         "heave_bottoming_events_rear": (2, 10),
         "front_rh_settle_time_ms": (20, 80),
         "roll_gradient_deg_per_g": (0.05, 0.15),
+        # GT3-specific bottoming proxies (audit DEGRADED #11).
+        "splitter_scrape_events": (2, 10),
+        "front_bump_rubber_contact_pct": (5.0, 15.0),
+        "rear_bump_rubber_contact_pct": (5.0, 15.0),
     }
     abs_d = abs(delta)
     if metric in thresholds:
@@ -336,12 +490,35 @@ def _classify_effect_significance(metric: str, delta: float, pct: float) -> str:
     return "noise"
 
 
-def _find_step_group(param: str) -> str:
-    """Find which solver step group a parameter belongs to."""
-    for group, params in STEP_GROUPS.items():
+def _find_step_group(
+    param: str,
+    step_groups: dict[str, list[str]] | None = None,
+) -> str:
+    """Find which solver step group a parameter belongs to.
+
+    When ``step_groups`` is None we fall back to the GTP-shaped legacy constant
+    (preserves behaviour for callers that have not been migrated to the
+    arch-aware path).
+    """
+    groups = step_groups if step_groups is not None else STEP_GROUPS
+    for group, params in groups.items():
         if param in params:
             return group
     return "other"
+
+
+def _resolve_step_groups_for_obs(obs: Observation) -> dict[str, list[str]]:
+    """Look up architecture-aware ``STEP_GROUPS`` for an observation's car.
+
+    Falls back to the legacy GTP shape when ``car_model.cars.get_car`` cannot
+    resolve the car (test fixtures, unknown cars, import failures).
+    """
+    try:
+        from car_model.cars import get_car  # local import — avoid cycle
+        car = get_car(obs.car, apply_calibration=False)
+        return step_groups_for_arch(car.suspension_arch)
+    except Exception:
+        return STEP_GROUPS
 
 
 def detect_delta(obs_before: Observation, obs_after: Observation) -> SessionDelta:
@@ -354,6 +531,10 @@ def detect_delta(obs_before: Observation, obs_after: Observation) -> SessionDelt
     Returns:
         SessionDelta with setup changes, effects, and causal hypotheses
     """
+    # Architecture-aware step grouping. For GT3 cars this returns the
+    # ``step3_corner_combined`` key; for GTP cars it returns the legacy
+    # ``step2_heave`` + ``step3_springs`` keys (audit BLOCKER #1).
+    step_groups = _resolve_step_groups_for_obs(obs_after)
     delta = SessionDelta(
         session_before=obs_before.session_id,
         session_after=obs_after.session_id,
@@ -379,7 +560,7 @@ def detect_delta(obs_before: Observation, obs_after: Observation) -> SessionDelt
 
         num_delta = _numeric_delta(val_b, val_a)
         display_delta = num_delta if num_delta is not None else f"{val_b}->{val_a}"
-        step_group = _find_step_group(param)
+        step_group = _find_step_group(param, step_groups)
         significance = _classify_setup_significance(param, num_delta)
 
         if significance != "trivial":

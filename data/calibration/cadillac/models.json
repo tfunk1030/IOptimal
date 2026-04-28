@@ -1,13 +1,1148 @@
 {
   "car": "cadillac",
-  "n_sessions": 0,
-  "n_unique_setups": 0,
-  "calibration_complete": false,
-  "status": "uncalibrated",
+  "track": "",
+  "n_sessions": 111,
+  "n_unique_setups": 84,
+  "calibration_complete": true,
   "front_ride_height": null,
-  "rear_ride_height": null,
-  "front_deflection": null,
-  "rear_deflection": null,
-  "aero_compression": null,
-  "damper_zeta": null
+  "rear_ride_height": {
+    "name": "rear_ride_height",
+    "feature_names": [
+      "inv_rear_third",
+      "inv_rear_spring",
+      "rear_pushrod",
+      "fuel_x_inv_spring",
+      "torsion_turns",
+      "front_heave_perch",
+      "front_heave",
+      "inv_front_heave",
+      "driver_aggression",
+      "fuel_remaining",
+      "fuel_remaining_sq",
+      "tyre_temp_x_inv_spring",
+      "tyre_temp_x_inv_third",
+      "aggression_x_inv_spring",
+      "aggression_x_inv_third",
+      "tyre_temp",
+      "tyre_temp_x_inv_front_corner_spring"
+    ],
+    "coefficients": [
+      97.61895145504917,
+      108.46374948192717,
+      -122.0765239448824,
+      0.3183906013456211,
+      5.210229046674932e-09,
+      -411.0251400451665,
+      -0.20731935449962677,
+      -0.3041252641648141,
+      65.15906733668241,
+      5.284991494415266e-10,
+      -1.3941896729687897e-13,
+      -7.525193786636641e-16,
+      -1.10026824088114e-09,
+      -5.403137421471911e-10,
+      -4.42838791375613e-08,
+      -6.076415566035752e-08,
+      1.3317763708370758e-08,
+      -1.3309711555109516e-08
+    ],
+    "r_squared": 1.0,
+    "rmse": 1.597920600060612e-11,
+    "loo_rmse": 0.05013295370300709,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9976825532437645,
+    "confidence_tier": "low"
+  },
+  "torsion_bar_turns": {
+    "name": "torsion_bar_turns",
+    "feature_names": [],
+    "coefficients": [
+      0.0976547619047619
+    ],
+    "r_squared": 1.0,
+    "rmse": 0.002727697649505933,
+    "loo_rmse": 0.002727697649505933,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": null,
+    "confidence_tier": "insufficient"
+  },
+  "torsion_bar_defl": {
+    "name": "torsion_bar_defl_load",
+    "feature_names": [
+      "front_heave",
+      "front_heave_perch"
+    ],
+    "coefficients": [
+      925558.2243425315,
+      4567.154939336359,
+      5850.8662327264865
+    ],
+    "r_squared": 0.9569762684282601,
+    "rmse": 12981.10727782917,
+    "loo_rmse": 13493.286583458834,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9535142238960916,
+    "confidence_tier": "high"
+  },
+  "front_shock_defl_static": {
+    "name": "front_shock_defl_static",
+    "feature_names": [
+      "front_pushrod",
+      "fuel_x_inv_third"
+    ],
+    "coefficients": [
+      28.39247487143665,
+      0.5402147195443605,
+      -0.7917943585408966
+    ],
+    "r_squared": 0.9999277065852006,
+    "rmse": 0.007982393910602431,
+    "loo_rmse": 0.008269833461082548,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9999224063902595,
+    "confidence_tier": "high"
+  },
+  "front_shock_defl_max": null,
+  "rear_shock_defl_static": {
+    "name": "rear_shock_defl_static",
+    "feature_names": [
+      "front_camber",
+      "front_heave_perch",
+      "fuel_x_inv_third",
+      "rear_third_perch"
+    ],
+    "coefficients": [
+      264.7607230494205,
+      81.56932204886465,
+      0.2844238842523623,
+      3.385252095029919,
+      -0.05209488749281377
+    ],
+    "r_squared": 0.999999844366762,
+    "rmse": 0.001757507729368284,
+    "loo_rmse": 0.0018503491823214121,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9999998274896125,
+    "confidence_tier": "high"
+  },
+  "rear_shock_defl_max": null,
+  "heave_spring_defl_static": {
+    "name": "heave_spring_defl_static",
+    "feature_names": [
+      "rear_third_perch",
+      "rear_spring_perch",
+      "rear_camber",
+      "rear_pushrod_sq"
+    ],
+    "coefficients": [
+      38.96313092266928,
+      -0.21352452153714505,
+      0.36013548679883955,
+      21.966634075465223,
+      0.008649683779104855
+    ],
+    "r_squared": 0.9999983543368988,
+    "rmse": 0.0060102315662937155,
+    "loo_rmse": 0.0077160344393597475,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9999972876430913,
+    "confidence_tier": "high"
+  },
+  "heave_spring_defl_max": {
+    "name": "heave_spring_defl_max",
+    "feature_names": [
+      "front_heave",
+      "inv_front_heave",
+      "rear_camber",
+      "tyre_temp_x_inv_third",
+      "torsion_turns",
+      "inv_rear_third",
+      "rear_pushrod",
+      "rear_spring_perch",
+      "fuel_x_inv_third",
+      "fuel_remaining",
+      "aggression_x_inv_third",
+      "fuel_remaining_sq",
+      "aggression_x_inv_spring",
+      "driver_aggression",
+      "tyre_temp",
+      "tyre_temp_x_inv_front_corner_spring",
+      "tyre_temp_x_inv_spring",
+      "inv_rear_spring"
+    ],
+    "coefficients": [
+      102.14348616139317,
+      -0.33330981375171925,
+      4.609103135925629,
+      -0.008866922568455591,
+      2.4283616000394798e-12,
+      22.28806191199723,
+      -0.00036379899248174314,
+      -0.04457612383838273,
+      0.05444725255584787,
+      8.925278877435701e-11,
+      2.391081300244293e-15,
+      1.3737736734625015e-12,
+      -3.283418496492853e-15,
+      -2.3456313957324554e-11,
+      -1.557671572054652e-14,
+      -5.183930007556184e-10,
+      5.183647899732522e-10,
+      3.807680828082048e-12,
+      1.0518231329700929
+    ],
+    "r_squared": 1.0,
+    "rmse": 5.269370839432879e-12,
+    "loo_rmse": 0.01268957070313157,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9999884112086529,
+    "confidence_tier": "low"
+  },
+  "heave_slider_defl_static": {
+    "name": "heave_slider_defl_static",
+    "feature_names": [
+      "front_pushrod",
+      "fuel_x_inv_third",
+      "rear_spring_perch",
+      "driver_aggression",
+      "front_heave_perch",
+      "fuel_remaining_sq",
+      "tyre_temp_x_inv_third"
+    ],
+    "coefficients": [
+      78.53332258221972,
+      1.501145893112515,
+      -2.166961256290133,
+      0.013766471323369694,
+      -0.0030859786875908337,
+      0.002890670700821104,
+      3.0821698542293774e-06,
+      0.10839940898106185
+    ],
+    "r_squared": 0.999928203023571,
+    "rmse": 0.021652909770124237,
+    "loo_rmse": 0.023475365867288198,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9999156085668803,
+    "confidence_tier": "high"
+  },
+  "rear_spring_defl_static": {
+    "name": "rear_spring_defl_static",
+    "feature_names": [
+      "rear_spring",
+      "torsion_turns",
+      "torsion_od",
+      "front_pushrod_sq",
+      "inv_rear_third",
+      "inv_rear_spring",
+      "fuel_remaining_sq",
+      "fuel_remaining",
+      "fuel",
+      "fuel_x_inv_spring",
+      "fuel_x_inv_front_corner_spring",
+      "fuel_x_inv_rear_corner_spring",
+      "tyre_temp_x_inv_third",
+      "tyre_temp",
+      "aggression_x_inv_spring",
+      "driver_aggression",
+      "aggression_x_inv_third",
+      "tyre_temp_x_inv_spring",
+      "tyre_temp_x_inv_front_corner_spring"
+    ],
+    "coefficients": [
+      83.41647178211531,
+      -1.1375710718535554,
+      577.4626132691652,
+      6.291202412228997,
+      -0.024550413871868765,
+      305.8703966859577,
+      -6.987599662636944,
+      1.1763827362406816e-13,
+      -4.49013031714121e-14,
+      0.8708504034747855,
+      -457.1964614547228,
+      0.8708504024182937,
+      0.8708504024197716,
+      4.3281089760470855e-11,
+      5.062391210436952e-07,
+      7.759702987796716e-09,
+      -8.167829115217636e-11,
+      1.4470428628983228e-08,
+      4.432067711966636e-11,
+      -5.06239392863983e-07
+    ],
+    "r_squared": 1.0,
+    "rmse": 1.2356482261285761e-10,
+    "loo_rmse": 0.136251925689282,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9915105539768768,
+    "confidence_tier": "low"
+  },
+  "rear_spring_defl_max": {
+    "name": "rear_spring_defl_max",
+    "feature_names": [
+      "inv_rear_spring",
+      "rear_spring"
+    ],
+    "coefficients": [
+      78.85736884955068,
+      2033.4247791906748,
+      -0.07416090232732131
+    ],
+    "r_squared": 0.999998863794903,
+    "rmse": 0.0016604263055609234,
+    "loo_rmse": 0.0017361158017064734,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9999987578475429,
+    "confidence_tier": "high"
+  },
+  "third_spring_defl_static": {
+    "name": "third_spring_defl_static",
+    "feature_names": [
+      "rear_spring",
+      "torsion_od",
+      "front_pushrod",
+      "rear_third",
+      "torsion_turns",
+      "fuel_x_inv_spring",
+      "fuel_x_inv_third",
+      "tyre_temp_x_inv_spring",
+      "fuel_remaining",
+      "aggression_x_inv_third",
+      "driver_aggression",
+      "aggression_x_inv_spring",
+      "fuel_remaining_sq",
+      "tyre_temp_x_inv_third",
+      "tyre_temp",
+      "tyre_temp_x_inv_front_corner_spring",
+      "inv_rear_spring",
+      "inv_rear_third"
+    ],
+    "coefficients": [
+      95.17003194994967,
+      0.08929556784504285,
+      -7.598830433781432,
+      -0.598671140872464,
+      -0.02528005280098023,
+      50.33221480146233,
+      7.47819565465017,
+      -13.674414911605492,
+      1.9666844246381646e-12,
+      9.402277656897503e-15,
+      6.541527696718753e-10,
+      -6.121299667480211e-12,
+      7.467647591720514e-10,
+      4.1185677596487445e-16,
+      -2.3717086248253355e-12,
+      -1.6822294173276578e-08,
+      1.6822288058041476e-08,
+      1.5172211368833879,
+      0.5391978309822627
+    ],
+    "r_squared": 1.0,
+    "rmse": 5.902545531999413e-13,
+    "loo_rmse": 0.01729734056196943,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9998746486554525,
+    "confidence_tier": "low"
+  },
+  "third_spring_defl_max": {
+    "name": "third_spring_defl_max",
+    "feature_names": [
+      "rear_third",
+      "inv_rear_third",
+      "torsion_turns",
+      "tyre_temp_x_inv_third",
+      "aggression_x_inv_third",
+      "driver_aggression"
+    ],
+    "coefficients": [
+      55.175925106847444,
+      -0.04324699269376809,
+      5474.138924023062,
+      29.841113458912922,
+      -0.3236993120570136,
+      -61.9760923942992,
+      0.2145311845478131
+    ],
+    "r_squared": 0.9999960472015844,
+    "rmse": 0.013419209045370912,
+    "loo_rmse": 0.03810115389903628,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9999681340340993,
+    "confidence_tier": "medium"
+  },
+  "third_slider_defl_static": {
+    "name": "third_slider_defl_static",
+    "feature_names": [
+      "third_spring_defl"
+    ],
+    "coefficients": [
+      38.63135201187048,
+      -1.999538647614062
+    ],
+    "r_squared": 0.41456317949362875,
+    "rmse": 3.6710414998712846,
+    "loo_rmse": 3.8031190799780457,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.3716794080286058,
+    "confidence_tier": "low"
+  },
+  "torsion_bar_defl_direct": {
+    "name": "torsion_bar_defl_direct",
+    "feature_names": [
+      "front_heave_perch",
+      "fuel_x_inv_spring",
+      "torsion_od",
+      "torsion_turns",
+      "rear_third_perch",
+      "aggression_x_inv_third",
+      "fuel_remaining_sq",
+      "tyre_temp_x_inv_spring",
+      "aggression_x_inv_spring",
+      "driver_aggression",
+      "fuel_remaining",
+      "tyre_temp",
+      "tyre_temp_x_inv_front_corner_spring",
+      "inv_rear_third",
+      "tyre_temp_x_inv_third",
+      "inv_rear_spring"
+    ],
+    "coefficients": [
+      -32.427132284679054,
+      0.31921277297213385,
+      5.133900686467074e-12,
+      0.8948398187413391,
+      529.8031932430423,
+      -0.2851374798674171,
+      4.014148486947423e-10,
+      -1.812940524592007e-15,
+      -4.737305332797496e-12,
+      1.951928303991814e-10,
+      -5.713738203869954e-13,
+      8.712574344284726e-14,
+      8.53395419463715e-09,
+      -8.533964439346785e-09,
+      -525.1863808661882,
+      -1.7584814072853742e-13,
+      990.3178033174721
+    ],
+    "r_squared": 1.0,
+    "rmse": 1.9069717617630654e-12,
+    "loo_rmse": 0.19787885286221574,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9807776049995249,
+    "confidence_tier": "low"
+  },
+  "third_slider_defl_direct": {
+    "name": "third_slider_defl_direct",
+    "feature_names": [
+      "front_camber",
+      "front_heave_perch",
+      "fuel_x_inv_third",
+      "rear_third_perch"
+    ],
+    "coefficients": [
+      283.15250762864855,
+      87.36524699667159,
+      0.30333904921042887,
+      3.4561568590201537,
+      -0.05124820922922879
+    ],
+    "r_squared": 0.9999991064907632,
+    "rmse": 0.0045352246091329715,
+    "loo_rmse": 0.004787917155795861,
+    "n_samples": 84,
+    "is_calibrated": true,
+    "q_squared": 0.9999990041482292,
+    "confidence_tier": "high"
+  },
+  "front_heave_lookup": null,
+  "rear_heave_lookup": null,
+  "front_torsion_lookup": null,
+  "rear_torsion_lookup": null,
+  "m_eff_front_kg": null,
+  "m_eff_rear_kg": 2560.1905181775605,
+  "m_eff_is_rate_dependent": true,
+  "m_eff_rate_table": [
+    {
+      "setting": 30.0,
+      "m_eff_kg": 105.55196524473628
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 106.42064069744633
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 109.56241841310518
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 119.75150340083758
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 123.21214658842746
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 130.43732408420468
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 131.68069418674975
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 136.30737932599186
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 137.53666619222489
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 137.92335612036516
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 138.39476937828127
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 140.7230113490074
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 144.558494532289
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 145.91399347813885
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 147.14382429992847
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 147.29074905868976
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 148.2872370848656
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 149.0529718859203
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 151.31744428052644
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 154.34727961211232
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 154.4783554375532
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 154.97534188740536
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 157.9368913441564
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 158.59312847235122
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 159.50786563741494
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 159.76924898339033
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 173.41852819206298
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 173.8389587550665
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 176.35336492218175
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 181.08694840507576
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 181.5999766395627
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 192.54134367221707
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 203.26511696494873
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 204.3923970573887
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 206.62350667758636
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 212.9462974223981
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 233.89401191410917
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 245.10302729278268
+    },
+    {
+      "setting": 30.0,
+      "m_eff_kg": 247.04065046674583
+    },
+    {
+      "setting": 40.0,
+      "m_eff_kg": 202.0016269317415
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 123.81165715940398
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 128.69077753495193
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 141.84211492724964
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 144.05352386486496
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 152.5317670786257
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 155.18795452091044
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 160.98108120922134
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 164.59338516715727
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 164.74510435354964
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 169.65980119033364
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 170.25221499801015
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 173.3991089171354
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 175.1599279840339
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 178.04473920660425
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 180.90328117701284
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 196.66470174764825
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 205.55131366195027
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 205.8284254389449
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 208.23517752265408
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 209.6095522857186
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 210.00829783217216
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 211.02307901155518
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 214.05914781035375
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 215.03056852769464
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 218.87012695157725
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 223.24371660082633
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 226.12751515705023
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 230.20186365499092
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 230.46328287786105
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 236.4993728239118
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 237.86914407240815
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 238.36861989242732
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 243.14130143945158
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 244.28852484353038
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 247.61587290025994
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 251.64586637066466
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 255.1202856879028
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 264.131962596947
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 297.227042653908
+    },
+    {
+      "setting": 50.0,
+      "m_eff_kg": 357.75714687536004
+    }
+  ],
+  "m_eff_rear_rate_table": [
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1378.799043315727
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1630.6495295879752
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1715.2248823902412
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1828.8447470990395
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1866.3362964154649
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1869.573724832977
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1882.5372209189165
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1910.2572742023408
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1913.124256055093
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1923.2255781763786
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 1960.8827045137616
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2026.6680803565002
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2045.1435508087968
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2098.543843286221
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2151.8163765677905
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2162.2033285456228
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2180.6058859170867
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2187.1689032734175
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2191.586460422782
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2220.447626903279
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2252.285932371386
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2271.4141874937955
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2325.6249563969754
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2393.376864319389
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2438.928579712899
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2448.828967077343
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2512.9333448817383
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2534.828538917226
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2714.45951683324
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2746.151780015329
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 2902.135013391033
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 3194.446282056497
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 3216.730688398948
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 3411.94867543817
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 3536.3382307042407
+    },
+    {
+      "setting": 320.0,
+      "m_eff_kg": 3660.568719596379
+    },
+    {
+      "setting": 380.0,
+      "m_eff_kg": 1480.7559518378382
+    },
+    {
+      "setting": 380.0,
+      "m_eff_kg": 1679.6815465424822
+    },
+    {
+      "setting": 380.0,
+      "m_eff_kg": 1800.422536245851
+    },
+    {
+      "setting": 380.0,
+      "m_eff_kg": 1870.3576003198789
+    },
+    {
+      "setting": 380.0,
+      "m_eff_kg": 2054.178362410855
+    },
+    {
+      "setting": 380.0,
+      "m_eff_kg": 3185.125188643657
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 1949.332537461716
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 1952.3641011006007
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2168.880144797555
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2239.710795686712
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2267.781555463978
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2354.1977529097044
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2367.124098921565
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2417.8444819429506
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2443.7720284062434
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2509.521920974685
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2512.9448697604803
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2585.4972650653417
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2627.338573807762
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2653.8437896033156
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2725.438248178574
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2730.5163650759396
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2750.3577444820194
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2762.57416439744
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2764.4444700743898
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2770.031734360153
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2772.698055633434
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2815.694253513377
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2901.059277706626
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2928.6237409655064
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2929.810106608402
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 2961.436077605766
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 3248.8894421489067
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 3306.347073098622
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 3529.600183130036
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 3544.6041721315355
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 3833.7232167649677
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 4038.8647545638823
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 4307.561281752012
+    },
+    {
+      "setting": 490.0,
+      "m_eff_kg": 4321.176692548408
+    },
+    {
+      "setting": 540.0,
+      "m_eff_kg": 2119.529029948401
+    },
+    {
+      "setting": 540.0,
+      "m_eff_kg": 2943.0432627462264
+    },
+    {
+      "setting": 540.0,
+      "m_eff_kg": 3730.2303993869446
+    },
+    {
+      "setting": 680.0,
+      "m_eff_kg": 3253.6730142860843
+    }
+  ],
+  "measured_lltd_target": null,
+  "front_ls_zeta": null,
+  "rear_ls_zeta": null,
+  "front_hs_zeta": null,
+  "rear_hs_zeta": null,
+  "zeta_n_sessions": 0,
+  "aero_front_compression_mm": 21.5,
+  "aero_rear_compression_mm": 14.769047619047626,
+  "aero_n_sessions": 84,
+  "corner_phase_models": {},
+  "status": {
+    "aero_compression": "calibrated from IBT AeroCalculator (84 sessions, front=21.5mm rear=14.8mm)",
+    "arb_stiffness": "insufficient controlled data (need sessions with same springs, different ARB AND roll gradient; have 79 points with roll data)",
+    "roll_gradient_mean": 1.7344430379746838,
+    "roll_gradient_n_sessions": 79,
+    "roll_gradient_cv": 0.20451906252864716,
+    "roll_gradient_stable": true,
+    "m_eff": "rate-dependent (80 points, range 106-358 kg)",
+    "m_eff_rear": "rate-dependent (80 points, range 1379-4321 kg)",
+    "corner_phase_models": "insufficient data (144 triplets observed, none passed gate)",
+    "lltd_target": "DISABLED \u2014 IBT 'lltd_measured' is a geometric proxy (t_f^3/(t_f^3+t_r^3)), not true LLTD. ARB solver uses OptimumG physics.",
+    "deflection_model": "calibrated (84 unique setups, best R\u00b2=1.00)"
+  }
 }

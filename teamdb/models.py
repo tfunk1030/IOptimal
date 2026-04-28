@@ -179,6 +179,8 @@ class CarDefinition(Base):
     __tablename__ = "car_definitions"
     __table_args__ = (
         UniqueConstraint("team_id", "car_name", name="uq_car_definitions_team_car"),
+        Index("ix_car_definitions_iracing_path", "iracing_car_path"),
+        Index("ix_car_definitions_arch", "suspension_arch"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -198,6 +200,20 @@ class CarDefinition(Base):
     )  # 'unsupported' | 'exploratory' | 'partial' | 'calibrated'
     observation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     car_model_json: Mapped[Optional[dict]] = mapped_column(_JsonType, nullable=True)
+    # GT3 Phase 2 — F1 (audit infra-teamdb-watcher-desktop.md). Stable iRacing
+    # CarPath identifier (locale-independent), BoP version stamp for the season,
+    # and the suspension architecture discriminator that drives the solver
+    # chain dispatch. All three are nullable for backward compat with legacy
+    # GTP rows; the migration backfills them with sensible defaults.
+    iracing_car_path: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
+    bop_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    suspension_arch: Mapped[Optional[str]] = mapped_column(
+        String(48), nullable=True
+    )
+    # values: "gtp_heave_third_torsion_front" | "gtp_heave_third_roll_front"
+    #       | "gt3_coil_4wheel"
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -221,6 +237,7 @@ class Observation(Base):
         Index("ix_observations_team_car_class", "team_id", "car_class"),
         Index("ix_observations_team_member", "team_id", "member_id"),
         Index("ix_observations_team_created", "team_id", "created_at"),
+        Index("ix_observations_team_arch_track", "team_id", "suspension_arch", "track"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -239,6 +256,22 @@ class Observation(Base):
     best_lap_time_s: Mapped[float] = mapped_column(Float, nullable=False)
     lap_count: Mapped[int] = mapped_column(Integer, nullable=False)
     observation_json: Mapped[dict] = mapped_column(_JsonType, nullable=False)
+    # GT3 Phase 2 — F2 + F8 (audit infra-teamdb-watcher-desktop.md).
+    # `suspension_arch` is the per-row discriminator the aggregator uses
+    # to partition GT3 vs GTP observations. It is NOT NULL so every new
+    # row carries it; existing rows are backfilled to the GTP-torsion
+    # default by the migration script.
+    suspension_arch: Mapped[str] = mapped_column(
+        String(48),
+        nullable=False,
+        default="gtp_heave_third_torsion_front",
+    )
+    # `bop_version` segregates fits across iRacing BoP patches; nullable
+    # because pre-GT3-Phase-2 rows carry no BoP stamp.
+    bop_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    iracing_car_path: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

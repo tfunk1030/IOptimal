@@ -34,12 +34,27 @@ class Observation:
 
     # ── Setup Parameters (what was configured) ──
     setup: dict = field(default_factory=dict)
-    # Keys: wing, fuel_l, front_rh_static, rear_rh_static,
-    #        front_pushrod, rear_pushrod, front_heave_nmm, rear_third_nmm,
-    #        torsion_bar_od_mm, rear_spring_nmm, front_arb_size, front_arb_blade,
-    #        rear_arb_size, rear_arb_blade, front_camber_deg, rear_camber_deg,
-    #        front_toe_mm, rear_toe_mm, brake_bias_pct,
-    #        dampers: {lf/rf/lr/rr: {ls_comp, ls_rbd, hs_comp, hs_rbd, hs_slope}}
+    # Keys (GTP architecture — heave/third + torsion-bar / roll-spring front):
+    #   wing, fuel_l, front_rh_static, rear_rh_static,
+    #   front_pushrod, rear_pushrod, front_heave_nmm, rear_third_nmm,
+    #   torsion_bar_od_mm, rear_spring_nmm, front_arb_size, front_arb_blade,
+    #   rear_arb_size, rear_arb_blade, front_camber_deg, rear_camber_deg,
+    #   front_toe_mm, rear_toe_mm, brake_bias_pct,
+    #   dampers: {lf/rf/lr/rr: {ls_comp, ls_rbd, hs_comp, hs_rbd, hs_slope}}
+    #
+    # Keys (GT3 architecture — paired coil-overs + bump rubbers + splitter):
+    #   wing, fuel_l, front_rh_static, rear_rh_static,
+    #   front_pushrod, rear_pushrod,
+    #   front_corner_spring_nmm, rear_corner_spring_nmm,
+    #   front_bump_rubber_gap_mm, rear_bump_rubber_gap_mm,
+    #   lf_bump_rubber_gap_mm, rf_bump_rubber_gap_mm,
+    #   lr_bump_rubber_gap_mm, rr_bump_rubber_gap_mm,
+    #   splitter_height_mm,
+    #   front_arb_size, front_arb_blade, rear_arb_size, rear_arb_blade,
+    #   front_camber_deg, rear_camber_deg, front_toe_mm, rear_toe_mm,
+    #   brake_bias_pct,
+    #   dampers: {lf/rf/lr/rr: {ls_comp, ls_rbd, hs_comp, hs_rbd, hs_slope}}
+    #     (per-axle on GT3 — duplicated lf/rf and lr/rr rows)
 
     # ── Performance Metrics (what happened) ──
     performance: dict = field(default_factory=dict)
@@ -64,6 +79,13 @@ class Observation:
     #        heave_bottoming_events_front, heave_bottoming_events_rear,
     #        front_rh_settle_time_ms, rear_rh_settle_time_ms,
     #        front_dominant_freq_hz, rear_dominant_freq_hz
+
+    # ── Speed-band stratified aero compression (per-IBT V^2 fit) ──
+    # Populated by analyzer.extractors.aero_speed_bands (Unit 1). One IBT
+    # produces multiple (V^2, compression) pairs — α_front and α_rear in
+    # this dict are the per-axle compression coefficients previously
+    # requiring multi-session sweeps.
+    aero_compression_by_speed_kph: dict = field(default_factory=dict)
 
     # ── Driver Profile (how they drove) ──
     driver_profile: dict = field(default_factory=dict)
@@ -102,10 +124,36 @@ class Observation:
     # Populated by build_observation() if the fingerprinting module is available.
     # Used to match and soft/hard-veto clusters in run_base_solve().
 
+    # ── Per-corner roll-stiffness micro-experiments (Unit 4) ──
+    # Each corner's (lat_g_mean, body_roll_mean) ratio is one independent
+    # roll-gradient sample. With ~14 corners × N laps a single IBT yields
+    # 14*N datapoints for ARB / roll-stiffness fitting, vs the single
+    # session-mean roll gradient stored in telemetry["roll_gradient_deg_per_g"].
+    roll_gradient_corner_p50_deg_per_g: float | None = None
+    roll_gradient_corner_p95_deg_per_g: float | None = None
+    roll_gradient_corner_count: int = 0
+
     # ── Corner-by-Corner Performance ──
     corner_performance: list[dict] = field(default_factory=list)
     # Each: {corner_id, lap_dist_m, direction, speed_class, speed_kph,
     #         understeer_deg, body_slip_deg, shock_vel_p95, time_delta_s}
+
+    # ── Within-IBT Measurement-Noise Floor ──
+    # Std of mean values across all valid laps from the SAME IBT (same setup).
+    # Cross-IBT variance is the actual setup-effect signal; within-IBT variance
+    # is driver/noise/conditions and gives the auto_calibrate fitter a
+    # measurement-noise floor. Populated only when ingested via --all-laps with
+    # >= 2 valid laps; otherwise None / 0.
+    setup_noise_floor_front_rh_mm: float | None = None
+    setup_noise_floor_rear_rh_mm: float | None = None
+    setup_noise_floor_lap_time_s: float | None = None
+    setup_noise_floor_n_laps: int = 0
+
+    # ── Per-corner per-phase metrics (Unit D3) ──
+    # Flat dict {f"corner_{idx}_{phase}_{metric}" -> float}, sliced by
+    # entry/mid/exit phase. Aggregated view of the per-corner record above.
+    # Empty if no corners were detected for this lap.
+    corner_phase_metrics: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -140,6 +188,7 @@ def build_observation(
     driver_profile_obj,   # DriverProfile
     diagnosis_obj,        # Diagnosis
     corners: list = None, # list[CornerAnalysis]
+    corner_phase_metrics: dict[str, float] | None = None,  # Unit D3
 ) -> Observation:
     """Build an Observation from analyzer outputs.
 
@@ -159,6 +208,18 @@ def build_observation(
     diag: Diagnosis = diagnosis_obj
     tp: TrackProfile = track_profile
 
+    # Detect GT3 architecture (audit BLOCKER #5). Without a CarModel handle
+    # available here, infer from CurrentSetup field shape: GT3 cars carry a
+    # non-zero ``front_corner_spring_nmm`` and zero on the GTP-only fields
+    # (heave/third, torsion-bar OD). The flag drives which keys we populate
+    # below so STEP_GROUPS and KNOWN_CAUSALITY downstream see the correct
+    # architecture-specific tuples.
+    is_gt3 = (
+        getattr(s, "front_corner_spring_nmm", 0.0) > 0.0
+        and not getattr(s, "front_heave_nmm", 0.0)
+        and not getattr(s, "front_torsion_od_mm", 0.0)
+    )
+
     # ── Setup dict ──
     setup = {
         "wing": s.wing_angle_deg,
@@ -174,6 +235,35 @@ def build_observation(
         "rear_third_nmm": s.rear_third_nmm,
         "torsion_bar_od_mm": s.front_torsion_od_mm,
         "rear_spring_nmm": s.rear_spring_nmm,
+        # GT3 paired-coil + bump-rubber + splitter fields (audit BLOCKER #5).
+        # Always populated from getattr-with-defaults so GTP observations
+        # carry zeros and GT3 observations carry the real values. Downstream
+        # consumers (delta_detector, empirical_models, setup_clusters) gate
+        # off the per-arch threshold dict so zero values are skipped.
+        "front_corner_spring_nmm": getattr(s, "front_corner_spring_nmm", 0.0),
+        # rear_corner_spring_nmm is the GT3-physical alias of rear_spring_nmm —
+        # the analyzer stores the avg of LR/RR SpringRate into rear_spring_nmm
+        # for GT3 cars (see analyzer/setup_reader.py:235). Surface it under the
+        # GT3-canonical key so KNOWN_CAUSALITY tuples can fire.
+        "rear_corner_spring_nmm": (
+            s.rear_spring_nmm if is_gt3 else getattr(s, "rear_corner_spring_nmm", 0.0)
+        ),
+        # Bump rubber gaps: average per axle for delta-detector convenience,
+        # but also surface the per-corner values so analyses that need
+        # left/right asymmetry can still get them.
+        "lf_bump_rubber_gap_mm": getattr(s, "lf_bump_rubber_gap_mm", 0.0),
+        "rf_bump_rubber_gap_mm": getattr(s, "rf_bump_rubber_gap_mm", 0.0),
+        "lr_bump_rubber_gap_mm": getattr(s, "lr_bump_rubber_gap_mm", 0.0),
+        "rr_bump_rubber_gap_mm": getattr(s, "rr_bump_rubber_gap_mm", 0.0),
+        "front_bump_rubber_gap_mm": (
+            (getattr(s, "lf_bump_rubber_gap_mm", 0.0)
+             + getattr(s, "rf_bump_rubber_gap_mm", 0.0)) / 2.0
+        ),
+        "rear_bump_rubber_gap_mm": (
+            (getattr(s, "lr_bump_rubber_gap_mm", 0.0)
+             + getattr(s, "rr_bump_rubber_gap_mm", 0.0)) / 2.0
+        ),
+        "splitter_height_mm": getattr(s, "splitter_height_mm", 0.0),
         "front_heave_index": getattr(s, "raw_indexed_fields", {}).get("front_heave_index", s.front_heave_nmm),
         "rear_heave_index": getattr(s, "raw_indexed_fields", {}).get("rear_heave_index", s.rear_third_nmm),
         "front_torsion_bar_index": getattr(s, "raw_indexed_fields", {}).get("front_torsion_bar_index", s.front_torsion_od_mm),
@@ -294,6 +384,13 @@ def build_observation(
         "splitter_rh_mean_at_speed_mm": getattr(m, "splitter_rh_mean_at_speed_mm", 0.0),
         "splitter_rh_min_mm": getattr(m, "splitter_rh_min_mm", 0.0),
         "splitter_scrape_events": getattr(m, "splitter_scrape_events", 0),
+        # GT3 bump-rubber engagement proxies (audit DEGRADED #11). These
+        # telemetry fields are not yet computed in analyzer/extract.py — they
+        # default to 0.0 here so the delta_detector / KNOWN_CAUSALITY paths
+        # do not crash on lookups. TODO(W7.x): wire from analyzer once the
+        # bump-rubber-contact extractor lands.
+        "front_bump_rubber_contact_pct": getattr(m, "front_bump_rubber_contact_pct", 0.0),
+        "rear_bump_rubber_contact_pct": getattr(m, "rear_bump_rubber_contact_pct", 0.0),
         "front_corner_defl_p99_mm": getattr(m, "front_corner_defl_p99_mm", 0.0),
         "rear_corner_defl_p99_mm": getattr(m, "rear_corner_defl_p99_mm", 0.0),
         "front_heave_vel_p95_mps": getattr(m, "front_heave_vel_p95_mps", 0.0),
@@ -384,6 +481,40 @@ def build_observation(
         "live_tc_slip": getattr(m, "live_tc_slip", None),
         "live_front_arb_blade": getattr(m, "live_front_arb_blade", None),
         "live_rear_arb_blade": getattr(m, "live_rear_arb_blade", None),
+        # Suspension PSD → ζ + ω_n per mode (Unit 2). Optional — populated
+        # when the IBT has the relevant deflection channels for this car's
+        # architecture. None values indicate the channel/mode wasn't
+        # available, NOT zero damping.
+        "front_heave_natural_freq_hz": getattr(m, "front_heave_natural_freq_hz", None),
+        "front_heave_damping_ratio": getattr(m, "front_heave_damping_ratio", None),
+        "front_heave_q_factor": getattr(m, "front_heave_q_factor", None),
+        "rear_heave_natural_freq_hz": getattr(m, "rear_heave_natural_freq_hz", None),
+        "rear_heave_damping_ratio": getattr(m, "rear_heave_damping_ratio", None),
+        "rear_heave_q_factor": getattr(m, "rear_heave_q_factor", None),
+        "front_roll_natural_freq_hz": getattr(m, "front_roll_natural_freq_hz", None),
+        "front_roll_damping_ratio": getattr(m, "front_roll_damping_ratio", None),
+        "rear_roll_natural_freq_hz": getattr(m, "rear_roll_natural_freq_hz", None),
+        "rear_roll_damping_ratio": getattr(m, "rear_roll_damping_ratio", None),
+        "lf_natural_freq_hz": getattr(m, "lf_natural_freq_hz", None),
+        "lf_damping_ratio": getattr(m, "lf_damping_ratio", None),
+        "rf_natural_freq_hz": getattr(m, "rf_natural_freq_hz", None),
+        "rf_damping_ratio": getattr(m, "rf_damping_ratio", None),
+        "lr_natural_freq_hz": getattr(m, "lr_natural_freq_hz", None),
+        "lr_damping_ratio": getattr(m, "lr_damping_ratio", None),
+        "rr_natural_freq_hz": getattr(m, "rr_natural_freq_hz", None),
+        "rr_damping_ratio": getattr(m, "rr_damping_ratio", None),
+        "front_axle_natural_freq_hz": getattr(m, "front_axle_natural_freq_hz", None),
+        "front_axle_damping_ratio": getattr(m, "front_axle_damping_ratio", None),
+        "rear_axle_natural_freq_hz": getattr(m, "rear_axle_natural_freq_hz", None),
+        "rear_axle_damping_ratio": getattr(m, "rear_axle_damping_ratio", None),
+        # Kerb-event step-response damper ID (Unit 3)
+        "front_step_response_zeta_p50": getattr(m, "front_step_response_zeta_p50", None),
+        "front_step_response_zeta_p95": getattr(m, "front_step_response_zeta_p95", None),
+        "front_step_response_freq_hz_p50": getattr(m, "front_step_response_freq_hz_p50", None),
+        "rear_step_response_zeta_p50": getattr(m, "rear_step_response_zeta_p50", None),
+        "rear_step_response_zeta_p95": getattr(m, "rear_step_response_zeta_p95", None),
+        "rear_step_response_freq_hz_p50": getattr(m, "rear_step_response_freq_hz_p50", None),
+        "kerb_strike_count": getattr(m, "kerb_strike_count", 0),
     }
 
     # ── Driver ──
@@ -474,7 +605,30 @@ def build_observation(
                 "entry_pitch_severity": getattr(c, "entry_pitch_severity", 0.0),
                 "aero_collapse_severity": getattr(c, "aero_collapse_severity", 0.0),
                 "exit_slip_severity": getattr(c, "exit_slip_severity", 0.0),
+                # Unit 4 — per-corner roll-stiffness micro-experiment.
+                "roll_gradient_deg_per_g": getattr(c, "roll_gradient_deg_per_g", None),
             })
+
+    # ── Speed-band aero compression (Unit 1, additive) ──
+    aero_by_speed = dict(getattr(m, "aero_compression_by_speed_kph", {}) or {})
+
+    # ── Per-corner roll-stiffness aggregates (Unit 4) ──
+    # Prefer aggregates already on MeasuredState (populated by pipeline.produce
+    # via aggregate_corner_roll_gradients). Fall back to recomputing from the
+    # corners list if the analyzer caller didn't run the aggregator. Wrapped
+    # in try/except so a malformed CornerAnalysis can never break ingest.
+    rg_p50: float | None = getattr(m, "roll_gradient_corner_p50_deg_per_g", None)
+    rg_p95: float | None = getattr(m, "roll_gradient_corner_p95_deg_per_g", None)
+    rg_count: int = int(getattr(m, "roll_gradient_corner_count", 0) or 0)
+    if rg_count == 0 and corners:
+        try:
+            from analyzer.extract import aggregate_corner_roll_gradients
+            agg = aggregate_corner_roll_gradients(corners)
+            rg_p50 = agg.get("roll_gradient_corner_p50")
+            rg_p95 = agg.get("roll_gradient_corner_p95")
+            rg_count = int(agg.get("roll_gradient_corner_count") or 0)
+        except Exception:  # noqa: BLE001 — additive only; never block ingest
+            pass
 
     return Observation(
         session_id=session_id,
@@ -500,8 +654,13 @@ def build_observation(
         setup=setup,
         performance=performance,
         telemetry=telemetry,
+        aero_compression_by_speed_kph=aero_by_speed,
         driver_profile=driver,
         diagnosis=diagnosis_dict,
         conditions=conditions,
         corner_performance=corner_perf,
+        roll_gradient_corner_p50_deg_per_g=rg_p50,
+        roll_gradient_corner_p95_deg_per_g=rg_p95,
+        roll_gradient_corner_count=rg_count,
+        corner_phase_metrics=dict(corner_phase_metrics) if corner_phase_metrics else {},
     )

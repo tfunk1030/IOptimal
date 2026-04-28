@@ -76,6 +76,19 @@ class CornerAnalysis:
     delta_to_min_time_s: float = 0.0  # backward-compatible alias of bounded total
     corner_confidence: float = 0.0
 
+    # Per-corner roll-stiffness micro-experiment (Unit 4):
+    # Each corner gives one (lat_g_mean, body_roll_mean) datapoint. The ratio
+    # body_roll / lat_g is a unit-less roll-gradient measurement. With ~14
+    # corners per lap and N valid laps, this produces 14*N independent samples
+    # for ARB / roll-stiffness fitting downstream. None when |lat_g_mean| <= 0.5
+    # or no body-roll signal is available.
+    roll_gradient_deg_per_g: float | None = None
+
+    # Sample indices (relative to lap start) for reuse by corner_balance (M3)
+    sample_start_idx: int = -1
+    sample_apex_idx: int = -1
+    sample_end_idx: int = -1
+
 
 def _classify_speed(apex_speed_kph: float) -> str:
     """Classify corner by apex speed into aero-relevance bands."""
@@ -275,6 +288,18 @@ def segment_lap(
         understeer_rad = road_wheel_angle - car.wheelbase_m * yaw_rate / safe_speed
         understeer_deg = np.degrees(understeer_rad)
 
+    # Body roll for per-corner roll-gradient (Unit 4). Roll channel is in
+    # radians; the RH-differential fallback mirrors extract.py:707-740 for
+    # cars without a Roll channel. lf_rh / rf_rh and track_w_mm are both in
+    # mm so the ratio is dimensionless before arctan.
+    body_roll_deg: np.ndarray | None = None
+    if ibt.has_channel("Roll"):
+        body_roll_deg = np.degrees(ibt.channel("Roll")[start:end + 1])
+    elif has_rh and car is not None:
+        track_w_mm = car.arb.track_width_front_mm
+        if track_w_mm > 0:
+            body_roll_deg = np.degrees(np.arctan((lf_rh - rf_rh) / track_w_mm))
+
     # Body slip
     body_slip_deg: np.ndarray | None = None
     if ibt.has_channel("VelocityX") and ibt.has_channel("VelocityY"):
@@ -341,6 +366,21 @@ def segment_lap(
         if body_slip_deg is not None:
             seg_bs = body_slip_deg[cs:ce]
             bs_peak = float(np.max(np.abs(seg_bs))) if len(seg_bs) > 0 else 0.0
+
+        # Per-corner roll-stiffness micro-experiment (Unit 4). Filter to
+        # |lat_g| > 0.5 because body roll outside the corner is dominated by
+        # undamped chassis pitch, not steady-state roll. The 0.5g floor on
+        # lat_mean guards against divide-by-near-zero in tight chicanes
+        # where signed lat_g averages near zero across the segment.
+        roll_gradient_dpg: float | None = None
+        if body_roll_deg is not None:
+            seg_roll = body_roll_deg[cs:ce]
+            corn_mask = np.abs(seg_lat) > 0.5
+            if int(np.sum(corn_mask)) >= 5:
+                lat_mean = float(np.mean(seg_lat[corn_mask]))
+                roll_mean = float(np.mean(seg_roll[corn_mask]))
+                if abs(lat_mean) > 0.5:
+                    roll_gradient_dpg = roll_mean / lat_mean
 
         # Trail braking: fraction of pre-apex samples (turn-in to apex) with brake > 5%
         apex_local = ca - cs
@@ -491,8 +531,154 @@ def segment_lap(
             traction_risk_flags=traction_flags,
             delta_to_min_time_s=0.0,
             corner_confidence=round(confidence, 3),
+            roll_gradient_deg_per_g=(
+                round(roll_gradient_dpg, 4) if roll_gradient_dpg is not None else None
+            ),
+            sample_start_idx=cs,
+            sample_apex_idx=ca,
+            sample_end_idx=ce,
         ))
 
     # Sort by lap distance
     results.sort(key=lambda c: c.lap_dist_start_m)
     return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-phase metrics (entry / mid / exit)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# `segment_lap()` produces per-corner metrics. For corner-by-corner causal
+# learning (Principle 6) we further slice each corner into 3 phases and compute
+# a small set of metrics per (corner_id, phase). Output is a flat
+# dict[str, float] with keys of the form
+#
+#     "corner_<idx>_<phase>_<metric>"
+#
+# where phase ∈ {"entry", "mid", "exit"} and idx is a 1-based stable index
+# (consistent across IBTs of the same track because corners are sorted by
+# lap distance in `segment_lap()`).
+#
+# Phase boundaries (sample indices within the corner segment cs..ce, with apex
+# at ca):
+#   entry: cs                    → (cs + ca) // 2
+#   mid:   (cs + ca) // 2        → (ca + ce) // 2
+#   exit:  (ca + ce) // 2        → ce
+#
+# Metrics per phase: understeer_deg, body_slip_deg, lat_g, long_g,
+# throttle_pos, brake_pos.
+
+_PHASE_NAMES: tuple[str, ...] = ("entry", "mid", "exit")
+
+
+def _phase_slices(cs: int, ca: int, ce: int) -> dict[str, tuple[int, int]]:
+    """Return (start, end) sample indices per phase for one corner."""
+    cs_ca_mid = (cs + ca) // 2
+    ca_ce_mid = (ca + ce) // 2
+    return {
+        "entry": (cs, max(cs_ca_mid, cs + 1)),
+        "mid": (max(cs_ca_mid, cs + 1), max(ca_ce_mid, cs + 2)),
+        "exit": (max(ca_ce_mid, cs + 2), max(ce, cs + 3)),
+    }
+
+
+def compute_corner_phase_metrics(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    car: CarModel | None = None,
+) -> dict[str, float]:
+    """Compute per-(corner, phase) metrics for one lap.
+
+    Re-uses the same corner detection algorithm as :func:`segment_lap` and
+    slices each corner into entry/mid/exit phases. For each phase, computes a
+    small bundle of physics-relevant metrics (understeer, body slip, lat/long
+    g, throttle, brake).
+
+    Returns a flat ``{key -> float}`` dict where keys are
+    ``f"corner_{idx}_{phase}_{metric}"``. ``idx`` is 1-based and stable across
+    IBTs of the same track (corners are sorted by lap distance).
+
+    On any extraction error or if no corners are detected returns ``{}``.
+    """
+    try:
+        n = end - start + 1
+        if n < 30:
+            return {}
+
+        speed_kph = ibt.channel("Speed")[start:end + 1] * 3.6
+        speed_ms = ibt.channel("Speed")[start:end + 1]
+        lat_g = ibt.channel("LatAccel")[start:end + 1]
+        long_g = ibt.channel("LongAccel")[start:end + 1]
+        steering = ibt.channel("SteeringWheelAngle")[start:end + 1]
+        brake = ibt.channel("Brake")[start:end + 1]
+        throttle = ibt.channel("Throttle")[start:end + 1]
+        lap_dist = ibt.channel("LapDist")[start:end + 1]
+
+        # Yaw rate for understeer
+        yaw_rate = (
+            ibt.channel("YawRate")[start:end + 1]
+            if ibt.has_channel("YawRate") else None
+        )
+        understeer_deg = None
+        if car is not None and yaw_rate is not None:
+            safe_speed = np.maximum(speed_ms, 5.0)
+            road_wheel_angle = steering / car.steering_ratio
+            us_rad = road_wheel_angle - car.wheelbase_m * yaw_rate / safe_speed
+            understeer_deg = np.degrees(us_rad)
+
+        # Body slip
+        body_slip_deg = None
+        if ibt.has_channel("VelocityX") and ibt.has_channel("VelocityY"):
+            vx = ibt.channel("VelocityX")[start:end + 1]
+            vy = ibt.channel("VelocityY")[start:end + 1]
+            body_slip_deg = np.degrees(np.arctan2(vy, np.maximum(np.abs(vx), 1.0)))
+
+        raw_corners = _detect_corners(lat_g, speed_kph, steering, lap_dist)
+        if not raw_corners:
+            return {}
+
+        # Stable 1-based index by lap distance (matches segment_lap sort order)
+        corners_sorted = sorted(
+            enumerate(raw_corners), key=lambda kv: float(lap_dist[kv[1][0]])
+        )
+        out: dict[str, float] = {}
+        for new_idx, (_orig, (cs, ca, ce, _direction)) in enumerate(corners_sorted, start=1):
+            phases = _phase_slices(cs, ca, ce)
+            for phase_name, (ps, pe) in phases.items():
+                pe = min(pe, len(lat_g))
+                ps = max(0, ps)
+                if pe <= ps:
+                    continue
+
+                def _stat(arr, fn, default=0.0):
+                    seg = arr[ps:pe]
+                    if seg.size == 0:
+                        return float(default)
+                    val = fn(seg)
+                    if not np.isfinite(val):
+                        return float(default)
+                    return float(val)
+
+                key_prefix = f"corner_{new_idx}_{phase_name}_"
+
+                if understeer_deg is not None:
+                    out[key_prefix + "understeer_deg"] = round(
+                        _stat(understeer_deg, np.mean), 3
+                    )
+                if body_slip_deg is not None:
+                    out[key_prefix + "body_slip_deg"] = round(
+                        _stat(body_slip_deg, lambda a: np.max(np.abs(a))), 3
+                    )
+                out[key_prefix + "lat_g"] = round(
+                    _stat(lat_g, lambda a: np.mean(np.abs(a))), 3
+                )
+                out[key_prefix + "long_g"] = round(_stat(long_g, np.mean), 3)
+                out[key_prefix + "throttle_pos"] = round(_stat(throttle, np.mean), 3)
+                out[key_prefix + "brake_pos"] = round(_stat(brake, np.mean), 3)
+
+        return out
+    except Exception:
+        # Any failure (missing channel, malformed lap, etc.) → empty dict.
+        # Caller is responsible for accepting the empty case.
+        return {}

@@ -1,14 +1,15 @@
 {
   "car": "cadillac",
-  "total_sessions": 3,
+  "total_sessions": 15,
   "tracks_included": [
-    "Silverstone Circuit"
+    "Silverstone Circuit",
+    "WeatherTech Raceway Laguna Seca"
   ],
-  "aero_compression_front_mm": 11.149962870279948,
-  "aero_compression_rear_mm": 25.92843364079793,
-  "roll_gradient_global_deg_per_g": null,
-  "m_eff_front_global_kg": 286.8624792247622,
+  "aero_compression_front_mm": 10.75882339477539,
+  "aero_compression_rear_mm": 20.766922810872398,
+  "roll_gradient_global_deg_per_g": 1.8489285714285715,
+  "m_eff_front_global_kg": 151.41900798437766,
   "anomalies": [],
-  "confidence": "low",
-  "last_updated": "2026-03-18T05:06:30.546814+00:00"
+  "confidence": "high",
+  "last_updated": "2026-04-28T06:52:57.099192+00:00"
 }

@@ -309,12 +309,17 @@ def _extract_target_maps(base_result: SolveChainResult, car: Any | None = None) 
             "static_front_rh_mm": s1.static_front_rh_mm,
             "static_rear_rh_mm": s1.static_rear_rh_mm,
         } if s1 is not None else {},
+        # Step 2 emits an empty target dict when (a) calibration gate skipped
+        # the step (s2 is None) OR (b) the car has no heave/third architecture
+        # and HeaveSolution.null() was used (present=False). An empty dict
+        # cleanly skips the snap pass for these fields downstream — see
+        # _snap_targets_to_garage which only reads keys that are present.
         "step2": {
             "front_heave_nmm": public_output_value(car, "front_heave_nmm", s2.front_heave_nmm),
             "rear_third_nmm": public_output_value(car, "rear_third_nmm", s2.rear_third_nmm),
             "perch_offset_front_mm": s2.perch_offset_front_mm,
             "perch_offset_rear_mm": s2.perch_offset_rear_mm,
-        } if s2 is not None else {},
+        } if s2 is not None and getattr(s2, "present", True) else {},
         "step3": {
             "front_torsion_od_mm": public_output_value(car, "front_torsion_od_mm", s3.front_torsion_od_mm),
             "rear_spring_rate_nmm": public_output_value(car, "rear_spring_rate_nmm", s3.rear_spring_rate_nmm),
@@ -690,13 +695,11 @@ def _apply_family_state_adjustments(
         )
 
     arb_delta = int(round((entry_push + high_speed_push - exit_instability) * family_intensity))
-    # Clamp to the car-specific rear ARB blade range, NOT a hardcoded 1-6
-    # (which was a BMW assumption). Porsche's rear ARB has blade range 1-16;
-    # driver-validated operating point is blade=10 — unreachable with hi=6.
-    _arb_hi = (
-        int(getattr(getattr(car, "arb", None), "rear_blade_count", 6))
-        if car is not None else 6
-    ) or 6
+    # Clamp to the car-specific rear ARB blade range — never a hardcoded value.
+    # Porsche's rear ARB has 1-16 blades (operating point ~6); BMW/Cadillac/Acura/Ferrari are 1-5.
+    if car is None or car.arb is None:
+        raise ValueError("ARB-blade clamping requires car.arb; got None")
+    _arb_hi = int(car.arb.rear_blade_count)
     _adjust_integer(targets["step4"], "rear_arb_blade_start", arb_delta, lo=1, hi=_arb_hi)
     _adjust_integer(targets["step4"], "rarb_blade_slow_corner", arb_delta, lo=1, hi=_arb_hi)
     _adjust_integer(targets["step4"], "rarb_blade_fast_corner", arb_delta, lo=1, hi=_arb_hi)
@@ -706,14 +709,54 @@ def _apply_family_state_adjustments(
     _adjust_numeric(targets["step5"], "front_toe_mm", -0.05 * entry_push * family_intensity, decimals=3)
 
     if targets.get("step6"):
+        # Damper adjustment bounds and direction are per-car. The sign convention
+        # of "stiffer = +N clicks" only holds for higher-stiffer polarity (BMW,
+        # Aston, Porsche 992, Mercedes, Ferrari, Acura, Lambo, Mustang). For
+        # inverted-polarity cars (Audi R8 LMS, McLaren 720S, Corvette Z06) the
+        # same intent of "+N stiffer" must invert to "-N clicks". Bounds also
+        # come from the per-car damper range (e.g. Porsche 992 = 0-12, BMW =
+        # 0-11; future inverted cars: McLaren HS = 0-50).
+        d = getattr(car, "damper", None) if car is not None else None
+        polarity = getattr(d, "click_polarity", "higher_stiffer")
+        polarity_sign = 1 if polarity == "higher_stiffer" else -1
+        hs_comp_lo, hs_comp_hi = (
+            d.hs_comp_range if d is not None else (0, 20)
+        )
+        ls_rbd_lo, ls_rbd_hi = (
+            d.ls_rbd_range if d is not None else (0, 20)
+        )
         for corner_name in ("lf", "rf"):
             if corner_name in targets["step6"]:
-                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * front_support * family_intensity)), lo=0, hi=20)
-                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round((front_support + front_lock) * family_intensity)), lo=0, hi=20)
+                _adjust_integer(
+                    targets["step6"][corner_name],
+                    "hs_comp",
+                    polarity_sign * int(round(1.5 * front_support * family_intensity)),
+                    lo=hs_comp_lo,
+                    hi=hs_comp_hi,
+                )
+                _adjust_integer(
+                    targets["step6"][corner_name],
+                    "ls_rbd",
+                    polarity_sign * int(round((front_support + front_lock) * family_intensity)),
+                    lo=ls_rbd_lo,
+                    hi=ls_rbd_hi,
+                )
         for corner_name in ("lr", "rr"):
             if corner_name in targets["step6"]:
-                _adjust_integer(targets["step6"][corner_name], "hs_comp", int(round(1.5 * rear_support * family_intensity)), lo=0, hi=20)
-                _adjust_integer(targets["step6"][corner_name], "ls_rbd", int(round(rear_support * family_intensity)), lo=0, hi=20)
+                _adjust_integer(
+                    targets["step6"][corner_name],
+                    "hs_comp",
+                    polarity_sign * int(round(1.5 * rear_support * family_intensity)),
+                    lo=hs_comp_lo,
+                    hi=hs_comp_hi,
+                )
+                _adjust_integer(
+                    targets["step6"][corner_name],
+                    "ls_rbd",
+                    polarity_sign * int(round(rear_support * family_intensity)),
+                    lo=ls_rbd_lo,
+                    hi=ls_rbd_hi,
+                )
 
     _adjust_numeric(targets["supporting"], "brake_bias_pct", -0.3 * front_lock * family_intensity, decimals=3)
     _adjust_numeric(targets["supporting"], "brake_bias_target", -0.5 * front_lock * family_intensity, decimals=3)
@@ -1078,11 +1121,122 @@ def generate_candidate_families(
             candidate.notes.append(f"Context penalty applied for {family}: -{family_penalty[family]:.2f}.")
         candidates.append(candidate)
 
+    # ── Coherence filter (Mission Principle 6) ───────────────────────────
+    # Reject candidates whose own predictions worsen on 5+ measured axes
+    # vs the driver-loaded baseline UNLESS the score's positive gains
+    # (safety/stability/performance × score-unit weight) outweigh the
+    # coherence penalty by ≥ 2x. This is a hard guard that prevents
+    # orthogonal terms (envelope, uncertainty, family priors) from rescuing
+    # a candidate that is incoherent on its own physics predictions.
+    skipped_coherence: list[tuple[str, float, int]] = []
+    for candidate in candidates:
+        if candidate.score is None or not candidate.selectable:
+            continue
+        coh_penalty = float(getattr(candidate.score, "coherence_penalty_ms", 0.0))
+        if coh_penalty <= 0.0:
+            continue
+        # Translate coherence penalty into score-unit equivalent (100ms ↔ 0.10),
+        # then compare to the candidate's "positive gains" (its 0–1 score
+        # before the coherence drop). If the penalty exceeds half the gains,
+        # mark non-selectable so it cannot win.
+        coh_score_drop = min(0.50, coh_penalty / 1000.0)
+        # candidate.score.total ALREADY had coh_score_drop subtracted in
+        # score_from_prediction(); back out for the gain comparison.
+        positive_gains = candidate.score.total + coh_score_drop
+        n_worsen = len(getattr(candidate.score, "coherence_worsening", ()))
+        if coh_score_drop > positive_gains * 0.5:
+            candidate.selectable = False
+            candidate.status = "coherence_rejected"
+            candidate.notes.append(
+                f"REJECTED for coherence: predicted to worsen on {n_worsen} "
+                f"axes (penalty {coh_penalty:.0f}ms > 0.5× positive gains "
+                f"{positive_gains:.2f})."
+            )
+            skipped_coherence.append((candidate.family, coh_penalty, n_worsen))
+
     selectable = [candidate for candidate in candidates if candidate.selectable]
     if selectable:
         winner = max(selectable, key=lambda candidate: candidate.score.total if candidate.score is not None else -1.0)
         winner.selected = True
+        if skipped_coherence and winner.score is not None:
+            winner.notes.append(
+                "Coherence filter skipped "
+                f"{len(skipped_coherence)} candidate(s): "
+                + ", ".join(
+                    f"{fam} (penalty {pen:.0f}ms, {nw} worsening)"
+                    for fam, pen, nw in skipped_coherence
+                )
+            )
     return candidates
+
+
+def pareto_reselect_winner(
+    candidates: list[SetupCandidate],
+    *,
+    worse_threshold: float = 1e-6,
+) -> SetupCandidate | None:
+    """Re-select the winning candidate to prefer Pareto-dominant ones.
+
+    Unit P1: when ``corner_impacts`` have been attached to candidates (by the
+    pipeline's per-corner causal block), prefer the highest-scoring candidate
+    that does NOT make any corner-phase metric worse than baseline. If no
+    Pareto-dominant candidate exists, the original score-based winner is kept
+    and a tradeoff note is appended to its ``notes`` list.
+
+    Returns the (possibly re-selected) winner, or None if there are no
+    selectable candidates. Mutates ``candidate.selected`` on the survivors.
+    """
+    selectable = [c for c in candidates if c.selectable]
+    if not selectable:
+        return None
+    # Gather candidates that have any corner_impacts data attached.
+    with_impacts = [c for c in selectable if getattr(c, "corner_impacts", None)]
+    # No impact data anywhere — nothing to do; respect the existing selection.
+    if not with_impacts:
+        return next((c for c in selectable if c.selected), None) or max(
+            selectable,
+            key=lambda c: c.score.total if c.score is not None else -1.0,
+        )
+
+    try:
+        from solver.corner_causal import find_pareto_dominant, pareto_summary
+    except Exception:
+        return next((c for c in selectable if c.selected), None)
+
+    pareto_dominant: list[SetupCandidate] = list(
+        find_pareto_dominant(with_impacts, worse_threshold=worse_threshold)
+    )
+
+    # Clear all selections, then choose:
+    #  - prefer Pareto-dominant candidate with highest score, else
+    #  - fall back to highest score with a tradeoff note.
+    for cand in candidates:
+        cand.selected = False
+    if pareto_dominant:
+        winner = max(
+            pareto_dominant,
+            key=lambda c: c.score.total if c.score is not None else -1.0,
+        )
+        winner.selected = True
+        winner.notes.append(
+            "Pareto-dominant: no per-corner metric regresses vs baseline."
+        )
+        return winner
+    # No Pareto-dominant candidate. Pick by score and surface tradeoff.
+    winner = max(
+        selectable,
+        key=lambda c: c.score.total if c.score is not None else -1.0,
+    )
+    winner.selected = True
+    impacts = getattr(winner, "corner_impacts", None) or {}
+    if impacts:
+        summary = pareto_summary(impacts, worse_threshold=worse_threshold)
+        winner.notes.append(
+            f"No Pareto-dominant candidate; tradeoff: "
+            f"{summary.improved} corner-phase metric(s) improve, "
+            f"{summary.worsened} worsen."
+        )
+    return winner
 
 
 def candidate_to_dict(candidate: SetupCandidate) -> dict[str, Any]:
@@ -1219,6 +1373,9 @@ def candidate_to_dict(candidate: SetupCandidate) -> dict[str, Any]:
                 "confidence": candidate.score.confidence,
                 "disruption_cost": candidate.score.disruption_cost,
                 "notes": candidate.score.notes,
+                "coherence_penalty_ms": getattr(candidate.score, "coherence_penalty_ms", 0.0),
+                "coherence_worsening": list(getattr(candidate.score, "coherence_worsening", ()) or ()),
+                "coherence_improving": list(getattr(candidate.score, "coherence_improving", ()) or ()),
             }
             if candidate.score is not None
             else None

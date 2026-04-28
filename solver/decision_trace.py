@@ -266,6 +266,7 @@ def _legacy_build_parameter_decisions(
     supporting: Any,
     legality: Any | None = None,
     fallback_reasons: list[str] | None = None,
+    car: Any | None = None,
 ) -> list[ParameterDecision]:
     decisions: list[ParameterDecision] = []
     fallback_text = "; ".join(fallback_reasons or [])
@@ -273,7 +274,36 @@ def _legacy_build_parameter_decisions(
     if legality is not None:
         legality_text = "garage validated" if legality.valid else "garage validation warning"
 
+    # Architectural skip list: parameters that DO NOT exist on this car's
+    # suspension architecture. Producing a row for them — even one that gets
+    # silently dropped by the AttributeError fallback below — risks confusing
+    # downstream consumers and obscures missing setup fields. We compute the
+    # skip set from car.suspension_arch (when available) and filter specs
+    # explicitly. The previous behaviour was to call the lambda, raise
+    # AttributeError on a GT3 setup (no Heave section), and silently drop
+    # the row — which is correct but produces no audit trail.
+    skip_keys: set[str] = set()
+    if car is not None:
+        arch = getattr(car, "suspension_arch", None)
+        if arch is not None:
+            if not getattr(arch, "has_heave_third", True):
+                skip_keys.update({
+                    "front_heave_nmm",
+                    "front_heave_index",
+                    "front_heave_perch_mm",
+                    "rear_third_nmm",
+                    "rear_heave_index",
+                    "rear_third_perch_mm",
+                })
+            if not getattr(arch, "has_front_torsion_bar", True):
+                skip_keys.update({
+                    "front_torsion_od_mm",
+                    "front_torsion_bar_index",
+                })
+
     for spec in _legacy_parameter_spec(car_name):
+        if spec.get("parameter") in skip_keys:
+            continue
         try:
             current_value = spec["current"](current_setup, step1, step2, step3, step4, step5, supporting)
             proposed_value = spec["proposed"](current_setup, step1, step2, step3, step4, step5, supporting)
@@ -471,6 +501,7 @@ def build_parameter_decisions(
     supporting: Any,
     legality: Any | None = None,
     fallback_reasons: list[str] | None = None,
+    car: Any | None = None,
 ) -> list[ParameterDecision]:
     if car_name.lower() != "bmw":
         return _legacy_build_parameter_decisions(
@@ -486,6 +517,7 @@ def build_parameter_decisions(
             supporting=supporting,
             legality=legality,
             fallback_reasons=fallback_reasons,
+            car=car,
         )
 
     decisions: list[ParameterDecision] = []

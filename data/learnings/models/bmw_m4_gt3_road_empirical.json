@@ -1,0 +1,22 @@
+{
+  "car": "bmw_m4_gt3",
+  "track": "Road Atlanta",
+  "relationships": {},
+  "last_updated": "2026-04-28T00:59:48.953207+00:00",
+  "observation_count": 2,
+  "most_sensitive_parameters": [],
+  "corrections": {
+    "roll_distribution_proxy_mean": 0.4457802793787847,
+    "roll_distribution_proxy_std": 0.0015373793428211935,
+    "roll_distribution_proxy_sample_count": 2,
+    "lltd_measured_mean": 0.4457802793787847,
+    "lltd_measured_std": 0.0015373793428211935,
+    "lltd_is_proxy": true,
+    "aero_compression_front_mean_mm": 4.834004974365229,
+    "aero_compression_front_std_mm": 0.040889739990234375,
+    "aero_compression_rear_mean_mm": 17.37987289428711,
+    "aero_compression_rear_std_mm": 0.3971961975097642,
+    "lap_time_surrogate_regularized": 1.0,
+    "lap_time_surrogate_sample_weight": 0.0
+  }
+}

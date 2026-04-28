@@ -3,15 +3,25 @@
 This file contains car-specific setup knowledge. Sections marked with **[VERIFIED]** include real parameter values extracted from actual setup files (Sebring International, 2026 Season 1).
 
 ## Table of Contents
+
+### GTP / Hypercar
 1. [Critical Architecture Differences](#architecture)
 2. [BMW M Hybrid V8](#bmw)
 3. [Ferrari 499P](#ferrari)
 4. [Cadillac V-Series.R](#cadillac)
 5. [Porsche 963](#porsche)
 6. [Acura ARX-06](#acura)
-7. [Cross-Car Rankings](#rankings)
-8. [Track Classification](#tracks)
-9. [Wet/Rain Setup](#wet)
+
+### GT3 (added 2026-04-27)
+7. [GT3 Class Architecture](#gt3-architecture)
+8. [BMW M4 GT3 EVO](#bmw-m4-gt3)
+9. [Aston Martin Vantage GT3 EVO](#aston-vantage-gt3)
+10. [Porsche 911 GT3 R (992)](#porsche-992-gt3r)
+
+### Cross-Car
+11. [Cross-Car Rankings](#rankings)
+12. [Track Classification](#tracks)
+13. [Wet/Rain Setup](#wet)
 
 ---
 
@@ -400,6 +410,168 @@ REAR 3rd:     4 params (LS comp, HS comp, LS rbd, HS rbd) -- NO HS slope
 3. **Roll dampers not physics-tuned:** Using baseline values only. Need lateral g spectrum data for proper roll damping calculation.
 4. **Torsion bar C constant:** Currently borrowed from BMW (0.0008036). ORECA likely differs; collect 5+ varied OD garage screenshots to calibrate.
 5. **Front ARB setting (Connected/Disconnected):** Field registered but not yet physics-modeled in the solver. The `front_arb_setting` field selects between two modes; the ARB solver currently treats this as always-connected.
+
+---
+
+## GT3 Class Architecture {#gt3-architecture}
+
+**[VERIFIED]** GT3 IBT corpus sampled 2026-04-26 (BoP **2026 Season 2 Patch 3**). Three cars onboarded end-to-end through the pipeline as of 2026-04-27 (Wave 1–8). Calibration is **intercept-only** until varied-spring IBT sweeps are captured; see `docs/calibration_guide.md` GT3 Onboarding section.
+
+### Shared GT3 invariants (`SuspensionArchitecture.GT3_COIL_4WHEEL`)
+- **4 paired coil springs** (LF==RF, LR==RR). No heave spring, no third spring, no torsion bar.
+- **Bump rubber gap (mm)** controlled per-corner — replaces the GTP "perch offset" + "pushrod offset" knobs.
+- **Splitter height (mm)** controls front aero balance shift directly.
+- **Pipeline dispatch**: Step 2 (Heave/Third) is `not_applicable`. Step 1 runs in **balance-only** mode (no L/D objective). Step 3 takes the front-coil + frequency-isolated rear-coil arm.
+- **Damper polarity**: all 3 sampled cars use `click_polarity="higher_stiffer"` — same direction as BMW GTP.
+- **Damper writes**: per-axle (8 channels) not per-corner (16 channels). L/F+R/F clicks averaged on .sto write.
+- **Stable IBT identity**: `iracing_car_path` (CarPath) — locale-independent, EVO-suffix-free.
+
+### GT3 setup parameter rename map (vs GTP)
+| GTP parameter | GT3 parameter | Notes |
+|---|---|---|
+| `front_heave_spring_nmm` | (n/a) | No heave spring on GT3 |
+| `rear_third_spring_nmm` | (n/a) | No third spring on GT3 |
+| `front_torsion_od_idx` | (n/a) | No front torsion bar on GT3 |
+| `front_pushrod_offset_mm` | `front_bump_rubber_gap_mm` | Stiffness via gap-to-rubber |
+| `rear_pushrod_offset_mm` | `rear_bump_rubber_gap_mm` | Stiffness via gap-to-rubber |
+| `front_heave_perch_mm` | `splitter_height_mm` | Aero balance shifter |
+| `front_corner_spring_nmm` (n/a on most GTPs) | `front_corner_spring_nmm` | Discrete steps from `front_spring_range_nmm` |
+
+---
+
+## BMW M4 GT3 EVO {#bmw-m4-gt3}
+
+**[VERIFIED] Spielberg GP, BoP 2026 S2 P3 (driver-loaded baseline)**
+
+### Identity
+- **iRacing CarScreenName:** `BMW M4 GT3 EVO`
+- **iRacing CarPath / `iracing_car_path`:** `bmwm4gt3`
+- **Canonical key:** `bmw_m4_gt3`
+- **Setup writer dict:** `_BMW_M4_GT3_PARAM_IDS` (~45 entries, `output/setup_writer.py:506-583`)
+
+### Architecture
+- 4 paired coil springs, no heave/third/torsion. `front_spring_range_nmm = (190, 340)` step 10, base 220 N/mm.
+- ARB encoding: **paired blades** (`Chassis.FrontBrakes.ArbBlades` and `Chassis.Rear.ArbBlades`).
+- Damper range `(0, 20)` clicks, polarity higher_stiffer.
+- TC/ABS labels: `"n (TC)"` / `"n (ABS)"`.
+- Rear toe: per-wheel (`Chassis.LeftRear.ToeIn`, `Chassis.RightRear.ToeIn`).
+- Fuel section: `Chassis.Rear.FuelLevel`. Capacity 100 L.
+
+### LLTD target
+- `measured_lltd_target = 0.51` (FR baseline; balanced front/rear weight transfer).
+
+### Driver-loaded baseline (Spielberg, lap 1, 2026-04-26)
+- **Springs:** Front 252 N/mm, Rear 179 N/mm (driver-tuned; range center is 220 / 180).
+- **Bump rubber gap:** Front 15 mm, Rear 52 mm.
+- **Splitter height:** 70.0 mm.
+- **ARB:** Front 5 / Rear 4 blades.
+- **Camber:** Front -4.0°, Rear -2.8°.
+- **Toe (front total):** -2.8 mm. Toe rear LR/RR: +1.5 / +1.5 mm.
+- **Diff preload:** 100 Nm. Friction faces: 8.
+- **TC/ABS:** TC 4 / ABS 6.
+- **Brake bias:** 52.0%. Master cyl 17.8 / 17.8 mm. Pads: Low friction.
+- **Tyre pressures:** all 159 kPa cold.
+- **Fuel:** 100 L. Wing: -2°. Front DF: 41.2%.
+- **Dampers (per-axle, clicks):** Front LSC 7 / HSC 3 / LSR 5 / HSR 3 ; Rear LSC 6 / HSC 4 / LSR 7 / HSR 5.
+
+### IBT corpus
+- `data/gt3_ibts/bmwm4gt3_spielberg gp 2026-04-26 21-34-43.ibt`
+- `data/gt3_ibts/bmwm4gt3_nurburgring combined 2026-04-26 21-56-20.ibt` (byte-identical setup; **cannot back-solve aero compression** with same setup at 2 tracks)
+
+### Calibration gaps (W7.2 unblocks once captured)
+1. **Varied-spring sweeps at single track** — need 5+ IBTs at Spielberg with `front_corner_spring_nmm` varied across 190 → 340 N/mm to fit `inv_front_corner_spring → front_rh_std` regressions.
+2. **Aero compression** — currently no calibrated coefficients; rake solver uses car-default targets.
+3. **LLTD** — target value 0.51 borrowed from physics formula; no direct measurement.
+
+---
+
+## Aston Martin Vantage GT3 EVO {#aston-vantage-gt3}
+
+**[VERIFIED] Spielberg GP, BoP 2026 S2 P3 (driver-loaded baseline)**
+
+### Identity
+- **iRacing CarScreenName:** `Aston Martin Vantage GT3 EVO`
+- **iRacing CarPath / `iracing_car_path`:** `amvantageevogt3`
+- **Canonical key:** `aston_martin_vantage_gt3`
+- **Setup writer dict:** `_ASTON_MARTIN_VANTAGE_GT3_PARAM_IDS` (`output/setup_writer.py:604-688`)
+
+### Architecture
+- 4 paired coil springs. `front_spring_range_nmm = (180, 320)`.
+- ARB encoding: **paired blades** under `Chassis.FrontBrakesLights.FarbBlades` (note: not `ArbBlades` — Aston-specific YAML hierarchy) and `Chassis.Rear.RarbBlades`.
+- Damper range `(0, 20)` clicks, polarity higher_stiffer.
+- TC label: `"n (TC SLIP)"`. ABS label: `"n (ABS)"`.
+- Rear toe: per-wheel.
+- Fuel section: `Chassis.Rear.FuelLevel`. Capacity 106 L.
+- **Aston-only fields:** `EpasSetting` (electronic power steering), `ThrottleResponse`, `EnduranceLights`, `NightLedStripColor`.
+
+### LLTD target
+- `measured_lltd_target = 0.53` (slight FR bias).
+
+### Driver-loaded baseline (Spielberg, lap 1, 2026-04-26)
+- **Springs:** Front 200 N/mm, Rear 180 N/mm.
+- **Bump rubber gap:** Front 17 mm, Rear 54 mm.
+- **Splitter height:** 70.4 mm.
+- **ARB:** Front 5 / Rear 5 blades.
+- **Camber:** Front -4.0°, Rear -2.8°.
+- **Toe (front total):** -3.0 mm. Toe rear LR/RR: +1.5 / +1.5 mm.
+- **Diff preload:** 110 Nm. Friction faces: 10.
+- **TC/ABS:** TC 5 / ABS 5. EPAS 3. Throttle response 4 (RED).
+- **Brake bias:** 55.8%. Master cyl 19.1 / 19.1 mm. Pads: Medium friction.
+- **Tyre pressures:** all 159 kPa cold.
+- **Fuel:** 106 L. Wing: 5°. Front DF: 40.5%.
+- **Dampers (per-axle, clicks):** Front LSC 9 / HSC 11 / LSR 9 / HSR 11 ; Rear LSC 9 / HSC 11 / LSR 9 / HSR 11.
+
+### IBT corpus
+- `data/gt3_ibts/amvantageevogt3_spielberg gp 2026-04-26 21-25-55.ibt`
+
+### Calibration gaps
+1. **Single IBT** — every regression target needs at least 5 varied sessions.
+2. **Aero compression** — no calibrated coefficients.
+
+---
+
+## Porsche 911 GT3 R (992) {#porsche-992-gt3r}
+
+**[VERIFIED] Spielberg GP, BoP 2026 S2 P3 (driver-loaded baseline)**
+
+### Identity
+- **iRacing CarScreenName:** `Porsche 911 GT3 R (992)`
+- **iRacing CarPath / `iracing_car_path`:** `porsche992rgt3`
+- **Canonical key:** `porsche_992_gt3r`
+- **Setup writer dict:** `_PORSCHE_992_GT3R_PARAM_IDS` (`output/setup_writer.py:691-768`)
+
+### Architecture
+- 4 paired coil springs. `front_spring_range_nmm = (170, 320)`.
+- ARB encoding: **integer settings** (`Chassis.FrontBrakesLights.ArbSetting` and `Chassis.Rear.RarbSetting`, range 1–11). NOT blade-based.
+- Damper range `(0, 12)` clicks (lower than BMW/Aston's 20), polarity higher_stiffer.
+- TC label: `"n (TC-LAT)"`. ABS label: `"n (ABS)"`.
+- **Rear toe: paired** (`Chassis.Rear.TotalToeIn`, single value), unlike BMW/Aston per-wheel.
+- **Fuel section: `Chassis.FrontBrakesLights.FuelLevel`** (NOT `Chassis.Rear.FuelLevel` — Porsche-specific quirk; was a writer bug source). Capacity 99 L.
+- **Porsche-only fields:** `ThrottleShapeSetting` (under `Chassis.InCarAdjustments`, not `FrontBrakesLights`; integer not indexed-label), `DashDisplayPage`.
+
+### LLTD target
+- `measured_lltd_target = 0.45` (RR adjustment per audit `solver-rake-corner-arb.md:350-365`). **Lower than the OptimumG formula prediction** — empirical measurement is more authoritative.
+
+### Driver-loaded baseline (Spielberg, lap 1, 2026-04-26)
+- **Springs:** Front 220 N/mm, Rear 260 N/mm. (Note: rear stiffer than front — Porsche-typical.)
+- **Bump rubber gap:** Front 30 mm, Rear 51 mm.
+- **Splitter height:** 76.6 mm.
+- **ARB:** Front 7 / Rear 7 (integer, not blades).
+- **Camber:** Front -4.0°, Rear -3.0°.
+- **Toe (front total):** -3.9 mm. Toe rear total: +3.0 mm (paired).
+- **Diff preload:** 110 Nm. Friction faces: 8.
+- **TC/ABS:** TC 3 / ABS 5. ThrottleShape 3. DashDisplayPage: Race 2.
+- **Brake bias:** 51.7%. Master cyl 20.2 / 18.8 mm (asymmetric — Porsche-specific). Pads: Low friction.
+- **Tyre pressures:** all 159 kPa cold.
+- **Fuel:** 99 L. Wing: 5.7°. Front DF: 36.0%.
+- **Dampers (per-axle, clicks):** Front LSC 8 / HSC 12 / LSR 6 / HSR 9 ; Rear LSC 8 / HSC 3 / LSR 12 / HSR 7.
+
+### IBT corpus
+- `data/gt3_ibts/porsche992rgt3_spielberg gp 2026-04-26 21-42-39.ibt`
+
+### Calibration gaps
+1. **Single IBT** — varied-spring sweep needed.
+2. **HSC reaches damper range max (12 clicks)** in driver baseline — confirms damper range `(0, 12)` is correct, but means there's no headroom to stiffen further if the solver wants to.
 
 ---
 

@@ -168,6 +168,21 @@ def _recommend_step1(
                 ),
             ))
 
+    elif comp.parameter == "bottoming_events_rear":
+        if comp.measured > 0:
+            output.parameter_adjustments.append(ParameterAdjustment(
+                step=1,
+                parameter="rear_third_nmm",
+                current_value=0,  # Will be filled from step2 data
+                recommended_value=0,
+                units="N/mm",
+                reasoning=(
+                    f"Rear bottoming detected ({int(comp.measured)} events). "
+                    f"Either increase rear third spring stiffness or raise "
+                    f"rear static ride height."
+                ),
+            ))
+
     elif comp.parameter == "vortex_burst_events":
         if comp.measured > 0:
             output.parameter_adjustments.append(ParameterAdjustment(

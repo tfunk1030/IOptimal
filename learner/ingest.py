@@ -10,9 +10,10 @@ This is the main entry point for the learning system. Each call:
 7. Prints what was learned
 
 Usage:
-    python -m learner.ingest --car bmw --ibt path/to/session.ibt
+    python -m learner.ingest --car bmw --ibt path/to/session.ibt          # all-laps default
     python -m learner.ingest --car bmw --ibt path/to/session.ibt --wing 17
-    python -m learner.ingest --car bmw --ibt path/to/session.ibt --all-laps
+    python -m learner.ingest --car bmw --ibt path/to/session.ibt --single-lap   # legacy: best lap only
+    python -m learner.ingest --car bmw --ibt path/to/session.ibt --lap 5        # specific lap (single)
     python -m learner.ingest --status                    # show what we know
     python -m learner.ingest --car bmw --track sebring --recall  # knowledge dump
 """
@@ -44,13 +45,15 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     Follows the same flow as pipeline/produce.py but returns intermediate
     objects instead of writing output files.
 
-    Returns: (track_profile, measured, current_setup, driver, diagnosis, corners, ibt)
+    Returns:
+        (track_profile, measured, current_setup, driver, diagnosis,
+         corners, ibt, corner_phase_metrics)
     """
     from analyzer.adaptive_thresholds import compute_adaptive_thresholds
     from analyzer.diagnose import diagnose
     from analyzer.driver_style import analyze_driver, refine_driver_with_measured
     from analyzer.extract import extract_measurements
-    from analyzer.segment import segment_lap
+    from analyzer.segment import compute_corner_phase_metrics, segment_lap
     from analyzer.setup_reader import CurrentSetup
     from analyzer.setup_schema import apply_live_control_overrides
     from car_model.cars import get_car
@@ -97,7 +100,15 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     thresholds = compute_adaptive_thresholds(track, car, driver)
     diag = diagnose(measured, setup, car, thresholds)
 
-    return track, measured, setup, driver, diag, corners, ibt
+    # Per-corner per-phase metrics (Unit D3). Best-effort; empty on any error.
+    try:
+        corner_phase_metrics = compute_corner_phase_metrics(
+            ibt, start, end, car=car
+        )
+    except Exception:
+        corner_phase_metrics = {}
+
+    return track, measured, setup, driver, diag, corners, ibt, corner_phase_metrics
 
 
 def _update_auto_calibration(
@@ -220,7 +231,7 @@ def ingest_ibt(
     # ── 1. Run analyzer ──────────────────────────────────────────────
     if verbose:
         print("Phase 1: Analyzing IBT...")
-    track, measured, setup, driver, diag, corners, ibt = _run_analyzer(
+    track, measured, setup, driver, diag, corners, ibt, corner_phase_metrics = _run_analyzer(
         car_name, ibt_path, wing, lap
     )
 
@@ -241,6 +252,7 @@ def ingest_ibt(
         driver_profile_obj=driver,
         diagnosis_obj=diag,
         corners=corners,
+        corner_phase_metrics=corner_phase_metrics,
     )
 
     store.save_observation(session_id, obs.to_dict())
@@ -405,6 +417,151 @@ def ingest_ibt(
     return result
 
 
+def _apply_within_ibt_noise_floor(
+    store: KnowledgeStore,
+    lap_results: list[dict],
+    *,
+    verbose: bool = True,
+) -> None:
+    """Compute std-of-means across per-lap observations from one IBT and write
+    the noise-floor fields back to each observation.
+
+    The same setup ran each lap, so cross-lap variance in mean front_rh /
+    rear_rh / lap_time is measurement noise, NOT setup effect. The fitter
+    can use this as a per-IBT noise floor.
+    """
+    import statistics
+
+    stored_ids = [r.get("session_id") for r in lap_results
+                  if r.get("observation_stored") and r.get("session_id")]
+    if len(stored_ids) < 2:
+        return  # Single observation: noise floor is meaningless.
+
+    obs_list: list[dict] = []
+    for sid in stored_ids:
+        data = store.load_observation(sid)
+        if data:
+            obs_list.append(data)
+    if len(obs_list) < 2:
+        return
+
+    front_rh_means = [o.get("telemetry", {}).get("dynamic_front_rh_mm") for o in obs_list]
+    rear_rh_means = [o.get("telemetry", {}).get("dynamic_rear_rh_mm") for o in obs_list]
+    lap_times = [o.get("performance", {}).get("best_lap_time_s") for o in obs_list]
+
+    def _std(xs):
+        clean = [float(x) for x in xs if isinstance(x, (int, float)) and x > 0]
+        if len(clean) < 2:
+            return None
+        return float(statistics.pstdev(clean))
+
+    front_rh_std = _std(front_rh_means)
+    rear_rh_std = _std(rear_rh_means)
+    lap_time_std = _std(lap_times)
+    n_laps = len(obs_list)
+
+    for sid, data in zip(stored_ids, obs_list):
+        data["setup_noise_floor_front_rh_mm"] = front_rh_std
+        data["setup_noise_floor_rear_rh_mm"] = rear_rh_std
+        data["setup_noise_floor_lap_time_s"] = lap_time_std
+        data["setup_noise_floor_n_laps"] = n_laps
+        store.save_observation(sid, data)
+
+    if verbose:
+        parts = []
+        if front_rh_std is not None:
+            parts.append(f"front_rh σ={front_rh_std:.3f}mm")
+        if rear_rh_std is not None:
+            parts.append(f"rear_rh σ={rear_rh_std:.3f}mm")
+        if lap_time_std is not None:
+            parts.append(f"lap_time σ={lap_time_std:.3f}s")
+        if parts:
+            print(f"  [noise-floor] across {n_laps} laps: " + ", ".join(parts))
+
+
+def _append_per_lap_calibration_points(
+    *,
+    car_name: str,
+    ibt_path: str,
+    valid_laps: list,
+    base_session_id: str,
+    verbose: bool = True,
+) -> None:
+    """Append one CalibrationPoint per valid lap (Unit D1).
+
+    The IBT-aggregated CalibrationPoint (``lap_number=0``) is appended by
+    ``_update_auto_calibration`` on the legacy path; this helper adds
+    per-lap rows on top so the regression fitter sees per-lap variance
+    (fuel burn, tyre thermals, driver consistency) instead of collapsing
+    every lap to a per-IBT mean.
+
+    Each per-lap point gets a unique session_id (``{base}__lap_{N}``) so
+    duplicate-detection on subsequent ingest passes works correctly.
+    Setup features hash identically across laps from the same IBT — the
+    ``lap_number`` slot in ``_setup_key`` disambiguates them so the
+    regression sees N rows instead of 1.
+    """
+    try:
+        from car_model.auto_calibrate import (
+            CalibrationPoint,
+            extract_point_from_ibt,
+            load_calibration_points,
+            save_calibration_points,
+        )
+    except Exception as exc:
+        if verbose:
+            print(f"  [calibrate per-lap] skipped: {exc}")
+        return
+
+    try:
+        cal_points = load_calibration_points(car_name)
+    except Exception as exc:
+        if verbose:
+            print(f"  [calibrate per-lap] load failed: {exc}")
+        return
+
+    existing_ids = {pt.session_id for pt in cal_points}
+    appended = 0
+    skipped = 0
+
+    for lap_num, lap_time, _start, _end in valid_laps:
+        lap_session_id = f"{base_session_id}__lap_{lap_num}"
+        if lap_session_id in existing_ids:
+            skipped += 1
+            continue
+
+        try:
+            lap_pt = extract_point_from_ibt(ibt_path, car_name, lap_idx=int(lap_num))
+        except Exception as exc:
+            if verbose:
+                print(f"  [calibrate per-lap] lap {lap_num} extract failed: {exc}")
+            continue
+        if lap_pt is None or not isinstance(lap_pt, CalibrationPoint):
+            continue
+
+        lap_pt.session_id = lap_session_id
+        lap_pt.lap_number = int(lap_num)
+        lap_pt.lap_time_s = float(lap_time) or float(lap_pt.lap_time_s)
+
+        cal_points.append(lap_pt)
+        existing_ids.add(lap_session_id)
+        appended += 1
+
+    if appended > 0:
+        try:
+            save_calibration_points(car_name, cal_points)
+        except Exception as exc:
+            if verbose:
+                print(f"  [calibrate per-lap] save failed: {exc}")
+            return
+
+    if verbose:
+        print(
+            f"  [calibrate per-lap] appended {appended} per-lap point(s)"
+            + (f" (skipped {skipped} already-ingested)" if skipped else "")
+        )
+
+
 def ingest_all_laps(
     car_name: str,
     ibt_path: str,
@@ -475,7 +632,7 @@ def ingest_all_laps(
             continue
 
         try:
-            track_lap, measured, setup, driver, diag, corners, _ = _run_analyzer(
+            track_lap, measured, setup, driver, diag, corners, _, corner_phase_metrics = _run_analyzer(
                 car_name, ibt_path, wing, lap=lap_num
             )
         except (ValueError, Exception) as exc:
@@ -493,6 +650,7 @@ def ingest_all_laps(
             driver_profile_obj=driver,
             diagnosis_obj=diag,
             corners=corners,
+            corner_phase_metrics=corner_phase_metrics,
         )
 
         store.save_observation(lap_session_id, obs.to_dict())
@@ -540,6 +698,28 @@ def ingest_all_laps(
             "lap_number": lap_num,
             "lap_time_s": lap_time,
         })
+
+    # ── Within-IBT measurement-noise floor ────────────────────────────
+    # Same setup, multiple laps → std-of-means is driver/conditions/noise,
+    # not setup effect. Write back to each per-lap Observation so the
+    # auto_calibrate fitter can use it as a heteroscedastic weight.
+    _apply_within_ibt_noise_floor(store, results, verbose=verbose)
+
+    # ── Per-lap CalibrationPoints (Unit D1) ──────────────────────────
+    # Append one CalibrationPoint per valid lap so the auto-calibrate
+    # regression fitter sees per-lap variance instead of collapsing every
+    # lap to a per-IBT mean. The IBT-aggregated point (``lap_number=0``)
+    # is added by ``_update_auto_calibration`` below; the per-lap rows
+    # are additive on top. Runs BEFORE ``fit_models`` so a pre-existing
+    # failure in the learner/empirical_models pipeline cannot prevent
+    # per-lap calibration points from landing on disk.
+    _append_per_lap_calibration_points(
+        car_name=car_name,
+        ibt_path=ibt_path,
+        valid_laps=valid_laps,
+        base_session_id=base_session_id,
+        verbose=verbose,
+    )
 
     # Fit models with all accumulated observations for this car/track.
     all_obs = store.list_observations(car=car_name, track=track.track_name)
@@ -623,7 +803,7 @@ def rebuild_track_learnings(
             continue
 
         try:
-            track_profile, measured, setup, driver, diag, corners, _ibt = _run_analyzer(
+            track_profile, measured, setup, driver, diag, corners, _ibt, corner_phase_metrics = _run_analyzer(
                 car_name,
                 str(ibt_path),
             )
@@ -643,6 +823,7 @@ def rebuild_track_learnings(
             driver_profile_obj=driver,
             diagnosis_obj=diag,
             corners=corners,
+            corner_phase_metrics=corner_phase_metrics,
         )
         store.save_observation(existing["session_id"], rebuilt.to_dict())
         repaired_sessions.append(existing["session_id"])
@@ -754,9 +935,24 @@ def _generate_insights(
         if conf in ("high", "medium") and d.get("key_finding"):
             insights["key_insights"].append(d["key_finding"])
 
-    # Setup parameter trends
-    params_to_track = ["front_heave_nmm", "rear_third_nmm", "rear_arb_blade",
-                        "front_camber_deg", "rear_camber_deg"]
+    # Setup parameter trends — architecture-aware (audit DEGRADED #12).
+    # For GT3 cars, surface corner-spring + splitter trends; for GTP cars,
+    # surface heave/third trends.
+    try:
+        from car_model.cars import SuspensionArchitecture, get_car
+        car_obj = get_car(car, apply_calibration=False)
+        is_gt3 = car_obj.suspension_arch is SuspensionArchitecture.GT3_COIL_4WHEEL
+    except Exception:
+        is_gt3 = False
+    if is_gt3:
+        params_to_track = [
+            "front_corner_spring_nmm", "rear_corner_spring_nmm",
+            "rear_arb_blade", "front_camber_deg", "rear_camber_deg",
+            "splitter_height_mm",
+        ]
+    else:
+        params_to_track = ["front_heave_nmm", "rear_third_nmm", "rear_arb_blade",
+                            "front_camber_deg", "rear_camber_deg"]
     for param in params_to_track:
         values = []
         for obs in observations:
@@ -804,12 +1000,31 @@ def main():
     parser = argparse.ArgumentParser(
         description="IOptimal Learner — ingest IBT sessions and build knowledge"
     )
-    parser.add_argument("--car", type=str, help="Car name (e.g., bmw)")
+    # GT3 Phase 2 W9.1 — F9 fix. Pre-W9.1 the help string was empty; with
+    # GT3 canonical names landing in the registry the user needs to know
+    # which keys are valid. The choices list is enforced at parse time so
+    # mistyped GT3 names fail loudly.
+    from car_model.cars import _CARS as _CAR_REGISTRY
+    _car_choices = sorted(_CAR_REGISTRY.keys())
+    parser.add_argument(
+        "--car",
+        type=str,
+        choices=_car_choices,
+        help="Car canonical name. Choices: " + ", ".join(_car_choices) +
+             " (e.g., bmw, bmw_m4_gt3, porsche_992_gt3r).",
+    )
     parser.add_argument("--ibt", type=str, help="Path to IBT file")
     parser.add_argument("--wing", type=float, help="Wing angle override")
-    parser.add_argument("--lap", type=int, help="Specific lap number to analyze")
-    parser.add_argument("--all-laps", action="store_true",
-                        help="Ingest every valid lap as a separate observation")
+    parser.add_argument("--lap", type=int,
+                        help="Specific lap number to analyze (implies --single-lap)")
+    # --all-laps is now the DEFAULT behaviour. The flag is kept as a
+    # backward-compatible no-op so existing scripts don't break.
+    parser.add_argument("--all-laps", action="store_true", default=False,
+                        dest="all_laps_legacy",
+                        help="(Default behaviour — kept for backward compatibility)")
+    parser.add_argument("--single-lap", action="store_true", default=False,
+                        dest="single_lap",
+                        help="Legacy: ingest only the best lap as one observation")
     parser.add_argument("--status", action="store_true",
                         help="Show knowledge store status")
     parser.add_argument("--recall", action="store_true",
@@ -845,19 +1060,22 @@ def main():
         print("Usage: python -m learner.ingest --car bmw --ibt path/to/session.ibt")
         sys.exit(1)
 
-    if args.all_laps:
-        ingest_all_laps(
-            car_name=args.car,
-            ibt_path=args.ibt,
-            wing=args.wing,
-            store=store,
-        )
-    else:
+    # Default: all-laps. Switch to single-lap when --single-lap is passed
+    # OR when a specific --lap N is requested (single-lap by definition).
+    use_single_lap = args.single_lap or (args.lap is not None)
+    if use_single_lap:
         ingest_ibt(
             car_name=args.car,
             ibt_path=args.ibt,
             wing=args.wing,
             lap=args.lap,
+            store=store,
+        )
+    else:
+        ingest_all_laps(
+            car_name=args.car,
+            ibt_path=args.ibt,
+            wing=args.wing,
             store=store,
         )
 

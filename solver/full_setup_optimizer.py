@@ -110,7 +110,17 @@ class BMWSebringOptimizer:
         if self.garage_model is None:
             raise ValueError("BMW/Sebring optimizer requires an active garage-output model")
         self.rake_solver = RakeSolver(car, surface, track)
-        self.heave_solver = HeaveSolver(car, track)
+        # GT3 dispatch (W2.1): cars without heave/third architecture cannot
+        # construct a HeaveSolver (it raises on car.heave_spring=None). The
+        # BMWSebringOptimizer itself only runs for BMW/Sebring (GTP) so this
+        # is defense-in-depth — a future caller exercising the constructor
+        # for a GT3 car would otherwise crash here. Methods that read
+        # self.heave_solver must guard with `is not None`.
+        self.heave_solver = (
+            HeaveSolver(car, track)
+            if car.suspension_arch.has_heave_third
+            else None
+        )
         self.corner_solver = CornerSpringSolver(car, track)
         self.arb_solver = ARBSolver(car, track)
         self.geom_solver = WheelGeometrySolver(car, track)
@@ -338,6 +348,14 @@ class BMWSebringOptimizer:
         step1.static_rear_rh_mm = round(target_rear_static, 1)
         step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
 
+        # GT3 dispatch (W2.1): the BMW/Sebring optimizer is GTP-only by
+        # construction (`optimize_if_supported` filters via _is_bmw_sebring),
+        # but defense-in-depth — if a future caller exercises the optimizer
+        # for a GT3 car the heave_solver will be None and seed-based Step 2
+        # solves cannot run. Bail out so the chain falls back to the
+        # legacy sequential solver.
+        if self.heave_solver is None:
+            return None
         step2 = self.heave_solver.solve(
             dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
             dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,

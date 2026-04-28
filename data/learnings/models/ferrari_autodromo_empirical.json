@@ -1,0 +1,29 @@
+{
+  "car": "ferrari",
+  "track": "Autodromo Internacional do Algarve",
+  "relationships": {},
+  "last_updated": "2026-04-28T05:50:39.166315+00:00",
+  "observation_count": 3,
+  "most_sensitive_parameters": [],
+  "corrections": {
+    "roll_distribution_proxy_mean": 0.5067253066258544,
+    "roll_distribution_proxy_std": 0.0009716350201925092,
+    "roll_distribution_proxy_sample_count": 3,
+    "lltd_measured_mean": 0.5067253066258544,
+    "lltd_measured_std": 0.0009716350201925092,
+    "lltd_is_proxy": true,
+    "aero_compression_front_mean_mm": 7.72178955078125,
+    "aero_compression_front_std_mm": 0.17665811973744602,
+    "aero_compression_rear_mean_mm": 16.772163645426435,
+    "aero_compression_rear_std_mm": 0.19112183532975027,
+    "lap_time_surrogate_regularized": 1.0,
+    "lap_time_surrogate_sample_weight": 0.0,
+    "m_eff_front_values": [
+      309.2,
+      253.0,
+      265.4
+    ],
+    "m_eff_front_empirical_mean": 275.8666666666667,
+    "m_eff_front_empirical_std": 24.10772121587236
+  }
+}

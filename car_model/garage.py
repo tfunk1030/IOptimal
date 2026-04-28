@@ -60,6 +60,27 @@ class GarageSetupState:
     # IBT observation data when available; defaults to 0.0 in solver-path.
     torsion_bar_turns: float = 0.0
     rear_torsion_bar_turns: float = 0.0
+    # ── GT3 paired-coil + bump-rubber + splitter fields (W7.1, audit BLOCKER #4) ──
+    # All 0.0 for GTP cars; populated for GT3 (SuspensionArchitecture.GT3_COIL_4WHEEL).
+    # Field names match the W6.3 ``learner/observation.py`` keys so observations
+    # and garage-state share schema. Per-axle (LF/RF averaged into front_*; LR/RR
+    # averaged into rear_*) — analyzer/setup_reader.py averages on read.
+    front_corner_spring_nmm: float = 0.0       # paired front coil rate (avg LF/RF)
+    rear_corner_spring_nmm: float = 0.0        # paired rear coil rate (avg LR/RR)
+    front_bump_rubber_gap_mm: float = 0.0      # avg per-axle bump rubber gap, front
+    rear_bump_rubber_gap_mm: float = 0.0       # avg per-axle bump rubber gap, rear
+    splitter_height_mm: float = 0.0            # CenterFrontSplitterHeight
+
+    # ── D1 per-lap covariates (lap-condition state) ──
+    # Lap-condition state, NOT setup parameters.  When a regression includes
+    # tyre/fuel/aggression interaction features (Unit D1), predictions need
+    # representative race values for these.  At solve time, populate from
+    # the IBT's measured per-lap mean (mid-stint conditions).  When unset,
+    # defaults below produce conservative predictions that exclude the
+    # lap-condition contribution (≈ training-mean-equivalent for tyre_temp).
+    tyre_temp_avg_c: float = 60.0       # representative steady-state tyre temp
+    driver_aggression_idx: float = 0.0  # front_shock_vel_p99 baseline
+    fuel_remaining_l: float = 0.0       # mid-stint fuel; defaults to 0 = full stint
 
     @classmethod
     def from_current_setup(cls, setup: Any, car: Any = None) -> "GarageSetupState":
@@ -73,24 +94,63 @@ class GarageSetupState:
         rear_spring_nmm = float(getattr(setup, "rear_spring_nmm", 0.0))
         front_torsion_od_mm = float(getattr(setup, "front_torsion_od_mm", 0.0))
 
-        # Index decoding for indexed cars (Ferrari, Acura)
+        # Index decoding for indexed cars (Ferrari, Acura).
+        # GT3 cars have ``heave_spring=None`` (no heave/third architecture) — we
+        # guard on ``hsm is not None`` so the index-decode block doesn't blow up
+        # when the W7.1 GT3 path calls this function.
         if car is not None:
             hsm = car.heave_spring
             csm = car.corner_spring
-            if (hsm.front_setting_index_range is not None
-                    and front_heave_nmm <= hsm.front_setting_index_range[1] + 0.5):
-                front_heave_nmm = hsm.front_rate_from_setting(front_heave_nmm)
-            if (hsm.rear_setting_index_range is not None
-                    and rear_third_nmm <= hsm.rear_setting_index_range[1] + 0.5):
-                rear_third_nmm = hsm.rear_rate_from_setting(rear_third_nmm)
-            if (hasattr(csm, 'rear_setting_index_range')
-                    and csm.rear_setting_index_range is not None
-                    and rear_spring_nmm <= csm.rear_setting_index_range[1] + 0.5):
-                rear_spring_nmm = csm.rear_bar_rate_from_setting(rear_spring_nmm)
-            if (hasattr(csm, 'front_setting_index_range')
-                    and csm.front_setting_index_range is not None
-                    and front_torsion_od_mm <= csm.front_setting_index_range[1] + 0.5):
-                front_torsion_od_mm = csm.front_torsion_od_from_setting(front_torsion_od_mm)
+            if hsm is not None:
+                if (hsm.front_setting_index_range is not None
+                        and front_heave_nmm <= hsm.front_setting_index_range[1] + 0.5):
+                    front_heave_nmm = hsm.front_rate_from_setting(front_heave_nmm)
+                if (hsm.rear_setting_index_range is not None
+                        and rear_third_nmm <= hsm.rear_setting_index_range[1] + 0.5):
+                    rear_third_nmm = hsm.rear_rate_from_setting(rear_third_nmm)
+            if csm is not None:
+                if (hasattr(csm, 'rear_setting_index_range')
+                        and csm.rear_setting_index_range is not None
+                        and rear_spring_nmm <= csm.rear_setting_index_range[1] + 0.5):
+                    rear_spring_nmm = csm.rear_bar_rate_from_setting(rear_spring_nmm)
+                if (hasattr(csm, 'front_setting_index_range')
+                        and csm.front_setting_index_range is not None
+                        and front_torsion_od_mm <= csm.front_setting_index_range[1] + 0.5):
+                    front_torsion_od_mm = csm.front_torsion_od_from_setting(front_torsion_od_mm)
+
+        # ── GT3 paired-coil + bump-rubber + splitter (W7.1, audit BLOCKER #4/#16) ──
+        # Always populate via getattr-with-defaults so GTP observations carry
+        # zeros and GT3 observations carry the real values. analyzer/setup_reader
+        # stores the avg of LF/RF SpringRate into ``front_corner_spring_nmm`` and
+        # the per-corner bump rubber gaps into ``{lf,rf,lr,rr}_bump_rubber_gap_mm``.
+        # We average per axle here to mirror observation.py's contract.
+        front_corner_spring_nmm = float(getattr(setup, "front_corner_spring_nmm", 0.0))
+        # ``rear_corner_spring_nmm`` is the GT3-canonical alias of rear_spring_nmm
+        # — analyzer stores the avg of LR/RR SpringRate into rear_spring_nmm for
+        # GT3 (analyzer/setup_reader.py:235). Surface it under the canonical key
+        # when the architecture is GT3 so DirectRegression models with a
+        # ``inv_rear_corner_spring`` feature can fire.
+        is_gt3 = (
+            front_corner_spring_nmm > 0.0
+            and not float(getattr(setup, "front_heave_nmm", 0.0))
+            and not float(getattr(setup, "front_torsion_od_mm", 0.0))
+        )
+        rear_corner_spring_nmm = (
+            rear_spring_nmm if is_gt3
+            else float(getattr(setup, "rear_corner_spring_nmm", 0.0))
+        )
+        lf_gap = float(getattr(setup, "lf_bump_rubber_gap_mm", 0.0))
+        rf_gap = float(getattr(setup, "rf_bump_rubber_gap_mm", 0.0))
+        lr_gap = float(getattr(setup, "lr_bump_rubber_gap_mm", 0.0))
+        rr_gap = float(getattr(setup, "rr_bump_rubber_gap_mm", 0.0))
+        front_bump_rubber_gap_mm = (
+            (lf_gap + rf_gap) / 2.0 if (lf_gap or rf_gap)
+            else float(getattr(setup, "front_bump_rubber_gap_mm", 0.0))
+        )
+        rear_bump_rubber_gap_mm = (
+            (lr_gap + rr_gap) / 2.0 if (lr_gap or rr_gap)
+            else float(getattr(setup, "rear_bump_rubber_gap_mm", 0.0))
+        )
 
         return cls(
             front_pushrod_mm=float(getattr(setup, "front_pushrod_mm", 0.0)),
@@ -110,6 +170,16 @@ class GarageSetupState:
             rear_arb_blade=float(getattr(setup, "rear_arb_blade", 0) or 0),
             torsion_bar_turns=float(getattr(setup, "torsion_bar_turns", 0.0)),
             rear_torsion_bar_turns=float(getattr(setup, "rear_torsion_bar_turns", 0.0)),
+            front_corner_spring_nmm=front_corner_spring_nmm,
+            rear_corner_spring_nmm=rear_corner_spring_nmm,
+            front_bump_rubber_gap_mm=front_bump_rubber_gap_mm,
+            rear_bump_rubber_gap_mm=rear_bump_rubber_gap_mm,
+            splitter_height_mm=float(getattr(setup, "splitter_height_mm", 0.0)),
+            # D1 lap-condition state — pull from IBT measurements when
+            # available; field defaults (60°C / 0 / 0) handle missing values.
+            tyre_temp_avg_c=float(getattr(setup, "tyre_temp_avg_c", 60.0) or 60.0),
+            driver_aggression_idx=float(getattr(setup, "driver_aggression_idx", 0.0) or 0.0),
+            fuel_remaining_l=float(getattr(setup, "fuel_remaining_l", 0.0) or 0.0),
         )
 
     @classmethod
@@ -167,6 +237,12 @@ class DirectRegression:
     intercept: float = 0.0
     feature_names: tuple[str, ...] = ()
     coefficients: tuple[float, ...] = ()
+    # F3 confidence tier propagated from the source FittedModel.  Used by
+    # callers that want to gate behavior on calibration confidence (e.g.,
+    # garage_validator.py only overrides physics-derived values when the
+    # regression is high/medium tier — low-tier predictions defer to the
+    # physics solve).
+    confidence_tier: str = "low"
 
     # Map from feature name to GarageSetupState extraction
     _EXTRACTORS: dict[str, Callable] = field(default_factory=dict, repr=False)
@@ -188,7 +264,8 @@ class DirectRegression:
 
     @classmethod
     def from_model(cls, model_coefficients: list[float],
-                   model_feature_names: list[str]) -> "DirectRegression":
+                   model_feature_names: list[str],
+                   confidence_tier: str = "low") -> "DirectRegression":
         """Build from a FittedModel's coefficients and feature names."""
         extractors: dict[str, Callable] = {
             "front_pushrod": lambda s: s.front_pushrod_mm,
@@ -219,11 +296,68 @@ class DirectRegression:
             # feature is auto-excluded when fitting those cars — see _pool_to_matrix).
             "torsion_turns": lambda s: s.torsion_bar_turns,
             "rear_torsion_turns": lambda s: s.rear_torsion_bar_turns,
+            # ── GT3 paired-coil + bump-rubber + splitter features (W7.1, audit BLOCKER #5) ──
+            # Compliance form (1/k) is the primary feature for ride-height-vs-spring
+            # relationships under aero load (project's "compliance physics" principle,
+            # CLAUDE.md). Linear forms are also exposed for cases where the regression
+            # selects k directly (e.g. dynamic excursion ∝ k for a constant force band).
+            # All extractors guard against zero (GTP setups) by returning 0.0.
+            "front_corner_spring": lambda s: s.front_corner_spring_nmm,
+            "inv_front_corner_spring": (
+                lambda s: 1.0 / s.front_corner_spring_nmm
+                if s.front_corner_spring_nmm > 0 else 0.0
+            ),
+            "rear_corner_spring": lambda s: s.rear_corner_spring_nmm,
+            "inv_rear_corner_spring": (
+                lambda s: 1.0 / s.rear_corner_spring_nmm
+                if s.rear_corner_spring_nmm > 0 else 0.0
+            ),
+            "front_bump_rubber_gap": lambda s: s.front_bump_rubber_gap_mm,
+            "rear_bump_rubber_gap": lambda s: s.rear_bump_rubber_gap_mm,
+            "splitter_height": lambda s: s.splitter_height_mm,
+            # Fuel-coupled GT3 compliance features — analogue of the GTP
+            # ``fuel_x_inv_spring`` / ``fuel_x_inv_third`` features that capture
+            # the rear-axle-mass × spring-compliance interaction term.
+            "fuel_x_inv_front_corner_spring": (
+                lambda s: s.fuel_l / s.front_corner_spring_nmm
+                if s.front_corner_spring_nmm > 0 else 0.0
+            ),
+            "fuel_x_inv_rear_corner_spring": (
+                lambda s: s.fuel_l / s.rear_corner_spring_nmm
+                if s.rear_corner_spring_nmm > 0 else 0.0
+            ),
+            # ── D1 per-lap covariates (lap-condition features) ──
+            # Read from GarageSetupState.tyre_temp_avg_c / driver_aggression_idx
+            # / fuel_remaining_l.  These default to representative race values
+            # (60°C tyre, zero aggression baseline, zero remaining-fuel) so
+            # predictions match training conditions when callers don't pass
+            # IBT-measured values explicitly.
+            "tyre_temp": lambda s: s.tyre_temp_avg_c,
+            "driver_aggression": lambda s: s.driver_aggression_idx,
+            "fuel_remaining": lambda s: s.fuel_remaining_l,
+            "fuel_remaining_sq": lambda s: s.fuel_remaining_l ** 2,
+            "tyre_temp_x_inv_spring": (
+                lambda s: s.tyre_temp_avg_c / max(s.rear_spring_nmm, 1.0)
+            ),
+            "tyre_temp_x_inv_third": (
+                lambda s: s.tyre_temp_avg_c / max(s.rear_third_nmm, 1.0)
+            ),
+            "tyre_temp_x_inv_front_corner_spring": (
+                lambda s: s.tyre_temp_avg_c / s.front_corner_spring_nmm
+                if s.front_corner_spring_nmm > 0 else 0.0
+            ),
+            "aggression_x_inv_spring": (
+                lambda s: s.driver_aggression_idx / max(s.rear_spring_nmm, 1.0)
+            ),
+            "aggression_x_inv_third": (
+                lambda s: s.driver_aggression_idx / max(s.rear_third_nmm, 1.0)
+            ),
         }
         return cls(
             intercept=model_coefficients[0] if model_coefficients else 0.0,
             feature_names=tuple(model_feature_names),
             coefficients=tuple(model_coefficients[1:1 + len(model_feature_names)]),
+            confidence_tier=confidence_tier,
             _EXTRACTORS=extractors,
         )
 
@@ -290,6 +424,19 @@ class GarageOutputModel:
     default_rear_camber_deg: float = -1.9
     default_front_shock_defl_max_mm: float = 100.0
     default_rear_shock_defl_max_mm: float = 150.0
+
+    # ── GT3 paired-coil + bump-rubber + splitter defaults (W7.1, audit DEGRADED #23) ──
+    # Mid-range BMW M4 GT3 EVO baseline (audit ``output.md:540-555`` driver-bracketed
+    # ranges; we pick the middle of each range so a freshly-constructed GarageOutputModel
+    # without per-car overrides has a meaningful baseline state for any GT3 car). Per-car
+    # GarageOutputModel instances populated from real fits will override these.
+    # Used only by ``default_state(car=...)`` when ``car.suspension_arch.has_heave_third``
+    # is False; GTP cars never read these.
+    default_front_corner_spring_nmm: float = 220.0     # BMW M4 GT3 mid (range 190-340 N/mm)
+    default_rear_corner_spring_nmm: float = 180.0      # BMW M4 GT3 mid
+    default_front_bump_rubber_gap_mm: float = 15.0     # BMW M4 GT3 driver-anchor
+    default_rear_bump_rubber_gap_mm: float = 50.0      # BMW M4 GT3 driver-anchor
+    default_splitter_height_mm: float = 20.0           # mid-range across all 3 GT3 stubs
     front_rh_floor_mm: float = 30.0
     max_slider_mm: float = 45.0
     min_static_defl_mm: float = 3.0
@@ -377,8 +524,37 @@ class GarageOutputModel:
         haystack = track_name.lower().replace("_", " ")
         return any(keyword.lower() in haystack for keyword in self.track_keywords)
 
-    def default_state(self, fuel_l: float = 0.0) -> GarageSetupState:
-        """Baseline state used before later solver stages fill in all inputs."""
+    def default_state(self, fuel_l: float = 0.0, *, car: Any = None) -> GarageSetupState:
+        """Baseline state used before later solver stages fill in all inputs.
+
+        Architecture-aware (W7.1, audit DEGRADED #23): when *car* has a non-GTP
+        ``suspension_arch`` (i.e. ``has_heave_third`` is False), returns a state
+        with GT3 paired-coil + bump-rubber + splitter fields populated and
+        heave/third/torsion fields zeroed. When *car* is None or a GTP car,
+        returns the legacy GTP baseline so existing callers see no change.
+        """
+        if car is not None and not car.suspension_arch.has_heave_third:
+            # GT3 baseline: coil rates + bump-rubber + splitter populated; the
+            # heave/third/torsion fields stay 0.0 via dataclass default.
+            return GarageSetupState(
+                front_pushrod_mm=self.default_front_pushrod_mm,
+                rear_pushrod_mm=self.default_rear_pushrod_mm,
+                front_heave_nmm=0.0,
+                front_heave_perch_mm=0.0,
+                rear_third_nmm=0.0,
+                rear_third_perch_mm=0.0,
+                front_torsion_od_mm=0.0,
+                rear_spring_nmm=0.0,
+                rear_spring_perch_mm=0.0,
+                front_camber_deg=self.default_front_camber_deg,
+                rear_camber_deg=self.default_rear_camber_deg,
+                fuel_l=fuel_l,
+                front_corner_spring_nmm=self.default_front_corner_spring_nmm,
+                rear_corner_spring_nmm=self.default_rear_corner_spring_nmm,
+                front_bump_rubber_gap_mm=self.default_front_bump_rubber_gap_mm,
+                rear_bump_rubber_gap_mm=self.default_rear_bump_rubber_gap_mm,
+                splitter_height_mm=self.default_splitter_height_mm,
+            )
         return GarageSetupState(
             front_pushrod_mm=self.default_front_pushrod_mm,
             rear_pushrod_mm=self.default_rear_pushrod_mm,
@@ -654,6 +830,9 @@ class GarageOutputModel:
                 fuel_l=fuel_l,
                 wing_deg=wing_deg if wing_deg is not None else 0.0,
             )
+            # Pre-populate torsion turns so the DirectRegression receives
+            # correct feature values (Ferrari: coeff=159.47 on torsion_turns).
+            template = self._ensure_torsion_turns_populated(template)
             return self._bisect_pushrod(
                 self._direct_front_rh, template, target, "front_pushrod_mm",
                 fallback=self.default_front_pushrod_mm,
@@ -702,6 +881,25 @@ class GarageOutputModel:
             self._direct_rear_rh is not None
             and any("rear_pushrod" in f for f in self._direct_rear_rh.feature_names)
         )
+        # FIXED 2026-04-28: Even when the model includes rear_pushrod, check if
+        # the coefficient is strong enough to use pushrod as an RH control lever.
+        # Cadillac has rear_pushrod coeff=0.089 — changing pushrod by 40mm only
+        # moves RH by 3.6mm. The solver then requests absurd pushrod values
+        # (-40 to -56mm) for small RH targets. If the pushrod effect is < 0.2
+        # mm RH per mm pushrod, fall back to the car's default pushrod value.
+        if _dr_has_pushrod and self._direct_rear_rh is not None:
+            _pushrod_coeff = 0.0
+            for i, fname in enumerate(self._direct_rear_rh.feature_names):
+                if fname == "rear_pushrod":
+                    _pushrod_coeff = abs(self._direct_rear_rh.coefficients[i])
+                    break
+            if _pushrod_coeff < 0.2:
+                _log.info(
+                    "Rear pushrod coefficient %.3f too weak for RH control "
+                    "(threshold 0.2). Returning default pushrod %.1f",
+                    _pushrod_coeff, self.default_rear_pushrod_mm,
+                )
+                return self.default_rear_pushrod_mm
         if _dr_has_pushrod:
             template = GarageSetupState(
                 front_pushrod_mm=front_pushrod_mm if front_pushrod_mm is not None else self.default_front_pushrod_mm,
@@ -718,6 +916,9 @@ class GarageOutputModel:
                 fuel_l=fuel_l,
                 wing_deg=wing_deg if wing_deg is not None else 0.0,
             )
+            # Pre-populate torsion turns so the DirectRegression receives
+            # correct feature values (Ferrari: coeff=217.20 on rear_torsion_turns).
+            template = self._ensure_torsion_turns_populated(template)
             return self._bisect_pushrod(
                 self._direct_rear_rh, template, target_rh_mm, "rear_pushrod_mm",
                 fallback=self.default_rear_pushrod_mm,
@@ -741,12 +942,52 @@ class GarageOutputModel:
         )
         return (target_rh_mm - other) / self.rear_coeff_pushrod
 
+    def _ensure_torsion_turns_populated(
+        self, setup: GarageSetupState,
+    ) -> GarageSetupState:
+        """Pre-populate torsion_bar_turns and rear_torsion_bar_turns if zero.
+
+        DirectRegression models (especially Ferrari) can have massive coefficients
+        for ``torsion_turns`` (159.47) and ``rear_torsion_turns`` (217.20).
+        When the solver path leaves these at 0.0, the models under-predict RH
+        by 15–25mm, causing catastrophic pushrod extrapolation (+40mm) and
+        front/rear RH swaps in the .sto output.
+
+        Front turns: use ``predict_torsion_turns()`` (constant model for Ferrari: 0.096).
+        Rear turns: estimate from front turns × 0.5 (empirical ratio from Ferrari
+        IBT data: front ≈ 0.096, rear ≈ 0.048).
+        """
+        changed = {}
+        if setup.torsion_bar_turns == 0.0:
+            # Use a nominal front_rh (30mm) — for Ferrari the torsion turns model
+            # is constant (no front_rh dependency), so the value doesn't matter.
+            _front_turns = self.predict_torsion_turns(setup, front_static_rh_mm=30.0)
+            if _front_turns != 0.0:
+                changed["torsion_bar_turns"] = _front_turns
+        if setup.rear_torsion_bar_turns == 0.0:
+            _front_turns = changed.get(
+                "torsion_bar_turns", setup.torsion_bar_turns
+            )
+            if _front_turns > 0.0:
+                # Rear turns are typically ~50% of front turns (Ferrari IBT data:
+                # front ≈ 0.096, rear ≈ 0.048 from setup_writer rear formula).
+                changed["rear_torsion_bar_turns"] = _front_turns * 0.5
+        if changed:
+            setup = replace(setup, **changed)
+        return setup
+
     def predict(
         self,
         setup: GarageSetupState,
         front_excursion_p99_mm: float = 0.0,
     ) -> GarageOutputs:
         """Predict the unified set of garage outputs for a setup."""
+        # Pre-populate torsion turns BEFORE front/rear RH predictions.
+        # DirectRegression models can include torsion_turns / rear_torsion_turns
+        # as features with large coefficients (Ferrari: 159.47 / 217.20).
+        # Without this, the solver path (torsion_bar_turns=0.0) under-predicts
+        # RH by 15–25mm → pushrod extrapolation → front/rear RH swap in .sto.
+        setup = self._ensure_torsion_turns_populated(setup)
         if self._direct_front_rh:
             front_static_rh = self._direct_front_rh.predict(setup)
         else:
@@ -756,15 +997,9 @@ class GarageOutputModel:
         else:
             rear_static_rh = self.predict_rear_static_rh(setup)
         torsion_turns = self.predict_torsion_turns(setup, front_static_rh)
-        # Augment the setup state with the predicted front torsion bar turns so
-        # that DirectRegression models using the `torsion_turns` feature receive
-        # the correct value.  In the IBT-observation path, `setup.torsion_bar_turns`
-        # is already set from the measured data; `predict_torsion_turns()` would
-        # produce a similar value.  In the solver path (no measured turns), this
-        # ensures models that depend on `torsion_turns` are evaluated correctly.
-        # `rear_torsion_bar_turns` is left as-is: actual measurements populate it
-        # in the IBT path; solver path keeps 0.0 (conservative, feature excluded
-        # at zero contribution).
+        # Augment the setup state with the refined torsion bar turns so
+        # that downstream DirectRegression models (heave_defl, slider, etc.)
+        # receive the correct value.
         if setup.torsion_bar_turns == 0.0 and torsion_turns != 0.0:
             setup = replace(setup, torsion_bar_turns=torsion_turns)
         # Use direct regressions when available (higher accuracy), fall back

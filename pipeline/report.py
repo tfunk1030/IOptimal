@@ -39,9 +39,71 @@ if TYPE_CHECKING:
     from solver.wheel_geometry_solver import WheelGeometrySolution
     from track_model.profile import TrackProfile
 
-from output.report import print_full_setup_report, _load_support_tier
+from output.report import (
+    print_full_setup_report,
+    _load_support_tier,
+    _build_not_solved_section,
+    _build_estimate_warnings_section,
+)
+from solver.objective import (
+    COHERENCE_METRICS,
+    COHERENCE_PENALTY_MS_PER_METRIC,
+    COHERENCE_THRESHOLD_WORSENING,
+)
+
+
+def _corner_impact_blocks(corners: list[Any], impacts: dict[str, float] | None) -> list[tuple[str, list[str]]]:
+    """Build (header, lines) blocks for PER-CORNER IMPACT and PARETO TRADEOFFS.
+
+    Returns an empty list when ``impacts`` is empty or formatting fails.
+    """
+    if not impacts:
+        return []
+    try:
+        from solver.corner_causal import (
+            format_corner_impact_lines,
+            format_pareto_tradeoff_lines,
+        )
+    except Exception:
+        return []
+    blocks: list[tuple[str, list[str]]] = []
+    ci = format_corner_impact_lines(corners, impacts)
+    if ci:
+        blocks.append(("PER-CORNER IMPACT", ci))
+    tl = format_pareto_tradeoff_lines(impacts)
+    if tl:
+        blocks.append(("PARETO TRADEOFFS", tl))
+    return blocks
 
 W = 70
+
+
+def _is_gt3(car: Any) -> bool:
+    """W5.1: GT3 architecture dispatch helper for the pipeline report layer.
+
+    Mirrors ``output/report.py:_is_gt3``. Returns True when the car has no
+    heave/third architecture (``SuspensionArchitecture.GT3_COIL_4WHEEL``).
+    Used to gate "Front heave" / "Rear third" rows in the CURRENT vs
+    RECOMMENDED table and the FRONT HEAVE TRAVEL BUDGET block, both of
+    which are GTP-only constructs.
+    """
+    if car is None:
+        return False
+    arch = getattr(car, "suspension_arch", None)
+    if arch is None:
+        return False
+    return getattr(arch, "has_heave_third", True) is False
+
+
+def _step2_present(step2: Any) -> bool:
+    """W5.1: True iff ``step2`` carries real heave/third data.
+
+    Returns False for both ``None`` (calibration-blocked) and
+    ``HeaveSolution.null()`` GT3 placeholders (``present=False``).
+    """
+    if step2 is None:
+        return False
+    return bool(getattr(step2, "present", True))
 
 
 def _hdr(title: str) -> str:
@@ -88,6 +150,131 @@ def _prediction_unavailable_reason(
     if value in (None, "", 0, 0.0):
         return "baseline metric unavailable"
     return "predictor did not return an estimate"
+
+
+def _build_why_this_candidate_lines(
+    generated_candidates: list[Any] | None,
+) -> list[str]:
+    """Format the WHY THIS CANDIDATE WAS CHOSEN audit section.
+
+    Decomposes the selected candidate's score (safety / performance /
+    stability / confidence / disruption / coherence) and shows per-metric
+    classification (improves / neutral / worsens) for each of the 9
+    coherence axes. If 5+ axes worsen, surfaces the coherence penalty
+    and the rejection-tradeoff explanation.
+    """
+    lines: list[str] = []
+    if not generated_candidates:
+        return lines
+
+    selected = next(
+        (c for c in generated_candidates if getattr(c, "selected", False)),
+        None,
+    )
+    if selected is None:
+        return lines
+
+    score = getattr(selected, "score", None)
+    if score is None:
+        return lines
+
+    # ── Per-axis score breakdown ─────────────────────────────────────
+    family = getattr(selected, "family", "unknown")
+    desc = getattr(selected, "description", "") or ""
+    lines.append(f"Selected: {family}  (total score {score.total:.3f})")
+    if desc:
+        lines.append(f"  Description: {desc[:60]}")
+    lines.append(
+        f"  Safety={score.safety:.3f}  Performance={score.performance:.3f}  "
+        f"Stability={score.stability:.3f}"
+    )
+    lines.append(
+        f"  Confidence={score.confidence:.3f}  Disruption={score.disruption_cost:.3f}"
+    )
+
+    # ── Coherence detail (the audit trail user asked for) ────────────
+    coh_penalty = float(getattr(score, "coherence_penalty_ms", 0.0))
+    coh_worsen = list(getattr(score, "coherence_worsening", ()) or ())
+    coh_improve = list(getattr(score, "coherence_improving", ()) or ())
+    coh_detail = dict(getattr(score, "coherence_detail", {}) or {})
+
+    n_worsen = len(coh_worsen)
+    n_improve = len(coh_improve)
+
+    lines.append("")
+    lines.append(
+        "  Coherence audit (Mission Principle 6 — net-positive impact):"
+    )
+    lines.append(
+        f"    {n_improve} improving / {n_worsen} worsening of "
+        f"{len(coh_detail) or len(COHERENCE_METRICS)} measured axes"
+    )
+
+    if coh_detail:
+        for metric, (base, pred, classification) in coh_detail.items():
+            label = metric.replace("_", " ")
+            if classification == "unavailable":
+                lines.append(f"    {label:32s}  unavailable")
+                continue
+            base_str = f"{base:.3f}" if base is not None else "?"
+            pred_str = f"{pred:.3f}" if pred is not None else "?"
+            try:
+                delta = float(pred) - float(base)
+                delta_str = f"{delta:+.3f}"
+            except (TypeError, ValueError):
+                delta_str = "?"
+            tag = {
+                "improves": "improves",
+                "worsens":  "WORSENS",
+                "neutral":  "neutral",
+            }.get(classification, classification)
+            lines.append(
+                f"    {label:32s}  {base_str} -> {pred_str}  "
+                f"({delta_str}, {tag})"
+            )
+
+    if coh_penalty > 0.0:
+        lines.append("")
+        lines.append(
+            f"  Coherence penalty: {coh_penalty:.0f} ms applied "
+            f"(threshold={COHERENCE_THRESHOLD_WORSENING} worsening axes; "
+            f"{COHERENCE_PENALTY_MS_PER_METRIC:.0f}ms per axis beyond "
+            f"{COHERENCE_THRESHOLD_WORSENING - 1})."
+        )
+        # Surface the tradeoff explanation
+        lines.append(
+            f"  Tradeoff: {n_worsen} axes worsen, {n_improve} improve. "
+            "Selected because the surviving candidates' positive gains "
+            "(safety/stability/performance) still outweigh the penalty."
+        )
+    elif n_worsen == 0 and n_improve > 0:
+        lines.append("")
+        lines.append(
+            f"  Coherence: net-positive on all comparable axes "
+            f"({n_improve} improving)."
+        )
+
+    # ── Skipped candidates (coherence-rejected) ──────────────────────
+    rejected = [
+        c for c in generated_candidates
+        if not getattr(c, "selected", False)
+        and getattr(c, "status", "") == "coherence_rejected"
+    ]
+    if rejected:
+        lines.append("")
+        lines.append(f"  Skipped {len(rejected)} candidate(s) for coherence:")
+        for cand in rejected:
+            cscore = getattr(cand, "score", None)
+            if cscore is None:
+                continue
+            cpen = float(getattr(cscore, "coherence_penalty_ms", 0.0))
+            cworsen = len(getattr(cscore, "coherence_worsening", ()) or ())
+            lines.append(
+                f"    - {cand.family}: penalty {cpen:.0f}ms, "
+                f"{cworsen} worsening axes"
+            )
+
+    return lines
 
 
 def _build_prediction_lines(
@@ -202,7 +389,11 @@ def generate_report(
     prediction_corrections: dict[str, float] | None = None,
     selected_candidate_family: str | None = None,
     selected_candidate_score: float | None = None,
+    corner_impacts: dict[str, float] | None = None,
+    generated_candidates: list[Any] | None = None,
     compact: bool = False,
+    cal_gate: object = None,
+    coupling_changes: list[Any] | None = None,
 ) -> str:
     """Generate the full pipeline report: telemetry context + garage card + comparison."""
 
@@ -212,11 +403,25 @@ def generate_report(
     report_fuel_l = fuel_l if fuel_l is not None else getattr(current_setup, "fuel_l", 0.0)
     garage_outputs = None
     garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
+    # W5.1 F16: GarageSetupState.from_solver_steps + garage_model.predict are
+    # GTP-only constructs (heave/third spring + heave-axis excursion). For GT3
+    # cars step2 is HeaveSolution.null() with all numeric fields zero — feeding
+    # those into the regression-based predictor would emit zeroed
+    # `front_heave_nmm` / `rear_third_nmm` features and produce nonsense
+    # predictions. Skip both the state build and the predict call until W7.x
+    # delivers a coil-only GarageSetupState constructor.
+    _is_gt3_report = _is_gt3(car)
+    _step2_alive = _step2_present(step2)
     _solver_state = GarageSetupState.from_solver_steps(
         step1=step1, step2=step2, step3=step3, step5=step5,
         fuel_l=report_fuel_l,
-    ) if step1 is not None and step2 is not None and step3 is not None else None
-    if garage_model is not None and _solver_state is not None:
+    ) if (
+        step1 is not None
+        and _step2_alive
+        and step3 is not None
+        and not _is_gt3_report
+    ) else None
+    if garage_model is not None and _solver_state is not None and _step2_alive:
         garage_outputs = garage_model.predict(
             _solver_state,
             front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
@@ -277,14 +482,22 @@ def generate_report(
             hybrid_corner_pct=_hybrid_corner_pct,
             front_diff_preload_nm=_front_diff_preload_nm,
             bias_migration_gain=_bias_migration_gain,
+            coupling_changes=coupling_changes,
         )
         if selected_candidate_family is not None:
             report += "\n" + _hdr("CANDIDATE SELECTION") + "\n"
             report += f"  Selected family: {selected_candidate_family}\n"
             if selected_candidate_score is not None:
                 report += f"  Candidate score: {selected_candidate_score:.3f}\n"
+        why_lines = _build_why_this_candidate_lines(generated_candidates)
+        if why_lines:
+            report += "\n" + _hdr("WHY THIS CANDIDATE WAS CHOSEN") + "\n"
+            report += "\n".join(f"  {line}" for line in why_lines)
         report += "\n" + _hdr("PREDICTED IMPROVEMENTS") + "\n"
         report += "\n".join(f"  {line}" for line in prediction_lines)
+        for header, block_lines in _corner_impact_blocks(corners, corner_impacts):
+            report += "\n" + _hdr(header) + "\n"
+            report += "\n".join(f"  {line}" for line in block_lines)
         if solve_context_lines:
             report += "\n" + _hdr("SOLVE CONTEXT") + "\n"
             report += "\n".join(f"  {line}" for line in solve_context_lines)
@@ -406,10 +619,23 @@ def generate_report(
             a(f"  Candidate score: {selected_candidate_score:.3f}")
         a("")
 
+    why_lines = _build_why_this_candidate_lines(generated_candidates)
+    if why_lines:
+        a(_hdr("WHY THIS CANDIDATE WAS CHOSEN"))
+        for line in why_lines:
+            a(f"  {line}")
+        a("")
+
     a(_hdr("PREDICTED IMPROVEMENTS"))
     for line in prediction_lines:
         a(f"  {line}")
     a("")
+
+    for header, block_lines in _corner_impact_blocks(corners, corner_impacts):
+        a(_hdr(header))
+        for line in block_lines:
+            a(f"  {line}")
+        a("")
 
     # ── CORE GARAGE CARD + ANALYSIS SECTIONS ─────────────────────────
     try:
@@ -438,6 +664,7 @@ def generate_report(
         hybrid_corner_pct=_hybrid_corner_pct,
         front_diff_preload_nm=_front_diff_preload_nm,
         bias_migration_gain=_bias_migration_gain,
+        coupling_changes=coupling_changes,
     )
         a(_setup_report)
     except (AttributeError, TypeError) as exc:
@@ -465,25 +692,51 @@ def generate_report(
         a(_cmp("Front RH (static)",  current_setup.static_front_rh_mm,   step1.static_front_rh_mm,       "mm"))
         a(_cmp("Rear RH (static)",   current_setup.static_rear_rh_mm,    step1.static_rear_rh_mm,        "mm"))
         _is_ferrari = getattr(car, "canonical_name", "") == "ferrari"
+        _is_gt3_table = _is_gt3(car)
         _hu = "idx" if _is_ferrari else "N/mm"
         _tu = "idx" if _is_ferrari else "mm"
-        # For Ferrari, convert raw N/mm values to garage indices via public_output_value so
-        # both Current and Recomm columns are in the same display units (idx).
-        _cur_fh  = float(public_output_value(car, "front_heave_nmm",     current_setup.front_heave_nmm))
-        _rec_fh  = float(public_output_value(car, "front_heave_nmm",     step2.front_heave_nmm))
-        _cur_rh  = float(public_output_value(car, "rear_third_nmm",      current_setup.rear_third_nmm))
-        _rec_rh  = float(public_output_value(car, "rear_third_nmm",      step2.rear_third_nmm))
-        _cur_rs  = float(public_output_value(car, "rear_spring_rate_nmm", current_setup.rear_spring_nmm))
-        _rec_rs  = float(public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
-        _cur_tb  = float(public_output_value(car, "front_torsion_od_mm", current_setup.front_torsion_od_mm))
-        _rec_tb  = float(public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
-        a(_cmp("Front heave",        _cur_fh,   _rec_fh,  _hu, ".0f"))
-        _rear_heave_lbl = "Rear heave" if _is_ferrari else "Rear third"
-        a(_cmp(_rear_heave_lbl,      _cur_rh,   _rec_rh,  _hu, ".0f"))
-        _rear_spr_lbl = "Rear TB OD" if _is_ferrari else "Rear spring"
-        a(_cmp(_rear_spr_lbl,        _cur_rs,   _rec_rs,  _hu, ".0f"))
-        _tb_lbl = "F torsion bar OD" if _is_ferrari else "Torsion bar OD"
-        a(_cmp(_tb_lbl,              _cur_tb,   _rec_tb,  _tu))
+        # W5.1 F14: GT3 cars have no heave/third/torsion architecture. Replace
+        # the GTP "Front heave / Rear third / Rear spring / Torsion bar OD"
+        # rows with the four corner spring rates (which is the only spring
+        # control on a GT3 garage). step3.front_coil_rate_nmm is a paired
+        # axle-level value (LF=RF) and step3.rear_spring_rate_nmm is the rear
+        # paired rate (LR=RR), so the four rows are 2 distinct values shown
+        # twice; this matches output/report.py:_is_gt3 layout.
+        if _is_gt3_table:
+            _front_coil = getattr(step3, "front_coil_rate_nmm", None)
+            _rear_coil = getattr(step3, "rear_spring_rate_nmm", None)
+            _cur_lf = getattr(current_setup, "lf_spring_rate", None) or getattr(
+                current_setup, "front_corner_spring_nmm", None
+            )
+            _cur_rf = getattr(current_setup, "rf_spring_rate", None) or _cur_lf
+            _cur_lr = getattr(current_setup, "lr_spring_rate", None) or getattr(
+                current_setup, "rear_spring_nmm", None
+            )
+            _cur_rr = getattr(current_setup, "rr_spring_rate", None) or _cur_lr
+            if _front_coil is not None:
+                a(_cmp("LF Spring",          _cur_lf,   float(_front_coil),  "N/mm", ".0f"))
+                a(_cmp("RF Spring",          _cur_rf,   float(_front_coil),  "N/mm", ".0f"))
+            if _rear_coil is not None:
+                a(_cmp("LR Spring",          _cur_lr,   float(_rear_coil),   "N/mm", ".0f"))
+                a(_cmp("RR Spring",          _cur_rr,   float(_rear_coil),   "N/mm", ".0f"))
+        else:
+            # For Ferrari, convert raw N/mm values to garage indices via public_output_value so
+            # both Current and Recomm columns are in the same display units (idx).
+            _cur_fh  = float(public_output_value(car, "front_heave_nmm",     current_setup.front_heave_nmm))
+            _rec_fh  = float(public_output_value(car, "front_heave_nmm",     step2.front_heave_nmm))
+            _cur_rh  = float(public_output_value(car, "rear_third_nmm",      current_setup.rear_third_nmm))
+            _rec_rh  = float(public_output_value(car, "rear_third_nmm",      step2.rear_third_nmm))
+            _cur_rs  = float(public_output_value(car, "rear_spring_rate_nmm", current_setup.rear_spring_nmm))
+            _rec_rs  = float(public_output_value(car, "rear_spring_rate_nmm", step3.rear_spring_rate_nmm))
+            _cur_tb  = float(public_output_value(car, "front_torsion_od_mm", current_setup.front_torsion_od_mm))
+            _rec_tb  = float(public_output_value(car, "front_torsion_od_mm", step3.front_torsion_od_mm))
+            a(_cmp("Front heave",        _cur_fh,   _rec_fh,  _hu, ".0f"))
+            _rear_heave_lbl = "Rear heave" if _is_ferrari else "Rear third"
+            a(_cmp(_rear_heave_lbl,      _cur_rh,   _rec_rh,  _hu, ".0f"))
+            _rear_spr_lbl = "Rear TB OD" if _is_ferrari else "Rear spring"
+            a(_cmp(_rear_spr_lbl,        _cur_rs,   _rec_rs,  _hu, ".0f"))
+            _tb_lbl = "F torsion bar OD" if _is_ferrari else "Torsion bar OD"
+            a(_cmp(_tb_lbl,              _cur_tb,   _rec_tb,  _tu))
         a(_cmp("Front camber",       current_setup.front_camber_deg,     step5.front_camber_deg,         "°"))
         a(_cmp("Rear camber",        current_setup.rear_camber_deg,      step5.rear_camber_deg,          "°"))
         a(_cmp("Brake bias",         current_setup.brake_bias_pct,       supporting.brake_bias_pct,      "%"))
@@ -532,7 +785,17 @@ def generate_report(
             a("")
 
     # ── HEAVE TRAVEL BUDGET ────────────────────────────────────────────
-    if step2 is not None and step2.defl_max_front_mm > 0:
+    # W5.1 F15: This block is GTP-specific — it renders heave-spring travel
+    # budget analytics from a populated HeaveSolution. GT3 cars have no heave
+    # architecture (step2.present=False, defl_max_front_mm=0.0); the existing
+    # numeric `> 0` guard happens to skip the block silently, but make the
+    # architecture branch explicit so future refactors can't regress.
+    if (
+        not _is_gt3(car)
+        and step2 is not None
+        and getattr(step2, "present", True)
+        and step2.defl_max_front_mm > 0
+    ):
         budget_slider = (
             garage_outputs.heave_slider_defl_static_mm
             if garage_outputs is not None else
@@ -671,51 +934,25 @@ def generate_report(
     except Exception:
         pass
 
-    # ── ESTIMATE WARNINGS ─────────────────────────────────────────────
-    estimate_warnings = []
+    # ── NOT SOLVED — preserved-from-driver parameters ─────────────────
+    # Surface every parameter the solver does NOT model so the user knows
+    # where the solver stopped (master cylinder, pad compound, gear stack,
+    # hybrid config, roof light color, cooling ducts).
+    not_solved_block = _build_not_solved_section(
+        car=car, current_setup=current_setup, supporting=supporting, width=W,
+    )
+    if not_solved_block:
+        a(not_solved_block)
 
-    # Check deflection model calibration
-    if hasattr(car, 'deflection') and not getattr(car.deflection, 'is_calibrated', True):
-        estimate_warnings.append(
-            "ESTIMATE: Deflection predictions use uncalibrated model — "
-            "verify garage display values manually"
-        )
-
-    # Check ride height model calibration
-    if hasattr(car, 'ride_height_model') and not getattr(car.ride_height_model, 'is_calibrated', True):
-        estimate_warnings.append(
-            "ESTIMATE: Ride height predictions use uncalibrated model"
-        )
-
-    # Check damper zeta calibration
-    if hasattr(car, 'damper') and not getattr(car.damper, 'zeta_is_calibrated', True):
-        estimate_warnings.append(
-            "ESTIMATE: Damper zeta targets are conservative defaults — "
-            "verify damper feel on track"
-        )
-
-    # Check garage output model
-    garage_model = getattr(car, "active_garage_output_model", lambda _track: None)(track.track_name)
-    if garage_model is None:
-        estimate_warnings.append(
-            "ESTIMATE: No garage output model — .sto display values are physics estimates only"
-        )
-
-    if estimate_warnings:
-        a(_hdr("ESTIMATE WARNINGS"))
-        for warning in estimate_warnings:
-            # Wrap long warnings at word boundaries to fit width
-            words = warning.split()
-            current_line = "  • "
-            for word in words:
-                if len(current_line) + len(word) + 1 <= W:
-                    current_line += word + " "
-                else:
-                    a(current_line.rstrip())
-                    current_line = "    " + word + " "
-            if current_line.strip():
-                a(current_line.rstrip())
-        a("")
+    # ── ESTIMATE WARNINGS — uncalibrated subsystems + CLI fix commands ─
+    # Enumerate every uncalibrated subsystem from the calibration gate's
+    # provenance, with the exact CLI command to fix it. Falls back to the
+    # legacy generic warnings if no cal_gate is supplied.
+    estimate_block = _build_estimate_warnings_section(
+        car=car, track_name=track.track_name, cal_gate=cal_gate, width=W,
+    )
+    if estimate_block:
+        a(estimate_block)
 
     a("═" * W)
     return "\n".join(lines)

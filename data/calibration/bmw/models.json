@@ -15,7 +15,8 @@
     "loo_rmse": 0.08331955809010615,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": null
+    "q_squared": null,
+    "confidence_tier": "high"
   },
   "rear_ride_height": {
     "name": "rear_ride_height",
@@ -43,7 +44,8 @@
     "loo_rmse": 0.12562898680530943,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9667256223127906
+    "q_squared": 0.9667256223127906,
+    "confidence_tier": "medium"
   },
   "torsion_bar_turns": {
     "name": "torsion_bar_turns",
@@ -56,7 +58,8 @@
     "loo_rmse": 0.0035917720482069857,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": null
+    "q_squared": null,
+    "confidence_tier": "high"
   },
   "torsion_bar_defl": {
     "name": "torsion_bar_defl_load",
@@ -74,7 +77,8 @@
     "loo_rmse": 26564.293504276404,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9301822727676682
+    "q_squared": 0.9301822727676682,
+    "confidence_tier": "high"
   },
   "front_shock_defl_static": null,
   "front_shock_defl_max": null,
@@ -104,7 +108,8 @@
     "loo_rmse": 0.06946604409734299,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9977488388892939
+    "q_squared": 0.9977488388892939,
+    "confidence_tier": "high"
   },
   "rear_shock_defl_max": null,
   "heave_spring_defl_static": {
@@ -133,7 +138,8 @@
     "loo_rmse": 0.11524555996241446,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9997673524833749
+    "q_squared": 0.9997673524833749,
+    "confidence_tier": "high"
   },
   "heave_spring_defl_max": {
     "name": "heave_spring_defl_max",
@@ -161,7 +167,8 @@
     "loo_rmse": 0.07917834438274034,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.999643642598724
+    "q_squared": 0.999643642598724,
+    "confidence_tier": "medium"
   },
   "heave_slider_defl_static": {
     "name": "heave_slider_defl_static",
@@ -189,7 +196,8 @@
     "loo_rmse": 0.1629041716505292,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9715658366591822
+    "q_squared": 0.9715658366591822,
+    "confidence_tier": "high"
   },
   "rear_spring_defl_static": {
     "name": "rear_spring_defl_static",
@@ -217,7 +225,8 @@
     "loo_rmse": 0.031956996279596424,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9995489649400692
+    "q_squared": 0.9995489649400692,
+    "confidence_tier": "high"
   },
   "rear_spring_defl_max": {
     "name": "rear_spring_defl_max",
@@ -245,7 +254,8 @@
     "loo_rmse": 0.03314514122689674,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9994123118723165
+    "q_squared": 0.9994123118723165,
+    "confidence_tier": "medium"
   },
   "third_spring_defl_static": {
     "name": "third_spring_defl_static",
@@ -273,7 +283,8 @@
     "loo_rmse": 0.06873899060826628,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9971705244248139
+    "q_squared": 0.9971705244248139,
+    "confidence_tier": "high"
   },
   "third_spring_defl_max": {
     "name": "third_spring_defl_max",
@@ -301,7 +312,8 @@
     "loo_rmse": 0.00987503963893199,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9999798064667437
+    "q_squared": 0.9999798064667437,
+    "confidence_tier": "high"
   },
   "third_slider_defl_static": {
     "name": "third_slider_defl_static",
@@ -317,7 +329,8 @@
     "loo_rmse": 1.4562038583572412,
     "n_samples": 22,
     "is_calibrated": false,
-    "q_squared": 0.13081270010692292
+    "q_squared": 0.13081270010692292,
+    "confidence_tier": "low"
   },
   "torsion_bar_defl_direct": {
     "name": "torsion_bar_defl_direct",
@@ -345,7 +358,8 @@
     "loo_rmse": 0.04067371443870406,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9997495728018175
+    "q_squared": 0.9997495728018175,
+    "confidence_tier": "high"
   },
   "third_slider_defl_direct": {
     "name": "third_slider_defl_direct",
@@ -373,7 +387,8 @@
     "loo_rmse": 0.06873899060827893,
     "n_samples": 22,
     "is_calibrated": true,
-    "q_squared": 0.9980632421801787
+    "q_squared": 0.9980632421801787,
+    "confidence_tier": "high"
   },
   "front_heave_lookup": null,
   "rear_heave_lookup": null,

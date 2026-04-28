@@ -95,6 +95,132 @@ class EnvelopePenalty:
         return self.setup_distance_ms + self.telemetry_envelope_ms
 
 
+# Metrics whose predicted-vs-baseline DELTA must be coherent (net-positive).
+# A candidate that worsens 5+ of these vs the driver-loaded baseline is
+# physically incoherent: its own predictions say it'll be worse on 5 axes,
+# yet the score may still rank it high because of orthogonal terms (LLTD,
+# damper zeta, envelope distance). The coherence-check term penalises this
+# heavily so the scorer can never pick a setup whose own predictions say
+# "worse" on most measured outcomes. Mission Principle 6: per-corner-phase
+# impact must be net-positive.
+#
+# All listed metrics follow "lower = better" semantics — they are deltas,
+# variances, or absolute deviations from optimum. (Pressures and other
+# target-tracking metrics deliberately omitted.)
+COHERENCE_METRICS: tuple[str, ...] = (
+    "front_heave_travel_used_pct",  # predictor.front_heave_travel_used_pct
+    "front_excursion_mm",           # predictor.front_excursion_mm
+    "rear_rh_std_mm",               # predictor.rear_rh_std_mm
+    "braking_pitch_deg",            # predictor.braking_pitch_deg
+    "front_lock_p95",               # predictor.front_lock_p95
+    "rear_power_slip_p95",          # predictor.rear_power_slip_p95 alias
+    "body_slip_p95_deg",            # predictor.body_slip_p95_deg
+    "understeer_low_speed_deg",     # predictor.understeer_low_deg
+    "understeer_high_speed_deg",    # predictor.understeer_high_deg
+)
+
+# Map from canonical coherence metric name to the (baseline_measured_attr,
+# predicted_attr) pair used to compute the delta. Baseline attribute names
+# match analyzer/extract.MeasuredState; predicted names match
+# solver.predictor.PredictedTelemetry.
+COHERENCE_METRIC_FIELDS: dict[str, tuple[str, str]] = {
+    "front_heave_travel_used_pct": ("front_heave_travel_used_pct", "front_heave_travel_used_pct"),
+    "front_excursion_mm":          ("front_rh_excursion_measured_mm", "front_excursion_mm"),
+    "rear_rh_std_mm":              ("rear_rh_std_mm", "rear_rh_std_mm"),
+    "braking_pitch_deg":           ("pitch_range_braking_deg", "braking_pitch_deg"),
+    "front_lock_p95":              ("front_braking_lock_ratio_p95", "front_lock_p95"),
+    "rear_power_slip_p95":         ("rear_power_slip_ratio_p95", "rear_power_slip_p95"),
+    "body_slip_p95_deg":           ("body_slip_p95_deg", "body_slip_p95_deg"),
+    "understeer_low_speed_deg":    ("understeer_low_speed_deg", "understeer_low_deg"),
+    "understeer_high_speed_deg":   ("understeer_high_speed_deg", "understeer_high_deg"),
+}
+
+# Tolerance band for "neutral" classification — a delta smaller than the
+# scale (in same units as the metric) is treated as no change. Same scales
+# the candidate-ranker uses for safety/stability/performance bucketing.
+COHERENCE_METRIC_NEUTRAL_BAND: dict[str, float] = {
+    "front_heave_travel_used_pct": 1.0,    # 1% travel-use noise floor
+    "front_excursion_mm":          0.25,
+    "rear_rh_std_mm":              0.10,
+    "braking_pitch_deg":           0.05,
+    "front_lock_p95":              0.005,
+    "rear_power_slip_p95":         0.005,
+    "body_slip_p95_deg":           0.10,
+    "understeer_low_speed_deg":    0.10,
+    "understeer_high_speed_deg":   0.10,
+}
+
+# Coherence penalty kicks in at 5 worsening metrics. 100ms per metric beyond
+# 4 — guarantees a penalty ≥ 100ms when 5+ metrics worsen, which dominates
+# the typical envelope/uncertainty/staleness terms.
+COHERENCE_THRESHOLD_WORSENING = 5
+COHERENCE_PENALTY_MS_PER_METRIC = 100.0
+
+
+def _coherence_get(source: object, attr: str) -> float | None:
+    """Read a coherence metric value from either an object or a dict; tolerate None."""
+    if source is None:
+        return None
+    if isinstance(source, dict):
+        value = source.get(attr)
+    else:
+        value = getattr(source, attr, None)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def compute_coherence_outcome(
+    predicted_metrics: object | dict | None,
+    baseline_metrics: object | dict | None,
+) -> tuple[float, tuple[str, ...], tuple[str, ...], dict[str, tuple[float | None, float | None, str]]]:
+    """Standalone entry point for coherence scoring (also used by reporters).
+
+    Returns ``(penalty_ms, worsening, improving, per_metric_detail)`` where
+    ``per_metric_detail[metric] = (baseline, predicted, classification)`` and
+    classification is one of ``"improves"``, ``"worsens"``, ``"neutral"``,
+    or ``"unavailable"``.
+    """
+    detail: dict[str, tuple[float | None, float | None, str]] = {}
+    worsening: list[str] = []
+    improving: list[str] = []
+
+    if predicted_metrics is None or baseline_metrics is None:
+        for metric in COHERENCE_METRICS:
+            detail[metric] = (None, None, "unavailable")
+        return 0.0, (), (), detail
+
+    for metric in COHERENCE_METRICS:
+        base_attr, pred_attr = COHERENCE_METRIC_FIELDS[metric]
+        base = _coherence_get(baseline_metrics, base_attr)
+        pred = _coherence_get(predicted_metrics, pred_attr)
+        if base is None or pred is None:
+            detail[metric] = (base, pred, "unavailable")
+            continue
+        delta = pred - base
+        tol = COHERENCE_METRIC_NEUTRAL_BAND.get(metric, 0.0)
+        if delta > tol:
+            worsening.append(metric)
+            detail[metric] = (base, pred, "worsens")
+        elif delta < -tol:
+            improving.append(metric)
+            detail[metric] = (base, pred, "improves")
+        else:
+            detail[metric] = (base, pred, "neutral")
+
+    n_worsen = len(worsening)
+    if n_worsen < COHERENCE_THRESHOLD_WORSENING:
+        penalty = 0.0
+    else:
+        penalty = COHERENCE_PENALTY_MS_PER_METRIC * (
+            n_worsen - (COHERENCE_THRESHOLD_WORSENING - 1)
+        )
+    return penalty, tuple(worsening), tuple(improving), detail
+
+
 @dataclass
 class PhysicsResult:
     """Forward-evaluated physics for a candidate setup."""
@@ -207,6 +333,15 @@ class ObjectiveBreakdown:
     w_staleness: float = 0.3  # lowered from 0.4 — staleness is least important
     empirical_penalty_ms: float = 0.0  # k-NN empirical score from SessionDatabase (76+ sessions)
     w_empirical: float = 0.40  # blend weight — empirical augments physics, never overrides it
+    # Coherence term: penalty when 5+ predicted-improvement metrics worsen vs
+    # baseline_measured. Mission Principle 6: per-corner-phase impact must be
+    # net-positive — a candidate that worsens 5+ axes by its OWN predictions
+    # cannot honestly be called "better". Weight 1.0 to dominate orthogonal
+    # terms (envelope ≤ 0.7, uncertainty ≤ 0.6, staleness ≤ 0.3).
+    coherence_penalty_ms: float = 0.0
+    coherence_worsening_metrics: tuple[str, ...] = field(default_factory=tuple)
+    coherence_improving_metrics: tuple[str, ...] = field(default_factory=tuple)
+    w_coherence: float = 1.0
 
     @property
     def total_score_ms(self) -> float:
@@ -218,9 +353,12 @@ class ObjectiveBreakdown:
             - self.w_envelope * self.envelope_penalty.total_ms
             - self.w_staleness * self.staleness_penalty_ms
             - self.w_empirical * self.empirical_penalty_ms
+            - self.w_coherence * self.coherence_penalty_ms
         )
 
     def summary(self) -> str:
+        n_worsen = len(self.coherence_worsening_metrics)
+        n_improve = len(self.coherence_improving_metrics)
         lines = [
             f"  Total score:           {self.total_score_ms:+.1f} ms",
             f"    Lap gain:            {self.w_lap_gain * self.lap_gain_ms:+.1f} ms "
@@ -235,6 +373,8 @@ class ObjectiveBreakdown:
             f"    Envelope penalty:    {-self.w_envelope * self.envelope_penalty.total_ms:+.1f} ms",
             f"    Staleness:           {-self.w_staleness * self.staleness_penalty_ms:+.1f} ms",
             f"    Empirical (k-NN):    {-self.w_empirical * self.empirical_penalty_ms:+.1f} ms",
+            f"    Coherence:           {-self.w_coherence * self.coherence_penalty_ms:+.1f} ms "
+            f"(worsen={n_worsen}, improve={n_improve})",
             f"  [hierarchy: rake/RH > heave_platform > LLTD(ARB) > dampers > camber]",
         ]
         return "\n".join(lines)
@@ -366,6 +506,22 @@ class ObjectiveFunction:
         self._measured = None   # set per-evaluation in evaluate()
         self._driver = None     # set per-evaluation in evaluate()
         self._session_db = None  # populated by set_session_context(); safe default for __main__ path
+        # Optional: external PredictedTelemetry to use for the coherence-check
+        # term (set via set_predicted_metrics). When None, the coherence term
+        # contributes 0 because PhysicsResult and MeasuredState have different
+        # field names — only score_from_prediction() carries authoritative
+        # PredictedTelemetry, and it computes coherence directly there.
+        self._predicted_metrics_override: object | dict | None = None
+
+    def set_predicted_metrics(self, predicted: object | dict | None) -> None:
+        """Stash a PredictedTelemetry instance for the coherence-check term.
+
+        When set, the next ``evaluate()`` call uses this for the
+        predicted-vs-baseline coherence comparison. Without it the
+        ObjectiveBreakdown coherence term stays at 0 (the canonical
+        candidate-scoring path goes through score_from_prediction).
+        """
+        self._predicted_metrics_override = predicted
 
     def set_session_context(self, measured=None, driver=None) -> None:
         """Pre-stash measured telemetry and driver profile for all subsequent evaluations.
@@ -413,27 +569,74 @@ class ObjectiveFunction:
             breakdown.w_empirical = 0.0
         return breakdown
 
+    def _coherence_penalty_ms(
+        self,
+        predicted_metrics: dict | object | None,
+        baseline_metrics: dict | object | None,
+    ) -> tuple[float, tuple[str, ...], tuple[str, ...]]:
+        """Penalise candidates whose own predictions worsen 5+ measured axes.
+
+        Coherence (Mission Principle 6): per-corner-phase impact must be
+        net-positive. If the candidate's predicted telemetry says it'll be
+        WORSE than the baseline_measured on 5 or more of COHERENCE_METRICS,
+        the candidate is physically incoherent and gets a heavy penalty so
+        orthogonal terms (LLTD targeting, damper zeta, envelope distance)
+        cannot rescue it.
+
+        All listed metrics are "lower = better" deltas/variances, so a
+        positive (predicted - baseline) means worse.
+
+        Args:
+            predicted_metrics: PredictedTelemetry (or dict, or None).
+            baseline_metrics: MeasuredState (or dict, or None) of the
+                driver-loaded session.
+
+        Returns:
+            (penalty_ms, worsening_metric_names, improving_metric_names)
+            Empty tuples and 0.0 if either input is None or no metrics
+            could be compared (the term then contributes 0 to the score).
+        """
+        penalty, worsening, improving, _ = compute_coherence_outcome(
+            predicted_metrics, baseline_metrics,
+        )
+        return penalty, worsening, improving
+
     def _heave_calibration_uncertainty_penalty_ms(self, front_heave: float) -> float:
+        # W6.1 (F-O-5): GT3 cars have no heave spring — no calibration
+        # uncertainty to penalize. Return 0 so this term contributes nothing
+        # for GT3 candidates.
+        if self.car.heave_spring is None:
+            return 0.0
         cal_uncertainty = self._heave_cal.uncertainty(front_heave)
         if cal_uncertainty <= 0.2:
             return 0.0
         return (cal_uncertainty - 0.2) ** 1.5 * 8.0
 
     def _heave_realism_penalty_ms(self, front_heave: float) -> float:
+        # W6.1 (F-O-5): GT3 cars have no heave spring; the candidate dict
+        # carries no front_heave_spring_nmm key and the heave-realism window
+        # does not apply. Return 0 to keep the envelope penalty neutral.
+        if self.car.heave_spring is None:
+            return 0.0
         # Keep solver search inside a realistic GTP heave window even when
         # the forward physics looks artificially "safe" at very stiff rates.
         # This remains an envelope/realism concern, not raw lap-gain.
-        # Read per-car realistic operating range instead of BMW-hardcoded (30, 100).
-        # Falls back to garage range if no realistic range is defined.
-        heave_opt_lo, heave_opt_hi = 30.0, 100.0  # ultimate fallback
+        # Read per-car realistic operating range; fall back to garage range.
+        # NO BMW-default (30, 100) magic numbers — if neither range is defined,
+        # raise loudly because solver cannot judge realism without a per-car window.
         _hs = self.car.heave_spring
         _realistic = _hs.front_realistic_range_nmm
         if _realistic is not None and len(_realistic) >= 2:
             heave_opt_lo, heave_opt_hi = _realistic[0], _realistic[1]
         else:
             _range = _hs.front_spring_range_nmm
-            if _range is not None and len(_range) >= 2:
-                    heave_opt_lo, heave_opt_hi = _range[0], _range[1]
+            if _range is None or len(_range) < 2:
+                raise ValueError(
+                    f"CarModel {self.car.canonical_name!r} heave_spring has neither "
+                    f"front_realistic_range_nmm nor front_spring_range_nmm set. "
+                    f"Per-car heave window is required for realism penalty."
+                )
+            heave_opt_lo, heave_opt_hi = _range[0], _range[1]
         if front_heave > heave_opt_hi:
             excess = front_heave - heave_opt_hi
             return min(300.0, excess * 0.5 + (max(0.0, excess - 100.0) ** 1.2) * 0.3)
@@ -673,6 +876,18 @@ class ObjectiveFunction:
         """
         car = self.car
 
+        # W6.1 (F-O-3): GT3 has neither torsion bar nor heave/third — front
+        # wheel rate comes from paired corner coils (constant rate, no fuel
+        # ramp). Skip the fuel-window LLTD analysis: the spring/ARB-driven
+        # LLTD does not shift across a stint the way GTP torsion+heave does,
+        # so a flat zero-window contributes no penalty and no signal. The
+        # static LLTD error is still scored normally in evaluate_physics.
+        if (
+            getattr(car, "suspension_arch", None) is not None
+            and not car.suspension_arch.has_heave_third
+        ):
+            return 0.0, 0.0, 0.0
+
         # Read per-car fuel loads from the car model (no BMW fallbacks).
         if fuel_start_l is None:
             fuel_start_l = car.fuel_capacity_l
@@ -859,8 +1074,31 @@ class ObjectiveFunction:
             else:
                 v_vortex_front = v_p99_front  # legacy behaviour
 
-            m_eff_front = car.heave_spring.front_m_eff_kg
-            m_eff_rear = car.heave_spring.rear_m_eff_kg
+            # W6.1 (F-O-1): GT3 cars (suspension_arch=GT3_COIL_4WHEEL) have
+            # car.heave_spring=None. The original BMW physics reads
+            # heave_spring.front_m_eff_kg as the effective mass driving
+            # the damped-excursion model. For GT3, the dominant vertical
+            # stiffness is the corner coil at each wheel — so m_eff per
+            # corner is half the per-axle sprung mass (~corner mass).
+            # We use:
+            #   m_eff_front = total_mass × weight_dist_front / 2.0
+            #   m_eff_rear  = total_mass × (1 - weight_dist_front) / 2.0
+            # This is the same proxy used in car_model/cars.py
+            # rh_excursion_p99 GT3 fallback (W2.2). The exact value is
+            # less important than (a) not crashing and (b) being
+            # deterministic across GT3 candidates so excursion comparisons
+            # are well-defined. Documented per audit F-O-1.
+            _is_gt3 = (
+                getattr(car, "suspension_arch", None) is not None
+                and not car.suspension_arch.has_heave_third
+            )
+            if _is_gt3 or car.heave_spring is None:
+                _total_mass = car.total_mass(car.fuel_capacity_l)
+                m_eff_front = _total_mass * car.weight_dist_front / 2.0
+                m_eff_rear = _total_mass * (1.0 - car.weight_dist_front) / 2.0
+            else:
+                m_eff_front = car.heave_spring.front_m_eff_kg
+                m_eff_rear = car.heave_spring.rear_m_eff_kg
             tyre_vr_front = car.tyre_vertical_rate_front_nmm
             tyre_vr_rear = car.tyre_vertical_rate_rear_nmm
             if tyre_vr_front is None or tyre_vr_front <= 0:
@@ -878,37 +1116,54 @@ class ObjectiveFunction:
                     tyre_vr_rear,
                 )
 
-            # Front excursion at p99 — for bottoming margin (worst-case bump)
-            # Guard against k=0 which returns 0 (wrong: should be ∞)
-            # GTP heave spring ≥ 20 N/mm in practice. k=0 is physically degenerate.
-            front_heave_clamped = max(5.0, front_heave_nmm)  # prevent div/zero physics
-            # parallel_wheel_rate is halved because front_wheel_rate is the
-            # per-axle total (2 corners), but the excursion model computes
-            # per-corner dynamics. Each corner sees half the axle wheel rate
-            # in parallel with the heave spring.
+            # W6.1 (F-O-2): for GT3 cars the corner coil IS the dominant
+            # vertical stiffness at each wheel (no heave/third spring in
+            # parallel), so the excursion model takes the corner wheel rate
+            # as the primary spring and zero parallel rate. The "<20 N/mm
+            # → cap at 30 mm" GTP safety heuristic is meaningless for GT3
+            # (front coils run 190-340 N/mm) and is skipped. For GTP the
+            # legacy heave-spring physics is preserved.
+            if _is_gt3:
+                k_front_for_excursion = max(5.0, front_wheel_rate)
+                k_rear_for_excursion = max(5.0, rear_wheel_rate)
+                parallel_front = 0.0
+                parallel_rear = 0.0
+            else:
+                # Front excursion at p99 — for bottoming margin (worst-case bump)
+                # Guard against k=0 which returns 0 (wrong: should be ∞)
+                # GTP heave spring ≥ 20 N/mm in practice. k=0 is physically degenerate.
+                k_front_for_excursion = max(5.0, front_heave_nmm)
+                k_rear_for_excursion = max(5.0, rear_third_nmm)
+                # parallel_wheel_rate is halved because front_wheel_rate is the
+                # per-axle total (2 corners), but the excursion model computes
+                # per-corner dynamics. Each corner sees half the axle wheel rate
+                # in parallel with the heave spring.
+                parallel_front = front_wheel_rate * 0.5
+                parallel_rear = rear_wheel_rate * 0.5
+
             result.front_excursion_mm = damped_excursion_mm(
-                v_p99_front, m_eff_front, front_heave_clamped,
+                v_p99_front, m_eff_front, k_front_for_excursion,
                 tyre_vertical_rate_nmm=tyre_vr_front,
-                parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
+                parallel_wheel_rate_nmm=parallel_front,
             )
             # Override: if heave spring < 20 N/mm, cap excursion at full travel (30mm)
-            # so sigma reflects the true aero instability risk
-            if front_heave_nmm < 20.0:
+            # so sigma reflects the true aero instability risk. GT3 has no heave
+            # spring so this cap does not apply.
+            if not _is_gt3 and front_heave_nmm < 20.0:
                 result.front_excursion_mm = max(result.front_excursion_mm, 30.0)
 
             # Front excursion at vortex percentile (p95) — for stall margin
             _front_vortex_excursion_mm = damped_excursion_mm(
-                v_vortex_front, m_eff_front, front_heave_clamped,
+                v_vortex_front, m_eff_front, k_front_for_excursion,
                 tyre_vertical_rate_nmm=tyre_vr_front,
-                parallel_wheel_rate_nmm=front_wheel_rate * 0.5,
+                parallel_wheel_rate_nmm=parallel_front,
             )
 
             # Rear excursion at p99 — for bottoming margin
-            rear_third_clamped = max(5.0, rear_third_nmm)
             result.rear_excursion_mm = damped_excursion_mm(
-                v_p99_rear, m_eff_rear, rear_third_clamped,
+                v_p99_rear, m_eff_rear, k_rear_for_excursion,
                 tyre_vertical_rate_nmm=tyre_vr_rear,
-                parallel_wheel_rate_nmm=rear_wheel_rate * 0.5,
+                parallel_wheel_rate_nmm=parallel_rear,
             )
 
             # Dynamic ride heights (use car compression model when available).
@@ -1168,7 +1423,13 @@ class ObjectiveFunction:
                 # before querying (map x-axis = actual rear RH, y-axis = actual front RH).
                 af, ar = car.to_aero_coords(dyn_f, dyn_r)
                 result.df_balance_pct = surface.df_balance(af, ar)
-                result.ld_ratio = surface.lift_drag(af, ar)
+                # GT3 balance-only maps publish no L/D — surface.has_ld is False
+                # and lift_drag() returns NaN. Leave result.ld_ratio at its
+                # default (3.0) so downstream score = -ld * 2.0 contributes a
+                # constant offset for ALL GT3 candidates (no signal, no penalty).
+                if surface.has_ld:
+                    result.ld_ratio = surface.lift_drag(af, ar)
+                # else: keep dataclass default 3.0 — neutral offset for GT3
                 result.df_balance_error_pct = abs(
                     result.df_balance_pct - car.default_df_balance_pct
                 )
@@ -1240,6 +1501,27 @@ class ObjectiveFunction:
 
         # ── 6. Staleness ────────────────────────────────────────────────
         breakdown.staleness_penalty_ms = 0.0
+
+        # ── 6b. Coherence (Mission Principle 6) ─────────────────────────
+        # Penalise candidates whose own predicted telemetry worsens 5+ axes
+        # vs the driver-loaded baseline. PhysicsResult field names don't
+        # match MeasuredState (different namespace), so the term only
+        # contributes when an explicit PredictedTelemetry was stashed via
+        # set_predicted_metrics(). The canonical candidate-scoring path
+        # (score_from_prediction in solver.candidate_ranker) uses the same
+        # compute_coherence_outcome() helper directly.
+        penalty_ms, worsen, improve = self._coherence_penalty_ms(
+            self._predicted_metrics_override, measured,
+        )
+        breakdown.coherence_penalty_ms = penalty_ms
+        breakdown.coherence_worsening_metrics = worsen
+        breakdown.coherence_improving_metrics = improve
+        if penalty_ms > 0.0:
+            soft_penalties.append(
+                f"Coherence penalty {penalty_ms:.0f}ms — predicted to worsen on "
+                f"{len(worsen)} of {len(COHERENCE_METRICS)} measured axes "
+                f"({', '.join(worsen[:3])}{'...' if len(worsen) > 3 else ''})"
+            )
 
         # ── 7. Empirical cross-check from SessionDatabase ────────────────
         # k-NN prediction from real BMW Sebring sessions (76+) — scores each
@@ -1486,9 +1768,9 @@ class ObjectiveFunction:
 
         # Diff preload: penalty for distance from per-car neutral target.
         # Each car has a default_diff_preload_nm in its model (e.g., BMW=12,
-        # Porsche=85). Fallback to 30 Nm for cars without the attribute.
+        # Porsche=85). Direct access — required field on every CarModel.
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = getattr(self.car, "default_diff_preload_nm", 30.0)
+        diff_target = self.car.default_diff_preload_nm
         gain -= min(8.0, abs(diff - diff_target) * 0.12)
 
         # ═══════════════════════════════════════════════════════════════
@@ -1769,41 +2051,59 @@ class ObjectiveFunction:
         # Front shock legal max: 19.9 mm (GarageRanges.front_shock_defl_max_mm)
         # Rear shock legal min: 15.0 mm (GarageRanges.rear_shock_defl_min_mm)
         # These are enforced by iRacing's garage and cannot be raced if violated.
+        # W6.1 (F-O-4): GT3 cars (suspension_arch=GT3_COIL_4WHEEL) have no
+        # heave spring — there is no heave-spring deflection legality to
+        # enforce. Skip the entire block. GT3 corner-coil deflection
+        # legality is enforced upstream in legality_engine.py / Step 3.
         _hsm = self.car.heave_spring
-        _gr = self.car.garage_ranges
-        _k_front = params.get("front_heave_spring_nmm", 50.0)
-        # Default OD: use car's first torsion option, or 0.0 for cars without torsion bars (Porsche)
-        _od_default = (self.car.corner_spring.front_torsion_od_options[0]
-                       if self.car.corner_spring.front_torsion_od_options else 0.0)
-        _od_mm = params.get("front_torsion_od_mm", _od_default)
-
-        # Ferrari's auto-calibrated deflection model was trained on INDEX inputs
-        # (front_heave=0-8, torsion_od=0-18), not physical N/mm rates.
-        # Convert N/mm → index before calling the deflection model.
-        _ferrari_controls = self.car.ferrari_indexed_controls
-        if _ferrari_controls is not None:
-            # Convert front heave N/mm → index for deflection model
-            _anchor = _hsm.front_setting_anchor_index or 1.0
-            _rate_at_anchor = _hsm.front_rate_at_anchor_nmm or 50.0
-            _rate_per_idx = _hsm.front_rate_per_index_nmm or 20.0
-            _k_front = _anchor + (_k_front - _rate_at_anchor) / _rate_per_idx  # → heave index
-            # Convert torsion OD mm → torsion bar index for deflection model
-            _od_mm = float(params.get("front_torsion_bar_index", 2.0))
-
-        _perch_front = _hsm.perch_offset_front_baseline_mm
         _dm = self.car.deflection
-        _spring_defl = _dm.heave_spring_defl_static(_k_front, _perch_front, _od_mm)
-        _slider_static = _dm.heave_slider_defl_static(_k_front, _perch_front, _od_mm)
+        _deflection_veto_enabled = (
+            _hsm is not None
+            and _dm.is_calibrated
+            and self.car.ferrari_indexed_controls is None
+        )
+        if _hsm is not None:
+            _gr = self.car.garage_ranges
+            _k_front = params.get("front_heave_spring_nmm", 50.0)
+            # Default OD: use car's first torsion option, or 0.0 for cars without torsion bars (Porsche)
+            _od_default = (self.car.corner_spring.front_torsion_od_options[0]
+                           if self.car.corner_spring.front_torsion_od_options else 0.0)
+            _od_mm = params.get("front_torsion_od_mm", _od_default)
 
-        _defl_min, _defl_max = _gr.heave_spring_defl_mm   # (0.6, 25.0)
-        _slider_min, _slider_max = _gr.heave_slider_defl_mm  # (25.0, 45.0)
+            # Ferrari's auto-calibrated deflection model was trained on INDEX inputs
+            # (front_heave=0-8, torsion_od=0-18), not physical N/mm rates.
+            # Convert N/mm → index before calling the deflection model.
+            _ferrari_controls = self.car.ferrari_indexed_controls
+            if _ferrari_controls is not None:
+                # Convert front heave N/mm → index for deflection model
+                _anchor = _hsm.front_setting_anchor_index or 1.0
+                _rate_at_anchor = _hsm.front_rate_at_anchor_nmm or 50.0
+                _rate_per_idx = _hsm.front_rate_per_index_nmm or 20.0
+                _k_front = _anchor + (_k_front - _rate_at_anchor) / _rate_per_idx  # → heave index
+                # Convert torsion OD mm → torsion bar index for deflection model
+                _od_mm = float(params.get("front_torsion_bar_index", 2.0))
+
+            _perch_front = _hsm.perch_offset_front_baseline_mm
+            _spring_defl = _dm.heave_spring_defl_static(_k_front, _perch_front, _od_mm)
+            _slider_static = _dm.heave_slider_defl_static(_k_front, _perch_front, _od_mm)
+
+            _defl_min, _defl_max = _gr.heave_spring_defl_mm   # (0.6, 25.0)
+            _slider_min, _slider_max = _gr.heave_slider_defl_mm  # (25.0, 45.0)
+        else:
+            # GT3: no heave spring; the Ferrari conversion never applies.
+            _ferrari_controls = None
+            _spring_defl = 0.0
+            _slider_static = 0.0
+            _defl_min = _defl_max = 0.0
+            _slider_min = _slider_max = 0.0
+            _k_front = 0.0
 
         # Deflection vetoes only applied when the car's DeflectionModel is calibrated
         # from real measured data. BMW: calibrated from 31 sessions (R²=0.953).
         # Ferrari: auto-calibrated but indexed inputs have insufficient boundary precision.
         # Porsche/Acura/Cadillac: uncalibrated — BMW coefficients produce garbage values.
         # NEVER apply BMW-calibrated deflection model to uncalibrated cars.
-        _deflection_veto_enabled = _dm.is_calibrated and _ferrari_controls is None
+        # GT3: _hsm is None so _deflection_veto_enabled is False (set above).
         if _deflection_veto_enabled:
             if _spring_defl < _defl_min:
                 veto_reasons.append(
@@ -1983,9 +2283,15 @@ class ObjectiveFunction:
         penalty = EnvelopePenalty()
 
         # Extreme spring ratios
+        # W6.1 (F-O-5): heave/third ratio penalty does not apply to GT3
+        # (no heave or third spring). Skip the ratio check entirely on GT3.
+        _is_gt3_envelope = (
+            getattr(self.car, "suspension_arch", None) is not None
+            and not self.car.suspension_arch.has_heave_third
+        )
         front_heave = params.get("front_heave_spring_nmm", 50.0)
         rear_third = params.get("rear_third_spring_nmm", 450.0)
-        if rear_third > 0:
+        if not _is_gt3_envelope and rear_third > 0:
             ratio = front_heave / rear_third
             if ratio < 0.03 or ratio > 0.20:
                 penalty.setup_distance_ms = 10.0

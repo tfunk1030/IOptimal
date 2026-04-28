@@ -117,6 +117,15 @@ class SyncClient:
                     synced INTEGER DEFAULT 0
                 )
             """)
+            # TODO(W9.x, audit F12): the (car, track) PK is too narrow once
+            # GT3 + GTP share a track.  Two architectures with identical
+            # (canonical, track) keys collide here; the local cache will
+            # overwrite the GTP empirical model with the GT3 one (or vice
+            # versa) on the next pull.  Extend the PK to
+            # (car, track, suspension_arch) when the server-side
+            # EmpiricalModel UniqueConstraint is widened (W8.1 left this
+            # for W9.x).  Until then GT3 + GTP cars in the same team must
+            # not share canonical names — registry entries enforce this.
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS pulled_models (
                     car TEXT NOT NULL,

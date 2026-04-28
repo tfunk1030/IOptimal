@@ -116,6 +116,7 @@ class HeaveRecommendation:
     avg_fuel_nmm: float = 0.0        # heave spring for average fuel (optimal)
     compromise_nmm: float = 0.0      # recommended compromise
     avg_fuel_l: float = 0.0          # average fuel load used for calculation
+    full_fuel_l: float = 0.0         # full-tank fuel load (per-car capacity)
     reasoning: str = ""
 
 
@@ -177,8 +178,11 @@ class StintStrategy:
             lines.append("")
             lines.append("  HEAVE SPRING FUEL-LOAD OPTIMISATION")
             lines.append("  " + "-" * (width - 4))
+            # W3.3 (ST1): per-car fuel capacity from HeaveRecommendation. GT3
+            # tanks (100/104/106 L) differ from GTP (89 L); the literal here
+            # was leaking the GTP capacity into every car's display string.
             lines.append(
-                f"    Full fuel ({89:.0f}L):   {hr.full_fuel_nmm:.0f} N/mm  "
+                f"    Full fuel ({hr.full_fuel_l:.0f}L):   {hr.full_fuel_nmm:.0f} N/mm  "
                 f"(safety constraint)"
             )
             lines.append(
@@ -267,7 +271,13 @@ FUEL_DENSITY_KG_PER_L = 0.73
 FUEL_TANK_POSITION_FRACTION = 0.55  # 55% of wheelbase from front
 
 # Pushrod correction per fuel load change
-# From per-car-quirks.md: BMW 89L → 12L needs ~0.5mm pushrod correction
+# From per-car-quirks.md: BMW 89L → 12L needs ~0.5mm pushrod correction.
+# TODO(W7.2): the divisor 77 is the BMW GTP fuel-mass range (kg). For GT3 the
+# range is ~66 kg (100 L → 10 L × 0.73), so the per-kg ratio is approximately
+# right but drifts ~10–14%. The audit ST2 finding (DEGRADED, small numerical
+# drift) flags this as a "needs per-car calibration" item — a real fix waits
+# for GT3 IBT pushrod-vs-fuel sweeps to land. See ST2 in
+# docs/audits/gt3_phase2/solver-damper-legality.md.
 PUSHROD_CORRECTION_MM_PER_KG = 0.5 / (77 * FUEL_DENSITY_KG_PER_L)
 
 
@@ -279,13 +289,22 @@ def compute_fuel_states(
 
     Args:
         car: Car model
-        fuel_levels_l: Fuel levels to compute (default: [89, 50, 12])
+        fuel_levels_l: Fuel levels to compute. When None, derived per-car from
+            ``car.fuel_capacity_l`` (full) and ``car.fuel_stint_end_l`` (end)
+            with the midpoint as the average. BMW GTP -> [88.96, ~54.5, 20];
+            BMW M4 GT3 -> [100, 55, 10]; Aston GT3 -> [106, 58, 10].
 
     Returns:
         List of FuelState objects
     """
+    # W3.3 (ST3): per-car fuel range. Previously hardcoded to GTP [89, 50, 12]
+    # which under-stated GT3 full tanks by 11–17 L. See ST3 in
+    # docs/audits/gt3_phase2/solver-damper-legality.md.
     if fuel_levels_l is None:
-        fuel_levels_l = [89.0, 50.0, 12.0]
+        fuel_full = float(car.fuel_capacity_l)
+        fuel_end = float(car.fuel_stint_end_l)
+        fuel_mid = (fuel_full + fuel_end) / 2.0
+        fuel_levels_l = [fuel_full, fuel_mid, fuel_end]
 
     dry_mass_kg = car.mass_car_kg + car.mass_driver_kg  # car + driver mass without fuel
     wheelbase_m = car.wheelbase_m
@@ -652,6 +671,7 @@ def _compute_heave_recommendation(
         avg_fuel_nmm=float(avg_heave),
         compromise_nmm=float(compromise),
         avg_fuel_l=avg_fuel_l,
+        full_fuel_l=float(full_fuel_l),
         reasoning=reasoning,
     )
 
@@ -689,11 +709,15 @@ def analyze_stint(
         StintStrategy with multi-condition analysis, balance curve, and compromise parameters
     """
     # Default to per-car baselines when caller doesn't pass values.
-    # Every car must define these — no fallback to hide missing definitions.
-    if base_heave_nmm is None:
+    # Every GTP car must define these. GT3 cars (no heave/third) leave them as
+    # None — the heave-related compromise outputs are skipped downstream. See
+    # ST5/ST6 in docs/audits/gt3_phase2/solver-damper-legality.md.
+    _has_heave_third = car.suspension_arch.has_heave_third
+    if base_heave_nmm is None and _has_heave_third:
         base_heave_nmm = float(car.front_heave_spring_nmm)
-    if base_third_nmm is None:
+    if base_third_nmm is None and _has_heave_third:
         base_third_nmm = float(car.rear_third_spring_nmm)
+    # GT3: keep both as None (sentinel meaning "not applicable").
 
     # When evolution is provided, derive parameters from telemetry
     if evolution is not None:
@@ -712,8 +736,14 @@ def analyze_stint(
                 stint_laps = max(stint_laps, len(snapshots))
                 base_understeer_deg = start_snap.understeer_mean_deg
 
+    # W3.3 (ST3): per-car fuel range, derived from car.fuel_capacity_l and
+    # car.fuel_stint_end_l. Mirror of compute_fuel_states default so analyze_stint
+    # produces a self-consistent fuel sweep regardless of which fixture was used.
     if fuel_levels_l is None:
-        fuel_levels_l = [89.0, 50.0, 12.0]
+        fuel_full = float(car.fuel_capacity_l)
+        fuel_end = float(car.fuel_stint_end_l)
+        fuel_mid = (fuel_full + fuel_end) / 2.0
+        fuel_levels_l = [fuel_full, fuel_mid, fuel_end]
 
     # Compute fuel states
     fuel_states = compute_fuel_states(car, fuel_levels_l)
@@ -727,12 +757,20 @@ def analyze_stint(
         mass_ratio = fs.total_mass_kg / fuel_states[0].total_mass_kg
         front_weight_shift = fs.front_weight_pct - fuel_states[0].front_weight_pct
 
-        # Heave spring: k_min ∝ m_eff (lighter car needs less spring)
-        heave_at_fuel = base_heave_nmm * mass_ratio
-        heave_at_fuel = math.ceil(heave_at_fuel / 10) * 10  # round to garage step
+        # Heave spring: k_min ∝ m_eff (lighter car needs less spring).
+        # GT3: no heave/third spring — leave heave_at_fuel/third_at_fuel at 0.0
+        # so find_compromise_parameters() skips those keys entirely.
+        if base_heave_nmm is not None:
+            heave_at_fuel = base_heave_nmm * mass_ratio
+            heave_at_fuel = math.ceil(heave_at_fuel / 10) * 10  # round to garage step
+        else:
+            heave_at_fuel = 0.0
 
-        third_at_fuel = base_third_nmm * mass_ratio
-        third_at_fuel = math.ceil(third_at_fuel / 10) * 10
+        if base_third_nmm is not None:
+            third_at_fuel = base_third_nmm * mass_ratio
+            third_at_fuel = math.ceil(third_at_fuel / 10) * 10
+        else:
+            third_at_fuel = 0.0
 
         # Damping ratio shift: ζ ∝ 1/√(k*m), so lighter → higher ζ
         zeta_shift = 1.0 / math.sqrt(mass_ratio) - 1.0
@@ -775,10 +813,14 @@ def analyze_stint(
         conditions, degradation, stint_laps
     )
 
-    # Heave spring recommendation (full vs average fuel)
-    heave_rec = _compute_heave_recommendation(
-        car, base_heave_nmm, fuel_levels_l, conditions
-    )
+    # Heave spring recommendation (full vs average fuel).
+    # GT3 short-circuit: no heave spring → return an empty recommendation.
+    if base_heave_nmm is not None and _has_heave_third:
+        heave_rec = _compute_heave_recommendation(
+            car, base_heave_nmm, fuel_levels_l, conditions
+        )
+    else:
+        heave_rec = HeaveRecommendation()
 
     return StintStrategy(
         conditions=conditions,

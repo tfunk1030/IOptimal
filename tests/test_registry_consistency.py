@@ -139,6 +139,57 @@ class RegistryConsistencyTests(unittest.TestCase):
         for sto_id in critical_ids:
             self.assertIn(sto_id, bmw_sto_ids, f"BMW registry missing STO ID: {sto_id}")
 
+    # ─── GT3 W1.3 routing regression guards ──────────────────────────────
+
+    def test_car_name_gt3_does_not_collapse_to_gtp(self):
+        """Pin W1.3 fix: ``_car_name`` MUST NOT silently map GT3 inputs to GTP.
+
+        The pre-W1.3 substring loop ran ``("bmw", "ferrari", "cadillac",
+        "porsche", "acura")`` in that order and returned on first hit, so
+        ``_car_name("bmw_m4_gt3")`` returned ``"bmw"``.  That collapsed every
+        GT3 caller into the GTP BMW spec set.
+        """
+        from car_model.setup_registry import _car_name
+        self.assertEqual(_car_name("bmw_m4_gt3"), "bmw_m4_gt3")
+        self.assertEqual(_car_name("aston_martin_vantage_gt3"), "aston_martin_vantage_gt3")
+        self.assertEqual(_car_name("porsche_992_gt3r"), "porsche_992_gt3r")
+        # And the GTP names still work.
+        self.assertEqual(_car_name("bmw"), "bmw")
+        self.assertEqual(_car_name("porsche"), "porsche")
+
+    def test_car_name_none_returns_bmw_default_with_todo(self):
+        """W1.3: ``_car_name(None)`` keeps the legacy BMW silent default.
+
+        Principle 8 (no silent fallbacks) ideally wants a raise, but there
+        is one real None caller today:
+        ``solver/bmw_rotation_search.py:665`` calls ``_extract_target_maps``
+        without a ``car`` argument, which propagates None to
+        ``public_output_value`` to ``_car_name``.  That path is BMW-only
+        (gated by ``_is_bmw_sebring``), so the silent default is
+        contextually correct.  Wave-1 follow-up tracked in code comment.
+        """
+        from car_model.setup_registry import _car_name
+        self.assertEqual(_car_name(None), "bmw")
+
+    def test_get_car_spec_gt3_returns_none_not_bmw_spec(self):
+        """W1.3: GT3 spec dicts are intentional empty stubs (Wave 4 will populate).
+
+        ``get_car_spec("bmw_m4_gt3", ...)`` must return None — NOT silently
+        return the BMW spec — so that downstream writers fail loudly when
+        they hit a GT3 field they have no STO param ID for.
+        """
+        for car in ("bmw_m4_gt3", "aston_martin_vantage_gt3", "porsche_992_gt3r"):
+            self.assertIn(car, CAR_FIELD_SPECS, f"{car} missing from CAR_FIELD_SPECS")
+            self.assertEqual(
+                CAR_FIELD_SPECS[car], {},
+                f"{car} spec dict should be empty stub (populated in Wave 4)",
+            )
+            self.assertIsNone(
+                get_car_spec(car, "front_heave_nmm"),
+                f"get_car_spec({car!r}, 'front_heave_nmm') must NOT silently "
+                "fall back to BMW spec",
+            )
+
     def test_writer_param_ids_cover_ferrari_native_map(self):
         """Verify Ferrari registry uses Ferrari-native Systems and Dampers IDs."""
         ferrari_specs = CAR_FIELD_SPECS["ferrari"]

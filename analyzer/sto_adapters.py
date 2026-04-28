@@ -443,6 +443,14 @@ _ACURA_ROW_SPECS: tuple[_RowDisplaySpec, ...] = (
 )
 
 
+# W5.2 — GT3 canonical names (must mirror analyzer.setup_reader.GT3_CANONICALS).
+_GT3_CANONICALS: frozenset[str] = frozenset({
+    "bmw_m4_gt3",
+    "aston_martin_vantage_gt3",
+    "porsche_992_gt3r",
+})
+
+
 def adapt_sto(decoded: DecodedSto, car: str | None = None) -> StoAdaptedSetup:
     canonical_car = _canonical_car_name(car or decoded.car_id)
     raw_metadata = {
@@ -467,6 +475,25 @@ def adapt_sto(decoded: DecodedSto, car: str | None = None) -> StoAdaptedSetup:
             car=canonical_car,
             adapter_name=oracle.name if oracle else "acura_v3_container",
             values=values,
+            extra_values={"tire_type": _infer_tire_type(decoded)},
+            decode_warnings=warnings,
+            raw_sto_metadata=raw_metadata,
+        )
+    if canonical_car in _GT3_CANONICALS:
+        # W5.2 — GT3 STO files: outer v3 container is car-agnostic, but the
+        # inner setup blob is still opaque.  We DO NOT yet have GT3 hashed
+        # oracles (no canonical reference STO per car) — that work lands as
+        # a follow-up unit.  Surface a non-``v3_container_only`` adapter_name
+        # so downstream consumers know the file was recognised as GT3 and
+        # carry the canonical car through; the analyzer's IBT path remains
+        # the authoritative source of GT3 setup values today.
+        warnings = list(decoded.warnings)
+        warnings.append(
+            f"{canonical_car} v3 container decoded; canonical GT3 setup oracles are pending (W5.2 follow-up)."
+        )
+        return StoAdaptedSetup(
+            car=canonical_car,
+            adapter_name=f"{canonical_car}_v3_container",
             extra_values={"tire_type": _infer_tire_type(decoded)},
             decode_warnings=warnings,
             raw_sto_metadata=raw_metadata,

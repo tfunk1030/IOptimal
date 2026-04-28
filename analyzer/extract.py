@@ -93,7 +93,17 @@ class MeasuredState:
     rear_dominant_freq_hz: float | None = None
 
     # --- Step 4: Balance ---
-    lltd_measured: float | None = None              # Backward-compatible alias of roll_distribution_proxy
+    # DEPRECATED — this field was historically aliased to ``roll_distribution_proxy``
+    # (a geometric ratio insensitive to spring stiffness; see CLAUDE.md 2026-04-08
+    # entry).  The alias write was removed in W5.3 (analyzer.md:A16) so this field
+    # is no longer populated by ``extract_measured_state``.  It is kept on the
+    # dataclass only because legacy serialised observations and downstream
+    # consumers (learner/empirical_models.py, solver/session_database.py) still
+    # reference it.  Do NOT consume in new code — use ``roll_distribution_proxy``
+    # directly OR a real wheel-force-based LLTD measurement (not yet available
+    # from iRacing IBT).  GT3 cars have no LLTD calibration baseline whatsoever
+    # so the alias is doubly invalid for them.
+    lltd_measured: float | None = None              # DEPRECATED — see comment above
     roll_distribution_proxy: float | None = None    # RH-based proxy, not true LLTD
     roll_gradient_measured_deg_per_g: float | None = None
     body_roll_at_peak_g_deg: float | None = None
@@ -288,6 +298,13 @@ class MeasuredState:
     metric_fallbacks: list[str] = field(default_factory=list)
     fallback_reasons: list[str] = field(default_factory=list)
 
+    # --- Speed-band stratified aero compression (per-IBT V^2 fit) ---
+    # Populated by analyzer.extractors.aero_speed_bands. Keys include
+    # front_<lo>_<hi>, rear_<lo>_<hi>, samples_<lo>_<hi>, v2_mid_<lo>_<hi>,
+    # alpha_front, beta_front, r2_front, n_bins_front (and rear), plus
+    # car_canonical. See analyzer/extractors/aero_speed_bands.py.
+    aero_compression_by_speed_kph: dict[str, object] = field(default_factory=dict)
+
     # --- Telemetry truth metadata ---
     front_settle_total_events: int = 0
     rear_settle_total_events: int = 0
@@ -299,6 +316,77 @@ class MeasuredState:
     signal_conflicts: list[str] = field(default_factory=list)
     telemetry_signals: dict[str, TelemetrySignal[float]] = field(default_factory=dict, repr=False)
     telemetry_bundle: dict[str, object] = field(default_factory=dict, repr=False)
+
+    # --- Suspension PSD: f_n + ζ + Q per mode (Unit 2) ---
+    # Populated by analyzer.extractors.psd.extract_suspension_psd. All keys
+    # are optional — populated only when the relevant deflection channels are
+    # present in the IBT for this car's architecture.
+    front_heave_natural_freq_hz: float | None = None
+    front_heave_damping_ratio: float | None = None
+    front_heave_q_factor: float | None = None
+    rear_heave_natural_freq_hz: float | None = None
+    rear_heave_damping_ratio: float | None = None
+    rear_heave_q_factor: float | None = None
+    front_roll_natural_freq_hz: float | None = None
+    front_roll_damping_ratio: float | None = None
+    front_roll_q_factor: float | None = None
+    rear_roll_natural_freq_hz: float | None = None
+    rear_roll_damping_ratio: float | None = None
+    rear_roll_q_factor: float | None = None
+    # Per-corner (cars with LF/RF/LR/RRshockDefl)
+    lf_natural_freq_hz: float | None = None
+    lf_damping_ratio: float | None = None
+    rf_natural_freq_hz: float | None = None
+    rf_damping_ratio: float | None = None
+    lr_natural_freq_hz: float | None = None
+    lr_damping_ratio: float | None = None
+    rr_natural_freq_hz: float | None = None
+    rr_damping_ratio: float | None = None
+    # Axle-mode keys for cars without heave/third (GT3 architecture)
+    front_axle_natural_freq_hz: float | None = None
+    front_axle_damping_ratio: float | None = None
+    rear_axle_natural_freq_hz: float | None = None
+    rear_axle_damping_ratio: float | None = None
+    suspension_psd_raw: dict[str, float | str] = field(default_factory=dict, repr=False)
+
+    # --- Kerb-event step-response damper ID (Unit 3) ---
+    front_step_response_zeta_p50: float | None = None
+    front_step_response_zeta_p95: float | None = None
+    front_step_response_freq_hz_p50: float | None = None
+    rear_step_response_zeta_p50: float | None = None
+    rear_step_response_zeta_p95: float | None = None
+    rear_step_response_freq_hz_p50: float | None = None
+    kerb_strike_count: int = 0
+
+    # --- Per-corner roll-stiffness micro-experiment aggregates (Unit 4) ---
+    # Populated by aggregate_corner_roll_gradients() from the per-corner
+    # roll_gradient_deg_per_g values produced by analyzer/segment.py. ~14
+    # corners × N laps gives a much richer ARB-fit dataset than the single
+    # session-mean roll gradient at state.roll_gradient_measured_deg_per_g.
+    roll_gradient_corner_p50_deg_per_g: float | None = None
+    roll_gradient_corner_p95_deg_per_g: float | None = None
+    roll_gradient_corner_count: int = 0
+
+    # --- Roll shock deflection (FROLLshockDefl / RROLLshockDefl) ---
+    # Available on Porsche 963, Acura ARX-06, and other heave+roll architectures.
+    front_roll_shock_defl_mean_mm: float | None = None   # Mean at speed
+    front_roll_shock_defl_p99_mm: float | None = None    # p99 peak
+    front_roll_shock_defl_std_mm: float | None = None    # Variance at speed
+    rear_roll_shock_defl_mean_mm: float | None = None
+    rear_roll_shock_defl_p99_mm: float | None = None
+    rear_roll_shock_defl_std_mm: float | None = None
+
+    # --- Direct downforce from IBT (DownforceFront / DownforceRear) ---
+    # Direct aero force values when available; validates ride-height-derived estimates.
+    downforce_front_n: float | None = None               # Mean DownforceFront at speed (N)
+    downforce_rear_n: float | None = None                # Mean DownforceRear at speed (N)
+    downforce_total_n: float | None = None               # Front + Rear total
+    downforce_balance_pct: float | None = None           # Front share of total (%)
+    downforce_front_vs_rh_delta_pct: float | None = None # % diff: direct vs RH-derived front
+    downforce_rear_vs_rh_delta_pct: float | None = None  # % diff: direct vs RH-derived rear
+
+    # --- BrakeABSactive direct channel flag ---
+    brake_abs_channel_present: bool = False               # True when direct BrakeABSactive IBT channel exists
 
 
 def extract_bottoming_events(
@@ -658,8 +746,9 @@ def extract_measurements(
         # includes geometric and direct components. This proxy correlates with
         # LLTD but is not identical — use the field name "roll_distribution_proxy"
         # and treat "lltd_measured" as a backward-compatible alias.
-        tw_f = getattr(car.arb, "track_width_front_mm", 1730.0)
-        tw_r = getattr(car.arb, "track_width_rear_mm", 1650.0)
+        # Track widths are required per-car ARBModel fields — no BMW-default magic.
+        tw_f = car.arb.track_width_front_mm
+        tw_r = car.arb.track_width_rear_mm
         tw_f_sq = tw_f ** 2
         tw_r_sq = tw_r ** 2
 
@@ -675,7 +764,9 @@ def extract_measurements(
             total_moment = front_moment + rear_moment
             if total_moment > 0.1:
                 state.roll_distribution_proxy = front_moment / total_moment
-                state.lltd_measured = state.roll_distribution_proxy
+                # W5.3 (analyzer.md:A16): no longer write ``lltd_measured`` alias.
+                # The field stays None.  Downstream consumers should read
+                # ``roll_distribution_proxy`` directly.
 
         # --- Speed-dependent roll distribution proxy ---
         # Use 150 kph as the boundary to eliminate the 120-180 kph gap that
@@ -692,7 +783,7 @@ def extract_measurements(
                 total_ls = f_mom_ls + r_mom_ls
                 if total_ls > 0.1:
                     state.roll_distribution_proxy_low_speed = f_mom_ls / total_ls
-                    state.lltd_low_speed = state.roll_distribution_proxy_low_speed
+                    # W5.3: alias ``lltd_low_speed`` no longer written; see A16.
 
             if np.sum(high_speed_corner) > 30:
                 f_defl_hs = np.abs(lf_rh[high_speed_corner] - rf_rh[high_speed_corner])
@@ -702,7 +793,7 @@ def extract_measurements(
                 total_hs = f_mom_hs + r_mom_hs
                 if total_hs > 0.1:
                     state.roll_distribution_proxy_high_speed = f_mom_hs / total_hs
-                    state.lltd_high_speed = state.roll_distribution_proxy_high_speed
+                    # W5.3: alias ``lltd_high_speed`` no longer written; see A16.
 
         # --- Body roll ---
         if ibt.has_channel("Roll"):
@@ -865,11 +956,35 @@ def extract_measurements(
     # --- Wind ---
     _extract_wind(ibt, state)
 
+    # --- Roll shock deflection (FROLLshockDefl / RROLLshockDefl) ---
+    _extract_roll_shock_defl(ibt, start, end, speed_kph, state)
+
+    # --- Direct downforce (DownforceFront / DownforceRear) ---
+    _extract_direct_downforce(ibt, start, end, speed_kph, state)
+
+    # --- BrakeABSactive channel presence flag ---
+    state.brake_abs_channel_present = ibt.has_channel("BrakeABSactive")
+
     # --- Per-corner shock velocities ---
     state.lf_shock_vel_p95_mps = float(np.percentile(lf_sv, 95))
     state.rf_shock_vel_p95_mps = float(np.percentile(rf_sv, 95))
     state.lr_shock_vel_p95_mps = float(np.percentile(lr_sv, 95))
     state.rr_shock_vel_p95_mps = float(np.percentile(rr_sv, 95))
+
+    # --- Speed-band stratified aero compression (additive extractor) ---
+    # Wrapped in try/except so a regression here cannot abort the rest of
+    # extract_measurements(). On failure we leave the dict empty and log
+    # a fallback reason for downstream provenance.
+    try:
+        from analyzer.extractors.aero_speed_bands import (
+            extract_aero_compression_by_speed_band,
+        )
+        state.aero_compression_by_speed_kph = extract_aero_compression_by_speed_band(
+            ibt, car, start=start, end=end,
+        )
+    except Exception as exc:
+        state.aero_compression_by_speed_kph = {}
+        state.fallback_reasons.append(f"aero_speed_bands:{exc}")
 
     # --- Telemetry truth map ---
     state.telemetry_signals = build_signal_map(state)
@@ -879,7 +994,115 @@ def extract_measurements(
     if state.rear_settle_invalid_reason:
         state.fallback_reasons.append(f"rear_settle:{state.rear_settle_invalid_reason}")
 
+    # --- Suspension PSD: ζ + ω_n per mode (Unit 2) ---
+    # Best-effort: failures here must not break the rest of the pipeline.
+    try:
+        from analyzer.extractors.psd import extract_suspension_psd
+
+        psd_features = extract_suspension_psd(
+            ibt, car, lap_range=(start, end)
+        )
+        state.suspension_psd_raw = psd_features
+        # Promote known keys to typed attributes.
+        for key, value in psd_features.items():
+            if hasattr(state, key) and not key.endswith("_psd_warning"):
+                setattr(state, key, value)
+        state.extraction_attempts.append(
+            {"phase": "suspension_psd", "source": "scipy.welch",
+             "status": "ok" if psd_features else "no_channels"}
+        )
+    except Exception as exc:
+        state.extraction_attempts.append(
+            {"phase": "suspension_psd", "source": "scipy.welch",
+             "status": f"failed: {exc}"}
+        )
+
+    # --- Kerb-event step-response damper ID (Unit 3) ---
+    # Each kerb strike is a free step input. Extract ζ + ω_n per axle from the
+    # post-strike ride-height ringdown. Wrapped in try/except to avoid breaking
+    # extraction on any per-car telemetry quirk.
+    try:
+        from analyzer.extractors.kerb_events import extract_kerb_step_responses
+        _kerb_resp = extract_kerb_step_responses(ibt, car)
+        state.front_step_response_zeta_p50 = _kerb_resp["front_step_response_zeta_p50"]
+        state.front_step_response_zeta_p95 = _kerb_resp["front_step_response_zeta_p95"]
+        state.front_step_response_freq_hz_p50 = _kerb_resp["front_step_response_freq_hz_p50"]
+        state.rear_step_response_zeta_p50 = _kerb_resp["rear_step_response_zeta_p50"]
+        state.rear_step_response_zeta_p95 = _kerb_resp["rear_step_response_zeta_p95"]
+        state.rear_step_response_freq_hz_p50 = _kerb_resp["rear_step_response_freq_hz_p50"]
+        state.kerb_strike_count = int(_kerb_resp["kerb_strike_count"])
+        state.extraction_attempts.append(
+            {"phase": "kerb_step_response", "source": "extractors.kerb_events",
+             "status": f"ok:{state.kerb_strike_count}_strikes"}
+        )
+    except Exception as exc:
+        state.extraction_attempts.append(
+            {"phase": "kerb_step_response", "source": "extractors.kerb_events",
+             "status": f"failed: {exc}"}
+        )
+
     return state
+
+
+def aggregate_corner_roll_gradients(
+    corners: list,
+    state: "MeasuredState | None" = None,
+) -> dict[str, float | int | None]:
+    """Aggregate per-corner roll-gradient micro-experiments into p50/p95/count.
+
+    Unit 4 (per-corner roll-stiffness micro-experiments): each corner gives one
+    (lat_g_mean, body_roll_mean) datapoint, so a single 25-lap IBT yields up to
+    ~350 independent roll-stiffness samples instead of one session mean. This
+    helper consumes the per-corner ``roll_gradient_deg_per_g`` field added to
+    ``CornerAnalysis`` and produces the percentile aggregates that downstream
+    ARB / auto_calibrate code can fit against.
+
+    Arguments
+    ---------
+    corners
+        List of ``CornerAnalysis`` instances (typically across all valid laps).
+        Items missing the field or carrying ``None`` are silently skipped.
+    state
+        Optional ``MeasuredState`` to populate in-place with the aggregate
+        fields. Returns the same dict regardless.
+
+    Returns
+    -------
+    dict with ``roll_gradient_corner_p50``, ``roll_gradient_corner_p95``,
+    ``roll_gradient_corner_count``. Percentile values are ``None`` when the
+    corpus is empty.
+    """
+    out: dict[str, float | int | None] = {
+        "roll_gradient_corner_p50": None,
+        "roll_gradient_corner_p95": None,
+        "roll_gradient_corner_count": 0,
+    }
+    try:
+        values = []
+        for c in corners or []:
+            v = getattr(c, "roll_gradient_deg_per_g", None)
+            if v is None:
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if not np.isfinite(fv):
+                continue
+            values.append(fv)
+        if values:
+            arr = np.asarray(values, dtype=float)
+            out["roll_gradient_corner_p50"] = round(float(np.percentile(arr, 50)), 4)
+            out["roll_gradient_corner_p95"] = round(float(np.percentile(arr, 95)), 4)
+            out["roll_gradient_corner_count"] = int(arr.size)
+    except Exception:  # noqa: BLE001 — aggregation must never crash extraction
+        pass
+
+    if state is not None:
+        state.roll_gradient_corner_p50_deg_per_g = out["roll_gradient_corner_p50"]
+        state.roll_gradient_corner_p95_deg_per_g = out["roll_gradient_corner_p95"]
+        state.roll_gradient_corner_count = int(out["roll_gradient_corner_count"] or 0)
+    return out
 
 
 def _extract_handling(
@@ -1435,7 +1658,22 @@ def _extract_heave_deflection(
     Channels:
         HFshockDefl — front heave element deflection (meters)
         HRshockDefl — rear heave/third element deflection (may be missing)
+
+    W5.3 (analyzer.md:A17): GT3 cars have no heave element.  If the
+    HFshockDefl/HRshockDefl channels happen to exist on a GT3 IBT they
+    either carry zeros or per-corner travel under a misleading name and
+    the resulting `front_heave_travel_used_pct` / `heave_bottoming_events_*`
+    metrics have no physical meaning — they would also fire phantom
+    critical-severity heave-bottoming alarms in `_check_safety` (A18).
+    Skip the extraction entirely on GT3; per-corner travel already lands
+    in `front_corner_defl_*_mm` via `_extract_corner_shock_defl`.
     """
+    if not car.suspension_arch.has_heave_third:
+        # GT3 (or any future architecture without a heave element) — no
+        # heave/third channels are meaningful.  Leave the heave_*_mm /
+        # heave_*_pct / heave_bottoming_events_* fields at their dataclass
+        # defaults (None / 0).
+        return
     n = end - start + 1
     hsm = car.heave_spring
 
@@ -1969,3 +2207,102 @@ def _extract_wind(
         wind_dir = ibt.channel("WindDir")
         if wind_dir is not None and len(wind_dir) > 0:
             state.wind_dir_deg = round(float(np.mean(np.degrees(wind_dir))), 1)
+
+
+def _extract_roll_shock_defl(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    speed_kph: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract roll spring/damper travel from FROLLshockDefl / RROLLshockDefl.
+
+    Available on Porsche 963, Acura ARX-06, and other heave+roll architectures.
+    These channels report roll-element deflection independently of the heave
+    springs, enabling direct validation of roll stiffness distribution.
+    """
+    at_speed = speed_kph > 150
+    n_at_speed = int(np.sum(at_speed))
+    if n_at_speed < 30:
+        return
+
+    if ibt.has_channel("FROLLshockDefl"):
+        froll_defl = ibt.channel("FROLLshockDefl")[start:end + 1]
+        froll_at_speed = froll_defl[at_speed]
+        state.front_roll_shock_defl_mean_mm = round(float(np.mean(froll_at_speed)) * 1000, 2)
+        state.front_roll_shock_defl_p99_mm = round(float(np.percentile(np.abs(froll_at_speed), 99)) * 1000, 2)
+        state.front_roll_shock_defl_std_mm = round(float(np.std(froll_at_speed)) * 1000, 3)
+
+    if ibt.has_channel("RROLLshockDefl"):
+        rroll_defl = ibt.channel("RROLLshockDefl")[start:end + 1]
+        rroll_at_speed = rroll_defl[at_speed]
+        state.rear_roll_shock_defl_mean_mm = round(float(np.mean(rroll_at_speed)) * 1000, 2)
+        state.rear_roll_shock_defl_p99_mm = round(float(np.percentile(np.abs(rroll_at_speed), 99)) * 1000, 2)
+        state.rear_roll_shock_defl_std_mm = round(float(np.std(rroll_at_speed)) * 1000, 3)
+
+
+def _extract_direct_downforce(
+    ibt: IBTFile,
+    start: int,
+    end: int,
+    speed_kph: np.ndarray,
+    state: MeasuredState,
+) -> None:
+    """Extract direct aero downforce from DownforceFront / DownforceRear channels.
+
+    These channels provide the simulator's actual aero force values, which can
+    validate the ride-height-derived aero compression estimates used by the solver.
+    When both direct and RH-derived estimates are available, the delta quantifies
+    how much model error exists in the aero map lookup.
+    """
+    at_speed = speed_kph > 150
+    n_at_speed = int(np.sum(at_speed))
+    if n_at_speed < 30:
+        return
+
+    has_front = ibt.has_channel("DownforceFront")
+    has_rear = ibt.has_channel("DownforceRear")
+    if not has_front and not has_rear:
+        return
+
+    if has_front:
+        df_front = ibt.channel("DownforceFront")[start:end + 1]
+        state.downforce_front_n = round(float(np.mean(df_front[at_speed])), 1)
+
+    if has_rear:
+        df_rear = ibt.channel("DownforceRear")[start:end + 1]
+        state.downforce_rear_n = round(float(np.mean(df_rear[at_speed])), 1)
+
+    if state.downforce_front_n is not None and state.downforce_rear_n is not None:
+        total = state.downforce_front_n + state.downforce_rear_n
+        state.downforce_total_n = round(total, 1)
+        if total > 10.0:
+            state.downforce_balance_pct = round(
+                state.downforce_front_n / total * 100, 1
+            )
+
+    # Compare with ride-height-derived aero compression if available.
+    # Aero compression (mm) is proportional to downforce, so a % delta
+    # between the two indicates aero map model error.
+    if (
+        state.downforce_front_n is not None
+        and state.aero_compression_front_mm is not None
+        and state.aero_compression_front_mm > 0.5
+        and state.downforce_front_n > 10.0
+    ):
+        # Normalise: downforce per mm of compression at speed
+        # Both are mean-at-speed so the comparison is apples-to-apples.
+        # We report the delta as (direct - rh_derived) / rh_derived * 100
+        # where rh_derived force is proxied by compression_mm * spring_rate.
+        # Without spring rate we just flag whether the channels are present
+        # and leave detailed comparison to the aero validation step.
+        state.downforce_front_vs_rh_delta_pct = None  # Needs spring rate; placeholder
+
+    if (
+        state.downforce_rear_n is not None
+        and state.aero_compression_rear_mm is not None
+        and state.aero_compression_rear_mm > 0.5
+        and state.downforce_rear_n > 10.0
+    ):
+        state.downforce_rear_vs_rh_delta_pct = None  # Needs spring rate; placeholder

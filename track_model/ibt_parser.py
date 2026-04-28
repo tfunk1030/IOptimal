@@ -149,16 +149,35 @@ class IBTFile:
         }
 
     def car_info(self) -> dict:
-        """Extract car info from session YAML."""
+        """Extract car info from session YAML.
+
+        Returns a dict with:
+            ``driver``           — driver display name
+            ``car``              — iRacing CarScreenName (locale-dependent,
+                                   gets EVO/year suffixes)
+            ``car_path``         — iRacing CarPath (stable short tag, e.g.
+                                   ``"bmwm4gt3"``); empty string when absent
+            ``iracing_car_path`` — alias of ``car_path`` for callers that
+                                   prefer the descriptive name; both keys
+                                   are always present together
+            ``car_idx``          — driver's CarIdx slot
+
+        ``CarPath`` is the only locale-independent identifier for the car
+        and is the preferred resolution key for ``resolve_car()``. See
+        ``watcher/service.py:_detect_car_and_track`` (W8.2).
+        """
         if not isinstance(self.session_info, dict):
             return {}
         di = self.session_info.get("DriverInfo", {})
         car_idx = di.get("DriverCarIdx", -1)
         for d in di.get("Drivers", []):
             if d.get("CarIdx") == car_idx and not d.get("CarIsPaceCar"):
+                car_path = d.get("CarPath", "") or ""
                 return {
                     "driver": d.get("UserName", "Unknown"),
                     "car": d.get("CarScreenName", "Unknown"),
+                    "car_path": car_path,
+                    "iracing_car_path": car_path,
                     "car_idx": car_idx,
                 }
         return {}

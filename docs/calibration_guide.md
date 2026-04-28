@@ -1,5 +1,6 @@
-# iOptimal GTP Calibration Guide
-*Generated 2026-04-02 | Last revised: 2026-04-08 (LLTD phantom proxy disabled, σ-cal driver anchor architecture, per-axle roll damper flags)*
+# iOptimal GTP / GT3 Calibration Guide
+*Generated 2026-04-02 | Last revised: 2026-04-27 (GT3 onboarding section added — Wave 9 Unit 2)*
+*Previous revision: 2026-04-08 (LLTD phantom proxy disabled, σ-cal driver anchor architecture, per-axle roll damper flags)*
 
 ---
 
@@ -1156,6 +1157,20 @@ This is the most common misuse. The full cascade:
 | Porsche | Done ✅ (10 setups) | Done ✅ (LLTD + ARB from telemetry) | Done ✅ (zeta from 35 sessions) | Done ✅ |
 | Acura | 6 sessions (heave + third sweep) | 6 sessions (ARB sweep) | 6 sessions (LS + HS sweep) | ~19 |
 
+To get a forecast for a specific (car, track) instead of the table-wide
+estimates above, run:
+
+```bash
+python -m validation.calibration_confidence --car cadillac --track silverstone
+python -m validation.calibration_confidence --car porsche --track algarve --gate-r2 0.95
+```
+
+The reporter re-fits the regression on bootstrapped subsets of the on-disk
+calibration corpus, plots the LOO R² vs n_samples curve, and forecasts how
+many additional sessions are needed to reach a given R² gate. Use it before
+collecting more IBTs — sometimes the asymptote is already below the gate
+(model is feature-limited, not data-limited).
+
 ---
 
 ## What "Calibrated" Actually Means Here
@@ -1175,5 +1190,99 @@ If you see ⚠️ EST on a recommendation — the physics behind it hasn't been 
 
 ---
 
-*Last updated: 2026-04-02 by claw-research*
-*Next review: after any spring, damper, or torsion bar calibration session*
+*Last updated: 2026-04-27 by W9.2 (GT3 onboarding section appended)*
+*Next review: after any spring, damper, or torsion bar calibration session, or when varied-spring GT3 IBT data lands*
+
+---
+
+## GT3 Onboarding (added 2026-04-27)
+
+The GT3 Phase 2 work shipped across Waves 1–8 makes **BMW M4 GT3 EVO**, **Aston Martin Vantage GT3 EVO**, and **Porsche 911 GT3 R (992)** ingestible through the standard pipeline. Calibration accuracy is currently **"intercept-only"** — the auto-calibrate scaffolding (W7.2) accepts GT3 IBTs without crashing and applies a documented baseline, but real regression fits require **varied-spring IBT sweeps at a single track**. Until those land, GT3 setup recommendations carry an `ESTIMATE WARNINGS` block in the report and a `--force` flag is required to bypass the calibration gate.
+
+### What's wired up (Wave 1–8)
+
+| Subsystem | GT3 status |
+|---|---|
+| Calibration gate (`car_model/calibration_gate.py`) | Step 2 (Heave/Third) is `not_applicable`; cascade `{3:1, 4:3, 5:4, 6:3}`. |
+| Solver chain (Steps 1, 3, 4, 5, 6) | Runs end-to-end on all 3 GT3 cars without crashing. Step 1 in **balance-only** mode, Step 3 in **GT3 paired-coil** arm. |
+| Setup writer (`output/setup_writer.py`) | Per-car `_<CAR>_GT3_PARAM_IDS` dicts (BMW/Aston/Porsche). `.sto` round-trips through iRacing on all 3 (pending in-game QA). |
+| Analyzer (extract / diagnose / causal_graph) | GT3 architecture detected; phantom heave-bottoming alarms suppressed. |
+| Learner (observation / delta_detector / empirical_models) | GT3 setup keys recognised; corner-spring → RH variance fitter wired. |
+| Watcher + desktop | CarPath dispatch (locale-independent); `class_filter=["GT3"]` available. |
+| Team server (DB + aggregator) | `Observation.suspension_arch` column; per-arch empirical-fit partitioning. |
+| Auto-calibrate (`car_model/auto_calibrate.py`) | **Intercept-only**. Real regression fits gated on varied-spring IBT capture (W10.1). |
+| Garage prediction (`DirectRegression`) | Front/rear corner-spring + bump-rubber + splitter features wired in `_UNIVERSAL_POOL`. Coefficients all 0 until calibration data lands. |
+
+### Required IBT capture per GT3 car
+
+For each GT3 car (or to upgrade an existing GT3 car's calibration from intercept-only to fitted):
+
+1. **Capture 5+ IBTs at the same track** with **varied front coil rates** covering the car's spring range. Suggested sweep:
+   - **BMW M4 GT3 EVO:** `front_corner_spring_nmm` ∈ {190, 220, 260, 300, 340} N/mm (range = (190, 340), step 10).
+   - **Aston Vantage GT3 EVO:** {180, 220, 260, 300, 320} N/mm.
+   - **Porsche 992 GT3R:** {170, 220, 260, 300, 320} N/mm.
+   Hold all other parameters constant across the sweep — driver style, tyres, fuel, ARB blades. The fitter accepts any single track but variance must come from front coil only.
+2. **Run the auto-calibrator:**
+   ```bash
+   python -m car_model.auto_calibrate --car bmw_m4_gt3 --ibt-dir data/gt3_ibts/
+   ```
+   The fitter produces compliance regressions (`inv_front_corner_spring → front_rh_std_mm`, etc.).
+3. **Apply the fits with `--apply`:**
+   ```bash
+   python -m car_model.auto_calibrate --car bmw_m4_gt3 --ibt-dir data/gt3_ibts/ --apply
+   ```
+   `apply_to_car` short-circuits today with a "intercept-only" applied note plus a TODO(W10.1) marker; once the real fits land they'll write to `car.corner_spring.front_baseline_rate_nmm` and the per-axis compliance coefficients in `RideHeightModel` / `DeflectionModel`.
+4. **Verify** with the regression test suite:
+   ```bash
+   pytest tests/test_setup_regression.py -v
+   ```
+   The 3 GT3 baseline `.sto` fixtures committed under `tests/fixtures/baselines/` lock the current intercept-only output. After calibration the fixtures must be regenerated (see test docstring).
+
+### Currently shipped (intercept-only, BoP 2026 S2 P3)
+
+| Car | IBT(s) | Track(s) sampled |
+|---|---|---|
+| BMW M4 GT3 EVO | 2 | Spielberg (`bmwm4gt3_spielberg gp 2026-04-26 21-34-43.ibt`) + Nürburgring (byte-identical setup; cannot back-solve aero compression with same setup at 2 tracks) |
+| Aston Vantage GT3 EVO | 1 | Spielberg (`amvantageevogt3_spielberg gp 2026-04-26 21-25-55.ibt`) |
+| Porsche 911 GT3 R (992) | 1 | Spielberg (`porsche992rgt3_spielberg gp 2026-04-26 21-42-39.ibt`) |
+
+The `data/gt3_ibts/` directory is gitignored — driver-side capture is required to populate it.
+
+### Adding a 4th+ GT3 car (Mercedes AMG GT3, Acura NSX GT3, Lambo Huracán, McLaren 720S, Mustang, Corvette Z06, Audi R8 LMS)
+
+W10.1 covers the remaining 7 GT3 cars. Per-car onboarding workflow:
+
+1. **Add a stub `CarModel` entry to `car_model/cars.py`** with the car's `iracing_car_path` (verified from a real IBT's `DriverInfo.CarPath`), `front_spring_range_nmm`, `damper.click_polarity`, `damper.{ls,hs}_{comp,rbd}_range`, and `arb.measured_lltd_target`.
+2. **Add the canonical name to `_CAR_REGISTRY` in `car_model/registry.py`** — both the `CarIdentity` row and the `CAR_FIELD_SPECS` dict (empty stub if PARAM_IDS not yet known). Without this, the substring fallback silently routes the IBT through the GTP BMW spec and corrupts learner observations.
+3. **Add `_<CAR>_GT3_PARAM_IDS` dict to `output/setup_writer.py`** (mirror the BMW M4 GT3 / Aston / Porsche dicts; verbatim from the iRacing garage YAML for that car). Some cars have unique YAML hierarchy quirks (e.g. Porsche fuel under `FrontBrakesLights`, Aston EpasSetting) — sample a real session-info YAML first.
+4. **Run the pipeline against an IBT** with `--force` to verify end-to-end output:
+   ```bash
+   python -m pipeline.produce --car <canonical> --ibt session.ibt --force --sto out.sto
+   ```
+5. **Commit a regression baseline `.sto` fixture** under `tests/fixtures/baselines/<car>_<track>_baseline.sto` and add the entry to `tests/test_setup_regression.py:REGRESSION_CASES`.
+6. **Run varied-spring IBT capture** per the protocol above to upgrade to "calibrated" tier.
+
+### Known gotchas
+
+- **`--force` is required** for any GT3 pipeline run until the calibration gate is satisfied. Without it the gate blocks Step 1 (no aero compression) and Step 3 (no spring-rate calibration) for all GT3 cars.
+- **Aero maps**: GT3 uses `balance_only` aero metadata (no L/D grid) — the rake solver dispatches to `_solve_balance_only` and `AeroSurface.has_ld == False`. Don't try to feed a GTP-format aero map to a GT3 car; it will compute NaN L/D and propagate.
+- **Damper writes per-axle**: iRacing's GT3 garage schema is per-axle (8 channels) not per-corner (16). The damper solver averages L/F and R/F clicks before writing. This means asymmetric damper recommendations on GT3 are silently lost on .sto write — a known limitation.
+- **Track aliases**: `_TRACK_ALIASES` in `car_model/registry.py` covers Spielberg ↔ Red Bull Ring. Add aliases for any new track that has a vendor-specific name vs the iRacing display name.
+- **`measured_lltd_target` per car** (BMW 0.51, Aston 0.53, Porsche 0.45): these bypass the OptimumG physics formula because the empirical evidence is more authoritative than the formula. Don't override unless you have wheel-force telemetry.
+
+### Per-car quirks reference
+
+See [`skill/per-car-quirks.md`](../skill/per-car-quirks.md) GT3 sections for ARB encoding, damper polarity, fuel capacity, TC label suffix, rear toe shape (paired vs per-wheel), per-car YAML hierarchy quirks (Porsche fuel under `FrontBrakesLights`, Aston EPAS / ThrottleResponse, Porsche `ThrottleShapeSetting` under `InCarAdjustments`, etc.), and driver-loaded baseline values for the 3 sampled cars.
+
+### Audit corpus
+
+The full Phase 2 audit lives under [`docs/audits/gt3_phase2/`](audits/gt3_phase2/):
+- `SYNTHESIS.md` — Top-level overview of the 12 audit PRs and ~329 findings.
+- `IMPLEMENTATION_STATUS.md` — Wave 1–8 implementation tracker (updated after every batch).
+- `output.md` — Per-car PARAM_IDS dicts + driver-side YAML divergences.
+- `calibration-gate.md` — `not_applicable` step dispatch rationale.
+- `solver-rake-corner-arb.md` — Step 1/3/4 GT3 paths.
+- `solver-damper-legality.md` — Damper polarity + range per car.
+- `learner.md` — GT3 KNOWN_CAUSALITY entries + corner-spring fits.
+- (and 5 more)
+

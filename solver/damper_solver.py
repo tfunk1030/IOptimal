@@ -173,6 +173,13 @@ class DamperSolution:
     parameter_search_status: dict = None
     parameter_search_evidence: dict = None
 
+    # When True, this solution was produced from textbook physics defaults
+    # (ζ_LS=0.5, ζ_HS=0.85) because the car's zeta targets were uncalibrated
+    # and the caller passed force_physics_estimate=True. The .sto values are
+    # usable but should be labelled "[ESTIMATE — physics defaults]" in any
+    # human-facing output until click-sweep IBT calibration lands.
+    is_estimate: bool = False
+
     def __post_init__(self):
         if self.parameter_search_status is None:
             self.parameter_search_status = {
@@ -362,13 +369,13 @@ class DamperSolver:
         Linear:    F = c * v   → clicks = (c * v_ref) / fpc
         Digressive: F = c * v^n → clicks = (c * v_ref^n) / fpc
         """
-        n = getattr(self.car.damper, "digressive_exponent", 1.0)
+        n = self.car.damper.digressive_exponent
         force_n = c_target * (v_ref_mps ** n)
         clicks = round(force_n / max(force_per_click, 1.0))
         return max(lo, min(hi, clicks))
 
     def _clicks_to_coeff(self, clicks: float, v_ref_mps: float, force_per_click: float) -> float:
-        n = getattr(self.car.damper, "digressive_exponent", 1.0)
+        n = self.car.damper.digressive_exponent
         return float(clicks) * max(force_per_click, 1.0) / max(v_ref_mps ** n, 1e-6)
 
     def _hs_slope_from_surface(self) -> tuple[int, int, str]:
@@ -441,11 +448,12 @@ class DamperSolver:
         rear_wheel_rate_nmm: float,
         front_dynamic_rh_mm: float,
         rear_dynamic_rh_mm: float,
-        fuel_load_l: float = 89.0,
+        fuel_load_l: float | None = None,
         damping_ratio_scale: float = 1.0,
         measured: "MeasuredState | None" = None,
         front_heave_nmm: float | None = None,
         rear_third_nmm: float | None = None,
+        force_physics_estimate: bool = False,
     ) -> DamperSolution:
         """Derive all damper settings from physics.
 
@@ -460,27 +468,52 @@ class DamperSolver:
         8. Compute HS slope from track surface distribution
 
         Args:
+            fuel_load_l: Stint fuel load in litres. REQUIRED — no implicit
+                BMW-GTP default. Caller must pass an explicit value (typically
+                ``inputs.fuel_load_l`` from the solve chain). GT3 cars have
+                100/104/106L tanks vs GTP 89L; silently defaulting would
+                under-state corner mass for GT3.
             damping_ratio_scale: Multiplier on ζ targets from solver modifiers.
                 >1.0 = stiffer damping (e.g. erratic driver needs more control),
                 <1.0 = softer damping (e.g. smooth driver benefits from compliance).
+            force_physics_estimate: When True AND ``zeta_is_calibrated=False``,
+                produce a solution using textbook ζ defaults (ζ_LS=0.5 mid-frequency
+                platform control, ζ_HS=0.85 high-velocity bottoming control) instead
+                of raising. ``DamperSolution.is_estimate`` is set to True so callers
+                can label the output as an estimate. Used by ``--force`` pipeline
+                runs against cars whose zeta targets are not yet calibrated
+                (Cadillac, Acura, Ferrari) so the .sto carries useful damper
+                clicks rather than omitting the entire damper section.
         """
+        # W3.3 (F3): fuel_load_l is required — GT3 tanks differ from GTP.
+        if fuel_load_l is None:
+            raise ValueError(
+                f"DamperSolver.solve() requires explicit fuel_load_l "
+                f"(car {self.car.name} max {self.car.fuel_capacity_l:.0f}L). "
+                f"Pass a stint fuel level — never rely on a default."
+            )
+
         d = self.car.damper
 
-        # ─── STRICT MODE: refuse to produce values without calibrated zeta ───
-        # Previously this branch silently returned baseline clicks. That's a
-        # fallback to a hardcoded value, which the user explicitly forbids.
-        # If zeta is uncalibrated, raise — the calibration gate is responsible
-        # for blocking Step 6 BEFORE this is called. If we get here, the gate
-        # was bypassed (likely by a track-only direct solver call) and the
-        # caller needs to know.
-        if not getattr(d, "zeta_is_calibrated", False):
-            raise ValueError(
-                f"DamperSolver refuses to produce clicks without calibrated "
-                f"zeta targets for {self.car.name}. Run "
-                f"'python -m validation.calibrate_dampers --car "
-                f"{self.car.canonical_name} --track <track>' after collecting "
-                "5+ click-sweep IBT sessions, then re-run."
-            )
+        # ─── Calibration gate: refuse OR fall back to textbook physics ────────
+        # The strict-mode default raises so callers that bypassed the
+        # CalibrationGate fail loudly. ``force_physics_estimate=True`` opts into
+        # a textbook-defaults estimate (ζ_LS=0.5, ζ_HS=0.85) — this is honest
+        # physics, not a hardcoded baseline, and the result carries
+        # ``is_estimate=True`` so downstream output labels it accordingly.
+        zeta_is_calibrated = bool(getattr(d, "zeta_is_calibrated", False))
+        is_estimate = False
+        if not zeta_is_calibrated:
+            if not force_physics_estimate:
+                raise ValueError(
+                    f"DamperSolver refuses to produce clicks without calibrated "
+                    f"zeta targets for {self.car.name}. Run "
+                    f"'python -m validation.calibrate_dampers --car "
+                    f"{self.car.canonical_name} --track <track>' after collecting "
+                    "5+ click-sweep IBT sessions, then re-run, OR pass "
+                    "force_physics_estimate=True to accept a textbook-defaults estimate."
+                )
+            is_estimate = True
 
         # ─── 1. Corner masses ─────────────────────────────────────────────────
         m_front = self._mass_per_corner_kg(is_front=True, fuel_load_l=fuel_load_l)
@@ -513,10 +546,22 @@ class DamperSolver:
 
         # ─── 3-4. Damping coefficients ────────────────────────────────────────
         # Apply damping_ratio_scale from modifiers (driver style / diagnosis)
-        zeta_ls_f = self._damping_ratio_ls(is_front=True) * damping_ratio_scale
-        zeta_ls_r = self._damping_ratio_ls(is_front=False) * damping_ratio_scale
-        zeta_hs_f = self._damping_ratio_hs(is_front=True) * damping_ratio_scale
-        zeta_hs_r = self._damping_ratio_hs(is_front=False) * damping_ratio_scale
+        if is_estimate:
+            # Textbook physics defaults — same ζ for front/rear because we have
+            # no per-axle calibration evidence to differentiate. ζ_LS=0.5 gives
+            # mid-frequency platform control; ζ_HS=0.85 gives near-critical
+            # high-velocity bottoming control. Honest, physics-derived, but
+            # not tuned to this specific car/track until click-sweep IBT data
+            # is collected.
+            zeta_ls_f = 0.5 * damping_ratio_scale
+            zeta_ls_r = 0.5 * damping_ratio_scale
+            zeta_hs_f = 0.85 * damping_ratio_scale
+            zeta_hs_r = 0.85 * damping_ratio_scale
+        else:
+            zeta_ls_f = self._damping_ratio_ls(is_front=True) * damping_ratio_scale
+            zeta_ls_r = self._damping_ratio_ls(is_front=False) * damping_ratio_scale
+            zeta_hs_f = self._damping_ratio_hs(is_front=True) * damping_ratio_scale
+            zeta_hs_r = self._damping_ratio_hs(is_front=False) * damping_ratio_scale
 
         # ─── Telemetry-based oscillation validation (P2) ──────────────────────
         # If measured rear shock oscillation frequency exceeds 1.5× natural
@@ -673,6 +718,19 @@ class DamperSolver:
                     else:
                         rr_hs_comp_adj = -adj
 
+        # W3.2 / Audit F2: GT3 garage YAML exposes only per-axle damper clicks
+        # (FrontDampers/RearDampers, not per-corner LF/RF/LR/RR). Any L/R
+        # asymmetric adjustment computed above would be silently dropped on the
+        # .sto write — the second corner of each axle would simply overwrite the
+        # first. Collapse asymmetric adjustments to per-axle averages so the
+        # solver's intent (e.g. "soften the busier side") is preserved as the
+        # axle-mean, not lost. GTP retains true per-corner asymmetry.
+        if not self.car.suspension_arch.has_heave_third:
+            front_avg = (lf_hs_comp_adj + rf_hs_comp_adj) // 2
+            rear_avg = (lr_hs_comp_adj + rr_hs_comp_adj) // 2
+            lf_hs_comp_adj = rf_hs_comp_adj = front_avg
+            lr_hs_comp_adj = rr_hs_comp_adj = rear_avg
+
         lf = CornerDamperSettings(
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
             hs_comp=max(lo_hs, min(hi_hs, front_hs_comp + lf_hs_comp_adj)),
@@ -759,7 +817,16 @@ class DamperSolver:
                           + (f" ζ_hs_rear bumped to {zeta_hs_r:.3f}." if osc_ratio > 1.5 else "")),
                 ))
 
-        notes = [
+        notes = []
+        if is_estimate:
+            notes.append(
+                f"ESTIMATE — physics defaults (zeta_LS=0.5, zeta_HS=0.85) used because "
+                f"{self.car.name} has zeta_is_calibrated=False. Collect 5+ click-sweep IBTs "
+                f"and run 'python -m validation.calibrate_dampers --car "
+                f"{self.car.canonical_name} --track <track>' to replace these with "
+                f"car-specific calibrated targets."
+            )
+        notes += [
             f"Front critical damping: {c_crit_front:.0f} N*s/m "
             f"(modal k={modal_front_rate_nmm:.1f} N/mm, "
             f"f_n = {math.sqrt(modal_front_rate_nmm*1000/m_front)/(2*math.pi):.2f} Hz)",
@@ -985,6 +1052,7 @@ class DamperSolver:
             hs_slope_reasoning=slope_reason,
             constraints=constraints,
             notes=notes,
+            is_estimate=is_estimate,
             **roll_damper_kwargs,
             **rear_3rd_kwargs,
             **heave_damper_kwargs,
@@ -1001,13 +1069,18 @@ class DamperSolver:
         rf: CornerDamperSettings,
         lr: CornerDamperSettings,
         rr: CornerDamperSettings,
-        fuel_load_l: float = 89.0,
+        fuel_load_l: float | None = None,
         damping_ratio_scale: float = 1.0,
         measured: "MeasuredState | None" = None,
         front_heave_nmm: float | None = None,
         rear_third_nmm: float | None = None,
+        force_physics_estimate: bool = False,
     ) -> DamperSolution:
-        """Build a Step 6 solution from explicit click/slope settings."""
+        """Build a Step 6 solution from explicit click/slope settings.
+
+        W3.3 (F4): ``fuel_load_l`` is required (no implicit BMW-GTP default).
+        ``self.solve()`` will raise ``ValueError`` if the caller forgets it.
+        """
         base = self.solve(
             front_wheel_rate_nmm=front_wheel_rate_nmm,
             rear_wheel_rate_nmm=rear_wheel_rate_nmm,
@@ -1018,6 +1091,7 @@ class DamperSolver:
             measured=measured,
             front_heave_nmm=front_heave_nmm,
             rear_third_nmm=rear_third_nmm,
+            force_physics_estimate=force_physics_estimate,
         )
         d = self.car.damper
         v_ls_ref = 0.025
@@ -1113,4 +1187,5 @@ class DamperSolver:
             front_heave_damper=base.front_heave_damper,
             rear_heave_damper=base.rear_heave_damper,
             notes=notes,
+            is_estimate=base.is_estimate,
         )

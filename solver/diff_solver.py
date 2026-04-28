@@ -21,7 +21,7 @@ BMW constants:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -79,6 +79,14 @@ class DiffSolution:
     # Reasoning
     preload_reasoning: str
     ramp_reasoning: str
+
+    # F2 provenance: per-parameter search status. Values are one of
+    #   "physics_formula"           — emitted from the physics computation
+    #   "fallback_preserve_driver"  — physics had no signal AND no fitted
+    #                                 model existed; driver value used as
+    #                                 last-resort fallback (with [FALLBACK]
+    #                                 logged).
+    parameter_search_status: dict[str, str] = field(default_factory=dict)
 
     def summary(self, width: int = 63) -> str:
         lines = [
@@ -197,41 +205,88 @@ class DiffSolver:
     ) -> DiffSolution:
         """Compute differential setup recommendation.
 
+        Per Unit F2 the diff solver emits the **physics-computed** preload
+        and ramp values directly. The previous "if within 8 Nm of driver,
+        prefer driver" anchor was removed — it was a Type-B/F preserve-driver
+        fallback that masked physics signals. Driver values are still
+        accepted as a last-resort fallback when the physics computation
+        cannot run (e.g. missing required driver/measured data); the
+        provenance label `fallback_preserve_driver` is set in that case.
+
         Args:
             driver: Driver behavior profile (throttle style, trail braking)
             measured: Measured telemetry state (body slip, slip ratios)
             track: Track demand profile (lateral g, corner speeds) — optional
-            current_*: Driver-loaded current values used as soft anchors when
-                no telemetry signal demands change. Driver-validated choices
-                often capture per-car/per-driver preferences the heuristic
-                doesn't model (e.g., coast ramp 40 vs 45).
+            current_*: Driver-loaded current values. Used ONLY as a
+                last-resort fallback when physics cannot compute a value.
 
         Returns:
             DiffSolution with recommended preload, ramps, and full reasoning
         """
+        # ── Preload — physics-first ──
+        preload_status: str
         preload_nm_raw, preload_reasoning = self._compute_preload(driver, measured, track)
-        preload_nm = round(preload_nm_raw / 5) * 5  # iRacing garage: 5 Nm increments
-        # Driver preload anchor: if loaded preload is within 8 Nm of computed
-        # AND no strong oversteer/understeer signal demands change, prefer it.
-        if (current_preload_nm is not None and current_preload_nm > 0
-                and abs(float(current_preload_nm) - preload_nm) <= 8):
+        if math.isfinite(preload_nm_raw) and preload_nm_raw >= 0.0:
+            preload_nm = round(preload_nm_raw / 5) * 5  # iRacing garage: 5 Nm increments
+            preload_status = "physics_formula"
+            preload_reasoning += " [confidence: medium — physics formula from car defaults + driver profile]"
+        elif current_preload_nm is not None and float(current_preload_nm) > 0:
             preload_nm = round(float(current_preload_nm) / 5) * 5
-            preload_reasoning += f"; anchored to driver-loaded preload={preload_nm:.0f} Nm"
+            preload_status = "fallback_preserve_driver"
+            preload_reasoning = (
+                f"[FALLBACK — driver value preserved due to insufficient calibration] "
+                f"physics returned no value; using driver-loaded {preload_nm:.0f} Nm"
+            )
+            import logging
+            logging.getLogger(__name__).warning(
+                "[FALLBACK] diff preload: physics formula unavailable — preserving "
+                "driver-loaded %.0f Nm.", preload_nm,
+            )
+        else:
+            preload_nm = round(float(self.car.default_diff_preload_nm) / 5) * 5
+            preload_status = "physics_formula"
+            preload_reasoning = (
+                f"[confidence: low] Defaulted to car baseline {preload_nm:.0f} Nm "
+                f"— no measured/driver inputs available."
+            )
+
+        # ── Coast / Drive ramps — physics-first ──
         coast_ramp, drive_ramp, ramp_reasoning = self._compute_ramps(driver)
-        # Driver ramp anchors: prefer driver-loaded values if within 1 step
-        # of the computed value. This preserves per-car/per-driver
-        # preferences the synthetic mapping doesn't capture (e.g., coast=40
-        # at trail-brake-depth=0.37 — heuristic gives 45).
-        if (current_coast_ramp_deg is not None
-                and current_coast_ramp_deg in COAST_RAMP_OPTIONS
-                and abs(int(current_coast_ramp_deg) - coast_ramp) <= 2):
-            coast_ramp = int(current_coast_ramp_deg)
-            ramp_reasoning += f"; coast anchored to driver={coast_ramp} deg"
-        if (current_drive_ramp_deg is not None
-                and current_drive_ramp_deg in DRIVE_RAMP_OPTIONS
-                and abs(int(current_drive_ramp_deg) - drive_ramp) <= 2):
-            drive_ramp = int(current_drive_ramp_deg)
-            ramp_reasoning += f"; drive anchored to driver={drive_ramp} deg"
+        ramp_reasoning += " [confidence: medium — physics-driven from driver style]"
+
+        # If physics couldn't pick legal ramps, fall back to driver values.
+        coast_status = "physics_formula"
+        drive_status = "physics_formula"
+        if coast_ramp not in COAST_RAMP_OPTIONS:
+            if (current_coast_ramp_deg is not None
+                    and int(current_coast_ramp_deg) in COAST_RAMP_OPTIONS):
+                coast_ramp = int(current_coast_ramp_deg)
+                coast_status = "fallback_preserve_driver"
+                ramp_reasoning += (
+                    f"; [FALLBACK — coast preserved at driver={coast_ramp}]"
+                )
+                import logging
+                logging.getLogger(__name__).warning(
+                    "[FALLBACK] coast ramp: physics emitted illegal value, "
+                    "preserving driver-loaded %d deg.", coast_ramp,
+                )
+            else:
+                coast_ramp = COAST_RAMP_OPTIONS[0]
+        if drive_ramp not in DRIVE_RAMP_OPTIONS:
+            if (current_drive_ramp_deg is not None
+                    and int(current_drive_ramp_deg) in DRIVE_RAMP_OPTIONS):
+                drive_ramp = int(current_drive_ramp_deg)
+                drive_status = "fallback_preserve_driver"
+                ramp_reasoning += (
+                    f"; [FALLBACK — drive preserved at driver={drive_ramp}]"
+                )
+                import logging
+                logging.getLogger(__name__).warning(
+                    "[FALLBACK] drive ramp: physics emitted illegal value, "
+                    "preserving driver-loaded %d deg.", drive_ramp,
+                )
+            else:
+                drive_ramp = DRIVE_RAMP_OPTIONS[0]
 
         default_plates = getattr(self.car, 'default_clutch_plates', BMW_DEFAULT_CLUTCH_PLATES)
         clutch_plates = current_clutch_plates or default_plates
@@ -270,6 +325,11 @@ class DiffSolver:
             clutch_plates=clutch_plates,
             exit_understeer_index=round(exit_understeer_index, 3),
             entry_rotation_index=round(entry_rotation_index, 3),
+            parameter_search_status={
+                "diff_preload_nm": preload_status,
+                "diff_ramp_coast": coast_status,
+                "diff_ramp_drive": drive_status,
+            },
             preload_reasoning=(
                 f"{preload_reasoning}; clutch plates={clutch_plates}"
                 if current_clutch_plates is not None

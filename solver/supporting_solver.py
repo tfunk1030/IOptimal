@@ -32,8 +32,9 @@ if TYPE_CHECKING:
 class SupportingSolution:
     """Computed values for brake, diff, TC, and tyre pressure parameters."""
 
-    # Brakes
-    brake_bias_pct: float = 56.0
+    # Brakes — brake_bias_pct is overwritten by _solve_brake_bias before the
+    # dataclass is consumed; 0.0 is just a sentinel, NOT a BMW-magic default.
+    brake_bias_pct: float = 0.0
     brake_bias_reasoning: str = ""
     brake_bias_target: float = 0.0
     brake_bias_migration: float = 0.0
@@ -193,8 +194,13 @@ class SupportingSolver:
             lo=float(migration_limits[0]),
             hi=float(migration_limits[1]),
         )
-        current_front_mc = float(getattr(self.current_setup, "front_master_cyl_mm", 19.1) or 19.1)
-        current_rear_mc = float(getattr(self.current_setup, "rear_master_cyl_mm", 20.6) or 20.6)
+        # Brake master cylinders: prefer driver-loaded IBT value, fall back to per-car
+        # CarModel baseline. NO BMW-default magic numbers — every CarModel sets the field
+        # explicitly (validated in CarModel.__post_init__).
+        _setup_front_mc = float(getattr(self.current_setup, "front_master_cyl_mm", 0.0) or 0.0)
+        _setup_rear_mc = float(getattr(self.current_setup, "rear_master_cyl_mm", 0.0) or 0.0)
+        current_front_mc = _setup_front_mc if _setup_front_mc > 0.0 else float(self.car.front_master_cyl_baseline_mm)
+        current_rear_mc = _setup_rear_mc if _setup_rear_mc > 0.0 else float(self.car.rear_master_cyl_baseline_mm)
         current_pad = getattr(self.current_setup, "pad_compound", "") or "Medium"
 
         front_lock = float(getattr(self.measured, "front_braking_lock_ratio_p95", 0.0) or 0.0)
@@ -209,20 +215,43 @@ class SupportingSolver:
         pad = current_pad
         hardware_reasons: list[str] = []
 
+        # Use physics-based MC recommendation from BrakeSolution when available.
+        # The brake_solver now computes ideal MC sizes from CG, wheelbase, and
+        # deceleration.  We blend the physics recommendation with telemetry
+        # evidence: if telemetry shows front-lock or stable braking, we still
+        # adjust target/migration/pad, but MC sizes come from physics.
+        brake_sol = getattr(sol, "_brake_solution", None)
+        physics_front_mc = getattr(brake_sol, "recommended_front_mc_mm", 0.0) if brake_sol else 0.0
+        physics_rear_mc = getattr(brake_sol, "recommended_rear_mc_mm", 0.0) if brake_sol else 0.0
+
+        if physics_front_mc > 0 and physics_rear_mc > 0:
+            # Physics-based MC: use the ideal sizes computed from car geometry
+            front_mc = physics_front_mc
+            rear_mc = physics_rear_mc
+            hardware_reasons.append(
+                f"MC sizes set from physics: F {front_mc:.1f} / R {rear_mc:.1f} mm "
+                f"(ideal ratio {front_mc / max(rear_mc, 0.01):.3f})"
+            )
+
+        # Telemetry-based adjustments to target, migration, pad (MC is already physics-based)
         if front_lock >= 0.075 or hydraulic_split >= sol.brake_bias_pct + 0.5:
-            front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, -1)
-            rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, +1)
+            # If MC is already physics-optimal but still locking, step MC one notch rearward
+            if physics_front_mc > 0:
+                front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), front_mc, -1)
+                rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), rear_mc, +1)
+                hardware_reasons.append("front-lock override: MC stepped one notch rearward from physics baseline")
+            else:
+                front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, -1)
+                rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, +1)
             target = _clamp(current_target - target_step, *target_limits)
             migration = _clamp(current_migration - migration_step, *migration_limits)
             pad = self._pad_step(current_pad, -1)
-            hardware_reasons.append("front-lock evidence shifted brake hardware and migration rearward")
+            hardware_reasons.append("front-lock evidence shifted brake target and migration rearward")
         elif front_lock <= 0.03 and braking_pitch <= 0.8 and abs_activity < 8.0:
-            front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, +1)
-            rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, -1)
             target = _clamp(current_target + target_step, *target_limits)
             migration = _clamp(current_migration + migration_step, *migration_limits)
             pad = self._pad_step(current_pad, +1)
-            hardware_reasons.append("stable braking allowed a slightly more aggressive brake hardware seed")
+            hardware_reasons.append("stable braking allowed a slightly more aggressive brake target seed")
 
         sol.brake_bias_target = snap_to_resolution(target, target_step, lo=float(target_limits[0]), hi=float(target_limits[1]))
         sol.brake_bias_migration = snap_to_resolution(
@@ -235,12 +264,17 @@ class SupportingSolver:
         sol.rear_master_cyl_mm = round(rear_mc, 1)
         sol.pad_compound = pad
         sol.brake_bias_status = "solved"
+        mc_from_physics = physics_front_mc > 0 and physics_rear_mc > 0
         if hardware_reasons:
             sol.brake_bias_target_status = "seeded_from_telemetry"
             sol.brake_bias_migration_status = "seeded_from_telemetry"
-            sol.master_cylinder_status = "seeded_from_telemetry"
+            sol.master_cylinder_status = "solved_from_physics" if mc_from_physics else "seeded_from_telemetry"
             sol.pad_compound_status = "seeded_from_telemetry"
             sol.brake_hardware_status = (
+                "Static brake bias is solved from telemetry; master cylinders computed from "
+                "car physics (CG/wheelbase/decel); brake target, pad compound, and migration "
+                "were conservatively seeded from braking evidence."
+                if mc_from_physics else
                 "Static brake bias is solved from telemetry; brake target, master cylinders, "
                 "pad compound, and migration were conservatively seeded from braking evidence."
             )
@@ -248,9 +282,13 @@ class SupportingSolver:
         else:
             sol.brake_bias_target_status = "seeded_from_setup"
             sol.brake_bias_migration_status = "seeded_from_setup"
-            sol.master_cylinder_status = "seeded_from_setup"
+            sol.master_cylinder_status = "solved_from_physics" if mc_from_physics else "seeded_from_setup"
             sol.pad_compound_status = "seeded_from_setup"
             sol.brake_hardware_status = (
+                "Static brake bias is solved from telemetry; master cylinders computed from "
+                "car physics (CG/wheelbase/decel); brake target, migration, and pad compound "
+                "are preserved as legal seeded context."
+                if mc_from_physics else
                 "Static brake bias is solved from telemetry; brake target, migration, "
                 "master cylinders, and pad compound are preserved as legal seeded context."
             )
@@ -611,7 +649,11 @@ class SupportingSolver:
         if fuel_burn_per_lap > 0.0:
             sol.fuel_low_warning_l = round(max(5.0, fuel_burn_per_lap * 1.5), 1)
         else:
-            sol.fuel_low_warning_l = round(float(getattr(current_setup, "fuel_low_warning_l", 0.0) or 8.0), 1)
+            # Prefer driver-loaded IBT value; fall back to per-car CarModel default.
+            # NO BMW-default magic — every CarModel sets fuel_low_warning_l_default explicitly.
+            _setup_warn = float(getattr(current_setup, "fuel_low_warning_l", 0.0) or 0.0)
+            _baseline = float(self.car.fuel_low_warning_l_default)
+            sol.fuel_low_warning_l = round(_setup_warn if _setup_warn > 0.0 else _baseline, 1)
         sol.brake_bias_migration_gain = round(float(getattr(current_setup, "brake_bias_migration_gain", 0.0) or 0.0), 1)
         sol.gear_stack = str(getattr(current_setup, "gear_stack", "") or "Short")
         sol.hybrid_rear_drive_enabled = str(getattr(current_setup, "hybrid_rear_drive_enabled", "") or "Off")
@@ -645,10 +687,14 @@ class SupportingSolver:
             pss["brake_migration_type"] = "user_set"
             pss["brake_migration_gain_pct"] = "user_set"
 
-        # ── Differential: all user_set ──
-        pss["diff_preload_nm"] = "user_set"
-        pss["diff_ramp_coast"] = "user_set"
-        pss["diff_ramp_drive"] = "user_set"
+        # ── Differential: status from DiffSolver (Unit F2) ──
+        # The diff solver now emits per-parameter physics_formula /
+        # fallback_preserve_driver labels.  Inherit those when available.
+        diff_sol = getattr(sol, "_diff_solution", None)
+        diff_pss = getattr(diff_sol, "parameter_search_status", None) or {}
+        pss["diff_preload_nm"] = diff_pss.get("diff_preload_nm", "physics_formula")
+        pss["diff_ramp_coast"] = diff_pss.get("diff_ramp_coast", "physics_formula")
+        pss["diff_ramp_drive"] = diff_pss.get("diff_ramp_drive", "physics_formula")
         pss["diff_clutch_plates"] = "user_set"
         if is_ferrari:
             pss["front_diff_preload_nm"] = "user_set"
