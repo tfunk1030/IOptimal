@@ -1038,16 +1038,17 @@ def write_sto(
                 front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
             )
 
-    # Compute brake bias from physics if not provided
+    # Compute brake bias from physics if not provided.
+    # NO BMW-default (56.0) magic — if the car model is unavailable or compute fails,
+    # raise loudly. Every supported car has brake_bias_pct set per-car.
     if brake_bias_pct is None:
         from solver.supporting_solver import compute_brake_bias
-        try:
-            if _car is not None:
-                brake_bias_pct, _ = compute_brake_bias(_car, fuel_load_l=fuel_l)
-            else:
-                brake_bias_pct = 56.0
-        except Exception:
-            brake_bias_pct = 56.0  # fallback only if car model unavailable
+        if _car is None:
+            raise ValueError(
+                "brake_bias_pct not provided and no CarModel available — "
+                "cannot synthesize a default. Pass --car or supply brake_bias_pct explicitly."
+            )
+        brake_bias_pct, _ = compute_brake_bias(_car, fuel_load_l=fuel_l)
 
     # ── Validate and clamp brake/diff/TC kwargs against garage ranges ─────
     if _car is not None:

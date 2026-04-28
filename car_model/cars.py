@@ -1645,7 +1645,16 @@ class CarModel:
     # NOT dynamic weight transfer ratio. Rear MC is physically larger,
     # which handles dynamic compensation. This parameter stays near static
     # weight distribution with small forward correction for stability.
-    brake_bias_pct: float = 46.0     # Default — calibrated below per car
+    # The four fields below are REQUIRED per-car (validated in __post_init__);
+    # the 0.0 defaults are sentinels — every CarModel must override them.
+    brake_bias_pct: float = 0.0
+    # Master cylinder baselines: secondary fallback when IBT current_setup is
+    # unavailable. Primary source is current_setup.{front,rear}_master_cyl_mm.
+    front_master_cyl_baseline_mm: float = 0.0
+    rear_master_cyl_baseline_mm: float = 0.0
+    # Driver dashboard low-fuel threshold; used when neither measured fuel-burn
+    # nor current_setup.fuel_low_warning_l is available.
+    fuel_low_warning_l_default: float = 0.0
 
     # Chassis geometry — needed for handling dynamics (understeer, slip angle)
     wheelbase_m: float = 2.740       # Wheelbase (m). BMW/Dallara = 2.740
@@ -1858,6 +1867,21 @@ class CarModel:
         # Auto-populate garage_ranges discrete torsion OD options from corner spring model
         if not self.garage_ranges.front_torsion_od_discrete and self.corner_spring.front_torsion_od_options:
             self.garage_ranges.front_torsion_od_discrete = list(self.corner_spring.front_torsion_od_options)
+        # Per-car required field validation — enforce no silent BMW-default substitution.
+        # Mission Principle 3: missing per-car data must raise, not substitute.
+        _required = {
+            "brake_bias_pct": self.brake_bias_pct,
+            "front_master_cyl_baseline_mm": self.front_master_cyl_baseline_mm,
+            "rear_master_cyl_baseline_mm": self.rear_master_cyl_baseline_mm,
+            "fuel_low_warning_l_default": self.fuel_low_warning_l_default,
+        }
+        _unset = [name for name, value in _required.items() if not value or value <= 0.0]
+        if _unset:
+            raise ValueError(
+                f"CarModel {self.canonical_name!r} ({self.name!r}) is missing required "
+                f"per-car field(s): {_unset}. Each CarModel must explicitly set these — "
+                f"no BMW-default fallback is permitted."
+            )
 
         # Architecture invariants — catch misconfiguration at construction.
         if self.suspension_arch.has_heave_third and self.heave_spring is None:
@@ -2193,6 +2217,9 @@ BMW_M_HYBRID_V8 = CarModel(
     weight_dist_front=0.4727,  # Calibrated from 41 sessions (corner weights) at full fuel
     fuel_cg_frac=0.50,        # LMDh reg: central fuel cell. Analysis: per-10L W_f shift=-0.018%
     brake_bias_pct=46.0,      # Calibrated: IBT=46.0%, S1=46.5%, S2=46.0%
+    front_master_cyl_baseline_mm=19.1,  # BMW M Hybrid V8 driver IBT baseline
+    rear_master_cyl_baseline_mm=20.6,   # BMW M Hybrid V8 driver IBT baseline
+    fuel_low_warning_l_default=8.0,     # Class-typical dashboard threshold
     default_df_balance_pct=50.14,  # Validated from BMW Sebring telemetry
     tyre_load_sensitivity=0.22,    # BMW Michelin GTP compound — moderate sensitivity
     torsion_arb_coupling=0.25,     # Back-calibrated from 73 IBT sessions at Sebring (LLTD=50.99%)
@@ -2484,6 +2511,9 @@ CADILLAC_VSERIES_R = CarModel(
     mass_driver_kg=75.0,
     weight_dist_front=0.485,      # CALIBRATED: IBT corner weights 5500/(5500+5840 N)
     brake_bias_pct=47.5,          # CALIBRATED: IBT BrakePressureBias = 47.5%
+    front_master_cyl_baseline_mm=19.1,  # Dallara LMDh class-typical
+    rear_master_cyl_baseline_mm=22.2,   # Dallara LMDh class-typical
+    fuel_low_warning_l_default=10.0,    # Class-typical dashboard threshold
     default_df_balance_pct=52.0,  # CALIBRATED from aero map sweep: at dyn front RH 21.5mm,
                                     # min achievable balance is 51.9% (wing 12) → 48.9% (wing 17).
                                     # 50.14% (BMW baseline) was unachievable at wing 12-14.
@@ -2682,6 +2712,9 @@ FERRARI_499P = CarModel(
     weight_dist_front=0.476,      # CALIBRATED from IBT corner weights: 2725F/2997R = 47.6%
     brake_bias_pct=49.0,          # VALIDATED: best lap 87.575s SYSTEMS tab screenshot 2026-04-02 → 49.00%
                                   # Prior value 54.0% was from an older IBT session — overridden by garage screenshot
+    front_master_cyl_baseline_mm=16.8,  # Ferrari driver IBT (single_session.json artifact)
+    rear_master_cyl_baseline_mm=22.2,   # Ferrari driver IBT (single_session.json artifact)
+    fuel_low_warning_l_default=10.0,    # Ferrari driver IBT artifact value
     default_df_balance_pct=48.3,  # CALIBRATED 2026-04-02 from IBT observed operating points:
                                     # 17 Hockenheim sessions at wing=17 run 46.97–48.26% balance naturally.
                                     # Fastest session (87.575s): 47.82%. Mean across session range: 48.3%.
@@ -3050,6 +3083,9 @@ PORSCHE_963 = CarModel(
     #   The old value forced the rake solver to hit the rear pushrod cap on every run.
     tyre_load_sensitivity=0.18,   # DSSV dampers give better contact — lower effective sensitivity
     brake_bias_pct=44.75,         # CALIBRATED: from user's Algarve baseline (was 46.0 BMW default)
+    front_master_cyl_baseline_mm=19.1,  # Porsche 963 Multimatic class-typical
+    rear_master_cyl_baseline_mm=20.6,   # Porsche 963 Multimatic class-typical
+    fuel_low_warning_l_default=8.0,     # Class-typical dashboard threshold
     # LLTD target: PHYSICS-DERIVED via OptimumG/Milliken formula
     # = weight_dist_front + (tyre_sens/0.20) × 0.05 + speed_correction
     # = 0.471 + (0.18/0.20) × 0.05 + ~0.005 = 0.521
@@ -3275,6 +3311,11 @@ ACURA_ARX06 = CarModel(
     mass_car_kg=1030.0,               # PDF: dry weight 1030 kg
     mass_driver_kg=75.0,
     weight_dist_front=0.470,          # IBT: (2706+2706)/(2706+2706+3048+3048) = 0.470
+    brake_bias_pct=47.0,              # ESTIMATE — Acura ARX-06 typical (front-biased, no migration)
+                                      # TODO: replace with IBT-validated value once telemetry confirms
+    front_master_cyl_baseline_mm=19.1,  # ORECA LMDh class-typical
+    rear_master_cyl_baseline_mm=20.6,   # ORECA LMDh class-typical
+    fuel_low_warning_l_default=8.0,     # Class-typical dashboard threshold
     default_df_balance_pct=49.0,      # Sharp front end — risk of snap oversteer
     tyre_load_sensitivity=0.20,       # ESTIMATE — Michelin GTP compound
     aero_axes_swapped=True,
