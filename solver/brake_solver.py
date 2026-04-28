@@ -201,7 +201,7 @@ class BrakeSolver:
         pad_note = ""
 
         # Compute physics-ideal MC sizes from car geometry
-        nominal_ratio = self.car.nominal_mc_ratio
+        nominal_ratio = self.car.nominal_mc_ratio()
         decel_for_mc = max(
             float(getattr(measured, "braking_decel_peak_g", 0.0) or 0.0),
             1.5,  # floor: even light brakers still need correct MC ratio

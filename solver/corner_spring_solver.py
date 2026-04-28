@@ -474,16 +474,16 @@ class CornerSpringSolver:
             # 40% accommodates the natural third/coil coupling.
             if abs(float(current_rear_spring_nmm) - _physics_rear_rate) / denom <= 0.40:
                 rear_target_rate = float(current_rear_spring_nmm)
-                logger.info(
+                logger.debug(
                     "Rear spring anchored to driver-loaded %.0f N/mm "
-                    "(physics target: %.0f N/mm, within 20%%)",
+                    "(physics target: %.0f N/mm, within 40%%)",
                     rear_target_rate, _physics_rear_rate,
                 )
             else:
                 rear_target_rate = _physics_rear_rate
-                logger.info(
+                logger.debug(
                     "Rear spring using physics target %.0f N/mm "
-                    "(driver-loaded: %.0f N/mm, differs by >20%%)",
+                    "(driver-loaded: %.0f N/mm, differs by >40%%)",
                     rear_target_rate, float(current_rear_spring_nmm),
                 )
             # Use the driver's empirical ratio for the FREQUENCY check that
@@ -511,7 +511,7 @@ class CornerSpringSolver:
                 if abs(float(current_rear_spring_nmm) - rear_target_rate) / _phys <= 0.20:
                     _physics_rear_rate = rear_target_rate
                     rear_target_rate = float(current_rear_spring_nmm)
-                    logger.info(
+                    logger.debug(
                         "Rear spring anchored to driver-loaded %.0f N/mm "
                         "(GT3 frequency target: %.0f N/mm, within 20%%)",
                         rear_target_rate, _physics_rear_rate,
@@ -1029,7 +1029,7 @@ class CornerSpringSolver:
 
         new_rate = csm.snap_front_roll_spring(rate_needed_nmm)
         if new_rate > front_rate:
-            logger.info(
+            logger.debug(
                 "LLTD floor: bumping front roll spring %.0f -> %.0f N/mm "
                 "(achievable LLTD %.1f%% -> target %.1f%%)",
                 front_rate, new_rate, achievable_lltd * 100, lltd_target * 100,

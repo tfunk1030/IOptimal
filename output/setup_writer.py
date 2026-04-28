@@ -20,7 +20,13 @@ from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, ElementTree, indent
 
 from car_model.garage import GarageSetupState
-from car_model.setup_registry import public_output_value
+from car_model.setup_registry import public_output_value, get_car_spec
+
+
+def _registry_sto_id(car: str, key: str, fallback: str = "") -> str:
+    """Resolve STO param ID from setup_registry, with fallback (audit M5)."""
+    spec = get_car_spec(car, key)
+    return spec.sto_param_id if spec else fallback
 from solver.rake_solver import RakeSolution
 from solver.heave_solver import HeaveSolution
 from solver.corner_spring_solver import CornerSpringSolution
@@ -408,11 +414,11 @@ _PORSCHE_PARAM_IDS: dict[str, str] = {
     "rear_master_cyl":          "CarSetup_BrakesDriveUnit_BrakeSpec_RearMasterCyl",
     "tc_gain":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain",
     "tc_slip":                  "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip",
-    # Diff (same XML IDs as BMW — verify from garage screenshots)
-    "diff_preload":             "CarSetup_BrakesDriveUnit_DiffSpec_DiffPreload",
-    "diff_coast_ramp":          "CarSetup_BrakesDriveUnit_DiffSpec_CoastRampAngle",
-    "diff_drive_ramp":          "CarSetup_BrakesDriveUnit_DiffSpec_DriveRampAngle",
-    "diff_clutch_plates":       "CarSetup_BrakesDriveUnit_DiffSpec_ClutchPlates",
+    # Diff — sourced from setup_registry canonical specs (audit M5)
+    "diff_preload":             _registry_sto_id("porsche", "diff_preload_nm", "CarSetup_BrakesDriveUnit_DiffSpec_DiffPreload"),
+    "diff_coast_ramp":          _registry_sto_id("porsche", "diff_ramp_angles", "CarSetup_BrakesDriveUnit_DiffSpec_CoastRampAngle"),
+    "diff_drive_ramp":          "",  # Porsche uses combined ramp angles, no separate drive ramp
+    "diff_clutch_plates":       _registry_sto_id("porsche", "diff_clutch_plates", "CarSetup_BrakesDriveUnit_DiffSpec_ClutchPlates"),
     # Gears / lighting (same as BMW)
     "gear_stack":               "CarSetup_BrakesDriveUnit_GearRatios_GearStack",
     "roof_light_color":         "CarSetup_BrakesDriveUnit_Lighting_RoofIdLightColor",
@@ -1083,9 +1089,13 @@ def write_sto(
     if _car is not None:
         _gr = _car.garage_ranges
 
-        # Diff preload — use car-specific calibrated default
+        # Diff preload — use car-specific calibrated default, clamped to garage range
         if diff_preload_nm is None:
             diff_preload_nm = _car.default_diff_preload_nm
+        if diff_preload_nm is not None:
+            _dp_lo, _dp_hi = _gr.diff_preload_nm
+            diff_preload_nm = max(_dp_lo, min(_dp_hi, diff_preload_nm))
+            diff_preload_nm = round(diff_preload_nm / _gr.diff_preload_step_nm) * _gr.diff_preload_step_nm
 
         # Diff coast/drive ramp — middle option from garage range
         if diff_coast_drive_ramp is None and _gr.diff_coast_drive_ramp_options:
@@ -1102,20 +1112,29 @@ def write_sto(
             front_master_cyl_mm = _mc_opts[len(_mc_opts) // 2]
         if rear_master_cyl_mm is None and _mc_opts:
             rear_master_cyl_mm = _mc_opts[len(_mc_opts) // 2]
+        # Clamp MC values to nearest legal option (audit M1)
+        if front_master_cyl_mm is not None and _mc_opts:
+            front_master_cyl_mm = min(_mc_opts, key=lambda x: abs(x - front_master_cyl_mm))
+        if rear_master_cyl_mm is not None and _mc_opts:
+            rear_master_cyl_mm = min(_mc_opts, key=lambda x: abs(x - rear_master_cyl_mm))
 
         # Pad compound — middle option from garage range
         if pad_compound is None and _gr.brake_pad_compound_options:
             pad_compound = _gr.brake_pad_compound_options[len(_gr.brake_pad_compound_options) // 2]
 
-        # TC gain / TC slip — default to mid-range (3) for GTP cars
+        # TC gain / TC slip — default to mid-range, clamped to [1, 10] (audit M1)
         if tc_gain is None:
             tc_gain = 3
+        tc_gain = max(1, min(10, tc_gain))
         if tc_slip is None:
             tc_slip = 3
+        tc_slip = max(1, min(10, tc_slip))
 
-        # Fuel target — default to full tank
+        # Fuel target — default to full tank, clamped to [0, max_fuel] (audit M1)
         if fuel_target_l is None:
             fuel_target_l = _gr.max_fuel_l
+        if fuel_target_l is not None:
+            fuel_target_l = max(0.0, min(_gr.max_fuel_l, fuel_target_l))
 
     # ── Corner weights (physics-computed) ─────────────────────────────────
     if _car is not None:

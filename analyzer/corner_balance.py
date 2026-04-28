@@ -347,6 +347,7 @@ def analyze_corner_balance(
     car: CarModel,
     corners: list[CornerAnalysis],
     tick_rate: int = 60,
+    corner_indices: list[tuple[int, int, int]] | None = None,
 ) -> list[CornerBalance]:
     """Compute per-phase balance for every corner on the lap.
 
@@ -362,6 +363,10 @@ def analyze_corner_balance(
         Corner segments from ``analyzer.segment.segment_lap()``.
     tick_rate : int
         Sample rate (Hz).
+    corner_indices : list[tuple[int, int, int]] | None
+        Pre-computed (start, apex, end) sample indices for each corner,
+        parallel to ``corners``.  When provided the expensive re-detection
+        via ``_detect_corners`` is skipped (audit M3).
 
     Returns
     -------
@@ -409,29 +414,37 @@ def analyze_corner_balance(
     # Session peak lateral G for stability margin computation
     peak_lat_g_session = float(np.percentile(np.abs(lat_g), 99.5)) if n > 100 else 2.0
 
-    # Re-detect corners using same algorithm as segment.py to get sample indices
-    from analyzer.segment import _detect_corners, _detect_braking_zones
-
-    raw_corners = _detect_corners(lat_g, speed_kph, steering, lap_dist)
-
-    # Match detected corners to CornerAnalysis objects by lap_dist proximity
+    # Use pre-computed corner indices when available; otherwise fall back to
+    # re-detection (expensive — callers should pass corner_indices).
     results: list[CornerBalance] = []
 
-    for ca_obj in corners:
-        # Find the raw corner whose start distance is closest to ca_obj
-        best_match = None
-        best_dist = float("inf")
-        for rc_start, rc_apex, rc_end, rc_dir in raw_corners:
-            rc_start_m = float(lap_dist[rc_start])
-            dist = abs(rc_start_m - ca_obj.lap_dist_start_m)
-            if dist < best_dist:
-                best_dist = dist
-                best_match = (rc_start, rc_apex, rc_end, rc_dir)
+    if corner_indices is not None and len(corner_indices) == len(corners):
+        # Fast path: indices already provided (audit M3)
+        _matched_corners = [
+            (ca_obj, ci[0], ci[1], ci[2], ca_obj.direction)
+            for ca_obj, ci in zip(corners, corner_indices)
+        ]
+    else:
+        # Slow path: re-detect and match by lap distance proximity
+        from analyzer.segment import _detect_corners
 
-        if best_match is None or best_dist > 100.0:
-            continue  # no matching raw corner found
+        raw_corners = _detect_corners(lat_g, speed_kph, steering, lap_dist)
+        _matched_corners = []
+        for ca_obj in corners:
+            best_match = None
+            best_dist = float("inf")
+            for rc_start, rc_apex, rc_end, rc_dir in raw_corners:
+                rc_start_m = float(lap_dist[rc_start])
+                dist = abs(rc_start_m - ca_obj.lap_dist_start_m)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_match = (rc_start, rc_apex, rc_end, rc_dir)
+            if best_match is None or best_dist > 100.0:
+                continue
+            cs, ca_idx, ce, direction = best_match
+            _matched_corners.append((ca_obj, cs, ca_idx, ce, direction))
 
-        cs, ca_idx, ce, direction = best_match
+    for ca_obj, cs, ca_idx, ce, direction in _matched_corners:
         # Clamp to valid range
         cs = max(0, cs)
         ce = min(n, ce)
@@ -683,6 +696,7 @@ def run_corner_balance_analysis(
     car: CarModel,
     corners: list[CornerAnalysis],
     tick_rate: int = 60,
+    corner_indices: list[tuple[int, int, int]] | None = None,
 ) -> tuple[list[CornerBalance], BalanceSummary, dict[str, float]]:
     """One-call convenience: analyze → aggregate → map to params.
 
@@ -690,7 +704,7 @@ def run_corner_balance_analysis(
     -------
     (corner_balances, summary, param_changes)
     """
-    corner_balances = analyze_corner_balance(ibt, start, end, car, corners, tick_rate)
+    corner_balances = analyze_corner_balance(ibt, start, end, car, corners, tick_rate, corner_indices)
     summary = aggregate_balance(corner_balances)
     param_changes = map_balance_to_params(summary, car)
     return corner_balances, summary, param_changes

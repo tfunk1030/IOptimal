@@ -1959,8 +1959,7 @@ class CarModel:
 
         return track_key(track_name) in set(self.supported_track_keys)
 
-    @property
-    def nominal_mc_ratio(self) -> float:
+    def nominal_mc_ratio(self, decel_g: float = 1.8) -> float:
         """Nominal front/rear master-cylinder diameter ratio for ideal brake force distribution.
 
         Under braking the front axle must produce more braking force than the
@@ -1970,7 +1969,7 @@ class CarModel:
             f_front = W_f_static + (h_cg / wheelbase) × decel_g
 
         where W_f_static is the static front weight fraction, h_cg is the CG
-        height, and decel_g is the typical peak deceleration (≈1.8 g for GTP).
+        height, and decel_g is the typical peak deceleration.
 
         Hydraulic force ∝ pressure × piston area ∝ diameter².  So the MC
         diameter ratio that produces this ideal force split is:
@@ -1982,13 +1981,17 @@ class CarModel:
             mc_ratio = sqrt(0.700 / 0.300) = 1.528
 
         In practice iRacing's BrakePressureBias already compensates for some
-        of this, so the MC ratio interacts with the bias %.  This property
+        of this, so the MC ratio interacts with the bias %.  This method
         provides the physics-ideal reference point.
+
+        Args:
+            decel_g: Typical peak deceleration in g.  Default 1.8 is the GTP
+                baseline derived from BMW M Hybrid V8 Sebring telemetry.
+                GT3 cars typically see ~1.4–1.6 g; adjust accordingly.
         """
         import math
         h_cg_m = self.corner_spring.cg_height_mm / 1000.0
-        typical_decel_g = 1.8
-        f_front = self.weight_dist_front + (h_cg_m / max(self.wheelbase_m, 0.1)) * typical_decel_g
+        f_front = self.weight_dist_front + (h_cg_m / max(self.wheelbase_m, 0.1)) * decel_g
         f_front = max(0.3, min(0.85, f_front))
         return round(math.sqrt(f_front / max(1.0 - f_front, 0.01)), 3)
 

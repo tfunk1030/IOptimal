@@ -48,6 +48,10 @@ from vertical_dynamics import damped_excursion_mm, legacy_mass_to_shared_model_k
 # are called during a single pipeline run.
 _heave_index_warning_shown: bool = False
 
+# Calibration-guard warning counters — log detail once, then summarise (audit M2).
+_cal_guard_front_count: int = 0
+_cal_guard_rear_count: int = 0
+
 
 @dataclass
 class HeaveSolution:
@@ -1093,14 +1097,17 @@ class HeaveSolver:
             if k_front < _cal_lo_f or k_front > _cal_hi_f:
                 k_front = max(k_front, _cal_lo_f)
                 k_front = min(k_front, _cal_hi_f)
-                logger.warning(
-                    "Circular-calibration guard: front heave %.0f→%.0f N/mm "
-                    "(baseline %.0f, ±50%% limit). front_m_eff_kg=%.0f was "
-                    "calibrated at this baseline — larger changes need "
-                    "bottoming evidence or re-calibration.",
-                    _unconstrained_front, k_front, _baseline_heave,
-                    m_front,
-                )
+                global _cal_guard_front_count
+                _cal_guard_front_count += 1
+                if _cal_guard_front_count == 1:
+                    logger.debug(
+                        "Circular-calibration guard: front heave %.0f→%.0f N/mm "
+                        "(baseline %.0f, ±50%% limit). front_m_eff_kg=%.0f was "
+                        "calibrated at this baseline — larger changes need "
+                        "bottoming evidence or re-calibration.",
+                        _unconstrained_front, k_front, _baseline_heave,
+                        m_front,
+                    )
                 front_binding = "calibration_guard"
 
         # Clamp to valid range
@@ -1187,14 +1194,17 @@ class HeaveSolver:
             if k_rear < _cal_lo or k_rear > _cal_hi:
                 k_rear = max(k_rear, _cal_lo)
                 k_rear = min(k_rear, _cal_hi)
-                logger.warning(
-                    "Circular-calibration guard: rear third %.0f→%.0f N/mm "
-                    "(baseline %.0f, ±50%% limit). rear_m_eff_kg=%.0f was "
-                    "calibrated at this baseline — larger changes need "
-                    "bottoming evidence or re-calibration.",
-                    _unconstrained_rear, k_rear, _baseline_third,
-                    m_rear,
-                )
+                global _cal_guard_rear_count
+                _cal_guard_rear_count += 1
+                if _cal_guard_rear_count == 1:
+                    logger.debug(
+                        "Circular-calibration guard: rear third %.0f→%.0f N/mm "
+                        "(baseline %.0f, ±50%% limit). rear_m_eff_kg=%.0f was "
+                        "calibrated at this baseline — larger changes need "
+                        "bottoming evidence or re-calibration.",
+                        _unconstrained_rear, k_rear, _baseline_third,
+                        m_rear,
+                    )
                 rear_binding = "calibration_guard"
 
         # Clamp and round up to nearest 10 N/mm (iRacing garage step)
