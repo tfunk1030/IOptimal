@@ -1247,6 +1247,61 @@ def reconcile_ride_heights(
             front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
         )
 
+        # ── Zero-coefficient rear pushrod: spring perch compensation ──────
+        # When rear_pushrod_to_rh ≈ 0 (e.g. Porsche 963), the pushrod cannot
+        # compensate for RH shifts caused by spring rate changes in Step 2/3.
+        # Detect a rear RH deficit and adjust the rear spring perch to recover
+        # the target ride height instead.
+        _rear_pushrod_coeff = getattr(car.pushrod, "rear_pushrod_to_rh", -1.0)
+        _rear_rh_deficit = target_rear_rh - outputs.rear_static_rh_mm
+        if abs(_rear_pushrod_coeff) < 1e-6 and abs(_rear_rh_deficit) > 0.3:
+            # Try adjusting rear spring perch to close the gap.
+            # The garage model's rear_coeff_spring_perch gives mm_RH / mm_perch.
+            _rear_perch_coeff = getattr(garage_model, "rear_coeff_spring_perch", 0.0)
+            # Also try DirectRegression's perch sensitivity if linear coeff is zero
+            if abs(_rear_perch_coeff) < 1e-6 and hasattr(garage_model, "_direct_rear_rh"):
+                _rear_perch_coeff = 1.0  # approximate: 1mm perch ≈ 1mm RH shift
+            if abs(_rear_perch_coeff) > 1e-6:
+                _perch_delta = _rear_rh_deficit / _rear_perch_coeff
+                _new_rear_perch = float(step3.rear_spring_perch_mm) + _perch_delta
+                _new_rear_perch = round(_new_rear_perch * 2) / 2  # snap to 0.5mm
+                # Clamp to garage range
+                _perch_lo, _perch_hi = car.garage_ranges.rear_spring_perch_mm
+                _new_rear_perch = max(_perch_lo, min(_perch_hi, _new_rear_perch))
+                if abs(_new_rear_perch - float(step3.rear_spring_perch_mm)) > 0.1:
+                    if verbose:
+                        print(
+                            f"  Zero rear_pushrod_to_rh: adjusting rear spring perch "
+                            f"{step3.rear_spring_perch_mm:.1f}→{_new_rear_perch:.1f} mm "
+                            f"to compensate {_rear_rh_deficit:+.1f} mm RH deficit "
+                            f"(pushrod cannot offset RH)."
+                        )
+                    step3.rear_spring_perch_mm = _new_rear_perch
+                    # Re-predict with updated perch
+                    outputs = garage_model.predict(
+                        GarageSetupState(
+                            front_pushrod_mm=new_front_pushrod,
+                            rear_pushrod_mm=new_rear_pushrod,
+                            front_heave_nmm=float(step2.front_heave_nmm),
+                            front_heave_perch_mm=float(step2.perch_offset_front_mm),
+                            rear_third_nmm=float(step2.rear_third_nmm),
+                            rear_third_perch_mm=float(step2.perch_offset_rear_mm),
+                            front_torsion_od_mm=float(step3.front_torsion_od_mm),
+                            rear_spring_nmm=float(step3.rear_spring_rate_nmm),
+                            rear_spring_perch_mm=float(step3.rear_spring_perch_mm),
+                            front_camber_deg=float(front_camber),
+                            rear_camber_deg=float(rear_camber),
+                            fuel_l=float(fuel_load_l),
+                        ),
+                        front_excursion_p99_mm=step2.front_excursion_at_rate_mm,
+                    )
+            elif verbose:
+                logger.warning(
+                    "Zero rear_pushrod_to_rh: rear RH deficit %.1f mm but no "
+                    "spring perch coefficient available for compensation.",
+                    _rear_rh_deficit,
+                )
+
         if verbose:
             if abs(outputs.front_static_rh_mm - step1.static_front_rh_mm) > 0.05:
                 print(

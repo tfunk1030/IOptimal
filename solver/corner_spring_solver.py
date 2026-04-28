@@ -516,6 +516,34 @@ class CornerSpringSolver:
             # third spring this is effectively zero, but we keep the shape.
             rear_target_ratio = 0.0
 
+        # ── Zero-coefficient pushrod guard ──────────────────────────────────
+        # When the car's rear_pushrod_to_rh is ~0 (e.g. Porsche 963), pushrod
+        # adjustments have NO effect on rear ride height.  RH is controlled
+        # by rear_spring + third via the RideHeightModel.  If we change the
+        # rear coil spring rate too aggressively, the resulting RH shift is
+        # uncompensated because the rake solver / reconcile cannot offset it
+        # via pushrod.  Constrain the rate change to ±30% of the car's
+        # baseline rear coil rate so RH stays within a recoverable window.
+        _rear_pushrod_coeff = getattr(self.car.pushrod, "rear_pushrod_to_rh", -1.0)
+        if abs(_rear_pushrod_coeff) < 1e-6:
+            _baseline_rear_spring = self.car.corner_spring.rear_spring_rate_baseline_nmm \
+                if hasattr(self.car.corner_spring, "rear_spring_rate_baseline_nmm") \
+                else (current_rear_spring_nmm if current_rear_spring_nmm and current_rear_spring_nmm > 0
+                      else self.car.rear_third_spring_nmm)
+            if _baseline_rear_spring and _baseline_rear_spring > 0:
+                _lo_guard = _baseline_rear_spring * 0.70
+                _hi_guard = _baseline_rear_spring * 1.30
+                _unconstrained = rear_target_rate
+                rear_target_rate = max(rear_target_rate, _lo_guard)
+                rear_target_rate = min(rear_target_rate, _hi_guard)
+                if abs(rear_target_rate - _unconstrained) > 0.5:
+                    logger.warning(
+                        "Zero rear_pushrod_to_rh: constraining rear spring "
+                        "%.0f→%.0f N/mm (baseline %.0f, ±30%% guard) to "
+                        "prevent uncompensated RH shift.",
+                        _unconstrained, rear_target_rate, _baseline_rear_spring,
+                    )
+
         # Clamp to valid range and snap
         if csm.rear_is_torsion_bar:
             # Rear torsion bar: convert target rate to OD, snap, reconvert

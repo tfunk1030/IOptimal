@@ -1144,6 +1144,32 @@ class HeaveSolver:
             k_rear = rear_third_floor_nmm
             rear_binding = "modifier_floor"
 
+        # ── Circular-calibration guard ─────────────────────────────────────
+        # rear_m_eff_kg is often back-calculated from the driver's current
+        # rear third spring rate (e.g. Porsche: 1232 kg from 120 N/mm).
+        # Recommending a rate that is >50% different invalidates the
+        # calibration basis (m_eff depends on compliance ∝ 1/k).  Constrain
+        # changes to ±50% of the car's baseline rear third spring UNLESS the
+        # binding constraint is "bottoming" — which means real telemetry
+        # evidence (bottoming events) justifies the larger change.
+        _baseline_third = self.car.rear_third_spring_nmm
+        if _baseline_third and _baseline_third > 0 and rear_binding != "bottoming":
+            _cal_lo = _baseline_third * 0.50
+            _cal_hi = _baseline_third * 1.50
+            _unconstrained_rear = k_rear
+            if k_rear < _cal_lo or k_rear > _cal_hi:
+                k_rear = max(k_rear, _cal_lo)
+                k_rear = min(k_rear, _cal_hi)
+                logger.warning(
+                    "Circular-calibration guard: rear third %.0f→%.0f N/mm "
+                    "(baseline %.0f, ±50%% limit). rear_m_eff_kg=%.0f was "
+                    "calibrated at this baseline — larger changes need "
+                    "bottoming evidence or re-calibration.",
+                    _unconstrained_rear, k_rear, _baseline_third,
+                    m_rear,
+                )
+                rear_binding = "calibration_guard"
+
         # Clamp and round up to nearest 10 N/mm (iRacing garage step)
         k_rear = max(k_rear, hsm.rear_spring_range_nmm[0])
         k_rear = min(k_rear, hsm.rear_spring_range_nmm[1])
