@@ -147,6 +147,12 @@ def _setup_key(pt) -> tuple:
         round(getattr(pt, "lr_hs_comp", 0.0), 1),
         round(getattr(pt, "lr_ls_rbd", 0.0), 1),
         round(getattr(pt, "lr_hs_rbd", 0.0), 1),
+        # Lap number (Unit D1) — disambiguates per-lap CalibrationPoints from
+        # the same IBT. Setup features are identical across laps, so without
+        # this slot all per-lap rows collapse to one fingerprint and the
+        # regression sees N=1. Legacy single-point-per-IBT files have
+        # lap_number=0 and remain equivalent to the old fingerprint shape.
+        round(getattr(pt, "lap_number", 0), 0),
     )
 
 # Alias for backward compatibility
@@ -285,6 +291,23 @@ class CalibrationPoint:
     lr_hs_comp: float = 0.0
     lr_ls_rbd: float = 0.0
     lr_hs_rbd: float = 0.0
+
+    # ── Per-lap covariates (Unit D1 — every lap is data) ─────────────
+    # ``lap_number == 0`` means "best-lap-aggregated" (legacy single-point
+    # per IBT); a non-zero value identifies a specific lap. lap_number is
+    # part of the setup fingerprint (see ``_setup_key``) so per-lap rows
+    # from the same IBT do NOT collapse to one regression sample. Per-lap
+    # variance correlates with fuel/tyre/driver factors and IS signal,
+    # not noise.
+    #
+    # Note: the existing ``lap_time_s`` field above is already populated
+    # from ``measured.lap_time_s``, which honours the ``lap`` argument
+    # to ``extract_measurements`` — when ``lap_idx`` is set, ``lap_time_s``
+    # is the per-lap time. ``lap_number`` disambiguates which lap.
+    lap_number: int = 0
+    fuel_remaining_l: float = 0.0
+    tyre_temp_avg_c: float = 0.0
+    driver_aggression_idx: float = 0.0
 
 
 @dataclass
@@ -603,11 +626,23 @@ def _dict_to_models(d: dict) -> CarCalibrationModels:
 # IBT extraction
 # ─────────────────────────────────────────────────────────────────────────────
 
-def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> CalibrationPoint | None:
+def extract_point_from_ibt(
+    ibt_path: str | Path,
+    car_name: str = "",
+    lap_idx: int | None = None,
+) -> CalibrationPoint | None:
     """Extract a CalibrationPoint from an IBT file.
 
     Reads ALL data from the IBT session info YAML (setup + computed values)
     and from the telemetry channels (measured outcomes).
+
+    When ``lap_idx`` is None (default) the legacy best-lap-aggregated
+    behavior is preserved (back-compat for existing callers). When
+    ``lap_idx`` is an int, telemetry is extracted from that specific lap
+    so per-lap variance feeds the regression instead of being collapsed
+    to a per-IBT mean. The setup-fingerprint hash includes ``lap_number``
+    (set by the caller via ``pt.lap_number = lap_idx``) so the regression
+    sees N rows instead of 1.
     """
     from track_model.ibt_parser import IBTFile
     from analyzer.setup_reader import CurrentSetup
@@ -644,10 +679,15 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
     front_shock_p99 = 0.0
     rear_shock_p99 = 0.0
     lap_time = 0.0
+    fuel_remaining_l = 0.0
+    tyre_temp_avg_c = 0.0
+    driver_aggression_idx = 0.0
 
     try:
         from analyzer.extract import extract_measurements
-        measured = extract_measurements(str(ibt_path), _get_dummy_car(car_name))
+        measured = extract_measurements(
+            str(ibt_path), _get_dummy_car(car_name), lap=lap_idx,
+        )
         dynamic_front_rh = measured.mean_front_rh_at_speed_mm or 0.0
         dynamic_rear_rh = measured.mean_rear_rh_at_speed_mm or 0.0
         front_sigma = measured.front_rh_std_mm or 0.0
@@ -660,6 +700,26 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         if lltd_m is None:
             lltd_m = getattr(measured, "lltd_measured", None)
         lltd_m = lltd_m or 0.0
+
+        # Per-lap fuel level — captures fuel burn across the stint so the
+        # regression can disambiguate fuel-driven RH/deflection drift from
+        # setup-driven changes within a single IBT.
+        fuel_remaining_l = (
+            getattr(measured, "fuel_level_at_measurement_l", None)
+            or float(setup.fuel_l)
+            or 0.0
+        )
+        temps = [
+            t for t in (
+                getattr(measured, "front_carcass_mean_c", None),
+                getattr(measured, "rear_carcass_mean_c", None),
+            ) if t is not None
+        ]
+        tyre_temp_avg_c = float(sum(temps) / len(temps)) if temps else 0.0
+        # Front shock-vel p99 is an honest per-lap aggression indicator
+        # (kerb riding + braking bumps). The regression treats it as a
+        # covariate when explaining per-lap RH variance.
+        driver_aggression_idx = float(front_shock_p99)
     except Exception as e:
         # Telemetry extraction is optional for calibration; skip gracefully
         import logging
@@ -742,6 +802,10 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         lr_hs_comp=float(setup.rear_hs_comp),
         lr_ls_rbd=float(setup.rear_ls_rbd),
         lr_hs_rbd=float(setup.rear_hs_rbd),
+        lap_number=int(lap_idx) if lap_idx is not None else 0,
+        fuel_remaining_l=float(fuel_remaining_l),
+        tyre_temp_avg_c=float(tyre_temp_avg_c),
+        driver_aggression_idx=float(driver_aggression_idx),
     )
 
 

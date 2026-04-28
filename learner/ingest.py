@@ -468,6 +468,89 @@ def _apply_within_ibt_noise_floor(
             print(f"  [noise-floor] across {n_laps} laps: " + ", ".join(parts))
 
 
+def _append_per_lap_calibration_points(
+    *,
+    car_name: str,
+    ibt_path: str,
+    valid_laps: list,
+    base_session_id: str,
+    verbose: bool = True,
+) -> None:
+    """Append one CalibrationPoint per valid lap (Unit D1).
+
+    The IBT-aggregated CalibrationPoint (``lap_number=0``) is appended by
+    ``_update_auto_calibration`` on the legacy path; this helper adds
+    per-lap rows on top so the regression fitter sees per-lap variance
+    (fuel burn, tyre thermals, driver consistency) instead of collapsing
+    every lap to a per-IBT mean.
+
+    Each per-lap point gets a unique session_id (``{base}__lap_{N}``) so
+    duplicate-detection on subsequent ingest passes works correctly.
+    Setup features hash identically across laps from the same IBT — the
+    ``lap_number`` slot in ``_setup_key`` disambiguates them so the
+    regression sees N rows instead of 1.
+    """
+    try:
+        from car_model.auto_calibrate import (
+            CalibrationPoint,
+            extract_point_from_ibt,
+            load_calibration_points,
+            save_calibration_points,
+        )
+    except Exception as exc:
+        if verbose:
+            print(f"  [calibrate per-lap] skipped: {exc}")
+        return
+
+    try:
+        cal_points = load_calibration_points(car_name)
+    except Exception as exc:
+        if verbose:
+            print(f"  [calibrate per-lap] load failed: {exc}")
+        return
+
+    existing_ids = {pt.session_id for pt in cal_points}
+    appended = 0
+    skipped = 0
+
+    for lap_num, lap_time, _start, _end in valid_laps:
+        lap_session_id = f"{base_session_id}__lap_{lap_num}"
+        if lap_session_id in existing_ids:
+            skipped += 1
+            continue
+
+        try:
+            lap_pt = extract_point_from_ibt(ibt_path, car_name, lap_idx=int(lap_num))
+        except Exception as exc:
+            if verbose:
+                print(f"  [calibrate per-lap] lap {lap_num} extract failed: {exc}")
+            continue
+        if lap_pt is None or not isinstance(lap_pt, CalibrationPoint):
+            continue
+
+        lap_pt.session_id = lap_session_id
+        lap_pt.lap_number = int(lap_num)
+        lap_pt.lap_time_s = float(lap_time) or float(lap_pt.lap_time_s)
+
+        cal_points.append(lap_pt)
+        existing_ids.add(lap_session_id)
+        appended += 1
+
+    if appended > 0:
+        try:
+            save_calibration_points(car_name, cal_points)
+        except Exception as exc:
+            if verbose:
+                print(f"  [calibrate per-lap] save failed: {exc}")
+            return
+
+    if verbose:
+        print(
+            f"  [calibrate per-lap] appended {appended} per-lap point(s)"
+            + (f" (skipped {skipped} already-ingested)" if skipped else "")
+        )
+
+
 def ingest_all_laps(
     car_name: str,
     ibt_path: str,
@@ -609,6 +692,22 @@ def ingest_all_laps(
     # not setup effect. Write back to each per-lap Observation so the
     # auto_calibrate fitter can use it as a heteroscedastic weight.
     _apply_within_ibt_noise_floor(store, results, verbose=verbose)
+
+    # ── Per-lap CalibrationPoints (Unit D1) ──────────────────────────
+    # Append one CalibrationPoint per valid lap so the auto-calibrate
+    # regression fitter sees per-lap variance instead of collapsing every
+    # lap to a per-IBT mean. The IBT-aggregated point (``lap_number=0``)
+    # is added by ``_update_auto_calibration`` below; the per-lap rows
+    # are additive on top. Runs BEFORE ``fit_models`` so a pre-existing
+    # failure in the learner/empirical_models pipeline cannot prevent
+    # per-lap calibration points from landing on disk.
+    _append_per_lap_calibration_points(
+        car_name=car_name,
+        ibt_path=ibt_path,
+        valid_laps=valid_laps,
+        base_session_id=base_session_id,
+        verbose=verbose,
+    )
 
     # Fit models with all accumulated observations for this car/track.
     all_obs = store.list_observations(car=car_name, track=track.track_name)
