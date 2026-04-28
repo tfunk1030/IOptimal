@@ -80,6 +80,13 @@ class Observation:
     #        front_rh_settle_time_ms, rear_rh_settle_time_ms,
     #        front_dominant_freq_hz, rear_dominant_freq_hz
 
+    # ── Speed-band stratified aero compression (per-IBT V^2 fit) ──
+    # Populated by analyzer.extractors.aero_speed_bands (Unit 1). One IBT
+    # produces multiple (V^2, compression) pairs — α_front and α_rear in
+    # this dict are the per-axle compression coefficients previously
+    # requiring multi-session sweeps.
+    aero_compression_by_speed_kph: dict = field(default_factory=dict)
+
     # ── Driver Profile (how they drove) ──
     driver_profile: dict = field(default_factory=dict)
     # Keys: style, trail_braking_depth, trail_braking_class,
@@ -550,6 +557,9 @@ def build_observation(
                 "exit_slip_severity": getattr(c, "exit_slip_severity", 0.0),
             })
 
+    # ── Speed-band aero compression (Unit 1, additive) ──
+    aero_by_speed = dict(getattr(m, "aero_compression_by_speed_kph", {}) or {})
+
     return Observation(
         session_id=session_id,
         ibt_path=str(ibt_path),
@@ -574,6 +584,7 @@ def build_observation(
         setup=setup,
         performance=performance,
         telemetry=telemetry,
+        aero_compression_by_speed_kph=aero_by_speed,
         driver_profile=driver,
         diagnosis=diagnosis_dict,
         conditions=conditions,
