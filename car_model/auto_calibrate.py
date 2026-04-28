@@ -286,6 +286,15 @@ class CalibrationPoint:
     lr_ls_rbd: float = 0.0
     lr_hs_rbd: float = 0.0
 
+    # ── Per-corner per-phase telemetry (Unit D3) ──
+    # Flat dict of {f"corner_{idx}_{phase}_{metric}" -> float}; populated by
+    # `analyzer.segment.compute_corner_phase_metrics`. Empty dict if no corners
+    # were detected or extraction failed. Idx is 1-based and stable across
+    # IBTs of the same track (corners are sorted by lap distance).
+    # Phases: entry / mid / exit. Metrics: understeer_deg, body_slip_deg,
+    # lat_g, long_g, throttle_pos, brake_pos.
+    corner_phase_metrics: dict[str, float] = field(default_factory=dict)
+
 
 @dataclass
 class FittedModel:
@@ -381,6 +390,14 @@ class CarCalibrationModels:
     aero_front_compression_mm: float | None = None
     aero_rear_compression_mm: float | None = None
     aero_n_sessions: int = 0
+
+    # Per-(corner, phase, metric) regressions (Unit D3)
+    # Keyed by the same "corner_{idx}_{phase}_{metric}" string used in
+    # CalibrationPoint.corner_phase_metrics. Each FittedModel uses the
+    # _UNIVERSAL_POOL features so downstream consumers (Unit P1) can predict
+    # phase-level effects from setup deltas. Only triplets present in ≥
+    # _MIN_SESSIONS_FOR_FIT distinct setups with non-trivial variance are fit.
+    corner_phase_models: dict[str, FittedModel] = field(default_factory=dict)
 
     # Calibration status per component
     status: dict[str, str] = field(default_factory=dict)
@@ -604,6 +621,18 @@ def _dict_to_models(d: dict) -> CarCalibrationModels:
             kwargs[k] = _to_fitted(v)
         elif k in lookup_keys:
             kwargs[k] = _to_lookup(v)
+        elif k == "corner_phase_models":
+            # Dict of {triplet_key: FittedModel-as-dict}
+            if isinstance(v, dict):
+                kwargs[k] = {
+                    name: fitted
+                    for name, fitted in (
+                        (n, _to_fitted(raw)) for n, raw in v.items()
+                    )
+                    if fitted is not None
+                }
+            else:
+                kwargs[k] = {}
         elif k in CarCalibrationModels.__dataclass_fields__:
             kwargs[k] = v
 
@@ -665,9 +694,10 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
     rear_shock_p99 = 0.0
     lap_time = 0.0
 
+    car_obj = _get_dummy_car(car_name)
     try:
         from analyzer.extract import extract_measurements
-        measured = extract_measurements(str(ibt_path), _get_dummy_car(car_name))
+        measured = extract_measurements(str(ibt_path), car_obj)
         dynamic_front_rh = measured.mean_front_rh_at_speed_mm or 0.0
         dynamic_rear_rh = measured.mean_rear_rh_at_speed_mm or 0.0
         front_sigma = measured.front_rh_std_mm or 0.0
@@ -686,6 +716,25 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         logging.getLogger(__name__).debug("Telemetry extraction skipped: %s", e)
         roll_grad = 0.0
         lltd_m = 0.0
+
+    # Per-corner per-phase metrics (Unit D3). Best-effort: any failure (missing
+    # channels, no valid lap, bad corner detection) yields an empty dict so
+    # calibration still proceeds.
+    corner_phase_metrics: dict[str, float] = {}
+    try:
+        from analyzer.segment import compute_corner_phase_metrics
+        best = ibt.best_lap_indices()
+        if best is not None:
+            cp_start, cp_end = best
+            corner_phase_metrics = compute_corner_phase_metrics(
+                ibt, cp_start, cp_end, car=car_obj,
+            )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug(
+            "Corner-phase metric extraction skipped: %s", e
+        )
+        corner_phase_metrics = {}
 
     import hashlib
     session_id = hashlib.sha256((str(ibt_path) + str(Path(ibt_path).stat().st_mtime)).encode()).hexdigest()[:16]
@@ -762,6 +811,9 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         lr_hs_comp=float(setup.rear_hs_comp),
         lr_ls_rbd=float(setup.rear_ls_rbd),
         lr_hs_rbd=float(setup.rear_hs_rbd),
+        # Per-corner per-phase metrics (Unit D3). May be empty if no valid
+        # corners were detected; downstream regression fitting tolerates this.
+        corner_phase_metrics=corner_phase_metrics,
     )
 
 
@@ -2225,6 +2277,68 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
             models.status["m_eff_rear"] = (
                 f"constant ({len(m_effs_rear)} points, mean {models.m_eff_rear_kg:.0f} kg)"
             )
+
+    # ─── 15c. Per-corner per-phase regressions (Unit D3) ────────────────────
+    # For every (corner_id, phase, metric) triplet observed in ≥
+    # _MIN_SESSIONS_FOR_FIT distinct setups with non-trivial variance, fit a
+    # regression using _UNIVERSAL_POOL features. Unit P1 (sibling) consumes
+    # these to produce per-corner predicted impacts of setup deltas.
+    # Implements Principle 6 (corner-by-corner causal): aggregate metrics alone
+    # cannot tell the user *which* corners a change will hurt or help.
+    try:
+        # Collect every key seen across all unique calibration points.
+        triplet_to_values: dict[str, list[float]] = {}
+        triplet_to_indices: dict[str, list[int]] = {}
+        for idx, pt in enumerate(unique):
+            cpm = getattr(pt, "corner_phase_metrics", None) or {}
+            for key, val in cpm.items():
+                if not isinstance(val, (int, float)):
+                    continue
+                if not np.isfinite(val):
+                    continue
+                triplet_to_values.setdefault(key, []).append(float(val))
+                triplet_to_indices.setdefault(key, []).append(idx)
+
+        # Need enough coverage AND variance to fit. Same gates as the other
+        # regressions (3:1 sample-to-feature, std > epsilon).
+        # Minimum: every unique setup must report this triplet so the X matrix
+        # rows align — requires len(values) == len(unique).
+        # Variance gate: std > 0.01 in metric units (deg / g / fraction).
+        n_fit_triplets = 0
+        for key, values in triplet_to_values.items():
+            if len(values) != len(unique):
+                continue
+            if len(values) < _MIN_SESSIONS_FOR_FIT:
+                continue
+            arr = np.asarray(values, dtype=float)
+            if np.std(arr) < 0.01:
+                continue
+            X_cols, names = _pool_to_matrix(_UNIVERSAL_POOL)
+            if not X_cols:
+                continue
+            X = np.column_stack(X_cols)
+            X, names = _select_features(X, arr, names)
+            fitted = _fit(X, arr, names, key)
+            # Keep only models that pass the calibration gate; otherwise the
+            # fit will mislead Unit P1 with high-R²-but-LOO-collapsed terms.
+            if fitted.is_calibrated:
+                models.corner_phase_models[key] = fitted
+                n_fit_triplets += 1
+
+        if n_fit_triplets > 0:
+            models.status["corner_phase_models"] = (
+                f"calibrated ({n_fit_triplets} (corner, phase, metric) triplets fit)"
+            )
+        elif triplet_to_values:
+            models.status["corner_phase_models"] = (
+                f"insufficient data ({len(triplet_to_values)} triplets observed, "
+                f"none passed gate)"
+            )
+    except Exception as _cpm_err:
+        import logging
+        logging.getLogger(__name__).debug(
+            "Corner-phase model fitting skipped: %s", _cpm_err
+        )
 
     # ─── 16. Measured LLTD target ───
     # IBT 'lltd_measured' is actually roll_distribution_proxy — a geometric

@@ -149,6 +149,12 @@ class Observation:
     setup_noise_floor_lap_time_s: float | None = None
     setup_noise_floor_n_laps: int = 0
 
+    # ── Per-corner per-phase metrics (Unit D3) ──
+    # Flat dict {f"corner_{idx}_{phase}_{metric}" -> float}, sliced by
+    # entry/mid/exit phase. Aggregated view of the per-corner record above.
+    # Empty if no corners were detected for this lap.
+    corner_phase_metrics: dict[str, float] = field(default_factory=dict)
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -182,6 +188,7 @@ def build_observation(
     driver_profile_obj,   # DriverProfile
     diagnosis_obj,        # Diagnosis
     corners: list = None, # list[CornerAnalysis]
+    corner_phase_metrics: dict[str, float] | None = None,  # Unit D3
 ) -> Observation:
     """Build an Observation from analyzer outputs.
 
@@ -655,4 +662,5 @@ def build_observation(
         roll_gradient_corner_p50_deg_per_g=rg_p50,
         roll_gradient_corner_p95_deg_per_g=rg_p95,
         roll_gradient_corner_count=rg_count,
+        corner_phase_metrics=dict(corner_phase_metrics) if corner_phase_metrics else {},
     )
