@@ -430,6 +430,9 @@ def _refit_per_track(ibts: list[IBTInfo]) -> None:
             tk_unique = len({_setup_key(pt) for pt in track_pts})
             if tk_unique < 5:
                 print(f"  {tk}: {len(track_pts)} points, {tk_unique} unique setups — need 5+, skipping")
+                hint = _recommend_next_test_one_liner(car_name, tk)
+                if hint:
+                    print(f"  -> recommend test: {hint}")
                 continue
 
             models = fit_models_from_points(car_name, track_pts)
@@ -498,6 +501,59 @@ def _rebuild_consensus(ibts: list[IBTInfo]) -> None:
         consensus = store.consensus()
         p99 = consensus.shock_vel_p99_front_mps
         print(f"  {ts} ({cs}): {store.n_sessions} sessions, p99={p99:.4f} m/s")
+
+
+def _recommend_next_test_one_liner(car_canonical: str, track_short: str) -> str:
+    """Return a single-line "front_heave=70, rear_third=350, ..." style hint.
+
+    Used by ``_refit_per_track`` when a (car, track) is gate-blocked due to
+    insufficient unique setups. Failures degrade silently — the refit summary
+    never crashes because the recommender hit an issue.
+    """
+    try:
+        from car_model.calibration_recommender import (
+            _filter_points_by_track,
+            _format_value,
+            baseline_extremes,
+            enumerate_axes,
+            rank_candidates,
+        )
+        from car_model.auto_calibrate import load_calibration_points
+        from car_model.cars import get_car
+    except Exception as exc:
+        logger.debug("calibration_recommender unavailable: %s", exc)
+        return ""
+
+    try:
+        car = get_car(car_canonical, apply_calibration=False)
+        axes = enumerate_axes(car, car_canonical)
+        if not axes:
+            return ""
+        all_points = load_calibration_points(car_canonical)
+        track_points = _filter_points_by_track(all_points, track_short)
+        if not track_points:
+            bootstrap = baseline_extremes(axes, n=1)
+            if not bootstrap:
+                return ""
+            cand = bootstrap[0]
+        else:
+            scored, _ = rank_candidates(
+                track_points, axes,
+                n_samples=200, n_recommendations=1, seed=0,
+            )
+            if not scored:
+                return ""
+            _gain, cand = scored[0]
+        return ", ".join(
+            f"{axis.display_name}={_format_value(axis, cand[axis.name])}"
+            for axis in axes if axis.name in cand
+        )
+    except Exception as exc:
+        logger.debug(
+            "calibration_recommender failed for %s/%s: %s",
+            car_canonical, track_short, exc,
+        )
+        return ""
 
 
 if __name__ == "__main__":

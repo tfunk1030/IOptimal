@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import dataclasses
+import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -1084,3 +1085,86 @@ def save_json_summary(
     }
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     Path(output_path).write_text(json.dumps(summary, indent=2))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Calibration recommendations section (Unit 4)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Renders the recommendations from car_model.calibration_recommender as a
+# "TO UNLOCK CALIBRATION" section appended to the engineering report when
+# the calibration gate has blocked one or more solver steps.
+#
+# Each recommendation is a dict with keys:
+#   - "rank": int (1-based)
+#   - "info_gain_nats": float (D-optimal log-det delta; may be None for bootstrap)
+#   - "values": list[(label: str, formatted_value: str)] — the setup parameters
+#   - "expected_unique_setups": int | None — count after running this test
+#   - "current_unique_setups": int | None — count before this test
+#   - "is_bootstrap": bool — True when no calibration data exists yet
+#
+# The dict shape is intentionally light so callers (pipeline.produce) build it
+# without dragging recommender internals through the import graph.
+
+def _build_recommendations_section(
+    recs: list[dict],
+    *,
+    car_display: str = "",
+    track_display: str = "",
+) -> list[str]:
+    """Render the TO UNLOCK CALIBRATION recommendation section.
+
+    Returns a list of strings (one per line) suitable for direct printing.
+    Empty when ``recs`` is falsy.
+    """
+    if not recs:
+        return []
+    parts = [p for p in (car_display, track_display) if p]
+    target = " at ".join(parts) if parts else ""
+    intro = (
+        f"  Run these IBT sweeps for {target} to unblock the gate:"
+        if target else
+        "  Run these IBT sweeps to unblock the calibration gate:"
+    )
+    lines: list[str] = ["", _hdr("TO UNLOCK CALIBRATION"), intro, ""]
+    for rec in recs:
+        rank = rec.get("rank", "?")
+        gain = rec.get("info_gain_nats")
+        values = rec.get("values") or []
+        expected = rec.get("expected_unique_setups")
+        current = rec.get("current_unique_setups")
+        is_bootstrap = bool(rec.get("is_bootstrap", False))
+
+        if is_bootstrap or gain is None:
+            head = f"  #{rank}  Bootstrap setup. Try: "
+        else:
+            head = f"  #{rank}  Information gain: {gain:+.2f} nats. Try: "
+        value_str = (
+            ", ".join(f"{label}={fmt}" for label, fmt in values)
+            if values else "(no axes — check car.setup_registry)"
+        )
+        lines.extend(_wrap_to_width(head + value_str + ".", W, indent="      "))
+
+        if expected is not None and current is not None:
+            lines.append(
+                f"      Expected unique-setup count after: {expected} "
+                f"(currently {current})."
+            )
+        lines.append("")
+    return lines
+
+
+def _wrap_to_width(text: str, width: int, indent: str = "  ") -> list[str]:
+    """Word-wrap ``text`` to ``width`` columns, indenting wrapped continuations."""
+    if len(text) <= width:
+        return [text]
+    leading = text[: len(text) - len(text.lstrip(" "))]
+    wrapped = textwrap.wrap(
+        text.lstrip(" "),
+        width=max(width - len(leading), 20),
+        initial_indent=leading,
+        subsequent_indent=indent,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    return wrapped or [text]
