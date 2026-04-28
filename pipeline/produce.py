@@ -1671,15 +1671,33 @@ def produce(
         for w in garage_warnings:
             print(f"[garage] {w}")
 
-        # Print ESTIMATE warnings for uncalibrated models
+        # Print ESTIMATE warnings for uncalibrated models. Where the
+        # calibration gate has classified a subsystem with a confidence
+        # tier (high/medium/low/insufficient), surface the tier so the
+        # operator knows whether the prediction is high-confidence,
+        # reduced-confidence (low tier), or absent (insufficient tier).
         estimate_warnings = []
+        try:
+            _gate_provenance = cal_gate.provenance()
+        except Exception:
+            _gate_provenance = {}
+        _rh_tier = (_gate_provenance.get("ride_height_model") or {}).get("confidence_tier")
+        _defl_tier = (_gate_provenance.get("deflection_model") or {}).get("confidence_tier")
         if hasattr(car, 'deflection') and not getattr(car.deflection, 'is_calibrated', True):
             estimate_warnings.append(
                 "Deflection predictions use uncalibrated model — verify garage display values manually"
             )
+        elif _defl_tier in ("low",):
+            estimate_warnings.append(
+                f"Deflection model at tier={_defl_tier} — predictions usable but reduced confidence"
+            )
         if hasattr(car, 'ride_height_model') and not getattr(car.ride_height_model, 'is_calibrated', True):
             estimate_warnings.append(
                 "Ride height predictions use uncalibrated model"
+            )
+        elif _rh_tier in ("low",):
+            estimate_warnings.append(
+                f"Ride height model at tier={_rh_tier} — predictions usable but reduced confidence"
             )
         if hasattr(car, 'damper') and not getattr(car.damper, 'zeta_is_calibrated', True):
             estimate_warnings.append(

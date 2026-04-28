@@ -54,11 +54,18 @@ class SubsystemCalibration:
     q_squared: float | None = None   # LOO R² — generalisation quality metric
     confidence: str = "unknown"      # "high" | "medium" | "low" | "manual_override" | "unknown"
     warnings: list[str] = field(default_factory=list)
+    # Confidence tier from FittedModel (when raw JSON carries one).
+    # "high" | "medium" | "low" | "insufficient" | None
+    # When set, this is the AUTHORITATIVE quality label; the legacy
+    # ``confidence`` field is kept for callers that haven't migrated.
+    confidence_tier: str | None = None
 
     def confidence_label(self) -> str:
-        """Short label for display, e.g. '[HIGH R²=0.97 Q²=0.91]'."""
+        """Short label for display, e.g. '[TIER=HIGH R²=0.97 Q²=0.91]'."""
         parts = []
-        if self.confidence != "unknown":
+        if self.confidence_tier:
+            parts.append(f"TIER={self.confidence_tier.upper()}")
+        elif self.confidence != "unknown":
             parts.append(self.confidence.upper())
         if self.r_squared is not None:
             parts.append(f"R²={self.r_squared:.2f}")
@@ -67,9 +74,46 @@ class SubsystemCalibration:
         return "[" + " ".join(parts) + "]" if parts else ""
 
 
-# Quality thresholds (strict mode)
-R2_THRESHOLD_BLOCK = 0.85   # below this, model is too weak to trust (status=weak)
+# Quality thresholds (legacy R² gates, retained for back-compat).
+#
+# The new authoritative classifier is the tier system in
+# ``car_model.auto_calibrate._compute_tier``: high / medium / low / insufficient.
+# These thresholds are derived from those tiers and are kept here so older
+# code paths that don't yet thread tier through still produce sensible
+# behaviour:
+#
+#   tier=high or medium  → status=calibrated (no warning / confidence note)
+#   tier=low             → status=weak       (step still runs, warning printed)
+#   tier=insufficient    → status=uncalibrated (step blocks)
+#
+# When raw model JSON carries an explicit ``confidence_tier`` key the gate
+# uses it directly via :func:`_status_from_tier`; otherwise the gate falls
+# back to the R² thresholds below.
+R2_THRESHOLD_BLOCK = 0.85   # below this, the legacy R² path marks status=weak
 R2_THRESHOLD_WARN = 0.95    # below this, calibrated model still gets warning
+
+
+def _status_from_tier(tier: str | None) -> str | None:
+    """Map a model's confidence_tier to a SubsystemCalibration status.
+
+    Returns None when *tier* is None / unknown so the caller can fall back to
+    the legacy R²-threshold logic.
+
+    Mapping (Principle 4 — tiered confidence, solver uses ALL non-insufficient):
+      - ``high`` / ``medium`` → ``calibrated``
+      - ``low``               → ``weak`` (step runs, warning surfaced)
+      - ``insufficient``      → ``uncalibrated`` (step blocks)
+    """
+    if tier is None:
+        return None
+    tier = tier.lower()
+    if tier in ("high", "medium"):
+        return "calibrated"
+    if tier == "low":
+        return "weak"
+    if tier == "insufficient":
+        return "uncalibrated"
+    return None  # unknown label → fall back to legacy R² gate
 
 
 # ─── Per-step calibration check result ───────────────────────────────────────
@@ -445,6 +489,37 @@ def _weaker_q2(front_q2: float | None, rear_q2: float | None) -> float | None:
     return front_q2 if front_q2 is not None else rear_q2
 
 
+# Ordered weakest → strongest so the min() pattern in _weaker_tier maps to
+# "use the weakest tier across a paired front/rear (or front/rear/etc.) model".
+_TIER_RANK = {"insufficient": 0, "low": 1, "medium": 2, "high": 3}
+
+
+def _weaker_tier(*tiers: str | None) -> str | None:
+    """Return the weakest (lowest-ranked) tier across the given values.
+
+    None values are skipped (no tier metadata available).  Unknown labels
+    are also skipped — the caller should fall back to the legacy R² gate.
+    """
+    seen = [t for t in tiers if isinstance(t, str) and t.lower() in _TIER_RANK]
+    if not seen:
+        return None
+    return min(seen, key=lambda t: _TIER_RANK[t.lower()])
+
+
+def _tier_from_raw(raw: dict | None) -> str | None:
+    """Extract / derive a ``confidence_tier`` from a raw model JSON entry.
+
+    Thin wrapper around :func:`auto_calibrate.tier_from_raw_model` so the gate
+    and the loader agree on legacy JSON classification.  Local import keeps
+    the gate importable without auto_calibrate at module-import time.
+    """
+    try:
+        from car_model.auto_calibrate import tier_from_raw_model
+    except ImportError:
+        return None
+    return tier_from_raw_model(raw)
+
+
 # Q² thresholds (conservative — warn only, do not change gate status)
 Q2_THRESHOLD_WARN = 0.60
 
@@ -524,6 +599,8 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     rear_r2 = rear_rh.get("r_squared") if isinstance(rear_rh, dict) else None
     front_q2 = front_rh.get("q_squared") if isinstance(front_rh, dict) else None
     rear_q2 = rear_rh.get("q_squared") if isinstance(rear_rh, dict) else None
+    front_tier = _tier_from_raw(front_rh)
+    rear_tier = _tier_from_raw(rear_rh)
     # Use the weaker of the two models as the subsystem confidence
     weaker_r2 = None
     if front_r2 is not None and rear_r2 is not None:
@@ -549,8 +626,20 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     # Q² warnings — conservative: warn but don't change gate status
     _append_q2_warnings(rh_warnings, "Front RH", front_r2, front_q2)
     _append_q2_warnings(rh_warnings, "Rear RH", rear_r2, rear_q2)
-    # Strict mode: weak fits are surfaced with warnings and marked weak.
-    if not rh_cal and weaker_r2 is None:
+
+    # Tier-aware status (preferred): pick the WEAKER of the two axes' tiers.
+    weaker_tier = _weaker_tier(front_tier, rear_tier)
+    rh_status_from_tier = _status_from_tier(weaker_tier)
+    if rh_status_from_tier is not None and rh_cal:
+        # Raw JSON already classified the model (and the live car says it's
+        # applied) — trust the tier mapping.  This is the new authoritative
+        # path.
+        rh_status = rh_status_from_tier
+        if rh_status == "weak":
+            rh_warnings.append(
+                f"Ride height model at tier={weaker_tier} — solver uses it with reduced confidence"
+            )
+    elif not rh_cal and weaker_r2 is None and weaker_tier is None:
         rh_status = "uncalibrated"
     elif not rh_cal:
         # Raw per-track regression evidence exists, but the live CarModel was
@@ -579,6 +668,7 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
         confidence=_classify_r_squared(weaker_r2) if rh_cal else "unknown",
         warnings=rh_warnings,
         instructions=_fmt_instructions("ride_height_model", cn, track_name),
+        confidence_tier=weaker_tier,
     )
 
     # 3. Deflection model — report best-model R² from raw JSON.
@@ -589,6 +679,9 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     defl_cal = car.deflection.is_calibrated
     defl_r2s: list[float] = []
     defl_q2s: list[float] = []
+    defl_tiers: list[str] = []
+    # GT3 architecture has no heave/third springs — drop those sub-model keys
+    # so their absence doesn't pull non-data into the subsystem's R² stats.
     defl_keys: list[str] = ["rear_spring_defl_static", "rear_shock_defl_static"]
     if car.suspension_arch.has_heave_third:
         defl_keys = [
@@ -610,8 +703,12 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
                     defl_q2s.append(float(val))
             except (TypeError, ValueError):
                 pass
+        tier_val = _tier_from_raw(model)
+        if tier_val is not None:
+            defl_tiers.append(tier_val)
     weakest_defl_r2 = min(defl_r2s) if defl_r2s else None
     weakest_defl_q2 = min(defl_q2s) if defl_q2s else None
+    weakest_defl_tier = _weaker_tier(*defl_tiers) if defl_tiers else None
     defl_warnings: list[str] = []
     if weakest_defl_r2 is not None and weakest_defl_r2 < R2_THRESHOLD_BLOCK:
         defl_warnings.append(
@@ -626,7 +723,16 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     if weakest_defl_q2 is not None and weakest_defl_r2 is not None:
         _append_q2_warnings(defl_warnings, "Weakest deflection sub-model",
                             weakest_defl_r2, weakest_defl_q2)
-    if not defl_cal:
+
+    # Tier-aware status: prefer the explicit tier label when present.
+    defl_status_from_tier = _status_from_tier(weakest_defl_tier)
+    if defl_status_from_tier is not None and defl_cal:
+        defl_status = defl_status_from_tier
+        if defl_status == "weak":
+            defl_warnings.append(
+                f"Deflection sub-model at tier={weakest_defl_tier} — solver uses it with reduced confidence"
+            )
+    elif not defl_cal:
         defl_status = "uncalibrated"
     elif weakest_defl_r2 is not None and weakest_defl_r2 < R2_THRESHOLD_BLOCK:
         defl_status = "weak"
@@ -645,6 +751,7 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
         confidence=_classify_r_squared(weakest_defl_r2) if defl_cal else "unknown",
         warnings=defl_warnings,
         instructions=_fmt_instructions("deflection_model", cn, track_name),
+        confidence_tier=weakest_defl_tier,
     )
 
     # GT3-style architectures expose an honest "this doesn't exist" provenance
@@ -878,6 +985,8 @@ class CalibrationGate:
             }
             if sub.q_squared is not None:
                 entry["q_squared"] = sub.q_squared
+            if sub.confidence_tier is not None:
+                entry["confidence_tier"] = sub.confidence_tier
             out[name] = entry
         return out
 
