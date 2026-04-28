@@ -660,6 +660,24 @@ def produce(
     corners = segment_lap(ibt, start, end, car=car, tick_rate=ibt.tick_rate)
     log(f"  Detected {len(corners)} corners")
 
+    # Per-corner roll-stiffness micro-experiments (Unit 4):
+    # turn each corner's (lat_g_mean, body_roll_mean) into one roll-gradient
+    # datapoint, then surface p50/p95/count on the MeasuredState so downstream
+    # learner / auto_calibrate can use 14*N samples instead of one mean.
+    try:
+        from analyzer.extract import aggregate_corner_roll_gradients
+        agg = aggregate_corner_roll_gradients(corners, state=measured)
+        _rg_count = int(agg.get("roll_gradient_corner_count") or 0)
+        _rg_p50 = agg.get("roll_gradient_corner_p50")
+        _rg_p95 = agg.get("roll_gradient_corner_p95")
+        if _rg_count > 0:
+            log(
+                f"  roll_gradient_corner: count={_rg_count} "
+                f"p50={_rg_p50} p95={_rg_p95} deg_per_g"
+            )
+    except Exception:  # noqa: BLE001 — never block the pipeline on aggregates
+        pass
+
     corner_classes = {}
     for c in corners:
         corner_classes[c.speed_class] = corner_classes.get(c.speed_class, 0) + 1

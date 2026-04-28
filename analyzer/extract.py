@@ -358,6 +358,15 @@ class MeasuredState:
     rear_step_response_freq_hz_p50: float | None = None
     kerb_strike_count: int = 0
 
+    # --- Per-corner roll-stiffness micro-experiment aggregates (Unit 4) ---
+    # Populated by aggregate_corner_roll_gradients() from the per-corner
+    # roll_gradient_deg_per_g values produced by analyzer/segment.py. ~14
+    # corners × N laps gives a much richer ARB-fit dataset than the single
+    # session-mean roll gradient at state.roll_gradient_measured_deg_per_g.
+    roll_gradient_corner_p50_deg_per_g: float | None = None
+    roll_gradient_corner_p95_deg_per_g: float | None = None
+    roll_gradient_corner_count: int = 0
+
 
 def extract_bottoming_events(
     ibt,
@@ -1002,6 +1011,67 @@ def extract_measurements(
         )
 
     return state
+
+
+def aggregate_corner_roll_gradients(
+    corners: list,
+    state: "MeasuredState | None" = None,
+) -> dict[str, float | int | None]:
+    """Aggregate per-corner roll-gradient micro-experiments into p50/p95/count.
+
+    Unit 4 (per-corner roll-stiffness micro-experiments): each corner gives one
+    (lat_g_mean, body_roll_mean) datapoint, so a single 25-lap IBT yields up to
+    ~350 independent roll-stiffness samples instead of one session mean. This
+    helper consumes the per-corner ``roll_gradient_deg_per_g`` field added to
+    ``CornerAnalysis`` and produces the percentile aggregates that downstream
+    ARB / auto_calibrate code can fit against.
+
+    Arguments
+    ---------
+    corners
+        List of ``CornerAnalysis`` instances (typically across all valid laps).
+        Items missing the field or carrying ``None`` are silently skipped.
+    state
+        Optional ``MeasuredState`` to populate in-place with the aggregate
+        fields. Returns the same dict regardless.
+
+    Returns
+    -------
+    dict with ``roll_gradient_corner_p50``, ``roll_gradient_corner_p95``,
+    ``roll_gradient_corner_count``. Percentile values are ``None`` when the
+    corpus is empty.
+    """
+    out: dict[str, float | int | None] = {
+        "roll_gradient_corner_p50": None,
+        "roll_gradient_corner_p95": None,
+        "roll_gradient_corner_count": 0,
+    }
+    try:
+        values = []
+        for c in corners or []:
+            v = getattr(c, "roll_gradient_deg_per_g", None)
+            if v is None:
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if not np.isfinite(fv):
+                continue
+            values.append(fv)
+        if values:
+            arr = np.asarray(values, dtype=float)
+            out["roll_gradient_corner_p50"] = round(float(np.percentile(arr, 50)), 4)
+            out["roll_gradient_corner_p95"] = round(float(np.percentile(arr, 95)), 4)
+            out["roll_gradient_corner_count"] = int(arr.size)
+    except Exception:  # noqa: BLE001 — aggregation must never crash extraction
+        pass
+
+    if state is not None:
+        state.roll_gradient_corner_p50_deg_per_g = out["roll_gradient_corner_p50"]
+        state.roll_gradient_corner_p95_deg_per_g = out["roll_gradient_corner_p95"]
+        state.roll_gradient_corner_count = int(out["roll_gradient_corner_count"] or 0)
+    return out
 
 
 def _extract_handling(
