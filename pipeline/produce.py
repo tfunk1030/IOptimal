@@ -30,6 +30,7 @@ from analyzer.adaptive_thresholds import compute_adaptive_thresholds
 from analyzer.diagnose import diagnose
 from analyzer.driver_style import analyze_driver, refine_driver_with_measured
 from analyzer.extract import extract_measurements
+from analyzer.corner_balance import run_corner_balance_analysis, format_balance_report
 from analyzer.segment import segment_lap
 from analyzer.stint_analysis import build_stint_dataset, dataset_to_evolution
 from analyzer.setup_reader import CurrentSetup
@@ -683,6 +684,32 @@ def produce(
         corner_classes[c.speed_class] = corner_classes.get(c.speed_class, 0) + 1
     for cls, cnt in sorted(corner_classes.items()):
         log(f"    {cls}: {cnt}")
+
+    # ── Phase C.5: Corner-by-corner balance analysis ──
+    log("Analyzing corner-by-corner balance...")
+    corner_balances = None
+    balance_summary = None
+    balance_param_changes = None
+    try:
+        corner_balances, balance_summary, balance_param_changes = run_corner_balance_analysis(
+            ibt, start, end, car=car, corners=corners, tick_rate=ibt.tick_rate,
+        )
+        log(f"  Analyzed {len(corner_balances)} corners")
+        if balance_summary:
+            log(f"  Entry: {balance_summary.dominant_entry_issue} "
+                f"(US={balance_summary.entry_understeer_pct:.0f}%)")
+            log(f"  Mid:   {balance_summary.dominant_mid_issue} "
+                f"(US={balance_summary.mid_understeer_pct:.0f}%)")
+            log(f"  Exit:  {balance_summary.dominant_exit_issue} "
+                f"(US={balance_summary.exit_understeer_pct:.0f}%)")
+            if balance_summary.priority_fix:
+                log(f"  ** PRIORITY FIX: {balance_summary.priority_fix} **")
+            if balance_param_changes:
+                for param, delta in balance_param_changes.items():
+                    if not param.startswith("_"):
+                        log(f"    {param}: {delta:+.2f}")
+    except Exception as exc:  # noqa: BLE001 — never block pipeline on balance analysis
+        log(f"  Corner balance analysis skipped: {exc}")
 
     # ── Phase D: Analyze driver style ──
     log("Analyzing driver style...")
@@ -1761,6 +1788,10 @@ def produce(
         )
     if _emit_report:
         print(report)
+        # Corner-by-corner balance analysis section
+        if balance_summary and balance_summary.corners:
+            print()
+            print(format_balance_report(balance_summary))
         if _steps_blocked:
             print()
             print("=" * 63)
