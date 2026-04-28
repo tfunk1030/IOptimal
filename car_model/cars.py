@@ -3505,6 +3505,9 @@ BMW_M4_GT3 = CarModel(
     weight_dist_front=0.464,  # IBT: InCarAdjustments.FWtdist = 46.4% (Spielberg setup)
     fuel_capacity_l=100.0,    # IBT: DriverCarFuelMaxLtr = 100.0
     fuel_stint_end_l=10.0,
+    fuel_low_warning_l_default=8.0,    # F1: GT3 class-typical dashboard threshold; PENDING_IBT
+    front_master_cyl_baseline_mm=19.1,  # F1: GT3 class-typical; PENDING_IBT
+    rear_master_cyl_baseline_mm=20.6,   # F1: GT3 class-typical; PENDING_IBT
     wheelbase_m=2.916,
     steering_ratio=14.0,      # PENDING_IBT (typical GT3 14-16:1)
     # Aero map axes (parsed from data/aeromaps_parsed/bmw_m4_gt3_aero.npz)
@@ -3661,6 +3664,9 @@ ASTON_MARTIN_VANTAGE_GT3 = CarModel(
     weight_dist_front=0.480,  # IBT: InCarAdjustments.FWtdist = 48.0% (Spielberg setup)
     fuel_capacity_l=106.0,    # IBT: DriverCarFuelMaxLtr = 106.0
     fuel_stint_end_l=10.0,
+    fuel_low_warning_l_default=8.0,     # F1: GT3 class-typical; PENDING_IBT
+    front_master_cyl_baseline_mm=19.1,  # F1: GT3 class-typical; PENDING_IBT
+    rear_master_cyl_baseline_mm=20.6,   # F1: GT3 class-typical; PENDING_IBT
     wheelbase_m=2.704,        # PENDING manual decode (V1 PDF is image-based); 2018 platform reference
     steering_ratio=14.0,      # PENDING_IBT
     aero_axes_swapped=False,
@@ -3809,6 +3815,9 @@ PORSCHE_992_GT3R = CarModel(
     weight_dist_front=0.449,  # IBT: FWtdist = 44.9% (RR-layout signature)
     fuel_capacity_l=100.0,    # IBT: DriverCarFuelMaxLtr
     fuel_stint_end_l=10.0,
+    fuel_low_warning_l_default=8.0,     # F1: GT3 class-typical; PENDING_IBT
+    front_master_cyl_baseline_mm=19.1,  # F1: GT3 class-typical; PENDING_IBT
+    rear_master_cyl_baseline_mm=20.6,   # F1: GT3 class-typical; PENDING_IBT
     wheelbase_m=2.507,
     steering_ratio=14.0,
     aero_axes_swapped=False,
