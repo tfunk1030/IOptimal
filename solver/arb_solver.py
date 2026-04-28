@@ -65,6 +65,29 @@ from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
 
+def _live_rarb_blade_targets(arb) -> tuple[int, int]:
+    """Recommended slow-corner / fast-corner rear ARB blades for live tuning.
+
+    Slow corners want softer-than-baseline (max rotation, no aero help).
+    Fast corners want stiffer-than-baseline (front bite via load transfer).
+
+    Legacy GTP behavior (5-blade cars: BMW/Cadillac/Acura/Ferrari) is preserved
+    exactly with `slow=1, fast=4` so existing setups don't shift. Wide-range
+    cars (Porsche 963: 1–16 blades, baseline 6) get baseline-relative spreads
+    instead — the historical `min(4, count)` cap put Porsche fast-corner blade
+    *softer* than baseline, exactly the opposite of intent.
+    """
+    count = arb.rear_blade_count
+    baseline = arb.rear_baseline_blade
+    if count <= 6:
+        return 1, min(4, count)
+    softer_range = baseline - 1
+    stiffer_range = count - baseline
+    slow = max(1, baseline - max(2, softer_range // 2))
+    fast = min(count, baseline + max(2, stiffer_range // 3))
+    return slow, fast
+
+
 @dataclass
 class ARBConstraintCheck:
     """Result of a single ARB constraint check."""
@@ -539,8 +562,7 @@ class ARBSolver:
             )
             sensitivity = (lltd_plus - lltd_minus) / 2
 
-            rarb_slow_blade = 1   # softest: maximum rotation, needed without aero
-            rarb_fast_blade = min(4, arb.rear_blade_count)  # stiff for front bite
+            rarb_slow_blade, rarb_fast_blade = _live_rarb_blade_targets(arb)
 
             lltd_min, _, _, _, _ = self._compute_lltd(
                 farb_size, farb_blade, best_size, rarb_slow_blade,
@@ -852,8 +874,9 @@ class ARBSolver:
         rarb_size_slow_corner: str | None = None
         rarb_size_fast_corner: str | None = None
         if arb.rear_blade_count > 1:
-            rarb_slow_blade = int(rarb_blade_slow_corner if rarb_blade_slow_corner is not None else 1)
-            rarb_fast_blade = int(rarb_blade_fast_corner if rarb_blade_fast_corner is not None else min(4, arb.rear_blade_count))
+            _slow_default, _fast_default = _live_rarb_blade_targets(arb)
+            rarb_slow_blade = int(rarb_blade_slow_corner if rarb_blade_slow_corner is not None else _slow_default)
+            rarb_fast_blade = int(rarb_blade_fast_corner if rarb_blade_fast_corner is not None else _fast_default)
         else:
             rarb_slow_blade = 1
             rarb_fast_blade = 1

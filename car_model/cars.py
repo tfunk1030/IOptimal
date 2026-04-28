@@ -25,16 +25,38 @@ from vertical_dynamics import damped_excursion_mm
 class SuspensionArchitecture(Enum):
     """Discriminator for car-class suspension architecture.
 
-    Drives conditional dispatch in the solver chain so each architecture
-    can declare which subsystems it has explicitly, instead of accumulating
-    boolean flags (has_heave_third, front_is_roll_spring, has_rear_roll_damper).
+    Drives conditional dispatch in the solver chain. Captures only the
+    coarsest distinctions; finer-grained flags (rear coil vs rear torsion,
+    per-corner vs heave+roll dampers, indexed garage values) live on
+    ``CornerSpringModel``, ``DamperModel``, and ``CarModel`` directly because
+    the GTP architectures don't cleanly partition along a single axis.
+
+    Verified per-car field-name layouts (real IBT YAML, 2026-04-27):
+
+      ===  =================================  =================================  ===============
+      car  front spring                       rear spring                        damper layout
+      ===  =================================  =================================  ===============
+      BMW  HeaveSpring + TorsionBar (mm)      ThirdSpring + Coil (LR.SpringRate) per-corner
+      Cad  HeaveSpring + TorsionBar (mm)      ThirdSpring + Coil (LR.SpringRate) per-corner
+      Por  HeaveSpring + RollSpring (no TB)   ThirdSpring + Coil (LR.SpringRate) FrontHeave+Roll + per-corner-rear
+      Fer  HeaveSpring + TorsionBar (idx)     Rear.HeaveSpring + TorsionBar (idx) per-corner-Dampers
+      Acu  HeaveSpring + TorsionBar (mm)      Rear.HeaveSpring + TorsionBar (mm) Heave+Roll only
+      ===  =================================  =================================  ===============
 
     Values:
-      GTP_HEAVE_THIRD_TORSION_FRONT — BMW M Hybrid V8, Cadillac V-Series.R,
-        Acura ARX-06, Ferrari 499P. Front torsion bars + rear coil + heave
-        and third springs.
-      GTP_HEAVE_THIRD_ROLL_FRONT — Porsche 963 (Multimatic). Front roll spring
-        in place of paired front corner springs; rear coil + heave and third.
+      GTP_HEAVE_THIRD_TORSION_FRONT — BMW, Cadillac, Acura, Ferrari.
+        All have a heave-mode spring at each axle plus front torsion bars.
+        Rear-spring architecture varies — query
+        ``car.corner_spring.has_rear_torsion_bar`` (True for Ferrari/Acura)
+        vs ``has_rear_coil`` (True for BMW/Cadillac).
+        Damper layout varies — query ``car.damper.has_roll_dampers`` (True
+        for Acura) and the per-section field name dispatch in
+        ``car_model.setup_registry``.
+        Indexed-vs-direct setup values vary — query
+        ``car.has_indexed_setup_values`` (True for Ferrari only).
+      GTP_HEAVE_THIRD_ROLL_FRONT — Porsche 963 (Multimatic). Front roll
+        spring in place of paired front corner springs; rear coil + heave
+        and third.
       GT3_COIL_4WHEEL — iRacing GT3 class. Coil-overs at all four corners,
         no heave/third springs. Step 2 of the solver chain is not applicable.
     """
@@ -51,6 +73,14 @@ class SuspensionArchitecture(Enum):
 
     @property
     def has_front_torsion_bar(self) -> bool:
+        """True if the front spring is a torsion bar.
+
+        Note: this returns True for BMW/Cadillac/Ferrari/Acura but is
+        FALSE for Porsche (which uses a front roll spring instead).
+        Ferrari + Acura also have rear torsion bars — the SuspensionArchitecture
+        enum does NOT capture rear-axle architecture; query
+        ``car.corner_spring.has_rear_torsion_bar`` for that.
+        """
         return self is SuspensionArchitecture.GTP_HEAVE_THIRD_TORSION_FRONT
 
 
@@ -1118,6 +1148,25 @@ class CornerSpringModel:
     front_spring_resolution_nmm: float = 5.0   # Garage step size (default 5 N/mm)
     front_baseline_rate_nmm: float = 0.0       # Default front coil rate (used when no anchor)
 
+    @property
+    def has_rear_torsion_bar(self) -> bool:
+        """True for cars with rear-axle torsion bars (Ferrari 499P, Acura ARX-06).
+
+        These cars have NO rear corner-coil spring — ``rear_spring_range_nmm``
+        is populated for compatibility but not physically meaningful. Use
+        ``rear_torsion_c`` and ``rear_torsion_od_*`` for stiffness math.
+        """
+        return self.rear_torsion_c is not None and self.rear_torsion_c > 0.0
+
+    @property
+    def has_rear_coil(self) -> bool:
+        """True for cars with rear-axle corner-coil springs (BMW, Cadillac, Porsche).
+
+        These cars expose ``Chassis.LeftRear.SpringRate`` in the IBT YAML
+        and use ``rear_spring_range_nmm`` as the search axis.
+        """
+        return not self.has_rear_torsion_bar
+
     def torsion_bar_rate(self, od_mm: float) -> float:
         """Wheel rate (N/mm) from torsion bar OD.
 
@@ -1832,6 +1881,17 @@ class CarModel:
                     f"{self.canonical_name}: GT3_COIL_4WHEEL must set "
                     "heave_spring=None (GT3 cars have no heave/third springs)"
                 )
+
+    @property
+    def has_indexed_setup_values(self) -> bool:
+        """True for cars whose iRacing garage exposes spring rates as integer indices.
+
+        Today this is Ferrari 499P only (HeaveSpring, TorsionBarOD, ArbSize all
+        appear as raw indices in the IBT YAML). All other GTP and GT3 cars expose
+        direct N/mm or mm values. Solvers compute in physical units; the writer
+        and reader convert at the boundary via ``ferrari_indexed_controls``.
+        """
+        return self.ferrari_indexed_controls is not None
 
     def total_mass(self, fuel_load_l: float) -> float:
         """Total car mass including driver and fuel (kg)."""

@@ -719,8 +719,13 @@ def _build_subsystem_status(car: "CarModel", track_name: str) -> dict[str, Subsy
     # 7. ARB stiffness — check car.arb.is_calibrated but also compare against
     # the auto-calibration result to detect manual-override conflicts.
     arb_cal = getattr(car.arb, "is_calibrated", False)
-    arb_status_from_data = raw_models.get("status", {}).get("arb_calibrated")
-    arb_status_note = raw_models.get("status", {}).get("arb_stiffness", "")
+    # Stub models.json files use a flat string for "status" (e.g. "uncalibrated"),
+    # so guard the dict access — fall back to None / empty when status isn't a dict.
+    _status_obj = raw_models.get("status") if isinstance(raw_models, dict) else None
+    if not isinstance(_status_obj, dict):
+        _status_obj = {}
+    arb_status_from_data = _status_obj.get("arb_calibrated")
+    arb_status_note = _status_obj.get("arb_stiffness", "")
     arb_warnings: list[str] = []
     if not arb_cal:
         # Car definition says ARB is uncalibrated → block.

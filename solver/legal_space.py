@@ -65,14 +65,6 @@ FRONT_HEAVE_PERCH_K = 0.001614   # mm_RH / (N/mm)  — from front RH empirical m
 REAR_SPRING_PERCH_K = 0.8        # mm_perch / (N/mm) — rough empirical, rear spring dominant
 REAR_THIRD_PERCH_K = 0.3         # mm_perch / (N/mm) — rear third spring contribution
 
-# BMW-Sebring fallback reference values (perch = 0 at these spring rates).
-# These are used ONLY when the car doesn't define its own baselines.
-# Per-car values are derived from car.heave_spring and car.corner_spring.
-_BMW_FRONT_HEAVE_SPRING_REF = 50.0    # N/mm
-_BMW_REAR_THIRD_SPRING_REF = 450.0    # N/mm
-_BMW_REAR_SPRING_REF = 160.0          # N/mm
-
-
 def _car_spring_refs(car: CarModel) -> tuple[float, float, float]:
     """Return (front_heave_ref, rear_third_ref, rear_spring_ref) for a car.
 
@@ -83,29 +75,21 @@ def _car_spring_refs(car: CarModel) -> tuple[float, float, float]:
     heave/third refs are sentinel zeros and callers MUST check
     ``car.suspension_arch.has_heave_third`` before using them.
     """
+    if not car.corner_spring.rear_spring_range_nmm:
+        raise ValueError(
+            f"{car.canonical_name}: corner_spring.rear_spring_range_nmm is unset; "
+            "every CarModel must populate this — no BMW fallback."
+        )
+    rspr_lo, rspr_hi = car.corner_spring.rear_spring_range_nmm
+    rear_spring_ref = float((rspr_lo + rspr_hi) / 2.0)
+
     # GT3 short-circuit: heave_spring is None — heave/third refs are not real.
-    if car is not None and not car.suspension_arch.has_heave_third:
-        if car.corner_spring.rear_spring_range_nmm:
-            rspr_lo, rspr_hi = car.corner_spring.rear_spring_range_nmm
-            rear_spring_ref = float((rspr_lo + rspr_hi) / 2.0)
-        else:
-            rear_spring_ref = _BMW_REAR_SPRING_REF
+    if not car.suspension_arch.has_heave_third:
         return 0.0, 0.0, rear_spring_ref
 
     front_heave_ref = float(car.front_heave_spring_nmm)
     rear_third_ref = float(car.rear_third_spring_nmm)
-    if car.corner_spring.rear_spring_range_nmm:
-        rspr_lo, rspr_hi = car.corner_spring.rear_spring_range_nmm
-        rear_spring_ref = float((rspr_lo + rspr_hi) / 2.0)
-    else:
-        rear_spring_ref = _BMW_REAR_SPRING_REF
     return front_heave_ref, rear_third_ref, rear_spring_ref
-
-
-# Backward-compat aliases (legacy callers may import these names)
-FRONT_HEAVE_SPRING_REF = _BMW_FRONT_HEAVE_SPRING_REF
-REAR_THIRD_SPRING_REF = _BMW_REAR_THIRD_SPRING_REF
-REAR_SPRING_REF = _BMW_REAR_SPRING_REF
 
 
 def compute_perch_offsets(params: dict, car: CarModel) -> dict:

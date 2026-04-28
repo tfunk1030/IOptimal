@@ -695,13 +695,11 @@ def _apply_family_state_adjustments(
         )
 
     arb_delta = int(round((entry_push + high_speed_push - exit_instability) * family_intensity))
-    # Clamp to the car-specific rear ARB blade range, NOT a hardcoded 1-6
-    # (which was a BMW assumption). Porsche's rear ARB has blade range 1-16;
-    # driver-validated operating point is blade=10 — unreachable with hi=6.
-    _arb_hi = (
-        int(getattr(getattr(car, "arb", None), "rear_blade_count", 6))
-        if car is not None else 6
-    ) or 6
+    # Clamp to the car-specific rear ARB blade range — never a hardcoded value.
+    # Porsche's rear ARB has 1-16 blades (operating point ~6); BMW/Cadillac/Acura/Ferrari are 1-5.
+    if car is None or car.arb is None:
+        raise ValueError("ARB-blade clamping requires car.arb; got None")
+    _arb_hi = int(car.arb.rear_blade_count)
     _adjust_integer(targets["step4"], "rear_arb_blade_start", arb_delta, lo=1, hi=_arb_hi)
     _adjust_integer(targets["step4"], "rarb_blade_slow_corner", arb_delta, lo=1, hi=_arb_hi)
     _adjust_integer(targets["step4"], "rarb_blade_fast_corner", arb_delta, lo=1, hi=_arb_hi)

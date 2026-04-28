@@ -436,7 +436,10 @@ def load_calibrated_models(car: str, track: str = "") -> CarCalibrationModels | 
         raw = json.load(f)
     # Legacy migrations: proxy-derived LLTD targets must not override curated
     # car definitions. Keep the status note for provenance, but clear the value.
-    if raw.get("status", {}).get("lltd_target", "").startswith("DISABLED"):
+    # Stub models.json files use a flat string for "status" (e.g. "uncalibrated"),
+    # so guard the dict access.
+    _status = raw.get("status")
+    if isinstance(_status, dict) and _status.get("lltd_target", "").startswith("DISABLED"):
         raw["measured_lltd_target"] = None
     return _dict_to_models(raw)
 
