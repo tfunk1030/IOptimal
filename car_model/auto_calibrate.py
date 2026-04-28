@@ -987,6 +987,8 @@ def _compute_tier(
     train_rmse: float,
     n_samples: int,
     n_features: int,
+    *,
+    noise_floor_rmse: float | None = None,
 ) -> str:
     """Classify a fitted model into one of four confidence tiers.
 
@@ -1000,6 +1002,21 @@ def _compute_tier(
       - ``low``          R² ≥ 0.30, LOO/train < 20.0
       - ``insufficient`` anything below — solver must NOT use this model
 
+    Train-RMSE floor (the metric-validity fix): when the regression has
+    enough degrees of freedom to drive train residuals below physical
+    measurement noise, the LOO/train ratio diverges to astronomical
+    values that say nothing about generalization (the model just fit
+    sub-noise micro-variation).  We floor ``train_rmse`` at the
+    measurement-noise estimate before computing the ratio:
+
+      - If ``noise_floor_rmse`` is provided (e.g. within-IBT std of the
+        same metric, populated by ``Observation.setup_noise_floor_*``)
+        we use that — that's the true measurement noise of the channel.
+      - Otherwise we fall back to ``loo_rmse * 0.1`` as a heuristic
+        floor: a model whose train RMSE is < 10% of its LOO RMSE is by
+        definition fitting numerical noise; further driving the ratio
+        up is meaningless.
+
     NaN ``loo_rmse`` (n < 5, LOO skipped) is treated as ratio = 0 — the
     n-bound checks in the higher tiers still gate small-sample cases.
     """
@@ -1010,7 +1027,15 @@ def _compute_tier(
         return "insufficient"
 
     if not np.isnan(loo_rmse):
-        loo_ratio = loo_rmse / max(train_rmse, 1e-6)
+        # Measurement-noise floor for train RMSE (see docstring).
+        if noise_floor_rmse is not None and noise_floor_rmse > 0:
+            train_floor = float(noise_floor_rmse)
+        else:
+            # Heuristic: floor at max(absolute_min, 10% of LOO).  10% of
+            # LOO is the boundary where ratio loses meaning — anything
+            # smaller is sub-noise overfit, not better generalization.
+            train_floor = max(1e-3, 0.10 * loo_rmse)
+        loo_ratio = loo_rmse / max(train_rmse, train_floor)
     else:
         # LOO not computed (n < 5).  Treat as best-case for ratio, but the
         # n_samples checks below still keep us in "low" or "insufficient".
@@ -1060,8 +1085,25 @@ def tier_from_raw_model(raw: dict | None) -> str | None:
         return None
 
 
-def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str) -> FittedModel:
-    """Fit y = X @ beta via least squares with LOO cross-validation."""
+def _fit(
+    X: np.ndarray,
+    y: np.ndarray,
+    feature_names: list[str],
+    model_name: str,
+    *,
+    noise_floor_rmse: float | None = None,
+) -> FittedModel:
+    """Fit y = X @ beta via least squares with LOO cross-validation.
+
+    ``noise_floor_rmse`` (optional) is the measurement-noise floor for the
+    target channel — typically the within-IBT lap-to-lap std of the same
+    output, populated by ``Observation.setup_noise_floor_*``.  When the
+    regression is over-parameterised relative to the number of distinct
+    physical setups, train RMSE drives below this physical floor; the
+    LOO/train ratio then explodes for non-physical reasons.  Floor train
+    RMSE at ``noise_floor_rmse`` before computing the ratio so the tier
+    classification reflects real generalization, not numerical noise.
+    """
     ones = np.ones((X.shape[0], 1))
     X_aug = np.hstack([ones, X])
 
@@ -1119,7 +1161,10 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
     # from this tier for backward compatibility (Mission Principle 4).
     # Replaces the legacy R2_THRESHOLD_BLOCK / MIN_R2_FLOOR binary gate.
     n_features = X.shape[1]
-    tier = _compute_tier(r2, loo_rmse, rmse, n, n_features)
+    tier = _compute_tier(
+        r2, loo_rmse, rmse, n, n_features,
+        noise_floor_rmse=noise_floor_rmse,
+    )
     is_cal = tier != "insufficient"
 
     # Surface non-fatal warnings about generalisation quality.
@@ -1653,6 +1698,41 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         (_fuel / np.maximum(_rear_coil, 1.0), "fuel_x_inv_rear_corner_spring")
     )
 
+    # ── D1 per-lap covariates (Unit D1 wiring) ─────────────────────────────
+    # When ingested via --all-laps, ``CalibrationPoint`` carries lap-specific
+    # values for fuel_remaining_l (vs fuel_l = stint start), tyre_temp_avg_c,
+    # and driver_aggression_idx (front_shock_vel_p99 as a proxy).  Per-lap
+    # variance in these IS signal — laps with hot tyres at low fuel have
+    # different RH/deflection than the same setup with cold tyres at full
+    # fuel. Add linear + interaction features so the regression can use them.
+    # Falls back to 0.0 on legacy rows ingested before D1 — std-filter at
+    # _select_features drops zero-variance features automatically.
+    _tyre_t = col("tyre_temp_avg_c")
+    _aggr = col("driver_aggression_idx")
+    _UNIVERSAL_POOL.append((_tyre_t, "tyre_temp"))
+    _UNIVERSAL_POOL.append((_aggr, "driver_aggression"))
+    # Tyre temp × spring compliance: hotter tyres = lower vertical stiffness
+    # (smaller tyre k); shifts effective RH at speed proportional to 1/k.
+    _UNIVERSAL_POOL.append((_tyre_t / np.maximum(_rear_spring, 1.0),
+                            "tyre_temp_x_inv_spring"))
+    _UNIVERSAL_POOL.append((_tyre_t / np.maximum(_rear_third, 1.0),
+                            "tyre_temp_x_inv_third"))
+    _UNIVERSAL_POOL.append((_tyre_t / np.maximum(_front_coil, 1.0),
+                            "tyre_temp_x_inv_front_corner_spring"))
+    # Driver aggression × damper-domain proxy (front_shock_vel p99): high
+    # aggression on soft springs = more bottoming, on stiff = more grip
+    # loss. Captures driver-style × setup interaction.
+    _UNIVERSAL_POOL.append((_aggr / np.maximum(_rear_spring, 1.0),
+                            "aggression_x_inv_spring"))
+    _UNIVERSAL_POOL.append((_aggr / np.maximum(_rear_third, 1.0),
+                            "aggression_x_inv_third"))
+    # Per-lap fuel from D1 (separate from stint-start fuel_l). When the
+    # legacy row has fuel_remaining_l=0 the std-filter drops this; on
+    # per-lap rows the linear and squared terms capture fuel-burn drift.
+    _fuel_rem = col("fuel_remaining_l")
+    _UNIVERSAL_POOL.append((_fuel_rem, "fuel_remaining"))
+    _UNIVERSAL_POOL.append((_fuel_rem * _fuel_rem, "fuel_remaining_sq"))
+
     # ── Physics-aware per-output feature pools ──
     # Each garage output is driven by features from a specific axle. The
     # universal forward selection (LOO RMSE-driven, physics-blind) was picking
@@ -1672,6 +1752,8 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         "front_corner_spring", "inv_front_corner_spring",
         "front_bump_rubber_gap",
         "fuel_x_inv_front_corner_spring",
+        # D1 per-lap covariates: tyre warmup affects front-axle tyre rate.
+        "tyre_temp_x_inv_front_corner_spring",
     }
     _REAR_AXIS_NAMES = {
         "rear_pushrod", "rear_pushrod_sq",
@@ -1687,8 +1769,16 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
         "rear_bump_rubber_gap",
         "splitter_height",
         "fuel_x_inv_rear_corner_spring",
+        # D1 per-lap covariates: rear axle carries fuel weight directly.
+        "tyre_temp_x_inv_spring", "tyre_temp_x_inv_third",
+        "aggression_x_inv_spring", "aggression_x_inv_third",
     }
-    _GLOBAL_NAMES = {"fuel", "wing"}
+    _GLOBAL_NAMES = {
+        "fuel", "wing",
+        # D1 per-lap covariates that affect both axles symmetrically.
+        "tyre_temp", "driver_aggression",
+        "fuel_remaining", "fuel_remaining_sq",
+    }
 
     def _filter_pool(allowed_names: set[str]) -> list[tuple]:
         return [(arr, name) for (arr, name) in _UNIVERSAL_POOL if name in allowed_names]

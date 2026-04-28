@@ -71,6 +71,17 @@ class GarageSetupState:
     rear_bump_rubber_gap_mm: float = 0.0       # avg per-axle bump rubber gap, rear
     splitter_height_mm: float = 0.0            # CenterFrontSplitterHeight
 
+    # ── D1 per-lap covariates (lap-condition state) ──
+    # Lap-condition state, NOT setup parameters.  When a regression includes
+    # tyre/fuel/aggression interaction features (Unit D1), predictions need
+    # representative race values for these.  At solve time, populate from
+    # the IBT's measured per-lap mean (mid-stint conditions).  When unset,
+    # defaults below produce conservative predictions that exclude the
+    # lap-condition contribution (≈ training-mean-equivalent for tyre_temp).
+    tyre_temp_avg_c: float = 60.0       # representative steady-state tyre temp
+    driver_aggression_idx: float = 0.0  # front_shock_vel_p99 baseline
+    fuel_remaining_l: float = 0.0       # mid-stint fuel; defaults to 0 = full stint
+
     @classmethod
     def from_current_setup(cls, setup: Any, car: Any = None) -> "GarageSetupState":
         """Build from analyzer.setup_reader.CurrentSetup-like objects.
@@ -164,6 +175,11 @@ class GarageSetupState:
             front_bump_rubber_gap_mm=front_bump_rubber_gap_mm,
             rear_bump_rubber_gap_mm=rear_bump_rubber_gap_mm,
             splitter_height_mm=float(getattr(setup, "splitter_height_mm", 0.0)),
+            # D1 lap-condition state — pull from IBT measurements when
+            # available; field defaults (60°C / 0 / 0) handle missing values.
+            tyre_temp_avg_c=float(getattr(setup, "tyre_temp_avg_c", 60.0) or 60.0),
+            driver_aggression_idx=float(getattr(setup, "driver_aggression_idx", 0.0) or 0.0),
+            fuel_remaining_l=float(getattr(setup, "fuel_remaining_l", 0.0) or 0.0),
         )
 
     @classmethod
@@ -302,6 +318,32 @@ class DirectRegression:
             "fuel_x_inv_rear_corner_spring": (
                 lambda s: s.fuel_l / s.rear_corner_spring_nmm
                 if s.rear_corner_spring_nmm > 0 else 0.0
+            ),
+            # ── D1 per-lap covariates (lap-condition features) ──
+            # Read from GarageSetupState.tyre_temp_avg_c / driver_aggression_idx
+            # / fuel_remaining_l.  These default to representative race values
+            # (60°C tyre, zero aggression baseline, zero remaining-fuel) so
+            # predictions match training conditions when callers don't pass
+            # IBT-measured values explicitly.
+            "tyre_temp": lambda s: s.tyre_temp_avg_c,
+            "driver_aggression": lambda s: s.driver_aggression_idx,
+            "fuel_remaining": lambda s: s.fuel_remaining_l,
+            "fuel_remaining_sq": lambda s: s.fuel_remaining_l ** 2,
+            "tyre_temp_x_inv_spring": (
+                lambda s: s.tyre_temp_avg_c / max(s.rear_spring_nmm, 1.0)
+            ),
+            "tyre_temp_x_inv_third": (
+                lambda s: s.tyre_temp_avg_c / max(s.rear_third_nmm, 1.0)
+            ),
+            "tyre_temp_x_inv_front_corner_spring": (
+                lambda s: s.tyre_temp_avg_c / s.front_corner_spring_nmm
+                if s.front_corner_spring_nmm > 0 else 0.0
+            ),
+            "aggression_x_inv_spring": (
+                lambda s: s.driver_aggression_idx / max(s.rear_spring_nmm, 1.0)
+            ),
+            "aggression_x_inv_third": (
+                lambda s: s.driver_aggression_idx / max(s.rear_third_nmm, 1.0)
             ),
         }
         return cls(
