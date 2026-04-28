@@ -2578,18 +2578,34 @@ def _is_overfit(model) -> bool:
     return loo_rmse > _OVERFIT_LOO_TRAIN_RATIO * max(rmse, 1e-6)
 
 
+_SAFETY_CRITICAL_DIRECT_MODELS = frozenset({
+    "heave_spring_defl_max",
+    "third_spring_defl_max",
+    "rear_spring_defl_max",
+    "heave_spring_defl_static",
+    "third_spring_defl_static",
+    "rear_spring_defl_static",
+    "front_shock_defl_static",
+    "rear_shock_defl_static",
+    "third_slider_defl_static",
+    "heave_slider_defl_static",
+    "front_ride_height",
+    "rear_ride_height",
+})
+
+
 def _mk_direct(fitted_model) -> "DirectRegression | None":
     """Build a DirectRegression from a fitted model.
 
-    Accepts any model whose ``confidence_tier`` is non-``insufficient`` (i.e.
-    ``high``, ``medium``, or ``low``).  The strict R² >= 0.85 calibration
-    gate is for blocking SOLVER steps, not garage predictions — a low-tier
-    model with R²=0.60 still gives better garage predictions than the
-    fallback coefficient path, which may have stale/mismatched coefficients
-    from another car.
+    Tier policy (matches apply_to_car safety-critical gate):
+      - ``insufficient``: rejected (R²<0.30, overfit, or n<features).
+      - ``low``: rejected for safety-critical model names (deflection /
+        travel-budget / static-RH).  These feed legality + heave travel
+        budget calculations, where unreliable predictions produce
+        non-physical outputs (e.g. DeflMax≈0 → INVALID setup).
+      - ``low`` non-safety-critical, ``medium``, ``high``: accepted.
 
-    Returns None when the model is absent, has no coefficients, or is
-    flagged ``insufficient`` (R² < 0.30 OR LOO/train > 20× OR n < n_features).
+    Returns None when rejected.
     """
     if fitted_model is None or not fitted_model.coefficients:
         return None
@@ -2609,6 +2625,40 @@ def _mk_direct(fitted_model) -> "DirectRegression | None":
             fitted_model.name, tier, ratio,
         )
         return None
+    # Safety-critical gate (a): low-tier deflection / RH models can produce
+    # non-physical predictions at default lap-conditions (e.g. DeflMax≈0)
+    # that corrupt the legality engine.
+    tier = getattr(fitted_model, "confidence_tier", "high")
+    if tier == "low" and fitted_model.name in _SAFETY_CRITICAL_DIRECT_MODELS:
+        import logging
+        logging.getLogger(__name__).warning(
+            "DirectRegression skipped for '%s' — tier=low and "
+            "safety-critical (would corrupt legality / travel-budget). "
+            "Garage predictions for this output fall back to physics defaults.",
+            fitted_model.name,
+        )
+        return None
+    # Safety-critical gate (b): physical-range sanity check on the
+    # intercept.  A deflection_max regression intercept of -119 mm or
+    # 0 mm is non-physical regardless of how good R²/LOO look (per-track
+    # fits with limited data can produce high-confidence-but-wrong
+    # coefficients).  Spring max-deflection intercepts must be in a
+    # plausible range (50–250 mm for heave/third/rear; the regression
+    # adjusts via slope×spring_rate from there).
+    if (fitted_model.name in _SAFETY_CRITICAL_DIRECT_MODELS
+            and "defl_max" in fitted_model.name
+            and len(fitted_model.coefficients) > 0):
+        intercept = fitted_model.coefficients[0]
+        if not (50.0 <= intercept <= 250.0):
+            import logging
+            logging.getLogger(__name__).warning(
+                "DirectRegression skipped for '%s' — intercept %.1f mm "
+                "outside physical range [50, 250] (overfit per-track "
+                "regression with non-physical coefficients).  Garage "
+                "predictions fall back to physics defaults.",
+                fitted_model.name, intercept,
+            )
+            return None
     from car_model.garage import DirectRegression
     return DirectRegression.from_model(
         fitted_model.coefficients,
@@ -2742,15 +2792,41 @@ def build_garage_output_model(car_obj, models: CarCalibrationModels):
                 elif feat == "inv_od4":
                     heave_defl_coeff_inv_od4 = coeffs[i + 1]  # 1/OD^4 coefficient
 
-    # Heave defl max from calibration
-    defl_max_intercept = 0.0
-    defl_max_slope = 0.0
-    if models.heave_spring_defl_max:
+    # Heave defl max from calibration.
+    # Initialise from car's HeaveSpringModel physics defaults (106.43,
+    # -0.310 for Dallara LMDh; populated per-car).  Only overwrite with
+    # regression coefficients when the model is non-safety-critical or
+    # tier ≥ medium — at tier=low the regression can produce coefficients
+    # that give DeflMax≈0 mm at typical heave rates, corrupting the
+    # legality engine.
+    defl_max_intercept = float(getattr(hsm, "heave_spring_defl_max_intercept_mm", 106.43) or 106.43)
+    defl_max_slope = float(getattr(hsm, "heave_spring_defl_max_slope", -0.310) or -0.310)
+    _dm_tier = getattr(models.heave_spring_defl_max, "confidence_tier", "high") if models.heave_spring_defl_max else None
+    _dm_safe = (_dm_tier in ("high", "medium")) or (
+        _dm_tier == "low"
+        and "heave_spring_defl_max" not in _SAFETY_CRITICAL_DIRECT_MODELS
+    )
+    if models.heave_spring_defl_max and _dm_safe:
         dm = models.heave_spring_defl_max
-        defl_max_intercept = dm.coefficients[0] if len(dm.coefficients) > 0 else 0.0
-        for i, feat in enumerate(dm.feature_names):
-            if i + 1 < len(dm.coefficients) and feat == "front_heave":
-                defl_max_slope = dm.coefficients[i + 1]
+        _candidate_intercept = dm.coefficients[0] if len(dm.coefficients) > 0 else defl_max_intercept
+        # Physical-range sanity: spring max-deflection intercepts must be
+        # in the plausible [50, 250] mm range.  Per-track fits with
+        # limited variance can produce high-confidence-but-wrong
+        # coefficients (intercept=-119 mm, etc.).  Reject and use
+        # physics fallback when the fitted intercept is unphysical.
+        if 50.0 <= _candidate_intercept <= 250.0:
+            defl_max_intercept = _candidate_intercept
+            for i, feat in enumerate(dm.feature_names):
+                if i + 1 < len(dm.coefficients) and feat == "front_heave":
+                    defl_max_slope = dm.coefficients[i + 1]
+        else:
+            import logging
+            logging.getLogger(__name__).warning(
+                "GarageOutputModel: heave_spring_defl_max intercept "
+                "%.1f mm outside physical [50, 250] range — falling "
+                "back to physics default %.1f mm.",
+                _candidate_intercept, defl_max_intercept,
+            )
 
     # Torsion turns from calibration
     torsion_turns_intercept = 0.0
