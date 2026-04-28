@@ -18,7 +18,7 @@
     "q_squared": null
   },
   "rear_ride_height": {
-    "name": "rear_ride_height",
+    "name": "rear_ride_height_real",
     "feature_names": [
       "inv_rear_third",
       "inv_rear_spring",
@@ -78,7 +78,34 @@
     "is_calibrated": true,
     "q_squared": 0.9234363682501642
   },
-  "front_shock_defl_static": null,
+  "front_shock_defl_static": {
+    "name": "front_shock_defl_static",
+    "feature_names": [
+      "torsion_od",
+      "front_heave",
+      "fuel",
+      "fuel_x_inv_front_corner_spring",
+      "inv_front_heave",
+      "torsion_turns",
+      "front_pushrod"
+    ],
+    "coefficients": [
+      41.03465035545485,
+      -1.1651500195677365,
+      -0.021501062118162384,
+      0.0013314441949305866,
+      0.0013314442203060661,
+      -83.58154823236764,
+      -28.928810774637757,
+      0.1396777382250876
+    ],
+    "r_squared": 0.9979803571228193,
+    "rmse": 0.12609622268407003,
+    "loo_rmse": 0.3010982722312214,
+    "n_samples": 27,
+    "is_calibrated": true,
+    "q_squared": 0.9884843898223674
+  },
   "front_shock_defl_max": null,
   "rear_shock_defl_static": {
     "name": "rear_shock_defl_static",

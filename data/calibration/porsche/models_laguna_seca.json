@@ -39,9 +39,43 @@
   },
   "torsion_bar_turns": null,
   "torsion_bar_defl": null,
-  "front_shock_defl_static": null,
+  "front_shock_defl_static": {
+    "name": "front_shock_defl_static",
+    "feature_names": [
+      "front_heave",
+      "fuel_x_inv_third"
+    ],
+    "coefficients": [
+      50.34452027149399,
+      -0.06364345835955708,
+      -130.37629379930402
+    ],
+    "r_squared": 0.8097278918150355,
+    "rmse": 2.312456816873931,
+    "loo_rmse": 6.692106347899224,
+    "n_samples": 8,
+    "is_calibrated": false,
+    "q_squared": -0.5935053841200575
+  },
   "front_shock_defl_max": null,
-  "rear_shock_defl_static": null,
+  "rear_shock_defl_static": {
+    "name": "rear_shock_defl_static",
+    "feature_names": [
+      "rear_third",
+      "rear_third_perch"
+    ],
+    "coefficients": [
+      -476.7430881190866,
+      -0.058833132677166944,
+      4.352841663667168
+    ],
+    "r_squared": 0.9819652213430441,
+    "rmse": 1.3306016945118277,
+    "loo_rmse": 2.0914192374268317,
+    "n_samples": 8,
+    "is_calibrated": true,
+    "q_squared": 0.9554449568002118
+  },
   "rear_shock_defl_max": null,
   "heave_spring_defl_static": {
     "name": "heave_spring_defl_static",
@@ -81,7 +115,7 @@
   },
   "heave_slider_defl_static": null,
   "rear_spring_defl_static": {
-    "name": "rear_spring_defl_static",
+    "name": "rear_spring_defl_static_real",
     "feature_names": [
       "rear_spring_perch",
       "rear_camber"
@@ -117,7 +151,7 @@
     "q_squared": 0.4310925889860683
   },
   "third_spring_defl_static": {
-    "name": "third_spring_defl_static",
+    "name": "third_spring_defl_static_real",
     "feature_names": [
       "rear_third_perch",
       "rear_camber"
@@ -217,7 +251,6 @@
     "m_eff": "rate-dependent (4 points, range 317-1978 kg)",
     "m_eff_rear": "rate-dependent (4 points, range 411-2483 kg)",
     "lltd_target": "DISABLED \u2014 IBT 'lltd_measured' is a geometric proxy (t_f^3/(t_f^3+t_r^3)), not true LLTD. ARB solver uses OptimumG physics.",
-    "deflection_model": "calibrated (6 unique setups, best R\u00b2=1.00)",
-    "arb_calibrated": null
+    "deflection_model": "calibrated (6 unique setups, best R\u00b2=1.00)"
   }
 }

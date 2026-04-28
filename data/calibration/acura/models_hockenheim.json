@@ -21,19 +21,21 @@
     "name": "rear_ride_height",
     "feature_names": [
       "inv_rear_third",
+      "inv_rear_spring",
       "rear_pushrod"
     ],
     "coefficients": [
-      40.77179131747773,
-      195.9383304227361,
-      -0.015449096686410257
+      48.54453490823473,
+      245.28663841838483,
+      -6.7029219006039735,
+      0.03545402911871065
     ],
-    "r_squared": 0.2894886276768248,
-    "rmse": 1.271753076316688,
-    "loo_rmse": 8.928704379782557,
-    "n_samples": 7,
+    "r_squared": 0.717295447269781,
+    "rmse": 1.9936118994453278,
+    "loo_rmse": 8.810422974935165,
+    "n_samples": 10,
     "is_calibrated": false,
-    "q_squared": -34.02211164762291
+    "q_squared": -4.521347552668052
   },
   "torsion_bar_turns": {
     "name": "torsion_bar_turns",
@@ -73,27 +75,67 @@
     "is_calibrated": false,
     "q_squared": -4.187321909277703
   },
-  "front_shock_defl_static": null,
+  "front_shock_defl_static": {
+    "name": "front_shock_defl_static",
+    "feature_names": [
+      "inv_front_heave",
+      "inv_rear_third",
+      "fuel_x_inv_third"
+    ],
+    "coefficients": [
+      -1.1730155798550093,
+      44.411181831666674,
+      4876.469198009394,
+      -82.69230825446363
+    ],
+    "r_squared": 0.7939135132241573,
+    "rmse": 1.0100768898559889,
+    "loo_rmse": 2.611874140687592,
+    "n_samples": 9,
+    "is_calibrated": false,
+    "q_squared": -0.37798705404038957
+  },
   "front_shock_defl_max": null,
-  "rear_shock_defl_static": null,
+  "rear_shock_defl_static": {
+    "name": "rear_shock_defl_static",
+    "feature_names": [
+      "inv_rear_third",
+      "fuel_x_inv_third",
+      "rear_torsion_turns"
+    ],
+    "coefficients": [
+      -7.679918313868531,
+      11243.399002225828,
+      -191.51380277708813,
+      -63.39996287713552
+    ],
+    "r_squared": 0.9309392227078661,
+    "rmse": 0.6568231935069277,
+    "loo_rmse": 2.9048939611145435,
+    "n_samples": 9,
+    "is_calibrated": true,
+    "q_squared": -0.350812495950394
+  },
   "rear_shock_defl_max": null,
   "heave_spring_defl_static": {
     "name": "heave_spring_defl_static",
     "feature_names": [
       "front_heave",
+      "fuel",
       "front_camber"
     ],
     "coefficients": [
-      6.180562240639918,
-      -0.03157123756901843,
-      -5.643385619555125
+      -31.50853022717772,
+      -0.03290764775101103,
+      0.6580579276985834,
+      -5.554443334281995
     ],
-    "r_squared": 0.9376504206430067,
-    "rmse": 1.425423734473702,
-    "loo_rmse": 2.577452477892166,
-    "n_samples": 7,
+    "r_squared": 0.9495778968081728,
+    "rmse": 1.3141314515460587,
+    "loo_rmse": 2.3384557390267395,
+    "n_samples": 9,
     "is_calibrated": true,
-    "q_squared": 0.7961424082453464
+    "q_squared": 0.8403379701666756
   },
   "heave_spring_defl_max": {
     "name": "heave_spring_defl_max",
@@ -114,25 +156,46 @@
     "q_squared": 0.9995150897915497
   },
   "heave_slider_defl_static": null,
-  "rear_spring_defl_static": null,
+  "rear_spring_defl_static": {
+    "name": "rear_spring_defl_static",
+    "feature_names": [
+      "inv_rear_third",
+      "fuel_x_inv_third",
+      "rear_torsion_turns"
+    ],
+    "coefficients": [
+      -7.679918313868531,
+      11243.399002225828,
+      -191.51380277708813,
+      -63.39996287713552
+    ],
+    "r_squared": 0.9309392227078661,
+    "rmse": 0.6568231935069277,
+    "loo_rmse": 2.9048939611145435,
+    "n_samples": 9,
+    "is_calibrated": true,
+    "q_squared": -0.350812495950394
+  },
   "rear_spring_defl_max": null,
   "third_spring_defl_static": {
     "name": "third_spring_defl_static",
     "feature_names": [
       "front_heave",
-      "rear_third"
+      "fuel_x_inv_third",
+      "inv_od4"
     ],
     "coefficients": [
-      35.662754052883884,
-      -0.04229189287620365,
-      -0.0851438232567781
+      -0.21948546754232381,
+      -0.024077984116956806,
+      22.54987617625747,
+      417357.6540626093
     ],
-    "r_squared": 0.8873616245352158,
-    "rmse": 2.6671842822682392,
-    "loo_rmse": 3.7146694385508674,
-    "n_samples": 7,
+    "r_squared": 0.9272004286729204,
+    "rmse": 2.3325613033219867,
+    "loo_rmse": 3.669179766404142,
+    "n_samples": 9,
     "is_calibrated": true,
-    "q_squared": 0.7815154772553262
+    "q_squared": 0.819863936089982
   },
   "third_spring_defl_max": {
     "name": "third_spring_defl_max",

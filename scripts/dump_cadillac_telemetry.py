@@ -19,6 +19,8 @@ IBT_NAMES = [
     "cadillacvseriesrgtp_lagunaseca 2026-04-27 16-54-38.ibt",
     "cadillacvseriesrgtp_lagunaseca 2026-04-27 17-11-38.ibt",
     "cadillacvseriesrgtp_lagunaseca 2026-04-27 17-36-02.ibt",
+    "cadillacvseriesrgtp_lagunaseca 2026-04-27 19-50-46.ibt",
+    "cadillacvseriesrgtp_lagunaseca 2026-04-27 19-58-45.ibt",
 ]
 
 
