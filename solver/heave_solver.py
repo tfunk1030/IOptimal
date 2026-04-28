@@ -32,7 +32,10 @@ Validated against BMW Sebring telemetry:
 
 from __future__ import annotations
 
+import logging
 import math
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 
 from car_model.garage import GarageSetupState

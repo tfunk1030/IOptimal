@@ -209,20 +209,43 @@ class SupportingSolver:
         pad = current_pad
         hardware_reasons: list[str] = []
 
+        # Use physics-based MC recommendation from BrakeSolution when available.
+        # The brake_solver now computes ideal MC sizes from CG, wheelbase, and
+        # deceleration.  We blend the physics recommendation with telemetry
+        # evidence: if telemetry shows front-lock or stable braking, we still
+        # adjust target/migration/pad, but MC sizes come from physics.
+        brake_sol = getattr(sol, "_brake_solution", None)
+        physics_front_mc = getattr(brake_sol, "recommended_front_mc_mm", 0.0) if brake_sol else 0.0
+        physics_rear_mc = getattr(brake_sol, "recommended_rear_mc_mm", 0.0) if brake_sol else 0.0
+
+        if physics_front_mc > 0 and physics_rear_mc > 0:
+            # Physics-based MC: use the ideal sizes computed from car geometry
+            front_mc = physics_front_mc
+            rear_mc = physics_rear_mc
+            hardware_reasons.append(
+                f"MC sizes set from physics: F {front_mc:.1f} / R {rear_mc:.1f} mm "
+                f"(ideal ratio {front_mc / max(rear_mc, 0.01):.3f})"
+            )
+
+        # Telemetry-based adjustments to target, migration, pad (MC is already physics-based)
         if front_lock >= 0.075 or hydraulic_split >= sol.brake_bias_pct + 0.5:
-            front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, -1)
-            rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, +1)
+            # If MC is already physics-optimal but still locking, step MC one notch rearward
+            if physics_front_mc > 0:
+                front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), front_mc, -1)
+                rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), rear_mc, +1)
+                hardware_reasons.append("front-lock override: MC stepped one notch rearward from physics baseline")
+            else:
+                front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, -1)
+                rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, +1)
             target = _clamp(current_target - target_step, *target_limits)
             migration = _clamp(current_migration - migration_step, *migration_limits)
             pad = self._pad_step(current_pad, -1)
-            hardware_reasons.append("front-lock evidence shifted brake hardware and migration rearward")
+            hardware_reasons.append("front-lock evidence shifted brake target and migration rearward")
         elif front_lock <= 0.03 and braking_pitch <= 0.8 and abs_activity < 8.0:
-            front_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_front_mc, +1)
-            rear_mc = self._option_step(getattr(self.car.garage_ranges, "brake_master_cyl_options_mm", []), current_rear_mc, -1)
             target = _clamp(current_target + target_step, *target_limits)
             migration = _clamp(current_migration + migration_step, *migration_limits)
             pad = self._pad_step(current_pad, +1)
-            hardware_reasons.append("stable braking allowed a slightly more aggressive brake hardware seed")
+            hardware_reasons.append("stable braking allowed a slightly more aggressive brake target seed")
 
         sol.brake_bias_target = snap_to_resolution(target, target_step, lo=float(target_limits[0]), hi=float(target_limits[1]))
         sol.brake_bias_migration = snap_to_resolution(
@@ -235,12 +258,17 @@ class SupportingSolver:
         sol.rear_master_cyl_mm = round(rear_mc, 1)
         sol.pad_compound = pad
         sol.brake_bias_status = "solved"
+        mc_from_physics = physics_front_mc > 0 and physics_rear_mc > 0
         if hardware_reasons:
             sol.brake_bias_target_status = "seeded_from_telemetry"
             sol.brake_bias_migration_status = "seeded_from_telemetry"
-            sol.master_cylinder_status = "seeded_from_telemetry"
+            sol.master_cylinder_status = "solved_from_physics" if mc_from_physics else "seeded_from_telemetry"
             sol.pad_compound_status = "seeded_from_telemetry"
             sol.brake_hardware_status = (
+                "Static brake bias is solved from telemetry; master cylinders computed from "
+                "car physics (CG/wheelbase/decel); brake target, pad compound, and migration "
+                "were conservatively seeded from braking evidence."
+                if mc_from_physics else
                 "Static brake bias is solved from telemetry; brake target, master cylinders, "
                 "pad compound, and migration were conservatively seeded from braking evidence."
             )
@@ -248,9 +276,13 @@ class SupportingSolver:
         else:
             sol.brake_bias_target_status = "seeded_from_setup"
             sol.brake_bias_migration_status = "seeded_from_setup"
-            sol.master_cylinder_status = "seeded_from_setup"
+            sol.master_cylinder_status = "solved_from_physics" if mc_from_physics else "seeded_from_setup"
             sol.pad_compound_status = "seeded_from_setup"
             sol.brake_hardware_status = (
+                "Static brake bias is solved from telemetry; master cylinders computed from "
+                "car physics (CG/wheelbase/decel); brake target, migration, and pad compound "
+                "are preserved as legal seeded context."
+                if mc_from_physics else
                 "Static brake bias is solved from telemetry; brake target, migration, "
                 "master cylinders, and pad compound are preserved as legal seeded context."
             )

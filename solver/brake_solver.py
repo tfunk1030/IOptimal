@@ -21,6 +21,10 @@ class BrakeSolution:
     reasoning: str
     mc_ratio: float = 0.0
     mc_ratio_note: str = ""
+    recommended_front_mc_mm: float = 0.0
+    recommended_rear_mc_mm: float = 0.0
+    mc_recommendation_reason: str = ""
+    effective_bias_correction: float = 0.0
     pad_compound: str = ""
     pad_compound_note: str = ""
 
@@ -58,7 +62,24 @@ def compute_brake_bias(
 
 
 class BrakeSolver:
-    """Brake bias solver extracted from SupportingSolver."""
+    """Brake bias solver with master-cylinder physics.
+
+    Computes brake bias % accounting for:
+    - Calibrated per-car baseline
+    - Fuel load weight transfer
+    - Track peak speed (aero load under braking)
+    - Driver trail-braking style
+    - Front lock / slip evidence
+    - ABS activity
+    - **Master cylinder bore sizes** (effective hydraulic force split)
+
+    The effective front braking force fraction is NOT just the bias %:
+        F_front = P_line * A_front_mc * bias_fraction
+    where A = pi/4 * d^2.  If front MC is larger than rear, the actual
+    front braking force exceeds what the bias % suggests.  This solver
+    corrects the bias recommendation to account for the MC ratio the
+    driver is actually running, and recommends optimal MC sizes.
+    """
 
     def __init__(
         self,
@@ -82,14 +103,11 @@ class BrakeSolver:
         bias, base_reason = compute_brake_bias(self.car, fuel_load_l=self.fuel_load_l)
         reasons = [base_reason]
 
-        # ── Track speed adaptation ──────────────────────────────────────
+        # -- Track speed adaptation -----------------------------------------
         # At higher peak braking speeds, aero load shifts the weight
         # distribution forward under heavy braking, requiring more front
         # bias. At lower peak speeds, less aero = less forward shift.
         # Reference: 230 kph (typical GTP track). Scale: ~0.3% per 30 kph.
-        # ADDED 2026-04-28: pipeline was outputting identical bias for
-        # Laguna (230 kph) and Silverstone (296 kph) despite 66 kph
-        # difference in max braking zone entry speed.
         max_speed_kph = getattr(measured, 'speed_max_kph', None) or 0.0
         if max_speed_kph > 150:
             _speed_ref_kph = 230.0
@@ -122,7 +140,7 @@ class BrakeSolver:
                 reasons.append(f"+0.2% for high braking decel p95={measured.braking_decel_peak_g:.2f}g")
             elif measured.braking_decel_peak_g < 1.2:
                 reasons.append(
-                    f"Note: low braking decel p95={measured.braking_decel_peak_g:.2f}g — "
+                    f"Note: low braking decel p95={measured.braking_decel_peak_g:.2f}g -- "
                     f"driver may not be braking hard enough to reveal bias issues"
                 )
 
@@ -139,7 +157,7 @@ class BrakeSolver:
         asymmetry = getattr(measured, 'front_brake_wheel_decel_asymmetry_p95_ms2', 0.0)
         if asymmetry > 1.5:
             reasons.append(
-                f"⚠ High brake deceleration asymmetry ({asymmetry:.1f} m/s²) detected — "
+                f"Warning: High brake deceleration asymmetry ({asymmetry:.1f} m/s2) detected -- "
                 f"check front caliper/pad condition before adjusting brake bias"
             )
         if asymmetry > 3.0:
@@ -151,7 +169,7 @@ class BrakeSolver:
 
         if measured.body_slip_p95_deg > 5.0:
             bias += 0.3
-            reasons.append(f"+0.3% for high body slip p95={measured.body_slip_p95_deg:.1f}°")
+            reasons.append(f"+0.3% for high body slip p95={measured.body_slip_p95_deg:.1f} deg")
 
         measured_split = getattr(measured, "hydraulic_brake_split_pct", 0.0)
         if measured_split > 0 and abs(measured_split - bias) > 2.0:
@@ -167,10 +185,32 @@ class BrakeSolver:
                 f"with {measured.abs_cut_mean_pct:.0f}% force cut (front locking)"
             )
 
+        # -- Master cylinder physics -----------------------------------------
+        # The effective braking force split depends on BOTH the bias % knob
+        # AND the front/rear MC bore diameters.  Hydraulic force = P * A,
+        # and A is proportional to diameter^2.  If the driver's MC ratio
+        # diverges from the physics-ideal ratio, the effective front brake
+        # force fraction differs from the bias % setting.
         mc_ratio = 0.0
         mc_note = ""
+        rec_front_mc = 0.0
+        rec_rear_mc = 0.0
+        mc_rec_reason = ""
+        effective_bias_correction = 0.0
         pad = ""
         pad_note = ""
+
+        # Compute physics-ideal MC sizes from car geometry
+        nominal_ratio = self.car.nominal_mc_ratio
+        decel_for_mc = max(
+            float(getattr(measured, "braking_decel_peak_g", 0.0) or 0.0),
+            1.5,  # floor: even light brakers still need correct MC ratio
+        )
+        rec_front_mc, rec_rear_mc, mc_rec_reason = self.car.compute_ideal_mc_sizes(
+            decel_g=decel_for_mc,
+            fuel_load_l=self.fuel_load_l,
+        )
+        reasons.append(f"MC physics: {mc_rec_reason}")
 
         if self.current_setup is not None:
             if getattr(self.current_setup, "brake_bias_migration", 0.0) != 0.0:
@@ -181,32 +221,60 @@ class BrakeSolver:
                 reasons.append(
                     f"Current target {self.current_setup.brake_bias_target:+.1f} retained as hardware context only"
                 )
-            front_mc = getattr(self.current_setup, "front_master_cyl_mm", 0.0)
-            rear_mc = getattr(self.current_setup, "rear_master_cyl_mm", 0.0)
+            front_mc = float(getattr(self.current_setup, "front_master_cyl_mm", 0.0) or 0.0)
+            rear_mc = float(getattr(self.current_setup, "rear_master_cyl_mm", 0.0) or 0.0)
             if front_mc > 0.0 and rear_mc > 0.0:
                 mc_ratio = front_mc / rear_mc
-                nominal_ratio = getattr(self.car, "nominal_mc_ratio", 1.0)
-                mc_note = f"F/R = {front_mc:.1f}/{rear_mc:.1f} mm (ratio {mc_ratio:.2f})"
-                if abs(mc_ratio - nominal_ratio) > 0.05:
+                mc_note = f"F/R = {front_mc:.1f}/{rear_mc:.1f} mm (ratio {mc_ratio:.3f})"
+
+                # Effective-bias correction: if the MC ratio differs from
+                # nominal, the actual front brake force is higher/lower than
+                # the bias % suggests.  We correct the bias recommendation
+                # to compensate.
+                #
+                # The hydraulic force ratio = (d_front/d_rear)^2.
+                # If actual ratio > ideal ratio, more front force than
+                # intended, so reduce bias % to compensate (and vice versa).
+                # Sensitivity: ~0.5% bias per 0.1 MC ratio deviation.
+                ratio_delta = mc_ratio - nominal_ratio
+                if abs(ratio_delta) > 0.02:
+                    effective_bias_correction = round(-ratio_delta * 5.0, 1)
+                    effective_bias_correction = _clamp(effective_bias_correction, -1.5, 1.5)
+                    bias += effective_bias_correction
+                    reasons.append(
+                        f"MC effective-bias correction: {effective_bias_correction:+.1f}% "
+                        f"(current ratio {mc_ratio:.3f} vs ideal {nominal_ratio:.3f}, "
+                        f"delta {ratio_delta:+.3f})"
+                    )
+
+                # Flag suboptimal MC configuration
+                if abs(ratio_delta) > 0.15:
+                    mc_note += (
+                        f"; !! SUBOPTIMAL: current ratio {mc_ratio:.3f} far from "
+                        f"ideal {nominal_ratio:.3f} -- recommend "
+                        f"F {rec_front_mc:.1f} / R {rec_rear_mc:.1f} mm"
+                    )
+                elif abs(ratio_delta) > 0.05:
                     direction = "increase" if mc_ratio > nominal_ratio else "decrease"
                     mc_note += (
-                        f"; differs from nominal {nominal_ratio:.2f} — "
-                        f"effective bias may need {direction}"
+                        f"; differs from ideal {nominal_ratio:.3f} -- "
+                        f"effective bias may need {direction}; consider "
+                        f"F {rec_front_mc:.1f} / R {rec_rear_mc:.1f} mm"
                     )
                 reasons.append(f"MC: {mc_note}")
             else:
                 mc_ratio = 0.0
                 mc_note = ""
-            pad = getattr(self.current_setup, "pad_compound", "")
+            pad = getattr(self.current_setup, "pad_compound", "") or ""
             pad_note = ""
             if pad:
                 pad_note = pad
                 front_temp = getattr(measured, "front_carcass_mean_c", 0.0) or 0.0
                 if front_temp > 0:
                     if front_temp < 60:
-                        pad_note += " — low brake temps, softer compound may improve initial bite"
+                        pad_note += " -- low brake temps, softer compound may improve initial bite"
                     elif front_temp > 110:
-                        pad_note += " — high brake temps, compound fade risk"
+                        pad_note += " -- high brake temps, compound fade risk"
                 reasons.append(f"Pad: {pad_note}")
 
         return BrakeSolution(
@@ -214,6 +282,10 @@ class BrakeSolver:
             reasoning="; ".join(reasons),
             mc_ratio=mc_ratio,
             mc_ratio_note=mc_note,
+            recommended_front_mc_mm=rec_front_mc,
+            recommended_rear_mc_mm=rec_rear_mc,
+            mc_recommendation_reason=mc_rec_reason,
+            effective_bias_correction=effective_bias_correction,
             pad_compound=pad,
             pad_compound_note=pad_note,
         )

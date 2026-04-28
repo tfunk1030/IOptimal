@@ -1959,6 +1959,99 @@ class CarModel:
 
         return track_key(track_name) in set(self.supported_track_keys)
 
+    @property
+    def nominal_mc_ratio(self) -> float:
+        """Nominal front/rear master-cylinder diameter ratio for ideal brake force distribution.
+
+        Under braking the front axle must produce more braking force than the
+        static weight split because longitudinal weight transfer adds load to
+        the front tyres.  The ideal front braking force fraction is:
+
+            f_front = W_f_static + (h_cg / wheelbase) × decel_g
+
+        where W_f_static is the static front weight fraction, h_cg is the CG
+        height, and decel_g is the typical peak deceleration (≈1.8 g for GTP).
+
+        Hydraulic force ∝ pressure × piston area ∝ diameter².  So the MC
+        diameter ratio that produces this ideal force split is:
+
+            mc_ratio = d_front / d_rear = sqrt(f_front / (1 - f_front))
+
+        For a 47% static front, 350 mm CG, 2.74 m wheelbase at 1.8 g:
+            f_front = 0.47 + (0.35 / 2.74) × 1.8 = 0.47 + 0.230 = 0.700
+            mc_ratio = sqrt(0.700 / 0.300) = 1.528
+
+        In practice iRacing's BrakePressureBias already compensates for some
+        of this, so the MC ratio interacts with the bias %.  This property
+        provides the physics-ideal reference point.
+        """
+        import math
+        h_cg_m = self.corner_spring.cg_height_mm / 1000.0
+        typical_decel_g = 1.8
+        f_front = self.weight_dist_front + (h_cg_m / max(self.wheelbase_m, 0.1)) * typical_decel_g
+        f_front = max(0.3, min(0.85, f_front))
+        return round(math.sqrt(f_front / max(1.0 - f_front, 0.01)), 3)
+
+    def compute_ideal_mc_sizes(
+        self,
+        decel_g: float = 1.8,
+        fuel_load_l: float | None = None,
+    ) -> tuple[float, float, str]:
+        """Compute recommended front and rear MC diameters from physics.
+
+        Uses the car's CG height, wheelbase, and weight distribution to
+        calculate the ideal hydraulic force split, then selects the closest
+        available MC option pair that produces that ratio.
+
+        Args:
+            decel_g: Typical peak deceleration in g (default 1.8 for GTP).
+            fuel_load_l: If given, adjusts weight distribution for fuel load.
+
+        Returns:
+            (front_mc_mm, rear_mc_mm, reasoning_string)
+        """
+        import math
+
+        h_cg_m = self.corner_spring.cg_height_mm / 1000.0
+        if fuel_load_l is not None:
+            w_f = self.front_weight_at_fuel(fuel_load_l)
+        else:
+            w_f = self.weight_dist_front
+
+        # Ideal front braking force fraction under deceleration
+        f_front = w_f + (h_cg_m / max(self.wheelbase_m, 0.1)) * decel_g
+        f_front = max(0.3, min(0.85, f_front))
+        ideal_ratio = math.sqrt(f_front / max(1.0 - f_front, 0.01))
+
+        mc_opts = list(getattr(self.garage_ranges, "brake_master_cyl_options_mm", []) or [])
+        if not mc_opts:
+            mid = 19.1
+            return mid, mid, "no MC options available"
+
+        # Search all option pairs for the one closest to the ideal ratio
+        best_front = mc_opts[len(mc_opts) // 2]
+        best_rear = mc_opts[len(mc_opts) // 2]
+        best_err = 999.0
+        for f_mc in mc_opts:
+            for r_mc in mc_opts:
+                if r_mc < 1e-6:
+                    continue
+                ratio = f_mc / r_mc
+                err = abs(ratio - ideal_ratio)
+                if err < best_err:
+                    best_err = err
+                    best_front = f_mc
+                    best_rear = r_mc
+
+        actual_ratio = best_front / max(best_rear, 0.01)
+        reason = (
+            f"Physics ideal: f_front={f_front:.3f} at {decel_g:.1f}g -> "
+            f"ideal MC ratio {ideal_ratio:.3f}; "
+            f"best available {best_front:.1f}/{best_rear:.1f} mm "
+            f"(ratio {actual_ratio:.3f}, err {best_err:.3f})"
+        )
+        return best_front, best_rear, reason
+
     def supported_tracks_label(self) -> str:
         """Human-readable list of supported base tracks."""
         if not self.supported_track_keys:
