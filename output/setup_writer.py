@@ -417,7 +417,7 @@ _PORSCHE_PARAM_IDS: dict[str, str] = {
     # Diff — sourced from setup_registry canonical specs (audit M5)
     "diff_preload":             _registry_sto_id("porsche", "diff_preload_nm", "CarSetup_BrakesDriveUnit_DiffSpec_DiffPreload"),
     "diff_coast_ramp":          _registry_sto_id("porsche", "diff_ramp_angles", "CarSetup_BrakesDriveUnit_DiffSpec_CoastRampAngle"),
-    "diff_drive_ramp":          "",  # Porsche uses combined ramp angles, no separate drive ramp
+    "diff_drive_ramp":          "CarSetup_BrakesDriveUnit_DiffSpec_DriveRampAngle",  # Porsche uses separate coast/drive STO fields
     "diff_clutch_plates":       _registry_sto_id("porsche", "diff_clutch_plates", "CarSetup_BrakesDriveUnit_DiffSpec_ClutchPlates"),
     # Gears / lighting (same as BMW)
     "gear_stack":               "CarSetup_BrakesDriveUnit_GearRatios_GearStack",
@@ -1636,7 +1636,8 @@ def write_sto(
 
     # === Brakes, Diff, TC — settable parameters ===
     _w_num("brake_bias",           brake_bias_pct,       "%")
-    # Porsche has separate coast/drive ramp XML IDs; other cars use combined string
+    # Porsche uses separate coast/drive ramp XML fields; other cars use combined string.
+    # (M5: IDs sourced from registry for coast; drive_ramp is Porsche-specific STO field.)
     if car_canonical == "porsche" and diff_coast_drive_ramp:
         parts = diff_coast_drive_ramp.replace(" ", "").split("/")
         if len(parts) == 2:

@@ -84,6 +84,11 @@ class CornerAnalysis:
     # or no body-roll signal is available.
     roll_gradient_deg_per_g: float | None = None
 
+    # Sample indices (relative to lap start) for reuse by corner_balance (M3)
+    sample_start_idx: int = -1
+    sample_apex_idx: int = -1
+    sample_end_idx: int = -1
+
 
 def _classify_speed(apex_speed_kph: float) -> str:
     """Classify corner by apex speed into aero-relevance bands."""
@@ -529,6 +534,9 @@ def segment_lap(
             roll_gradient_deg_per_g=(
                 round(roll_gradient_dpg, 4) if roll_gradient_dpg is not None else None
             ),
+            sample_start_idx=cs,
+            sample_apex_idx=ca,
+            sample_end_idx=ce,
         ))
 
     # Sort by lap distance

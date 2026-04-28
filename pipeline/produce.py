@@ -691,8 +691,17 @@ def produce(
     balance_summary = None
     balance_param_changes = None
     try:
+        # Build corner_indices from CornerAnalysis sample indices (M3: avoid re-detection)
+        _corner_indices = [
+            (c.sample_start_idx, c.sample_apex_idx, c.sample_end_idx)
+            for c in corners
+            if c.sample_start_idx >= 0
+        ] if corners else None
+        if _corner_indices is not None and len(_corner_indices) != len(corners):
+            _corner_indices = None  # mismatch — fall back to re-detection
         corner_balances, balance_summary, balance_param_changes = run_corner_balance_analysis(
             ibt, start, end, car=car, corners=corners, tick_rate=ibt.tick_rate,
+            corner_indices=_corner_indices,
         )
         log(f"  Analyzed {len(corner_balances)} corners")
         if balance_summary:

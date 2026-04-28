@@ -62,7 +62,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "a87765252b772352",
@@ -127,7 +133,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "d0269a1da946f4b7",
@@ -192,7 +204,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "792adafa35b2bd08",
@@ -257,7 +275,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "820f413846468a2c",
@@ -322,7 +346,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "3acc27ba0f8bd49f",
@@ -387,7 +417,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "7afcaf11eabb8329",
@@ -452,7 +488,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "92f0ef512cec0765",
@@ -517,7 +559,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "e3f5b43b952dc315",
@@ -582,7 +630,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "379d42df0cf12024",
@@ -647,7 +701,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "cb1c1069afee15c6",
@@ -712,7 +772,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "e921bd7c387203dc",
@@ -777,7 +843,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "5536fd4aa653bdbc",
@@ -842,7 +914,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "55fa45f8bb390af3",
@@ -907,7 +985,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "2386daa4892773ee",
@@ -972,7 +1056,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "7fafd760e3961836",
@@ -1037,7 +1127,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "90412f0b0234566c",
@@ -1102,7 +1198,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "63c7436acc7aaff1",
@@ -1167,7 +1269,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "f414e0e393110c91",
@@ -1232,7 +1340,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "21359d5654873844",
@@ -1297,7 +1411,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "1e94ad5b44905701",
@@ -1362,7 +1482,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "13e185025f7d3708",
@@ -1427,7 +1553,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "da32d5eb531bb1d1",
@@ -1492,7 +1624,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "45586ecb9c8ede4e",
@@ -1557,7 +1695,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "c918906c402da0b4",
@@ -1622,7 +1766,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-11_10-17-38",
@@ -1687,7 +1837,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-21_19-01-49",
@@ -1752,7 +1908,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwlmdh_sebring international 2026-03-21 19-01-49",
@@ -1817,7 +1979,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwlmdh_sebring international 2026-03-22 14-47-42",
@@ -1882,7 +2050,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_14-52-24",
@@ -1947,7 +2121,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwlmdh_sebring international 2026-03-22 14-52-24",
@@ -2012,7 +2192,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_15-15-48",
@@ -2077,7 +2263,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwlmdh_sebring international 2026-03-22 15-15-48",
@@ -2142,7 +2334,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_15-41-46",
@@ -2207,7 +2405,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwlmdh_sebring international 2026-03-22 15-41-46",
@@ -2272,7 +2476,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_18-54-07",
@@ -2337,7 +2547,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwlmdh_sebring international 2026-03-22 18-54-07",
@@ -2402,7 +2618,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-22_19-18-50",
@@ -2467,7 +2689,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwlmdh_sebring international 2026-03-22 19-18-50",
@@ -2532,7 +2760,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-24_09-35-32",
@@ -2597,7 +2831,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwlmdh_sebring international 2026-03-24 09-35-32",
@@ -2662,7 +2902,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwquali1",
@@ -2727,7 +2973,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwquali1",
@@ -2792,7 +3044,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_fullracebmw",
@@ -2857,7 +3115,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "fullracebmw",
@@ -2922,7 +3186,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwquali2",
@@ -2987,7 +3257,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwquali2",
@@ -3052,7 +3328,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_2ndracebmw",
@@ -3117,7 +3399,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "2ndracebmw",
@@ -3182,7 +3470,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_quali3bmw",
@@ -3247,7 +3541,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "quali3bmw",
@@ -3312,7 +3612,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwrace3",
@@ -3377,7 +3683,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwrace3",
@@ -3442,7 +3754,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_badbmw",
@@ -3507,7 +3825,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "badbmw",
@@ -3572,7 +3896,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwbadquaili1",
@@ -3637,7 +3967,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwbadquaili1",
@@ -3702,7 +4038,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "badbmwquali",
@@ -3767,7 +4109,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_badbmw2",
@@ -3832,7 +4180,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "badbmw2",
@@ -3897,7 +4251,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-27_09-32-23",
@@ -3962,7 +4322,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwlmdh_sebring international 2026-03-27 09-32-23",
@@ -4027,7 +4393,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwtf11",
@@ -4092,7 +4464,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwtf11",
@@ -4157,7 +4535,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwtf12",
@@ -4222,7 +4606,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwtf12",
@@ -4287,7 +4677,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwjj",
@@ -4352,7 +4748,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwjj",
@@ -4417,7 +4819,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwjj1",
@@ -4482,7 +4890,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwjj1",
@@ -4547,7 +4961,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwbestquali",
@@ -4612,7 +5032,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwbestquali",
@@ -4677,7 +5103,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_bmwbest",
@@ -4742,7 +5174,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmwbest",
@@ -4807,7 +5245,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_12",
@@ -4872,7 +5316,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "12",
@@ -4937,7 +5387,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "bmw_sebring_international_raceway_af",
@@ -5002,7 +5458,13 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   },
   {
     "session_id": "af",
@@ -5067,6 +5529,83 @@
     "front_side_spring_rate_nmm": 0.0,
     "rear_side_spring_rate_nmm": 0.0,
     "front_heave_rate_nmm": 0.0,
-    "rear_heave_rate_nmm": 0.0
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
+  },
+  {
+    "session_id": "bmw_sebring_international_raceway_bmwlmdh_sebring_international_2026-03-09_18-39-17",
+    "ibt_path": "data/telemetry/bmwlmdh_sebring international 2026-03-09 18-39-17.ibt",
+    "track": "Sebring International Raceway",
+    "timestamp": "",
+    "wing_deg": 17.0,
+    "fuel_l": 89.0,
+    "front_heave_setting": 50.0,
+    "rear_third_setting": 530.0,
+    "front_heave_perch_mm": -10.0,
+    "rear_third_perch_mm": 41.0,
+    "front_torsion_od_mm": 13.9,
+    "rear_spring_setting": 160.0,
+    "rear_spring_perch_mm": 30.0,
+    "front_pushrod_mm": -23.0,
+    "rear_pushrod_mm": -27.0,
+    "front_camber_deg": -2.9,
+    "rear_camber_deg": -1.8,
+    "front_arb_size": "Soft",
+    "rear_arb_size": "Medium",
+    "front_arb_blade": 1,
+    "rear_arb_blade": 3,
+    "static_front_rh_mm": 30.0,
+    "static_rear_rh_mm": 49.9,
+    "torsion_bar_turns": 0.102,
+    "rear_torsion_bar_turns": 0.0,
+    "torsion_bar_defl_mm": 24.7,
+    "rear_torsion_bar_defl_mm": 0.0,
+    "front_shock_defl_static_mm": 15.9,
+    "front_shock_defl_max_mm": 100.0,
+    "rear_shock_defl_static_mm": 18.0,
+    "rear_shock_defl_max_mm": 150.0,
+    "heave_spring_defl_static_mm": 6.5,
+    "heave_spring_defl_max_mm": 90.2,
+    "heave_slider_defl_static_mm": 44.1,
+    "heave_slider_defl_max_mm": 200.0,
+    "rear_spring_defl_static_mm": 15.8,
+    "rear_spring_defl_max_mm": 79.7,
+    "third_spring_defl_static_mm": 5.9,
+    "third_spring_defl_max_mm": 45.5,
+    "third_slider_defl_static_mm": 19.1,
+    "third_slider_defl_max_mm": 150.0,
+    "lf_corner_weight_n": 2763.0,
+    "rf_corner_weight_n": 2763.0,
+    "lr_corner_weight_n": 3081.0,
+    "rr_corner_weight_n": 3081.0,
+    "aero_df_balance_pct": 50.14,
+    "aero_ld_ratio": 3.795,
+    "front_rh_at_speed_mm": 15.0,
+    "rear_rh_at_speed_mm": 40.0,
+    "dynamic_front_rh_mm": 19.75358009338379,
+    "dynamic_rear_rh_mm": 30.40520477294922,
+    "front_sigma_mm": 5.3872904777526855,
+    "rear_sigma_mm": 6.781888008117676,
+    "front_shock_vel_p99_mps": 0.2510647177696228,
+    "rear_shock_vel_p99_mps": 0.31360968947410583,
+    "lap_time_s": 109.53506469726562,
+    "assessment": "compromised",
+    "roll_gradient_deg_per_g": -0.21,
+    "lltd_measured": 0.5114758693857043,
+    "front_side_spring_rate_nmm": 0.0,
+    "rear_side_spring_rate_nmm": 0.0,
+    "front_heave_rate_nmm": 0.0,
+    "rear_heave_rate_nmm": 0.0,
+    "front_corner_spring_nmm": 0.0,
+    "rear_corner_spring_nmm": 0.0,
+    "front_bump_rubber_gap_mm": 0.0,
+    "rear_bump_rubber_gap_mm": 0.0,
+    "splitter_height_mm": 0.0,
+    "synthesized": false
   }
 ]
