@@ -1768,9 +1768,9 @@ class ObjectiveFunction:
 
         # Diff preload: penalty for distance from per-car neutral target.
         # Each car has a default_diff_preload_nm in its model (e.g., BMW=12,
-        # Porsche=85). Fallback to 30 Nm for cars without the attribute.
+        # Porsche=85). Direct access — required field on every CarModel.
         diff = params.get("diff_preload_nm", 20.0)
-        diff_target = getattr(self.car, "default_diff_preload_nm", 30.0)
+        diff_target = self.car.default_diff_preload_nm
         gain -= min(8.0, abs(diff - diff_target) * 0.12)
 
         # ═══════════════════════════════════════════════════════════════

@@ -492,7 +492,7 @@ class RakeSolver:
             RakeSolution with dynamic targets, static settings, and pushrod offsets.
         """
         if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+            fuel_load_l = self.car.fuel_capacity_l
         if target_balance is None:
             target_balance = self.car.default_df_balance_pct
         # Ride height excursion from track surface (use clean-track p99,
@@ -1252,7 +1252,7 @@ def reconcile_ride_heights(
         # compensate for RH shifts caused by spring rate changes in Step 2/3.
         # Detect a rear RH deficit and adjust the rear spring perch to recover
         # the target ride height instead.
-        _rear_pushrod_coeff = getattr(car.pushrod, "rear_pushrod_to_rh", -1.0)
+        _rear_pushrod_coeff = car.pushrod.rear_pushrod_to_rh
         _rear_rh_deficit = target_rear_rh - outputs.rear_static_rh_mm
         if abs(_rear_pushrod_coeff) < 1e-6 and abs(_rear_rh_deficit) > 0.3:
             # Try adjusting rear spring perch to close the gap.

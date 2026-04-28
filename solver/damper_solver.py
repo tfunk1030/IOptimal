@@ -369,13 +369,13 @@ class DamperSolver:
         Linear:    F = c * v   → clicks = (c * v_ref) / fpc
         Digressive: F = c * v^n → clicks = (c * v_ref^n) / fpc
         """
-        n = getattr(self.car.damper, "digressive_exponent", 1.0)
+        n = self.car.damper.digressive_exponent
         force_n = c_target * (v_ref_mps ** n)
         clicks = round(force_n / max(force_per_click, 1.0))
         return max(lo, min(hi, clicks))
 
     def _clicks_to_coeff(self, clicks: float, v_ref_mps: float, force_per_click: float) -> float:
-        n = getattr(self.car.damper, "digressive_exponent", 1.0)
+        n = self.car.damper.digressive_exponent
         return float(clicks) * max(force_per_click, 1.0) / max(v_ref_mps ** n, 1e-6)
 
     def _hs_slope_from_surface(self) -> tuple[int, int, str]:

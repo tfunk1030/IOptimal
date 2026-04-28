@@ -3761,14 +3761,14 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-04-28T17:00:56.720439+00:00",
+  "last_updated": "2026-04-28T17:03:53.340457+00:00",
   "observation_count": 62,
   "most_sensitive_parameters": [],
   "corrections": {
-    "roll_distribution_proxy_mean": 0.5055932819711866,
+    "roll_distribution_proxy_mean": 0.5055932819711868,
     "roll_distribution_proxy_std": 0.002067451511053395,
     "roll_distribution_proxy_sample_count": 62,
-    "lltd_measured_mean": 0.5055932819711866,
+    "lltd_measured_mean": 0.5055932819711868,
     "lltd_measured_std": 0.002067451511053395,
     "lltd_is_proxy": true,
     "aero_compression_front_mean_mm": 12.68096253487372,
@@ -3779,7 +3779,7 @@
     "calibrated_heave_var_r2": 0.48014269044591573,
     "lap_time_surrogate_regularized": 1.0,
     "lap_time_surrogate_sample_weight": 0.0,
-    "roll_gradient_measured_mean": 0.16934176710148507,
+    "roll_gradient_measured_mean": 0.16934176710148496,
     "roll_gradient_measured_std": 0.03534600661861507,
     "roll_gradient_sample_count": 43,
     "m_eff_front_values": [

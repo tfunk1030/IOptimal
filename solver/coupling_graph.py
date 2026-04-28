@@ -173,14 +173,14 @@ def _adjust_damper_for_new_spring(
         return None
 
     tyre_nmm = (
-        getattr(car, "tyre_vertical_rate_front_nmm", 0.0) if is_front
-        else getattr(car, "tyre_vertical_rate_rear_nmm", 0.0)
+        car.tyre_vertical_rate_front_nmm if is_front
+        else car.tyre_vertical_rate_rear_nmm
     )
     fuel_l = float(setup.get("fuel_load_l", 0.0))
     total_mass = car.total_mass(fuel_l) if hasattr(car, "total_mass") else None
     if total_mass is None:
         return None
-    weight_dist_front = float(getattr(car, "weight_dist_front", 0.5))
+    weight_dist_front = float(car.weight_dist_front)
     if is_front:
         m_corner = total_mass * weight_dist_front / 2.0
         zeta = damper.zeta_target_ls_front

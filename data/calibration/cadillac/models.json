@@ -23,7 +23,8 @@
     "loo_rmse": 2.333226935871736,
     "n_samples": 8,
     "is_calibrated": false,
-    "q_squared": -1.3021377769700408
+    "q_squared": -1.3021377769700408,
+    "confidence_tier": "medium"
   },
   "torsion_bar_turns": {
     "name": "torsion_bar_turns",
@@ -36,7 +37,8 @@
     "loo_rmse": 0.004841487374764081,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": null
+    "q_squared": null,
+    "confidence_tier": "high"
   },
   "torsion_bar_defl": {
     "name": "torsion_bar_defl_load",
@@ -54,7 +56,8 @@
     "loo_rmse": 117867.10088011697,
     "n_samples": 5,
     "is_calibrated": false,
-    "q_squared": -1.313064872726354
+    "q_squared": -1.313064872726354,
+    "confidence_tier": "medium"
   },
   "front_shock_defl_static": {
     "name": "front_shock_defl_static_real",
@@ -70,7 +73,8 @@
     "loo_rmse": 0.05424888594980416,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.9984941968753608
+    "q_squared": 0.9984941968753608,
+    "confidence_tier": "high"
   },
   "front_shock_defl_max": null,
   "rear_shock_defl_static": {
@@ -87,7 +91,8 @@
     "loo_rmse": 1.436662799685449,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.8902454587995048
+    "q_squared": 0.8902454587995048,
+    "confidence_tier": "high"
   },
   "rear_shock_defl_max": null,
   "heave_spring_defl_static": {
@@ -104,7 +109,8 @@
     "loo_rmse": 1.566324876404381,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.8936902616197873
+    "q_squared": 0.8936902616197873,
+    "confidence_tier": "high"
   },
   "heave_spring_defl_max": {
     "name": "heave_spring_defl_max",
@@ -120,7 +126,8 @@
     "loo_rmse": 0.35345403105088885,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.986464228995176
+    "q_squared": 0.986464228995176,
+    "confidence_tier": "medium"
   },
   "heave_slider_defl_static": {
     "name": "heave_slider_defl_static",
@@ -136,7 +143,8 @@
     "loo_rmse": 0.15120960286269905,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.9984523512212395
+    "q_squared": 0.9984523512212395,
+    "confidence_tier": "high"
   },
   "rear_spring_defl_static": {
     "name": "rear_spring_defl_static",
@@ -152,7 +160,8 @@
     "loo_rmse": 2.1203021235815647,
     "n_samples": 5,
     "is_calibrated": false,
-    "q_squared": 0.2746093495442602
+    "q_squared": 0.2746093495442602,
+    "confidence_tier": "medium"
   },
   "rear_spring_defl_max": {
     "name": "rear_spring_defl_max",
@@ -168,7 +177,8 @@
     "loo_rmse": 0.04697027310950071,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.9997226432470103
+    "q_squared": 0.9997226432470103,
+    "confidence_tier": "high"
   },
   "third_spring_defl_static": {
     "name": "third_spring_defl_static_real",
@@ -184,7 +194,8 @@
     "loo_rmse": 0.9930609795335399,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.6897275015504298
+    "q_squared": 0.6897275015504298,
+    "confidence_tier": "high"
   },
   "third_spring_defl_max": {
     "name": "third_spring_defl_max",
@@ -200,7 +211,8 @@
     "loo_rmse": 1.406704107680415,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.9785595485866306
+    "q_squared": 0.9785595485866306,
+    "confidence_tier": "medium"
   },
   "third_slider_defl_static": {
     "name": "third_slider_defl_static",
@@ -216,7 +228,8 @@
     "loo_rmse": 7.622559907883536,
     "n_samples": 5,
     "is_calibrated": false,
-    "q_squared": -1.681234289596568
+    "q_squared": -1.681234289596568,
+    "confidence_tier": "insufficient"
   },
   "torsion_bar_defl_direct": {
     "name": "torsion_bar_defl_direct",
@@ -232,7 +245,8 @@
     "loo_rmse": 0.6868017898751421,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.9417082676006304
+    "q_squared": 0.9417082676006304,
+    "confidence_tier": "high"
   },
   "third_slider_defl_direct": {
     "name": "third_slider_defl_direct",
@@ -248,7 +262,8 @@
     "loo_rmse": 1.545315501766563,
     "n_samples": 5,
     "is_calibrated": true,
-    "q_squared": 0.8898036030714687
+    "q_squared": 0.8898036030714687,
+    "confidence_tier": "high"
   },
   "front_heave_lookup": null,
   "rear_heave_lookup": null,

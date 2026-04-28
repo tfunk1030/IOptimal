@@ -642,7 +642,7 @@ class CornerSpringSolver:
             CornerSpringSolution with torsion bar OD and rear rate
         """
         if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+            fuel_load_l = self.car.fuel_capacity_l
         csm = self.car.corner_spring
         total_mass = self.car.total_mass(fuel_load_l)
         m_f_corner = total_mass * self.car.weight_dist_front / 2
@@ -821,7 +821,7 @@ class CornerSpringSolver:
         # uncompensated because the rake solver / reconcile cannot offset it
         # via pushrod.  Constrain the rate change to ±30% of the car's
         # baseline rear coil rate so RH stays within a recoverable window.
-        _rear_pushrod_coeff = getattr(self.car.pushrod, "rear_pushrod_to_rh", -1.0)
+        _rear_pushrod_coeff = self.car.pushrod.rear_pushrod_to_rh
         if abs(_rear_pushrod_coeff) < 1e-6:
             _baseline_rear_spring = self.car.corner_spring.rear_spring_rate_baseline_nmm \
                 if hasattr(self.car.corner_spring, "rear_spring_rate_baseline_nmm") \
@@ -931,7 +931,7 @@ class CornerSpringSolver:
                 non-Acura cars without torsion calibration).
         """
         if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+            fuel_load_l = self.car.fuel_capacity_l
         csm = self.car.corner_spring
         # Architecture dispatch — three mutually-exclusive front arms:
         #   1. GT3 paired front coils (front_spring_range_nmm[1] > 0)
@@ -1116,7 +1116,7 @@ class CornerSpringSolver:
             best-first.
         """
         if fuel_load_l is None:
-            fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
+            fuel_load_l = self.car.fuel_capacity_l
         csm = self.car.corner_spring
 
         # Always include the physics-targeted solve as the first candidate
