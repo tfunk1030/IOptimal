@@ -658,8 +658,9 @@ def extract_measurements(
         # includes geometric and direct components. This proxy correlates with
         # LLTD but is not identical — use the field name "roll_distribution_proxy"
         # and treat "lltd_measured" as a backward-compatible alias.
-        tw_f = getattr(car.arb, "track_width_front_mm", 1730.0)
-        tw_r = getattr(car.arb, "track_width_rear_mm", 1650.0)
+        # Track widths are required per-car ARBModel fields — no BMW-default magic.
+        tw_f = car.arb.track_width_front_mm
+        tw_r = car.arb.track_width_rear_mm
         tw_f_sq = tw_f ** 2
         tw_r_sq = tw_r ** 2
 

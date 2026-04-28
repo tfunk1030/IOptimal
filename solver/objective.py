@@ -423,17 +423,22 @@ class ObjectiveFunction:
         # Keep solver search inside a realistic GTP heave window even when
         # the forward physics looks artificially "safe" at very stiff rates.
         # This remains an envelope/realism concern, not raw lap-gain.
-        # Read per-car realistic operating range instead of BMW-hardcoded (30, 100).
-        # Falls back to garage range if no realistic range is defined.
-        heave_opt_lo, heave_opt_hi = 30.0, 100.0  # ultimate fallback
+        # Read per-car realistic operating range; fall back to garage range.
+        # NO BMW-default (30, 100) magic numbers — if neither range is defined,
+        # raise loudly because solver cannot judge realism without a per-car window.
         _hs = self.car.heave_spring
         _realistic = _hs.front_realistic_range_nmm
         if _realistic is not None and len(_realistic) >= 2:
             heave_opt_lo, heave_opt_hi = _realistic[0], _realistic[1]
         else:
             _range = _hs.front_spring_range_nmm
-            if _range is not None and len(_range) >= 2:
-                    heave_opt_lo, heave_opt_hi = _range[0], _range[1]
+            if _range is None or len(_range) < 2:
+                raise ValueError(
+                    f"CarModel {self.car.canonical_name!r} heave_spring has neither "
+                    f"front_realistic_range_nmm nor front_spring_range_nmm set. "
+                    f"Per-car heave window is required for realism penalty."
+                )
+            heave_opt_lo, heave_opt_hi = _range[0], _range[1]
         if front_heave > heave_opt_hi:
             excess = front_heave - heave_opt_hi
             return min(300.0, excess * 0.5 + (max(0.0, excess - 100.0) ** 1.2) * 0.3)

@@ -32,8 +32,9 @@ if TYPE_CHECKING:
 class SupportingSolution:
     """Computed values for brake, diff, TC, and tyre pressure parameters."""
 
-    # Brakes
-    brake_bias_pct: float = 56.0
+    # Brakes — brake_bias_pct is overwritten by _solve_brake_bias before the
+    # dataclass is consumed; 0.0 is just a sentinel, NOT a BMW-magic default.
+    brake_bias_pct: float = 0.0
     brake_bias_reasoning: str = ""
     brake_bias_target: float = 0.0
     brake_bias_migration: float = 0.0
@@ -193,8 +194,13 @@ class SupportingSolver:
             lo=float(migration_limits[0]),
             hi=float(migration_limits[1]),
         )
-        current_front_mc = float(getattr(self.current_setup, "front_master_cyl_mm", 19.1) or 19.1)
-        current_rear_mc = float(getattr(self.current_setup, "rear_master_cyl_mm", 20.6) or 20.6)
+        # Brake master cylinders: prefer driver-loaded IBT value, fall back to per-car
+        # CarModel baseline. NO BMW-default magic numbers — every CarModel sets the field
+        # explicitly (validated in CarModel.__post_init__).
+        _setup_front_mc = float(getattr(self.current_setup, "front_master_cyl_mm", 0.0) or 0.0)
+        _setup_rear_mc = float(getattr(self.current_setup, "rear_master_cyl_mm", 0.0) or 0.0)
+        current_front_mc = _setup_front_mc if _setup_front_mc > 0.0 else float(self.car.front_master_cyl_baseline_mm)
+        current_rear_mc = _setup_rear_mc if _setup_rear_mc > 0.0 else float(self.car.rear_master_cyl_baseline_mm)
         current_pad = getattr(self.current_setup, "pad_compound", "") or "Medium"
 
         front_lock = float(getattr(self.measured, "front_braking_lock_ratio_p95", 0.0) or 0.0)
@@ -611,7 +617,11 @@ class SupportingSolver:
         if fuel_burn_per_lap > 0.0:
             sol.fuel_low_warning_l = round(max(5.0, fuel_burn_per_lap * 1.5), 1)
         else:
-            sol.fuel_low_warning_l = round(float(getattr(current_setup, "fuel_low_warning_l", 0.0) or 8.0), 1)
+            # Prefer driver-loaded IBT value; fall back to per-car CarModel default.
+            # NO BMW-default magic — every CarModel sets fuel_low_warning_l_default explicitly.
+            _setup_warn = float(getattr(current_setup, "fuel_low_warning_l", 0.0) or 0.0)
+            _baseline = float(self.car.fuel_low_warning_l_default)
+            sol.fuel_low_warning_l = round(_setup_warn if _setup_warn > 0.0 else _baseline, 1)
         sol.brake_bias_migration_gain = round(float(getattr(current_setup, "brake_bias_migration_gain", 0.0) or 0.0), 1)
         sol.gear_stack = str(getattr(current_setup, "gear_stack", "") or "Short")
         sol.hybrid_rear_drive_enabled = str(getattr(current_setup, "hybrid_rear_drive_enabled", "") or "Off")
