@@ -1057,6 +1057,10 @@ def produce(
         failed_validation_clusters=failed_clusters,
         corners=corners,
         optimization_mode=getattr(args, "opt_mode", "driver") or "driver",
+        # --force opts the damper solver into textbook physics defaults for
+        # cars whose zeta targets are not yet calibrated (Cadillac/Acura/Ferrari)
+        # so step6 carries usable damper clicks instead of being None.
+        force_physics_estimate=getattr(args, "force", False),
     )
     base_solve_result = run_base_solve(solve_inputs)
     step1 = base_solve_result.step1

@@ -2818,6 +2818,7 @@ def reason_and_solve(
     stint_select: str = "all",
     stint_max_laps: int = 40,
     stint_threshold: float = 1.5,
+    force_physics_estimate: bool = False,
 ) -> ReasoningState:
     """Run the full 9-phase reasoning pipeline.
 
@@ -3194,15 +3195,17 @@ def reason_and_solve(
                 measured=authority_measured,
                 front_heave_nmm=_step2.front_heave_nmm,
                 rear_third_nmm=_step2.rear_third_nmm,
+                force_physics_estimate=force_physics_estimate,
             )
             _apply_damper_modifiers(_step6, mods, car)
         except ValueError:
-            # Damper solver raises when zeta targets are uncalibrated for this
-            # car. Mirror solve_chain.py:512-529 — return step6=None so the
-            # pipeline can continue and emit output for the calibrated steps.
-            # The calibration gate has already flagged Step 6 as uncalibrated;
-            # downstream report/writer paths handle step6=None gracefully.
-            pass
+            # Damper solver raises when zeta targets are uncalibrated AND
+            # force_physics_estimate=False. Mirror solve_chain.py:512-529 —
+            # return step6=None so the pipeline can continue and emit output
+            # for the calibrated steps. With force_physics_estimate=True
+            # (Unit 1, --force flag) the solver returns physics-default
+            # clicks and this branch never fires.
+            _step6 = None
         return _step1, _step2, _step3, _step4, _step5, _step6, _rear_wheel_rate_nmm
 
     # Try constrained optimizer first
@@ -3299,6 +3302,7 @@ def reason_and_solve(
         supporting_measured=best_driver.measured,
         supporting_diagnosis=best_driver.diagnosis,
         corners=reference.corners,
+        force_physics_estimate=force_physics_estimate,
     )
     solve_result = run_base_solve(solve_inputs)
     if stint and state.merged_stint_dataset is not None:
@@ -4081,6 +4085,16 @@ def main() -> None:
         dest="scenario_profile",
         help="Legacy alias for --scenario-profile.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Bypass uncalibrated-zeta gate in the damper solver: use textbook "
+            "physics defaults (zeta_LS=0.5, zeta_HS=0.85) and label step6 as "
+            "an estimate. Use for cars whose damper zeta targets are not yet "
+            "calibrated (Cadillac, Acura, Ferrari)."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -4111,6 +4125,7 @@ def main() -> None:
         stint_max_laps=getattr(args, "stint_max_laps", 40),
         stint_threshold=getattr(args, "stint_threshold", 1.5),
         scenario_profile=getattr(args, "scenario_profile", "single_lap_safe"),
+        force_physics_estimate=getattr(args, "force", False),
     )
 
     if args.learn:
