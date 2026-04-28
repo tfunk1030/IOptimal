@@ -44,13 +44,15 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     Follows the same flow as pipeline/produce.py but returns intermediate
     objects instead of writing output files.
 
-    Returns: (track_profile, measured, current_setup, driver, diagnosis, corners, ibt)
+    Returns:
+        (track_profile, measured, current_setup, driver, diagnosis,
+         corners, ibt, corner_phase_metrics)
     """
     from analyzer.adaptive_thresholds import compute_adaptive_thresholds
     from analyzer.diagnose import diagnose
     from analyzer.driver_style import analyze_driver, refine_driver_with_measured
     from analyzer.extract import extract_measurements
-    from analyzer.segment import segment_lap
+    from analyzer.segment import compute_corner_phase_metrics, segment_lap
     from analyzer.setup_reader import CurrentSetup
     from analyzer.setup_schema import apply_live_control_overrides
     from car_model.cars import get_car
@@ -97,7 +99,15 @@ def _run_analyzer(car_name: str, ibt_path: str, wing: float | None = None,
     thresholds = compute_adaptive_thresholds(track, car, driver)
     diag = diagnose(measured, setup, car, thresholds)
 
-    return track, measured, setup, driver, diag, corners, ibt
+    # Per-corner per-phase metrics (Unit D3). Best-effort; empty on any error.
+    try:
+        corner_phase_metrics = compute_corner_phase_metrics(
+            ibt, start, end, car=car
+        )
+    except Exception:
+        corner_phase_metrics = {}
+
+    return track, measured, setup, driver, diag, corners, ibt, corner_phase_metrics
 
 
 def _update_auto_calibration(
@@ -220,7 +230,7 @@ def ingest_ibt(
     # ── 1. Run analyzer ──────────────────────────────────────────────
     if verbose:
         print("Phase 1: Analyzing IBT...")
-    track, measured, setup, driver, diag, corners, ibt = _run_analyzer(
+    track, measured, setup, driver, diag, corners, ibt, corner_phase_metrics = _run_analyzer(
         car_name, ibt_path, wing, lap
     )
 
@@ -241,6 +251,7 @@ def ingest_ibt(
         driver_profile_obj=driver,
         diagnosis_obj=diag,
         corners=corners,
+        corner_phase_metrics=corner_phase_metrics,
     )
 
     store.save_observation(session_id, obs.to_dict())
@@ -475,7 +486,7 @@ def ingest_all_laps(
             continue
 
         try:
-            track_lap, measured, setup, driver, diag, corners, _ = _run_analyzer(
+            track_lap, measured, setup, driver, diag, corners, _, corner_phase_metrics = _run_analyzer(
                 car_name, ibt_path, wing, lap=lap_num
             )
         except (ValueError, Exception) as exc:
@@ -493,6 +504,7 @@ def ingest_all_laps(
             driver_profile_obj=driver,
             diagnosis_obj=diag,
             corners=corners,
+            corner_phase_metrics=corner_phase_metrics,
         )
 
         store.save_observation(lap_session_id, obs.to_dict())
@@ -623,7 +635,7 @@ def rebuild_track_learnings(
             continue
 
         try:
-            track_profile, measured, setup, driver, diag, corners, _ibt = _run_analyzer(
+            track_profile, measured, setup, driver, diag, corners, _ibt, corner_phase_metrics = _run_analyzer(
                 car_name,
                 str(ibt_path),
             )
@@ -643,6 +655,7 @@ def rebuild_track_learnings(
             driver_profile_obj=driver,
             diagnosis_obj=diag,
             corners=corners,
+            corner_phase_metrics=corner_phase_metrics,
         )
         store.save_observation(existing["session_id"], rebuilt.to_dict())
         repaired_sessions.append(existing["session_id"])

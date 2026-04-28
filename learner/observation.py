@@ -107,6 +107,12 @@ class Observation:
     # Each: {corner_id, lap_dist_m, direction, speed_class, speed_kph,
     #         understeer_deg, body_slip_deg, shock_vel_p95, time_delta_s}
 
+    # ── Per-corner per-phase metrics (Unit D3) ──
+    # Flat dict {f"corner_{idx}_{phase}_{metric}" -> float}, sliced by
+    # entry/mid/exit phase. Aggregated view of the per-corner record above.
+    # Empty if no corners were detected for this lap.
+    corner_phase_metrics: dict[str, float] = field(default_factory=dict)
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -140,6 +146,7 @@ def build_observation(
     driver_profile_obj,   # DriverProfile
     diagnosis_obj,        # Diagnosis
     corners: list = None, # list[CornerAnalysis]
+    corner_phase_metrics: dict[str, float] | None = None,  # Unit D3
 ) -> Observation:
     """Build an Observation from analyzer outputs.
 
@@ -504,4 +511,5 @@ def build_observation(
         diagnosis=diagnosis_dict,
         conditions=conditions,
         corner_performance=corner_perf,
+        corner_phase_metrics=dict(corner_phase_metrics) if corner_phase_metrics else {},
     )
