@@ -528,29 +528,19 @@ def produce(
     fuel = args.fuel or current_setup.fuel_l or 89.0
     log(f"  Wing: {wing}°, Fuel: {fuel:.0f} L")
 
-    # ── Resolve DF balance target ─────────────────────────────────────────
-    # Priority order (driver-anchor pattern, mirrors σ-cal anchor):
+    # ── Resolve DF balance target (physics-first) ────────────────────────
+    # Priority order:
     #   1. Explicit --balance flag (operator override)
-    #   2. Driver-loaded df_balance_pct from this IBT, when in [40, 65]%
-    #      and matches the car's wing-driven aero map. The driver has
-    #      already validated this balance at THIS track — it's empirically
-    #      track-specific calibration, more authoritative than the
-    #      single-track-calibrated ``car.default_df_balance_pct``.
-    #   3. Car-level fallback (``default_df_balance_pct``).
-    # Provenance is logged so the operator sees which target was used.
+    #   2. Car-level ``default_df_balance_pct`` (calibrated per-car;
+    #      should be derived from per-track calibration data when
+    #      available, not from driver-loaded values).
+    # Driver-loaded df_balance_pct is intentionally NOT used as an
+    # anchor — drivers iterate setups based on lap times and feel,
+    # not physics optima.  Per project mission: "physics first, not
+    # pattern matching".
     if getattr(args, "balance", None) is None:
-        _driver_bal = getattr(current_setup, "df_balance_pct", None)
-        if _driver_bal is not None and 40.0 <= float(_driver_bal) <= 65.0:
-            args.balance = float(_driver_bal)
-            log(
-                f"DF balance target anchored to driver-loaded value: "
-                f"{args.balance:.2f}% (track-specific calibration; "
-                f"car default {car.default_df_balance_pct:.2f}% was for "
-                f"a different track)"
-            )
-        else:
-            args.balance = car.default_df_balance_pct
-            log(f"Using car-specific DF balance target: {args.balance:.2f}%")
+        args.balance = car.default_df_balance_pct
+        log(f"Using car-specific DF balance target: {args.balance:.2f}%")
 
     # ── Apply learned corrections (default: auto, --no-learn to disable) ──
     learned = None

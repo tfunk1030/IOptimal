@@ -252,46 +252,47 @@ def validate_and_fix_garage_correlation(
     predicted_front = garage_model.predict_front_static_rh(state)
     predicted_rear = garage_model.predict_rear_static_rh(state)
 
-    # Driver-anchor guard: when current_setup carries the driver's measured
-    # static heights AND the rake solver's reconciled value is closer to
-    # the driver-anchored target than the regression's re-prediction, the
-    # rake solver wins.  Regressions with D1 lap-condition features
-    # (tyre_temp, fuel_remaining) can destabilise predictions when called
-    # with default lap-conditions; the rake solver already reconciled
-    # against an anchored driver value via _find_rear_for_balance.
-    _drv_static_front = (
-        float(getattr(current_setup, "static_front_rh_mm", None) or 0.0)
-        if current_setup is not None else 0.0
-    )
-    _drv_static_rear = (
-        float(getattr(current_setup, "static_rear_rh_mm", None) or 0.0)
-        if current_setup is not None else 0.0
-    )
-    _front_solver_closer = (
-        _drv_static_front > 0
-        and abs(step1.static_front_rh_mm - _drv_static_front)
-            < abs(predicted_front - _drv_static_front)
-    )
-    _rear_solver_closer = (
-        _drv_static_rear > 0
-        and abs(step1.static_rear_rh_mm - _drv_static_rear)
-            < abs(predicted_rear - _drv_static_rear)
-    )
+    # Physics-first reconciliation: only override the rake solver's
+    # value when the regression is HIGH-confidence (tier=high or medium).
+    # Low-tier regressions are still useful as scoring-input estimates,
+    # but should not override the physics-derived rake solution at the
+    # output stage.  Driver-loaded values are NOT used as anchors —
+    # drivers iterate setups based on lap times and feel, which is not
+    # equivalent to a physics-optimal operating point.
+    _front_tier = getattr(getattr(garage_model, "_direct_front_rh", None),
+                          "confidence_tier", "low")
+    _rear_tier = getattr(getattr(garage_model, "_direct_rear_rh", None),
+                         "confidence_tier", "low")
+    _trust_front = _front_tier in ("high", "medium")
+    _trust_rear = _rear_tier in ("high", "medium")
 
-    if abs(predicted_front - step1.static_front_rh_mm) > 0.05 and not _front_solver_closer:
+    if _trust_front and abs(predicted_front - step1.static_front_rh_mm) > 0.05:
         warnings.append(
             f"front RH reconciled: {step1.static_front_rh_mm:.1f} -> "
-            f"{predicted_front:.1f} mm (garage model prediction)"
+            f"{predicted_front:.1f} mm (garage model prediction, tier={_front_tier})"
         )
         step1.static_front_rh_mm = round(predicted_front, 1)
         step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
-    if abs(predicted_rear - step1.static_rear_rh_mm) > 0.1 and not _rear_solver_closer:
+    elif not _trust_front and abs(predicted_front - step1.static_front_rh_mm) > 0.5:
+        warnings.append(
+            f"front RH: regression predicts {predicted_front:.1f} mm but "
+            f"tier={_front_tier} — keeping rake solver's "
+            f"{step1.static_front_rh_mm:.1f} mm"
+        )
+
+    if _trust_rear and abs(predicted_rear - step1.static_rear_rh_mm) > 0.1:
         warnings.append(
             f"rear RH reconciled: {step1.static_rear_rh_mm:.1f} -> "
-            f"{predicted_rear:.1f} mm (garage model prediction)"
+            f"{predicted_rear:.1f} mm (garage model prediction, tier={_rear_tier})"
         )
         step1.static_rear_rh_mm = round(predicted_rear, 1)
         step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
+    elif not _trust_rear and abs(predicted_rear - step1.static_rear_rh_mm) > 0.5:
+        warnings.append(
+            f"rear RH: regression predicts {predicted_rear:.1f} mm but "
+            f"tier={_rear_tier} — keeping rake solver's "
+            f"{step1.static_rear_rh_mm:.1f} mm"
+        )
 
     setattr(step2, "garage_constraints_ok", bool(final.valid))
     setattr(step2, "garage_constraint_notes", list(getattr(final, "messages", [])))

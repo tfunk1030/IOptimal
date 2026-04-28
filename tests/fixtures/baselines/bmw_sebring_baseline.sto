@@ -6,7 +6,7 @@
   <Layers>
     <Details>
       <String Id="Event" Value="GTP Setup Builder" Unit="" />
-      <String Id="Session" Value="Generated 2026-04-28 18:04 UTC" Unit="" />
+      <String Id="Session" Value="Generated 2026-04-28 18:19 UTC" Unit="" />
       <String Id="Venue" Value="Sebring International Raceway — International" Unit="" />
       <String Id="Vehicle Type" Value="Car" Unit="" />
       <Numeric Id="CarSetup_TiresAero_AeroSettings_RearWingAngle" Value="17.0" Unit="deg" />
@@ -16,8 +16,8 @@
       <Numeric Id="CarSetup_TiresAero_AeroCalculator_LD" Value="3.8" Unit="" />
       <Numeric Id="CarSetup_Chassis_LeftFront_RideHeight" Value="30.1" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_RightFront_RideHeight" Value="30.1" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_LeftRear_RideHeight" Value="45.4" Unit="mm" />
-      <Numeric Id="CarSetup_Chassis_RightRear_RideHeight" Value="45.4" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_LeftRear_RideHeight" Value="45.3" Unit="mm" />
+      <Numeric Id="CarSetup_Chassis_RightRear_RideHeight" Value="45.3" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Front_PushrodLengthOffset" Value="-25.5" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Rear_PushrodLengthOffset" Value="-27.5" Unit="mm" />
       <Numeric Id="CarSetup_Chassis_Front_HeaveSpring" Value="80" Unit="N/mm" />

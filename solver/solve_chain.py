@@ -425,33 +425,19 @@ def _decode_ferrari_indexed_setup(car: Any, setup: Any) -> None:
 
 
 def _rake_driver_anchors(inputs: SolveChainInputs) -> tuple[float | None, float | None]:
-    """Extract (anchor_dyn_rear, anchor_dyn_front) from driver-loaded IBT setup.
+    """Driver anchors are DISABLED per physics-first mission.
 
-    Driver-anchor pattern: when the pipeline runs against an IBT, the
-    driver-loaded ride heights at speed are calibrated truth — pass them
-    as anchors so the rake solver (a) overrides its (potentially over-
-    pessimistic) vortex-burst constraint with the driver's lower
-    dyn_front when the driver isn't actually bursting, and (b) picks the
-    balance-locus rear solution closest to driver rather than an L/D-
-    optimal point that ignores mechanical-grip / kerb-rideability.
-    Returns (None, None) in physics mode, on GT3 (no front pinning),
-    or when current_setup is missing / out of range.
+    Returns ``(None, None)`` always.  Kept as a stub so call sites that
+    still pass ``anchor_dyn_*`` parameters compile; the rake solver
+    treats None as "no anchor — use physics search".
+
+    Rationale: drivers iterate setups based on lap times and feel,
+    which is not equivalent to a physics-optimal operating point.
+    The previous implementation used IBT-measured ride heights as
+    anchors, which violated the project's "physics first, not
+    pattern matching" principle (CLAUDE.md / MISSION.md).
     """
-    if inputs.optimization_mode == "physics":
-        return None, None
-    if inputs.current_setup is None:
-        return None, None
-    if not inputs.car.suspension_arch.has_heave_third:
-        return None, None
-    rear_anchor: float | None = None
-    front_anchor: float | None = None
-    drv_rear = getattr(inputs.current_setup, "rear_rh_at_speed_mm", None)
-    if drv_rear is not None and 5.0 <= float(drv_rear) <= 100.0:
-        rear_anchor = float(drv_rear)
-    drv_front = getattr(inputs.current_setup, "front_rh_at_speed_mm", None)
-    if drv_front is not None and 0.5 <= float(drv_front) <= 60.0:
-        front_anchor = float(drv_front)
-    return rear_anchor, front_anchor
+    return None, None
 
 
 def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any, Any, Any, float]:

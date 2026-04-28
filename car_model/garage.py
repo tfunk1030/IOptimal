@@ -237,6 +237,12 @@ class DirectRegression:
     intercept: float = 0.0
     feature_names: tuple[str, ...] = ()
     coefficients: tuple[float, ...] = ()
+    # F3 confidence tier propagated from the source FittedModel.  Used by
+    # callers that want to gate behavior on calibration confidence (e.g.,
+    # garage_validator.py only overrides physics-derived values when the
+    # regression is high/medium tier — low-tier predictions defer to the
+    # physics solve).
+    confidence_tier: str = "low"
 
     # Map from feature name to GarageSetupState extraction
     _EXTRACTORS: dict[str, Callable] = field(default_factory=dict, repr=False)
@@ -258,7 +264,8 @@ class DirectRegression:
 
     @classmethod
     def from_model(cls, model_coefficients: list[float],
-                   model_feature_names: list[str]) -> "DirectRegression":
+                   model_feature_names: list[str],
+                   confidence_tier: str = "low") -> "DirectRegression":
         """Build from a FittedModel's coefficients and feature names."""
         extractors: dict[str, Callable] = {
             "front_pushrod": lambda s: s.front_pushrod_mm,
@@ -350,6 +357,7 @@ class DirectRegression:
             intercept=model_coefficients[0] if model_coefficients else 0.0,
             feature_names=tuple(model_feature_names),
             coefficients=tuple(model_coefficients[1:1 + len(model_feature_names)]),
+            confidence_tier=confidence_tier,
             _EXTRACTORS=extractors,
         )
 

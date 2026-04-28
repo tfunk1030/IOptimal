@@ -2610,7 +2610,11 @@ def _mk_direct(fitted_model) -> "DirectRegression | None":
         )
         return None
     from car_model.garage import DirectRegression
-    return DirectRegression.from_model(fitted_model.coefficients, fitted_model.feature_names)
+    return DirectRegression.from_model(
+        fitted_model.coefficients,
+        fitted_model.feature_names,
+        confidence_tier=getattr(fitted_model, "confidence_tier", "low"),
+    )
 
 
 def _mk_direct_torsion(fitted_model, torsion_c: float) -> "DirectRegression | None":
@@ -2623,7 +2627,11 @@ def _mk_direct_torsion(fitted_model, torsion_c: float) -> "DirectRegression | No
     if fitted_model is None or not fitted_model.is_calibrated:
         return None
     from car_model.garage import DirectRegression
-    return DirectRegression.from_model(fitted_model.coefficients, fitted_model.feature_names)
+    return DirectRegression.from_model(
+        fitted_model.coefficients,
+        fitted_model.feature_names,
+        confidence_tier=getattr(fitted_model, "confidence_tier", "low"),
+    )
 
 
 def build_garage_output_model(car_obj, models: CarCalibrationModels):
