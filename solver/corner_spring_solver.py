@@ -56,6 +56,66 @@ from car_model.cars import CarModel
 from track_model.profile import TrackProfile
 
 
+def _solve_torsion_bar_turns(
+    car: CarModel,
+    current_setup,
+    *,
+    front_torsion_od_mm: float,
+    rear_spring_rate_nmm: float,
+    front_heave_nmm: float,
+    rear_third_nmm: float,
+    front_heave_perch_mm: float = -16.5,
+    rear_third_perch_mm: float = -104.0,
+) -> tuple[float, float]:
+    """Dispatcher for front/rear torsion bar preload turns by car.
+
+    Ferrari has a calibrated regression (see _solve_ferrari_torsion_bar_turns).
+    BMW/Cadillac/Acura have no calibrated solver — preserve the driver's
+    loaded value from the IBT session_info instead of recomputing from a
+    formula that drifts from driver-loaded ground truth. Porsche has no
+    front torsion bar (uses a roll spring), so turns are 0.0.
+
+    Args:
+        car: CarModel.
+        current_setup: CurrentSetup-like object from analyzer.setup_reader,
+            or None when running in pure-physics mode.
+
+    Returns:
+        (front_turns, rear_turns). For BMW/Cadillac/Acura when current_setup
+        is None, returns (0.0, 0.0) — there's no driver value to anchor to,
+        and we don't fabricate a value (Key Principle 7: calibrated or instruct,
+        never guess).
+    """
+    canonical = (car.canonical_name or "").lower()
+
+    if canonical == "ferrari":
+        return _solve_ferrari_torsion_bar_turns(
+            car,
+            front_torsion_od_mm=front_torsion_od_mm,
+            rear_spring_rate_nmm=rear_spring_rate_nmm,
+            front_heave_nmm=front_heave_nmm,
+            rear_third_nmm=rear_third_nmm,
+            front_heave_perch_mm=front_heave_perch_mm,
+            rear_third_perch_mm=rear_third_perch_mm,
+        )
+
+    if canonical == "porsche":
+        # No front torsion bar; no rear torsion bar. Roll spring car.
+        return 0.0, 0.0
+
+    if canonical in ("bmw", "cadillac", "acura"):
+        # Preserve driver-loaded value when present. CurrentSetup field name
+        # is `torsion_bar_turns` (front) and `rear_torsion_bar_turns` (rear).
+        if current_setup is None:
+            return 0.0, 0.0
+        front = float(getattr(current_setup, "torsion_bar_turns", 0.0) or 0.0)
+        rear = float(getattr(current_setup, "rear_torsion_bar_turns", 0.0) or 0.0)
+        return front, rear
+
+    # Unknown car: don't fabricate.
+    return 0.0, 0.0
+
+
 def _solve_ferrari_torsion_bar_turns(
     car: CarModel,
     *,
@@ -289,6 +349,7 @@ class CornerSpringSolver:
         fuel_load_l: float | None = None,
         current_rear_third_nmm: float | None = None,
         current_rear_spring_nmm: float | None = None,
+        current_setup=None,
     ) -> CornerSpringSolution:
         """Find optimal corner spring rates.
 
@@ -301,6 +362,9 @@ class CornerSpringSolver:
                 (anchor for the third/coil ratio calibration)
             current_rear_spring_nmm: Driver's currently-loaded rear coil
                 (anchor for the third/coil ratio calibration)
+            current_setup: Driver's loaded CurrentSetup (analyzer.setup_reader).
+                Passed through to torsion-bar-turns dispatcher so non-Ferrari
+                cars preserve the driver's loaded TorsionBarTurns value.
 
         Returns:
             CornerSpringSolution with torsion bar OD and rear rate
@@ -451,6 +515,7 @@ class CornerSpringSolver:
             rear_spring_perch_mm=csm.rear_spring_perch_baseline_mm,
             rear_torsion_od_mm=rear_od,
             front_roll_spring_nmm=front_rate if (csm.front_is_roll_spring or csm.front_torsion_c == 0.0) else None,
+            current_setup=current_setup,
         )
         # Annotate solution with anchor provenance so trace consumers see final values
         if _physics_rear_rate is not None:
@@ -475,6 +540,7 @@ class CornerSpringSolver:
         front_heave_perch_mm: float | None = None,
         rear_third_perch_mm: float | None = None,
         front_roll_spring_nmm: float | None = None,
+        current_setup=None,
     ) -> CornerSpringSolution:
         """Build a corner-spring solution from explicit garage selections.
 
@@ -482,6 +548,9 @@ class CornerSpringSolver:
             front_roll_spring_nmm: For roll-spring cars (Porsche), the explicit
                 front roll spring rate (N/mm). When provided, overrides the
                 torsion bar path entirely. Ignored for torsion bar cars.
+            current_setup: Driver's loaded CurrentSetup; used by the
+                torsion-bar-turns dispatcher for non-Ferrari cars to preserve
+                the driver's loaded TorsionBarTurns value.
         """
         if fuel_load_l is None:
             fuel_load_l = getattr(self.car, 'fuel_capacity_l', 89.0)
@@ -546,22 +615,24 @@ class CornerSpringSolver:
             m_r_corner=m_r_corner,
         )
 
-        # Ferrari: compute authoritative torsion bar preload turns.
-        # All other cars leave these at the 0.0 default.
-        front_tb_turns = 0.0
-        rear_tb_turns = 0.0
-        if self.car.canonical_name == 'ferrari':
-            _f_perch = front_heave_perch_mm if front_heave_perch_mm is not None else -16.5
-            _r_perch = rear_third_perch_mm if rear_third_perch_mm is not None else -104.0
-            front_tb_turns, rear_tb_turns = _solve_ferrari_torsion_bar_turns(
-                self.car,
-                front_torsion_od_mm=front_torsion_od_mm,
-                rear_spring_rate_nmm=rear_spring_rate_nmm,
-                front_heave_nmm=front_heave_nmm,
-                rear_third_nmm=rear_third_nmm,
-                front_heave_perch_mm=_f_perch,
-                rear_third_perch_mm=_r_perch,
-            )
+        # Torsion bar preload turns:
+        #   - Ferrari: calibrated regression (R²=0.51/0.55, see _solve_ferrari_torsion_bar_turns).
+        #   - BMW / Cadillac / Acura: passthrough of driver-loaded value from
+        #     CurrentSetup (no calibrated solver — old formula drifted from
+        #     driver-loaded ground truth).
+        #   - Porsche: 0.0 (roll spring car, no front torsion bar).
+        _f_perch = front_heave_perch_mm if front_heave_perch_mm is not None else -16.5
+        _r_perch = rear_third_perch_mm if rear_third_perch_mm is not None else -104.0
+        front_tb_turns, rear_tb_turns = _solve_torsion_bar_turns(
+            self.car,
+            current_setup,
+            front_torsion_od_mm=front_torsion_od_mm,
+            rear_spring_rate_nmm=rear_spring_rate_nmm,
+            front_heave_nmm=front_heave_nmm,
+            rear_third_nmm=rear_third_nmm,
+            front_heave_perch_mm=_f_perch,
+            rear_third_perch_mm=_r_perch,
+        )
 
         return CornerSpringSolution(
             front_torsion_od_mm=front_torsion_od_mm,
@@ -601,6 +672,7 @@ class CornerSpringSolver:
         current_rear_third_nmm: float | None = None,
         current_rear_spring_nmm: float | None = None,
         max_candidates: int = 20,
+        current_setup=None,
     ) -> list[CornerSpringSolution]:
         """Evaluate all legal (front_OD, rear_spring) combos and return top-N.
 
@@ -635,6 +707,7 @@ class CornerSpringSolver:
             fuel_load_l=fuel_load_l,
             current_rear_third_nmm=current_rear_third_nmm,
             current_rear_spring_nmm=current_rear_spring_nmm,
+            current_setup=current_setup,
         )
 
         # Build list of front options (torsion OD or roll spring)
@@ -688,6 +761,7 @@ class CornerSpringSolver:
                     fuel_load_l=fuel_load_l,
                     rear_torsion_od_mm=rear_torsion_od,
                     front_roll_spring_nmm=f_od if use_front_roll_spring else None,
+                    current_setup=current_setup,
                 )
                 key = (sol.front_torsion_od_mm, sol.rear_spring_rate_nmm)
                 if key in seen:
