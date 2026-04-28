@@ -82,6 +82,27 @@ class BrakeSolver:
         bias, base_reason = compute_brake_bias(self.car, fuel_load_l=self.fuel_load_l)
         reasons = [base_reason]
 
+        # ── Track speed adaptation ──────────────────────────────────────
+        # At higher peak braking speeds, aero load shifts the weight
+        # distribution forward under heavy braking, requiring more front
+        # bias. At lower peak speeds, less aero = less forward shift.
+        # Reference: 230 kph (typical GTP track). Scale: ~0.3% per 30 kph.
+        # ADDED 2026-04-28: pipeline was outputting identical bias for
+        # Laguna (230 kph) and Silverstone (296 kph) despite 66 kph
+        # difference in max braking zone entry speed.
+        max_speed_kph = getattr(measured, 'speed_max_kph', None) or 0.0
+        if max_speed_kph > 150:
+            _speed_ref_kph = 230.0
+            _speed_delta = max_speed_kph - _speed_ref_kph
+            _speed_adj = round(_speed_delta / 30.0 * 0.3, 1)
+            _speed_adj = max(-0.5, min(0.8, _speed_adj))  # clamp
+            if abs(_speed_adj) >= 0.1:
+                bias += _speed_adj
+                reasons.append(
+                    f"{_speed_adj:+.1f}% for track peak speed "
+                    f"{max_speed_kph:.0f} kph (ref 230 kph)"
+                )
+
         if driver.trail_brake_depth_p95 > 0:
             trail_adj = (driver.trail_brake_depth_p95 - 0.3) * 1.5
             trail_adj = round(_clamp(trail_adj, -0.5, 0.75), 1)

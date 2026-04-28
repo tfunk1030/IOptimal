@@ -1076,6 +1076,30 @@ class HeaveSolver:
             k_front = front_heave_floor_nmm
             front_binding = "modifier_floor"
 
+        # ── Circular-calibration guard (front heave) ───────────────────
+        # front_m_eff_kg is calibrated from the driver's current front
+        # heave spring rate. Recommending a rate >50% different
+        # invalidates the calibration basis. Constrain changes to ±50%
+        # of the car's baseline front heave spring UNLESS the binding
+        # constraint is "bottoming" (real telemetry evidence).
+        _baseline_heave = self.car.front_heave_spring_nmm
+        if _baseline_heave and _baseline_heave > 0 and front_binding != "bottoming":
+            _cal_lo_f = _baseline_heave * 0.50
+            _cal_hi_f = _baseline_heave * 1.50
+            _unconstrained_front = k_front
+            if k_front < _cal_lo_f or k_front > _cal_hi_f:
+                k_front = max(k_front, _cal_lo_f)
+                k_front = min(k_front, _cal_hi_f)
+                logger.warning(
+                    "Circular-calibration guard: front heave %.0f→%.0f N/mm "
+                    "(baseline %.0f, ±50%% limit). front_m_eff_kg=%.0f was "
+                    "calibrated at this baseline — larger changes need "
+                    "bottoming evidence or re-calibration.",
+                    _unconstrained_front, k_front, _baseline_heave,
+                    m_front,
+                )
+                front_binding = "calibration_guard"
+
         # Clamp to valid range
         lo_front, hi_front = self._heave_hard_bounds()
         k_front = max(k_front, lo_front)
@@ -1520,14 +1544,27 @@ class HeaveSolver:
                 rear_sigma_target_mm=base.rear_sigma_target_mm,
             )
 
+        # ── Calibration guards for candidate generation ──────────────────
+        # Apply the same ±50% calibration guards from solve() to candidates.
+        # Without these, the pareto ranker picks candidates outside the
+        # calibrated range, invalidating the m_eff basis.
+        _baseline_heave = self.car.front_heave_spring_nmm
+        _baseline_third = self.car.rear_third_spring_nmm
+        _cal_hi_front = hi_front
+        _cal_hi_rear = hi_rear
+        if _baseline_heave and _baseline_heave > 0:
+            _cal_hi_front = min(hi_front, _baseline_heave * 1.50)
+        if _baseline_third and _baseline_third > 0:
+            _cal_hi_rear = min(hi_rear, _baseline_third * 1.50)
+
         # Generate stiffness steps above the minimum (+10, +20, +30 N/mm)
         step = 10.0  # iRacing garage increment
         for i in range(1, n_candidates):
             kf = base.front_heave_nmm + i * step
             kr = base.rear_third_nmm + i * step
-            # Clamp to legal range
-            kf = min(kf, hi_front)
-            kr = min(kr, hi_rear)
+            # Clamp to legal range AND calibration guard
+            kf = min(kf, _cal_hi_front)
+            kr = min(kr, _cal_hi_rear)
             kf = math.ceil(kf / step) * step
             kr = math.ceil(kr / step) * step
             key = (kf, kr)

@@ -2403,8 +2403,12 @@ CADILLAC_VSERIES_R = CarModel(
     min_rear_rh_dynamic=25.0,
     max_rear_rh_dynamic=75.0,
     vortex_burst_threshold_mm=2.0,
-    front_heave_spring_nmm=50.0,  # ESTIMATE — needs Cadillac IBT calibration
-    rear_third_spring_nmm=600.0,  # UPDATED: 680 N/mm observed at Silverstone; anchor raised from 530
+    front_heave_spring_nmm=30.0,  # CALIBRATED 2026-04-28: driver runs 30 N/mm at Laguna (88-90% travel)
+                                  # Physics target is 40-50 N/mm for 70-75% travel, but solver should
+                                  # not exceed ±50% of this anchor without bottoming evidence.
+    rear_third_spring_nmm=380.0,  # CALIBRATED 2026-04-28: median across 5 unique setups (320-680 range)
+                                  # was 600 (biased toward stiff Silverstone setup). 380 is center of
+                                  # driver's actual usage range and better reflects multi-track needs.
     aero_compression=AeroCompression(
         ref_speed_kph=230.0,
         front_compression_mm=12.0,  # CALIBRATED: learner mean 11.98mm across 2 sessions
@@ -2419,9 +2423,13 @@ CADILLAC_VSERIES_R = CarModel(
         front_heave_perch_to_rh=-1.955,    # CALIBRATED: LS fit over 4 garage data points
         front_heave_perch_ref_mm=-20.5,    # Reference heave perch for front_base_rh_mm
         rear_base_rh_mm=46.85,              # CALIBRATED: intercept from IBT data
-        rear_pushrod_to_rh=0.042,           # CALIBRATED: 2 data points (+0.5→46.8, -6.0→46.6)
-                                            # Positive and very weak — DIFFERENT from BMW (-0.096)
-                                            # -0.096 gives +2.5mm pushrod; 0.042 gives -6.0mm (correct)
+        rear_pushrod_to_rh=0.0,             # FIXED 2026-04-28: coefficient too weak (was 0.042) to use
+                                            # as RH control. Cadillac rear pushrod is a PRELOAD control,
+                                            # not an RH control. 5 unique setups show pushrod 0.5→-35mm
+                                            # but RH variation (42-47mm) is dominated by 1/third and
+                                            # 1/spring compliance. Using 0.042 causes solver to request
+                                            # absurd pushrod values (-40 to -56mm) for small RH targets.
+        rear_pushrod_default_mm=0.5,        # CALIBRATED: driver's Laguna Seca default (most sessions)
     ),
     rh_variance=RideHeightVariance(dominant_bump_freq_hz=5.0),
     heave_spring=HeaveSpringModel(

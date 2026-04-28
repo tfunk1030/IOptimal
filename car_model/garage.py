@@ -831,6 +831,25 @@ class GarageOutputModel:
             self._direct_rear_rh is not None
             and any("rear_pushrod" in f for f in self._direct_rear_rh.feature_names)
         )
+        # FIXED 2026-04-28: Even when the model includes rear_pushrod, check if
+        # the coefficient is strong enough to use pushrod as an RH control lever.
+        # Cadillac has rear_pushrod coeff=0.089 — changing pushrod by 40mm only
+        # moves RH by 3.6mm. The solver then requests absurd pushrod values
+        # (-40 to -56mm) for small RH targets. If the pushrod effect is < 0.2
+        # mm RH per mm pushrod, fall back to the car's default pushrod value.
+        if _dr_has_pushrod and self._direct_rear_rh is not None:
+            _pushrod_coeff = 0.0
+            for i, fname in enumerate(self._direct_rear_rh.feature_names):
+                if fname == "rear_pushrod":
+                    _pushrod_coeff = abs(self._direct_rear_rh.coefficients[i])
+                    break
+            if _pushrod_coeff < 0.2:
+                _log.info(
+                    "Rear pushrod coefficient %.3f too weak for RH control "
+                    "(threshold 0.2). Returning default pushrod %.1f",
+                    _pushrod_coeff, self.default_rear_pushrod_mm,
+                )
+                return self.default_rear_pushrod_mm
         if _dr_has_pushrod:
             template = GarageSetupState(
                 front_pushrod_mm=front_pushrod_mm if front_pushrod_mm is not None else self.default_front_pushrod_mm,

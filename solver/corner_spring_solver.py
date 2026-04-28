@@ -467,8 +467,12 @@ class CornerSpringSolver:
             _physics_rear_rate = rear_third_nmm / _physics_ratio
             # Guard the relative-gap divide against a degenerate _physics_rear_rate.
             denom = max(_physics_rear_rate, 1.0)
-            # Soft preference: use driver's value only if within 20% of physics
-            if abs(float(current_rear_spring_nmm) - _physics_rear_rate) / denom <= 0.20:
+            # Soft preference: use driver's value only if within 40% of physics
+            # FIXED 2026-04-28: was 20% which was too tight — when the third
+            # spring changes (e.g. 680→370), the physics ratio shifts and the
+            # driver's coil (validated at the old third) falls outside 20%.
+            # 40% accommodates the natural third/coil coupling.
+            if abs(float(current_rear_spring_nmm) - _physics_rear_rate) / denom <= 0.40:
                 rear_target_rate = float(current_rear_spring_nmm)
                 logger.info(
                     "Rear spring anchored to driver-loaded %.0f N/mm "
@@ -1056,13 +1060,19 @@ class CornerSpringSolver:
         Higher shock velocity = bumpier = want softer corner springs = higher ratio.
         This ratio determines the rear corner spring rate relative to the third spring.
 
-        Returns a ratio in the range [2.0, 3.5].
+        Returns a ratio in the range [3.0, 5.0].
+
+        FIXED 2026-04-28: range was [2.0, 3.5] which under-predicted the ratio
+        for cars with stiff third springs. Cadillac at Silverstone runs
+        third=680 / corner=140 → ratio 4.86. The old range capped at 3.5,
+        producing corner=194-340 (vs driver's 140). Widened to [3.0, 5.0]
+        to cover the observed range across all GTP cars.
         """
         # Linear interpolation:
-        # p99 = 0.15 m/s (smooth) -> ratio 2.0 (stiffer corner for platform)
-        # p99 = 0.40 m/s (very bumpy) -> ratio 3.5 (softer corner for grip)
+        # p99 = 0.15 m/s (smooth) -> ratio 3.0 (stiffer corner for platform)
+        # p99 = 0.40 m/s (very bumpy) -> ratio 5.0 (softer corner for grip)
         v_lo, v_hi = 0.15, 0.40
-        r_lo, r_hi = 2.0, 3.5
+        r_lo, r_hi = 3.0, 5.0
         t = max(0, min(1, (shock_vel_p99_mps - v_lo) / (v_hi - v_lo)))
         return r_lo + t * (r_hi - r_lo)
 
