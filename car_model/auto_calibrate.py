@@ -208,7 +208,18 @@ class CalibrationPoint:
 
 @dataclass
 class FittedModel:
-    """Fitted regression coefficients for one calibration model."""
+    """Fitted regression coefficients for one calibration model.
+
+    Confidence tiers (computed by ``_compute_tier``):
+      - ``high``         R² ≥ 0.85, LOO/train < 2.0, n ≥ 3 × n_features
+      - ``medium``       R² ≥ 0.70, LOO/train < 5.0, n ≥ 2 × n_features
+      - ``low``          R² ≥ 0.30, LOO/train < 20.0 (still usable, with warning)
+      - ``insufficient`` anything below — solver must NOT use this model
+
+    The legacy ``is_calibrated`` boolean is kept for backward compatibility and
+    is derived as ``confidence_tier != "insufficient"``.  New code should read
+    ``confidence_tier`` directly.
+    """
     name: str
     feature_names: list[str]
     coefficients: list[float]   # [intercept, beta_1, beta_2, ...]
@@ -218,6 +229,7 @@ class FittedModel:
     n_samples: int = 0
     is_calibrated: bool = True
     q_squared: float | None = None  # LOO R² = 1 - (LOO_RMSE² × n) / SS_total
+    confidence_tier: str = "insufficient"  # "high"|"medium"|"low"|"insufficient"
 
 
 @dataclass
@@ -456,7 +468,15 @@ def _dict_to_models(d: dict) -> CarCalibrationModels:
     def _to_fitted(raw: dict | None) -> FittedModel | None:
         if raw is None:
             return None
-        return FittedModel(**{k: v for k, v in raw.items() if k in FittedModel.__dataclass_fields__})
+        kwargs = {k: v for k, v in raw.items() if k in FittedModel.__dataclass_fields__}
+        # Backward-compat: legacy models.json files saved before the tier
+        # system existed don't carry a ``confidence_tier`` key.  Derive one
+        # so the gate doesn't see every legacy model as "insufficient".
+        if "confidence_tier" not in kwargs:
+            kwargs["confidence_tier"] = tier_from_raw_model(raw) or (
+                "medium" if kwargs.get("is_calibrated", False) else "insufficient"
+            )
+        return FittedModel(**kwargs)
 
     def _to_lookup(raw: dict | None) -> SpringLookupTable | None:
         if raw is None:
@@ -727,6 +747,85 @@ def ingest_sto_json(car: str, sto_json_path: str | Path) -> dict[str, float]:
 # Regression fitting
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _compute_tier(
+    r2: float,
+    loo_rmse: float,
+    train_rmse: float,
+    n_samples: int,
+    n_features: int,
+) -> str:
+    """Classify a fitted model into one of four confidence tiers.
+
+    The tiers replace the binary ``is_calibrated`` flag.  Solver consumers
+    use ALL non-``insufficient`` tiers; the tier label tells them how much
+    confidence to attach to the prediction.
+
+    Tier definitions:
+      - ``high``         R² ≥ 0.85, LOO/train < 2.0, n ≥ 3 × n_features
+      - ``medium``       R² ≥ 0.70, LOO/train < 5.0, n ≥ 2 × n_features
+      - ``low``          R² ≥ 0.30, LOO/train < 20.0
+      - ``insufficient`` anything below — solver must NOT use this model
+
+    NaN ``loo_rmse`` (n < 5, LOO skipped) is treated as ratio = 0 — the
+    n-bound checks in the higher tiers still gate small-sample cases.
+    """
+    # Hard floors: too few samples or terrible fit → insufficient.
+    if r2 < 0.30:
+        return "insufficient"
+    if n_samples < max(n_features, 1):
+        return "insufficient"
+
+    if not np.isnan(loo_rmse):
+        loo_ratio = loo_rmse / max(train_rmse, 1e-6)
+    else:
+        # LOO not computed (n < 5).  Treat as best-case for ratio, but the
+        # n_samples checks below still keep us in "low" or "insufficient".
+        loo_ratio = 0.0
+
+    if r2 >= 0.85 and loo_ratio < 2.0 and n_samples >= 3 * max(n_features, 1):
+        return "high"
+    if r2 >= 0.70 and loo_ratio < 5.0 and n_samples >= 2 * max(n_features, 1):
+        return "medium"
+    if r2 >= 0.30 and loo_ratio < 20.0:
+        return "low"
+    return "insufficient"
+
+
+_TIER_NAMES = ("high", "medium", "low", "insufficient")
+
+
+def tier_from_raw_model(raw: dict | None) -> str | None:
+    """Extract / derive a ``confidence_tier`` from a raw fitted-model dict.
+
+    Returns the explicit ``confidence_tier`` field when present, otherwise
+    derives one from the saved (R², RMSE, LOO RMSE, n_samples, feature
+    names) using :func:`_compute_tier` so legacy on-disk models pre-dating
+    the tier system are still classified consistently.  Returns None when
+    *raw* is not a dict or has no usable fields.
+    """
+    if not isinstance(raw, dict):
+        return None
+    explicit = raw.get("confidence_tier")
+    if isinstance(explicit, str) and explicit.lower() in _TIER_NAMES:
+        return explicit.lower()
+    try:
+        loo = raw.get("loo_rmse")
+        loo_val = float(loo) if loo is not None else float("nan")
+    except (TypeError, ValueError):
+        loo_val = float("nan")
+    try:
+        feats = raw.get("feature_names") or []
+        return _compute_tier(
+            float(raw.get("r_squared", 0.0) or 0.0),
+            loo_val,
+            float(raw.get("rmse", 0.0) or 0.0),
+            int(raw.get("n_samples", 0) or 0),
+            len(feats) if isinstance(feats, list) else 0,
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str) -> FittedModel:
     """Fit y = X @ beta via least squares with LOO cross-validation."""
     ones = np.ones((X.shape[0], 1))
@@ -739,7 +838,7 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
         import logging
         logging.getLogger(__name__).warning(
             "Model '%s': underdetermined (%d samples, %d parameters) — "
-            "marking as uncalibrated",
+            "marking as insufficient",
             model_name, X.shape[0], n_params,
         )
         return FittedModel(
@@ -751,6 +850,7 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
             loo_rmse=float("inf"),
             n_samples=X.shape[0],
             is_calibrated=False,
+            confidence_tier="insufficient",
         )
 
     beta, *_ = np.linalg.lstsq(X_aug, y, rcond=None)
@@ -780,17 +880,16 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
         # Q² = 1 - (LOO_RMSE² × n) / SS_total
         q_squared = float(1.0 - (loo_rmse ** 2 * n) / max(ss_tot, 1e-12))
 
-    # A model is only considered calibrated if its R² meets the gate threshold.
-    # Writing an under-threshold model to disk would let it appear "calibrated" on
-    # the next load before the gate re-checks. Guard here prevents that.
-    from car_model.calibration_gate import R2_THRESHOLD_BLOCK
-    is_cal = r2 >= R2_THRESHOLD_BLOCK
-
-    # Overfit warning: if LOO RMSE is more than 2x training RMSE, the model
-    # may not generalize. Also warn if sample-to-feature ratio is below 3:1.
+    # Classify into a confidence tier (high/medium/low/insufficient).  This
+    # is the new truth for "is this model usable?".  ``is_calibrated`` is
+    # derived from this tier for backward compatibility.
     n_features = X.shape[1]
+    tier = _compute_tier(r2, loo_rmse, rmse, n, n_features)
+    is_cal = tier != "insufficient"
+
+    # Surface non-fatal warnings about generalisation quality.
     _overfit_warnings: list[str] = []
-    if loo_rmse > 2.0 * max(rmse, 1e-6) and n >= 5:
+    if not np.isnan(loo_rmse) and loo_rmse > 2.0 * max(rmse, 1e-6) and n >= 5:
         _overfit_warnings.append(
             f"LOO RMSE ({loo_rmse:.3f}) > 2x training RMSE ({rmse:.3f}) — "
             f"possible overfit"
@@ -800,14 +899,15 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
             f"Only {n} samples for {n_features} features (recommend "
             f"{_min_sessions_for_features(n_features)}+)"
         )
-    # Defense-in-depth: if LOO is catastrophically worse than training (>10x),
-    # the model is memorizing noise and won't generalize. Mark uncalibrated
-    # even if R² looks great on the training set.
-    if is_cal and n >= 5 and not np.isnan(loo_rmse) and loo_rmse > 10.0 * max(rmse, 1e-6):
-        is_cal = False
+    if tier == "low":
         _overfit_warnings.append(
-            f"LOO/train ratio {loo_rmse / max(rmse, 1e-6):.0f}x — "
-            f"marking uncalibrated despite R²={r2:.3f}"
+            f"tier=low (R²={r2:.3f}, LOO/train={loo_rmse / max(rmse, 1e-6):.1f}x) — "
+            f"model is usable but predictions carry reduced confidence"
+        )
+    elif tier == "insufficient" and r2 >= 0.30 and n >= 5 and not np.isnan(loo_rmse):
+        _overfit_warnings.append(
+            f"tier=insufficient (R²={r2:.3f}, LOO/train={loo_rmse / max(rmse, 1e-6):.0f}x) — "
+            f"model REJECTED, solver will skip"
         )
     if _overfit_warnings:
         import logging
@@ -825,6 +925,7 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
         n_samples=n,
         is_calibrated=is_cal,
         q_squared=q_squared,
+        confidence_tier=tier,
     )
 
 
@@ -1806,22 +1907,31 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
 # Build GarageOutputModel from calibration regressions
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Threshold matches the defense-in-depth guard in _fit(): if a model's
-# leave-one-out RMSE is more than 10x its training RMSE it has memorized
-# noise and won't generalize. Skip applying such models to the car.
+# Legacy threshold preserved for status messages.  The tier system has fully
+# replaced this as the gate: ``confidence_tier == "insufficient"`` is the
+# canonical signal for "do not apply this model".
 _OVERFIT_LOO_TRAIN_RATIO = 10.0
 
 
 def _is_overfit(model) -> bool:
-    """Return True if a fitted model fails the LOO/train generalization check.
+    """Return True if a fitted model is too unreliable to apply.
 
-    Mirrors the defense-in-depth guard in `_fit()`. Used by `_mk_direct()` and
-    `apply_to_car()` to refuse using catastrophically overfit models for
-    garage prediction or .sto serialization, even when the model has high
-    training R².
+    Under the tier system this delegates to ``confidence_tier == "insufficient"``
+    so the legacy LOO/train > 10× heuristic and the new tier rules cannot
+    drift apart.  Models at tier ``low`` (LOO/train 10×–20×) are NOT flagged
+    as overfit — the solver applies them with a warning, in line with
+    Principle 4 (continuous learning, tiered confidence).
+
+    Used by ``_mk_direct()`` and ``apply_to_car()`` to refuse catastrophically
+    overfit models for garage prediction or .sto serialization.
     """
     if model is None:
         return False
+    tier = getattr(model, "confidence_tier", None)
+    if tier is not None:
+        return tier == "insufficient"
+    # Backward-compat path for legacy FittedModel dicts loaded before tiers
+    # existed: fall through to the original LOO/train threshold.
     rmse = getattr(model, "rmse", None)
     loo_rmse = getattr(model, "loo_rmse", None)
     n = getattr(model, "n_samples", 0)
@@ -1835,15 +1945,15 @@ def _is_overfit(model) -> bool:
 def _mk_direct(fitted_model) -> "DirectRegression | None":
     """Build a DirectRegression from a fitted model.
 
-    Accepts any model with R² > 0.30 (reasonable fit). The strict R² >= 0.85
-    calibration gate is for blocking SOLVER steps, not garage predictions.
-    A fitted model with R²=0.60 still gives better garage predictions than
-    the fallback coefficient path which may have stale/mismatched coefficients.
+    Accepts any model whose ``confidence_tier`` is non-``insufficient`` (i.e.
+    ``high``, ``medium``, or ``low``).  The strict R² >= 0.85 calibration
+    gate is for blocking SOLVER steps, not garage predictions — a low-tier
+    model with R²=0.60 still gives better garage predictions than the
+    fallback coefficient path, which may have stale/mismatched coefficients
+    from another car.
 
-    Returns None when the model is absent, has no coefficients, has R² so low
-    it would produce worse predictions than a constant, OR is flagged as
-    overfit by the LOO/train ratio guard (defense-in-depth: high training R²
-    on memorized data still fails generalization).
+    Returns None when the model is absent, has no coefficients, or is
+    flagged ``insufficient`` (R² < 0.30 OR LOO/train > 20× OR n < n_features).
     """
     if fitted_model is None or not fitted_model.coefficients:
         return None
@@ -1857,9 +1967,10 @@ def _mk_direct(fitted_model) -> "DirectRegression | None":
     if _is_overfit(fitted_model):
         import logging
         ratio = fitted_model.loo_rmse / max(fitted_model.rmse, 1e-6)
+        tier = getattr(fitted_model, "confidence_tier", "n/a")
         logging.getLogger(__name__).warning(
-            "DirectRegression skipped for '%s' — LOO/train ratio %.0fx exceeds %.0fx threshold",
-            fitted_model.name, ratio, _OVERFIT_LOO_TRAIN_RATIO,
+            "DirectRegression skipped for '%s' — tier=%s, LOO/train ratio %.0fx",
+            fitted_model.name, tier, ratio,
         )
         return None
     from car_model.garage import DirectRegression
@@ -2127,19 +2238,30 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
 
     Modifies the car object in-place. Returns list of applied correction notes.
 
-    Models flagged as overfit (LOO/train RMSE ratio > 10x) are skipped and
-    their names recorded for a single combined warning. Skipping prevents
-    catastrophically non-generalizing fits from driving deflection
-    predictions or .sto serialization.
+    Tier handling (Principle 4 — continuous learning, tiered confidence):
+      - ``high`` / ``medium`` — applied silently
+      - ``low`` — applied with a logged warning and an "applied at low tier"
+        note in the returned list
+      - ``insufficient`` — skipped entirely (no application, no silent corruption)
+
+    Models flagged as ``insufficient`` (the new tier name for the legacy
+    LOO/train > 10× guard) are skipped and their names recorded for a
+    single combined warning.
     """
     applied = []
     _skipped_overfit: list[str] = []
+    _low_tier_applied: list[str] = []
 
     if not models:
         return applied
 
     def _ok(m, min_coefs: int = 1) -> bool:
-        """Return True if model is usable (present, calibrated, has enough coefs, not overfit)."""
+        """Return True if model is usable (tier ∈ {high, medium, low} and has enough coefs).
+
+        Models at tier ``insufficient`` are rejected here.  Tier ``low`` is
+        accepted (Principle 4: solver uses ALL non-insufficient tiers) and
+        the caller name is recorded in ``_low_tier_applied`` for warning.
+        """
         if m is None or len(m.coefficients) < min_coefs:
             return False
         # Never apply a model that the fitting process itself flagged as uncalibrated.
@@ -2148,9 +2270,16 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
         if not getattr(m, "is_calibrated", True):
             return False
         if _is_overfit(m):
+            # Tier == "insufficient" (or legacy LOO/train > 10× when tier is
+            # missing).  Skip and record for the combined warning below.
             if m.name not in _skipped_overfit:
                 _skipped_overfit.append(m.name)
             return False
+        # Track "low" tier applications so the caller can warn about reduced
+        # confidence even though the model is being applied (Principle 4).
+        if getattr(m, "confidence_tier", "high") == "low":
+            if m.name not in _low_tier_applied:
+                _low_tier_applied.append(m.name)
         return True
 
     # Apply DeflectionModel coefficients — apply whatever is available
@@ -2629,20 +2758,32 @@ def apply_to_car(car_obj, models: CarCalibrationModels) -> list[str]:
             car_obj.garage_output_model = new_gom
             applied.append("GarageOutputModel rebuilt from calibration models")
 
-    # Surface any models that were skipped because they failed the LOO/train
-    # generalization guard. Users need to know which submodels were dropped so
-    # they can either collect more data or accept the reduced coverage.
+    # Surface tier-related model handling (Principle 4 — continuous learning,
+    # tiered confidence).  ``insufficient`` models were skipped entirely;
+    # ``low`` models were applied but predictions carry reduced confidence.
     if _skipped_overfit:
-        import logging as _logging
-        _logger = _logging.getLogger(__name__)
-        _logger.warning(
-            "apply_to_car: skipped %d overfit model(s) (LOO/train > %.0fx): %s",
+        import logging
+        logging.getLogger(__name__).warning(
+            "apply_to_car: skipped %d insufficient-tier model(s) "
+            "(LOO/train > %.0fx or R² < 0.30): %s",
             len(_skipped_overfit), _OVERFIT_LOO_TRAIN_RATIO,
             ", ".join(sorted(_skipped_overfit)),
         )
         applied.append(
-            f"⚠ skipped {len(_skipped_overfit)} overfit model(s): "
+            f"⚠ skipped {len(_skipped_overfit)} insufficient model(s): "
             f"{', '.join(sorted(_skipped_overfit))}"
+        )
+    if _low_tier_applied:
+        import logging
+        logging.getLogger(__name__).warning(
+            "apply_to_car: applied %d low-tier model(s) "
+            "(R²≥0.30 or LOO/train≥2×): %s",
+            len(_low_tier_applied),
+            ", ".join(sorted(_low_tier_applied)),
+        )
+        applied.append(
+            f"⚠ applied {len(_low_tier_applied)} low-tier model(s) "
+            f"(reduced confidence): {', '.join(sorted(_low_tier_applied))}"
         )
 
     return applied
@@ -2871,6 +3012,7 @@ def calibration_status(car: str) -> dict[str, Any]:
                     "r_squared": round(m.r_squared, 3),
                     "rmse": round(m.rmse, 3),
                     "n": m.n_samples,
+                    "confidence_tier": getattr(m, "confidence_tier", "insufficient"),
                 }
         status["fitted_models"] = fitted_models
 
@@ -2925,9 +3067,20 @@ def print_status(car: str) -> None:
 
     if s.get("fitted_models"):
         print(f"\n  Regression models:")
+        _tier_icon = {
+            "high": "✅",
+            "medium": "✅",
+            "low": "⚠️",
+            "insufficient": "❌",
+        }
         for name, m in s["fitted_models"].items():
-            bar = "✅" if m["r_squared"] >= 0.80 else ("⚠️" if m["r_squared"] >= 0.50 else "❌")
-            print(f"    {bar} {name:<35} R²={m['r_squared']:.3f}  RMSE={m['rmse']:.2f}  n={m['n']}")
+            tier = m.get("confidence_tier", "insufficient")
+            bar = _tier_icon.get(tier, "❌")
+            tier_tag = f"  tier={tier}"
+            print(
+                f"    {bar} {name:<35} R²={m['r_squared']:.3f}  "
+                f"RMSE={m['rmse']:.2f}  n={m['n']}{tier_tag}"
+            )
 
     if s.get("spring_lookups"):
         print(f"\n  Spring lookup tables:")
