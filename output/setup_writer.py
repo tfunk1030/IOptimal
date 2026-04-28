@@ -1073,6 +1073,45 @@ def write_sto(
         if pad_compound is not None and pad_compound not in _gr.brake_pad_compound_options:
             pad_compound = "Medium"
 
+    # ── Fallback defaults from car model for omitted supporting params ────
+    # Hierarchy: solver-computed value > car model default > skip (truly optional only)
+    if _car is not None:
+        _gr = _car.garage_ranges
+
+        # Diff preload — use car-specific calibrated default
+        if diff_preload_nm is None:
+            diff_preload_nm = _car.default_diff_preload_nm
+
+        # Diff coast/drive ramp — middle option from garage range
+        if diff_coast_drive_ramp is None and _gr.diff_coast_drive_ramp_options:
+            _mid = _gr.diff_coast_drive_ramp_options[len(_gr.diff_coast_drive_ramp_options) // 2]
+            diff_coast_drive_ramp = f"{_mid[0]} / {_mid[1]}"
+
+        # Diff clutch plates — middle option from garage range
+        if diff_clutch_plates is None and _gr.diff_clutch_plates_options:
+            diff_clutch_plates = _gr.diff_clutch_plates_options[len(_gr.diff_clutch_plates_options) // 2]
+
+        # Brake master cylinders — middle option from garage range
+        _mc_opts = _gr.brake_master_cyl_options_mm
+        if front_master_cyl_mm is None and _mc_opts:
+            front_master_cyl_mm = _mc_opts[len(_mc_opts) // 2]
+        if rear_master_cyl_mm is None and _mc_opts:
+            rear_master_cyl_mm = _mc_opts[len(_mc_opts) // 2]
+
+        # Pad compound — middle option from garage range
+        if pad_compound is None and _gr.brake_pad_compound_options:
+            pad_compound = _gr.brake_pad_compound_options[len(_gr.brake_pad_compound_options) // 2]
+
+        # TC gain / TC slip — default to mid-range (3) for GTP cars
+        if tc_gain is None:
+            tc_gain = 3
+        if tc_slip is None:
+            tc_slip = 3
+
+        # Fuel target — default to full tank
+        if fuel_target_l is None:
+            fuel_target_l = _gr.max_fuel_l
+
     # ── Corner weights (physics-computed) ─────────────────────────────────
     if _car is not None:
         _total_mass   = _car.mass_car_kg + _car.mass_driver_kg + fuel_l * _car.fuel_density_kg_per_l
