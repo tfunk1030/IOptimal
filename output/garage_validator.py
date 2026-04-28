@@ -85,6 +85,7 @@ def validate_and_fix_garage_correlation(
     step5,
     fuel_l: float,
     track_name: str | None = None,
+    current_setup=None,
 ) -> list[str]:
     """Validate and auto-correct setup parameter correlations before .sto write.
 
@@ -93,6 +94,14 @@ def validate_and_fix_garage_correlation(
 
     Modifies step1/step2 in-place when corrections are needed.
     Returns a list of warning/adjustment messages (empty if all OK).
+
+    ``current_setup`` (optional): when provided, the regression-based
+    "Phase 3" RH reconciliation respects driver-anchored static heights —
+    if the rake solver's reconciled value already agrees with the driver's
+    measured static_rear/front_rh within a tolerance, the regression's
+    re-prediction is skipped (avoids regressions destabilised by lap-
+    condition features at default conditions overriding the empirically
+    validated rake solution).
     """
     warnings: list[str] = []
     gr = car.garage_ranges
@@ -242,14 +251,41 @@ def validate_and_fix_garage_correlation(
     )
     predicted_front = garage_model.predict_front_static_rh(state)
     predicted_rear = garage_model.predict_rear_static_rh(state)
-    if abs(predicted_front - step1.static_front_rh_mm) > 0.05:
+
+    # Driver-anchor guard: when current_setup carries the driver's measured
+    # static heights AND the rake solver's reconciled value is closer to
+    # the driver-anchored target than the regression's re-prediction, the
+    # rake solver wins.  Regressions with D1 lap-condition features
+    # (tyre_temp, fuel_remaining) can destabilise predictions when called
+    # with default lap-conditions; the rake solver already reconciled
+    # against an anchored driver value via _find_rear_for_balance.
+    _drv_static_front = (
+        float(getattr(current_setup, "static_front_rh_mm", None) or 0.0)
+        if current_setup is not None else 0.0
+    )
+    _drv_static_rear = (
+        float(getattr(current_setup, "static_rear_rh_mm", None) or 0.0)
+        if current_setup is not None else 0.0
+    )
+    _front_solver_closer = (
+        _drv_static_front > 0
+        and abs(step1.static_front_rh_mm - _drv_static_front)
+            < abs(predicted_front - _drv_static_front)
+    )
+    _rear_solver_closer = (
+        _drv_static_rear > 0
+        and abs(step1.static_rear_rh_mm - _drv_static_rear)
+            < abs(predicted_rear - _drv_static_rear)
+    )
+
+    if abs(predicted_front - step1.static_front_rh_mm) > 0.05 and not _front_solver_closer:
         warnings.append(
             f"front RH reconciled: {step1.static_front_rh_mm:.1f} -> "
             f"{predicted_front:.1f} mm (garage model prediction)"
         )
         step1.static_front_rh_mm = round(predicted_front, 1)
         step1.rake_static_mm = round(step1.static_rear_rh_mm - step1.static_front_rh_mm, 1)
-    if abs(predicted_rear - step1.static_rear_rh_mm) > 0.1:
+    if abs(predicted_rear - step1.static_rear_rh_mm) > 0.1 and not _rear_solver_closer:
         warnings.append(
             f"rear RH reconciled: {step1.static_rear_rh_mm:.1f} -> "
             f"{predicted_rear:.1f} mm (garage model prediction)"

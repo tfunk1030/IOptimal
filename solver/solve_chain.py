@@ -348,6 +348,7 @@ def _finalize_result(
         step3=step3,
         fuel_l=inputs.fuel_load_l,
         step5=step5,
+        current_setup=inputs.current_setup,
     )
     decision_trace = build_parameter_decisions(
         car_name=inputs.car.canonical_name,
@@ -423,6 +424,36 @@ def _decode_ferrari_indexed_setup(car: Any, setup: Any) -> None:
                 setattr(setup, key, float(decoded))
 
 
+def _rake_driver_anchors(inputs: SolveChainInputs) -> tuple[float | None, float | None]:
+    """Extract (anchor_dyn_rear, anchor_dyn_front) from driver-loaded IBT setup.
+
+    Driver-anchor pattern: when the pipeline runs against an IBT, the
+    driver-loaded ride heights at speed are calibrated truth — pass them
+    as anchors so the rake solver (a) overrides its (potentially over-
+    pessimistic) vortex-burst constraint with the driver's lower
+    dyn_front when the driver isn't actually bursting, and (b) picks the
+    balance-locus rear solution closest to driver rather than an L/D-
+    optimal point that ignores mechanical-grip / kerb-rideability.
+    Returns (None, None) in physics mode, on GT3 (no front pinning),
+    or when current_setup is missing / out of range.
+    """
+    if inputs.optimization_mode == "physics":
+        return None, None
+    if inputs.current_setup is None:
+        return None, None
+    if not inputs.car.suspension_arch.has_heave_third:
+        return None, None
+    rear_anchor: float | None = None
+    front_anchor: float | None = None
+    drv_rear = getattr(inputs.current_setup, "rear_rh_at_speed_mm", None)
+    if drv_rear is not None and 5.0 <= float(drv_rear) <= 100.0:
+        rear_anchor = float(drv_rear)
+    drv_front = getattr(inputs.current_setup, "front_rh_at_speed_mm", None)
+    if drv_front is not None and 0.5 <= float(drv_front) <= 60.0:
+        front_anchor = float(drv_front)
+    return rear_anchor, front_anchor
+
+
 def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any, Any, Any, float]:
     mods = _default_modifiers(inputs.modifiers)
     car = inputs.car
@@ -437,12 +468,16 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
     # setup regardless of what the driver loaded.
     _physics_mode = inputs.optimization_mode == "physics"
 
+    _rake_anchor_dyn_rear, _rake_anchor_dyn_front = _rake_driver_anchors(inputs)
+
     rake_solver = RakeSolver(car, inputs.surface, track)
     step1 = rake_solver.solve(
         target_balance=inputs.target_balance,
         balance_tolerance=inputs.balance_tolerance,
         fuel_load_l=fuel,
         pin_front_min=inputs.pin_front_min,
+        anchor_dyn_rear_mm=_rake_anchor_dyn_rear,
+        anchor_dyn_front_mm=_rake_anchor_dyn_front,
     )
 
     # GT3 dispatch (W2.1): cars without heave/third architecture skip the
@@ -510,8 +545,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         verbose=False,
         surface=inputs.surface,
         track=track,
-        target_balance=inputs.target_balance,
-    )
+        target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
     # NOTE: Previously a provisional Step 6 (DamperSolver) ran here to refine
     # heave sizing with HS damper values. Removed because it introduces a Step 6
@@ -554,8 +588,7 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
         verbose=False,
         surface=inputs.surface,
         track=track,
-        target_balance=inputs.target_balance,
-    )
+        target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
     step6 = None
     try:
@@ -629,12 +662,15 @@ def _run_branching_solver(
     )
 
     # ── Step 1: Rake (single answer — Brent root-find, no branching) ──
+    _rake_anchor_dyn_rear, _rake_anchor_dyn_front = _rake_driver_anchors(inputs)
     rake_solver = RakeSolver(car, inputs.surface, track)
     step1 = rake_solver.solve(
         target_balance=inputs.target_balance,
         balance_tolerance=inputs.balance_tolerance,
         fuel_load_l=fuel,
         pin_front_min=inputs.pin_front_min,
+        anchor_dyn_rear_mm=_rake_anchor_dyn_rear,
+        anchor_dyn_front_mm=_rake_anchor_dyn_front,
     )
 
     # ── Step 2: Heave candidates ──
@@ -717,7 +753,7 @@ def _run_branching_solver(
             reconcile_ride_heights(car, s1_copy, s2_copy, s3_copy, fuel_load_l=fuel,
                                   track_name=track.track_name, verbose=False,
                                   surface=inputs.surface, track=track,
-                                  target_balance=inputs.target_balance)
+                                  target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
             # Step 4: ARB candidates for this spring combo
             arb_candidates = arb_solver_inst.solve_candidates(
@@ -747,8 +783,7 @@ def _run_branching_solver(
                     car, s1_copy, s2_copy, s3_copy, step5=s5,
                     fuel_load_l=fuel, track_name=track.track_name,
                     verbose=False, surface=inputs.surface, track=track,
-                    target_balance=inputs.target_balance,
-                )
+                    target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
                 # Step 6: dampers (fast, deterministic)
                 s6 = None
@@ -839,6 +874,8 @@ def _iterative_coupling_refinement(
     lltd_tol: float = 0.002,
     sigma_tol_mm: float = 0.1,
 ) -> tuple[Any, Any, Any, Any, Any, Any, float]:
+    # Driver-anchor extracted once per refinement loop (see _rake_driver_anchors).
+    _rake_anchor_dyn_rear, _rake_anchor_dyn_front = _rake_driver_anchors(inputs)
     """Objective-driven iterative coupling resolution.
 
     After the initial solver pass, re-optimizes each step against the full
@@ -950,7 +987,9 @@ def _iterative_coupling_refinement(
                     balance_tolerance=inputs.balance_tolerance,
                     fuel_load_l=fuel,
                     pin_front_min=inputs.pin_front_min,
-                )
+        anchor_dyn_rear_mm=_rake_anchor_dyn_rear,
+        anchor_dyn_front_mm=_rake_anchor_dyn_front,
+    )
                 step1 = new_step1
             except Exception as e:
                 logger.debug("Coupling re-solve Step 1 failed: %s", e)
@@ -1030,8 +1069,7 @@ def _iterative_coupling_refinement(
                 car, step1, step2, step3, step5=step5,
                 fuel_load_l=fuel, track_name=track.track_name,
                 verbose=False, surface=inputs.surface, track=track,
-                target_balance=inputs.target_balance,
-            )
+                target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
         if step6 is not None:
             damper_solver = DamperSolver(car, track)
@@ -1377,8 +1415,7 @@ def materialize_overrides(
             verbose=False,
             surface=inputs.surface,
             track=track,
-            target_balance=inputs.target_balance,
-        )
+            target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
         damper_solver = DamperSolver(car, track)
         # COUPLING APPROXIMATION: The heave excursion model has a weak dependency
@@ -1488,8 +1525,7 @@ def materialize_overrides(
             verbose=False,
             surface=inputs.surface,
             track=track,
-            target_balance=inputs.target_balance,
-        )
+            target_balance=inputs.target_balance, current_setup=inputs.current_setup)
     else:
         rear_wheel_rate_nmm = step3.rear_wheel_rate_nmm
 
@@ -1570,8 +1606,7 @@ def materialize_overrides(
             verbose=False,
             surface=inputs.surface,
             track=track,
-            target_balance=inputs.target_balance,
-        )
+            target_balance=inputs.target_balance, current_setup=inputs.current_setup)
 
     rebuild_step6 = earliest <= 6 or rebuild_step5
     if rebuild_step6:

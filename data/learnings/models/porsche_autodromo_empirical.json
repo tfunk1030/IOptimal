@@ -3761,14 +3761,14 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-04-28T17:03:53.340457+00:00",
+  "last_updated": "2026-04-28T18:04:49.226323+00:00",
   "observation_count": 62,
   "most_sensitive_parameters": [],
   "corrections": {
-    "roll_distribution_proxy_mean": 0.5055932819711868,
+    "roll_distribution_proxy_mean": 0.5055932819711866,
     "roll_distribution_proxy_std": 0.002067451511053395,
     "roll_distribution_proxy_sample_count": 62,
-    "lltd_measured_mean": 0.5055932819711868,
+    "lltd_measured_mean": 0.5055932819711866,
     "lltd_measured_std": 0.002067451511053395,
     "lltd_is_proxy": true,
     "aero_compression_front_mean_mm": 12.68096253487372,

@@ -941,6 +941,7 @@ def write_sto(
     front_tb_turns: float | None = None,
     rear_tb_turns: float | None = None,
     front_roll_perch_mm: float = 0.0,
+    current_setup=None,
 ) -> Path:
     """Write an iRacing .sto setup file from solver output.
 
@@ -1000,6 +1001,7 @@ def write_sto(
         garage_warnings = validate_and_fix_garage_correlation(
             _car, step1, step2, step3, step5,
             fuel_l=fuel_l, track_name=track_name,
+            current_setup=current_setup,
         )
         for w in garage_warnings:
             print(f"[garage] {w}")

@@ -511,11 +511,6 @@ def produce(
     from output.run_trace import RunTrace
     run_trace = RunTrace()
 
-    # Resolve DF balance target from car model if not explicitly set
-    if getattr(args, "balance", None) is None:
-        args.balance = car.default_df_balance_pct
-        log(f"Using car-specific DF balance target: {args.balance:.2f}%")
-
     # ── Parse IBT ──
     ibt = IBTFile(ibt_path)
     log(f"IBT: {ibt_path}")
@@ -532,6 +527,30 @@ def produce(
     wing = args.wing or current_setup.wing_angle_deg
     fuel = args.fuel or current_setup.fuel_l or 89.0
     log(f"  Wing: {wing}°, Fuel: {fuel:.0f} L")
+
+    # ── Resolve DF balance target ─────────────────────────────────────────
+    # Priority order (driver-anchor pattern, mirrors σ-cal anchor):
+    #   1. Explicit --balance flag (operator override)
+    #   2. Driver-loaded df_balance_pct from this IBT, when in [40, 65]%
+    #      and matches the car's wing-driven aero map. The driver has
+    #      already validated this balance at THIS track — it's empirically
+    #      track-specific calibration, more authoritative than the
+    #      single-track-calibrated ``car.default_df_balance_pct``.
+    #   3. Car-level fallback (``default_df_balance_pct``).
+    # Provenance is logged so the operator sees which target was used.
+    if getattr(args, "balance", None) is None:
+        _driver_bal = getattr(current_setup, "df_balance_pct", None)
+        if _driver_bal is not None and 40.0 <= float(_driver_bal) <= 65.0:
+            args.balance = float(_driver_bal)
+            log(
+                f"DF balance target anchored to driver-loaded value: "
+                f"{args.balance:.2f}% (track-specific calibration; "
+                f"car default {car.default_df_balance_pct:.2f}% was for "
+                f"a different track)"
+            )
+        else:
+            args.balance = car.default_df_balance_pct
+            log(f"Using car-specific DF balance target: {args.balance:.2f}%")
 
     # ── Apply learned corrections (default: auto, --no-learn to disable) ──
     learned = None
@@ -1740,6 +1759,7 @@ def produce(
         garage_warnings = validate_and_fix_garage_correlation(
             car, step1, step2, step3, step5,
             fuel_l=fuel, track_name=track.track_name,
+            current_setup=current_setup,
         )
         for w in garage_warnings:
             print(f"[garage] {w}")
@@ -1859,6 +1879,7 @@ def produce(
                 step4=step4, step5=step5, step6=step6,
                 output_path=args.sto,
                 car_canonical=car.canonical_name,
+                current_setup=current_setup,
                 **_extra_kw,
             )
             print(f"\niRacing .sto setup saved to: {sto_path}")

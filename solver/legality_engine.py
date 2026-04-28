@@ -49,6 +49,7 @@ def validate_solution_legality(
     step3: Any,
     step5: Any,
     fuel_l: float,
+    current_setup: Any = None,
 ) -> LegalValidation:
     validation_step1 = step1
     validation_step2 = step2
@@ -80,6 +81,7 @@ def validate_solution_legality(
         step5=step5,
         fuel_l=fuel_l,
         track_name=track_name,
+        current_setup=current_setup,
     )
 
     garage_model = car.active_garage_output_model(track_name)

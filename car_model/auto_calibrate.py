@@ -1705,10 +1705,23 @@ def fit_models_from_points(car: str, points: list[CalibrationPoint]) -> CarCalib
     # variance in these IS signal — laps with hot tyres at low fuel have
     # different RH/deflection than the same setup with cold tyres at full
     # fuel. Add linear + interaction features so the regression can use them.
-    # Falls back to 0.0 on legacy rows ingested before D1 — std-filter at
-    # _select_features drops zero-variance features automatically.
-    _tyre_t = col("tyre_temp_avg_c")
-    _aggr = col("driver_aggression_idx")
+    #
+    # **Bimodal-data guard:** legacy rows ingested before D1 have
+    # tyre_temp_avg_c == 0.0 (default).  If left as zero, the regression
+    # mis-interprets "tyre_temp=0" as a real cold-tyre datapoint and
+    # learns a spurious slope between cold/warm rows that's actually
+    # legacy-vs-per-lap data noise.  Replace zeros with the median of
+    # the non-zero values so legacy rows contribute neutrally on the
+    # tyre_temp / aggression axes (the rest of their features still vary,
+    # so they contribute to OTHER coefficients honestly).
+    _tyre_t_raw = col("tyre_temp_avg_c")
+    _tyre_t_warm = _tyre_t_raw[_tyre_t_raw > 10.0]
+    _tyre_t_median = float(np.median(_tyre_t_warm)) if _tyre_t_warm.size > 0 else 60.0
+    _tyre_t = np.where(_tyre_t_raw > 10.0, _tyre_t_raw, _tyre_t_median)
+    _aggr_raw = col("driver_aggression_idx")
+    _aggr_nonzero = _aggr_raw[_aggr_raw > 1e-3]
+    _aggr_median = float(np.median(_aggr_nonzero)) if _aggr_nonzero.size > 0 else 0.0
+    _aggr = np.where(_aggr_raw > 1e-3, _aggr_raw, _aggr_median)
     _UNIVERSAL_POOL.append((_tyre_t, "tyre_temp"))
     _UNIVERSAL_POOL.append((_aggr, "driver_aggression"))
     # Tyre temp × spring compliance: hotter tyres = lower vertical stiffness

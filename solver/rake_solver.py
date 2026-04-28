@@ -219,12 +219,26 @@ class RakeSolver:
         return bal, ld
 
     def _find_rear_for_balance(
-        self, actual_front: float, target_balance: float
+        self,
+        actual_front: float,
+        target_balance: float,
+        anchor_rear: float | None = None,
     ) -> float | None:
         """Find the actual rear RH that achieves target balance at a given front RH.
 
         Primary method: Brent's method (root finding) on the balance error.
         Fallback: surface.find_rh_for_balance() bisection (interpolator utility).
+
+        ``anchor_rear`` (driver-anchor pattern, optional): when the aero map
+        has a degenerate balance locus (multiple rear-RH values produce the
+        same balance at this front-RH), Brent's method picks whichever
+        bracket flip happens to be there — could be the L/D-optimal high-
+        rear point or the mechanical-grip-optimal low-rear point.  When the
+        driver has loaded a setup at this track and the anchor is in legal
+        range, prefer the solution closer to the driver-validated value.
+        Sample the full rear range, collect ALL zero-crossings, and pick
+        the one nearest the anchor.  This is the same physics-fallback
+        anchor pattern used in heave_solver / corner_spring_solver.
         """
         rear_lo = self.car.min_rear_rh_dynamic
         rear_hi = self.car.max_rear_rh_dynamic
@@ -232,6 +246,37 @@ class RakeSolver:
         def balance_error(actual_rear):
             bal, _ = self._query_aero(actual_front, actual_rear)
             return bal - target_balance
+
+        # Anchored search: sample the full range, find ALL solutions
+        # (zero-crossings), pick the one closest to the driver-anchor.
+        if (anchor_rear is not None
+                and rear_lo <= anchor_rear <= rear_hi):
+            n_samples = 41
+            xs = [rear_lo + i * (rear_hi - rear_lo) / (n_samples - 1)
+                  for i in range(n_samples)]
+            errs = [balance_error(x) for x in xs]
+            crossings: list[float] = []
+            for i in range(len(xs) - 1):
+                if errs[i] == 0.0:
+                    crossings.append(xs[i])
+                elif errs[i] * errs[i + 1] < 0:
+                    try:
+                        root = brentq(balance_error, xs[i], xs[i + 1],
+                                       xtol=0.01, maxiter=30)
+                        crossings.append(root)
+                    except (ValueError, RuntimeError):
+                        continue
+            if crossings:
+                # Pick the crossing closest to the driver-anchored value.
+                best = min(crossings, key=lambda r: abs(r - anchor_rear))
+                logger.debug(
+                    "Rake driver-anchor: %d balance solutions in [%.1f, %.1f]; "
+                    "picked %.2f (anchor=%.2f, candidates=%s)",
+                    len(crossings), rear_lo, rear_hi, best, anchor_rear,
+                    [f"{c:.2f}" for c in crossings],
+                )
+                return best
+            # No crossing — fall through to legacy unanchored search.
 
         # Check if target is bracketed
         err_lo = balance_error(rear_lo)
@@ -472,6 +517,8 @@ class RakeSolver:
         balance_tolerance: float = 0.1,
         fuel_load_l: float | None = None,
         pin_front_min: bool = True,
+        anchor_dyn_rear_mm: float | None = None,
+        anchor_dyn_front_mm: float | None = None,
     ) -> RakeSolution:
         """Find optimal ride heights for target DF balance.
 
@@ -487,6 +534,14 @@ class RakeSolver:
                 maximum absolute downforce. Forced to False for GT3 cars
                 (suspension_arch=GT3_COIL_4WHEEL) which have flat-floor aero,
                 no ground-effect vortex, and do not pin to the floor.
+            anchor_dyn_rear_mm: Optional driver-anchor for rear dynamic RH.
+                When the aero map has a degenerate balance locus (multiple
+                rear-RH values produce the same balance), pick the solution
+                nearest this value.  Pipeline passes the driver's
+                IBT-measured ``rear_rh_at_speed_mm`` so the empirically
+                validated operating point wins over an L/D-optimal point
+                that ignores mechanical-grip / kerb-rideability concerns.
+                None = legacy unanchored behavior.
 
         Returns:
             RakeSolution with dynamic targets, static settings, and pushrod offsets.
@@ -514,7 +569,9 @@ class RakeSolver:
 
         if pin_front_min:
             return self._solve_pinned_front(
-                target_balance, front_excursion_p99, fuel_load_l
+                target_balance, front_excursion_p99, fuel_load_l,
+                anchor_dyn_rear_mm=anchor_dyn_rear_mm,
+                anchor_dyn_front_mm=anchor_dyn_front_mm,
             )
         else:
             return self._solve_free(
@@ -708,11 +765,20 @@ class RakeSolver:
         target_balance: float,
         front_excursion_p99: float,
         fuel_load_l: float,
+        anchor_dyn_rear_mm: float | None = None,
+        anchor_dyn_front_mm: float | None = None,
     ) -> RakeSolution:
         """Solve with front static RH pinned at sim minimum.
 
         This is the standard GTP approach: minimum front RH for maximum DF,
         then find rear RH to achieve target balance.
+
+        ``anchor_dyn_front_mm``: when the driver has empirically validated a
+        lower dynamic front RH than the solver's recomputed vortex-burst
+        constraint allows (excursion-p99 estimates can be pessimistic for a
+        given driver/tyre/track combo), prefer the driver's value.  The
+        IBT-measured operating point is calibrated truth.  None = legacy
+        constraint-driven behavior.
         """
         comp = self.car.aero_compression
 
@@ -738,8 +804,29 @@ class RakeSolver:
             dyn_front = min_front_for_vortex
             static_front = dyn_front + comp.front_at_speed(track_speed)
 
-        # Find rear RH for target balance
-        dyn_rear = self._find_rear_for_balance(dyn_front, target_balance)
+        # Driver-anchor override: if the driver has loaded a lower dynamic
+        # front RH and is empirically not bursting, the solver's vortex
+        # constraint is an over-estimate (rh_excursion_p99 from
+        # measured shock-vel can be pessimistic).  Use the driver-loaded
+        # value as the operating point — it's the calibrated truth.
+        if (anchor_dyn_front_mm is not None
+                and 0.5 <= float(anchor_dyn_front_mm) < dyn_front):
+            dyn_front = float(anchor_dyn_front_mm)
+            static_front = dyn_front + comp.front_at_speed(track_speed)
+            logger.debug(
+                "Rake driver-anchor: dyn_front overridden to driver-loaded "
+                "%.2fmm (solver constraint was %.2fmm; driver empirically "
+                "not vortex-bursting)", dyn_front, min_front_for_vortex,
+            )
+
+        # Find rear RH for target balance (anchored to driver-loaded value
+        # when provided — picks the balance solution closest to the driver's
+        # empirically validated operating point, which guards against the
+        # solver converging on an L/D-optimal but mechanically-suboptimal
+        # corner of the aero map's degenerate balance locus).
+        dyn_rear = self._find_rear_for_balance(
+            dyn_front, target_balance, anchor_rear=anchor_dyn_rear_mm
+        )
         if dyn_rear is None:
             # Balance target not achievable at this front RH — target lies outside
             # the aero map's achievable range. Two causes:
@@ -1038,6 +1125,8 @@ def reconcile_ride_heights(
     surface=None,
     track=None,
     target_balance: float | None = None,
+    anchor_dyn_rear_mm: float | None = None,
+    current_setup=None,
 ) -> None:
     """Reconcile static ride heights after step2+step3 provide actual spring values.
 
@@ -1063,6 +1152,14 @@ def reconcile_ride_heights(
                 car.canonical_name,
             )
         return
+
+    # Driver-anchor pattern: derive rear-dynamic anchor from current_setup
+    # when not already provided.  See ``_find_rear_for_balance`` for the
+    # rationale (degenerate balance locus disambiguation).
+    if anchor_dyn_rear_mm is None and current_setup is not None:
+        _drv_rear_dyn = getattr(current_setup, "rear_rh_at_speed_mm", None)
+        if _drv_rear_dyn is not None and 5.0 <= float(_drv_rear_dyn) <= 100.0:
+            anchor_dyn_rear_mm = float(_drv_rear_dyn)
 
     garage_model = car.active_garage_output_model(track_name)
     if garage_model is not None:
@@ -1091,6 +1188,7 @@ def reconcile_ride_heights(
                 rake_solver = RakeSolver(car, surface, track)
                 corrected = rake_solver._find_rear_for_balance(
                     step1.dynamic_front_rh_mm, target_balance,
+                    anchor_rear=anchor_dyn_rear_mm,
                 )
                 if corrected is not None:
                     corrected_dynamic_rear = corrected
