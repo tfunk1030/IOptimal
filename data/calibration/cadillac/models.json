@@ -1,7 +1,7 @@
 {
   "car": "cadillac",
   "track": "",
-  "n_sessions": 17,
+  "n_sessions": 23,
   "n_unique_setups": 5,
   "calibration_complete": true,
   "front_ride_height": null,
@@ -274,7 +274,6 @@
     "m_eff": "constant (3 points, mean 198 kg)",
     "m_eff_rear": "constant (3 points, mean 3366 kg)",
     "lltd_target": "DISABLED \u2014 IBT 'lltd_measured' is a geometric proxy (t_f^3/(t_f^3+t_r^3)), not true LLTD. ARB solver uses OptimumG physics.",
-    "deflection_model": "calibrated (5 unique setups, best R\u00b2=0.94)",
-    "_legacy_stub": "uncalibrated"
+    "deflection_model": "calibrated (5 unique setups, best R\u00b2=0.94)"
   }
 }
