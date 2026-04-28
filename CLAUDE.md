@@ -1,3 +1,18 @@
+# MISSION CONSTRAINTS — READ BEFORE ANY CHANGE
+
+This codebase has 6 inviolable principles documented in [MISSION.md](MISSION.md). Every change must comply. The full text and rationale lives in MISSION.md; the headline rules are:
+
+1. Every lap is data — no best-lap-only collapsing
+2. Physics-first — every recommendation regression-derived or labeled estimate
+3. No hardcoded fallbacks — per-car fields required, not optional
+4. Continuous learning — confidence tiers (high/medium/low/insufficient)
+5. Coupled evaluation — parameter changes propagate to dependents
+6. Corner-by-corner causal — per-corner-phase impact in every recommendation
+
+Violations are tested by `tests/test_mission_compliance.py`. Read MISSION.md for forbidden vs required patterns.
+
+---
+
 # GTP / GT3 Setup Builder — Physics-Based Setup Calculator for iRacing
 
 ## Project Goal
