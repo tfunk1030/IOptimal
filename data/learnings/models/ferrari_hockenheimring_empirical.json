@@ -1821,7 +1821,7 @@
       "correction_factor": 1.0
     }
   },
-  "last_updated": "2026-04-27T16:11:25.204478+00:00",
+  "last_updated": "2026-04-28T00:26:54.187203+00:00",
   "observation_count": 24,
   "most_sensitive_parameters": [
     [
@@ -1869,7 +1869,7 @@
     "calibrated_hs_front_n": 24,
     "lap_time_surrogate_regularized": 1.0,
     "lap_time_surrogate_sample_weight": 6.6,
-    "roll_gradient_measured_mean": 0.2912782121268065,
+    "roll_gradient_measured_mean": 0.29127821212680644,
     "roll_gradient_measured_std": 0.1191976325870893,
     "roll_gradient_sample_count": 23,
     "m_eff_front_values": [
