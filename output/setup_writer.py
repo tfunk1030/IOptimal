@@ -478,6 +478,10 @@ _ACURA_PARAM_IDS: dict[str, str] = {
     "rr_hs_rbd":                "",
     "rr_hs_slope":              "",
 
+    # Front roll spring + perch (ORECA chassis — separate roll spring)
+    "front_roll_spring_nmm":    "CarSetup_Chassis_Front_RollSpring",
+    "front_roll_perch_mm":      "CarSetup_Chassis_Front_RollPerchOffset",
+
     # Roll dampers (Acura-specific, no BMW equivalent)
     "front_roll_ls":            "CarSetup_Dampers_FrontRoll_LsDamping",
     "front_roll_hs":            "CarSetup_Dampers_FrontRoll_HsDamping",
@@ -930,6 +934,7 @@ def write_sto(
     include_computed: bool = False,
     front_tb_turns: float | None = None,
     rear_tb_turns: float | None = None,
+    front_roll_perch_mm: float = 0.0,
 ) -> Path:
     """Write an iRacing .sto setup file from solver output.
 
@@ -1306,6 +1311,9 @@ def write_sto(
         if "lf_roll_spring" in ids:
             _numeric(details, ids["lf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
             _numeric(details, ids["rf_roll_spring"], int(round(step3.front_wheel_rate_nmm)), "N/mm")
+        # Front roll perch offset (Porsche — preloads the roll spring)
+        if "front_roll_perch" in ids:
+            _w_num("front_roll_perch", _snap_to_step(front_roll_perch_mm, 0.5), "mm")
         # Rear spring / torsion bar
         if is_acura:
             # Acura rear uses torsion bar OD (mapped via lr_spring_rate -> TorsionBarOD)

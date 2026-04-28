@@ -475,9 +475,9 @@ _PORSCHE_SPECS: dict[str, CarFieldSpec] = {
     "front_master_cyl_mm":      _S("BrakesDriveUnit.BrakeSpec.FrontMasterCyl",       "CarSetup_BrakesDriveUnit_BrakeSpec_FrontMasterCyl"),
     "rear_master_cyl_mm":       _S("BrakesDriveUnit.BrakeSpec.RearMasterCyl",        "CarSetup_BrakesDriveUnit_BrakeSpec_RearMasterCyl"),
     # --- Diff ---
-    "diff_ramp_angles":         _S("BrakesDriveUnit.RearDiffSpec.CoastDriveRampAngles", "CarSetup_BrakesDriveUnit_RearDiffSpec_CoastDriveRampAngles"),
-    "diff_clutch_plates":       _S("BrakesDriveUnit.RearDiffSpec.ClutchFrictionPlates", "CarSetup_BrakesDriveUnit_RearDiffSpec_ClutchFrictionPlates", parse_fn="int"),
-    "diff_preload_nm":          _S("BrakesDriveUnit.RearDiffSpec.Preload",           "CarSetup_BrakesDriveUnit_RearDiffSpec_Preload"),
+    "diff_ramp_angles":         _S("BrakesDriveUnit.DiffSpec.CoastRampAngle", "CarSetup_BrakesDriveUnit_DiffSpec_CoastRampAngle"),
+    "diff_clutch_plates":       _S("BrakesDriveUnit.DiffSpec.ClutchPlates", "CarSetup_BrakesDriveUnit_DiffSpec_ClutchPlates", parse_fn="int"),
+    "diff_preload_nm":          _S("BrakesDriveUnit.DiffSpec.DiffPreload",           "CarSetup_BrakesDriveUnit_DiffSpec_DiffPreload"),
     # --- TC / Fuel ---
     "tc_gain":                  _S("BrakesDriveUnit.TractionControl.TractionControlGain", "CarSetup_BrakesDriveUnit_TractionControl_TractionControlGain", parse_fn="int"),
     "tc_slip":                  _S("BrakesDriveUnit.TractionControl.TractionControlSlip", "CarSetup_BrakesDriveUnit_TractionControl_TractionControlSlip", parse_fn="int"),
