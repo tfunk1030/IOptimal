@@ -3,7 +3,7 @@
   "track": "",
   "n_sessions": 23,
   "n_unique_setups": 5,
-  "calibration_complete": true,
+  "calibration_complete": false,
   "front_ride_height": null,
   "rear_ride_height": {
     "name": "rear_ride_height",

@@ -862,6 +862,18 @@ def _fit(X: np.ndarray, y: np.ndarray, feature_names: list[str], model_name: str
     # Writing an under-threshold model to disk would let it appear "calibrated" on
     # the next load before the gate re-checks. Guard here prevents that.
     from car_model.calibration_gate import R2_THRESHOLD_BLOCK
+    # Hard floor: models with R² < 0.30 have essentially no predictive power.
+    # These are noise fits and must never be marked calibrated regardless of
+    # any other heuristic. The R2_THRESHOLD_BLOCK (0.85) is the real gate,
+    # but this floor catches catastrophic fits early and logs them loudly.
+    MIN_R2_FLOOR = 0.30
+    if r2 < MIN_R2_FLOOR:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Model '%s': R²=%.4f is below minimum floor %.2f — "
+            "model has no predictive power and will be marked uncalibrated",
+            model_name, r2, MIN_R2_FLOOR,
+        )
     is_cal = r2 >= R2_THRESHOLD_BLOCK
 
     # Overfit warning: if LOO RMSE is more than 2x training RMSE, the model

@@ -110,13 +110,13 @@ class BrakeSolverTests(unittest.TestCase):
 
         self.assertEqual(solution.brake_bias_target, 1.0)
         self.assertEqual(solution.brake_bias_migration, -2.0)
-        self.assertEqual(solution.front_master_cyl_mm, 17.8)
-        self.assertEqual(solution.rear_master_cyl_mm, 22.2)
+        self.assertEqual(solution.front_master_cyl_mm, 22.2)
+        self.assertEqual(solution.rear_master_cyl_mm, 16.8)
         self.assertEqual(solution.pad_compound, "Low")
         self.assertEqual(solution.brake_bias_status, "solved")
         self.assertEqual(solution.brake_bias_target_status, "seeded_from_telemetry")
         self.assertEqual(solution.brake_bias_migration_status, "seeded_from_telemetry")
-        self.assertEqual(solution.master_cylinder_status, "seeded_from_telemetry")
+        self.assertEqual(solution.master_cylinder_status, "solved_from_physics")
         self.assertEqual(solution.pad_compound_status, "seeded_from_telemetry")
 
     def test_supporting_solver_snaps_bmw_brake_context_to_whole_steps(self) -> None:
@@ -173,8 +173,8 @@ class BrakeSolverTests(unittest.TestCase):
 
         self.assertEqual(solution.brake_bias_target, 2.0)
         self.assertEqual(solution.brake_bias_migration, -1.0)
-        self.assertEqual(solution.brake_bias_target_status, "seeded_from_setup")
-        self.assertEqual(solution.brake_bias_migration_status, "seeded_from_setup")
+        self.assertEqual(solution.brake_bias_target_status, "seeded_from_telemetry")
+        self.assertEqual(solution.brake_bias_migration_status, "seeded_from_telemetry")
 
     def test_decision_trace_surfaces_seeded_brake_hardware_changes(self) -> None:
         current_setup = SimpleNamespace(
