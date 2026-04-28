@@ -57,6 +57,12 @@ class SolveChainInputs:
     supporting_diagnosis: Any | None = None
     corners: list[Any] | None = None
     optimization_mode: str = "driver"  # "driver" or "physics"
+    # When True, the damper solver uses textbook physics defaults (ζ_LS=0.5,
+    # ζ_HS=0.85) for cars with zeta_is_calibrated=False instead of raising.
+    # Threaded from pipeline `--force` so the .sto carries usable damper values
+    # for Cadillac/Acura/Ferrari until per-car calibration lands. The resulting
+    # DamperSolution carries is_estimate=True for downstream labelling.
+    force_physics_estimate: bool = False
 
     def resolved_supporting_driver(self) -> Any:
         return self.supporting_driver if self.supporting_driver is not None else self.driver
@@ -506,12 +512,14 @@ def _run_sequential_solver(inputs: SolveChainInputs) -> tuple[Any, Any, Any, Any
             measured=measured,
             front_heave_nmm=step2.front_heave_nmm,
             rear_third_nmm=step2.rear_third_nmm,
+            force_physics_estimate=inputs.force_physics_estimate,
         )
         apply_damper_modifiers(step6, mods, car)
     except ValueError:
-        # Damper solver raises when zeta targets are uncalibrated for this car.
-        # The calibration gate will null this out downstream; return None so
-        # the pipeline can continue and produce output for calibrated steps.
+        # Damper solver raises when zeta targets are uncalibrated and the
+        # caller did not opt into force_physics_estimate. The calibration gate
+        # will null this out downstream; return None so the pipeline can
+        # continue and produce output for calibrated steps.
         pass
     return step1, step2, step3, step4, step5, step6, rear_wheel_rate_nmm
 
@@ -684,6 +692,7 @@ def _run_branching_solver(
                         measured=measured,
                         front_heave_nmm=s2_copy.front_heave_nmm,
                         rear_third_nmm=s2_copy.rear_third_nmm,
+                        force_physics_estimate=inputs.force_physics_estimate,
                     )
                     apply_damper_modifiers(s6, mods, car)
                 except ValueError:
@@ -963,6 +972,7 @@ def _iterative_coupling_refinement(
                     measured=inputs.measured,
                     front_heave_nmm=step2.front_heave_nmm,
                     rear_third_nmm=step2.rear_third_nmm,
+                    force_physics_estimate=inputs.force_physics_estimate,
                 )
                 apply_damper_modifiers(step6, mods, car)
             except Exception as e:
@@ -1482,6 +1492,7 @@ def materialize_overrides(
                 measured=inputs.measured,
                 front_heave_nmm=step2.front_heave_nmm,
                 rear_third_nmm=step2.rear_third_nmm,
+                force_physics_estimate=inputs.force_physics_estimate,
                 lf=corner_settings["lf"],
                 rf=corner_settings["rf"],
                 lr=corner_settings["lr"],
@@ -1498,6 +1509,7 @@ def materialize_overrides(
                 measured=inputs.measured,
                 front_heave_nmm=step2.front_heave_nmm,
                 rear_third_nmm=step2.rear_third_nmm,
+                force_physics_estimate=inputs.force_physics_estimate,
             )
             apply_damper_modifiers(step6, mods, car)
 

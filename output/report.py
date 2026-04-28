@@ -490,7 +490,10 @@ def print_full_setup_report(
     a(_setting("Tyre cold FL / FR", f"{tyre_fl:.0f} / {tyre_fr:.0f} kPa"))
     a(_setting("Tyre cold RL / RR", f"{tyre_rl:.0f} / {tyre_rr:.0f} kPa"))
     a(_blank())
-    a(_full("  DAMPERS"))
+    _damper_header = "  DAMPERS"
+    if step6 is not None and getattr(step6, "is_estimate", False):
+        _damper_header = "  DAMPERS [ESTIMATE — physics defaults]"
+    a(_full(_damper_header))
     if step6 is None:
         a(_setting("Dampers", "(blocked — uncalibrated)"))
     elif _has_roll_dampers:
@@ -699,6 +702,8 @@ def print_full_setup_report(
     _lltd_line = f"  LLTD:   {step4.lltd_achieved:.1%}  (target {step4.lltd_target:.1%})" if step4 is not None else "  LLTD:   [blocked]"
     _camber_conf = step5.camber_confidence if step5 is not None else "blocked"
     _camber_line = f"  Camber: F{_eff_front_camber:+.1f}°  R{_eff_rear_camber:+.1f}°  [{_camber_conf}]"
+    _is_estimate = step6 is not None and getattr(step6, "is_estimate", False)
+    _est_suffix = " [ESTIMATE]" if _is_estimate else ""
     if step6 is None:
         a(_full("  DAMPERS (blocked — uncalibrated)     AERO STATUS"))
         a(_row("", f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
@@ -708,7 +713,7 @@ def print_full_setup_report(
         a(_row("", f"  Dyn RH: F {step1.dynamic_front_rh_mm:.1f}  R {step1.dynamic_rear_rh_mm:.1f} mm"))
         a(_row("", _camber_line))
     elif _has_roll_dampers:
-        a(_full("  DAMPERS (clicks)                     AERO STATUS"))
+        a(_full(f"  DAMPERS (clicks){_est_suffix}                     AERO STATUS"))
         a(_row(f"           FH   FR   RH   RR",
                f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
         a(_row(f"  LS Comp: {step6.lf.ls_comp:3d}    -  {step6.lr.ls_comp:3d}    -",
@@ -722,7 +727,7 @@ def print_full_setup_report(
         a(_row(f"  Roll HS: {step6.front_roll_hs or '-':>3}    -  {step6.rear_roll_hs or '-':>3}    -",
                _camber_line))
     else:
-        a(_full("  DAMPERS (clicks)                     AERO STATUS"))
+        a(_full(f"  DAMPERS (clicks){_est_suffix}                     AERO STATUS"))
         a(_row(f"            LF   RF   LR   RR",
                f"  DF bal: {step1.df_balance_pct:.2f}%  {_ok(df_ok)}"))
         a(_row(f"  LS Comp: {step6.lf.ls_comp:3d}  {step6.rf.ls_comp:3d}  {step6.lr.ls_comp:3d}  {step6.rr.ls_comp:3d}",
