@@ -317,6 +317,38 @@ class MeasuredState:
     telemetry_signals: dict[str, TelemetrySignal[float]] = field(default_factory=dict, repr=False)
     telemetry_bundle: dict[str, object] = field(default_factory=dict, repr=False)
 
+    # --- Suspension PSD: f_n + ζ + Q per mode (Unit 2) ---
+    # Populated by analyzer.extractors.psd.extract_suspension_psd. All keys
+    # are optional — populated only when the relevant deflection channels are
+    # present in the IBT for this car's architecture.
+    front_heave_natural_freq_hz: float | None = None
+    front_heave_damping_ratio: float | None = None
+    front_heave_q_factor: float | None = None
+    rear_heave_natural_freq_hz: float | None = None
+    rear_heave_damping_ratio: float | None = None
+    rear_heave_q_factor: float | None = None
+    front_roll_natural_freq_hz: float | None = None
+    front_roll_damping_ratio: float | None = None
+    front_roll_q_factor: float | None = None
+    rear_roll_natural_freq_hz: float | None = None
+    rear_roll_damping_ratio: float | None = None
+    rear_roll_q_factor: float | None = None
+    # Per-corner (cars with LF/RF/LR/RRshockDefl)
+    lf_natural_freq_hz: float | None = None
+    lf_damping_ratio: float | None = None
+    rf_natural_freq_hz: float | None = None
+    rf_damping_ratio: float | None = None
+    lr_natural_freq_hz: float | None = None
+    lr_damping_ratio: float | None = None
+    rr_natural_freq_hz: float | None = None
+    rr_damping_ratio: float | None = None
+    # Axle-mode keys for cars without heave/third (GT3 architecture)
+    front_axle_natural_freq_hz: float | None = None
+    front_axle_damping_ratio: float | None = None
+    rear_axle_natural_freq_hz: float | None = None
+    rear_axle_damping_ratio: float | None = None
+    suspension_psd_raw: dict[str, float | str] = field(default_factory=dict, repr=False)
+
 
 def extract_bottoming_events(
     ibt,
@@ -912,6 +944,29 @@ def extract_measurements(
         state.fallback_reasons.append(f"front_settle:{state.front_settle_invalid_reason}")
     if state.rear_settle_invalid_reason:
         state.fallback_reasons.append(f"rear_settle:{state.rear_settle_invalid_reason}")
+
+    # --- Suspension PSD: ζ + ω_n per mode (Unit 2) ---
+    # Best-effort: failures here must not break the rest of the pipeline.
+    try:
+        from analyzer.extractors.psd import extract_suspension_psd
+
+        psd_features = extract_suspension_psd(
+            ibt, car, lap_range=(start, end)
+        )
+        state.suspension_psd_raw = psd_features
+        # Promote known keys to typed attributes.
+        for key, value in psd_features.items():
+            if hasattr(state, key) and not key.endswith("_psd_warning"):
+                setattr(state, key, value)
+        state.extraction_attempts.append(
+            {"phase": "suspension_psd", "source": "scipy.welch",
+             "status": "ok" if psd_features else "no_channels"}
+        )
+    except Exception as exc:
+        state.extraction_attempts.append(
+            {"phase": "suspension_psd", "source": "scipy.welch",
+             "status": f"failed: {exc}"}
+        )
 
     return state
 
