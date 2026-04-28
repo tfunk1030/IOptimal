@@ -92,6 +92,9 @@ def _setup_key(pt) -> tuple:
     - ARB: front/rear size (string) and blade (integer) — affect roll stiffness
       and must be distinguished for accurate regression coverage
     - Load: fuel level
+    - Dampers: LF/LR LS/HS comp/rbd clicks — same suspension with different
+      damper clicks drives shock-velocity telemetry differences the regression
+      sees, so sessions must count as distinct setups for fitting purposes.
     """
     return (
         # Track — different tracks produce different ride heights and deflections
@@ -131,6 +134,19 @@ def _setup_key(pt) -> tuple:
         round(float(getattr(pt, "front_bump_rubber_gap_mm", 0.0)), 1),
         round(float(getattr(pt, "rear_bump_rubber_gap_mm", 0.0)), 1),
         round(float(getattr(pt, "splitter_height_mm", 0.0)), 1),
+        # Damper clicks (Unit 2) — appended at END so existing fingerprints
+        # don't shift. getattr-with-default keeps legacy CalibrationPoint JSON
+        # (no damper fields) loadable; legacy points all collapse to
+        # (0,0,0,0,0,0,0,0). New differentiation only fires when fresh
+        # extract_point_from_ibt populates these fields.
+        round(getattr(pt, "lf_ls_comp", 0.0), 1),
+        round(getattr(pt, "lf_hs_comp", 0.0), 1),
+        round(getattr(pt, "lf_ls_rbd", 0.0), 1),
+        round(getattr(pt, "lf_hs_rbd", 0.0), 1),
+        round(getattr(pt, "lr_ls_comp", 0.0), 1),
+        round(getattr(pt, "lr_hs_comp", 0.0), 1),
+        round(getattr(pt, "lr_ls_rbd", 0.0), 1),
+        round(getattr(pt, "lr_hs_rbd", 0.0), 1),
     )
 
 # Alias for backward compatibility
@@ -253,6 +269,22 @@ class CalibrationPoint:
     # ``len(unique) >= _MIN_SESSIONS_FOR_FIT`` gate that decides whether
     # fitting is attempted.
     synthesized: bool = False
+
+    # ── Damper clicks (Unit 2 — left-side; right-side mirrors for per-corner cars) ──
+    # For per-corner cars (BMW, Cadillac, Ferrari) lf maps to LeftFront and lr
+    # to LeftRear. For heave-architecture cars (Porsche/Acura) lf maps to
+    # FrontHeave and lr to RearHeave/LeftRear depending on car. The reader
+    # exposes these as setup.front_* / setup.rear_* (already normalized).
+    # These are part of the setup fingerprint so click-sweep IBTs at otherwise
+    # identical suspension count as distinct calibration points.
+    lf_ls_comp: float = 0.0
+    lf_hs_comp: float = 0.0
+    lf_ls_rbd: float = 0.0
+    lf_hs_rbd: float = 0.0
+    lr_ls_comp: float = 0.0
+    lr_hs_comp: float = 0.0
+    lr_ls_rbd: float = 0.0
+    lr_hs_rbd: float = 0.0
 
 
 @dataclass
@@ -700,6 +732,16 @@ def extract_point_from_ibt(ibt_path: str | Path, car_name: str = "") -> Calibrat
         # Historical field name retained for JSON compatibility.  Value is the
         # roll_distribution_proxy, not a true LLTD calibration target.
         lltd_measured=lltd_m,
+        # Damper clicks — setup_reader normalizes to front_* / rear_* (LF/LR
+        # for per-corner cars; FrontHeave/RearHeave for heave-architecture).
+        lf_ls_comp=float(setup.front_ls_comp),
+        lf_hs_comp=float(setup.front_hs_comp),
+        lf_ls_rbd=float(setup.front_ls_rbd),
+        lf_hs_rbd=float(setup.front_hs_rbd),
+        lr_ls_comp=float(setup.rear_ls_comp),
+        lr_hs_comp=float(setup.rear_hs_comp),
+        lr_ls_rbd=float(setup.rear_ls_rbd),
+        lr_hs_rbd=float(setup.rear_hs_rbd),
     )
 
 
